@@ -119,8 +119,8 @@ cfg := tenancy.Config{
         {Group: "example:k8s:viewer", Grants: []tenancy.Grant{
             {Env: "devel", AllTenants: true},
         }},
-        {Group: "example:dms:deployer", Grants: []tenancy.Grant{
-            {Env: "devel", Tenants: []string{"dms"}},
+        {Group: "example:example-app:deployer", Grants: []tenancy.Grant{
+            {Env: "devel", Tenants: []string{"example-app"}},
         }},
     },
 }

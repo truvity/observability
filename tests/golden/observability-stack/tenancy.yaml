@@ -107,7 +107,7 @@ spec:
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMUser
 metadata:
-  name: observability-stack-example-dms-deployer
+  name: observability-stack-example-example-app-deployer
   labels:
     app.kubernetes.io/name: observability-stack
     app.kubernetes.io/instance: observability-stack
@@ -115,18 +115,18 @@ metadata:
     app.kubernetes.io/part-of: observability-stack
     observability.role: reader
 spec:
-  name: "example:dms:deployer"
+  name: "example:example-app:deployer"
   disable_secret_creation: true
   jwt:
     oidc:
       issuer: "https://issuer.example"
     matchClaims:
-      groups: "example:dms:deployer"
+      groups: "example:example-app:deployer"
     defaultVMAccessClaim:
       metricsExtraFilters:
-        - '{env="devel",tenant=~"^(dms)$"}'
+        - '{env="devel",tenant=~"^(example-app)$"}'
       logsExtraStreamFilters:
-        - _stream:{"env"="devel","kubernetes.namespace_labels.tenancy.example.com/project"=~"^(dms)$"}
+        - _stream:{"env"="devel","kubernetes.namespace_labels.tenancy.example.com/project"=~"^(example-app)$"}
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500

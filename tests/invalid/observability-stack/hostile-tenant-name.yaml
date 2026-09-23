@@ -8,7 +8,7 @@ tenancy:
         - env: devel
           allTenants: true
 
-# A tenant name is interpolated into a filter expression. `dms|prod`
+# A tenant name is interpolated into a filter expression. `example-app|prod`
 # would not look odd in the rendered filter — it would grant a second
 # tenant. Such a name is refused, never escaped.
 tenancy:
@@ -16,7 +16,7 @@ tenancy:
   logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
   logsEnvField: env
   principals:
-    - group: example:dms:deployer
+    - group: example:example-app:deployer
       grants:
         - env: devel
-          tenants: ["dms|prod"]
+          tenants: ["example-app|prod"]

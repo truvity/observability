@@ -197,10 +197,10 @@ tenancy:
   #       grants:
   #         - env: devel
   #           allTenants: true
-  #     - group: example:dms:deployer
+  #     - group: example:example-app:deployer
   #       grants:
   #         - env: devel
-  #           tenants: [dms]
+  #           tenants: [example-app]
   #
   # `tenants` and `allTenants` are mutually exclusive and one is required:
   # an empty list is refused rather than read as "everything", because a
