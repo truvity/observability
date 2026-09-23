@@ -6,7 +6,17 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
-## Unreleased
+## 0.1.0
+
+The first release. Everything below is new to a consumer, so the two
+authorization fixes among these entries describe defects that **never
+reached a published version** — they were found and fixed between the
+repository being created and this tag. Nobody ran them.
+
+They are written up anyway, at length, because the mechanisms are the
+ones an operator has to understand to run this safely, and because each
+one is a shape that could come back.
+
 
 - **`pkg/tenancy` and `charts/observability-stack`** — the proxy now
   APPLIES the filters it renders. **This is an authorization fix: before
@@ -76,6 +86,15 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
   argument it is given — two entries naming two environments intersected
   in nothing, so the principal with the most access got the emptiest
   screen. The metrics and traces paths are unchanged. See docs/safety.md.
+
+- **`pkg/tenancy`** — the default `vm_access` claim is rendered inside
+  the token block rather than beside the route map. vmauth's user object
+  has no such field and its parser is strict, so the misplaced version
+  did not merely lose the default: vmauth refused the whole
+  configuration file and exited, and the proxy never started. Caught by
+  running a rendered configuration against the binary; a test now asserts
+  the nesting against the marshalled output rather than against our own
+  structs.
 
 - **`charts/observability-emitters`** — per-cluster collection: vmagent as
   a `VMAgent` the operator reconciles, vlagent from the vendor's own
