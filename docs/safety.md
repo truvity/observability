@@ -192,7 +192,7 @@ stop working in a patch release.
 
 ## The refusals: `observability-emitters`
 
-Twenty-six, each with a fixture under
+Twenty-seven, each with a fixture under
 `tests/invalid/observability-emitters/` that is otherwise valid, so it
 fails for its one reason and no other.
 
@@ -204,6 +204,7 @@ exists.
 | Refusal | The failure it prevents |
 |---|---|
 | `metrics.spec.overrideHonorLabels: false` | With honor labels not overridden, a label a **target exports itself** wins over the label the agent stamps. Any workload that exposes a `tenant` metric label then chooses its own tenant: it can write into another team's data, or hide its own from the people responsible for it. The render, the sync and the dashboards all look correct. |
+| A default scrape class that writes neither label | `mergeOverwrite` replaces a list wholesale, so a caller who adds one scrape class of their own replaces the tenancy one — and a replacement that happens to set `attachMetadata` would pass every other check while stamping nothing at all. The rules are checked, not just their container. |
 | A default scrape class without `attachMetadata.namespace` | A namespace's labels are not part of Kubernetes service discovery unless they are asked for. Without it `__meta_kubernetes_namespace_label_*` is simply absent, every tenancy rule matches nothing, and the whole cluster collapses onto `fallbackTenant` — a single-tenant install rendered to look like a multi-tenant one. |
 | `tenancy.env` empty | Telemetry labelled `env=""` matches no grant the proxy injects. It is stored, it is paid for, and it is invisible to everyone who might have acted on it. |
 | `tenancy.fallbackTenant` empty | The same, for every namespace nobody has labelled yet — which on any real estate is the namespaces added most recently. |

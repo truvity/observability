@@ -17,7 +17,7 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
   overwritten. Install `charts/observability-crds` first: the chart
   renders `PodMonitor` objects, and on a cluster without those CRDs every
   other chart's monitor template renders nothing at all, silently, with a
-  successful sync. Twenty-six refusals, each with a fixture, and the three
+  successful sync. Twenty-seven refusals, each with a fixture, and the three
   worth knowing before you write the values file: `overrideHonorLabels`
   cannot be turned off, because a target that exports its own `tenant`
   label would otherwise choose its own tenant; `remoteWrite.shardByURL` is
