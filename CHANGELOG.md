@@ -39,6 +39,11 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
     under `/api/v1/status/` except `tsdb` and `buildinfo` take no filter,
     so no filter narrows them: they returned metric names, and other
     principals' query text, across every tenant.
+  - **`vmauth.extraArgs.mergeQueryArgs` naming a filter argument is
+    refused.** The clash between a client's query argument and the
+    route's is the other half of the enforcement, and that flag exempts
+    an argument from it; vmselect ORs `extra_filters` alternatives, so a
+    caller adding an empty one would read every tenant.
   - **A claim can no longer be rendered empty.** An empty filter list
     does not deny anything — it removes the query argument, and with it
     the clash that stops a caller supplying its own.

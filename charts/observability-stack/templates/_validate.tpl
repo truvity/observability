@@ -398,6 +398,34 @@ edit to this chart rather than against a value somebody wrote.
 {{- fail (printf "observability-stack: the %s read route does not carry %s=%s. vmauth applies a `vm_access` claim ONLY by substituting a placeholder into the route, so without it every principal's query reaches the store unfiltered while `defaultVMAccessClaim` beside it still states the grant. Nothing downstream reports that: the render succeeds, the install succeeds, and a query for one tenant returns exactly what it would have returned if the filter had been applied." $signal $arg $placeholder) -}}
 {{- end -}}
 {{- end -}}
+{{- /*
+And the one flag that would hand the filter back to the caller.
+
+vmauth forwards a client's query argument only when it does NOT clash
+with one the route already set — that clash is what stops a reader
+sending its own `extra_filters` alongside the enforced one.
+`-mergeQueryArgs` names the arguments exempted from that rule, and the
+exemption is total: the client's value is added rather than dropped.
+
+On the log path an extra `extra_stream_filters` is AND-ed, so it could
+only narrow. On the metrics path vmselect treats each `extra_filters`
+as an ALTERNATIVE and ORs them, so a caller adding `{}` reads
+everything — the whole grant, undone by one query argument, with the
+claim and the route both still correct.
+
+The flag's own default is empty and this chart sets no route argument
+that anyone would legitimately want merged, so naming one of these here
+is refused rather than trusted.
+*/}}
+{{- range $arg, $value := ($.Values.vmauth.extraArgs | default dict) -}}
+{{- if eq (toString $arg) "mergeQueryArgs" -}}
+{{- range $merged := (splitList "," (toString $value)) -}}
+{{- if has (trim $merged) (list "extra_filters" "extra_filters[]" "extra_stream_filters") -}}
+{{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q, which is the argument this chart enforces a principal's grant with. vmauth drops a client query argument that CLASHES with one the route already set, and that drop is the only thing stopping a reader from sending its own filter; `mergeQueryArgs` exempts an argument from it entirely. vmselect treats each `extra_filters` as an ALTERNATIVE and ORs them, so a caller adding an empty one reads every tenant — with the claim, the route and the filter all still exactly right. Remove it, or stop enforcing tenancy here." (trim $merged)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- $paths := concat
     (fromYamlArray (include "observability-stack.readPaths.metrics" .))
     (fromYamlArray (include "observability-stack.readPaths.logs" .))

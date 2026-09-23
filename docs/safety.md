@@ -126,7 +126,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Twenty-one, each with a fixture under
+Twenty-two, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -152,6 +152,7 @@ for its one reason and no other.
 | Grafana with alerting enabled | A second alerting engine, with its own rules, silences and notification policies: a second place to look at three in the morning, and the one nobody remembers. |
 | Grafana without an admin Secret | The Grafana chart then generates a random admin password on every render: `helm upgrade` rotates it silently, and the release's manifest differs from itself when nothing changed. |
 | Grafana with `use_refresh_token` off, `role_attribute_strict` off, `locking_attempt_timeout_sec` outside 60–300, or a dashboard `updateIntervalSeconds` of 10 or less | Four defaults that leave a Grafana which looks fine: a session that outlives its token and 401s on every query, an unmapped person given the default role, a second replica crash-looping through a database migration, and dashboards that never update because a ConfigMap projection is a symlink swap that fires no watch event. |
+| `vmauth.extraArgs.mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` | vmauth drops a client query argument that clashes with one the route already set, and that drop is the only thing stopping a reader sending its own filter beside the enforced one. `mergeQueryArgs` exempts an argument from it. vmselect ORs each `extra_filters` as an alternative, so a caller adding an empty one reads every tenant — with the claim, the route and the rendered filter all still exactly right. |
 | A trace store enabled alongside `principals`, without `tenancy.allowUnfilteredTraceReads` | The proxy enforces a grant by substituting it into the route it forwards on, and VictoriaTraces' select APIs accept no query argument to substitute one into. The trace route would sit between two scoped routes, look exactly like them, and scope nothing. |
 | A backup with no destination or no credentials | It runs, finds nothing to do and reports success. |
 
@@ -208,6 +209,14 @@ function:
   such an argument *clashes* with one the route already set — and with
   the route's argument gone there is no clash, so the caller's filter is
   used. `RenderClaim` refuses to produce an empty list.
+- **The clash is the other half of the enforcement.** vmauth forwards a
+  client's query argument only when it does not clash with one the route
+  already set; that is what stops a reader sending its own
+  `extra_filters` alongside the enforced one. `-mergeQueryArgs` exempts
+  an argument from that rule, and vmselect ORs each `extra_filters` as
+  an alternative — so a caller adding an empty one reads every tenant,
+  with the claim, the route and the rendered filter all still exactly
+  right. The chart refuses the flag naming either filter argument.
 - **Not every endpoint under a route reads the argument.** The route is
   a whole `url_map` row; the filter reaches every request in it, but a
   handler that never looks at `extra_filters` is unfiltered anyway. That
