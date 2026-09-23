@@ -2,7 +2,7 @@
 # check workflow (truvity/ci-workflows) runs each one as its own job, so a
 # laptop and CI run the same thing.
 
-charts := "platform-alerts"
+charts := "observability-crds platform-alerts"
 
 # The parent workspace would otherwise interfere with this standalone
 # module.
@@ -21,6 +21,17 @@ lint:
     set -euo pipefail
     golangci-lint run ./...
     for chart in {{ charts }}; do
+      # A chart renders with WHATEVER archive is in its charts/ directory:
+      # move the version in Chart.yaml and leave the vendored archive
+      # behind, and helm installs the old CRDs while every check passes and
+      # the golden does not move. `helm dependency list` is where that
+      # shows, and it exits 0 either way, so the STATUS column is read.
+      if helm dependency list "charts/$chart" \
+           | tail -n +2 | grep -v '^[[:space:]]*$' | grep -qv 'ok[[:space:]]*$'; then
+        helm dependency list "charts/$chart" >&2
+        echo "$chart: a declared dependency is missing or is the wrong version — run 'just crds'" >&2
+        exit 1
+      fi
       helm lint "charts/$chart" --values tests/cases/"$chart"/minimal/values.yaml
       # An unknown top-level key must fail the render. Not `! helm
       # template ...`: bash's `set -e` ignores a command negated with `!`,
@@ -54,6 +65,12 @@ test:
 # Regenerate the golden renders — review the diff before committing.
 golden:
     hack/golden.sh update
+
+# Re-fetch observability-crds from its two pinned upstreams. Needs network
+# and a GITHUB_TOKEN; deliberately NOT part of `check`, for the same reason
+# `golden` is not: it writes what the checks then read.
+crds:
+    hack/crds.sh
 
 # The reason this repository can be public. Runs in CI as its own job.
 leak-canary:

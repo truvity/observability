@@ -8,6 +8,7 @@ everything still looks green.
 
 | Artifact | What | Status |
 |---|---|---|
+| `charts/observability-crds` | The CustomResourceDefinitions the rest of the stack needs, owned as their own release rather than as a side effect of whichever chart installed them first: the VictoriaMetrics operator's, and the four Prometheus Operator scrape kinds every component authors its scrape objects in. Applied before the controllers, never pruned. | unreleased |
 | `charts/platform-alerts` | The rules that fire when something has stopped working silently: a CronJob that is no longer scheduled, a store whose write path has died, a volume that was never mounted, a store approaching its own read-only limit. Every rule carries the incident that earned it and a negative fixture that must fail. | unreleased |
 | `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces, single or as a zone-redundant pair, behind an authorising proxy that scopes every query to the caller's tenants; vmalert and Alertmanager; optionally Grafana, forwarding the signed-in user's identity. | planned |
 | `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry collector, each stamping tenancy from namespace labels and replicating to every destination with its own on-disk buffer. | planned |
@@ -152,6 +153,7 @@ Used in production by its maintainers.
 devbox shell
 just check      # lint, golden renders, leak canary
 just golden     # regenerate the golden renders — review the diff
+just crds       # re-fetch observability-crds from its pinned upstreams
 ```
 
 Every chart carries a strict `values.schema.json`, golden renders under

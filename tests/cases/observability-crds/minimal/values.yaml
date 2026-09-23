@@ -1,0 +1,7 @@
+# The defaults: both sets, which is what a cluster with no other owner for
+# either of them installs. The render this produces ends on the inventory —
+# every kind and the version it stores — and that list is what a bump of
+# either upstream is reviewed against.
+sets:
+  victoriaMetrics: true
+  prometheusOperator: true

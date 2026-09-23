@@ -1,0 +1,28 @@
+apiVersion: v2
+name: observability-crds
+description: >-
+  The CustomResourceDefinitions this stack depends on, owned as their own
+  release: the VictoriaMetrics operator's, and the four Prometheus Operator
+  scrape kinds.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - crds
+  - victoriametrics
+  - prometheus-operator
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability
+dependencies:
+  # Upstream's own CRDs chart, vendored under charts/ by hack/crds.sh so a
+  # render needs no network. Aliased short because upstream recommends a
+  # short name for anything derived from this chart's, against the 63
+  # character limit on a Kubernetes resource name.
+  - name: victoria-metrics-operator-crds
+    alias: vmoc
+    version: "0.14.0"
+    repository: oci://ghcr.io/victoriametrics/helm-charts
+    condition: sets.victoriaMetrics
