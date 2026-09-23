@@ -1,0 +1,15 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# An Enterprise image runs. It refuses only the Enterprise features, so
+# the install succeeds, the store serves, and nothing reports that the
+# estate is now using a binary it has no licence for.
+victoria-logs-single:
+  server:
+    image:
+      tag: v1.52.0-enterprise

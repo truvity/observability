@@ -1,0 +1,157 @@
+---
+# Source: observability-stack/templates/vmauth.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAuth
+metadata:
+  name: observability-stack
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  image:
+    repository: victoriametrics/vmauth
+    tag: v1.152.0
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: "1"
+      memory: 512Mi
+  selectAllByDefault: false
+  userSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: observability-stack
+      app.kubernetes.io/instance: observability-stack
+  userNamespaceSelector: {}
+  unauthorizedUserAccessSpec:
+    disabled: true
+  extraArgs:
+    logInvalidAuthTokens: "true"
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-example-k8s-viewer
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: reader
+spec:
+  name: "example:k8s:viewer"
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: "https://issuer.example"
+    matchClaims:
+      groups: "example:k8s:viewer"
+    defaultVMAccessClaim:
+      metricsExtraFilters:
+        - '{env="devel"}'
+      logsExtraStreamFilters:
+        - '{env="devel"}'
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+      paths:
+        - /prometheus/api/v1/query
+        - /prometheus/api/v1/query_range
+        - /prometheus/api/v1/series
+        - /prometheus/api/v1/labels
+        - /prometheus/api/v1/label/[^/]+/values
+        - /prometheus/api/v1/metadata
+        - /prometheus/api/v1/status/[^/]+
+        - /prometheus/vmui.*
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+    - static:
+        url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+      paths:
+        - /select/logsql/.*
+        - /select/vmui.*
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-example-dms-deployer
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: reader
+spec:
+  name: "example:dms:deployer"
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: "https://issuer.example"
+    matchClaims:
+      groups: "example:dms:deployer"
+    defaultVMAccessClaim:
+      metricsExtraFilters:
+        - '{env="devel",tenant=~"^(dms)$"}'
+      logsExtraStreamFilters:
+        - '{env="devel",tenant=~"^(dms)$"}'
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+      paths:
+        - /prometheus/api/v1/query
+        - /prometheus/api/v1/query_range
+        - /prometheus/api/v1/series
+        - /prometheus/api/v1/labels
+        - /prometheus/api/v1/label/[^/]+/values
+        - /prometheus/api/v1/metadata
+        - /prometheus/api/v1/status/[^/]+
+        - /prometheus/vmui.*
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+    - static:
+        url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+      paths:
+        - /select/logsql/.*
+        - /select/vmui.*
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"

@@ -1,0 +1,14 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# A bare number is MONTHS. `90` is seven and a half years of data on a
+# volume sized for three months, and the first anyone hears of it is the
+# volume filling up a quarter later.
+victoria-logs-single:
+  server:
+    retentionPeriod: "90"

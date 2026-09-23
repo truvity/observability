@@ -10,7 +10,7 @@ everything still looks green.
 |---|---|---|
 | `charts/observability-crds` | The CustomResourceDefinitions the rest of the stack needs, owned as their own release rather than as a side effect of whichever chart installed them first: the VictoriaMetrics operator's, and the four Prometheus Operator scrape kinds every component authors its scrape objects in. Applied before the controllers, never pruned. | unreleased |
 | `charts/platform-alerts` | The rules that fire when something has stopped working silently: a CronJob that is no longer scheduled, a store whose write path has died, a volume that was never mounted, a store approaching its own read-only limit. Every rule carries the incident that earned it and a negative fixture that must fail. | unreleased |
-| `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces, single or as a zone-redundant pair, behind an authorising proxy that scopes every query to the caller's tenants; vmalert and Alertmanager; optionally Grafana, forwarding the signed-in user's identity. | planned |
+| `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces behind an authorising proxy that scopes every query to the caller's tenants; two vmalerts and Alertmanager with a deadman that leaves the cluster; network policies and backups; optionally Grafana, forwarding the signed-in user's identity. Single-replica today — `ha` is accepted and the zone-redundant behaviour follows. | unreleased |
 | `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry collector, each stamping tenancy from namespace labels and replicating to every destination with its own on-disk buffer. | planned |
 | `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. Refuses a name that could widen a grant rather than escaping it. | unreleased |
 
@@ -48,6 +48,18 @@ front of reads. High availability is a values flag, not a different
 architecture.
 
 ## Install
+
+The stack itself installs after the CRDs and before the rules — see
+[docs/adoption.md](docs/adoption.md), which lists what must already exist
+(the CRDs chart, cert-manager, an OIDC issuer, and the Secret holding the
+stores' own credentials):
+
+```console
+helm install observability oci://ghcr.io/truvity/charts/observability-stack \
+  --version <version> --namespace observability --values values.yaml
+```
+
+The rules are their own release:
 
 ```console
 helm install platform-alerts oci://ghcr.io/truvity/charts/platform-alerts \

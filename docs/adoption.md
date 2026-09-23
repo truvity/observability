@@ -193,6 +193,77 @@ A rule that returns nothing in both directions is not passing. It is
 querying metrics that do not exist — usually a metric name that is right
 for a different version of the exporter.
 
+## Installing observability-stack
+
+### What must already exist
+
+| Thing | Why |
+|---|---|
+| `charts/observability-crds`, installed and synced | This chart renders `VMAuth`, `VMUser`, `VMAlert`, `VMAlertmanager` and `VMSingle` objects, and its operator dependency has `crds.enabled: false`. Without the CRDs the operator's own chart installs nothing and every object here is rejected — or worse, a chart that gates a monitor template on the kind renders nothing and reports success. It is a wave ahead, and it is a rule rather than a preference. |
+| cert-manager | The VictoriaMetrics operator's admission webhook needs a certificate. The alternative is upstream's default, where the chart generates a self-signed CA **at render time**: a new certificate on every `helm upgrade`, and a release whose manifest differs from itself when nothing changed. |
+| An OIDC issuer | vmauth verifies every read token against its discovery document. `tenancy.issuerUrl` is required as soon as a principal exists, because a proxy that trusts an unverified token is worse than no proxy. |
+| A Secret with the stores' credentials | Named by `storeCredentials.secretName`, default `observability-store-credentials`, with `username` and `password` keys. Every store runs with `-httpAuth.*` so nothing in the cluster can reach one around the proxy; the chart takes the name and never creates the Secret. |
+| A `StorageClass` that binds | The stores are stateful and their volumes are ReadWriteOnce. The backup jobs mount the same volumes, which is why each carries a pod affinity onto its store's node. |
+| A deadman watcher outside the cluster | Optional, and the only alert that can see this stack's own alerting path fail. `alertmanager.watchdog.secretName` names the Secret holding its receiver URL. |
+
+### Install order
+
+1. `observability-crds`, at a wave ahead. See above.
+2. The Secrets: the store credentials, the Watchdog receiver, each writer's
+   token, the backup credentials, Grafana's admin and OAuth client. All of
+   them are the estate's; the chart renders none of them.
+3. This chart.
+
+   ```console
+   helm install observability oci://ghcr.io/truvity/charts/observability-stack \
+     --version <version> --namespace observability --values values.yaml
+   ```
+
+4. `platform-alerts`, once the stores are answering: its rules name the
+   counters your stores export.
+
+The smallest values file that is worth installing is
+`tests/cases/observability-stack/minimal/values.yaml`; the shape this
+release supports, written out, is `…/single/values.yaml`.
+
+### Some values are written twice, and the chart refuses the disagreement
+
+Helm evaluates a subchart's values before any template runs, so a parent
+chart cannot compute them. Three values therefore appear both in this
+chart's surface and in an upstream chart's own key, marked `MIRROR:` in
+values.yaml:
+
+| This chart | The upstream key |
+|---|---|
+| `interval` | `victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval']` |
+| `storeCredentials.secretName` | the `VM_httpAuth_*` entries in each store's `env` / `extraEnvs` |
+
+Change one and the render fails, naming the other. That is the point: a
+deduplication window wider than the scrape interval silently discards good
+samples, and a store reading a different Secret than the proxy presents
+answers every query with 401 — neither of which announces itself.
+
+### The zero-diff gate, and the one difference to expect
+
+The rule is unchanged: a consumer adopts a release only when the render is
+byte-identical to what runs, or differs exactly by the change the release
+announces. Render the chart, diff it against the live objects, reconcile
+before installing rather than after.
+
+One difference is built in. The golden renders in this repository are
+tracked files in a public repository, so they are rendered with
+`global.cluster.dnsDomain: cluster.example.` rather than the real default:
+the leak canary bans in-cluster DNS names, in tests as much as in docs. An
+estate on the default suffix sees that one substitution and nothing else.
+
+### Turning a store off
+
+Each upstream chart has its own `enabled` key, and this chart follows it:
+the proxy stops rendering the routes for a store that is off, the network
+policy for it disappears, and the mirror checks for it stop applying. An
+estate that keeps its log store elsewhere sets
+`victoria-logs-single.enabled: false` and `stores.logs.url`.
+
 ## Upgrades that change what runs
 
 Each entry says what to do; none is optional reading before a bump.

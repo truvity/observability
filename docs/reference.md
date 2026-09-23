@@ -106,6 +106,177 @@ Alerts: `VolumeSmallerThanClaimed`.
 Alerts: `StoreApproachingReadOnly`, one per qualifying store, labelled
 `store`.
 
+## `charts/observability-stack`
+
+One install of the store. The chart renders the proxy, the two vmalerts,
+Alertmanager, the network policies and the backups itself; the stores, the
+operator and Grafana come from the pinned upstream charts, and their own
+values are the surface for everything about them.
+
+**Why some values appear twice.** Helm evaluates a subchart's values before
+any template runs, so a parent chart cannot compute them. Where one value
+has to reach an upstream chart, it is written in both places and the chart
+**refuses to render when the two disagree** — marked `MIRROR:` in
+values.yaml, listed here, and enforced rather than remembered.
+
+### Top level
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `nameOverride` | string | `""` | Replaces the chart name in the names this chart renders. |
+| `fullnameOverride` | string | `""` | Replaces them entirely. |
+| `ha` | bool | `false` | Zone-redundant mode. Accepted today, behaviour in a later release. **Refused with fewer than two `zones`.** |
+| `zones` | list | `[]` | Zone names, at least two when `ha` is true. Labels, not addresses. |
+| `interval` | duration | `30s` | The one interval: both vmalerts' evaluation interval, and — through its mirror — the metrics store's `-dedup.minScrapeInterval`. Mirror: `victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval']`. |
+
+### `vmauth` — the authorising proxy
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `vmauth.enabled` | bool | `true` | Renders the `VMAuth` and its `VMUser` objects. |
+| `vmauth.image.repository` | string | `victoriametrics/vmauth` | |
+| `vmauth.image.tag` | string | `v1.152.0` | **Refused below v1.152.0.** `default_vm_access_claim` arrived in v1.147.0, and v1.147.0–v1.151.x matched claim values unanchored (GHSA-f99m-22fh-qw96). The operator's own default tag is older than both, so it is set here. |
+| `vmauth.replicaCount` | int | `1` | |
+| `vmauth.resources` | object | 1 CPU / 512Mi | Requests equal limits, integer CPU. |
+| `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | A rejected token that logs nothing is an access problem nobody can diagnose. Note the trade: with this flag vmauth also returns the offending token in the 401 body. |
+| `vmauth.deniedPaths` | list | `["/internal/.*", "/-/reload"]` | Paths no user may be routed to. Checked against every route the chart renders; a match fails the render. |
+| `vmauth.loadBalancingPolicy` | enum | `first_available` | A read balanced onto a replica still replaying its buffer returns a gap, and a gap reads as an outage. |
+| `vmauth.retryStatusCodes` | list | `[500, 502, 503]` | What a backend returns while it is coming back. |
+
+### `tenancy`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `tenancy.issuerUrl` | string | `""` | The OIDC issuer vmauth discovers keys from. **Required whenever `principals` is set.** |
+| `tenancy.claimName` | string | `groups` | The claim carrying the caller's groups. |
+| `tenancy.tenantLabel` | name | `tenant` | The label key the collectors stamp with the tenant. |
+| `tenancy.envLabel` | name | `env` | The label key for the environment. |
+| `tenancy.principals[].group` | string | — | Matched against `claimName`. One `VMUser` per entry. |
+| `tenancy.principals[].grants[].env` | name | — | One environment. Granting the same one twice to a principal is refused. |
+| `tenancy.principals[].grants[].tenants` | list of names | — | Tenants by name. An empty list is refused, never read as "everything". |
+| `tenancy.principals[].grants[].allTenants` | bool | — | Every tenant in that environment. Mutually exclusive with `tenants`; one is required. |
+| `tenancy.writers[].name` | name | — | A collector that writes. Its routes are the write paths and nothing else. |
+| `tenancy.writers[].tokenSecret` | `{name, key}` | — | The Secret holding its bearer token. The chart never creates one. |
+| `tenancy.writers[].destinations` | list | — | `metrics`, `logs`, `traces`. |
+
+Names must match `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` — the same shape, for
+the same reason, as `pkg/tenancy`: they are interpolated into a filter
+expression, so one carrying `|` or `.*` widens the grant rather than
+looking odd.
+
+### `storeCredentials`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `storeCredentials.secretName` | string | `observability-store-credentials` | The Secret holding the `-httpAuth.*` credentials every store demands. **Must exist before the stores start**; the chart neither creates nor reads it. Mirrors: the `VM_httpAuth_username` / `VM_httpAuth_password` entries in each store's `env` / `extraEnvs`. |
+| `storeCredentials.usernameKey` | string | `username` | |
+| `storeCredentials.passwordKey` | string | `password` | |
+
+### `stores`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `stores.metrics.url` | string | `""` | Where the metrics store is. Empty derives it from the upstream chart's naming rules. Set it when the store runs outside this release. |
+| `stores.logs.url` | string | `""` | As above, for logs. |
+| `stores.traces.url` | string | `""` | As above, for traces. A non-empty value also enables the trace routes when the trace chart is off. |
+
+### `vmalert` — two of them
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `vmalert.enabled` | bool | `true` | Renders the metrics vmalert. |
+| `vmalert.logs.enabled` | bool | `true` | Renders the second one, with `-rule.defaultRuleType=vlogs`. |
+| `vmalert.externalUrl` | string | `""` | `-external.url`. Empty leaves vmalert's own default, which is the pod hostname — every alert's source link dead outside the cluster. |
+| `vmalert.externalLabels` | map | `{}` | Labels on every alert and recording rule. |
+| `vmalert.resources` | object | 1 CPU / 512Mi | |
+
+Both carry `remoteWrite` **and** `remoteRead` against the metrics store,
+and `selectAllByDefault: true`; none of the three is configurable, because
+each has exactly one correct value and the wrong one is silent. See
+docs/safety.md.
+
+### `alertmanager`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `alertmanager.enabled` | bool | `true` | Renders the `VMAlertmanager`. |
+| `alertmanager.replicaCount` | int | `1` | |
+| `alertmanager.notifierUrl` | string | `""` | An Alertmanager the estate already runs, for when `enabled` is false. **One of the two is required**: a vmalert with no notifier sends every alert nowhere. |
+| `alertmanager.watchdog.secretName` | string | `""` | The Secret holding the deadman receiver's URL. Empty renders no Watchdog route and no Watchdog rule. |
+| `alertmanager.watchdog.key` | string | `url` | The key inside it. Read with `url_file` from a mounted volume, never interpolated into the rendered config. |
+| `alertmanager.watchdog.repeatInterval` | duration | `5m` | How often the heartbeat repeats. The outside watcher's timeout must be comfortably longer. |
+| `alertmanager.config.route` | object | receiver `blackhole` | The top-level route, in Alertmanager's own shape. |
+| `alertmanager.config.receivers` | list | `[{name: blackhole}]` | |
+| `alertmanager.config.routes` | list | `[]` | Routes under the top-level one. The Watchdog route is rendered first and matched on its own. |
+| `alertmanager.config.inhibitRules` | list | `[]` | |
+| `alertmanager.resources` | object | 1 CPU / 256Mi | |
+
+### `networkPolicy`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `networkPolicy.enabled` | bool | `true` | One policy per store plus one for the proxy. A policy that selects a pod is a default-deny for it. |
+| `networkPolicy.proxyFrom` | list | `[]` | Who may reach the proxy, as `NetworkPolicyPeer` objects. Empty means the release's own namespace. |
+| `networkPolicy.writersFrom` | list | `[]` | Who may write to a store directly. The collectors need this; nothing else does. |
+
+Egress is deliberately unrestricted: a policy naming every DNS server,
+object store and issuer breaks the first time one moves, and it breaks as
+a backup that stopped.
+
+### `backup`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `backup.enabled` | bool | `false` | |
+| `backup.destination` | string | `""` | An rclone destination without credentials, e.g. `:s3,env_auth=true:bucket/path`. **Required when enabled.** |
+| `backup.credentialsSecret` | string | `""` | The Secret with the object store's credentials, loaded with `envFrom`. **Required when enabled.** |
+| `backup.metrics.enabled` | bool | `true` | `vmbackup` against an instant snapshot. Incremental by construction: a destination that already holds a backup receives only what changed. |
+| `backup.metrics.schedule` | cron | `17 * * * *` | The incremental run. |
+| `backup.metrics.fullSchedule` | cron | `17 3 * * 0` | The weekly full, which names the existing backup as `-origin` so unchanged data is copied inside the object store. |
+| `backup.metrics.claimName` | string | `""` | The store's volume. Empty derives the operator's own name for it. |
+| `backup.metrics.image` | `{repository, tag}` | `victoriametrics/vmbackup:v1.152.0` | `vmbackupmanager` is Enterprise and is never wrapped. |
+| `backup.logs.enabled` | bool | `true` | The partition snapshot API: create, copy, delete. |
+| `backup.logs.schedule` | cron | `37 * * * *` | |
+| `backup.traces.enabled` | bool | `false` | The vendor's documented procedure: sync, detach, sync, attach. |
+| `backup.traces.schedule` | cron | `57 * * * *` | |
+| `backup.image` | `{repository, tag}` | `rclone/rclone:1.73.0` | Needs a shell, `rclone` and busybox `wget`. |
+| `backup.activeDeadlineSeconds` | int | `3000` | Give up rather than overlap. |
+| `backup.successfulJobsHistoryLimit` / `failedJobsHistoryLimit` | int | `3` / `3` | |
+
+Every job mounts its store's volume read-only, and carries a pod affinity
+onto the store's node: a ReadWriteOnce volume can only be mounted from one
+node. Every job refuses an empty source before it copies anything.
+
+### The upstream charts
+
+Their own values, pinned in `Chart.yaml` and vendored under the chart's
+`charts/` directory. The keys below are the ones this chart reasons about;
+everything else in each subchart's surface is the vendor's and passes
+through.
+
+| Value | Default | What it does |
+|---|---|---|
+| `victoria-metrics-k8s-stack.victoria-metrics-operator.crds.enabled` | `false` | The CRDs are `charts/observability-crds`'. **`crds.plain` must be `false` as well** — upstream disables CRD creation only when both are, because a Helm dependency condition cannot gate a `crds/` directory. |
+| `…operator.crds.cleanup.enabled` | `false` | The cleanup Job deletes every VictoriaMetrics object in the namespace on uninstall. |
+| `…operator.admissionWebhooks.certManager.enabled` | `true` | Otherwise the chart generates a self-signed CA at render time: a new certificate on every upgrade, and a render that is not a function of its inputs. This is why cert-manager is a prerequisite. |
+| `victoria-metrics-k8s-stack.vmsingle.spec.retentionPeriod` | `90d` | **With a unit.** A bare number is months. |
+| `…vmsingle.spec.extraArgs['dedup.minScrapeInterval']` | `30s` | MIRROR of `interval`. |
+| `…vmsingle.spec.extraArgs['storage.minFreeDiskSpaceBytes']` | `10GiB` | The metrics store's only disk guard — it has no `-retention.max*` flags. Upstream's default is 100MB, which is reached with the disk already full. |
+| `…vmsingle.spec.extraArgs['storage.maxHourlySeries' / 'maxDailySeries']` | `0` | Cardinality caps, off. A guessed cap silently drops every NEW series while the old ones keep ingesting, which looks exactly like an exporter that stopped. Set them from a measured active-series count. |
+| `…vmsingle.spec.resources` | 2 CPU / 8Gi | Requests equal limits, integer CPU. Unset is not neutral: the operator's own default is `1200m`. |
+| `…vmsingle.spec.extraEnvs` | the credential pair | MIRROR of `storeCredentials`. |
+| `victoria-logs-single.server.retentionPeriod` | `90d` | With a unit; the store's own default is `7d`. |
+| `victoria-logs-single.server.retentionMaxDiskUsagePercent` | `80` | **Mutually exclusive** with `retentionDiskSpaceUsage`: with both set the binary refuses to start. |
+| `victoria-logs-single.server.extraArgs['storage.minFreeDiskSpaceBytes']` | `10GiB` | Upstream's default is 10MB. |
+| `victoria-logs-single.server.env` | the credential pair | MIRROR of `storeCredentials`. |
+| `victoria-traces-single.server.retentionPeriod` | `30d` | Traces are the shortest-lived and the largest per unit of value. |
+| `victoria-traces-single.server.extraArgs['retention.maxDiskUsagePercent']` | `80` | The trace chart has no value of its own for it. |
+| `grafana.enabled` | `false` | An estate that already runs one points it at this stack's proxy instead. |
+| `grafana.admin.existingSecret` | `""` | **Required when Grafana is enabled**: with none, the chart generates a random admin password on every render. |
+| `grafana.datasources` | one per store, through the proxy | Every datasource needs `jsonData.oauthPassThru: true` and a `version`. |
+| `grafana.sidecar.dashboards.provider.updateIntervalSeconds` | `30` | **Above 10.** At 10 or below Grafana watches the filesystem, and a ConfigMap projection is a symlink swap that fires no watch event. |
+| `grafana.grafana.ini` | see values.yaml | `use_refresh_token` true, `role_attribute_strict` true, `locking_attempt_timeout_sec` 60–300, analytics off, `[unified_alerting]` and `[alerting]` off. |
+
 ## `pkg/tenancy`
 
 `go get github.com/truvity/observability`
@@ -147,7 +318,7 @@ a name is refused rather than escaped.
 |---|---|
 | `Validate() error` | Every problem found, joined, not just the first. |
 | `RenderClaim(Principal) (Claim, error)` | The `vm_access` body an issuer mints. |
-| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Needs vmauth **v1.147.0 or later** (`default_vm_access_claim`); JWT auth itself is community from v1.137.0. |
+| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Needs vmauth **v1.152.0 or later**: `default_vm_access_claim` arrived in v1.147.0, but v1.147.0–v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96). JWT auth itself is community from v1.137.0. |
 
 Rendering does not mutate its input, and output order is stable: grants
 sort by environment and tenants sort by name, so an unrelated change
@@ -158,5 +329,6 @@ produces no diff.
 | Artifact | Where |
 |---|---|
 | `observability-crds` | `oci://ghcr.io/truvity/charts/observability-crds` |
+| `observability-stack` | `oci://ghcr.io/truvity/charts/observability-stack` |
 | `platform-alerts` | `oci://ghcr.io/truvity/charts/platform-alerts` |
 | `pkg/tenancy` | `github.com/truvity/observability` |

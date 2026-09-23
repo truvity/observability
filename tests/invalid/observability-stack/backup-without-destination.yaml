@@ -1,0 +1,14 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# `rclone sync` from an empty source deletes the destination and exits
+# zero, and a backup with no destination at all is the same shape of
+# nothing: it runs, finds nothing to do, and reports success.
+backup:
+  enabled: true
+  credentialsSecret: example-backup-credentials

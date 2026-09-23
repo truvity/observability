@@ -1,0 +1,238 @@
+{{- if .Values.backup.enabled }}
+{{- $root := . }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- if not .Values.backup.destination }}
+{{- fail "observability-stack: `backup.enabled` is true but `backup.destination` is empty. A backup job with no destination runs, finds nothing to do and exits zero — the exact shape of failure this repository exists to catch." }}
+{{- end }}
+{{- if not .Values.backup.credentialsSecret }}
+{{- fail "observability-stack: `backup.enabled` is true but `backup.credentialsSecret` is empty. The object store's credentials are the estate's; this chart takes the NAME of a Secret and never a value." }}
+{{- end }}
+{{- /*
+Backups. Three stores, three mechanisms, and they are not
+interchangeable.
+
+Every job here refuses an EMPTY SOURCE before it copies anything. That
+is the rule the whole file exists for: `rclone sync` from an empty source
+deletes the destination and exits zero, so a backup that finds nothing
+reports success and destroys the copy you had. A job that cannot find its
+data must fail loudly, and loudly means a non-zero exit that
+`charts/platform-alerts`' CronJobNotSucceeding can see.
+
+All three mount the store's own volume. That is not an implementation
+detail to work around: vmbackup reads the snapshot from the filesystem,
+and a snapshot of a log or trace partition is a directory of hardlinks
+inside the data directory. A ReadWriteOnce volume can only be mounted by
+pods on ONE node, so each job carries a pod affinity onto its store's
+node. Without it the job stays Pending, which the same alert sees.
+*/}}
+{{- $affinity := dict }}
+{{- if .Values.backup.metrics.enabled }}
+{{- range $variant := list "incremental" "full" }}
+{{- $full := eq $variant "full" }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ printf "%s-backup-metrics-%s" $fullname $variant | trunc 52 }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.backup: metrics
+spec:
+  schedule: {{ ternary $root.Values.backup.metrics.fullSchedule $root.Values.backup.metrics.schedule $full | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ $root.Values.backup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $root.Values.backup.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ $root.Values.backup.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "observability-stack.labels" $root | nindent 12 }}
+            observability.backup: metrics
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: vmsingle
+                      app.kubernetes.io/instance: {{ include "observability-stack.vmks.fullname" $root }}
+          containers:
+            - name: vmbackup
+              image: {{ printf "%s:%s" $root.Values.backup.metrics.image.repository $root.Values.backup.metrics.image.tag | quote }}
+              args:
+                # vmbackup takes an instant snapshot through the store's
+                # own API and uploads it. It is incremental BY
+                # CONSTRUCTION: a destination that already holds a backup
+                # gets only what changed, and there is no flag for it.
+                - -storageDataPath=/vm-data
+                - -snapshot.createURL=$(SNAPSHOT_CREATE_URL)
+                {{- if $full }}
+                # The weekly full names the existing backup as `-origin`,
+                # so everything unchanged is copied INSIDE the object
+                # store rather than pulled down and pushed back up. It is
+                # the same backup either way; this is what it costs.
+                - -origin={{ $root.Values.backup.destination }}/metrics
+                - -dst={{ $root.Values.backup.destination }}/metrics-full
+                {{- else }}
+                - -dst={{ $root.Values.backup.destination }}/metrics
+                {{- end }}
+              env:
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $root.Values.storeCredentials.secretName | quote }}
+                      key: {{ $root.Values.storeCredentials.usernameKey | quote }}
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $root.Values.storeCredentials.secretName | quote }}
+                      key: {{ $root.Values.storeCredentials.passwordKey | quote }}
+                # The snapshot endpoint is behind the store's own
+                # `-httpAuth.*`, and deliberately not behind a
+                # `-snapshotAuthKey`: an authKey REPLACES basic auth for
+                # that endpoint rather than adding to it, and it travels
+                # in the query string.
+                - name: SNAPSHOT_CREATE_URL
+                  value: {{ printf "http://$(VM_USERNAME):$(VM_PASSWORD)@%s/snapshot/create" (trimPrefix "http://" (include "observability-stack.metrics.url" $root)) | quote }}
+              envFrom:
+                - secretRef:
+                    name: {{ $root.Values.backup.credentialsSecret | quote }}
+              volumeMounts:
+                - name: store
+                  mountPath: /vm-data
+                  readOnly: true
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: {{ $root.Values.backup.metrics.claimName | default (printf "vmsingle-%s" (include "observability-stack.vmks.fullname" $root)) | quote }}
+                readOnly: true
+{{- end }}
+{{- end }}
+{{- range $store := list "logs" "traces" }}
+{{- $cfg := index $root.Values.backup $store }}
+{{- if $cfg.enabled }}
+{{- $isLogs := eq $store "logs" }}
+{{- $url := ternary (include "observability-stack.logs.url" $root) (include "observability-stack.traces.url" $root) $isLogs }}
+{{- $sts := ternary (include "observability-stack.logs.fullname" $root) (include "observability-stack.traces.fullname" $root) $isLogs }}
+{{- $name := ternary (default "victoria-logs-single" ((index $root.Values "victoria-logs-single").nameOverride)) (default "vt-single" ((index $root.Values "victoria-traces-single").nameOverride)) $isLogs }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ printf "%s-backup-%s" $fullname $store | trunc 52 }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.backup: {{ $store }}
+spec:
+  schedule: {{ $cfg.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ $root.Values.backup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $root.Values.backup.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ $root.Values.backup.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "observability-stack.labels" $root | nindent 12 }}
+            observability.backup: {{ $store }}
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app: server
+                      app.kubernetes.io/name: {{ $name }}
+                      app.kubernetes.io/instance: {{ $root.Release.Name }}
+          containers:
+            - name: backup
+              image: {{ printf "%s:%s" $root.Values.backup.image.repository $root.Values.backup.image.tag | quote }}
+              env:
+                - name: STORE_URL
+                  value: {{ $url | quote }}
+                - name: DESTINATION
+                  value: {{ printf "%s/%s" $root.Values.backup.destination $store | quote }}
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $root.Values.storeCredentials.secretName | quote }}
+                      key: {{ $root.Values.storeCredentials.usernameKey | quote }}
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $root.Values.storeCredentials.secretName | quote }}
+                      key: {{ $root.Values.storeCredentials.passwordKey | quote }}
+              envFrom:
+                - secretRef:
+                    name: {{ $root.Values.backup.credentialsSecret | quote }}
+              volumeMounts:
+                - name: store
+                  mountPath: /storage
+                  readOnly: true
+              command:
+                - /bin/sh
+                - -euc
+                - |
+                  {{- if $isLogs }}
+                  # The log store's partitions are per-day directories.
+                  # A snapshot is a directory of HARDLINKS inside the data
+                  # directory: cheap to make, and it pins every part it
+                  # references, so one left behind grows the store's disk
+                  # usage with nothing pointing at why. The binary expires
+                  # them after -snapshotsMaxAge (3 days), which is a
+                  # backstop, not a plan — this job deletes its own.
+                  auth="--user=$VM_USERNAME --password=$VM_PASSWORD"
+                  created=$(wget -q -O- $auth --post-data='' \
+                    "$STORE_URL/internal/partition/snapshot/create")
+                  echo "snapshots: $created"
+                  # REFUSE AN EMPTY SOURCE. A store with no partitions is
+                  # a store with no data, and `rclone sync` from an empty
+                  # source DELETES the destination and exits zero.
+                  case "$created" in
+                    ''|'[]') echo "no snapshot was created: the store has no partitions, or the API refused" >&2; exit 1 ;;
+                  esac
+                  for path in $(echo "$created" | tr -d '[]"' | tr ',' ' '); do
+                    test -d "$path" || { echo "snapshot $path is not on this volume" >&2; exit 1; }
+                    test -n "$(ls -A "$path")" || { echo "snapshot $path is empty" >&2; exit 1; }
+                    rclone sync "$path" "$DESTINATION/$(basename "$path")" --checksum
+                    wget -q -O- $auth --post-data='' \
+                      "$STORE_URL/internal/partition/snapshot/delete?path=$path"
+                  done
+                  {{- else }}
+                  # The trace store has no snapshot API this chart will
+                  # rely on, so the vendor's documented procedure it is:
+                  # sync, detach, sync, attach. The second pass exists
+                  # because the data files are immutable but the small
+                  # metadata files beside them are not, and the first pass
+                  # takes long enough for them to change.
+                  auth="--user=$VM_USERNAME --password=$VM_PASSWORD"
+                  test -d /storage/partitions || { echo "no partitions directory: this is not a trace store's volume" >&2; exit 1; }
+                  # REFUSE AN EMPTY SOURCE, before anything is deleted at
+                  # the destination.
+                  test -n "$(ls -A /storage/partitions)" || { echo "the trace store has no partitions; refusing to sync an empty source over the backup" >&2; exit 1; }
+                  rclone sync /storage/partitions "$DESTINATION" --checksum
+                  for p in $(ls /storage/partitions); do
+                    wget -q -O- $auth --post-data='' "$STORE_URL/internal/partition/detach?name=$p"
+                  done
+                  rclone sync /storage/partitions "$DESTINATION" --checksum
+                  for p in $(ls /storage/partitions); do
+                    wget -q -O- $auth --post-data='' "$STORE_URL/internal/partition/attach?name=$p"
+                  done
+                  {{- end }}
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: {{ printf "server-volume-%s-0" $sts | quote }}
+                readOnly: true
+{{- end }}
+{{- end }}
+{{- end }}

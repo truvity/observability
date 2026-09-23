@@ -1,0 +1,809 @@
+# observability-stack — one install of the store, behind a proxy that
+# scopes every query to the caller's own tenants.
+#
+# This chart wraps the upstream charts rather than replacing them: the
+# stores, the operator and Grafana come from the vendor, pinned to exact
+# versions in Chart.yaml. What this chart adds is everything an install is
+# judged on when it fails — the proxy in front of reads, the second
+# vmalert, the deadman's route out of the cluster, the network policies
+# and the backups — plus a refusal for every setting whose wrong value is
+# silent.
+#
+# Two things to know before reading further.
+#
+# FIRST: every default here is the COMMUNITY edition. The chart refuses an
+# image tag containing `enterprise` and never renders a `-license` flag,
+# because an Enterprise binary without a key is a licence breach that runs
+# perfectly. See docs/doctrine.md.
+#
+# SECOND: Helm evaluates a subchart's values before any template runs, so
+# a parent chart cannot compute them. Where one value has to reach an
+# upstream chart, it is written twice — once here as the value this chart
+# reasons about, once in the subchart's own key — and the chart REFUSES TO
+# RENDER when the two disagree. That is the whole of the duplication below,
+# it is marked `# MIRROR:` at every site, and it is a refusal rather than a
+# comment because two numbers that are supposed to be equal stop being
+# equal the first time somebody changes one of them.
+
+# -- Name overrides for the objects this chart renders itself.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Zone-redundant mode.
+#
+# No store here replicates across a zone in a way that survives one, so
+# high availability means two independent installs with the writers
+# holding the redundancy (docs/doctrine.md). This flag is the switch for
+# that shape; it is accepted today and the behaviour lands in a later
+# release. It refuses to render with fewer than two zones, because a
+# "highly available" install with one zone is the single-zone install with
+# a label that stops anyone looking.
+ha: false
+
+# -- The zones this install spans. Names only — they are labels, not
+# addresses, and they are matched against whatever the estate's nodes
+# carry. Required, with at least two entries, when `ha` is true.
+zones: []
+
+# -- The one interval.
+#
+# It is the scrape interval of this stack's own components, the
+# `-dedup.minScrapeInterval` of the metrics store, and the evaluation
+# interval of both vmalerts. These three must agree: deduplication keeps
+# one sample per interval, so a dedup window wider than the scrape
+# interval silently discards good samples, and a vmalert evaluating faster
+# than data arrives re-reads the same points and holds `for:` timers open.
+# One value, mirrored where an upstream chart needs it, and the render
+# refuses when a mirror disagrees.
+interval: 30s
+
+# The authorising proxy: vmauth, in front of every read.
+#
+# Nothing else in this namespace may reach a store, which is why the
+# stores themselves run with `-httpAuth.*` (see `storeCredentials` below)
+# and why the network policies exist. The proxy verifies the caller's JWT
+# against the issuer's OIDC discovery document and injects the filters
+# that token is entitled to.
+vmauth:
+  enabled: true
+  image:
+    repository: victoriametrics/vmauth
+    # -- The floor is v1.152.0, and the chart refuses an older tag.
+    #
+    # Two reasons, and the second is the one that matters.
+    # `default_vm_access_claim` arrived in v1.147.0: without it a token
+    # that verifies but carries no `vm_access` claim falls through to the
+    # unauthorized user and is rejected, with no way to say what it may
+    # read. And in v1.147.0 through v1.151.x the values in `match_claims`
+    # were matched UNANCHORED (GHSA-f99m-22fh-qw96): a claim value of
+    # `admin` also matched `not-admin-really`, which is an authorisation
+    # bypass in exactly the mechanism this chart uses to select a user.
+    # v1.152.0 anchors them.
+    #
+    # The operator's own default image tag is older than both, so this is
+    # set explicitly rather than left to it.
+    tag: v1.152.0
+  replicaCount: 1
+  # -- Requests equal limits, integer CPU. See `resources` on each store
+  # below for why.
+  resources:
+    requests:
+      cpu: "1"
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  # -- Extra flags for vmauth. `logInvalidAuthTokens` is on by default: a
+  # rejected token that logs nothing is an access problem nobody can
+  # diagnose, and the log line carries no token material.
+  extraArgs:
+    logInvalidAuthTokens: "true"
+  # -- Paths the proxy must never forward, as regular expressions matched
+  # against the request path.
+  #
+  # `/internal/*` carries the partition and snapshot APIs, and those
+  # endpoints have their OWN query-string auth keys
+  # (`-partitionManageAuthKey`, `-snapshotAuthKey`) which OVERRIDE
+  # `-httpAuth.*` entirely: with such a key set, basic auth is not
+  # consulted at all. A route through this proxy would therefore be a
+  # route around the stores' own authentication, so there is no route.
+  # The chart refuses to render if any user's paths would reach them.
+  deniedPaths:
+    - "/internal/.*"
+    - "/-/reload"
+  # -- Read load balancing. `first_available` sends every read to the first
+  # healthy backend rather than spreading them: with a redundant pair, a
+  # query balanced onto the replica that is still replaying its buffer
+  # after a restart returns a gap, and a gap in a dashboard is read as an
+  # outage. The retry codes are the ones a backend returns while it is
+  # coming back.
+  loadBalancingPolicy: first_available
+  retryStatusCodes: [500, 502, 503]
+
+# Who may read what.
+#
+# `pkg/tenancy` in this repository renders the same principals into the
+# `vm_access` claim an issuer mints. The two shapes must agree, so the
+# `tenancy` golden case is exactly what `RenderVMAuth` produces for the
+# principals in the repository's README, and a Go test compares them.
+tenancy:
+  # -- The issuer this proxy verifies tokens against. vmauth fetches the
+  # OIDC discovery document and the keys from it. Required whenever
+  # `principals` is non-empty: without an issuer nothing verifies a
+  # signature, and a proxy that trusts an unverified token is worse than
+  # no proxy.
+  issuerUrl: ""
+  # -- The token claim carrying the caller's groups.
+  claimName: groups
+  # -- The label keys the collectors stamp. They are the estate's
+  # vocabulary, not this chart's.
+  tenantLabel: tenant
+  envLabel: env
+  # -- One entry per named population. Each renders one vmauth user,
+  # selected by `group` matched against `claimName`.
+  #
+  #   principals:
+  #     - group: example:k8s:viewer
+  #       grants:
+  #         - env: devel
+  #           allTenants: true
+  #     - group: example:dms:deployer
+  #       grants:
+  #         - env: devel
+  #           tenants: [dms]
+  #
+  # `tenants` and `allTenants` are mutually exclusive and one is required:
+  # an empty list is refused rather than read as "everything", because a
+  # list empty because a derivation produced nothing is the likeliest way
+  # a grant widens by accident. Names must match the plain-name shape
+  # `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` — they are interpolated into a
+  # filter expression, so a name carrying `|` or `.*` would widen the
+  # grant it appears in, and such a name is refused rather than escaped.
+  principals: []
+  # -- The writers: collectors and agents that push, authenticated by a
+  # bearer token rather than by a person's identity.
+  #
+  #   writers:
+  #     - name: metrics-agent
+  #       tokenSecret:
+  #         name: example-writer-token
+  #         key: token
+  #       destinations: [metrics]
+  #
+  # The token is the caller's: this chart takes the NAME of a Secret and
+  # never a value. A writer may not read — its paths are the write paths
+  # of the destinations it names, and nothing else.
+  writers: []
+
+# -- The credentials the stores themselves demand.
+#
+# Every store runs with `-httpAuth.username` and `-httpAuth.password` so
+# that nothing inside the cluster can reach one around the proxy. A
+# network policy stops the traffic; this stops the traffic that a policy
+# was not written for.
+#
+# The values arrive as the name of a Secret the estate created, with the
+# keys it chose. The chart mounts nothing and stores nothing.
+#
+# The credentials reach the store as environment variables (the stores
+# read `-envflag.enable`), not as command-line flags, because a flag value
+# is visible in every `kubectl describe` and in the process table. The
+# cost is that rotating the Secret needs a restart: the password flag
+# alone would support `file://` and reload itself, but the username flag
+# does not, and one mechanism that is always true beats two that differ.
+storeCredentials:
+  # -- Name of the Secret. It must exist in the release's namespace before
+  # the stores start; the chart neither creates it nor reads it.
+  #
+  # The default is a conventional name rather than an empty string, so the
+  # mirrors below (`MIRROR: storeCredentials.secretName`) agree out of the
+  # box. Change it and the chart will tell you which other keys to change
+  # with it.
+  secretName: observability-store-credentials
+  usernameKey: username
+  passwordKey: password
+
+# -- Where the stores are.
+#
+# Empty means "derive it from the upstream chart's own naming rules",
+# which is what an install of this chart wants. Set one when a store runs
+# outside this release — an estate keeping the log store in another
+# namespace points at it here rather than running a second one.
+stores:
+  metrics:
+    url: ""
+  logs:
+    url: ""
+  traces:
+    url: ""
+
+# Alerting.
+#
+# Two vmalerts, because one cannot do both jobs: rules over metrics and
+# rules over logs are different rule types, selected by
+# `-rule.defaultRuleType`, and a single process has one default.
+vmalert:
+  enabled: true
+  # -- The rules over logs. Renders a second vmalert with
+  # `-rule.defaultRuleType=vlogs` and the log store as its datasource.
+  logs:
+    enabled: true
+  # -- Where a person lands from an alert's source link. vmalert defaults
+  # `-external.url` to its own pod hostname, which makes every alert's
+  # link dead the moment it leaves the cluster. Empty renders no flag and
+  # keeps the broken default, so set it.
+  externalUrl: ""
+  # -- Labels on every alert and recording rule these vmalerts produce.
+  externalLabels: {}
+  resources:
+    requests:
+      cpu: "1"
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+alertmanager:
+  enabled: true
+  replicaCount: 1
+  # -- An Alertmanager the estate already runs, when `enabled` is false.
+  # A vmalert with no notifier evaluates every rule and sends the result
+  # nowhere, which is indistinguishable from an estate with no problems,
+  # so the chart refuses that combination.
+  notifierUrl: ""
+  # -- The deadman's route out of the cluster.
+  #
+  # A Watchdog alert fires continuously while the stack is healthy, and
+  # something OUTSIDE the cluster pages when it stops arriving. That
+  # receiver's URL is a credential (it is a capability to page), so it
+  # arrives as the name of a Secret and is read by Alertmanager from the
+  # mounted file with `url_file` — never interpolated into the rendered
+  # config, where it would sit in the release's manifest.
+  #
+  # With no Watchdog receiver configured the chart renders no Watchdog
+  # route at all rather than a route to nowhere.
+  watchdog:
+    secretName: ""
+    key: url
+    # -- How often the heartbeat repeats. The outside watcher's own
+    # timeout must be comfortably longer than this.
+    repeatInterval: 5m
+  # -- The rest of the routing tree. Receivers, inhibitions and routes are
+  # the estate's; the chart renders what is here under the Watchdog route
+  # and refuses nothing about it.
+  config:
+    route:
+      receiver: blackhole
+      groupBy: [alertname, tenant, env]
+      groupWait: 30s
+      groupInterval: 5m
+      repeatInterval: 4h
+    receivers:
+      - name: blackhole
+    # -- Routes under the top-level one, in Alertmanager's own shape. The
+    # Watchdog route is rendered before these and matched on its own.
+    routes: []
+    # -- Inhibition rules, in Alertmanager's own shape.
+    inhibitRules: []
+  resources:
+    requests:
+      cpu: "1"
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 256Mi
+
+# Network policies.
+#
+# The proxy is the only way in, and the stores talk to nothing. A policy
+# that is present but empty is not a smaller policy — it is a default-deny
+# for the pods it selects, which is the point.
+networkPolicy:
+  enabled: true
+  # -- Who may reach the proxy. Empty means every pod in the release's own
+  # namespace, which is the smallest useful default; an estate whose
+  # Grafana or console lives elsewhere adds its namespace here.
+  #
+  # Entries are Kubernetes `NetworkPolicyPeer` objects and pass through
+  # untouched.
+  proxyFrom: []
+  # -- Who may write to the stores directly, bypassing the proxy. The
+  # collectors need this; nothing else does.
+  writersFrom: []
+
+# Backups.
+#
+# Each store has its own mechanism and they are not interchangeable:
+#
+#   metrics  vmbackup against an instant snapshot. Incremental by
+#            construction — a backup whose `-dst` already holds data
+#            uploads only what changed — with a weekly full that uses
+#            `-origin` so the unchanged parts are copied server-side
+#            rather than pulled through the pod.
+#   logs     the partition snapshot API: create, copy, delete. A snapshot
+#            lives INSIDE the data directory and pins the parts it
+#            references, so one left behind grows the store's disk usage
+#            silently; the binary expires them after `-snapshotsMaxAge`
+#            (3 days by default), which is a backstop and not a plan.
+#   traces   rsync, detach, rsync, attach — the vendor's documented
+#            procedure. The second pass exists because small metadata
+#            files change while the first one runs.
+#
+# Every job refuses an EMPTY SOURCE. `rclone sync` from an empty source
+# deletes the destination and exits zero: a backup that finds nothing
+# reports success and destroys the copy you had.
+#
+# `vmbackupmanager` is Enterprise and is not wrapped here, in this release
+# or any other.
+backup:
+  enabled: false
+  # -- Where backups go, as a URL without credentials: `s3://bucket/path`,
+  # `gs://bucket/path`, or `fs:///mnt/path`. The bucket is the estate's.
+  destination: ""
+  # -- The Secret holding the object-store credentials, mounted into the
+  # job as environment variables. The chart never reads it.
+  credentialsSecret: ""
+  metrics:
+    enabled: true
+    # -- Hourly, because the incremental upload is proportional to what
+    # changed and an hour of metrics is the recovery point this buys.
+    schedule: "17 * * * *"
+    # -- The weekly full. `-origin` points it at the existing backup so
+    # the shared data is copied inside the object store.
+    fullSchedule: "17 3 * * 0"
+    image:
+      repository: victoriametrics/vmbackup
+      tag: v1.152.0
+    # -- The metrics store's volume, mounted read-only so vmbackup can
+    # read the snapshot it asked the store to take. Empty derives the
+    # operator's own name for it.
+    claimName: ""
+  logs:
+    enabled: true
+    schedule: "37 * * * *"
+  traces:
+    enabled: false
+    schedule: "57 * * * *"
+  # -- The image the log and trace jobs run: it needs a shell, `curl` and
+  # `rclone`. Named rather than built here, so the estate can mirror it.
+  image:
+    repository: rclone/rclone
+    tag: "1.73.0"
+  # -- Give up rather than overlap. A backup job that is still running an
+  # hour later is a backup that is not keeping up, and two of them racing
+  # on one snapshot directory is worse than a missed run.
+  activeDeadlineSeconds: 3000
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+###############################################################################
+# Upstream charts.
+#
+# Everything below is the vendor's own values shape, set to what this
+# stack needs. The comments say which failure each setting prevents; the
+# refusals in templates/_validate.tpl enforce the ones that are silent.
+###############################################################################
+
+# -- victoria-metrics-k8s-stack: the operator, and the metrics store it
+# reconciles.
+victoria-metrics-k8s-stack:
+  enabled: true
+
+  victoria-metrics-operator:
+    # -- The CRDs are NOT this chart's to install.
+    #
+    # They are cluster-scoped and shared by every release in the cluster,
+    # so a chart that owns them deletes them for everybody when that one
+    # release is uninstalled, taking every VMSingle, VMRule and VMUser
+    # object with them. `charts/observability-crds` owns them and is
+    # applied first (docs/adoption.md).
+    #
+    # Both keys are needed: upstream disables CRD creation only when
+    # `enabled: false` AND `plain: false`, because a Helm dependency
+    # condition cannot gate a `crds/` directory. `plain: true` with
+    # `enabled: false` still installs them.
+    crds:
+      enabled: false
+      plain: false
+      cleanup:
+        # -- The cleanup Job deletes every VictoriaMetrics object in the
+        # namespace on uninstall. Off: an uninstall is not a request to
+        # delete the data, and a helm rollback that runs it is a very bad
+        # afternoon.
+        enabled: false
+    admissionWebhooks:
+      # -- `Ignore` so an install does not race the operator's own webhook
+      # server on the first pass. Tighten to `Fail` once the operator is
+      # in steady state.
+      policy: Ignore
+      # -- The webhook's certificate comes from cert-manager, which is why
+      # cert-manager is a prerequisite (docs/adoption.md).
+      #
+      # The alternative is upstream's default: the chart GENERATES a
+      # self-signed CA at render time. That is a new certificate on every
+      # `helm upgrade` — a webhook restart each time, a render that is not
+      # a function of its inputs, and a golden file that can never match
+      # its own regeneration. A chart whose output changes when nothing
+      # changed is one whose diffs nobody reads.
+      certManager:
+        enabled: true
+    operator:
+      # -- The prometheus-operator converter watches ServiceMonitors and
+      # turns them into VMServiceScrapes. Off: this stack is not the
+      # estate's Prometheus, and converting objects somebody else owns is
+      # how two controllers end up fighting over one scrape.
+      disable_prometheus_converter: true
+    resources:
+      requests:
+        cpu: "1"
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+
+  # The metrics store.
+  vmsingle:
+    enabled: true
+    spec:
+      # -- Retention ALWAYS carries a unit. VictoriaMetrics reads a bare
+      # number as MONTHS (`-retentionPeriod=90` is seven and a half
+      # years), and the month suffix is a capital `M` — a lowercase `m`
+      # is rejected at startup. The chart refuses a value without a unit
+      # rather than letting the default meaning apply.
+      retentionPeriod: 90d
+      replicaCount: 1
+      extraArgs:
+        # -- MIRROR: `interval`. The dedup window keeps one sample per
+        # interval, so it must equal the scrape interval exactly.
+        dedup.minScrapeInterval: 30s
+        # -- The metrics store has NO `-retention.maxDiskUsagePercent` and
+        # no `-retention.maxDiskSpaceUsageBytes`; those exist only on the
+        # log and trace stores. Its only disk guard is this one, and
+        # upstream's default is 100MB — small enough that the store goes
+        # read-only with the disk already full, which is the state that
+        # takes an outage to get out of. GiB-scale, so there is room to
+        # act.
+        storage.minFreeDiskSpaceBytes: "10GiB"
+        # -- Cardinality caps. Both default to 0, which is OFF, and this
+        # chart leaves them off: a cap is a number about one estate's
+        # traffic, and a guessed one either never binds or silently drops
+        # every NEW series while the old ones keep ingesting — a failure
+        # that looks exactly like "the exporter stopped exporting". Set
+        # them from the measured active-series count, with headroom, and
+        # alert on `vm_hourly_series_limit_current_series` approaching
+        # them.
+        storage.maxHourlySeries: "0"
+        storage.maxDailySeries: "0"
+        # -- Credentials from the caller's Secret, as environment
+        # variables rather than flags.
+        envflag.enable: "true"
+        envflag.prefix: VM_
+      # -- MIRROR: `storeCredentials`. The store's own basic auth, so that
+      # nothing in the cluster can reach it around the proxy.
+      extraEnvs:
+        - name: VM_httpAuth_username
+          valueFrom:
+            secretKeyRef:
+              name: observability-store-credentials
+              key: username
+        - name: VM_httpAuth_password
+          valueFrom:
+            secretKeyRef:
+              name: observability-store-credentials
+              key: password
+      # -- Requests EQUAL limits, and the CPU is an INTEGER.
+      #
+      # Both halves matter. VictoriaMetrics sizes its thread pool from the
+      # cgroup CPU quota and rounds DOWN, so `1500m` buys exactly one
+      # thread and the other 500m is paid for and unused. And a store
+      # whose requests are below its limits is evicted first under node
+      # pressure, which is the moment it is most needed.
+      #
+      # Setting this at all is not optional: with `resources` unset the
+      # operator applies its own defaults (1500Mi / 1200m for VMSingle),
+      # and 1200m is a fractional CPU, so an unset value is the rounding
+      # failure by default.
+      resources:
+        requests:
+          cpu: "2"
+          memory: 8Gi
+        limits:
+          cpu: "2"
+          memory: 8Gi
+      storage:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi
+
+  # -- vmalert comes from this chart, not from upstream: there are two of
+  # them and they differ by rule type, which upstream's single `vmalert`
+  # section cannot express.
+  vmalert:
+    enabled: false
+  # -- Alertmanager likewise: the Watchdog receiver reads its URL from a
+  # mounted Secret, which means the chart has to own the config and the
+  # mount.
+  alertmanager:
+    enabled: false
+  # -- Collection belongs to `charts/observability-emitters`: an agent
+  # that runs next to the store, scraping only what is in this namespace,
+  # is not the estate's metrics pipeline and quietly becomes one.
+  vmagent:
+    enabled: false
+  # -- The rules are `charts/platform-alerts`, where each one carries the
+  # incident that earned it and a fixture that must fail.
+  defaultRules:
+    create: false
+  defaultDashboards:
+    enabled: false
+  # -- Grafana is a direct dependency of this chart (see `grafana` below),
+  # so the copy bundled inside this one stays dormant.
+  grafana:
+    enabled: false
+    forceDeployDatasource: false
+  # -- kube-state-metrics and node-exporter are the cluster's, not this
+  # release's. Two installs of kube-state-metrics export the same series
+  # twice and every rate() over them is wrong.
+  kube-state-metrics:
+    enabled: false
+  prometheus-node-exporter:
+    enabled: false
+  # -- Control-plane scrapes belong to whatever collects them today.
+  kubelet:
+    enabled: false
+  kubeApiServer:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  kubeDns:
+    enabled: false
+  coreDns:
+    enabled: false
+  kubeEtcd:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  kubeProxy:
+    enabled: false
+
+# -- victoria-logs-single: the log store.
+victoria-logs-single:
+  enabled: true
+  server:
+    # -- WITH A UNIT, always: VictoriaLogs reads a bare number as months
+    # too, and its own default is 7d — three months of logs is not what
+    # an estate that wrote `90` expects, and neither is a week.
+    retentionPeriod: 90d
+    # -- The disk guard. `-retention.maxDiskUsagePercent` and
+    # `-retention.maxDiskSpaceUsageBytes` are MUTUALLY EXCLUSIVE: the
+    # binary refuses to start when both are set, which turns a values
+    # typo into a store that never comes back. The chart refuses that
+    # combination at render time instead.
+    #
+    # Retention applies INDEPENDENTLY of this: whichever bites first wins,
+    # and a disk guard does not extend `retentionPeriod`.
+    retentionMaxDiskUsagePercent: 80
+    retentionDiskSpaceUsage: ""
+    replicaCount: 1
+    extraArgs:
+      envflag.enable: true
+      envflag.prefix: VM_
+      loggerFormat: json
+      http.shutdownDelay: 15s
+      # -- Upstream's default here is 10MB, which is not a guard, it is a
+      # rounding error: the store goes read-only with the volume already
+      # full.
+      storage.minFreeDiskSpaceBytes: 10GiB
+    # -- MIRROR: `storeCredentials`.
+    env:
+      - name: VM_httpAuth_username
+        valueFrom:
+          secretKeyRef:
+            name: observability-store-credentials
+            key: username
+      - name: VM_httpAuth_password
+        valueFrom:
+          secretKeyRef:
+            name: observability-store-credentials
+            key: password
+    resources:
+      requests:
+        cpu: "2"
+        memory: 4Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    persistentVolume:
+      enabled: true
+      size: 200Gi
+    statefulSet:
+      enabled: true
+
+# -- victoria-traces-single: the trace store.
+victoria-traces-single:
+  enabled: true
+  server:
+    # -- Traces are the shortest-lived of the three: they answer "what
+    # happened in that request", which is a question people ask within
+    # days, and they are the largest per unit of value.
+    retentionPeriod: 30d
+    retentionDiskSpaceUsage: ""
+    replicaCount: 1
+    extraArgs:
+      envflag.enable: true
+      envflag.prefix: VM_
+      loggerFormat: json
+      http.shutdownDelay: 15s
+      # -- The percentage guard has no value of its own in this chart, so
+      # it goes here. Setting `retentionDiskSpaceUsage` as well is the
+      # mutually-exclusive pair the chart refuses.
+      retention.maxDiskUsagePercent: 80
+      storage.minFreeDiskSpaceBytes: 10GiB
+    # -- MIRROR: `storeCredentials`.
+    env:
+      - name: VM_httpAuth_username
+        valueFrom:
+          secretKeyRef:
+            name: observability-store-credentials
+            key: username
+      - name: VM_httpAuth_password
+        valueFrom:
+          secretKeyRef:
+            name: observability-store-credentials
+            key: password
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    persistentVolume:
+      enabled: true
+      size: 100Gi
+
+# -- Grafana. Off by default: an estate that already runs one points it at
+# this stack's proxy instead, and two Grafanas over one store is two sets
+# of dashboards that drift.
+#
+# Every value here is upstream's own shape. What matters is which ones are
+# NOT at their upstream defaults, and why.
+grafana:
+  enabled: false
+  replicas: 1
+  # -- The admin credentials, from a Secret the estate created.
+  #
+  # Left empty, the Grafana chart GENERATES a random password into a
+  # Secret of its own — a new one on every render, so every `helm upgrade`
+  # rotates the admin password and the only person who can still log in is
+  # whoever wrote down the last one. It also makes the release's manifest
+  # differ from itself when nothing changed, which is how a diff stops
+  # being read. The chart refuses an enabled Grafana without one.
+  admin:
+    existingSecret: ""
+    userKey: admin-user
+    passwordKey: admin-password
+  # -- Datasources, provisioned.
+  #
+  # Each one points at the PROXY, never at a store, and carries
+  # `oauthPassThru: true` so the signed-in person's own token travels with
+  # the query and the proxy scopes it to their tenants. Without it every
+  # query arrives as Grafana's own identity, and a viewer sees everything
+  # Grafana can see — the chart refuses a datasource without it.
+  #
+  # `version` is the caller's to bump. With more than one replica Grafana
+  # only updates a provisioned datasource whose version is greater than or
+  # equal to the stored one, so a datasource edited without a bump is an
+  # edit that lands on a fresh install and nowhere else.
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: VictoriaMetrics
+          type: prometheus
+          access: proxy
+          uid: victoriametrics
+          isDefault: true
+          version: 1
+          url: http://vmauth-observability-stack:8427/prometheus
+          jsonData:
+            oauthPassThru: true
+        - name: VictoriaLogs
+          type: victoriametrics-logs-datasource
+          access: proxy
+          uid: victorialogs
+          version: 1
+          url: http://vmauth-observability-stack:8427
+          jsonData:
+            oauthPassThru: true
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      provider:
+        name: sidecar
+        orgid: 1
+        # -- Above 10 on purpose. At 10 or below Grafana watches the
+        # filesystem for changes instead of polling, and a Kubernetes
+        # ConfigMap projection is a symlink swap that fires no watch
+        # event — so dashboards never update, and nothing reports an
+        # error. The chart refuses 10 or less.
+        updateIntervalSeconds: 30
+        disableDelete: false
+        allowUiUpdates: false
+    datasources:
+      enabled: false
+  # -- The signing key for session cookies, identical across replicas.
+  # Grafana generates one per pod when it is unset, so with two replicas
+  # every other request lands on the pod that cannot read the cookie and
+  # the user is signed out at random. From the caller's Secret.
+  envValueFrom:
+    GF_SECURITY_SECRET_KEY:
+      secretKeyRef:
+        name: ""
+        key: secret_key
+    GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+      secretKeyRef:
+        name: ""
+        key: client_id
+    GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+      secretKeyRef:
+        name: ""
+        key: client_secret
+  grafana.ini:
+    analytics:
+      # -- Off: a monitoring system that phones home from inside a private
+      # estate is a data-egress question nobody asked for.
+      check_for_updates: false
+      reporting_enabled: false
+    users:
+      auto_assign_org: true
+    database:
+      # -- Grafana takes a database lock through its schema migration at
+      # startup. The default of 0 means "do not wait", so the second
+      # replica of a rolling update finds the lock held and crash-loops
+      # through the migration. 60-300 is a value that waits.
+      locking_attempt_timeout_sec: 120
+    auth:
+      disable_login_form: true
+      oauth_auto_login: true
+    auth.generic_oauth:
+      enabled: true
+      name: SSO
+      allow_sign_up: true
+      # -- TRUE, against Grafana's own default of false.
+      #
+      # Without it the session outlives the access token: Grafana keeps
+      # the person signed in for up to 30 days while forwarding an access
+      # token that expired an hour ago. The UI works, every query 401s,
+      # and the person's own reflex — sign out and back in — fixes it
+      # just long enough to make the report unreproducible.
+      use_refresh_token: true
+      # -- A person whose claims map to no role is refused, rather than
+      # silently given the default one. An unmapped viewer is a support
+      # ticket; an unmapped editor is an incident.
+      role_attribute_strict: true
+      role_attribute_path: "contains(groups[*], 'example:grafana:admin') && 'Admin' || contains(groups[*], 'example:grafana:editor') && 'Editor' || 'Viewer'"
+      scopes: "openid profile email groups offline_access"
+      auth_url: ""
+      token_url: ""
+      api_url: ""
+    unified_alerting:
+      # -- OFF, and the chart refuses it on. Alerting in this stack is
+      # vmalert and Alertmanager: rules live in `platform-alerts` where
+      # each one carries the incident that earned it, and a second
+      # alerting engine with its own rules, its own silences and its own
+      # notification policies is a second place to look at three in the
+      # morning.
+      enabled: false
+    alerting:
+      enabled: false
+  resources:
+    requests:
+      cpu: "1"
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi

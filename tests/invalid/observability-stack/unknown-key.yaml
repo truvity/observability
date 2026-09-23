@@ -1,0 +1,12 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# A typo in a values file is a setting that does not apply. In this chart
+# that is a retention that never changed, a filter that never narrowed,
+# or a secret name nothing reads.
+storeCredentialsName: example-store-credentials

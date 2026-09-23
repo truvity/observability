@@ -2,7 +2,7 @@
 # check workflow (truvity/ci-workflows) runs each one as its own job, so a
 # laptop and CI run the same thing.
 
-charts := "observability-crds platform-alerts"
+charts := "observability-crds observability-stack platform-alerts"
 
 # The parent workspace would otherwise interfere with this standalone
 # module.
@@ -29,7 +29,7 @@ lint:
       if helm dependency list "charts/$chart" \
            | tail -n +2 | grep -v '^[[:space:]]*$' | grep -qv 'ok[[:space:]]*$'; then
         helm dependency list "charts/$chart" >&2
-        echo "$chart: a declared dependency is missing or is the wrong version — run 'just crds'" >&2
+        echo "$chart: a declared dependency is missing or is the wrong version — run 'just crds' for observability-crds, 'just vendor $chart' otherwise" >&2
         exit 1
       fi
       helm lint "charts/$chart" --values tests/cases/"$chart"/minimal/values.yaml
@@ -71,6 +71,14 @@ golden:
 # `golden` is not: it writes what the checks then read.
 crds:
     hack/crds.sh
+
+# Re-vendor one chart's pinned dependencies into its charts/ directory,
+# after moving a version in its Chart.yaml. The archives are committed on
+# purpose: a render that needs the network is a render that differs
+# depending on when it runs, and `just lint` reads the STATUS column to
+# prove the archive and the pin still agree.
+vendor chart:
+    helm dependency update charts/{{ chart }}
 
 # The reason this repository can be public. Runs in CI as its own job.
 leak-canary:

@@ -1,0 +1,114 @@
+{{- if .Values.alertmanager.enabled }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- $watchdog := .Values.alertmanager.watchdog }}
+{{- /*
+Alertmanager, and the deadman's route out of the cluster.
+
+A Watchdog alert fires continuously while this stack is healthy, and
+something OUTSIDE the cluster pages when it STOPS arriving. That is the
+only alert that can see the alerting path itself failing: every other
+rule here is delivered by the machinery it would be reporting on.
+
+The receiver's URL is a capability to page, so it is a Secret. It is
+mounted and read with `url_file` rather than interpolated into the
+config, because a config rendered by Helm is in the release's manifest,
+in `helm get manifest`, and in whatever stores the release history.
+*/}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlertmanager
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+spec:
+  replicaCount: {{ .Values.alertmanager.replicaCount }}
+  resources:
+    {{- toYaml .Values.alertmanager.resources | nindent 4 }}
+  selectAllByDefault: false
+  {{- with .Values.vmalert.externalUrl }}
+  externalURL: {{ . | quote }}
+  {{- end }}
+  {{- if $watchdog.secretName }}
+  {{- /*
+  Mounted here rather than through the CR's own `secrets` list, which
+  would put it under a path this repository's leak canary bans outright —
+  and the canary is right to: a path with that shape is the one thing in
+  a manifest that names where an estate keeps its secrets.
+  */}}
+  volumes:
+    - name: watchdog
+      secret:
+        secretName: {{ $watchdog.secretName | quote }}
+  volumeMounts:
+    - name: watchdog
+      mountPath: /etc/alertmanager/watchdog
+      readOnly: true
+  {{- end }}
+  configRawYaml: |
+    route:
+      receiver: {{ .Values.alertmanager.config.route.receiver | quote }}
+      group_by: {{ toYaml .Values.alertmanager.config.route.groupBy | nindent 8 }}
+      group_wait: {{ .Values.alertmanager.config.route.groupWait }}
+      group_interval: {{ .Values.alertmanager.config.route.groupInterval }}
+      repeat_interval: {{ .Values.alertmanager.config.route.repeatInterval }}
+      {{- if $watchdog.secretName }}
+      routes:
+        # The heartbeat, first and matched on its own: it must never be
+        # grouped with anything, never inhibited and never silenced by a
+        # rule written for a real alert.
+        - receiver: watchdog
+          matchers:
+            - alertname = "Watchdog"
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: {{ $watchdog.repeatInterval }}
+      {{- end }}
+      {{- with .Values.alertmanager.config.routes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+    receivers:
+      {{- toYaml .Values.alertmanager.config.receivers | nindent 6 }}
+      {{- if $watchdog.secretName }}
+      - name: watchdog
+        webhook_configs:
+          - url_file: /etc/alertmanager/watchdog/{{ $watchdog.key }}
+            send_resolved: false
+      {{- end }}
+    {{- with .Values.alertmanager.config.inhibitRules }}
+    inhibit_rules:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- if $watchdog.secretName }}
+---
+{{- /*
+The alert the outside watcher waits for.
+
+`vector(1)` is always true, so this fires for as long as rules are being
+evaluated at all and delivered to Alertmanager. It lives here rather than
+in charts/platform-alerts because it is not a rule about the estate: it
+is this install reporting that it is still alive, and it is worthless
+without the receiver above.
+*/}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ $fullname }}-watchdog
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: observability-stack.watchdog
+      interval: {{ .Values.interval }}
+      rules:
+        - alert: Watchdog
+          expr: vector(1)
+          labels:
+            severity: none
+          annotations:
+            summary: "This alert is always firing; its absence is the signal"
+            description: >-
+              The heartbeat of this observability stack. Something outside the
+              cluster watches for it and pages when it stops arriving: an alerting
+              path that has died cannot report that it has died.
+{{- end }}
+{{- end }}

@@ -1,0 +1,17 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# A licence flag is only useful to an Enterprise binary. Rendering one is
+# how a chart that claims to wrap the community edition quietly stops
+# doing so.
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      extraArgs:
+        dedup.minScrapeInterval: 30s
+        license: example-licence-key

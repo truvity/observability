@@ -1,0 +1,24 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# A second alerting engine, with its own rules, its own silences and its
+# own notification policies: a second place to look at three in the
+# morning, and the one nobody remembers.
+grafana:
+  enabled: true
+  admin:
+    existingSecret: example-grafana
+  grafana.ini:
+    database:
+      locking_attempt_timeout_sec: 120
+    auth.generic_oauth:
+      enabled: true
+      use_refresh_token: true
+      role_attribute_strict: true
+    unified_alerting:
+      enabled: true

@@ -1,0 +1,12 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# A vmalert with no notifier evaluates every rule and sends the result
+# nowhere, which is indistinguishable from an estate with no problems.
+alertmanager:
+  enabled: false

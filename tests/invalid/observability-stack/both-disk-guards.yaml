@@ -1,0 +1,15 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# VictoriaLogs refuses to START when both disk guards are set. It is
+# Fatal, not a warning, so this renders a store that never comes up —
+# from a values file that looks more careful than the correct one.
+victoria-logs-single:
+  server:
+    retentionMaxDiskUsagePercent: 80
+    retentionDiskSpaceUsage: 100GiB
