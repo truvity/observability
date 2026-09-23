@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "observability-emitters",
-  "description": "Per-cluster collection. Strict: an unknown key fails the render rather than being silently ignored, because in a collection chart a key that does not apply is a label that is never stamped, a destination that is never written to, or a buffer that was never on a volume \u2014 and every one of those renders, syncs and reports healthy.",
+  "description": "Per-cluster collection. Strict: an unknown key fails the render rather than being silently ignored, because in a collection chart a key that does not apply is a label that is never stamped, a destination that is never written to, or a buffer that was never on a volume — and every one of those renders, syncs and reports healthy.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -109,44 +109,18 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "env",
-        "tenantLabel",
-        "envLabel",
-        "fallbackTenant",
-        "namespaceLabels"
+        "cluster",
+        "environment"
       ],
+      "description": "The two values constant for the cluster. The NAMES the emitters stamp are not values: they are OpenTelemetry's, and pkg/tenancy filters on the same spellings.",
       "properties": {
-        "env": {
+        "cluster": {
           "type": "string",
-          "description": "This cluster's environment name. Required; blank is refused at render because telemetry labelled env=\"\" matches no grant and is invisible."
+          "description": "This cluster's name: half of the scoping key, matched exactly by every grant. Required; blank is refused at render, where the refusal can say what a blank key costs."
         },
-        "tenantLabel": {
-          "$ref": "#/definitions/plainName"
-        },
-        "envLabel": {
-          "$ref": "#/definitions/plainName"
-        },
-        "fallbackTenant": {
+        "environment": {
           "type": "string",
-          "description": "The tenant for a namespace carrying neither tenancy label. Required."
-        },
-        "namespaceLabels": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "project",
-            "layer"
-          ],
-          "properties": {
-            "project": {
-              "type": "string",
-              "description": "The namespace label whose value is the tenant. Required."
-            },
-            "layer": {
-              "type": "string",
-              "description": "Consulted only for a namespace with no project label. Empty renders no rule for it."
-            }
-          }
+          "description": "The environment tier, the value of deployment.environment.name (production, staging, development, test, or any plain name). Descriptive, never a key. Required; blank is refused at render."
         }
       }
     },
@@ -217,7 +191,7 @@
         },
         "spec": {
           "type": "object",
-          "description": "Merged over the VMAgent spec this chart renders. The vendor's surface, so it is not constrained here \u2014 but the settings that turn off tenancy stamping, replication or buffering are refused at render, against the merged result."
+          "description": "Merged over the VMAgent spec this chart renders. The vendor's surface, so it is not constrained here — but the settings that turn off the scoping-key stamp, replication or buffering are refused at render, against the merged result."
         }
       }
     },
@@ -288,7 +262,7 @@
         },
         "streamFields": {
           "type": "array",
-          "description": "Resource attributes that become log stream fields. Refused empty, and every entry must be one the chart knows to be constant for the lifetime of a pod.",
+          "description": "Resource attributes that become log stream fields. Refused empty, must carry both scoping keys, and every entry must be one the chart knows to be constant for the lifetime of a pod.",
           "items": {
             "type": "string",
             "minLength": 1
@@ -360,7 +334,7 @@
     },
     "victoria-logs-collector": {
       "type": "object",
-      "description": "Passed through to the vendored upstream chart, and read back by this chart's refusals. Upstream's surface, not this chart's, so it is not constrained here \u2014 a key this chart does not know about is still upstream's to interpret."
+      "description": "Passed through to the vendored upstream chart, and read back by this chart's refusals. Upstream's surface, not this chart's, so it is not constrained here — a key this chart does not know about is still upstream's to interpret."
     },
     "global": {
       "type": "object",

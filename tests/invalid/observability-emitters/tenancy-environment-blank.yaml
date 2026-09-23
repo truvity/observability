@@ -1,17 +1,12 @@
-# A namespace's labels are not part of Kubernetes service discovery
-# unless they are asked for. Without this the tenancy rules match
-# nothing and every namespace collapses onto the fallback tenant.
+# The tier is never a key, so a blank one selects nothing wrongly. It is
+# refused because a `deployment.environment.name` of "" on every series
+# is a dimension that exists and says nothing, and nobody notices until
+# the first dashboard that groups by it.
 
 metrics:
   destinations:
   - name: primary
     url: https://metrics.example/api/v1/write
-  spec:
-    scrapeClasses:
-    - attachMetadata:
-        namespace: false
-      default: true
-      name: tenancy
 otlp:
   destinations:
     logs:
@@ -24,20 +19,16 @@ otlp:
     - name: primary
       url: https://traces.example
 tenancy:
-  env: example
-  fallbackTenant: infra
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: tenancy.example.com/project
+  cluster: example-cluster
+  environment: ''
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
     - kubernetes.pod_namespace
-    - env
-    - kubernetes.namespace_labels.tenancy.example.com/project
+    - k8s.cluster.name
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

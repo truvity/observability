@@ -20,20 +20,16 @@ otlp:
     - name: primary
       url: https://traces.example
 tenancy:
-  env: example
-  fallbackTenant: infra
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: tenancy.example.com/project
+  cluster: example-cluster
+  environment: development
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
     - kubernetes.pod_namespace
-    - env
-    - kubernetes.namespace_labels.tenancy.example.com/project
+    - k8s.cluster.name
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

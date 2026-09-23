@@ -20,7 +20,7 @@ ruleLabels: {}
 
 # -- Labels added to every rule, merged under each rule's own `severity`.
 # The Alertmanager routing tree reads these: an estate that routes by
-# tenant or environment sets them here, once.
+# cluster or environment sets them here, once.
 commonLabels: {}
 
 # -- Base URL for the runbook link on every alert. The alert's name is

@@ -1,17 +1,18 @@
 # observability
 
 A self-hosted observability stack for Kubernetes estates, as reusable
-mechanism: the VictoriaMetrics family as the store, tenancy enforced at
-the door from the caller's own token, the collectors that stamp it, and
-the alerting rules that catch a backup, a store or a volume failing while
+mechanism: the VictoriaMetrics family as the store, every query scoped
+at the door to the clusters and namespaces the caller's own token allows,
+the collectors that stamp those under OpenTelemetry's names, and the
+alerting rules that catch a backup, a store or a volume failing while
 everything still looks green.
 
 | Artifact | What | Status |
 |---|---|---|
 | `charts/observability-crds` | The CustomResourceDefinitions the rest of the stack needs, owned as their own release rather than as a side effect of whichever chart installed them first: the VictoriaMetrics operator's, and the four Prometheus Operator scrape kinds every component authors its scrape objects in. Applied before the controllers, never pruned. | unreleased |
 | `charts/platform-alerts` | The rules that fire when something has stopped working silently: a CronJob that is no longer scheduled, a store whose write path has died, a volume that was never mounted, a store approaching its own read-only limit. Every rule carries the incident that earned it and a negative fixture that must fail. | unreleased |
-| `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces behind an authorising proxy that scopes every query to the caller's tenants; two vmalerts and Alertmanager with a deadman that leaves the cluster; network policies and backups; optionally Grafana, forwarding the signed-in user's identity. Single-replica today — `ha` is accepted and the zone-redundant behaviour follows. | unreleased |
-| `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry gateway, each optional, each stamping `tenant` and `env` from the namespace's own labels so an application cannot choose them, and each replicating to every destination with its own on-disk buffer. | unreleased |
+| `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces behind an authorising proxy that scopes every query to the clusters and namespaces the caller may read; two vmalerts and Alertmanager with a deadman that leaves the cluster; network policies and backups; optionally Grafana, forwarding the signed-in user's identity. Single-replica today — `ha` is accepted and the zone-redundant behaviour follows. | unreleased |
+| `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry gateway, each optional, each stamping the cluster, the namespace and the environment tier under OpenTelemetry's names — from what the collector can see, never from what the application said — and each replicating to every destination with its own on-disk buffer. | unreleased |
 | `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. Refuses a name that could widen a grant rather than escaping it. | unreleased |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
@@ -34,19 +35,30 @@ silently stopped two days ago is still reported healthy.
 
 ## The model
 
-Two nouns. A **tenant** is a label, not an instance: telemetry carries
-`tenant` and `env`, the collectors stamp both from the namespace's own
-labels, and an application cannot choose its own. An **install** is one
-set of stores serving many tenants; isolation happens at query time, where
-a proxy reads the caller's token and injects the filters that token is
-entitled to.
+Two nouns. The **scoping key** is the cluster and the namespace: every
+series, log stream and span carries `k8s.cluster.name` and
+`k8s.namespace.name` (spelled `k8s_cluster_name` and `k8s_namespace_name`
+where a label cannot hold a dot, and `kubernetes.pod_namespace` on logs,
+where the container-log agent's own spelling is the one both log writers
+use), stamped by the collectors from the pod they resolved the data to
+and never from what the application said. A grant names a cluster and
+the namespaces on it; a project or a team is a derivation from a name to
+a namespace list that lives with whoever writes grants, and is not a
+label anywhere. An **install** is one set of stores serving many of
+them; isolation happens at query time, where a proxy reads the caller's
+token and injects the filters that token is entitled to.
+
+The environment tier, `deployment.environment.name`, rides on every
+signal and is never a key: two clusters can share a tier, so a filter on
+it would hand a principal both.
 
 That first sentence is the whole security property, and
 `charts/observability-emitters` is what holds it up: the metrics agent
-discards a `tenant` label a target exported itself, the gateway overwrites
-the one an SDK set, and the values that would turn either of those off are
-refusals rather than defaults. Query-time isolation over telemetry an
-application labelled itself is not isolation.
+discards a `k8s_namespace_name` label a target exported itself, the
+gateway strips the one an SDK set before resolving the pod, and the
+values that would turn either of those off are refusals rather than
+defaults. Query-time isolation over telemetry an application labelled
+itself is not isolation.
 
 Everything else follows from those two. Redundancy is the writer's job
 because no store here replicates across a zone: two independent instances,
@@ -94,8 +106,8 @@ ruleLabels:
 
 # Whatever the Alertmanager routing tree reads.
 commonLabels:
-  tenant: infra
-  env: example
+  k8s_cluster_name: example-cluster
+  deployment_environment_name: development
 
 runbookBaseUrl: https://runbooks.example.com
 ```
@@ -108,19 +120,17 @@ cfg := tenancy.Config{
     MetricsBackend: "http://metrics.example:8428",
     LogsBackend:    "http://logs.example:9428",
 
-    // The log store's own field names. Required, and there is no default:
-    // the tenant is not carried in a field called `tenant` on the log
-    // path and cannot be, so a filter that guessed would return an empty
-    // result rather than an error.
-    LogsTenantField: "kubernetes.namespace_labels.example.com/project",
-    LogsEnvField:    "env",
+    // The keys default to what charts/observability-emitters stamps:
+    // k8s_cluster_name / k8s_namespace_name on metrics, k8s.cluster.name /
+    // kubernetes.pod_namespace on logs. Set them only for collectors that
+    // were not built here.
 
     Principals: []tenancy.Principal{
         {Group: "example:k8s:viewer", Grants: []tenancy.Grant{
-            {Env: "devel", AllTenants: true},
+            {Cluster: "example-cluster", AllNamespaces: true},
         }},
         {Group: "example:example-app:deployer", Grants: []tenancy.Grant{
-            {Env: "devel", Tenants: []string{"example-app"}},
+            {Cluster: "example-cluster", Namespaces: []string{"example-app"}},
         }},
     },
 }

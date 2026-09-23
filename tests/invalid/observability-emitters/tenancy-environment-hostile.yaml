@@ -1,7 +1,5 @@
-# Helm evaluates a subchart's values before any template runs, so this
-# field cannot be computed and has to be written twice. Two numbers that
-# are supposed to be equal stop being equal the first time somebody
-# changes one of them.
+# The tier is stamped into the same places the cluster is, and held to
+# the same shape.
 
 metrics:
   destinations:
@@ -19,20 +17,16 @@ otlp:
     - name: primary
       url: https://traces.example
 tenancy:
-  env: example
-  fallbackTenant: infra
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: tenancy.example.com/project
+  cluster: example-cluster
+  environment: Production Tier
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example-two"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
     - kubernetes.pod_namespace
-    - env
-    - kubernetes.namespace_labels.tenancy.example.com/project
+    - k8s.cluster.name
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

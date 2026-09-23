@@ -19,17 +19,15 @@ global:
 tenancy:
   issuerUrl: https://issuer.example
   claimName: groups
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
     - group: example:example-app:deployer
       grants:
-        - env: devel
-          tenants: [example-app]
+        - cluster: example-cluster
+          namespaces: [example-app]
 
 # Off, so the render is the tenancy and nothing else.
 vmalert:

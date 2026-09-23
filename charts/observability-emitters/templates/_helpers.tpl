@@ -52,66 +52,40 @@ app.kubernetes.io/part-of: observability-emitters
 {{- end -}}
 
 {{/*
-A Kubernetes label key as the meta label vmagent discovers it under.
+The scoping-key stamp, as target relabeling.
 
-`__meta_kubernetes_namespace_label_<name>` is the label key with every
-character outside [a-zA-Z0-9_] replaced by an underscore, which is what
-turns `tenancy.example.com/project` into
-`tenancy_example_com_project`. Written once here rather than in each
-relabel rule, because getting it wrong produces a rule that matches
-nothing and therefore silently applies the fallback tenant to the whole
-cluster.
-*/}}
-{{- define "observability-emitters.metaLabel" -}}
-{{- printf "__meta_kubernetes_namespace_label_%s" (regexReplaceAll "[^a-zA-Z0-9_]" . "_") -}}
-{{- end -}}
-
-{{/*
-The field the log store carries the tenant in.
-
-vlagent cannot rename a field, so a namespace label arrives under this
-name and no other. The chart derives it and then requires it to appear in
-the log agent's own `streamFields` — see templates/_validate.tpl, and
-docs/safety.md for what it costs.
-*/}}
-{{- define "observability-emitters.logs.tenantField" -}}
-{{- printf "kubernetes.namespace_labels.%s" .Values.tenancy.namespaceLabels.project -}}
-{{- end -}}
-
-{{/*
-The tenancy stamp, as target relabeling.
-
-Order is the mechanism: each rule overwrites what the one before it set,
-so the least specific source is applied first and the most specific wins.
-Everything starts with the fallback, a namespace's layer label replaces
-it, and a namespace's project label replaces that.
+The names are literals here and in every other stamping site, on purpose:
+they are OpenTelemetry's, spelled without dots because a Prometheus label
+cannot carry one, and `pkg/tenancy` filters on the same literals. A name
+that could be configured is a name that could stop matching the filter,
+which is an empty result rather than an error. tests/agreement_test.go
+reads these back out of the rendered manifest and fails on any drift.
 
 Written as target relabeling rather than as external labels, because
 external labels are added at remote-write time and only where the label is
-absent — a target that already carries `tenant` would keep its own. Target
-relabeling replaces unconditionally, which is the point: an application
-does not choose its tenant.
+absent — a target that already carries `k8s_cluster_name` would keep its
+own. Target relabeling replaces unconditionally, which is the point: an
+application does not choose its cluster or its namespace.
 
-These rules can only see a namespace's labels because the scrape class
-they belong to sets `attachMetadata.namespace`, and they reach every
-scrape object on the cluster because that class is the default one.
+The namespace comes from `__meta_kubernetes_namespace`, which service
+discovery carries for every namespaced role without being asked; the
+cluster and the tier are constants for the cluster. The Helm release is
+passed through from the pod's own label for navigation, and is not a key.
+
+These rules reach every scrape object on the cluster because the scrape
+class they belong to is the default one.
 */}}
 {{- define "observability-emitters.tenancy.relabelConfigs" -}}
 {{- $t := .Values.tenancy -}}
-- target_label: {{ $t.envLabel }}
-  replacement: {{ $t.env | quote }}
-- target_label: {{ $t.tenantLabel }}
-  replacement: {{ $t.fallbackTenant | quote }}
-{{- with $t.namespaceLabels.layer }}
-- source_labels: [{{ include "observability-emitters.metaLabel" . }}]
+- target_label: k8s_cluster_name
+  replacement: {{ $t.cluster | quote }}
+- target_label: deployment_environment_name
+  replacement: {{ $t.environment | quote }}
+- source_labels: [__meta_kubernetes_namespace]
+  target_label: k8s_namespace_name
+- source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance]
   regex: (.+)
-  target_label: {{ $t.tenantLabel }}
-  replacement: $1
-{{- end }}
-- source_labels: [{{ include "observability-emitters.metaLabel" $t.namespaceLabels.project }}]
-  regex: (.+)
-  target_label: {{ $t.tenantLabel }}
-  replacement: $1
+  target_label: app_kubernetes_io_instance
 {{- end -}}
 
 {{/*
@@ -158,11 +132,10 @@ exactly where a security property gets turned off by accident.
     "scrapeClasses" (list (dict
         "name" "tenancy"
         "default" true
-        "attachMetadata" (dict "namespace" true)
         "relabelConfigs" (fromYamlArray (include "observability-emitters.tenancy.relabelConfigs" $root))))
     "globalScrapeMetricRelabelConfigs" (list (dict
         "action" "labeldrop"
-        "regex" (printf "exported_(%s|%s)" $root.Values.tenancy.tenantLabel $root.Values.tenancy.envLabel)))
+        "regex" "exported_(k8s_cluster_name|k8s_namespace_name|deployment_environment_name)"))
 -}}
 {{- if not $v.queue.storageClassName -}}
 {{- $_ := unset (index $base "statefulStorage" "volumeClaimTemplate" "spec") "storageClassName" -}}
@@ -174,21 +147,35 @@ exactly where a security property gets turned off by accident.
 {{- end -}}
 
 {{/*
-Tenancy for a target that belongs to no namespace.
+The stamp for a target that belongs to no namespace.
 
 The kubelet and cAdvisor run on a node, and a node is cluster-scoped:
-there is no namespace to read a label from, so these targets carry the
-env and the fallback tenant and nothing else. Writing it out rather than
-reusing the namespace rules is the point — those rules would render four
-lines that can never match, which reads as a bug for as long as anyone
-looks at it.
+there is no namespace in service discovery, so these targets carry the
+cluster and the tier as target labels and nothing else. Writing it out
+rather than reusing the namespace rules is the point — those rules would
+render lines that can never match, which reads as a bug for as long as
+anyone looks at it.
+
+The series themselves do carry a namespace, though: cAdvisor labels every
+container series with the pod's `namespace`, and the kubelet does the same
+for its per-pod gauges. That is copied into the key at metric-relabel
+time, after the scrape, so that a grant on a namespace reaches the
+container metrics of that namespace. It is the target's own statement
+about which namespace a container runs in, and the target is the node
+agent, which is the platform's.
 */}}
 {{- define "observability-emitters.tenancy.clusterScopedRelabelConfigs" -}}
 {{- $t := .Values.tenancy -}}
-- target_label: {{ $t.envLabel }}
-  replacement: {{ $t.env | quote }}
-- target_label: {{ $t.tenantLabel }}
-  replacement: {{ $t.fallbackTenant | quote }}
+- target_label: k8s_cluster_name
+  replacement: {{ $t.cluster | quote }}
+- target_label: deployment_environment_name
+  replacement: {{ $t.environment | quote }}
+{{- end -}}
+
+{{- define "observability-emitters.tenancy.nodeMetricRelabelConfigs" -}}
+- source_labels: [namespace]
+  regex: (.+)
+  target_label: k8s_namespace_name
 {{- end -}}
 
 {{/*
@@ -203,7 +190,7 @@ Everything else this agent collects arrives as a PodMonitor or a
 ServiceMonitor written by whoever owns the thing being watched.
 
 `honor_labels: false`, here as everywhere: a kubelet that exported its own
-`tenant` label would otherwise keep it.
+`k8s_cluster_name` label would otherwise keep it.
 
 No series allow-list is applied. A dropped series is invisible until the
 first incident that needed it, so narrowing this belongs to an estate that
@@ -224,6 +211,8 @@ metrics somebody's dashboard uses.
     - action: labelmap
       regex: __meta_kubernetes_node_label_(.+)
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
+  metric_relabel_configs:
+{{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
 {{- end -}}
 
 {{- define "observability-emitters.scrapeConfig.cadvisor" -}}
@@ -241,6 +230,8 @@ metrics somebody's dashboard uses.
     - action: labelmap
       regex: __meta_kubernetes_node_label_(.+)
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
+  metric_relabel_configs:
+{{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
 {{- end -}}
 
 {{/*
@@ -264,6 +255,12 @@ one.
 extensions:
   file_storage:
     directory: /var/lib/otelcol/queue
+    # A fresh volume is empty, and the extension refuses to start on a
+    # directory that does not exist rather than creating it — so without
+    # this every first boot on a new PersistentVolume crash-loops before
+    # the first byte is queued. Found by running the rendered file
+    # against the binary; no render can tell you a directory is missing.
+    create_directory: true
     # The collector is killed with a queue on disk often enough that a
     # corrupt database has to be survivable: without this the process
     # crash-loops on the file it cannot open, and the only way out is
@@ -296,21 +293,33 @@ receivers:
 {{- end }}
 
 processors:
-  # Two processors, in this order, and the order is the security property.
+  # Three processors, in this order, and the order is the security
+  # property.
   #
-  # k8sattributes resolves the sending pod and copies the NAMESPACE's own
-  # labels onto the resource, under names of this chart's choosing rather
-  # than the estate's. Nothing is decided here.
+  # transform/disown removes the namespace an SDK may have stated about
+  # itself, under both spellings. It has to run FIRST, because
+  # k8sattributes writes an attribute only when it is absent or empty —
+  # so a resource that arrived already carrying `k8s.namespace.name`
+  # would keep the application's claim, and the namespace is the key.
   #
-  # transform/tenancy then writes `{{ $t.tenantLabel }}` and `{{ $t.envLabel }}` from
-  # those, unconditionally, with `set` — which overwrites whatever an SDK
-  # put there. It finishes by deleting the intermediate attributes, so the
-  # namespace's raw labels do not reach the store as a second vocabulary.
+  # k8sattributes then resolves the sending pod and writes the NAMESPACE's
+  # name from the pod object, not from anything the sender said. The
+  # cluster and the tier are constants from this values file; the
+  # processor cannot know either.
   #
-  # Doing it the obvious way — letting k8sattributes write `{{ $t.tenantLabel }}`
-  # directly — is what this avoids: that processor leaves an attribute that
-  # is already present alone, so an SDK that set its own tenant would keep
-  # it, and the label would be the application's claim about itself.
+  # transform/tenancy finishes by writing those two with `set`, which
+  # overwrites whatever an SDK put there, and on the log pipeline copies
+  # the namespace to the spelling the container-log agent uses, so one
+  # store holds one name for it.
+  transform/disown:
+    error_mode: ignore
+{{- range $signal := list "metric" "log" "trace" }}
+    {{ $signal }}_statements:
+      - context: resource
+        statements:
+          - delete_key(attributes, "k8s.namespace.name")
+          - delete_key(attributes, "kubernetes.pod_namespace")
+{{- end }}
   k8sattributes:
     auth_type: serviceAccount
     passthrough: false
@@ -321,44 +330,46 @@ processors:
         - k8s.pod.uid
         - k8s.node.name
       labels:
-{{- with $t.namespaceLabels.layer }}
-        - tag_name: observability.tenancy.layer
-          key: {{ . | quote }}
-          from: namespace
-{{- end }}
-        - tag_name: observability.tenancy.project
-          key: {{ $t.namespaceLabels.project | quote }}
-          from: namespace
+        # The Helm release, for navigation. Named explicitly rather than
+        # left to the processor's default pattern, so the attribute a
+        # reader searches for is the one the rendered file says.
+        - tag_name: k8s.pod.labels.app.kubernetes.io/instance
+          key: app.kubernetes.io/instance
+          from: pod
+    # The connection comes first. The other two sources read the pod's
+    # identity from attributes the SENDER supplied, which for an
+    # in-cluster application is a claim about itself; the peer address of
+    # the socket it opened is not. They remain for a sender whose address
+    # resolves to no pod — a host-network pod carries its node's.
     pod_association:
+      - sources:
+          - from: connection
       - sources:
           - from: resource_attribute
             name: k8s.pod.uid
       - sources:
           - from: resource_attribute
             name: k8s.pod.ip
-      - sources:
-          - from: connection
   transform/tenancy:
     error_mode: ignore
 {{- range $signal := list "metric" "log" "trace" }}
     {{ $signal }}_statements:
       - context: resource
         statements:
-          - set(attributes[{{ $t.envLabel | quote }}], {{ $t.env | quote }})
-          - set(attributes[{{ $t.tenantLabel | quote }}], {{ $t.fallbackTenant | quote }})
-{{- if $t.namespaceLabels.layer }}
-          - set(attributes[{{ $t.tenantLabel | quote }}], attributes["observability.tenancy.layer"]) where attributes["observability.tenancy.layer"] != nil
+          - set(attributes["k8s.cluster.name"], {{ $t.cluster | quote }})
+          - set(attributes["deployment.environment.name"], {{ $t.environment | quote }})
+{{- if eq $signal "log" }}
+          # The container-log agent cannot rename a field, so its native
+          # spelling is the log-path key and this writer yields to it.
+          - set(attributes["kubernetes.pod_namespace"], attributes["k8s.namespace.name"]) where attributes["k8s.namespace.name"] != nil
 {{- end }}
-          - set(attributes[{{ $t.tenantLabel | quote }}], attributes["observability.tenancy.project"]) where attributes["observability.tenancy.project"] != nil
-          - delete_key(attributes, "observability.tenancy.layer")
-          - delete_key(attributes, "observability.tenancy.project")
 {{- end }}
   # Delta metrics and deduplication do not mix: the store keeps one sample
   # per interval, and dropping one sample of a delta series loses the
   # increment it carried rather than a repetition of a total. An SDK's
   # default temporality is the caller's business, so the conversion happens
   # here and is not configurable.
-  deltatocumulative: {}
+  delta_to_cumulative: {}
   batch: {}
 
 exporters:
@@ -366,15 +377,29 @@ exporters:
   # No `sending_queue` here, and it is not an omission: the Prometheus
   # remote-write exporter does not have one. Its durability is a
   # write-ahead log, per exporter, on the same volume the others queue on.
-  prometheusremotewrite/{{ $d.name }}:
+  prometheus_remote_write/{{ $d.name }}:
     endpoint: {{ printf "%s/api/v1/write" (trimSuffix "/" $d.url) | quote }}
     wal:
       directory: /var/lib/otelcol/wal/{{ $d.name }}
     headers:
       Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+    # A resource attribute does not become a label on its own: this
+    # exporter puts the resource on a `target_info` series and nothing
+    # else, so a series would reach the store carrying no cluster and no
+    # namespace, and every scoped query would miss it. These three are
+    # promoted onto every series, under the dotted names — the exporter
+    # spells them with underscores on the way out, which is how they
+    # match the metrics agent's labels and the proxy's filters. Only
+    # these three: the rest of the resource, the pod UID among it, stays
+    # on `target_info`.
+    resource_constant_labels:
+      included:
+        - k8s.cluster.name
+        - k8s.namespace.name
+        - deployment.environment.name
 {{- end }}
 {{- range $d := $v.destinations.logs }}
-  otlphttp/logs-{{ $d.name }}:
+  otlp_http/logs-{{ $d.name }}:
     logs_endpoint: {{ printf "%s/insert/opentelemetry/v1/logs" (trimSuffix "/" $d.url) | quote }}
     headers:
       Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
@@ -389,7 +414,7 @@ exporters:
       enabled: true
 {{- end }}
 {{- range $d := $v.destinations.traces }}
-  otlphttp/traces-{{ $d.name }}:
+  otlp_http/traces-{{ $d.name }}:
     traces_endpoint: {{ printf "%s/insert/opentelemetry/v1/traces" (trimSuffix "/" $d.url) | quote }}
     headers:
       Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
@@ -416,27 +441,27 @@ service:
                 port: 8888
   pipelines:
 {{- $metricsExporters := list }}
-{{- range $d := $v.destinations.metrics }}{{ $metricsExporters = append $metricsExporters (printf "prometheusremotewrite/%s" $d.name) }}{{ end }}
+{{- range $d := $v.destinations.metrics }}{{ $metricsExporters = append $metricsExporters (printf "prometheus_remote_write/%s" $d.name) }}{{ end }}
 {{- if $metricsExporters }}
     metrics:
       receivers: [otlp]
-      processors: [k8sattributes, transform/tenancy, deltatocumulative, batch]
+      processors: [transform/disown, k8sattributes, transform/tenancy, delta_to_cumulative, batch]
       exporters: [{{ join ", " $metricsExporters }}]
 {{- end }}
 {{- $logExporters := list }}
-{{- range $d := $v.destinations.logs }}{{ $logExporters = append $logExporters (printf "otlphttp/logs-%s" $d.name) }}{{ end }}
+{{- range $d := $v.destinations.logs }}{{ $logExporters = append $logExporters (printf "otlp_http/logs-%s" $d.name) }}{{ end }}
 {{- if $logExporters }}
     logs:
       receivers: [otlp{{ if $v.events.enabled }}, k8s_events{{ end }}]
-      processors: [k8sattributes, transform/tenancy, batch]
+      processors: [transform/disown, k8sattributes, transform/tenancy, batch]
       exporters: [{{ join ", " $logExporters }}]
 {{- end }}
 {{- $traceExporters := list }}
-{{- range $d := $v.destinations.traces }}{{ $traceExporters = append $traceExporters (printf "otlphttp/traces-%s" $d.name) }}{{ end }}
+{{- range $d := $v.destinations.traces }}{{ $traceExporters = append $traceExporters (printf "otlp_http/traces-%s" $d.name) }}{{ end }}
 {{- if $traceExporters }}
     traces:
       receivers: [otlp]
-      processors: [k8sattributes, transform/tenancy, batch]
+      processors: [transform/disown, k8sattributes, transform/tenancy, batch]
       exporters: [{{ join ", " $traceExporters }}]
 {{- end }}
 {{- end -}}

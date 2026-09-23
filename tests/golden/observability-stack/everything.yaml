@@ -2512,8 +2512,8 @@ spec:
       receiver: "default"
       group_by: 
         - alertname
-        - owner
-        - stage
+        - cell
+        - ns
       group_wait: 10s
       group_interval: 2m
       repeat_interval: 2h
@@ -2652,10 +2652,10 @@ spec:
       entitlements: "example:k8s:viewer"
     defaultVMAccessClaim:
       metricsExtraFilters:
-        - '{stage="devel"}'
-        - '{stage="prod",owner=~"^(example-app|other-app)$"}'
+        - '{cell="example-cluster"}'
+        - '{cell="other-cluster",ns=~"^(example-app|other-app)$"}'
       logsExtraStreamFilters:
-        - _stream:{"stage"="devel" or "stage"="prod","kubernetes.namespace_labels.tenancy.example.com/owner"=~"^(example-app|other-app)$"}
+        - _stream:{"k8s.cell"="example-cluster" or "k8s.cell"="other-cluster","kubernetes.namespace_name"=~"^(example-app|other-app)$"}
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500

@@ -149,31 +149,35 @@ values.yaml, listed here, and enforced rather than remembered.
 |---|---|---|---|
 | `tenancy.issuerUrl` | string | `""` | The OIDC issuer vmauth discovers keys from. **Required whenever `principals` is set.** |
 | `tenancy.claimName` | string | `groups` | The claim carrying the caller's groups. |
-| `tenancy.tenantLabel` | name | `tenant` | The label key the collectors stamp with the tenant, on metrics and on spans. |
-| `tenancy.envLabel` | name | `env` | The label key for the environment. |
-| `tenancy.logsTenantField` | log field name | — | The **field** the log store carries the tenant in. **Required whenever `principals` is set**, and deliberately without a default: on the log path the tenant is not in a field called `tenant` and cannot be. With `observability-emitters`, `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`. |
-| `tenancy.logsEnvField` | log field name | — | The **field** the log store carries the environment in. **Required whenever `principals` is set.** With `observability-emitters`, `tenancy.envLabel`, which is the name the agent is given in `-kubernetesCollector.extraFields`. |
-| `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | Extra flags for vmauth. **`mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` is refused**: it exempts a client's copy of that argument from the clash rule that is the other half of the enforcement, and vmselect ORs alternatives, so a caller could add an empty one and read every tenant. |
-| `tenancy.allowUnfilteredTraceReads` | bool | `false` | Admit the trace read route although nothing can scope it. **Required whenever a trace store is enabled alongside `principals`**, because vmauth enforces a grant by substituting it into the route and VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to substitute one into. Setting it records that every principal who can reach the proxy reads every tenant's spans. It admits the trace route and nothing else. |
+| `tenancy.clusterLabel` | label name | `k8s_cluster_name` | The metrics label carrying the cluster. What `observability-emitters` stamps; set it only for collectors not built here. |
+| `tenancy.namespaceLabel` | label name | `k8s_namespace_name` | The metrics label carrying the namespace. |
+| `tenancy.logsClusterField` | log field name | `k8s.cluster.name` | The log **stream field** carrying the cluster — the conventional name, which both log writers stamp. |
+| `tenancy.logsNamespaceField` | log field name | `kubernetes.pod_namespace` | The log stream field carrying the namespace: the container-log agent's own spelling, because it cannot rename a field and the gateway is configured to write the same one. |
+| `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | Extra flags for vmauth. **`mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` is refused**: it exempts a client's copy of that argument from the clash rule that is the other half of the enforcement, and vmselect ORs alternatives, so a caller could add an empty one and read every cluster and namespace. |
+| `tenancy.allowUnfilteredTraceReads` | bool | `false` | Admit the trace read route although nothing can scope it. **Required whenever a trace store is enabled alongside `principals`**, because vmauth enforces a grant by substituting it into the route and VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to substitute one into. Setting it records that every principal who can reach the proxy reads every namespace's spans on every cluster. It admits the trace route and nothing else. |
 | `tenancy.principals[].group` | string | — | Matched against `claimName`. One `VMUser` per entry. |
-| `tenancy.principals[].grants[].env` | name | — | One environment. Granting the same one twice to a principal is refused. |
-| `tenancy.principals[].grants[].tenants` | list of names | — | Tenants by name. An empty list is refused, never read as "everything". |
-| `tenancy.principals[].grants[].allTenants` | bool | — | Every tenant in that environment. Mutually exclusive with `tenants`; one is required. |
+| `tenancy.principals[].grants[].cluster` | name | — | One cluster. Granting the same one twice to a principal is refused. |
+| `tenancy.principals[].grants[].namespaces` | list of names | — | Namespaces on that cluster, by name. An empty list is refused, never read as "everything": a project that expands to no namespaces is the likeliest way a grant widens by accident. |
+| `tenancy.principals[].grants[].allNamespaces` | bool | — | Every namespace on that cluster. Mutually exclusive with `namespaces`; one is required. |
 | `tenancy.writers[].name` | name | — | A collector that writes. Its routes are the write paths and nothing else. |
 | `tenancy.writers[].tokenSecret` | `{name, key}` | — | The Secret holding its bearer token. The chart never creates one. |
 | `tenancy.writers[].destinations` | list | — | `metrics`, `logs`, `traces`. |
 
-Names must match `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` — the same shape, for
-the same reason, as `pkg/tenancy`: they are interpolated into a filter
-expression, so one carrying `|` or `.*` widens the grant rather than
-looking odd.
+A grant is namespaces on a cluster. A project or a team is a derivation
+from a name to a namespace list, held wherever this file is written, and
+is not a label on the telemetry. Names must match
+`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` — the same shape, for the same reason,
+as `pkg/tenancy`: they are interpolated into a filter expression, so one
+carrying `|` or `.*` widens the grant rather than looking odd.
 
-A **log field name** is a different question and has a different answer:
+A **metrics key** is a Prometheus label name, `^[a-zA-Z_][a-zA-Z0-9_]*$`,
+because the defaults carry underscores and a label carries no dot. A
+**log field name** is a different question and has a different answer:
 `^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`, because a log agent names its own fields
-and a real one carries the dots and the slash of a Kubernetes label key.
-It admits those and refuses everything that is stream-filter syntax. The
-tenant rule is not loosened to fit it: a tenant name goes inside the
-alternation, where a `.` is a metacharacter.
+and a real one carries dots. It admits those and refuses everything that
+is stream-filter syntax. The namespace rule is not loosened to fit either:
+a namespace name goes inside the alternation, where a `.` is a
+metacharacter. The two keys of one signal must differ.
 
 The rendered logs filter is **one** entry for the whole principal, with
 the grants as `or` alternatives, and its field names are quoted. Both
@@ -296,15 +300,22 @@ through.
 ## `charts/observability-emitters`
 
 Per-cluster collection: three optional emitters, each replicating to every
-destination it is given and each stamping the same two labels.
+destination it is given and each stamping the same three dimensions.
 
-**The label keys are one vocabulary.** `tenancy.tenantLabel` and
-`tenancy.envLabel` are what the emitters stamp AND what `pkg/tenancy`
-renders into the proxy's filters. A filter selecting on one name against
-telemetry labelled with another returns an empty result rather than an
-error, so `tests/agreement_test.go` fails when the chart's defaults drift
-from the library's, and a second test fails when a template hardcodes a
-key that should be a value.
+**The names are not values.** What every writer stamps and every filter
+selects on is OpenTelemetry's vocabulary, spelled the way each store can
+carry it, and `pkg/tenancy` filters on the same spellings — so a key that
+could be changed here is a key that could stop matching the filter, which
+is an empty result rather than an error. `tests/agreement_test.go` reads
+the names back out of this chart's rendered manifest, for every writer
+and every dimension, and fails on any drift.
+
+| Dimension | Metrics label | Log field, both writers | Span attribute |
+|---|---|---|---|
+| cluster — **key** | `k8s_cluster_name` | `k8s.cluster.name` | `k8s.cluster.name` |
+| namespace — **key** | `k8s_namespace_name`; `namespace` stays on scraped series | `kubernetes.pod_namespace` | `k8s.namespace.name` |
+| environment tier — descriptive | `deployment_environment_name` | `deployment.environment.name` | `deployment.environment.name` |
+| Helm release — navigation | `app_kubernetes_io_instance` on scraped series | `kubernetes.pod_labels.app.kubernetes.io/instance` (agent), `k8s.pod.labels.app.kubernetes.io/instance` (gateway) | `k8s.pod.labels.app.kubernetes.io/instance` |
 
 ### Top level
 
@@ -318,17 +329,14 @@ key that should be a value.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
-| `tenancy.env` | name | `""` | This cluster's environment. **Required**: telemetry labelled `env=""` matches no grant and is invisible. |
-| `tenancy.tenantLabel` | name | `tenant` | The label, field and resource attribute the tenant is stamped as. |
-| `tenancy.envLabel` | name | `env` | The same, for the environment. |
-| `tenancy.fallbackTenant` | name | `""` | The tenant for a namespace carrying neither label. **Required**, and there is no safe guess for it. |
-| `tenancy.namespaceLabels.project` | string | `""` | The namespace label whose **value** is the tenant. **Required.** |
-| `tenancy.namespaceLabels.layer` | string | `""` | Consulted only when a namespace has no `project` label. Empty renders no rule for it. |
+| `tenancy.cluster` | name | `""` | This cluster's name, half of the scoping key. **Required**: telemetry stamped with a cluster called nothing matches no grant and is invisible. Matched exactly, so it is the estate's own vocabulary. |
+| `tenancy.environment` | name | `""` | The environment tier, the value of `deployment.environment.name` — `production`, `staging`, `development`, `test`, or any plain name. **Required**, and never a key: two clusters may share it. |
 
-Resolution order, last match winning: `fallbackTenant`, then `layer`'s
-value, then `project`'s value. Names must match
+The namespace needs no value: it is the namespace of the pod each
+emitter resolved the data to, from service discovery on the metrics agent
+and from the pod object on the gateway. Names must match
 `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, for the same reason as in
-`pkg/tenancy`: they are interpolated into a filter expression.
+`pkg/tenancy`: the cluster name is interpolated into a filter expression.
 
 ### `writeCredentials`
 
@@ -360,12 +368,16 @@ below. The chart refuses an entry with none.
 Rendered and **not configurable away**, each with a fixture:
 `statefulMode: true` with a `volumeClaimTemplate` (the queue is on `/tmp`
 without it), `overrideHonorLabels: true` (without it a target's own
-`tenant` label wins), `selectAllByDefault: true` (false with no selectors
-selects *nothing*), a default scrape class with `attachMetadata.namespace`
-(without it namespace labels are not discovered at all), and
-`disableSelfServiceScrape: true` so the agent's own metrics come from a
-`PodMonitor` rather than a `VMServiceScrape`. `remoteWrite.shardByURL` in
-`metrics.spec.extraArgs` is refused outright.
+`k8s_namespace_name` label wins), `selectAllByDefault: true` (false with
+no selectors selects *nothing*), a default scrape class that stamps both
+keys on every scrape object (`k8s_namespace_name` from
+`__meta_kubernetes_namespace`, the cluster and the tier statically, the
+release passed through), a `labeldrop` of the `exported_` copy of the
+three stamped labels, and `disableSelfServiceScrape: true` so the
+agent's own metrics come from a `PodMonitor` rather than a
+`VMServiceScrape`. The two node-level jobs copy the container's own
+`namespace` into `k8s_namespace_name` after the scrape.
+`remoteWrite.shardByURL` in `metrics.spec.extraArgs` is refused outright.
 
 ### `logs` — vlagent
 
@@ -381,7 +393,7 @@ this chart's refusals rather than duplicated — see below.
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `otlp.enabled` | bool | `true` | Renders the StatefulSet, its ConfigMap, Services, RBAC and `PodMonitor`. |
-| `otlp.image` | `{repository, tag}` | `otel/opentelemetry-collector-contrib:0.161.0` | The contrib distribution: `k8sattributes`, `k8s_events`, `file_storage` and `deltatocumulative` are not in core. |
+| `otlp.image` | `{repository, tag}` | `otel/opentelemetry-collector-contrib:0.161.0` | The contrib distribution: `k8sattributes`, `k8s_events`, `file_storage` and `delta_to_cumulative` are not in core. |
 | `otlp.replicaCount` | int | `2` | Each replica owns a queue volume, which is why this is a StatefulSet. |
 | `otlp.resources` | object | 1 CPU / 1Gi | |
 | `otlp.queue.size` | quantity | `10Gi` | One volume per replica, holding both the OTLP `sending_queue`s and the remote-write WAL. **Required.** |
@@ -389,15 +401,19 @@ this chart's refusals rather than duplicated — see below.
 | `otlp.destinations.metrics[]` | `{name, url}` | `[]` | Base URLs; the exporter appends `/api/v1/write`. **Refused empty.** |
 | `otlp.destinations.logs[]` | `{name, url}` | `[]` | Appends `/insert/opentelemetry/v1/logs`. |
 | `otlp.destinations.traces[]` | `{name, url}` | `[]` | Appends `/insert/opentelemetry/v1/traces`. |
-| `otlp.streamFields` | list | `[tenant, env, service.name]` | The `VL-Stream-Fields` header. **Refused empty**, must contain the tenant and env keys, and every entry must be an attribute the chart knows to be constant for the lifetime of a pod. |
+| `otlp.streamFields` | list | `[k8s.cluster.name, kubernetes.pod_namespace, service.name]` | The `VL-Stream-Fields` header. **Refused empty**, must contain both keys, and every entry must be an attribute the chart knows to be constant for the lifetime of a pod. The Helm release attribute is refused: navigation, not a stream. |
 | `otlp.events.enabled` | bool | `true` | Kubernetes Events through the `k8s_events` receiver, with a leader-election lease so replicas do not each ingest every Event. Events do **not** come from the log agent. |
 | `otlp.service.grpcPort` / `.httpPort` | int | `4317` / `4318` | |
 | `otlp.podMonitor.enabled` | bool | `true` | The gateway's own `otelcol_exporter_send_failed_*` and `otelcol_exporter_enqueue_failed_*`. |
 | `otlp.podMonitor.extraLabels` | map | `{}` | |
 
-Rendered and not configurable: `k8sattributes` then `transform/tenancy`,
-in that order, and `deltatocumulative` on the metrics pipeline. The order
-is the security property — see docs/safety.md.
+Rendered and not configurable: `transform/disown`, then `k8sattributes`
+with the connection as its first pod-association source, then
+`transform/tenancy`, in that order — the order is the security property,
+see docs/safety.md — and `delta_to_cumulative` on the metrics pipeline.
+On the metrics exporters, `resource_constant_labels` promotes exactly the
+three keys from the resource onto every series; the exporter writes them
+with underscores, which is how they match the agent's labels.
 
 ### `selfMonitor`
 
@@ -416,20 +432,17 @@ would have to be kept in step with them.
 | Value | Default | What it does |
 |---|---|---|
 | `victoria-logs-collector.remoteWrite[]` | `[]` | The log destinations. **Refused empty.** Each entry needs a credential (`bearerTokenFile`, `bearerToken`, `basicAuth` or an Authorization header) and a `maxDiskUsagePerURL`; each URL's path must be absent or `/insert/native`. |
-| `…collector.streamFields` | the three defaults | **Must also contain `tenancy.envLabel` and `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`**, or the proxy's stream filter selects nothing. |
-| `…collector.includeNamespaceLabels` | `true` | Where the tenant comes from on this path. Refused false. |
-| `…collector.includePodLabels` | `false` | Against upstream's default: an application's own vocabulary, changing without a deploy. |
-| `…collector.extraFields` | `""` | MIRROR of `tenancy.env`: must be exactly `{"<envLabel>":"<env>"}`. |
+| `…collector.streamFields` | upstream's three plus `k8s.cluster.name` | **Must contain `kubernetes.pod_namespace` and `k8s.cluster.name`**, or the proxy's stream filter selects nothing. |
+| `…collector.includePodLabels` | `true` | Upstream's default. Pod labels are ordinary fields, and `kubernetes.pod_labels.app.kubernetes.io/instance` is how the Helm release reaches the log store on this path. |
+| `…collector.extraFields` | `""` | MIRROR of `tenancy.cluster` and `tenancy.environment`: a JSON object carrying `k8s.cluster.name` and `deployment.environment.name` with exactly those values. Refused when it disagrees or is not an object. |
 | `…extraArgs.tmpDataPath` | `/var/lib/vl-collector` | Checkpoints **and** the per-destination buffer. |
 | `…persistence.volume` | `{}` | Empty keeps upstream's hostPath at `tmpDataPath`. An `emptyDir` is refused. |
 | `…podMonitor.vm` | `false` | `true` renders a `VMPodScrape` instead of a `PodMonitor`, and is refused. |
 
-**The tenant on the log path is not called `tenant`.** vlagent cannot
-rename a field, so a namespace label reaches the store as
-`kubernetes.namespace_labels.<key>` and the proxy has to filter on that
-name — which is why `observability-stack` and `pkg/tenancy` take the log
-path's field names as required input and refuse to render without them.
-docs/safety.md has what this costs and what it does not cover.
+**The namespace on the log path is `kubernetes.pod_namespace`.** vlagent
+cannot rename a field, so its native spelling is the key and the gateway
+writes the same one on its log pipeline; the read side defaults to it.
+docs/safety.md has the two writer collisions and how each one is closed.
 
 ## `pkg/tenancy`
 
@@ -441,10 +454,10 @@ docs/safety.md has what this costs and what it does not cover.
 |---|---|---|
 | `ClaimName` | yes | The token claim carrying the caller's groups, e.g. `groups`. |
 | `Principals` | yes | One entry per named population. |
-| `TenantLabel` | no, `tenant` | The label key the collectors stamp with the tenant, on metrics and on spans. |
-| `EnvLabel` | no, `env` | The label key the collectors stamp with the environment. |
-| `LogsTenantField` | **yes** | The field the log store carries the tenant in. No default: the log path cannot carry the label key above, and a filter naming it returns an empty result rather than an error. |
-| `LogsEnvField` | **yes** | The field the log store carries the environment in. No default, for the same reason. |
+| `ClusterLabel` | no, `k8s_cluster_name` | The metrics label carrying the cluster. `DefaultClusterLabel`. |
+| `NamespaceLabel` | no, `k8s_namespace_name` | The metrics label carrying the namespace. `DefaultNamespaceLabel`. |
+| `LogsClusterField` | no, `k8s.cluster.name` | The log stream field carrying the cluster. `DefaultLogsClusterField`. |
+| `LogsNamespaceField` | no, `kubernetes.pod_namespace` | The log stream field carrying the namespace: the container-log agent's spelling, which the gateway matches. `DefaultLogsNamespaceField`. A filter naming any other field returns an empty result rather than an error, which is why this is an input at all. |
 | `MetricsBackend`, `LogsBackend` | for `RenderVMAuth` | Where the proxy forwards. |
 | `TracesBackend` | no | Omitted renders no trace route. |
 | `AllowUnfilteredTraceReads` | with `TracesBackend` | Admits the trace route although nothing can scope it: vmauth enforces by substituting a filter into the route, and VictoriaTraces' select APIs accept no argument to substitute one into. Without it, `RenderVMAuth` refuses rather than render an unscoped route beside two scoped ones. It admits the trace route only. |
@@ -455,19 +468,28 @@ docs/safety.md has what this costs and what it does not cover.
 |---|---|---|
 | `Principal.Group` | yes | Matched against the claim. Not a display name or an address. |
 | `Principal.Grants` | yes | What this group may read. A principal that may read nothing is written by leaving it out. |
-| `Grant.Env` | yes | One environment. Granting the same environment twice to one principal is refused. |
-| `Grant.Tenants` | one of | Tenants by name. |
-| `Grant.AllTenants` | one of | Every tenant in that environment. |
+| `Grant.Cluster` | yes | One cluster. Granting the same cluster twice to one principal is refused. |
+| `Grant.Namespaces` | one of | Namespaces on that cluster, by name. |
+| `Grant.AllNamespaces` | one of | Every namespace on that cluster. |
 
-`Tenants` and `AllTenants` are mutually exclusive and one is required. An
-empty `Tenants` list is **refused**, never read as "everything": a list
-empty because a derivation produced nothing is the likeliest way a grant
-widens by accident.
+`Namespaces` and `AllNamespaces` are mutually exclusive and one is
+required. An empty `Namespaces` list is **refused**, never read as
+"everything": a project that expands to no namespaces is the likeliest
+way a grant widens by accident. A project is that expansion, held by the
+caller; it is not a field here.
 
 Names must match `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`. This is a security
 boundary rather than a style rule — names are interpolated into a filter
 expression, so one containing `|`, `)` or `.*` would widen the grant. Such
-a name is refused rather than escaped.
+a name is refused rather than escaped. The metrics keys are held to the
+Prometheus label shape, the log keys to the log-field shape, and the two
+keys of one signal must differ.
+
+The package also exports the vocabulary as constants — the four defaults
+above, `TracesClusterAttribute` / `TracesNamespaceAttribute`
+(`k8s.cluster.name` / `k8s.namespace.name`), and `EnvironmentLabel` /
+`EnvironmentAttribute` (`deployment_environment_name` /
+`deployment.environment.name`, the tier, which no filter ever names).
 
 ### Methods
 
@@ -478,7 +500,7 @@ a name is refused rather than escaped.
 | `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Each read route carries its filter argument in the `url_prefix` — `extra_filters={{.MetricsExtraFilters}}`, `extra_stream_filters={{.LogsExtraStreamFilters}}` — because **that substitution is the only thing that applies a `vm_access` claim**; a route without it forwards unfiltered while the claim beside it states the grant. A route cannot be constructed without one, and `Validate` refuses one that is. Needs vmauth **v1.152.0 or later**, or a patched v1.148 LTS: `default_vm_access_claim` arrived in v1.147.0, but every release from v1.138.0 through v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96). JWT auth itself is community from v1.137.0. |
 
 Rendering does not mutate its input, and output order is stable: grants
-sort by environment and tenants sort by name, so an unrelated change
+sort by cluster and namespaces sort by name, so an unrelated change
 produces no diff.
 
 ## Published artifacts

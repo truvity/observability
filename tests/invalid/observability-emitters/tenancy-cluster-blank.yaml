@@ -1,6 +1,6 @@
-# A LogsQL stream filter — which is what the proxy injects — only
-# selects on stream fields. With the tenant field absent from the stream,
-# every tenant-scoped log query returns nothing at all.
+# The cluster is half of the scoping key. Telemetry stamped with a
+# cluster called nothing matches no grant the proxy injects: stored, paid
+# for, and invisible to everyone.
 
 metrics:
   destinations:
@@ -18,19 +18,16 @@ otlp:
     - name: primary
       url: https://traces.example
 tenancy:
-  env: example
-  fallbackTenant: infra
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: tenancy.example.com/project
+  cluster: ''
+  environment: development
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
     - kubernetes.pod_namespace
-    - env
+    - k8s.cluster.name
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

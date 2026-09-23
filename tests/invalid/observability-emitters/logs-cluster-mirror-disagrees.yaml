@@ -1,16 +1,12 @@
-# THE security refusal. With honor labels not overridden, a label a
-# target exports itself wins over the label the agent stamps — so any
-# workload that exposes its own `k8s_namespace_name` or `k8s_cluster_name`
-# label chooses where its series are filed. It can write into another
-# team's data or hide its own, and the render, the sync and the dashboards
-# all look correct.
+# Helm evaluates a subchart's values before any template runs, so the
+# log agent's static fields cannot be computed and have to be written
+# twice. A cluster that disagrees here files every container log on this
+# cluster under another one, where no grant for this one reaches it.
 
 metrics:
   destinations:
   - name: primary
     url: https://metrics.example/api/v1/write
-  spec:
-    overrideHonorLabels: false
 otlp:
   destinations:
     logs:
@@ -27,7 +23,7 @@ tenancy:
   environment: development
 victoria-logs-collector:
   collector:
-    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+    extraFields: '{"k8s.cluster.name":"other-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name

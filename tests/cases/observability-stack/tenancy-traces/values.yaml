@@ -22,14 +22,12 @@ global:
 tenancy:
   issuerUrl: https://issuer.example
   claimName: groups
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   allowUnfilteredTraceReads: true
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
 
 # The trace store's address is read back from the upstream chart's own
 # naming rules, so the subchart is enabled and everything else is off:

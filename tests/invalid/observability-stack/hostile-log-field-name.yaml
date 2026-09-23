@@ -1,14 +1,13 @@
 # A log field name is interpolated into the stream filter, exactly as a
-# tenant name is. This one closes the quoted field name, ends the
-# alternative and opens a second one that matches every tenant — it would
-# not look odd in the rendered filter, it would be a grant nobody wrote.
-# Such a name is refused, never escaped.
+# namespace name is. This one closes the quoted field name, ends the
+# alternative and opens a second one that matches every namespace — it
+# would not look odd in the rendered filter, it would be a grant nobody
+# wrote. Such a name is refused, never escaped.
 tenancy:
   issuerUrl: https://issuer.example
-  logsTenantField: 'project"=~"^(.*)$" or {"env'
-  logsEnvField: env
+  logsNamespaceField: 'ns"=~"^(.*)$" or {"k8s.cluster.name'
   principals:
     - group: example:app:deployer
       grants:
-        - env: devel
-          tenants: [example-app]
+        - cluster: example-cluster
+          namespaces: [example-app]

@@ -6,12 +6,12 @@ global:
 #
 # Two things this case is here to prove, beyond "it renders":
 #
-#   - the label keys are PLUMBED. `tenantLabel` and `envLabel` are not
-#     `tenant` and `env` here, and the golden has to carry the names below
-#     in the agent's relabel rules, the gateway's OTTL statements, the
-#     `VL-Stream-Fields` header and the dropped-label regex. A key that is
-#     a value in one place and a constant in another is a filter that
-#     selects nothing on the read side.
+#   - the cluster and the tier are PLUMBED. Neither is the minimal case's
+#     value here, and the golden has to carry these two at every stamping
+#     site: the agent's relabel rules for both scrape classes, the
+#     gateway's OTTL statements, and the log agent's static fields. A value
+#     that reaches one site and not another is a signal filed under the
+#     wrong cluster.
 #   - the escape hatch is merged, not ignored. `metrics.spec` sets values
 #     the chart does not otherwise render, and leaves every guarded one
 #     alone.
@@ -19,13 +19,8 @@ nameOverride: emitters
 interval: 60s
 
 tenancy:
-  env: example-two
-  tenantLabel: owner
-  envLabel: cell
-  fallbackTenant: platform
-  namespaceLabels:
-    project: example.com/project
-    layer: example.com/layer
+  cluster: other-cluster
+  environment: staging
 
 writeCredentials:
   secretName: example-write-token
@@ -56,7 +51,7 @@ metrics:
   spec:
     scrapeInterval: 60s
     externalLabels:
-      cluster: example
+      region: example
     extraArgs:
       promscrape.suppressScrapeErrors: "true"
 
@@ -90,8 +85,9 @@ otlp:
       - name: primary
         url: https://traces.example
   streamFields:
-    - owner
-    - cell
+    - k8s.cluster.name
+    - kubernetes.pod_namespace
+    - deployment.environment.name
     - service.name
     - service.namespace
   events:
@@ -127,11 +123,10 @@ victoria-logs-collector:
       - kubernetes.container_name
       - kubernetes.pod_name
       - kubernetes.pod_namespace
-      - cell
-      - kubernetes.namespace_labels.example.com/project
-    extraFields: '{"cell":"example-two"}'
-    includeNamespaceLabels: true
-    includePodLabels: false
+      - k8s.cluster.name
+      - deployment.environment.name
+    extraFields: '{"k8s.cluster.name":"other-cluster","deployment.environment.name":"staging"}'
+    includePodLabels: true
     includePodAnnotations: false
     includeNodeLabels: false
     includeNodeAnnotations: false

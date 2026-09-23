@@ -37,21 +37,21 @@ vmauth:
 tenancy:
   issuerUrl: https://issuer.example
   claimName: entitlements
-  tenantLabel: owner
-  envLabel: stage
-  # Deliberately none of the defaults and none of the label keys above:
-  # the log store's field names are the log agent's, and this case exists
-  # to prove they reach the rendered filter rather than being a constant
-  # somewhere in the template.
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/owner
-  logsEnvField: stage
+  # Deliberately none of the defaults, on both paths: the keys are inputs
+  # for an estate whose collectors were not built here, and this case
+  # exists to prove they reach the rendered filter rather than being a
+  # constant somewhere in the template.
+  clusterLabel: cell
+  namespaceLabel: ns
+  logsClusterField: k8s.cell
+  logsNamespaceField: kubernetes.namespace_name
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: prod
-          tenants: [example-app, other-app]
-        - env: devel
-          allTenants: true
+        - cluster: other-cluster
+          namespaces: [example-app, other-app]
+        - cluster: example-cluster
+          allNamespaces: true
   writers:
     - name: otel-collector
       tokenSecret:
@@ -87,7 +87,7 @@ alertmanager:
   config:
     route:
       receiver: default
-      groupBy: [alertname, owner, stage]
+      groupBy: [alertname, cell, ns]
       groupWait: 10s
       groupInterval: 2m
       repeatInterval: 2h

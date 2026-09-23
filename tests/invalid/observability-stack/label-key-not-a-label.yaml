@@ -1,0 +1,13 @@
+# A metrics key has to be a label a series can carry. `k8s.namespace.name`
+# is the OpenTelemetry spelling, and it is exactly what a Prometheus label
+# cannot be: the remote-write exporter turns the dots into underscores on
+# the way in, so a filter naming the dotted form selects a label no series
+# has — an empty result, with no error anywhere. Refused by the schema.
+tenancy:
+  issuerUrl: https://issuer.example
+  namespaceLabel: k8s.namespace.name
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

@@ -24,12 +24,17 @@
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
-      "description": "A plain name. This is a security boundary rather than a style rule: tenant and environment names are interpolated into a filter expression, so one carrying | or .* would widen the grant it appears in."
+      "description": "A plain name. This is a security boundary rather than a style rule: cluster and namespace names are interpolated into a filter expression, so one carrying | or .* would widen the grant it appears in."
+    },
+    "labelName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "A Prometheus label name: the key a metrics filter selects on, so it has to be one a series can carry - no dots, no dashes, no slashes."
     },
     "logFieldName": {
       "type": "string",
-      "pattern": "^$|^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$",
-      "description": "A LOG FIELD NAME, which is a different question from a plain name and has a different answer. A log agent names its own fields: vlagent delivers a namespace label as kubernetes.namespace_labels.<key>, so a real one carries dots, and a slash when the label key has a domain prefix. The shape admits those and refuses everything that is stream-filter syntax - a quote, a brace, a comma, an equals sign, a pipe, a colon, whitespace - because the name is interpolated into the filter and one of those would widen the grant rather than look odd. Empty is allowed HERE and refused in templates/_validate.tpl, where the refusal can say why the log path is not the metrics path."
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$",
+      "description": "A LOG FIELD NAME, which is a different question from a plain name and has a different answer. A log agent names its own fields, and a real one carries dots: kubernetes.pod_namespace, k8s.cluster.name. The shape admits those and refuses everything that is stream-filter syntax - a quote, a brace, a comma, an equals sign, a pipe, a colon, whitespace - because the name is interpolated into the filter and one of those would widen the grant rather than look odd."
     },
     "resources": {
       "type": "object",
@@ -211,19 +216,21 @@
           "type": "string",
           "minLength": 1
         },
-        "tenantLabel": {
-          "$ref": "#/definitions/name"
+        "clusterLabel": {
+          "$ref": "#/definitions/labelName",
+          "description": "The metrics label carrying the cluster. Default k8s_cluster_name, which is what charts/observability-emitters stamps."
         },
-        "envLabel": {
-          "$ref": "#/definitions/name"
+        "namespaceLabel": {
+          "$ref": "#/definitions/labelName",
+          "description": "The metrics label carrying the namespace. Default k8s_namespace_name."
         },
-        "logsTenantField": {
+        "logsClusterField": {
           "$ref": "#/definitions/logFieldName",
-          "description": "The FIELD the log store carries the tenant in. No default: on the log path the tenant is not in a field called tenant and cannot be, because vlagent can rename no field. Required whenever principals is set."
+          "description": "The log STREAM FIELD carrying the cluster. Default k8s.cluster.name, the conventional name both log writers stamp."
         },
-        "logsEnvField": {
+        "logsNamespaceField": {
           "$ref": "#/definitions/logFieldName",
-          "description": "The FIELD the log store carries the environment in. No default, for the same reason as logsTenantField. Required whenever principals is set."
+          "description": "The log STREAM FIELD carrying the namespace. Default kubernetes.pod_namespace: the container-log agent's native spelling, because it cannot rename a field and the gateway is configured to write the same one."
         },
         "allowUnfilteredTraceReads": {
           "type": "boolean",
@@ -250,21 +257,21 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "env"
+                    "cluster"
                   ],
                   "properties": {
-                    "env": {
+                    "cluster": {
                       "$ref": "#/definitions/name"
                     },
-                    "tenants": {
+                    "namespaces": {
                       "type": "array",
                       "minItems": 1,
                       "items": {
                         "$ref": "#/definitions/name"
                       },
-                      "description": "An EMPTY list is refused rather than read as everything: a list empty because a derivation produced nothing is the likeliest way a grant widens by accident."
+                      "description": "An EMPTY list is refused rather than read as everything: a project that expands to no namespaces is the likeliest way a grant widens by accident."
                     },
-                    "allTenants": {
+                    "allNamespaces": {
                       "type": "boolean"
                     }
                   }

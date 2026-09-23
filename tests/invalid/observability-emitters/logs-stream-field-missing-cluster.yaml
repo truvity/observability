@@ -1,7 +1,6 @@
-# The fallback tenant is interpolated into the filter expression the
-# proxy applies to every query. `infra|prod` would not look odd in a
-# rendered filter — it would grant a second tenant. Such a name is
-# refused, never escaped.
+# A LogsQL stream filter — which is what the proxy injects — only
+# selects on stream fields. With the cluster key an ordinary field rather
+# than a stream field, every scoped log query returns nothing at all.
 
 metrics:
   destinations:
@@ -19,20 +18,15 @@ otlp:
     - name: primary
       url: https://traces.example
 tenancy:
-  env: example
-  fallbackTenant: infra|prod
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: tenancy.example.com/project
+  cluster: example-cluster
+  environment: development
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
     - kubernetes.pod_namespace
-    - env
-    - kubernetes.namespace_labels.tenancy.example.com/project
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

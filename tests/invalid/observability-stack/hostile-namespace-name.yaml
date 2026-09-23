@@ -1,0 +1,18 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# A namespace name is interpolated into a filter expression. `example-app|other-app`
+# would not look odd in the rendered filter — it would grant a second
+# namespace. Such a name is refused, never escaped.
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:example-app:deployer
+      grants:
+        - cluster: example-cluster
+          namespaces: ["example-app|other-app"]

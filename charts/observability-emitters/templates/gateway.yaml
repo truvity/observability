@@ -29,10 +29,11 @@ metadata:
 The one ClusterRole among the emitters.
 
 `k8sattributes` reads pods and namespaces cluster-wide, because the
-tenancy it stamps is the NAMESPACE's property and a namespace-scoped role
-cannot see a namespace object. The Events receiver reads events. Neither
-writes anything, and the only write in the whole role is the lease the
-replicas elect a leader with.
+namespace it stamps is resolved from the POD OBJECT of whatever sent the
+data — never from what the sender said about itself — and a
+namespace-scoped role cannot see another namespace's pods. The Events
+receiver reads events. Neither writes anything, and the only write in the
+whole role is the lease the replicas elect a leader with.
 */}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

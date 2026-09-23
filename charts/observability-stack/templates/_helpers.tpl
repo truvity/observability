@@ -138,13 +138,13 @@ TSDBStatusHandler takes its label filters from the same getCommonParams
 every query handler uses, so the principal's selector reaches it. Its
 neighbours do not take one: `/status/active_queries` and
 `/status/top_queries` return other principals' query TEXT,
-`/status/metric_names_stats` returns metric names across every tenant,
+`/status/metric_names_stats` returns metric names across every namespace,
 and `/api/v1/metadata` returns the metadata of every series in the
 store. `/status/[^/]+` was all three of those plus this one.
 */}}
 - /prometheus/api/v1/status/tsdb
 {{- /*
-Carries the store's version and nothing from any tenant. Grafana's
+Carries the store's version and nothing from any namespace. Grafana's
 Prometheus datasource asks for it to decide which dialect it is talking
 to.
 */}}
@@ -165,7 +165,7 @@ applies it ONLY by substituting a placeholder into the route it chose.
 A `targetRef` with no `query_args` forwards the request unfiltered, with
 the claim computed, correct, visible in this manifest and discarded. It
 renders identically to a working configuration and answers a
-single-tenant question identically too.
+single-namespace question identically too.
 
 The placeholder must be the WHOLE value of the argument: vmauth looks
 the value up in a map rather than replacing a substring, so
@@ -226,11 +226,11 @@ whole reach.
 This is `pkg/tenancy`'s metricsFilter, in Helm.
 */}}
 {{- define "observability-stack.filter" -}}
-{{- $env := printf "%s=%q" .labels.env .grant.env -}}
-{{- if .grant.allTenants -}}
-{{- printf "{%s}" $env -}}
+{{- $cluster := printf "%s=%q" .labels.cluster .grant.cluster -}}
+{{- if .grant.allNamespaces -}}
+{{- printf "{%s}" $cluster -}}
 {{- else -}}
-{{- printf "{%s,%s=~\"^(%s)$\"}" $env .labels.tenant (join "|" (sortAlpha .grant.tenants)) -}}
+{{- printf "{%s,%s=~\"^(%s)$\"}" $cluster .labels.namespace (join "|" (sortAlpha .grant.namespaces)) -}}
 {{- end -}}
 {{- end -}}
 
@@ -240,14 +240,15 @@ A principal's WHOLE reach, as ONE LogsQL stream filter.
 This is `pkg/tenancy`'s logsFilter, in Helm, and it differs from the
 metrics one above in three ways that are all forced.
 
-The FIELD NAMES are `tenancy.logsTenantField` and `tenancy.logsEnvField`
-rather than the label keys: vlagent can rename no field, so the log store
-carries the tenant under the name the agent produced and a filter naming
-`tenant` selects a field that does not exist — an empty result, with no
-error anywhere.
+The FIELD NAMES are `tenancy.logsClusterField` and
+`tenancy.logsNamespaceField` rather than the label keys: a label cannot
+carry a dot, and the container-log agent can rename no field, so the log
+store carries the namespace under the name that agent produces and a
+filter naming the metrics label selects a field that does not exist — an
+empty result, with no error anywhere.
 
 The NAMES ARE QUOTED, because a LogsQL word is [a-zA-Z0-9_] and a real
-field name has dots and a slash. Quoting is unconditional: a bare name
+field name has dots. Quoting is unconditional: a bare name
 that collides with a keyword or a pipe name would parse as that keyword,
 and the schema's `logFieldName` shape guarantees there is nothing inside
 the quotes to escape.
@@ -256,18 +257,18 @@ And it is ONE filter with the grants as `or` alternatives, because
 VictoriaLogs AND-s every `extra_stream_filters` argument into the query as
 its own global constraint. Two entries would not widen a principal's
 reach, they would narrow it to the intersection — and two grants naming
-two environments intersect in nothing at all. Comma binds tighter than
+two clusters intersect in nothing at all. Comma binds tighter than
 `or` inside `{...}`, so each alternative stays its own conjunction.
 */}}
 {{- define "observability-stack.logsFilter" -}}
 {{- $fields := .fields -}}
 {{- $alternatives := list -}}
 {{- range $grant := .grants -}}
-{{- $env := printf "%s=%q" ($fields.env | quote) $grant.env -}}
-{{- if $grant.allTenants -}}
-{{- $alternatives = append $alternatives $env -}}
+{{- $cluster := printf "%s=%q" ($fields.cluster | quote) $grant.cluster -}}
+{{- if $grant.allNamespaces -}}
+{{- $alternatives = append $alternatives $cluster -}}
 {{- else -}}
-{{- $alternatives = append $alternatives (printf "%s,%s=~\"^(%s)$\"" $env ($fields.tenant | quote) (join "|" (sortAlpha $grant.tenants))) -}}
+{{- $alternatives = append $alternatives (printf "%s,%s=~\"^(%s)$\"" $cluster ($fields.namespace | quote) (join "|" (sortAlpha $grant.namespaces))) -}}
 {{- end -}}
 {{- end -}}
 {{- /*

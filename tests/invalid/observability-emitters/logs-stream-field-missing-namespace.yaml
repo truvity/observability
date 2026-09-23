@@ -1,5 +1,7 @@
-# This key is what the emitters stamp AND what pkg/tenancy renders into
-# the proxy filters. Blank renders a label with no name at all.
+# The namespace key on the log path is the agent's own
+# `kubernetes.pod_namespace`, an upstream default stream field. A caller
+# who replaces the list and drops it has removed half of the scoping key
+# from every stream the agent writes.
 
 metrics:
   destinations:
@@ -17,21 +19,15 @@ otlp:
     - name: primary
       url: https://traces.example
 tenancy:
-  env: example
-  fallbackTenant: infra
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: tenancy.example.com/project
-  tenantLabel: ''
+  cluster: example-cluster
+  environment: development
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
-    - kubernetes.pod_namespace
-    - env
-    - kubernetes.namespace_labels.tenancy.example.com/project
+    - k8s.cluster.name
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

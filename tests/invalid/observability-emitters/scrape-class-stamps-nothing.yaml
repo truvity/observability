@@ -1,8 +1,8 @@
 # `mergeOverwrite` replaces a list wholesale, so a caller who adds one
-# scrape class of their own replaces the tenancy one. A replacement that
-# sets attachMetadata but no relabel rules attaches the namespace's labels
-# and then writes none of them: every series carries one dimension, and
-# the grants select on a dimension that is not there.
+# scrape class of their own replaces the stamping one. A replacement that
+# is still the default class but carries no relabel rules stamps neither
+# half of the scoping key: every series from every scrape object this
+# chart does not own matches no grant.
 
 metrics:
   destinations:
@@ -10,10 +10,8 @@ metrics:
     url: https://metrics.example/api/v1/write
   spec:
     scrapeClasses:
-    - name: tenancy
-      default: true
-      attachMetadata:
-        namespace: true
+    - default: true
+      name: tenancy
 otlp:
   destinations:
     logs:
@@ -26,20 +24,16 @@ otlp:
     - name: primary
       url: https://traces.example
 tenancy:
-  env: example
-  fallbackTenant: infra
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: tenancy.example.com/project
+  cluster: example-cluster
+  environment: development
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
     - kubernetes.pod_namespace
-    - env
-    - kubernetes.namespace_labels.tenancy.example.com/project
+    - k8s.cluster.name
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

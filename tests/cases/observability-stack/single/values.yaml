@@ -20,21 +20,19 @@ ha: false
 tenancy:
   issuerUrl: https://issuer.example
   claimName: groups
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   # The trace store is on by default, and this proxy cannot scope trace
   # reads: vmauth applies a grant by substituting it into the route, and
   # VictoriaTraces' Jaeger and Tempo select APIs accept no query
   # argument to substitute it into. So every principal below reads every
-  # tenant's spans, and the chart refuses to render until that is
+  # namespace's spans on every cluster, and the chart refuses to render until that is
   # written down. docs/safety.md has the mechanism; the alternative is
   # `victoria-traces-single.enabled: false`.
   allowUnfilteredTraceReads: true
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
   writers:
     - name: metrics-agent
       tokenSecret:

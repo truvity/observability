@@ -126,7 +126,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Twenty-two, each with a fixture under
+Twenty-three, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -142,17 +142,20 @@ for its one reason and no other.
 | A `-license` or `-licenseFile` flag | The same boundary from the other side. This chart wraps the community edition; an install that needs a licence flag is an install this chart is the wrong shape for. |
 | A vmauth tag below v1.152.0 | `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0 through v1.151.x matched `match_claims` values UNANCHORED (GHSA-f99m-22fh-qw96) — `admin` also matched `not-admin-really`, in the exact mechanism that decides which user a token is. |
 | An `*AuthKey` flag on a store | An authKey does not add to `-httpAuth.*`, it REPLACES it for those endpoints: basic auth is never checked, and the key travels in the query string and therefore into every access log. |
-| A tenant or environment name outside the plain-name shape | The name is interpolated into a filter expression. `example-app\|prod` does not look odd in the rendered filter — it grants a second tenant. Refused, never escaped. |
+| A cluster or namespace name outside the plain-name shape | The name is interpolated into a filter expression. `example-app\|other-app` does not look odd in the rendered filter — it grants a second namespace. Refused, never escaped. |
+| A log key carrying stream-filter syntax | The key is interpolated into the filter exactly as a name is, so a quote or a brace ends the filter early and a second alternative opens beside it — a grant wider than the one somebody wrote. Refused, never escaped. |
+| A metrics key that is not a Prometheus label name | `k8s.namespace.name` is the convention's spelling and exactly what a label cannot be: the remote-write exporter writes it with underscores, so a filter naming the dotted form selects a label no series has. Refused by the schema. |
+| The two keys of one signal set to the same name | One name for both dimensions is one dimension: the filter selects on one of them and ignores the other, and every grant is wider or narrower than written. |
 | A mirror that disagrees with `interval` | Deduplication keeps one sample per window: wider than the scrape interval it discards good samples, narrower it deduplicates nothing. Neither announces itself. |
 | A store whose credentials come from another Secret | The proxy authenticates to the stores with `storeCredentials`; a store reading a different Secret answers every query with 401, and the proxy is the only thing that ever sees it. |
 | `ha: true` with fewer than two zones | No store here replicates across a zone. An install labelled highly available with one zone is the single-zone install with a label that stops anyone looking at it again. |
 | vmalert with no notifier at all | Every rule evaluates and the result goes nowhere, which is indistinguishable from an estate with no problems. |
-| A Grafana datasource without `oauthPassThru` | Every query reaches the proxy as GRAFANA's identity rather than the signed-in person's, so the proxy scopes nothing and a viewer sees every tenant. It looks exactly like a working dashboard. |
+| A Grafana datasource without `oauthPassThru` | Every query reaches the proxy as GRAFANA's identity rather than the signed-in person's, so the proxy scopes nothing and a viewer sees every namespace on every cluster. It looks exactly like a working dashboard. |
 | A Grafana datasource without a `version` | With more than one replica Grafana only updates a provisioned datasource whose version is at least the stored one, so an edit without a bump lands on a fresh install and nowhere else. |
 | Grafana with alerting enabled | A second alerting engine, with its own rules, silences and notification policies: a second place to look at three in the morning, and the one nobody remembers. |
 | Grafana without an admin Secret | The Grafana chart then generates a random admin password on every render: `helm upgrade` rotates it silently, and the release's manifest differs from itself when nothing changed. |
 | Grafana with `use_refresh_token` off, `role_attribute_strict` off, `locking_attempt_timeout_sec` outside 60–300, or a dashboard `updateIntervalSeconds` of 10 or less | Four defaults that leave a Grafana which looks fine: a session that outlives its token and 401s on every query, an unmapped person given the default role, a second replica crash-looping through a database migration, and dashboards that never update because a ConfigMap projection is a symlink swap that fires no watch event. |
-| `vmauth.extraArgs.mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` | vmauth drops a client query argument that clashes with one the route already set, and that drop is the only thing stopping a reader sending its own filter beside the enforced one. `mergeQueryArgs` exempts an argument from it. vmselect ORs each `extra_filters` as an alternative, so a caller adding an empty one reads every tenant — with the claim, the route and the rendered filter all still exactly right. |
+| `vmauth.extraArgs.mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` | vmauth drops a client query argument that clashes with one the route already set, and that drop is the only thing stopping a reader sending its own filter beside the enforced one. `mergeQueryArgs` exempts an argument from it. vmselect ORs each `extra_filters` as an alternative, so a caller adding an empty one reads every cluster and namespace — with the claim, the route and the rendered filter all still exactly right. |
 | A trace store enabled alongside `principals`, without `tenancy.allowUnfilteredTraceReads` | The proxy enforces a grant by substituting it into the route it forwards on, and VictoriaTraces' select APIs accept no query argument to substitute one into. The trace route would sit between two scoped routes, look exactly like them, and scope nothing. |
 | A backup with no destination or no credentials | It runs, finds nothing to do and reports success. |
 
@@ -161,8 +164,8 @@ for its one reason and no other.
 **This is the failure this whole design nearly shipped, so it is written
 out at length.**
 
-The proxy's job is to turn "this person may read tenant `example-app` in
-`devel`" into something the store applies. It does that in two halves,
+The proxy's job is to turn "this person may read namespace `example-app`
+on `example-cluster`" into something the store applies. It does that in two halves,
 and only one of them is obvious.
 
 The obvious half is the claim. Each principal's `VMUser` carries a
@@ -189,7 +192,7 @@ claim was verified, selected, computed and correct, and it is discarded.
 The request goes to the store with no filter on it.
 
 So for a while every principal who passed JWT verification read every
-tenant's metrics and every tenant's logs, and the manifest said
+namespace's metrics and logs on every cluster, and the manifest said
 otherwise on the same object.
 
 Every route this chart renders now carries its filter argument, and
@@ -214,7 +217,7 @@ function:
   already set; that is what stops a reader sending its own
   `extra_filters` alongside the enforced one. `-mergeQueryArgs` exempts
   an argument from that rule, and vmselect ORs each `extra_filters` as
-  an alternative — so a caller adding an empty one reads every tenant,
+  an alternative — so a caller adding an empty one reads everything,
   with the claim, the route and the rendered filter all still exactly
   right. The chart refuses the flag naming either filter argument.
 - **Not every endpoint under a route reads the argument.** The route is
@@ -223,11 +226,11 @@ function:
   is why the metrics route names `/api/v1/status/tsdb` rather than
   `/api/v1/status/[^/]+`: `/status/active_queries` and
   `/status/top_queries` return other principals' query text,
-  `/status/metric_names_stats` returns metric names across every tenant,
-  and `/api/v1/metadata` returns the metadata of every series in the
-  store. None of the four takes a filter. `/status/buildinfo` does not
-  either and is kept, because it carries the store's version and nothing
-  from any tenant.
+  `/status/metric_names_stats` returns metric names across every
+  namespace, and `/api/v1/metadata` returns the metadata of every series
+  in the store. None of the four takes a filter. `/status/buildinfo` does
+  not either and is kept, because it carries the store's version and
+  nothing from any namespace.
 
 #### What the proxy cannot defend against, and who has to
 
@@ -267,8 +270,8 @@ different claim in a different place.
 Nothing about the broken version looked broken. The render succeeded.
 The install succeeded. The proxy was healthy. Every principal could sign
 in and query, and every query returned data. **And a query for the one
-tenant the reviewer had data for returned exactly the rows it would have
-returned if the filter had been applied** — because the filter that was
+namespace the reviewer had data for returned exactly the rows it would
+have returned if the filter had been applied** — because the filter that was
 not applied would not have removed any of them.
 
 A test that renders one principal and asserts the claim is correct
@@ -282,10 +285,10 @@ asking one of two questions:
   `pkg/tenancy` and `tests/agreement_test.go`, and it is a property of
   the output rather than of the input, because a route is only enforced
   where it is emitted.
-- **behaviourally**, write a second tenant's data, query as a principal
-  entitled to the first, and assert the second tenant's rows are
-  **absent**. An authorization test with one tenant in it does not test
-  authorization; it tests that the query works.
+- **behaviourally**, write a second namespace's data, query as a
+  principal entitled to the first, and assert the second namespace's rows
+  are **absent**. An authorization test with one namespace in it does
+  not test authorization; it tests that the query works.
 
 The general shape, worth carrying out of this repository: **a proxy that
 computes an authorization decision and then does not apply it is
@@ -308,8 +311,8 @@ appended to, so a proxy cannot narrow them either.
 The tenant headers are a real mechanism, but a different tenancy model:
 they select one of the store's own tenant ids, and this design scopes by
 *label* precisely so a fleet-wide question stays answerable across
-tenants. Nothing writes per-tenant account ids on the way in, so there
-would be nothing for them to select.
+clusters and namespaces. Nothing writes per-namespace account ids on the
+way in, so there would be nothing for them to select.
 
 So trace reads through this proxy cannot be scoped to a principal, and
 the chart says so rather than rendering a route that looks like the two
@@ -317,7 +320,7 @@ beside it. With a trace store and `principals` both set it refuses to
 render until `tenancy.allowUnfilteredTraceReads` is `true`, and the
 library refuses the same way unless `AllowUnfilteredTraceReads` is set.
 The name is the point: what it admits is that **every principal who can
-reach the proxy reads every tenant's spans.** It admits the trace route
+reach the proxy reads every namespace's spans on every cluster.** It admits the trace route
 and nothing else — no value of it relaxes the metrics or logs route.
 
 An estate that cannot accept that turns the trace store off. An estate
@@ -371,27 +374,30 @@ stop working in a patch release.
 
 ## The refusals: `observability-emitters`
 
-Twenty-seven, each with a fixture under
+Thirty, each with a fixture under
 `tests/invalid/observability-emitters/` that is otherwise valid, so it
 fails for its one reason and no other.
 
 They divide into four kinds, and the first kind is the reason the chart
 exists.
 
-### Tenancy, which is a security property and not a convenience
+### The scoping key, which is a security property and not a convenience
 
 | Refusal | The failure it prevents |
 |---|---|
-| `metrics.spec.overrideHonorLabels: false` | With honor labels not overridden, a label a **target exports itself** wins over the label the agent stamps. Any workload that exposes a `tenant` metric label then chooses its own tenant: it can write into another team's data, or hide its own from the people responsible for it. The render, the sync and the dashboards all look correct. |
-| A default scrape class that writes neither label | `mergeOverwrite` replaces a list wholesale, so a caller who adds one scrape class of their own replaces the tenancy one — and a replacement that happens to set `attachMetadata` would pass every other check while stamping nothing at all. The rules are checked, not just their container. |
-| A default scrape class without `attachMetadata.namespace` | A namespace's labels are not part of Kubernetes service discovery unless they are asked for. Without it `__meta_kubernetes_namespace_label_*` is simply absent, every tenancy rule matches nothing, and the whole cluster collapses onto `fallbackTenant` — a single-tenant install rendered to look like a multi-tenant one. |
-| `tenancy.env` empty | Telemetry labelled `env=""` matches no grant the proxy injects. It is stored, it is paid for, and it is invisible to everyone who might have acted on it. |
-| `tenancy.fallbackTenant` empty | The same, for every namespace nobody has labelled yet — which on any real estate is the namespaces added most recently. |
-| `tenancy.namespaceLabels.project` empty | Nothing reads a tenant off a namespace. Everything falls through to the fallback. |
-| `project` and `layer` set to the same key | They are consulted in order, so the second never applies and one of the two rules somebody wrote does nothing. |
-| A blank or non-plain `tenantLabel` / `envLabel` | The key the emitters stamp is the key `pkg/tenancy` filters on. A mismatch is not an error — it is an empty result, read as "this tenant produces nothing". A name outside the plain shape is interpolated into a filter expression, where `\|` or `.*` widens the grant. |
-| `tenantLabel` equal to `envLabel` | One relabel rule overwrites the other, so every series carries one dimension and the grants select on a dimension that is not there. |
-| A `fallbackTenant` outside the plain-name shape | `infra\|prod` does not look odd in a rendered filter — it grants a second tenant. Refused, never escaped. |
+| `metrics.spec.overrideHonorLabels: false` | With honor labels not overridden, a label a **target exports itself** wins over the label the agent stamps. Any workload that exposes its own `k8s_namespace_name` or `k8s_cluster_name` label then chooses where its series are filed: it can write into another team's data, or hide its own from the people responsible for it. The render, the sync and the dashboards all look correct. |
+| A default scrape class that writes neither key | `mergeOverwrite` replaces a list wholesale, so a caller who adds one scrape class of their own replaces the stamping one — and a replacement that is still the default class passes every other check while stamping nothing at all. The rules are checked for the two keys, not just their container. |
+| `tenancy.cluster` empty | The cluster is half of the scoping key. Telemetry stamped with a cluster called nothing matches no grant the proxy injects: stored, paid for, and invisible to everyone who might have acted on it. |
+| `tenancy.environment` empty | The tier is never a key, so a blank one selects nothing wrongly. It is refused because a `deployment.environment.name` of `""` on every series is a dimension that exists and says nothing, and nobody notices until the first dashboard that groups by it. |
+| Either outside the plain-name shape | `example-cluster\|other-cluster` does not look odd in a rendered filter — it grants a second cluster. Refused, never escaped. The tier is held to the same shape because it is stamped into the same places. |
+
+There is no fallback value and no namespace-label key any more, and no
+refusal for an unlabelled namespace: the namespace is the key, a
+namespace always has a name, and the emitters read it from service
+discovery or from the pod object rather than from a label somebody had
+to remember. What used to be a tenant — a project, a team — is a
+derivation from a name to a namespace list held with whoever writes the
+grants.
 
 ### Replication, which is the writer's job
 
@@ -417,11 +423,11 @@ exists.
 
 | Refusal | The failure it prevents |
 |---|---|
-| `tenancy.logsTenantField` or `tenancy.logsEnvField` empty with principals set (`observability-stack`) | The proxy would filter logs on a field the streams do not have. Every tenant-scoped log query returns an empty result with no error, and reads as "my service logged nothing". |
-| A log field name carrying stream-filter syntax (`observability-stack`) | The name is interpolated into the filter, so a quote or a brace ends the filter early and a second alternative opens beside it — a grant wider than the one somebody wrote. Refused, never escaped. |
+| The log agent's `extraFields` not a JSON object, or disagreeing with `tenancy` | It is how the container-log agent stamps the cluster and the tier on every line, and Helm cannot compute a subchart's values, so it is written twice and checked. A wrong cluster here files every container log on the cluster under another one, where no grant for this one reaches it. |
 | `otlp.streamFields` empty | No `VL-Stream-Fields` header is sent, and with none VictoriaLogs treats EVERY resource attribute as a stream field. An OpenTelemetry SDK's resource carries the pod's UID and its start time, so every restart of every workload mints a stream that is never written to again. The store does not fail; it degrades, over weeks, in a way that reads as growth. |
 | A stream field outside the chart's list | A field that changes per request — an address, a user id, a trace id — creates a stream per value. It is the vendor's own named way to wreck this store, and it does not recover on its own. The list is the chart's and not a value, because an allow-list a caller can extend is a comment. |
-| The tenant or env key missing from either stream-field list | A stream filter, which is what the proxy injects, only selects on stream fields. Every tenant-scoped log query returns nothing at all. |
+| `k8s.cluster.name` or `kubernetes.pod_namespace` missing from either writer's stream fields | A stream filter, which is what the proxy injects, only selects on stream fields. A key that is an ordinary field is a key every scoped log query misses — for that writer's half of the store, while the other writer's half still answers, which is the more confusing shape. |
+| The Helm release label as a stream field | It is constant per pod, but a stream field is a cardinality decision, and the release is navigation. The allow-list is the chart's and does not include it. |
 | A log write path other than `/insert/native` | The only path that accepts that protocol. A wrong one answers 404, and vlagent treats 404 as a permanent rejection and DROPS the block rather than retrying it. The loss is silent, unrecoverable, and proportional to how long it takes somebody to look. |
 
 ### And the rest
@@ -433,7 +439,7 @@ exists.
 | `writeCredentials.secretName` empty | The stores answer 401 to every write, each agent buffers until full, then drops the oldest, with every pod Ready throughout. |
 | A log destination with no credential | The same, for the one emitter whose credential is upstream's shape rather than this chart's. |
 | `podMonitor.vm: true` on the log agent | It renders a `VMPodScrape` instead of a `PodMonitor` — see below. |
-| A mirror that disagrees | `interval` against the agent's scrape interval, and `tenancy.env` against the log agent's `extraFields`. Helm evaluates a subchart's values before any template runs, so some values have to be written twice; two numbers that are supposed to be equal stop being equal the first time somebody changes one. |
+| A mirror that disagrees | `interval` against the agent's scrape interval, and `tenancy.cluster` / `tenancy.environment` against the log agent's `extraFields`. Helm evaluates a subchart's values before any template runs, so some values have to be written twice; two numbers that are supposed to be equal stop being equal the first time somebody changes one. |
 | An `enterprise` image tag, or a licence key | An Enterprise image without a key RUNS, refusing only the Enterprise features, so the estate is in breach with everything apparently healthy. |
 
 ## Scrape objects are always the Prometheus Operator kinds
@@ -456,80 +462,126 @@ refused true, and the metrics agent runs with
 `VMServiceScrape` for the agent itself — the chart writes a `PodMonitor`
 instead.
 
-## The tenant on the log path is not called `tenant`
+## Two writers per signal, and which one yields
 
-This is the sharpest edge in the chart, and it is upstream's rather than
-ours.
+One name per dimension per signal is the invariant, and on two signals
+two different writers share one store. Each pair collides once, and each
+collision is closed the same way: the writer that can be told what to
+call a thing matches the one that cannot.
 
-vlagent has **no way to rename a field**. A namespace label reaches
-VictoriaLogs as `kubernetes.namespace_labels.<key>`, and there is no flag,
-no header and no ingest pipeline that turns it into `tenant`. So on the
-log path the tenancy stream field carries that long name, and the proxy
-has to filter on it. A filter on `tenant` against those streams matches
-nothing, returns an empty result, and reads as "this namespace writes no
-logs".
+### Logs: the container-log agent cannot rename a field
 
-The chart derives the name and then requires it to appear in the log
-agent's own `streamFields`, refusing to render until it does. That is
-deliberate: the chart could compute the value silently, but the value has
-to travel out of the chart and into the proxy's configuration, and a value
-nobody writes is a value nobody carries.
+vlagent has **no way to rename a field**. Its levers are
+`-kubernetesCollector.extraFields`, `.ignoreFields`, `.streamFields` and
+the `include*` toggles; none renames. So the namespace reaches the log
+store under the agent's own spelling, `kubernetes.pod_namespace`, and
+no other — and that is the one place in the whole vocabulary where the
+name is not OpenTelemetry's.
 
-Three things this does **not** fix, stated because discovering them
-during an incident is worse:
+The OTLP gateway's log pipeline can call an attribute anything. So it
+yields: `transform/tenancy` copies `k8s.namespace.name` — which it keeps
+too — into `kubernetes.pod_namespace` on the log pipeline alone, and
+`VL-Stream-Fields` names it. One store, one spelling for the key, and
+the ugly name is confined to the one signal that forced it.
 
-- **There is no fallback tenant on the log path.** A namespace with no
-  project label produces log streams with no tenancy field at all. They
-  are stored and are invisible to every tenant-scoped query. The metrics
-  and OTLP paths have `tenancy.fallbackTenant`; vlagent can express no
-  such thing. Label every namespace.
-- **There is no layer fallback either**, for the same reason. Only the
-  project label reaches the log store's streams.
-- **The two log writers do not name the tenant the same way.** The log
-  agent produces `kubernetes.namespace_labels.<key>`, as above. The OTLP
-  gateway sets its own resource attribute and declares it in
-  `VL-Stream-Fields`, so on that path the stream field is
-  `tenancy.tenantLabel` — the name the log agent cannot produce. One
-  store therefore holds streams keyed two ways, and a filter can name one
-  of them. An estate running both emitters against one log store should
-  expect the OTLP half to be invisible to a filter written for the agent
-  half, and the other way round. Naming them the same thing is a change
-  to the gateway's log pipeline, which is free to call its attribute
-  anything (the metrics and traces pipelines are not: a Prometheus label
-  cannot carry a dot or a slash). It is not done here.
+Cluster and tier need no such step. Both are constants for the cluster,
+which is exactly what a static extra field can carry, so the agent adds
+`k8s.cluster.name` and `deployment.environment.name` under the exact
+conventional names through `extraFields` and the two writers agree for
+free. Helm cannot compute a subchart's values, so that string is a
+mirror of `tenancy` and the chart refuses it when it disagrees or is not
+a JSON object.
+
+What this closes, compared with the previous design: the field derived
+from an estate's namespace label (`kubernetes.namespace_labels.<key>`)
+is gone entirely, the read side no longer needs to be told a field name
+with no safe default, and the gap where a namespace with no label
+produced log streams nobody could select cannot occur — a namespace
+always has a name.
+
+### Metrics: a resource attribute is not a label
+
+Scraped series carry the namespace already, as `namespace`, from
+service discovery; the metrics agent relabels `k8s_namespace_name` from
+`__meta_kubernetes_namespace` beside it and stamps the cluster and the
+tier statically. `namespace` stays, for every pre-built dashboard and
+rule that reads it.
+
+OTLP-derived metrics reach the same store through the gateway's
+Prometheus remote-write exporter, and that exporter **does not promote a
+resource attribute to a label unless configured to**: the resource goes
+onto a `target_info` series and the metric itself arrives carrying only
+its datapoint attributes. So `k8s.namespace.name`, set correctly on the
+resource by `k8sattributes`, would have reached the store on
+`target_info` and nowhere else, and every scoped query would have missed
+every OTLP-derived series. The exporter is therefore told to promote
+exactly three attributes — `k8s.cluster.name`, `k8s.namespace.name`,
+`deployment.environment.name` — through `resource_constant_labels`,
+which spells them with underscores on the way out; that is how they
+match the agent's labels and the proxy's filters. Only those three: the
+rest of the resource carries the pod UID, and a label that changes per
+restart is a series that changes per restart. Verified against the
+collector binary the chart pins rather than read from its
+documentation, because the option is one of two the documentation
+lists and the other is deprecated.
+
+### The application does not get a vote
+
+On metrics, `overrideHonorLabels` makes the agent's stamp replace a
+target's own, and the `exported_(…)` copy the agent would otherwise keep
+of a conflicting label is dropped for the three names, so a target that
+exports `k8s_namespace_name` neither wins nor leaves a second label
+somebody will eventually query by.
+
+On the gateway the order of the processors is the property.
+`k8sattributes` writes an attribute **only when it is absent or empty**
+— so a resource that arrived already carrying `k8s.namespace.name` would
+keep the application's claim, and the namespace is the key. So
+`transform/disown` runs first and deletes both namespace spellings;
+`k8sattributes` then writes the namespace from the pod object it
+resolved the sender to; and `transform/tenancy` sets the cluster and the
+tier with `set`, which overwrites whatever an SDK put there. The pod is
+resolved from the **connection** first, because the pod-UID and pod-IP
+resource attributes the other two sources read are the sender's own
+claim about itself; they remain as fallbacks for a sender whose address
+resolves to no pod, such as a host-network pod.
 
 ### What the read side does about it
 
-`pkg/tenancy` and `charts/observability-stack` take the log path's field
-names as **required input** — `logsTenantField` and `logsEnvField` on the
-chart, `LogsTenantField` and `LogsEnvField` on the `Config` — and refuse
-to render a filter until they are stated. There is no default, and in
-particular no default equal to the metrics label: every default anyone
-would write here is correct on one estate and silently wrong on the next.
+`pkg/tenancy` and `charts/observability-stack` take the keys as inputs
+**with defaults** — `clusterLabel` / `namespaceLabel` and
+`logsClusterField` / `logsNamespaceField` on the chart, the same names
+on the `Config` — and the defaults are what `charts/observability-emitters`
+stamps. `tests/agreement_test.go` reads the names back out of a rendered
+library filter and finds each one in the rendered manifest of every
+writer that stamps that signal. An estate whose collectors were not
+built here sets them; nobody else touches them.
 
 Two consequences of the shape, both of which the renderers handle and
 neither of which is obvious from the metrics path.
 
-**The field name is quoted, and held to its own shape.** A LogsQL word is
-`[a-zA-Z0-9_]` and nothing else, so a real field name — which carries dots,
-and a slash when the label key has a domain prefix — is not a word and has
-to be quoted to be read as one name. It is therefore held to a *field*
-shape, `^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`, rather than to the plain-name
-shape a tenant is held to. The tenant rule is not loosened to let a field
-name through: a tenant name goes inside the alternation, where a `.` is a
-metacharacter. A field name carrying stream-filter syntax — a quote, a
-brace, a comma, an equals sign, a `|`, a colon, a space — is refused
-rather than escaped, for the same reason a tenant name is.
+**The log field name is quoted, and held to its own shape.** A LogsQL
+word is `[a-zA-Z0-9_]` and nothing else, so a real field name — which
+carries dots — is not a word and has to be quoted to be read as one
+name. It is therefore held to a *field* shape,
+`^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`, rather than to the plain-name shape a
+namespace is held to. The namespace rule is not loosened to let a field
+name through: a namespace name goes inside the alternation, where a `.`
+is a metacharacter. A field name carrying stream-filter syntax — a
+quote, a brace, a comma, an equals sign, a `|`, a colon, a space — is
+refused rather than escaped, for the same reason a namespace name is.
+A metrics key is held to the Prometheus label shape instead, because
+the defaults carry underscores and a label carries no dot.
 
 **A principal gets one stream filter, not one per grant.** VictoriaLogs
 AND-s every `extra_stream_filters` argument it receives into the query as
 its own global constraint, so a second entry does not widen a principal's
 reach: it narrows it to the intersection, and two grants naming two
-environments intersect in nothing at all. That is an empty screen for
+clusters intersect in nothing at all. That is an empty screen for
 exactly the people with the most access. So the grants are rendered as
 `or` alternatives inside a single filter, where a comma still binds
-tighter than `or` and no grant can borrow another grant's tenants. The
-metrics path takes the opposite convention — vmselect OR-s its
+tighter than `or` and no grant can borrow another grant's namespaces.
+The metrics path takes the opposite convention — vmselect OR-s its
 `extra_filters` — which is why the two claim fields are neither the same
 list nor the same length, and why a test asserts they are not.
 
@@ -558,18 +610,12 @@ is a Deployment where at most one replica has a queue. A queue on an
 emptyDir is not a queue: it is a buffer discarded exactly when it is
 holding something.
 
-The processor order is a second, quieter thing. `k8sattributes` resolves
-the sending pod and copies the namespace's labels onto the resource under
-names of this chart's choosing; `transform/tenancy` then writes `tenant`
-and `env` from them with `set`, which overwrites whatever an SDK put
-there, and deletes the intermediates.
-
-The obvious version — letting `k8sattributes` write `tenant` directly —
-is what that avoids. That processor leaves an attribute that is already
-present alone, so an SDK that set its own `tenant` would keep it, and the
-stored label would be the application's claim about itself. The two-step
-renders identically for a well-behaved application and differently for the
-one that matters.
+The processor order is a second, quieter thing, and it is written up
+above under "The application does not get a vote": `transform/disown`
+strips the namespace a sender claimed, `k8sattributes` resolves the pod
+and writes the real one, `transform/tenancy` sets the cluster and the
+tier. The three-step renders identically for a well-behaved application
+and differently for the one that matters.
 
 One more that is easy to get backwards: the **Prometheus remote-write
 exporter has no `sending_queue`** and cannot use the `file_storage`

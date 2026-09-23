@@ -1,0 +1,13 @@
+# One name for both dimensions is one dimension. A metrics filter with
+# `k8s_namespace_name` for the cluster AND the namespace selects on one
+# of them and ignores the other, so every grant is wider or narrower than
+# written — and the render, the proxy and every single-namespace query
+# look right.
+tenancy:
+  issuerUrl: https://issuer.example
+  clusterLabel: k8s_namespace_name
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

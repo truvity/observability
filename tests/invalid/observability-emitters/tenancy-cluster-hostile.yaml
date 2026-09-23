@@ -1,16 +1,12 @@
-# THE security refusal. With honor labels not overridden, a label a
-# target exports itself wins over the label the agent stamps — so any
-# workload that exposes its own `k8s_namespace_name` or `k8s_cluster_name`
-# label chooses where its series are filed. It can write into another
-# team's data or hide its own, and the render, the sync and the dashboards
-# all look correct.
+# The cluster name is interpolated into the filter expression the proxy
+# applies to every query. `example-cluster|other-cluster` would not look
+# odd in a rendered filter — it would grant a second cluster. Such a name
+# is refused, never escaped.
 
 metrics:
   destinations:
   - name: primary
     url: https://metrics.example/api/v1/write
-  spec:
-    overrideHonorLabels: false
 otlp:
   destinations:
     logs:
@@ -23,7 +19,7 @@ otlp:
     - name: primary
       url: https://traces.example
 tenancy:
-  cluster: example-cluster
+  cluster: example-cluster|other-cluster
   environment: development
 victoria-logs-collector:
   collector:
