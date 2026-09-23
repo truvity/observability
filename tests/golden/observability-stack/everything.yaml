@@ -2653,9 +2653,9 @@ spec:
     defaultVMAccessClaim:
       metricsExtraFilters:
         - '{stage="devel"}'
-        - '{stage="prod",owner=~"^(dms|url-shortener)$"}'
+        - '{stage="prod",owner=~"^(example-app|other-app)$"}'
       logsExtraStreamFilters:
-        - _stream:{"stage"="devel" or "stage"="prod","kubernetes.namespace_labels.tenancy.example.com/owner"=~"^(dms|url-shortener)$"}
+        - _stream:{"stage"="devel" or "stage"="prod","kubernetes.namespace_labels.tenancy.example.com/owner"=~"^(example-app|other-app)$"}
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500

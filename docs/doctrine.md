@@ -240,6 +240,26 @@ Grafana and its VictoriaMetrics data source plugin are AGPL-3.0. Running
 them unmodified is fine; this repository references them by name and
 never vendors their code into an MIT-licensed tree.
 
+## Examples are invented, not borrowed
+
+Every tenant, group, namespace and hostname in this repository is made up:
+`example-app`, `other-app`, `example:k8s:viewer`, `tenancy.example.com`.
+None of them names anything that exists anywhere.
+
+This is not tidiness. A component published for anyone to install is read
+by people who do not work where it was written, and an example borrowed
+from the estate that happened to build it tells them something about that
+estate while teaching them nothing about the chart. The leak canary
+catches an account id, a token or a secret path; it cannot catch a
+plausible-looking name, because a plausible-looking name is exactly what
+an example is supposed to be. So the rule is the review's to hold: if a
+reader could learn from an example that some particular system exists,
+the example is wrong.
+
+The same applies to a name that is merely a habit. An internal shorthand
+reads as generic to the person who types it every day and as a proper
+noun to everybody else.
+
 ## Refusals over defaults
 
 Where a wrong value would be silently harmful, the chart refuses rather

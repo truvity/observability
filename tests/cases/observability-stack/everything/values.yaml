@@ -49,7 +49,7 @@ tenancy:
     - group: example:k8s:viewer
       grants:
         - env: prod
-          tenants: [dms, url-shortener]
+          tenants: [example-app, other-app]
         - env: devel
           allTenants: true
   writers:

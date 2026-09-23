@@ -282,13 +282,13 @@ func TestTheRefusalExplainsWhyTheLogPathIsDifferent(t *testing.T) {
 // reach the renderer.
 func TestHostileNamesAreRefused(t *testing.T) {
 	hostile := []string{
-		"dms|url-shortener", // alternation: would grant a second tenant
+		"example-app|other-app", // alternation: would grant a second tenant
 		".*",                // would grant every tenant
-		"dms)|(.*",          // would close the group and open a new one
-		"dms$|^",            // would defeat the anchors
+		"example-app)|(.*",          // would close the group and open a new one
+		"example-app$|^",            // would defeat the anchors
 		"DMS",               // uppercase is not the label shape
-		"dms ",              // trailing space
-		"-dms",              // must start alphanumeric
+		"example-app ",              // trailing space
+		"-example-app",              // must start alphanumeric
 		"",                  // empty
 	}
 
@@ -308,7 +308,7 @@ func TestHostileNamesAreRefused(t *testing.T) {
 			c := base()
 			c.Principals = []tenancy.Principal{{
 				Group:  "g",
-				Grants: []tenancy.Grant{{Env: name, Tenants: []string{"dms"}}},
+				Grants: []tenancy.Grant{{Env: name, Tenants: []string{"example-app"}}},
 			}}
 			require.Error(t, c.Validate(), "an env named %q must be refused", name)
 		})
@@ -321,7 +321,7 @@ func TestHostileNameNeverReachesAFilter(t *testing.T) {
 	c := base()
 	_, err := c.RenderClaim(tenancy.Principal{
 		Group:  "g",
-		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"dms)|(.*"}}},
+		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example-app)|(.*"}}},
 	})
 	require.Error(t, err)
 }
@@ -339,7 +339,7 @@ func TestRefusals(t *testing.T) {
 		},
 		"allTenants and a list together": {
 			mutate: func(c *tenancy.Config) {
-				c.Principals[0].Grants = []tenancy.Grant{{Env: "devel", AllTenants: true, Tenants: []string{"dms"}}}
+				c.Principals[0].Grants = []tenancy.Grant{{Env: "devel", AllTenants: true, Tenants: []string{"example-app"}}}
 			},
 			want: "One of them is wrong",
 		},
@@ -360,15 +360,15 @@ func TestRefusals(t *testing.T) {
 		"the same env granted twice to one principal": {
 			mutate: func(c *tenancy.Config) {
 				c.Principals[0].Grants = []tenancy.Grant{
-					{Env: "devel", Tenants: []string{"dms"}},
-					{Env: "devel", Tenants: []string{"url-shortener"}},
+					{Env: "devel", Tenants: []string{"example-app"}},
+					{Env: "devel", Tenants: []string{"other-app"}},
 				}
 			},
 			want: "granted twice",
 		},
 		"a tenant listed twice": {
 			mutate: func(c *tenancy.Config) {
-				c.Principals[0].Grants = []tenancy.Grant{{Env: "devel", Tenants: []string{"dms", "dms"}}}
+				c.Principals[0].Grants = []tenancy.Grant{{Env: "devel", Tenants: []string{"example-app", "example-app"}}}
 			},
 			want: "listed twice",
 		},
@@ -402,7 +402,7 @@ func TestValidateReportsEveryProblem(t *testing.T) {
 		Group: "g",
 		Grants: []tenancy.Grant{
 			{Env: "devel", Tenants: []string{"BAD"}},
-			{Env: "PROD", Tenants: []string{"dms"}},
+			{Env: "PROD", Tenants: []string{"example-app"}},
 		},
 	}}
 
@@ -421,8 +421,8 @@ func TestVMAuthConfig(t *testing.T) {
 	// caller has said so. See TestTracesRouteIsRefusedUntilItIsAskedFor.
 	c.AllowUnfilteredTraceReads = true
 	c.Principals = append(c.Principals, tenancy.Principal{
-		Group:  "example:dms:deployer",
-		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"dms"}}},
+		Group:  "example:example-app:deployer",
+		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example-app"}}},
 	})
 
 	cfg, err := c.RenderVMAuth("https://issuer.example")
@@ -436,7 +436,7 @@ func TestVMAuthConfig(t *testing.T) {
 
 	// The whole point, asserted: two principals, two different reaches.
 	assert.Equal(t, []string{`{env="devel"}`}, viewer.JWT.DefaultVMAccess.MetricsExtraFilters)
-	assert.Equal(t, []string{`{env="devel",tenant=~"^(dms)$"}`}, deployer.JWT.DefaultVMAccess.MetricsExtraFilters)
+	assert.Equal(t, []string{`{env="devel",tenant=~"^(example-app)$"}`}, deployer.JWT.DefaultVMAccess.MetricsExtraFilters)
 
 	assert.Equal(t, "first_available", viewer.LoadBalancingPol,
 		"a read balanced onto the replica still replaying its buffer returns a gap, and a gap reads as an outage")
@@ -495,15 +495,15 @@ func TestVMAuthRequiresItsInputs(t *testing.T) {
 func TestRenderDoesNotMutateItsInput(t *testing.T) {
 	c := base()
 	c.Principals[0].Grants = []tenancy.Grant{
-		{Env: "prod", Tenants: []string{"url-shortener", "dms"}},
-		{Env: "devel", Tenants: []string{"dms"}},
+		{Env: "prod", Tenants: []string{"other-app", "example-app"}},
+		{Env: "devel", Tenants: []string{"example-app"}},
 	}
 
 	_, err := c.RenderClaim(c.Principals[0])
 	require.NoError(t, err)
 
 	assert.Equal(t, "prod", c.Principals[0].Grants[0].Env, "grant order changed under the caller")
-	assert.Equal(t, []string{"url-shortener", "dms"}, c.Principals[0].Grants[0].Tenants, "tenant order changed under the caller")
+	assert.Equal(t, []string{"other-app", "example-app"}, c.Principals[0].Grants[0].Tenants, "tenant order changed under the caller")
 }
 
 // A reader's route must not also be a writer's route. The shapes this

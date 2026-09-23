@@ -112,7 +112,7 @@ func (c Config) RenderClaim(p Principal) (Claim, error) {
 // metricsFilter renders one grant as a MetricsQL series selector, which
 // vmauth appends to every query the principal makes.
 //
-//	{env=~"^(devel)$",tenant=~"^(dms|url-shortener)$"}
+//	{env=~"^(devel)$",tenant=~"^(example-app|other-app)$"}
 //
 // A grant of every tenant omits the tenant matcher entirely rather than
 // rendering a match-all: a matcher that has to match everything is one

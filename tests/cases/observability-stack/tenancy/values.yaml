@@ -26,10 +26,10 @@ tenancy:
       grants:
         - env: devel
           allTenants: true
-    - group: example:dms:deployer
+    - group: example:example-app:deployer
       grants:
         - env: devel
-          tenants: [dms]
+          tenants: [example-app]
 
 # Off, so the render is the tenancy and nothing else.
 vmalert:
