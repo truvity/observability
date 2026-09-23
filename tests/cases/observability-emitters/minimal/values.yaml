@@ -1,0 +1,69 @@
+# The cluster's DNS suffix is an input, and this file sets it to a neutral
+# placeholder: a golden render is a tracked file in a public repository,
+# and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The smallest values file that renders something worth installing.
+#
+# Everything here has no default that could be safe. An environment name,
+# a fallback tenant and a namespace label key cannot be guessed: a guess
+# renders, runs, and produces telemetry nobody can select. A write
+# credential cannot be guessed either, and a destination list least of all.
+tenancy:
+  env: example
+  fallbackTenant: infra
+  namespaceLabels:
+    project: tenancy.example.com/project
+    layer: tenancy.example.com/layer
+
+writeCredentials:
+  secretName: example-write-token
+
+metrics:
+  destinations:
+    - name: primary
+      url: https://metrics.example/api/v1/write
+
+otlp:
+  destinations:
+    metrics:
+      - name: primary
+        url: https://metrics.example
+    logs:
+      - name: primary
+        url: https://logs.example
+    traces:
+      - name: primary
+        url: https://traces.example
+
+victoria-logs-collector:
+  # The log agent takes its credential on each remote-write entry, because
+  # that is upstream's own shape — the other two emitters read
+  # `writeCredentials` directly. The file is re-read when it changes, so a
+  # rotation needs no restart.
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://logs.example
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    # The tenant field is the namespace label's own name, prefixed: vlagent
+    # cannot rename a field, so this is what the log store's streams carry
+    # and what the proxy has to filter on. The chart refuses to render
+    # until it is here.
+    streamFields:
+      - kubernetes.container_name
+      - kubernetes.pod_name
+      - kubernetes.pod_namespace
+      - env
+      - kubernetes.namespace_labels.tenancy.example.com/project
+    extraFields: '{"env":"example"}'

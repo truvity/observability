@@ -1,0 +1,398 @@
+# observability-emitters — per-cluster collection.
+#
+# Three emitters, each optional, each writing to every destination it is
+# given with its own on-disk buffer, and each stamping the same two labels
+# on everything it collects.
+#
+# Three things to know before reading further.
+#
+# FIRST, and it is the whole point of this chart: TENANCY IS STAMPED HERE
+# AND NOWHERE ELSE. `tenant` and `env` are derived from the NAMESPACE's
+# labels by the emitter, and an application that sets them itself has them
+# overwritten rather than merged. Query-time isolation in
+# charts/observability-stack is only as good as this: a workload that could
+# choose its own tenant could write into another team's data or hide its own
+# from the people responsible for it. Every setting below that could weaken
+# that is a refusal in templates/_validate.tpl, not a default.
+#
+# SECOND: REPLICATION IS THE WRITER'S JOB. No store in this family
+# replicates across a zone in a way that survives one, so each emitter
+# sends every sample to every destination and keeps a per-destination
+# buffer on disk. That buffer has to be backed by a volume that outlives
+# the pod, or a rollout is a gap in the data — and it is a gap nothing
+# reports. The chart refuses a buffer with nothing behind it.
+#
+# THIRD: the three emitters exist because our own software and everything
+# else are wired differently ON PURPOSE. Applications speak OpenTelemetry
+# and know nothing about a store; infrastructure and third-party components
+# are taken as they come — a Prometheus endpoint through a scrape object, a
+# container's stdout through the log agent. Collapsing the two into one
+# path means either instrumenting components we do not own or teaching our
+# own software a store's protocol. See docs/doctrine.md.
+
+# -- Name overrides for the objects this chart renders itself.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- The one interval.
+#
+# It is the scrape interval of the metrics agent and — through
+# `-dedup.minScrapeInterval` on the store, which charts/observability-stack
+# sets from its own `interval` — the deduplication window that reads it
+# back. The two are one number: a dedup window wider than the scrape
+# interval silently discards good samples, and a narrower one deduplicates
+# nothing. Neither says anything at the time.
+interval: 30s
+
+# Tenancy: where `tenant` and `env` come from.
+#
+# `env` is a constant for the cluster. `tenant` is read from the
+# namespace's own labels, in this order, first match winning:
+#
+#   1. the `namespaceLabels.project` label — a namespace that belongs to
+#      one product or team carries its name here;
+#   2. the `namespaceLabels.layer` label — for namespaces that belong to
+#      the platform rather than to a product, where the estate's own
+#      vocabulary for "which layer is this" becomes the tenant;
+#   3. `fallbackTenant`, for a namespace carrying neither.
+#
+# The fallback is required and has no default. A series with no `tenant`
+# label matches no grant, so it is stored, costs what every other series
+# costs, and is invisible to every person who might have acted on it. That
+# is the most expensive shape of failure this chart can produce, so the
+# value that prevents it is asked for rather than guessed.
+tenancy:
+  # -- This cluster's environment name. Required.
+  #
+  # It is matched exactly by every grant the proxy injects, so it is the
+  # estate's vocabulary and not a display name.
+  env: ""
+  # -- The label keys the emitters stamp, and the keys `pkg/tenancy`
+  # renders into the proxy's filters. They are one vocabulary: a filter
+  # that selects on `tenant` against telemetry labelled `team` returns
+  # nothing at all, which reads as "no data" rather than as a mistake.
+  # `tests/agreement_test.go` fails when these two defaults drift from the
+  # library's.
+  tenantLabel: tenant
+  envLabel: env
+  # -- The tenant for a namespace that carries neither label. Required.
+  fallbackTenant: ""
+  # -- The namespace labels the tenant is read from. `project` is
+  # required; `layer` is optional and is only consulted when a namespace
+  # has no `project` label.
+  #
+  # These are the estate's keys, so there is no default: a guessed key
+  # matches no namespace, every namespace falls through to
+  # `fallbackTenant`, and the install renders and runs as one tenant.
+  namespaceLabels:
+    project: ""
+    layer: ""
+
+# -- The credential every emitter writes with.
+#
+# One bearer token for the cluster, delivered as the NAME of a Secret the
+# estate created. The chart mounts it three different ways because the
+# three agents accept it three different ways — a Secret reference for the
+# metrics agent, a file for the log agent, an environment variable
+# interpolated into a header for the gateway — and that is worth knowing
+# once rather than discovering per agent.
+#
+# It is a bearer and not a person's token on purpose: a writer has no
+# identity to scope and nothing to read.
+writeCredentials:
+  # -- Name of the Secret. It must exist in the release's namespace before
+  # the emitters start; the chart neither creates it nor reads it.
+  secretName: ""
+  # -- The key inside it holding the token.
+  key: token
+
+###############################################################################
+# The metrics agent: vmagent, as a VMAgent object the operator reconciles.
+###############################################################################
+metrics:
+  enabled: true
+  # -- Where to write. One entry per store replica; every sample goes to
+  # every entry.
+  #
+  #   destinations:
+  #     - name: zone-a
+  #       url: https://metrics-a.example/api/v1/write
+  #     - name: zone-b
+  #       url: https://metrics-b.example/api/v1/write
+  #
+  # An empty list is refused rather than rendering an agent that scrapes
+  # the cluster and writes nowhere — which is a healthy pod, a full buffer
+  # and no data.
+  destinations: []
+  image:
+    repository: victoriametrics/vmagent
+    tag: v1.152.0
+  replicaCount: 1
+  # -- Requests EQUAL limits, and the CPU is an INTEGER: the
+  # VictoriaMetrics binaries size their thread pool from the cgroup quota
+  # and round DOWN, so `1500m` buys one thread and pays for one and a half,
+  # and an agent whose requests are below its limits is evicted first under
+  # node pressure — which is the moment its buffer is holding the data.
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # -- The persistent queue.
+  #
+  # Under the operator the queue lands on `/tmp` unless the agent runs in
+  # stateful mode, and `/tmp` is emptyDir: every rollout drops whatever had
+  # not been delivered, and on a node with an ephemeral-storage budget it
+  # counts against that budget as well. This chart always renders
+  # `statefulMode: true`; what is configurable is how much disk the queue
+  # gets.
+  #
+  # Size it in multiples of 500MB — the chunk size — with at least 500Mi
+  # per destination. The operator divides `requests.storage` by the number
+  # of remote-write destinations to derive `-remoteWrite.maxDiskUsagePerURL`.
+  queue:
+    size: 10Gi
+    storageClassName: ""
+  scrape:
+    # -- The node's own two endpoints, as inline scrape configs. Everything
+    # else this agent collects arrives as a PodMonitor or a ServiceMonitor
+    # authored by the chart that owns the thing being watched.
+    kubelet: true
+    cadvisor: true
+  # -- Anything else in the VMAgent spec, merged over what this chart
+  # renders.
+  #
+  # It is an escape hatch and it is guarded: the settings that make the
+  # agent stop stamping tenancy, stop replicating or stop buffering are
+  # refused here as firmly as they would be anywhere else, because an
+  # escape hatch that can turn off the security property is not an escape
+  # hatch, it is the door.
+  spec: {}
+
+###############################################################################
+# The log agent: vlagent, from upstream's own chart.
+#
+# It collects container stdout and stderr and NOTHING ELSE. Kubernetes
+# Events are not logs on a node's disk — they come from the gateway's
+# `k8s_events` receiver below. Getting that backwards produces an install
+# where Events are simply absent and nothing says so.
+###############################################################################
+logs:
+  enabled: true
+
+###############################################################################
+# The OpenTelemetry gateway.
+#
+# Everything our own software emits arrives here over OTLP — traces, and
+# whatever logs and metrics a product chooses to send — together with
+# Kubernetes Events and the OTLP a third-party component happens to offer.
+# It is a StatefulSet rather than a Deployment because each replica owns a
+# persistent queue, and a ReadWriteOnce volume cannot be shared by two.
+###############################################################################
+otlp:
+  enabled: true
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.161.0
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # -- The persistent queue, one volume per replica.
+  #
+  # Two mechanisms live on it, because the exporters do not agree: the OTLP
+  # exporters use a `sending_queue` backed by the `file_storage` extension,
+  # and the Prometheus remote-write exporter — which has no `sending_queue`
+  # at all — uses its own write-ahead log. Both are on this volume.
+  queue:
+    size: 10Gi
+    storageClassName: ""
+  # -- Where each signal goes. Three lists because three stores.
+  #
+  #   destinations:
+  #     metrics:
+  #       - name: zone-a
+  #         url: https://metrics-a.example
+  #     logs:
+  #       - name: zone-a
+  #         url: https://logs-a.example
+  #     traces:
+  #       - name: zone-a
+  #         url: https://traces-a.example
+  #
+  # A base URL, not an endpoint: each exporter appends the path its store
+  # documents, so a typo in a path cannot become a silent 404 — and a 404
+  # is permanent loss, not a retry.
+  destinations:
+    metrics: []
+    logs: []
+    traces: []
+  # -- Which resource attributes become log STREAM fields in the log store.
+  #
+  # This list is mandatory and is refused empty. With no `VL-Stream-Fields`
+  # header VictoriaLogs treats EVERY resource attribute as a stream field,
+  # and the resource attributes of an OpenTelemetry SDK include the pod's
+  # UID and its start time — so every pod restart mints a new stream, and a
+  # store whose stream count grows without bound degrades until it stops.
+  #
+  # Only attributes that are constant for the lifetime of a pod may appear.
+  # The chart holds the list of those and refuses anything else: `ip`,
+  # `user_id` and `trace_id` on a stream are the documented way to wreck
+  # this store, and nothing about it looks wrong for the first week.
+  streamFields:
+    - tenant
+    - env
+    - service.name
+  events:
+    # -- Kubernetes Events, through the `k8s_events` receiver.
+    #
+    # This is the one emitter that reads a cluster-scoped API, so it is the
+    # one with a ClusterRole of its own. It is also the one that must not
+    # run twice: every replica watching the same Events ingests all of
+    # them, so the chart renders a leader-election lease whenever this is
+    # on, and only the holder reads.
+    enabled: true
+  service:
+    # -- The address applications send OTLP to. Both protocols, because an
+    # SDK's default differs by language.
+    grpcPort: 4317
+    httpPort: 4318
+  # -- Self-monitoring, as a PodMonitor.
+  #
+  # The gateway has no operator to scrape it and no Service on its
+  # telemetry port, so the chart authors the object — as a PodMonitor, the
+  # Prometheus Operator kind, like every other scrape object on the
+  # cluster. The counters worth an alert are
+  # `otelcol_exporter_send_failed_*` and `otelcol_exporter_enqueue_failed_*`:
+  # a queue that is dropping is the failure this whole shape exists to
+  # prevent.
+  podMonitor:
+    enabled: true
+    extraLabels: {}
+
+###############################################################################
+# Self-monitoring for the metrics agent.
+###############################################################################
+selfMonitor:
+  # -- Render a PodMonitor for the metrics agent, and tell the operator not
+  # to scrape it with a kind of its own.
+  #
+  # The operator's default is to create a VMServiceScrape for every VMAgent
+  # it reconciles. This chart turns that off and writes a PodMonitor
+  # instead, for the same reason every other scrape object on the cluster
+  # is a PodMonitor: the agent under it has to stay replaceable, and it
+  # only stays replaceable while nothing depends on this vendor's scrape
+  # kinds. See docs/doctrine.md.
+  enabled: true
+  extraLabels: {}
+
+###############################################################################
+# Upstream charts.
+#
+# Everything below is the vendor's own values shape. This chart reads these
+# keys back and refuses the combinations that fail silently, so they are
+# the surface for the log agent rather than a second set of keys that would
+# have to be kept in step with them.
+###############################################################################
+
+# -- victoria-logs-collector: vlagent, as a DaemonSet.
+victoria-logs-collector:
+  # -- Where to write. One entry per log store replica; every line goes to
+  # every entry, each with its own buffer under `extraArgs.tmpDataPath`.
+  #
+  #   remoteWrite:
+  #     - url: https://logs-a.example
+  #       maxDiskUsagePerURL: 5GB
+  #     - url: https://logs-b.example
+  #       maxDiskUsagePerURL: 5GB
+  #
+  # This is the destination list for the log path: there is no second copy
+  # of it under `logs`, because a list written twice is a list that stops
+  # agreeing. A URL with no path is sent to `/insert/native`, which is the
+  # only path that accepts this protocol — the chart refuses any other,
+  # because vlagent DROPS a block the store answers 404 to rather than
+  # retrying it.
+  remoteWrite: []
+  collector:
+    # -- The stream fields, and THE PLACE THE LOG PATH'S TENANCY IS
+    # DECLARED.
+    #
+    # The three defaults are constant for the lifetime of a pod and stay.
+    # Two more have to join them before the log path is usable, and the
+    # chart refuses to render until they do:
+    #
+    #   - `env`, which arrives as a constant field from `extraFields`
+    #     below;
+    #   - the tenant, which arrives as
+    #     `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`.
+    #
+    # THAT SECOND NAME IS NOT `tenant`, and it cannot be. vlagent has no
+    # way to rename a field: there is no flag, header or pipeline that
+    # turns a namespace label into a plain one. So the log store's tenancy
+    # field is that long name, whoever configures the proxy has to filter
+    # on it, and it is written here rather than derived silently because
+    # the value has to travel out of this chart. A filter on `tenant`
+    # against these streams matches nothing, returns an empty result, and
+    # reads as "this namespace writes no logs".
+    #
+    # Nothing an application writes ever becomes a stream field. That is
+    # not a preference: a field that changes per request mints a stream
+    # per value, and a store whose stream count grows without bound
+    # degrades over weeks in a way that reads as growth. See
+    # docs/safety.md.
+    streamFields:
+      - kubernetes.container_name
+      - kubernetes.pod_name
+      - kubernetes.pod_namespace
+    # -- Namespace labels as fields. This is where the tenant comes from on
+    # the log path, so it is on, and the chart refuses it off while a
+    # tenant field derived from a namespace label is in use.
+    includeNamespaceLabels: true
+    # -- Pod labels as fields. Off, against upstream's default: they are an
+    # application's own vocabulary, they change without a deploy, and a
+    # store that indexes them grows with somebody else's naming habits.
+    includePodLabels: false
+    includePodAnnotations: false
+    includeNodeLabels: false
+    includeNodeAnnotations: false
+    # -- MIRROR: `tenancy.env`. A constant field on every line, because
+    # `env` is a property of the cluster rather than of a pod. The chart
+    # refuses a value that does not match `tenancy.env`.
+    extraFields: ""
+  extraArgs:
+    envflag.enable: true
+    envflag.prefix: VL_
+    loggerFormat: json
+    # -- The checkpoints AND the per-destination buffer live here, and
+    # upstream backs it with a hostPath by default. That default is the
+    # right one and the chart refuses to replace it with an emptyDir: the
+    # checkpoint records how far into each container's log file the agent
+    # got, so an agent that forgets re-reads every file from the beginning
+    # and ships every line a second time. A duplicate is not a gap, which
+    # is why nobody notices it until the bill.
+    tmpDataPath: /var/lib/vl-collector
+  # -- Empty leaves upstream's hostPath at `extraArgs.tmpDataPath`. An
+  # `emptyDir` here is refused.
+  persistence:
+    volume: {}
+  resources:
+    requests:
+      cpu: "1"
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  podMonitor:
+    enabled: true
+    # -- FALSE, and refused true. `true` renders a VMPodScrape instead of a
+    # PodMonitor. Every scrape object on the cluster is a Prometheus
+    # Operator kind so that the agent reading them can be replaced without
+    # rewriting every chart that authors one; one object in the other
+    # spelling is the first of the ones that follow it.
+    vm: false

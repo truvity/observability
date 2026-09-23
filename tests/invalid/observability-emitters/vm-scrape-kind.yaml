@@ -1,0 +1,50 @@
+# Renders a VMPodScrape instead of a PodMonitor. Every scrape object on
+# the cluster is a Prometheus Operator kind, and that is the only thing
+# keeping the agent under them replaceable.
+
+metrics:
+  destinations:
+  - name: primary
+    url: https://metrics.example/api/v1/write
+otlp:
+  destinations:
+    logs:
+    - name: primary
+      url: https://logs.example
+    metrics:
+    - name: primary
+      url: https://metrics.example
+    traces:
+    - name: primary
+      url: https://traces.example
+tenancy:
+  env: example
+  fallbackTenant: infra
+  namespaceLabels:
+    layer: tenancy.example.com/layer
+    project: tenancy.example.com/project
+victoria-logs-collector:
+  collector:
+    extraFields: '{"env":"example"}'
+    streamFields:
+    - kubernetes.container_name
+    - kubernetes.pod_name
+    - kubernetes.pod_namespace
+    - env
+    - kubernetes.namespace_labels.tenancy.example.com/project
+  extraVolumeMounts:
+  - mountPath: /etc/observability-write-token
+    name: write-token
+    readOnly: true
+  extraVolumes:
+  - name: write-token
+    secret:
+      secretName: example-write-token
+  podMonitor:
+    vm: true
+  remoteWrite:
+  - bearerTokenFile: /etc/observability-write-token/token
+    maxDiskUsagePerURL: 5GB
+    url: https://logs.example
+writeCredentials:
+  secretName: example-write-token

@@ -1,0 +1,707 @@
+---
+# Source: observability-emitters/charts/victoria-logs-collector/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-emitters-victoria-logs-collector
+  namespace: observability
+  labels: 
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-logs-collector
+    app.kubernetes.io/version: v1.52.0
+    helm.sh/chart: victoria-logs-collector-0.3.7
+  annotations: 
+    {}
+automountServiceAccountToken: true
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+data:
+  config.yaml: |
+    extensions:
+      file_storage:
+        directory: /var/lib/otelcol/queue
+        # The collector is killed with a queue on disk often enough that a
+        # corrupt database has to be survivable: without this the process
+        # crash-loops on the file it cannot open, and the only way out is
+        # deleting the volume — which is the data it was holding.
+        recreate: true
+        compaction:
+          on_start: true
+          directory: /var/lib/otelcol/queue
+      k8s_leader_elector:
+        auth_type: serviceAccount
+        lease_name: observability-emitters-gateway
+        lease_namespace: observability
+    
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      # Kubernetes Events are not container logs and do not come from the log
+      # agent: they are an API object, read here. Only the lease holder reads,
+      # or every replica ingests every Event.
+      k8s_events:
+        auth_type: serviceAccount
+        k8s_leader_elector: k8s_leader_elector
+    
+    processors:
+      # Two processors, in this order, and the order is the security property.
+      #
+      # k8sattributes resolves the sending pod and copies the NAMESPACE's own
+      # labels onto the resource, under names of this chart's choosing rather
+      # than the estate's. Nothing is decided here.
+      #
+      # transform/tenancy then writes `tenant` and `env` from
+      # those, unconditionally, with `set` — which overwrites whatever an SDK
+      # put there. It finishes by deleting the intermediate attributes, so the
+      # namespace's raw labels do not reach the store as a second vocabulary.
+      #
+      # Doing it the obvious way — letting k8sattributes write `tenant`
+      # directly — is what this avoids: that processor leaves an attribute that
+      # is already present alone, so an SDK that set its own tenant would keep
+      # it, and the label would be the application's claim about itself.
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.node.name
+          labels:
+            - tag_name: observability.tenancy.layer
+              key: "tenancy.example.com/layer"
+              from: namespace
+            - tag_name: observability.tenancy.project
+              key: "tenancy.example.com/project"
+              from: namespace
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+          - sources:
+              - from: connection
+      transform/tenancy:
+        error_mode: ignore
+        metric_statements:
+          - context: resource
+            statements:
+              - set(attributes["env"], "example")
+              - set(attributes["tenant"], "infra")
+              - set(attributes["tenant"], attributes["observability.tenancy.layer"]) where attributes["observability.tenancy.layer"] != nil
+              - set(attributes["tenant"], attributes["observability.tenancy.project"]) where attributes["observability.tenancy.project"] != nil
+              - delete_key(attributes, "observability.tenancy.layer")
+              - delete_key(attributes, "observability.tenancy.project")
+        log_statements:
+          - context: resource
+            statements:
+              - set(attributes["env"], "example")
+              - set(attributes["tenant"], "infra")
+              - set(attributes["tenant"], attributes["observability.tenancy.layer"]) where attributes["observability.tenancy.layer"] != nil
+              - set(attributes["tenant"], attributes["observability.tenancy.project"]) where attributes["observability.tenancy.project"] != nil
+              - delete_key(attributes, "observability.tenancy.layer")
+              - delete_key(attributes, "observability.tenancy.project")
+        trace_statements:
+          - context: resource
+            statements:
+              - set(attributes["env"], "example")
+              - set(attributes["tenant"], "infra")
+              - set(attributes["tenant"], attributes["observability.tenancy.layer"]) where attributes["observability.tenancy.layer"] != nil
+              - set(attributes["tenant"], attributes["observability.tenancy.project"]) where attributes["observability.tenancy.project"] != nil
+              - delete_key(attributes, "observability.tenancy.layer")
+              - delete_key(attributes, "observability.tenancy.project")
+      # Delta metrics and deduplication do not mix: the store keeps one sample
+      # per interval, and dropping one sample of a delta series loses the
+      # increment it carried rather than a repetition of a total. An SDK's
+      # default temporality is the caller's business, so the conversion happens
+      # here and is not configurable.
+      deltatocumulative: {}
+      batch: {}
+    
+    exporters:
+      # No `sending_queue` here, and it is not an omission: the Prometheus
+      # remote-write exporter does not have one. Its durability is a
+      # write-ahead log, per exporter, on the same volume the others queue on.
+      prometheusremotewrite/primary:
+        endpoint: "https://metrics.example/api/v1/write"
+        wal:
+          directory: /var/lib/otelcol/wal/primary
+        headers:
+          Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+      otlphttp/logs-primary:
+        logs_endpoint: "https://logs.example/insert/opentelemetry/v1/logs"
+        headers:
+          Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+          # Without this header every resource attribute becomes a stream
+          # field, and an SDK's resource carries the pod's UID and start time —
+          # so every restart mints a stream the store never reuses.
+          VL-Stream-Fields: "tenant,env,service.name"
+        sending_queue:
+          enabled: true
+          storage: file_storage
+        retry_on_failure:
+          enabled: true
+      otlphttp/traces-primary:
+        traces_endpoint: "https://traces.example/insert/opentelemetry/v1/traces"
+        headers:
+          Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+        sending_queue:
+          enabled: true
+          storage: file_storage
+        retry_on_failure:
+          enabled: true
+    
+    service:
+      extensions:
+        - file_storage
+        - k8s_leader_elector
+      telemetry:
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [k8sattributes, transform/tenancy, deltatocumulative, batch]
+          exporters: [prometheusremotewrite/primary]
+        logs:
+          receivers: [otlp, k8s_events]
+          processors: [k8sattributes, transform/tenancy, batch]
+          exporters: [otlphttp/logs-primary]
+        traces:
+          receivers: [otlp]
+          processors: [k8sattributes, transform/tenancy, batch]
+          exporters: [otlphttp/traces-primary]
+
+---
+# Source: observability-emitters/charts/victoria-logs-collector/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: observability-emitters-victoria-logs-collector
+  labels: 
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-logs-collector
+    app.kubernetes.io/version: v1.52.0
+    helm.sh/chart: victoria-logs-collector-0.3.7
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces", "pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Source: observability-emitters/charts/victoria-logs-collector/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: observability-emitters-victoria-logs-collector
+  labels: 
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-logs-collector
+    app.kubernetes.io/version: v1.52.0
+    helm.sh/chart: victoria-logs-collector-0.3.7
+subjects:
+  - kind: ServiceAccount
+    name: observability-emitters-victoria-logs-collector
+    namespace: observability
+roleRef:
+  kind: ClusterRole
+  name: observability-emitters-victoria-logs-collector
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+subjects:
+  - kind: ServiceAccount
+    name: observability-emitters-gateway
+    namespace: observability
+roleRef:
+  kind: ClusterRole
+  name: observability-emitters-gateway
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+subjects:
+  - kind: ServiceAccount
+    name: observability-emitters-gateway
+    namespace: observability
+roleRef:
+  kind: Role
+  name: observability-emitters-gateway
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  selector:
+    app.kubernetes.io/name: observability-emitters-gateway
+    app.kubernetes.io/instance: observability-emitters
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-emitters-gateway-headless
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: observability-emitters-gateway
+    app.kubernetes.io/instance: observability-emitters
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      protocol: TCP
+
+---
+# Source: observability-emitters/charts/victoria-logs-collector/templates/server.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: observability-emitters-victoria-logs-collector
+  namespace: observability
+  labels: 
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-logs-collector
+    app.kubernetes.io/version: v1.52.0
+    helm.sh/chart: victoria-logs-collector-0.3.7
+spec:
+  selector:
+    matchLabels: 
+      app.kubernetes.io/instance: observability-emitters
+      app.kubernetes.io/name: victoria-logs-collector
+  template:
+    metadata:
+      labels: 
+        app.kubernetes.io/instance: observability-emitters
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: victoria-logs-collector
+    spec:
+      serviceAccountName: observability-emitters-victoria-logs-collector
+      securityContext: 
+        {}
+      containers:
+        - name: vlagent
+          image: victoriametrics/vlagent:v1.52.0
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            {}
+          resources: 
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "1"
+              memory: 512Mi
+          ports:
+            - name: http
+              containerPort: 9429
+              protocol: TCP
+          args:
+          - --envflag.enable
+          - --envflag.prefix=VL_
+          - --kubernetesCollector
+          - --kubernetesCollector.extraFields={"env":"example"}
+          - --kubernetesCollector.includeNamespaceLabels
+          - --kubernetesCollector.includeNodeAnnotations=false
+          - --kubernetesCollector.includeNodeLabels=false
+          - --kubernetesCollector.includePodAnnotations=false
+          - --kubernetesCollector.includePodLabels=false
+          - --kubernetesCollector.msgField=message,msg,log
+          - --kubernetesCollector.streamFields=kubernetes.container_name,kubernetes.pod_name,kubernetes.pod_namespace,env,kubernetes.namespace_labels.tenancy.example.com/project
+          - --kubernetesCollector.timeField=time,ts,timestamp
+          - --loggerFormat=json
+          - --remoteWrite.bearerTokenFile=/etc/observability-write-token/token
+          - --remoteWrite.headers="AccountID:0^^ProjectID:0"
+          - --remoteWrite.maxDiskUsagePerURL=5GB
+          - --remoteWrite.url=https://logs.example/insert/native
+          - --tmpDataPath=/var/lib/vl-collector
+          volumeMounts:
+            - mountPath: /etc/observability-write-token
+              name: write-token
+              readOnly: true
+            - mountPath: /var/log
+              name: varlog
+              readOnly: true
+            - mountPath: /var/lib
+              name: varlib
+              readOnly: true
+            - name: vl-collector-data
+              mountPath: /var/lib/vl-collector
+            
+      volumes:
+        - name: write-token
+          secret:
+            secretName: example-write-token
+        - hostPath:
+            path: /var/log
+          name: varlog
+        - hostPath:
+            path: /var/lib
+          name: varlib
+        - name: vl-collector-data
+          hostPath:
+            path: /var/lib/vl-collector
+        
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  replicas: 2
+  serviceName: observability-emitters-gateway-headless
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: observability-emitters-gateway
+      app.kubernetes.io/instance: observability-emitters
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: observability-emitters-gateway
+        app.kubernetes.io/instance: observability-emitters
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/part-of: observability-emitters
+      annotations:
+        observability-emitters/config-checksum: 62010b0a38191e84226ad61ab52ed1927deb5da2fc477d9cf55890e499e08b85
+    spec:
+      serviceAccountName: observability-emitters-gateway
+      containers:
+        - name: collector
+          image: "otel/opentelemetry-collector-contrib:0.161.0"
+          args:
+            - --config=/etc/otelcol/config.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: telemetry
+              containerPort: 8888
+              protocol: TCP
+          env:
+            - name: OBSERVABILITY_WRITE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: "example-write-token"
+                  key: "token"
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+            - name: queue
+              mountPath: /var/lib/otelcol
+      volumes:
+        - name: config
+          configMap:
+            name: observability-emitters-gateway
+  volumeClaimTemplates:
+    - metadata:
+        name: queue
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+
+---
+# Source: observability-emitters/charts/victoria-logs-collector/templates/monitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: observability-emitters-victoria-logs-collector
+  labels: 
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-logs-collector
+    app.kubernetes.io/version: v1.52.0
+    helm.sh/chart: victoria-logs-collector-0.3.7
+spec:
+  namespaceSelector:
+    matchNames:
+      - observability
+  selector:
+    matchLabels: 
+      app.kubernetes.io/instance: observability-emitters
+      app.kubernetes.io/name: victoria-logs-collector
+  podMetricsEndpoints:
+    - port: http
+
+---
+# Source: observability-emitters/templates/gateway.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: observability-emitters-gateway
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: observability-emitters-gateway
+      app.kubernetes.io/instance: observability-emitters
+  podMetricsEndpoints:
+    - port: telemetry
+      path: /metrics
+      interval: 30s
+
+---
+# Source: observability-emitters/templates/vmagent.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: observability-emitters-metrics-agent
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmagent
+      app.kubernetes.io/instance: observability-emitters
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+
+---
+# Source: observability-emitters/templates/vmagent.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAgent
+metadata:
+  name: observability-emitters
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  disableSelfServiceScrape: true
+  globalScrapeMetricRelabelConfigs:
+  - action: labeldrop
+    regex: exported_(tenant|env)
+  image:
+    repository: victoriametrics/vmagent
+    tag: v1.152.0
+  inlineScrapeConfig: |
+    - job_name: kubelet
+      scheme: https
+      honor_labels: false
+      kubernetes_sd_configs:
+        - role: node
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        insecure_skip_verify: true
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+        - target_label: env
+          replacement: "example"
+        - target_label: tenant
+          replacement: "infra"
+    - job_name: cadvisor
+      scheme: https
+      honor_labels: false
+      metrics_path: /metrics/cadvisor
+      kubernetes_sd_configs:
+        - role: node
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        insecure_skip_verify: true
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+        - target_label: env
+          replacement: "example"
+        - target_label: tenant
+          replacement: "infra"
+  overrideHonorLabels: true
+  remoteWrite:
+  - bearerTokenSecret:
+      key: token
+      name: example-write-token
+    url: https://metrics.example/api/v1/write
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi
+    requests:
+      cpu: "1"
+      memory: 1Gi
+  scrapeClasses:
+  - attachMetadata:
+      namespace: true
+    default: true
+    name: tenancy
+    relabelConfigs:
+    - replacement: example
+      target_label: env
+    - replacement: infra
+      target_label: tenant
+    - regex: (.+)
+      replacement: $1
+      source_labels:
+      - __meta_kubernetes_namespace_label_tenancy_example_com_layer
+      target_label: tenant
+    - regex: (.+)
+      replacement: $1
+      source_labels:
+      - __meta_kubernetes_namespace_label_tenancy_example_com_project
+      target_label: tenant
+  scrapeInterval: 30s
+  selectAllByDefault: true
+  statefulMode: true
+  statefulStorage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi

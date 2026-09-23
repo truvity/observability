@@ -277,6 +277,142 @@ through.
 | `grafana.sidecar.dashboards.provider.updateIntervalSeconds` | `30` | **Above 10.** At 10 or below Grafana watches the filesystem, and a ConfigMap projection is a symlink swap that fires no watch event. |
 | `grafana.grafana.ini` | see values.yaml | `use_refresh_token` true, `role_attribute_strict` true, `locking_attempt_timeout_sec` 60–300, analytics off, `[unified_alerting]` and `[alerting]` off. |
 
+## `charts/observability-emitters`
+
+Per-cluster collection: three optional emitters, each replicating to every
+destination it is given and each stamping the same two labels.
+
+**The label keys are one vocabulary.** `tenancy.tenantLabel` and
+`tenancy.envLabel` are what the emitters stamp AND what `pkg/tenancy`
+renders into the proxy's filters. A filter selecting on one name against
+telemetry labelled with another returns an empty result rather than an
+error, so `tests/agreement_test.go` fails when the chart's defaults drift
+from the library's, and a second test fails when a template hardcodes a
+key that should be a value.
+
+### Top level
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `nameOverride` | string | `""` | Replaces the chart name in the names this chart renders. |
+| `fullnameOverride` | string | `""` | Replaces them entirely. |
+| `interval` | duration | `30s` | The metrics agent's scrape interval. It is the same number as the store's `-dedup.minScrapeInterval` (`interval` in `observability-stack`): a dedup window wider than the scrape interval silently discards good samples. **Refused when `metrics.spec.scrapeInterval` disagrees.** |
+
+### `tenancy`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `tenancy.env` | name | `""` | This cluster's environment. **Required**: telemetry labelled `env=""` matches no grant and is invisible. |
+| `tenancy.tenantLabel` | name | `tenant` | The label, field and resource attribute the tenant is stamped as. |
+| `tenancy.envLabel` | name | `env` | The same, for the environment. |
+| `tenancy.fallbackTenant` | name | `""` | The tenant for a namespace carrying neither label. **Required**, and there is no safe guess for it. |
+| `tenancy.namespaceLabels.project` | string | `""` | The namespace label whose **value** is the tenant. **Required.** |
+| `tenancy.namespaceLabels.layer` | string | `""` | Consulted only when a namespace has no `project` label. Empty renders no rule for it. |
+
+Resolution order, last match winning: `fallbackTenant`, then `layer`'s
+value, then `project`'s value. Names must match
+`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, for the same reason as in
+`pkg/tenancy`: they are interpolated into a filter expression.
+
+### `writeCredentials`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `writeCredentials.secretName` | string | `""` | The Secret holding the cluster's bearer token. **Required.** The chart never creates or reads one. |
+| `writeCredentials.key` | string | `token` | The key inside it. |
+
+Read directly by the metrics agent (a Secret reference) and the gateway
+(an environment variable interpolated into an `Authorization` header). The
+**log agent takes its credential on each of its own remote-write
+entries**, because that is upstream's shape — see `victoria-logs-collector`
+below. The chart refuses an entry with none.
+
+### `metrics` — vmagent
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `metrics.enabled` | bool | `true` | Renders the `VMAgent` and its `PodMonitor`. |
+| `metrics.destinations[]` | `{name, url}` | `[]` | Every destination receives every sample. **Refused empty.** Names must be distinct: they become queue directories. |
+| `metrics.image` | `{repository, tag}` | `victoriametrics/vmagent:v1.152.0` | An `enterprise` tag is refused. |
+| `metrics.replicaCount` | int | `1` | |
+| `metrics.resources` | object | 1 CPU / 1Gi | Requests equal limits, integer CPU. |
+| `metrics.queue.size` | quantity | `10Gi` | The persistent queue's volume. The operator divides it by the number of destinations to derive `-remoteWrite.maxDiskUsagePerURL`, so size it in multiples of 500MB with at least 500Mi per destination. |
+| `metrics.queue.storageClassName` | string | `""` | Empty renders no class and takes the cluster's default. |
+| `metrics.scrape.kubelet` / `.cadvisor` | bool | `true` | The node's two endpoints, as inline scrape configs. Everything else arrives as a `PodMonitor` or `ServiceMonitor` authored by whoever owns the thing being watched. |
+| `metrics.spec` | object | `{}` | Merged over the rendered `VMAgent` spec. Guarded — see below. |
+
+Rendered and **not configurable away**, each with a fixture:
+`statefulMode: true` with a `volumeClaimTemplate` (the queue is on `/tmp`
+without it), `overrideHonorLabels: true` (without it a target's own
+`tenant` label wins), `selectAllByDefault: true` (false with no selectors
+selects *nothing*), a default scrape class with `attachMetadata.namespace`
+(without it namespace labels are not discovered at all), and
+`disableSelfServiceScrape: true` so the agent's own metrics come from a
+`PodMonitor` rather than a `VMServiceScrape`. `remoteWrite.shardByURL` in
+`metrics.spec.extraArgs` is refused outright.
+
+### `logs` — vlagent
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `logs.enabled` | bool | `true` | Renders the upstream `victoria-logs-collector` DaemonSet. |
+
+Everything else about the log agent is upstream's own values, read back by
+this chart's refusals rather than duplicated — see below.
+
+### `otlp` — the OpenTelemetry gateway
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `otlp.enabled` | bool | `true` | Renders the StatefulSet, its ConfigMap, Services, RBAC and `PodMonitor`. |
+| `otlp.image` | `{repository, tag}` | `otel/opentelemetry-collector-contrib:0.161.0` | The contrib distribution: `k8sattributes`, `k8s_events`, `file_storage` and `deltatocumulative` are not in core. |
+| `otlp.replicaCount` | int | `2` | Each replica owns a queue volume, which is why this is a StatefulSet. |
+| `otlp.resources` | object | 1 CPU / 1Gi | |
+| `otlp.queue.size` | quantity | `10Gi` | One volume per replica, holding both the OTLP `sending_queue`s and the remote-write WAL. **Required.** |
+| `otlp.queue.storageClassName` | string | `""` | |
+| `otlp.destinations.metrics[]` | `{name, url}` | `[]` | Base URLs; the exporter appends `/api/v1/write`. **Refused empty.** |
+| `otlp.destinations.logs[]` | `{name, url}` | `[]` | Appends `/insert/opentelemetry/v1/logs`. |
+| `otlp.destinations.traces[]` | `{name, url}` | `[]` | Appends `/insert/opentelemetry/v1/traces`. |
+| `otlp.streamFields` | list | `[tenant, env, service.name]` | The `VL-Stream-Fields` header. **Refused empty**, must contain the tenant and env keys, and every entry must be an attribute the chart knows to be constant for the lifetime of a pod. |
+| `otlp.events.enabled` | bool | `true` | Kubernetes Events through the `k8s_events` receiver, with a leader-election lease so replicas do not each ingest every Event. Events do **not** come from the log agent. |
+| `otlp.service.grpcPort` / `.httpPort` | int | `4317` / `4318` | |
+| `otlp.podMonitor.enabled` | bool | `true` | The gateway's own `otelcol_exporter_send_failed_*` and `otelcol_exporter_enqueue_failed_*`. |
+| `otlp.podMonitor.extraLabels` | map | `{}` | |
+
+Rendered and not configurable: `k8sattributes` then `transform/tenancy`,
+in that order, and `deltatocumulative` on the metrics pipeline. The order
+is the security property — see docs/safety.md.
+
+### `selfMonitor`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `selfMonitor.enabled` | bool | `true` | A `PodMonitor` for the metrics agent. |
+| `selfMonitor.extraLabels` | map | `{}` | |
+
+### `victoria-logs-collector` — the upstream chart
+
+Its own values, pinned in `Chart.yaml` and vendored under the chart's
+`charts/` directory. This chart **reads these keys back and refuses the
+combinations that fail silently** rather than offering a second set that
+would have to be kept in step with them.
+
+| Value | Default | What it does |
+|---|---|---|
+| `victoria-logs-collector.remoteWrite[]` | `[]` | The log destinations. **Refused empty.** Each entry needs a credential (`bearerTokenFile`, `bearerToken`, `basicAuth` or an Authorization header) and a `maxDiskUsagePerURL`; each URL's path must be absent or `/insert/native`. |
+| `…collector.streamFields` | the three defaults | **Must also contain `tenancy.envLabel` and `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`**, or the proxy's stream filter selects nothing. |
+| `…collector.includeNamespaceLabels` | `true` | Where the tenant comes from on this path. Refused false. |
+| `…collector.includePodLabels` | `false` | Against upstream's default: an application's own vocabulary, changing without a deploy. |
+| `…collector.extraFields` | `""` | MIRROR of `tenancy.env`: must be exactly `{"<envLabel>":"<env>"}`. |
+| `…extraArgs.tmpDataPath` | `/var/lib/vl-collector` | Checkpoints **and** the per-destination buffer. |
+| `…persistence.volume` | `{}` | Empty keeps upstream's hostPath at `tmpDataPath`. An `emptyDir` is refused. |
+| `…podMonitor.vm` | `false` | `true` renders a `VMPodScrape` instead of a `PodMonitor`, and is refused. |
+
+**The tenant on the log path is not called `tenant`.** vlagent cannot
+rename a field, so a namespace label reaches the store as
+`kubernetes.namespace_labels.<key>` and the proxy has to filter on that
+name. docs/safety.md has what this costs and what it does not cover.
+
 ## `pkg/tenancy`
 
 `go get github.com/truvity/observability`
@@ -329,6 +465,7 @@ produces no diff.
 | Artifact | Where |
 |---|---|
 | `observability-crds` | `oci://ghcr.io/truvity/charts/observability-crds` |
+| `observability-emitters` | `oci://ghcr.io/truvity/charts/observability-emitters` |
 | `observability-stack` | `oci://ghcr.io/truvity/charts/observability-stack` |
 | `platform-alerts` | `oci://ghcr.io/truvity/charts/platform-alerts` |
 | `pkg/tenancy` | `github.com/truvity/observability` |

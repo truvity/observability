@@ -264,6 +264,83 @@ policy for it disappears, and the mirror checks for it stop applying. An
 estate that keeps its log store elsewhere sets
 `victoria-logs-single.enabled: false` and `stores.logs.url`.
 
+## Installing observability-emitters
+
+Last of the four, and on every cluster rather than on the ones holding a
+store. The order matters twice over:
+
+1. `observability-crds`, or the `PodMonitor` objects this chart renders
+   are rejected and — worse — every other chart on the cluster that gates
+   its monitor template on the CRD's presence renders **nothing, silently,
+   with a successful sync**. A `serviceMonitor.enabled: true` flipped
+   before the CRDs land produces a green deploy, no scrape object, and a
+   fault that looks like the scraper's.
+2. `observability-stack`, because this chart's `VMAgent` is reconciled by
+   the operator that chart installs, and because its destinations are that
+   install's addresses.
+
+### What must already exist
+
+| Thing | Why |
+|---|---|
+| `observability-crds` | `PodMonitor` is one of its kinds, and so is `VMAgent`. |
+| The VictoriaMetrics operator | It reconciles the `VMAgent`. `observability-stack` installs it. |
+| A Secret with the cluster's write token | Its **name** is `writeCredentials.secretName`; the chart neither creates nor reads it. |
+| Namespaces carrying the tenancy labels | Everything unlabelled becomes `tenancy.fallbackTenant` on the metrics and OTLP paths, and carries no tenant at all on the log path. |
+| Reachable store addresses | Every destination URL, from this cluster. A NetworkPolicy in the way is a buffer that fills. |
+
+### The values that have no default
+
+Five, and none of them can be guessed. Each renders, runs and reports
+healthy when wrong, which is why the chart refuses rather than defaults:
+
+```yaml
+tenancy:
+  env: example                       # this cluster
+  fallbackTenant: infra              # whatever nobody has labelled yet
+  namespaceLabels:
+    project: example.com/project     # the label whose VALUE is the tenant
+    layer: example.com/layer         # consulted only without a project label
+
+writeCredentials:
+  secretName: example-write-token
+```
+
+Plus a destination list per emitter. `tests/cases/observability-emitters/`
+holds three worked values files — the smallest useful one, one that sets
+everything, and the zone-redundant pair — each with the render it
+produces beside it.
+
+### Two things to carry out of this chart
+
+**The log store's tenancy field.** It is
+`kubernetes.namespace_labels.<your project label key>`, not `tenant`, and
+the proxy has to filter on that name. docs/safety.md says why. The chart
+makes you write it into the log agent's `streamFields`, so it is visible
+rather than derived — carry it to the read side.
+
+**Enabling a component's monitor is a second step.** This chart collects
+every `PodMonitor` and `ServiceMonitor` on the cluster, so wiring a
+component is a values flip in the chart that owns it — and, after the CRDs
+are present, nothing more. A component with no scrape object is not an
+omission this chart can see.
+
+### The zero-diff gate, here
+
+An estate replacing hand-written collection objects adopts this chart in
+one pull request whose render diff is empty, then tightens in later ones.
+The two diffs to read first are the `VMAgent`'s `scrapeClasses` block and
+the gateway's `transform/tenancy` statements: they are where the labels
+come from, and a difference there is a difference in what every query
+returns.
+
+### Turning an emitter off
+
+`metrics.enabled`, `logs.enabled` and `otlp.enabled` are independent, and
+all three off is refused. Turning one off removes its objects, its
+refusals and its destinations — an estate that already runs a log shipper
+sets `logs.enabled: false` and keeps the other two.
+
 ## Upgrades that change what runs
 
 Each entry says what to do; none is optional reading before a bump.

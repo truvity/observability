@@ -1,0 +1,152 @@
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# Every value this chart has, set to something other than its default.
+#
+# Two things this case is here to prove, beyond "it renders":
+#
+#   - the label keys are PLUMBED. `tenantLabel` and `envLabel` are not
+#     `tenant` and `env` here, and the golden has to carry the names below
+#     in the agent's relabel rules, the gateway's OTTL statements, the
+#     `VL-Stream-Fields` header and the dropped-label regex. A key that is
+#     a value in one place and a constant in another is a filter that
+#     selects nothing on the read side.
+#   - the escape hatch is merged, not ignored. `metrics.spec` sets values
+#     the chart does not otherwise render, and leaves every guarded one
+#     alone.
+nameOverride: emitters
+interval: 60s
+
+tenancy:
+  env: example-two
+  tenantLabel: owner
+  envLabel: cell
+  fallbackTenant: platform
+  namespaceLabels:
+    project: example.com/project
+    layer: example.com/layer
+
+writeCredentials:
+  secretName: example-write-token
+  key: bearer
+
+metrics:
+  enabled: true
+  destinations:
+    - name: primary
+      url: https://metrics.example/api/v1/write
+  image:
+    repository: victoriametrics/vmagent
+    tag: v1.152.0
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "2"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  queue:
+    size: 20Gi
+    storageClassName: example-ssd
+  scrape:
+    kubelet: true
+    cadvisor: false
+  spec:
+    scrapeInterval: 60s
+    externalLabels:
+      cluster: example
+    extraArgs:
+      promscrape.suppressScrapeErrors: "true"
+
+logs:
+  enabled: true
+
+otlp:
+  enabled: true
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.161.0
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: "2"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  queue:
+    size: 20Gi
+    storageClassName: example-ssd
+  destinations:
+    metrics:
+      - name: primary
+        url: https://metrics.example
+    logs:
+      - name: primary
+        url: https://logs.example
+    traces:
+      - name: primary
+        url: https://traces.example
+  streamFields:
+    - owner
+    - cell
+    - service.name
+    - service.namespace
+  events:
+    enabled: true
+  service:
+    grpcPort: 14317
+    httpPort: 14318
+  podMonitor:
+    enabled: true
+    extraLabels:
+      example.com/scraped-by: example
+
+selfMonitor:
+  enabled: true
+  extraLabels:
+    example.com/scraped-by: example
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://logs.example
+      bearerTokenFile: /etc/observability-write-token/bearer
+      maxDiskUsagePerURL: 20GB
+  collector:
+    streamFields:
+      - kubernetes.container_name
+      - kubernetes.pod_name
+      - kubernetes.pod_namespace
+      - cell
+      - kubernetes.namespace_labels.example.com/project
+    extraFields: '{"cell":"example-two"}'
+    includeNamespaceLabels: true
+    includePodLabels: false
+    includePodAnnotations: false
+    includeNodeLabels: false
+    includeNodeAnnotations: false
+  extraArgs:
+    envflag.enable: true
+    envflag.prefix: VL_
+    loggerFormat: json
+    tmpDataPath: /var/lib/vl-collector
+  resources:
+    requests:
+      cpu: "2"
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  podMonitor:
+    enabled: true
+    vm: false

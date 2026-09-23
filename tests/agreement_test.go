@@ -21,6 +21,7 @@ package tests
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -149,4 +150,97 @@ func readVMUsers(t *testing.T, path string) []vmUser {
 	}
 	require.NotEmpty(t, users, "no VMUser in %s", path)
 	return users
+}
+
+// The second boundary: what the collectors STAMP and what the proxy
+// FILTERS ON.
+//
+// charts/observability-emitters writes `tenant` and `env` onto every
+// series, log stream and span; pkg/tenancy renders the filters that select
+// on those names. The two are one vocabulary, held in two places, and a
+// difference between them is not an error anywhere — it is an empty
+// result. A person asks for their tenant's data, gets nothing back, and
+// reads it as "nothing is running" rather than as "the filter names a
+// label that does not exist".
+//
+// So: the chart's defaults must be the library's defaults, and the values
+// must actually reach every site that stamps. The second half matters more
+// than it looks — a key that is a value in one template and a constant in
+// another renders correctly for anyone who leaves the default alone and
+// silently wrong for anyone who does not.
+const emittersValues = "../charts/observability-emitters/values.yaml"
+
+func TestEmittersStampWhatTheLibraryFilters(t *testing.T) {
+	var chart struct {
+		Tenancy struct {
+			TenantLabel string `yaml:"tenantLabel"`
+			EnvLabel    string `yaml:"envLabel"`
+		} `yaml:"tenancy"`
+	}
+	raw, err := os.ReadFile(emittersValues)
+	require.NoError(t, err)
+	require.NoError(t, yaml.Unmarshal(raw, &chart))
+
+	// The library's own defaults, read back out of a rendered filter rather
+	// than from an unexported function: the filter is what the store
+	// applies, so it is the only statement of these names that can be
+	// wrong.
+	claim, err := tenancy.Config{
+		ClaimName: "groups",
+		Principals: []tenancy.Principal{
+			{Group: "example:reader", Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}}},
+		},
+	}.RenderClaim(tenancy.Principal{
+		Group:  "example:reader",
+		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}},
+	})
+	require.NoError(t, err)
+	require.Len(t, claim.MetricsExtraFilters, 1)
+
+	matchers := regexp.MustCompile(`([a-z0-9-]+)=~?"`).FindAllStringSubmatch(claim.MetricsExtraFilters[0], -1)
+	require.Len(t, matchers, 2, "the filter should carry one env matcher and one tenant matcher: %s", claim.MetricsExtraFilters[0])
+
+	assert.Equal(t, matchers[0][1], chart.Tenancy.EnvLabel,
+		"the emitters stamp an environment label the proxy's filters do not select on: every query scoped to an environment would return nothing, and nothing would report it")
+	assert.Equal(t, matchers[1][1], chart.Tenancy.TenantLabel,
+		"the emitters stamp a tenant label the proxy's filters do not select on: every tenant-scoped query would return nothing, and nothing would report it")
+}
+
+// And the values are plumbed, not decorative.
+//
+// tests/cases/observability-emitters/everything sets `tenantLabel: owner`
+// and `envLabel: cell` for exactly this: every place the chart stamps has
+// to carry those names, and none of them may carry the defaults. A site
+// that hardcoded `tenant` renders identically for everyone who leaves the
+// default alone, which is how it survives review.
+func TestEmittersLabelKeysReachEverySite(t *testing.T) {
+	raw, err := os.ReadFile("golden/observability-emitters/everything.yaml")
+	require.NoError(t, err, "regenerate the golden renders with `just golden`")
+	golden := string(raw)
+
+	for _, site := range []struct{ what, needle string }{
+		{"the metrics agent's env stamp", "target_label: cell"},
+		{"the metrics agent's tenant stamp", "target_label: owner"},
+		{"the label the agent drops when a target exports its own", "regex: exported_(owner|cell)"},
+		{"the gateway's env statement", `set(attributes["cell"], "example-two")`},
+		{"the gateway's tenant statement", `set(attributes["owner"], "platform")`},
+		{"the log stream fields the gateway declares", `VL-Stream-Fields: "owner,cell,`},
+		{"the log agent's env field", `--kubernetesCollector.extraFields={"cell":"example-two"}`},
+	} {
+		assert.Contains(t, golden, site.needle,
+			"%s does not use the configured label key, so that key is a constant somewhere it should be a value", site.what)
+	}
+
+	// The defaults must not survive anywhere the chart stamps. Checked as
+	// exact rendered fragments rather than as bare words, because `tenant`
+	// and `env` legitimately appear in this file's own comments.
+	for _, leak := range []string{
+		"target_label: tenant",
+		"target_label: env",
+		`set(attributes["tenant"]`,
+		`set(attributes["env"]`,
+	} {
+		assert.NotContains(t, golden, leak,
+			"a stamping site renders the DEFAULT label key while the values set another one — it would look correct for everyone who never changed it")
+	}
 }
