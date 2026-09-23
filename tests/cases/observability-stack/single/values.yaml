@@ -19,6 +19,7 @@ ha: false
 
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   claimName: groups
   # The trace store is on by default, and this proxy cannot scope trace
   # reads: vmauth applies a grant by substituting it into the route, and

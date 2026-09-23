@@ -15,6 +15,7 @@
 # it accepts that, and its absence is how this fixture fails.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   principals:
     - group: example:k8s:viewer
       grants:

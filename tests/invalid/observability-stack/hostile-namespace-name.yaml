@@ -1,5 +1,6 @@
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   principals:
     - group: example:k8s:viewer
       grants:
@@ -11,6 +12,7 @@ tenancy:
 # namespace. Such a name is refused, never escaped.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   principals:
     - group: example:example-app:deployer
       grants:

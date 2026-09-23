@@ -126,7 +126,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Twenty-three, each with a fixture under
+Twenty-six, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -141,6 +141,9 @@ for its one reason and no other.
 | An `enterprise` image tag | An Enterprise image without a licence key RUNS, refusing only the Enterprise features, so the estate is in breach of the vendor's terms with everything apparently healthy. |
 | A `-license` or `-licenseFile` flag | The same boundary from the other side. This chart wraps the community edition; an install that needs a licence flag is an install this chart is the wrong shape for. |
 | A vmauth tag below v1.152.0 | `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0 through v1.151.x matched `match_claims` values UNANCHORED (GHSA-f99m-22fh-qw96) — `admin` also matched `not-admin-really`, in the exact mechanism that decides which user a token is. |
+| `principals` with no `tenancy.audience` | vmauth validates a token's expiry and its issuer and stops: it has no audience option and never inspects `aud`. Without the pin, every reader is selected by its group alone, so any unexpired token the issuer minted is admitted whatever client it was minted for — a token the same person holds for another application reads their namespaces here, with nothing to see: the token verifies, the filters apply. |
+| An audience that is not a plain client id | The value is compiled as a regular expression, so `example-.*` pins no client at all and admits every one of them whose id starts that way. Refused, never escaped — the same shape as the advisory two rows up. |
+| `tenancy.claimName` set to `aud` | The groups claim and the audience pin are entries in one `matchClaims` map, so one overwrites the other and the proxy checks either which principal a token is or which client minted it, never both. The rendered manifest looks like one that does both. |
 | An `*AuthKey` flag on a store | An authKey does not add to `-httpAuth.*`, it REPLACES it for those endpoints: basic auth is never checked, and the key travels in the query string and therefore into every access log. |
 | A cluster or namespace name outside the plain-name shape | The name is interpolated into a filter expression. `example-app\|other-app` does not look odd in the rendered filter — it grants a second namespace. Refused, never escaped. |
 | A log key carrying stream-filter syntax | The key is interpolated into the filter exactly as a name is, so a quote or a brace ends the filter early and a second alternative opens beside it — a grant wider than the one somebody wrote. Refused, never escaped. |
@@ -328,6 +331,63 @@ that can has written down that it did, in a values file somebody
 reviews. What neither of them gets is the third option, which is the
 defect above one level down: a route that carries a grant nobody
 applies.
+
+### What vmauth checks on a token, and what it does not
+
+It checks two things: that the token has not **expired**, and — with OIDC
+discovery configured — that its **issuer** is the one configured. That is
+the whole list. There is no audience option anywhere in vmauth's
+configuration, and `aud` is a claim it never reads on its own.
+
+That is easy to read past, because an issuer is exactly the thing one
+expects a proxy to check. But an issuer is not a client. An estate's
+issuer mints tokens for every application that signs people in through
+it, and all of those tokens carry the same `iss`, are signed by the same
+keys, and carry the same person's groups. So a proxy that checks the
+issuer and the groups admits **any unexpired token that issuer minted,
+for any of its clients**: a token a person holds for some entirely
+different application is a token that reads their namespaces here.
+
+Nothing about that looks wrong from the inside. The signature verifies,
+the claim matches a principal, the filters are computed and applied, and
+the query returns exactly the rows that principal is entitled to. It is
+not a leak of another person's data — it is the wrong *credential*
+reading the right person's data, which is the failure an audience exists
+to stop and the one nothing in the request will ever report.
+
+So the audience is the caller's to pin, and both artifacts make it
+required: `tenancy.audience` on the chart, `Config.Audience` in
+`pkg/tenancy`, rendered into every reader's `match_claims` beside the
+group, under `aud`. The claim name is fixed rather than an input —
+OpenID Connect specifies it, and a second spelling of a spec-defined
+claim is how a configuration comes to read as though something were
+pinned when nothing is.
+
+Three things about the value follow from where it lands rather than from
+taste:
+
+- **It is compiled as a regular expression.** Every `match_claims` value
+  is. So a client id carrying `.`, `|`, `*` or `(` pins a pattern rather
+  than a client, and a pattern admits clients nobody wrote down — which
+  is the same shape as the unanchored-claim advisory that sets the vmauth
+  version floor below. The value is held to
+  `^[A-Za-z0-9][A-Za-z0-9_:@-]*$`, which admits a UUID, a hyphenated name
+  and the `<id>@<project>` form some issuers mint, and is refused rather
+  than escaped when it is anything else.
+- **The rendered pin is anchored anyway.** vmauth anchors a
+  `match_claims` value itself from v1.152.0 — the release that fixed that
+  advisory, and this design's floor — so the anchors are redundant in
+  front of a proxy at the floor. They are rendered because a pin whose
+  narrowing depends on the binary in front of it being patched is a pin
+  with a version number in it, and because anchoring twice costs nothing.
+- **A list `aud` needs no special case.** An issuer mints the claim as a
+  string or as an array, and vmauth tests a `match_claims` entry against
+  an array claim element by element, matching if any one of them does.
+
+What this does not do is make a token's `vm_access` claim trustworthy, or
+limit what a holder of a token for this audience may ask for. It answers
+one question — was this token minted for this proxy — which is the
+question that was not being asked at all.
 
 ### Why there is no deny rule in the proxy's configuration
 
@@ -676,7 +736,9 @@ therefore which tenants it may read. A group name that is a substring of
 a more privileged one would have selected the more privileged entry. It
 is the same failure `Validate` refuses on the tenant-name side — a name
 reaching a regular expression without anchors — sitting in the proxy
-rather than in this library.
+rather than in this library. It is why the audience pin is held to a
+shape with no metacharacter in it and rendered anchored: see "What vmauth
+checks on a token, and what it does not" above.
 
 Upstream backported the fix only to the v1.148 LTS line, and the
 operator's own default image tag is older than both, so the chart sets

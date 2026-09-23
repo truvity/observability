@@ -1,5 +1,6 @@
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   principals:
     - group: example:k8s:viewer
       grants:

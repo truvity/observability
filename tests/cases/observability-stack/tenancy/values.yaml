@@ -18,6 +18,11 @@ global:
 # and nothing surfaces that until somebody sees data they should not.
 tenancy:
   issuerUrl: https://issuer.example
+  # The client id these tokens are minted under. vmauth validates a
+  # token's expiry and its issuer and nothing else, so this pin is the
+  # only thing that makes a token minted for another client of the same
+  # issuer fail here rather than read whatever its groups allow.
+  audience: example-observability-client
   claimName: groups
   principals:
     - group: example:k8s:viewer

@@ -2650,6 +2650,7 @@ spec:
       issuer: "https://issuer.example"
     matchClaims:
       entitlements: "example:k8s:viewer"
+      aud: "^(example-client@example-project)$"
     defaultVMAccessClaim:
       metricsExtraFilters:
         - '{cell="example-cluster"}'

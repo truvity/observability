@@ -183,8 +183,9 @@ func (c Config) logsFilter(grants []Grant) string {
 }
 
 // RenderVMAuth returns a vmauth configuration in which each principal is a
-// user selected by its group, carrying its own filters, and reaching each
-// store through a route that APPLIES them.
+// user selected by its group AND by the audience its token was minted
+// for, carrying its own filters, and reaching each store through a route
+// that APPLIES them.
 //
 // The routes themselves live in route.go. What happens here is the
 // binding of each one to its backend, and the refusal of any binding that
@@ -203,6 +204,9 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 	}
 	if c.MetricsBackend == "" || c.LogsBackend == "" {
 		return VMAuthConfig{}, fmt.Errorf("metricsBackend and logsBackend are required to render a vmauth configuration")
+	}
+	if c.Audience == "" {
+		return VMAuthConfig{}, fmt.Errorf("audience is empty: vmauth validates a token's EXPIRY and, under OIDC discovery, its ISSUER, and nothing else — it has no audience option and never inspects `aud` on its own. Without this pin each user below is selected by its group alone, so ANY unexpired token that issuer minted is admitted whatever client it was minted for: a token the same person holds for a different application of the same issuer reads their namespaces here, and nothing anywhere reports it, because the token verifies and the filters apply. Set it to the client id this proxy's tokens are minted under; it is pinned into every user's `%s` claim, which is the only place vmauth can be made to check it", AudienceClaim)
 	}
 
 	// Rendered once, outside the principal loop: every principal gets the
@@ -227,8 +231,18 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 		out.Users = append(out.Users, VMAuthUser{
 			Name: p.Group,
 			JWT: &VMAuthJWT{
-				OIDC:            issuer,
-				MatchClaims:     map[string]string{c.ClaimName: p.Group},
+				OIDC: issuer,
+				// Two claims, and they answer two different questions.
+				// The group says WHICH PRINCIPAL a token is; the
+				// audience says the token was minted for THIS PROXY.
+				// vmauth checks the second nowhere else — it validates
+				// expiry and issuer and stops — so a user entry without
+				// it admits every unexpired token of the issuer whose
+				// groups happen to match.
+				MatchClaims: map[string]string{
+					c.ClaimName:   p.Group,
+					AudienceClaim: audienceMatch(c.Audience),
+				},
 				DefaultVMAccess: &claim,
 			},
 			URLMap: append([]VMAuthURLMapRow(nil), rows...),

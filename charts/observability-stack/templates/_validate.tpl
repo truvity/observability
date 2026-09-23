@@ -292,9 +292,28 @@ would override its `-httpAuth.*`.
 {{- define "observability-stack.validate.tenancy" -}}
 {{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
 {{- $fieldShape := "^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$" -}}
+{{- $audienceShape := "^[A-Za-z0-9][A-Za-z0-9_:@-]*$" -}}
 {{- $t := .Values.tenancy -}}
 {{- if and $t.principals (not $t.issuerUrl) -}}
 {{- fail "observability-stack: `tenancy.principals` is set but `tenancy.issuerUrl` is empty. vmauth verifies a token against the issuer's OIDC discovery document; with no issuer there is nothing to verify a signature against, and a proxy that trusts an unverified token is worse than no proxy at all." -}}
+{{- end -}}
+{{- /*
+The audience, which is the other half of "whose token is this".
+
+The issuer above says the token was signed by the right issuer. Nothing
+in vmauth says it was minted for THIS PROXY: it validates a token's
+expiry and, under OIDC discovery, its issuer, and stops. There is no
+audience option, and `aud` is never inspected. The only place the check
+can be made is `matchClaims`, which is where the pin goes.
+*/}}
+{{- if and $t.principals (not $t.audience) -}}
+{{- fail "observability-stack: `tenancy.principals` is set but `tenancy.audience` is empty. vmauth validates a token's EXPIRY and, under OIDC discovery, its ISSUER, and nothing else: it has no audience option and never inspects `aud` on its own. So each reader below would be selected by its group alone, and ANY unexpired token that issuer minted would be admitted whatever client it was minted for — a token the same person holds for another application of the same issuer reads their namespaces here, and nothing reports it, because the token verifies and the filters apply. Set it to the client id this proxy's tokens are minted under; it is pinned into every reader's `matchClaims` as `aud`, which is the only place vmauth can be made to check it." -}}
+{{- end -}}
+{{- if and $t.audience (not (regexMatch $audienceShape (toString $t.audience))) -}}
+{{- fail (printf "observability-stack: `tenancy.audience` is %q, which is not a usable client id (%s). vmauth compiles every `matchClaims` value as a REGULAR EXPRESSION, so a value carrying `.`, `|`, `*` or `(` is matched as a pattern rather than as itself and pins more than the one client it names — the same shape as the unanchored-claim advisory this chart's vmauth floor exists for. Such a value is refused, never escaped. The shape admits what an opaque identifier is built from: letters, digits, `-`, `_`, `:` and `@`." (toString $t.audience) $audienceShape) -}}
+{{- end -}}
+{{- if eq (toString $t.claimName) "aud" -}}
+{{- fail "observability-stack: `tenancy.claimName` is `aud`, which is the claim `tenancy.audience` is pinned under. Both are entries in one `matchClaims` map, so one would overwrite the other — and whichever survived would decide either which principal a token is or which client it was minted for, never both. Name the groups claim something else." -}}
 {{- end -}}
 {{- /*
 The keys.

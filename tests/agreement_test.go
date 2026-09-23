@@ -43,6 +43,7 @@ import (
 // pointing somewhere else fails this test as well as producing a diff.
 const (
 	goldenIssuer     = "https://issuer.example"
+	goldenAudience   = "example-observability-client"
 	goldenMetricsURL = "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
 	goldenLogsURL    = "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
 )
@@ -113,6 +114,7 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 	// proved.
 	cfg := tenancy.Config{
 		ClaimName:      "groups",
+		Audience:       goldenAudience,
 		MetricsBackend: goldenMetricsURL,
 		LogsBackend:    goldenLogsURL,
 		Principals: []tenancy.Principal{
@@ -147,6 +149,14 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 				"the proxy would verify tokens against a different issuer than the claim was minted by")
 			assert.Equal(t, user.JWT.MatchClaims, chart.Spec.JWT.MatchClaims,
 				"a user selected by different claims is a user a token reaches, or does not, for reasons neither side states")
+
+			// And the audience pin, asserted on the chart's own output
+			// rather than on the comparison above: both sides dropping
+			// it would satisfy that equality and leave a proxy that
+			// admits every client of the issuer, because vmauth
+			// validates expiry and issuer and checks `aud` nowhere.
+			assert.Equal(t, "^("+goldenAudience+")$", chart.Spec.JWT.MatchClaims[tenancy.AudienceClaim],
+				"this VMUser carries no audience pin, so any unexpired token from the issuer is admitted whatever client it was minted for")
 
 			// The filters. This is the whole of it: these strings are
 			// what the store applies to every query the principal makes.

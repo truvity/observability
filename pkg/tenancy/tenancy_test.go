@@ -16,6 +16,7 @@ import (
 func base() tenancy.Config {
 	return tenancy.Config{
 		ClaimName:      "groups",
+		Audience:       "example-observability-client",
 		MetricsBackend: "http://metrics.example:8428",
 		LogsBackend:    "http://logs.example:9428",
 		TracesBackend:  "http://traces.example:10428",
@@ -435,6 +436,14 @@ func TestRefusals(t *testing.T) {
 			mutate: func(c *tenancy.Config) { c.ClaimName = "" },
 			want:   "claimName is empty",
 		},
+		"an audience that is a pattern rather than a client id": {
+			mutate: func(c *tenancy.Config) { c.Audience = "example-.*" },
+			want:   "not a usable client id",
+		},
+		"the groups claim named `aud`": {
+			mutate: func(c *tenancy.Config) { c.ClaimName = "aud" },
+			want:   "would overwrite the other",
+		},
 		"an empty group": {
 			mutate: func(c *tenancy.Config) { c.Principals[0].Group = "" },
 			want:   "group is empty",
@@ -490,7 +499,16 @@ func TestVMAuthConfig(t *testing.T) {
 
 	viewer, deployer := cfg.Users[0], cfg.Users[1]
 
-	assert.Equal(t, map[string]string{"groups": "example:k8s:viewer"}, viewer.JWT.MatchClaims)
+	// Two claims, answering two different questions. The group says which
+	// principal a token is; the audience says the token was minted for
+	// this proxy at all — which vmauth checks nowhere else, because it
+	// validates expiry and issuer and stops.
+	assert.Equal(t, map[string]string{
+		"groups": "example:k8s:viewer",
+		"aud":    "^(example-observability-client)$",
+	}, viewer.JWT.MatchClaims)
+	assert.Equal(t, viewer.JWT.MatchClaims["aud"], deployer.JWT.MatchClaims["aud"],
+		"the audience is the proxy's, not a principal's: every user entry carries the same pin")
 	assert.Equal(t, "https://issuer.example", viewer.JWT.OIDC)
 
 	// The whole point, asserted: two principals, two different reaches.
@@ -541,6 +559,19 @@ func TestVMAuthRequiresItsInputs(t *testing.T) {
 		assert.Contains(t, err.Error(), "required to render a vmauth configuration")
 	})
 
+	t.Run("audience", func(t *testing.T) {
+		c := base()
+		c.Audience = ""
+		_, err := c.RenderVMAuth("https://issuer.example")
+		require.Error(t, err)
+		// The message is the whole of the defence for somebody reading
+		// it at two in the morning: what vmauth checks, what it does
+		// not, and what follows from that.
+		assert.Contains(t, err.Error(), "audience is empty")
+		assert.Contains(t, err.Error(), "ISSUER")
+		assert.Contains(t, err.Error(), "whatever client it was minted for")
+	})
+
 	t.Run("an invalid config never renders", func(t *testing.T) {
 		c := base()
 		c.Principals[0].Grants = []tenancy.Grant{{Cluster: "example-cluster"}}
@@ -554,6 +585,84 @@ func TestVMAuthRequiresItsInputs(t *testing.T) {
 		_, err := c.RenderVMAuth("https://issuer.example")
 		require.Error(t, err)
 	})
+}
+
+// The audience pin, read back the way the proxy will read it.
+//
+// vmauth compiles a `match_claims` value as a REGULAR EXPRESSION —
+// `^(?:` + value + `)$` since v1.152.0, the release that fixed
+// GHSA-f99m-22fh-qw96, and bare before it. So the rendered pin is
+// asserted under both compilations: the one the version floor promises,
+// and the one an estate running an older proxy would get. A pin that
+// only holds under the first is a pin with a version number in it.
+func TestTheAudiencePinSurvivesVMAuthsOwnAnchoring(t *testing.T) {
+	const (
+		ours   = "example-observability-client"
+		theirs = "example-observability-client-for-something-else"
+	)
+
+	c := base()
+	c.TracesBackend = "" // the trace route has its own refusal; not what this test is about
+	cfg, err := c.RenderVMAuth("https://issuer.example")
+	require.NoError(t, err)
+
+	pin := cfg.Users[0].JWT.MatchClaims[tenancy.AudienceClaim]
+	require.NotEmpty(t, pin, "no audience pin was rendered at all")
+
+	for name, compiled := range map[string]*regexp.Regexp{
+		"as vmauth at the version floor compiles it": regexp.MustCompile("^(?:" + pin + ")$"),
+		"as a vmauth below the floor compiles it":    regexp.MustCompile(pin),
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.True(t, compiled.MatchString(ours),
+				"the proxy would admit no token at all, which is a fail-closed outage rather than a leak — but it is still wrong")
+			assert.False(t, compiled.MatchString(theirs),
+				"a second client of the same issuer whose id merely CONTAINS this one is admitted: that is the substring failure the pin exists to stop")
+			assert.False(t, compiled.MatchString("some-other-client"))
+		})
+	}
+}
+
+// A client id is opaque — the issuer chooses it — so the shape has to
+// admit the forms issuers actually mint and refuse everything that a
+// regular-expression engine would read as syntax. The second half is the
+// security half: a value carrying `.` or `|` pins a PATTERN, and a
+// pattern admits clients nobody named.
+func TestTheAudienceShapeAdmitsAnIdentifierAndRefusesAPattern(t *testing.T) {
+	render := func(audience string) (tenancy.VMAuthConfig, error) {
+		c := base()
+		c.TracesBackend = ""
+		c.Audience = audience
+		return c.RenderVMAuth("https://issuer.example")
+	}
+
+	for _, id := range []string{
+		"example-observability-client",
+		"0f8fad5b-d9cb-469f-a165-70867728950e", // an issuer that mints UUIDs
+		"123456@example-project",               // an issuer that qualifies the id with a project
+		"EXAMPLE_CLIENT",
+		"example:observability",
+	} {
+		cfg, err := render(id)
+		require.NoError(t, err, "a client id an issuer could mint was refused: %q", id)
+		assert.Equal(t, "^("+id+")$", cfg.Users[0].JWT.MatchClaims[tenancy.AudienceClaim])
+	}
+
+	for _, pattern := range []string{
+		".*",               // every client of the issuer
+		"example-.*",       // every client whose id starts this way
+		"example.client",   // one dot is one wildcard, and a wildcard is a second client
+		"example|other",    // two clients pinned, one of them unwritten
+		"(example|other)",  // the same, with a group
+		"example-client$",  // an anchor of its own, inside ours
+		"-leading-hyphen",  // not an identifier
+		"example client",   // nor is this
+		"example\\bclient", // a word boundary is not a character
+	} {
+		_, err := render(pattern)
+		require.Error(t, err, "a value that is a pattern rather than a client id rendered: %q", pattern)
+		assert.Contains(t, err.Error(), "not a usable client id")
+	}
 }
 
 // Rendering must not mutate its input: a caller that renders twice, or
