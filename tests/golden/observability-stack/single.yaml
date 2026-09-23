@@ -2541,7 +2541,7 @@ spec:
       metricsExtraFilters:
         - '{env="devel"}'
       logsExtraStreamFilters:
-        - '{env="devel"}'
+        - '{"env"="devel"}'
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500

@@ -19,6 +19,8 @@ global:
 tenancy:
   issuerUrl: https://issuer.example
   claimName: groups
+  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
+  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:

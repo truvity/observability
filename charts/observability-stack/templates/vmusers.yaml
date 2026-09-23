@@ -2,6 +2,12 @@
 {{- $root := . }}
 {{- $fullname := include "observability-stack.fullname" . }}
 {{- $labels := dict "env" .Values.tenancy.envLabel "tenant" .Values.tenancy.tenantLabel }}
+{{- /*
+The log store's field names are NOT the label keys, and there is no
+default for them — see `tenancy.logsTenantField` in values.yaml, and
+templates/_validate.tpl for the refusal.
+*/}}
+{{- $logFields := dict "env" .Values.tenancy.logsEnvField "tenant" .Values.tenancy.logsTenantField }}
 {{- $metrics := include "observability-stack.metrics.url" . }}
 {{- $logs := include "observability-stack.logs.url" . }}
 {{- $traces := include "observability-stack.traces.url" . }}
@@ -26,9 +32,12 @@ anyone notices until it matters.
 {{- $_ := set $byEnv $grant.env $grant }}
 {{- end }}
 {{- $filters := list }}
+{{- $sortedGrants := list }}
 {{- range $env := (keys $byEnv | sortAlpha) }}
 {{- $filters = append $filters (include "observability-stack.filter" (dict "grant" (index $byEnv $env) "labels" $labels)) }}
+{{- $sortedGrants = append $sortedGrants (index $byEnv $env) }}
 {{- end }}
+{{- $logsFilter := include "observability-stack.logsFilter" (dict "grants" $sortedGrants "fields" $logFields) }}
 ---
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMUser
@@ -63,8 +72,13 @@ spec:
     defaultVMAccessClaim:
       metricsExtraFilters:
         {{- toYaml $filters | nindent 8 }}
+      {{- /*
+      One entry, naming the log store's own fields. Not the metrics list:
+      those names do not exist on the log path, and a second entry here
+      would be AND-ed rather than OR-ed.
+      */}}
       logsExtraStreamFilters:
-        {{- toYaml $filters | nindent 8 }}
+        {{- toYaml (list $logsFilter) | nindent 8 }}
   load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
   retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
   targetRefs:

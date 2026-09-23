@@ -39,6 +39,12 @@ tenancy:
   claimName: entitlements
   tenantLabel: owner
   envLabel: stage
+  # Deliberately none of the defaults and none of the label keys above:
+  # the log store's field names are the log agent's, and this case exists
+  # to prove they reach the rendered filter rather than being a constant
+  # somewhere in the template.
+  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/owner
+  logsEnvField: stage
   principals:
     - group: example:k8s:viewer
       grants:

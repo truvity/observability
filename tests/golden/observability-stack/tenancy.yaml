@@ -56,7 +56,7 @@ spec:
       metricsExtraFilters:
         - '{env="devel"}'
       logsExtraStreamFilters:
-        - '{env="devel"}'
+        - '{"env"="devel"}'
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500
@@ -118,7 +118,7 @@ spec:
       metricsExtraFilters:
         - '{env="devel",tenant=~"^(dms)$"}'
       logsExtraStreamFilters:
-        - '{env="devel",tenant=~"^(dms)$"}'
+        - '{"env"="devel","kubernetes.namespace_labels.tenancy.example.com/project"=~"^(dms)$"}'
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500

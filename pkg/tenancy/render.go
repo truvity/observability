@@ -2,6 +2,7 @@ package tenancy
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -12,6 +13,13 @@ import (
 // absent: this design scopes a query by label rather than by tenant id,
 // because the log and trace stores cannot query across their own tenant
 // ids and the fleet-wide question has to stay answerable.
+//
+// The two lists are not the same list and are not the same length.
+// MetricsExtraFilters carries one selector per grant, which vmselect
+// OR-s. LogsExtraStreamFilters carries exactly one stream filter for the
+// whole principal, because VictoriaLogs AND-s each one it is given — see
+// logsFilter. They also name different fields, because the log store
+// cannot carry the metrics label keys.
 type Claim struct {
 	MetricsExtraFilters    []string `json:"metrics_extra_filters,omitempty" yaml:"metrics_extra_filters,omitempty"`
 	LogsExtraStreamFilters []string `json:"logs_extra_stream_filters,omitempty" yaml:"logs_extra_stream_filters,omitempty"`
@@ -52,19 +60,23 @@ type VMAuthConfig struct {
 // says.
 func (c Config) RenderClaim(p Principal) (Claim, error) {
 	if err := (Config{
-		ClaimName:   orDefault(c.ClaimName, "groups"),
-		TenantLabel: c.TenantLabel,
-		EnvLabel:    c.EnvLabel,
-		Principals:  []Principal{p},
+		ClaimName:       orDefault(c.ClaimName, "groups"),
+		TenantLabel:     c.TenantLabel,
+		EnvLabel:        c.EnvLabel,
+		LogsTenantField: c.LogsTenantField,
+		LogsEnvField:    c.LogsEnvField,
+		Principals:      []Principal{p},
 	}).Validate(); err != nil {
 		return Claim{}, fmt.Errorf("rendering claim for %q: %w", p.Group, err)
 	}
 
+	grants := sortedGrants(p)
+
 	var claim Claim
-	for _, g := range sortedGrants(p) {
+	for _, g := range grants {
 		claim.MetricsExtraFilters = append(claim.MetricsExtraFilters, c.metricsFilter(g))
-		claim.LogsExtraStreamFilters = append(claim.LogsExtraStreamFilters, c.logsFilter(g))
 	}
+	claim.LogsExtraStreamFilters = []string{c.logsFilter(grants)}
 	return claim, nil
 }
 
@@ -86,18 +98,47 @@ func (c Config) metricsFilter(g Grant) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// logsFilter renders one grant as a LogsQL stream filter.
+// logsFilter renders a principal's WHOLE reach as one LogsQL stream
+// filter, with the grants as alternatives inside it.
 //
-//	{env="devel",tenant=~"^(dms|url-shortener)$"}
+//	{"env"="devel","kubernetes.namespace_labels.example.com/project"=~"^(example-app)$" or "env"="prod","kubernetes.namespace_labels.example.com/project"=~"^(example-app|other-app)$"}
 //
-// The shape is the same as the metrics one by construction. That is worth
-// stating: the two stores have different query languages, and the only
-// reason one function can serve both is that this design restricts itself
-// to equality and alternation on stream labels. A filter that needed more
-// than that would have to be written twice, and two hand-written filters
-// meaning the same thing is how they stop meaning the same thing.
-func (c Config) logsFilter(g Grant) string {
-	return c.metricsFilter(g)
+// Three things differ from the metrics filter, and none of them is a
+// matter of taste.
+//
+// The FIELD NAMES are the caller's log-path names rather than the label
+// keys, because the log store cannot be made to carry the label keys. See
+// Config.LogsTenantField.
+//
+// The NAMES ARE QUOTED. A LogsQL word is [a-zA-Z0-9_] and nothing else, so
+// a real log field name — which has dots, and a slash when the label key
+// has a prefix — is not a word and has to be quoted to be read as one
+// name. Quoting is unconditional rather than applied where it looks
+// needed: an unquoted name that happens to collide with a keyword or a
+// pipe name parses as that keyword, and the shape in fieldRE guarantees
+// there is nothing inside the quotes to escape.
+//
+// And it is ONE filter rather than one per grant. Every
+// `extra_stream_filters` argument VictoriaLogs receives is AND-ed into the
+// query as a separate global constraint, so a second entry does not widen
+// a principal's reach — it narrows it to the intersection, and two grants
+// naming two environments intersect in nothing at all. That is an empty
+// result for exactly the people with the most access. The metrics path
+// takes the opposite convention (vmselect OR-s its `extra_filters`), which
+// is why the two claim fields are not the same list and a test asserts
+// they are not.
+func (c Config) logsFilter(grants []Grant) string {
+	alternatives := make([]string, 0, len(grants))
+	for _, g := range grants {
+		parts := []string{fmt.Sprintf("%s=%q", strconv.Quote(c.LogsEnvField), g.Env)}
+		if !g.AllTenants {
+			parts = append(parts, fmt.Sprintf("%s=~%q", strconv.Quote(c.LogsTenantField), alternation(g.Tenants)))
+		}
+		alternatives = append(alternatives, strings.Join(parts, ","))
+	}
+	// Comma binds tighter than `or` inside `{...}`, so each alternative is
+	// its own conjunction and a grant cannot borrow another grant's tenants.
+	return "{" + strings.Join(alternatives, " or ") + "}"
 }
 
 // MetricsReadPaths, LogsReadPaths and TracesReadPaths are the routes a
