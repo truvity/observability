@@ -2536,7 +2536,7 @@ spec:
     oidc:
       issuer: "https://issuer.example"
     matchClaims:
-      groups: "example:k8s:viewer"
+      groups: "^(example:k8s:viewer)$"
       aud: "^(example-observability-client)$"
     defaultVMAccessClaim:
       metricsExtraFilters:

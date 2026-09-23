@@ -436,9 +436,9 @@ func TestRefusals(t *testing.T) {
 			mutate: func(c *tenancy.Config) { c.ClaimName = "" },
 			want:   "claimName is empty",
 		},
-		"an audience that is a pattern rather than a client id": {
-			mutate: func(c *tenancy.Config) { c.Audience = "example-.*" },
-			want:   "not a usable client id",
+		"an audience that is not an identifier at all": {
+			mutate: func(c *tenancy.Config) { c.Audience = "example-observability-client\n" },
+			want:   "not an identifier",
 		},
 		"the groups claim named `aud`": {
 			mutate: func(c *tenancy.Config) { c.ClaimName = "aud" },
@@ -504,7 +504,7 @@ func TestVMAuthConfig(t *testing.T) {
 	// this proxy at all — which vmauth checks nowhere else, because it
 	// validates expiry and issuer and stops.
 	assert.Equal(t, map[string]string{
-		"groups": "example:k8s:viewer",
+		"groups": "^(example:k8s:viewer)$",
 		"aud":    "^(example-observability-client)$",
 	}, viewer.JWT.MatchClaims)
 	assert.Equal(t, viewer.JWT.MatchClaims["aud"], deployer.JWT.MatchClaims["aud"],
@@ -587,48 +587,93 @@ func TestVMAuthRequiresItsInputs(t *testing.T) {
 	})
 }
 
-// The audience pin, read back the way the proxy will read it.
+// Every value this package puts in `match_claims`, read back the way the
+// proxy will read it.
 //
 // vmauth compiles a `match_claims` value as a REGULAR EXPRESSION —
 // `^(?:` + value + `)$` since v1.152.0, the release that fixed
-// GHSA-f99m-22fh-qw96, and bare before it. So the rendered pin is
-// asserted under both compilations: the one the version floor promises,
-// and the one an estate running an older proxy would get. A pin that
-// only holds under the first is a pin with a version number in it.
-func TestTheAudiencePinSurvivesVMAuthsOwnAnchoring(t *testing.T) {
-	const (
-		ours   = "example-observability-client"
-		theirs = "example-observability-client-for-something-else"
-	)
+// GHSA-f99m-22fh-qw96, and bare before it. Neither value in that map is
+// this package's own: a group is whatever a derivation produced, an
+// audience is whatever an issuer assigned. So both are escaped and
+// anchored, and both are asserted here under both compilations: the one
+// the version floor promises, and the one an estate on an older proxy
+// would get.
+func TestEveryMatchClaimValueMeansOnlyItself(t *testing.T) {
+	cases := []struct {
+		name   string
+		group  string
+		aud    string
+		admits []string // strings the two values must NOT admit
+	}{
+		{
+			name:   "ordinary names",
+			group:  "example:k8s:viewer",
+			aud:    "example-observability-client",
+			admits: []string{"example:k8s:viewer-admin", "xexample:k8s:viewer", "example-observability-client-for-something-else"},
+		},
+		{
+			name:   "a client id and a group with dots in them",
+			group:  "example.k8s.viewers",
+			aud:    "123.apps.example-issuer",
+			admits: []string{"examplexk8sxviewers", "123xappsxexample-issuer"},
+		},
+		{
+			// The shape a derivation bug produces. `.*` pins nothing at
+			// all unless it is escaped: `^(?:.*)$` matches every token
+			// there is.
+			name:   "a group and an audience written as patterns",
+			group:  ".*",
+			aud:    "example-.*",
+			admits: []string{"any-group-at-all", "example-anything", "example-"},
+		},
+	}
 
-	c := base()
-	c.TracesBackend = "" // the trace route has its own refusal; not what this test is about
-	cfg, err := c.RenderVMAuth("https://issuer.example")
-	require.NoError(t, err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := base()
+			c.TracesBackend = "" // the trace route has its own refusal; not what this test is about
+			c.Audience = tc.aud
+			c.Principals = []tenancy.Principal{{
+				Group:  tc.group,
+				Grants: []tenancy.Grant{{Cluster: "example-cluster", AllNamespaces: true}},
+			}}
 
-	pin := cfg.Users[0].JWT.MatchClaims[tenancy.AudienceClaim]
-	require.NotEmpty(t, pin, "no audience pin was rendered at all")
+			cfg, err := c.RenderVMAuth("https://issuer.example")
+			require.NoError(t, err)
 
-	for name, compiled := range map[string]*regexp.Regexp{
-		"as vmauth at the version floor compiles it": regexp.MustCompile("^(?:" + pin + ")$"),
-		"as a vmauth below the floor compiles it":    regexp.MustCompile(pin),
-	} {
-		t.Run(name, func(t *testing.T) {
-			assert.True(t, compiled.MatchString(ours),
-				"the proxy would admit no token at all, which is a fail-closed outage rather than a leak — but it is still wrong")
-			assert.False(t, compiled.MatchString(theirs),
-				"a second client of the same issuer whose id merely CONTAINS this one is admitted: that is the substring failure the pin exists to stop")
-			assert.False(t, compiled.MatchString("some-other-client"))
+			rendered := cfg.Users[0].JWT.MatchClaims
+			require.Len(t, rendered, 2, "the group and the audience, and nothing else")
+
+			for claim, want := range map[string]string{c.ClaimName: tc.group, tenancy.AudienceClaim: tc.aud} {
+				value := rendered[claim]
+				require.NotEmpty(t, value, "nothing was rendered for %q", claim)
+
+				for name, compiled := range map[string]*regexp.Regexp{
+					"as vmauth at the version floor compiles it": regexp.MustCompile("^(?:" + value + ")$"),
+					"as a vmauth below the floor compiles it":    regexp.MustCompile(value),
+				} {
+					assert.True(t, compiled.MatchString(want),
+						"%s, %s: the entry matches nothing, so the proxy admits nobody — fail-closed, and still wrong", claim, name)
+					for _, other := range tc.admits {
+						assert.False(t, compiled.MatchString(other),
+							"%s, %s: %q is admitted by an entry that names %q", claim, name, other, want)
+					}
+				}
+			}
 		})
 	}
 }
 
-// A client id is opaque — the issuer chooses it — so the shape has to
-// admit the forms issuers actually mint and refuse everything that a
-// regular-expression engine would read as syntax. The second half is the
-// security half: a value carrying `.` or `|` pins a PATTERN, and a
-// pattern admits clients nobody named.
-func TestTheAudienceShapeAdmitsAnIdentifierAndRefusesAPattern(t *testing.T) {
+// A client id is escaped, not refused — which is the opposite of what
+// this package does with a cluster or a namespace name.
+//
+// The distinction is where the value comes from. A namespace name is the
+// estate's own and a narrow shape costs it nothing. A client id is
+// assigned by somebody else's issuer, and issuers mint ids with dots in
+// them, so refusing a shape we do not control would lock an operator out
+// of a component published for them to install. What is still refused is
+// a value no issuer mints at all.
+func TestAnAudienceIsEscapedRatherThanRefused(t *testing.T) {
 	render := func(audience string) (tenancy.VMAuthConfig, error) {
 		c := base()
 		c.TracesBackend = ""
@@ -638,30 +683,28 @@ func TestTheAudienceShapeAdmitsAnIdentifierAndRefusesAPattern(t *testing.T) {
 
 	for _, id := range []string{
 		"example-observability-client",
-		"0f8fad5b-d9cb-469f-a165-70867728950e", // an issuer that mints UUIDs
-		"123456@example-project",               // an issuer that qualifies the id with a project
+		"0f8fad5b-d9cb-469f-a165-70867728950e",  // an issuer that mints UUIDs
+		"123456@example-project",                // an issuer that qualifies the id with a project
+		"123456789.apps.example-issuer.example", // an issuer that mints a hostname-shaped id
 		"EXAMPLE_CLIENT",
 		"example:observability",
+		"example-.*", // even this: it pins the literal, and nothing else
+		"a|b",
 	} {
 		cfg, err := render(id)
 		require.NoError(t, err, "a client id an issuer could mint was refused: %q", id)
-		assert.Equal(t, "^("+id+")$", cfg.Users[0].JWT.MatchClaims[tenancy.AudienceClaim])
+		assert.Equal(t, "^("+regexp.QuoteMeta(id)+")$", cfg.Users[0].JWT.MatchClaims[tenancy.AudienceClaim])
 	}
 
-	for _, pattern := range []string{
-		".*",               // every client of the issuer
-		"example-.*",       // every client whose id starts this way
-		"example.client",   // one dot is one wildcard, and a wildcard is a second client
-		"example|other",    // two clients pinned, one of them unwritten
-		"(example|other)",  // the same, with a group
-		"example-client$",  // an anchor of its own, inside ours
-		"-leading-hyphen",  // not an identifier
-		"example client",   // nor is this
-		"example\\bclient", // a word boundary is not a character
+	for _, notAnID := range []string{
+		"example-observability-client\n", // a file read with its trailing newline
+		"example-client another-client",  // two ids in one string
+		"\texample-observability-client", // a heredoc, indented
+		" ",                              // and the one that renders a pin of nothing
 	} {
-		_, err := render(pattern)
-		require.Error(t, err, "a value that is a pattern rather than a client id rendered: %q", pattern)
-		assert.Contains(t, err.Error(), "not a usable client id")
+		_, err := render(notAnID)
+		require.Error(t, err, "a value no issuer mints rendered: %q", notAnID)
+		assert.Contains(t, err.Error(), "not an identifier")
 	}
 }
 

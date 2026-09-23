@@ -36,11 +36,14 @@ vmauth:
 
 tenancy:
   issuerUrl: https://issuer.example
-  # Deliberately the `<id>@<project>` form some issuers mint, and not the
-  # value the other cases use: the pin is an input, and this case is
-  # where it is proved to reach the rendered `matchClaims` rather than
-  # being a constant in the template.
-  audience: example-client@example-project
+  # Deliberately a client id with a dot and an `@` in it, and not the
+  # value the other cases use. Two things are proved in the render
+  # beside this file: that the pin is an input rather than a constant in
+  # the template, and that a client id an issuer assigned is ESCAPED
+  # into the pin — `.` is a wildcard to the regular-expression engine
+  # vmauth compiles that value with, and it appears in the output as
+  # `\.`, matching itself and nothing else.
+  audience: example-client.example@example-project
   claimName: entitlements
   # Deliberately none of the defaults, on both paths: the keys are inputs
   # for an estate whose collectors were not built here, and this case
@@ -51,7 +54,10 @@ tenancy:
   logsClusterField: k8s.cell
   logsNamespaceField: kubernetes.namespace_name
   principals:
-    - group: example:k8s:viewer
+    # A group with dots in it, for the same reason: identity providers
+    # name populations with dots and this is where the render is checked
+    # for the escaping that makes such a name match only itself.
+    - group: example.k8s.viewers
       grants:
         - cluster: other-cluster
           namespaces: [example-app, other-app]

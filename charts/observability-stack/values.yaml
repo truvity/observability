@@ -151,14 +151,16 @@ tenancy:
   # nothing while the configuration reads as though something were
   # pinned.
   #
-  # The value is an opaque client id — whatever the issuer registered
-  # this proxy's client under — and vmauth compiles every `matchClaims`
-  # value as a REGULAR EXPRESSION. So it is held to
-  # `^[A-Za-z0-9][A-Za-z0-9_:@-]*$`, which admits a UUID, a hyphenated
-  # name and the `<id>@<project>` form some issuers mint, and carries no
-  # metacharacter: a value containing `.` or `|` would pin a pattern, and
-  # a pattern admits clients nobody named. Such a value is refused rather
-  # than escaped, and the rendered pin is anchored on top of that.
+  # The value is whatever the issuer registered this proxy's client
+  # under. vmauth compiles every `matchClaims` value as a REGULAR
+  # EXPRESSION, so the chart escapes it and anchors it: a client id
+  # carrying `.`, `|` or `@` pins itself and nothing else. It is escaped
+  # rather than refused — unlike a cluster or namespace name, which this
+  # chart holds to a narrow shape — because the issuer chooses a client
+  # id and this chart does not, and a shape refusal here would lock out
+  # an estate whose issuer mints ids with dots in them. What is still
+  # refused is a value no issuer mints: one carrying whitespace or a
+  # newline.
   #
   # It works whether the issuer mints `aud` as a string or as a list:
   # vmauth matches a `matchClaims` entry against an array claim element

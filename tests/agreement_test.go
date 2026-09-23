@@ -155,8 +155,16 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 			// it would satisfy that equality and leave a proxy that
 			// admits every client of the issuer, because vmauth
 			// validates expiry and issuer and checks `aud` nowhere.
-			assert.Equal(t, "^("+goldenAudience+")$", chart.Spec.JWT.MatchClaims[tenancy.AudienceClaim],
+			assert.Equal(t, "^("+regexp.QuoteMeta(goldenAudience)+")$", chart.Spec.JWT.MatchClaims[tenancy.AudienceClaim],
 				"this VMUser carries no audience pin, so any unexpired token from the issuer is admitted whatever client it was minted for")
+
+			// And that every value in that map is a value that means
+			// only itself. vmauth compiles each one as a regular
+			// expression, and neither of them is ours to choose.
+			for claim, value := range chart.Spec.JWT.MatchClaims {
+				assert.Regexp(t, `^\^\(.*\)\$$`, value,
+					"the chart renders %q unanchored, so a token whose claim merely contains this value is admitted", claim)
+			}
 
 			// The filters. This is the whole of it: these strings are
 			// what the store applies to every query the principal makes.

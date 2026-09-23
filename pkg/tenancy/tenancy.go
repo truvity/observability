@@ -126,29 +126,23 @@ var fieldRE = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`)
 // were pinned.
 const AudienceClaim = "aud"
 
-// audienceRE is what an audience may look like: an OAuth client id, with
-// no regular-expression metacharacter in it.
+// audienceRE is the little that is still asked of an audience: that it
+// is a token at all — one run of non-whitespace characters, and not a
+// line, a phrase or a blank.
 //
-// A client id is opaque. The issuer chooses it, nothing here gets to
-// design it, and it carries no meaning this package can check. What
-// constrains its shape is where it lands: vmauth compiles every
-// `match_claims` VALUE as a regular expression, so a client id carrying
-// `.`, `|`, `*` or `(` is matched as a PATTERN rather than as itself,
-// and a pattern is a pin that admits more than the one client it names.
-// That is the same shape as GHSA-f99m-22fh-qw96 — a claim value reaching
-// a regular expression as something other than a literal — which is the
-// advisory this design's vmauth floor exists for.
+// It is deliberately almost nothing, and that is the difference between
+// this value and every other name in this package.
 //
-// So the shape admits what an opaque identifier is built from and no
-// metacharacter at all: letters, digits, `-`, `_`, `:` and `@`, opening
-// on a letter or a digit. A UUID passes, an ordinary hyphenated name
-// passes, and so does the `<id>@<project>` form some issuers mint. A
-// client id carrying a dot does not, and is refused rather than escaped,
-// for the reason a namespace name is: the alternative is a value that
-// means one thing in the issuer's console and another in the proxy.
-//
-// The rendered value is anchored on top of this — see audienceMatch.
-var audienceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_:@-]*$`)
+// A cluster or a namespace name is REFUSED outside a narrow shape,
+// because those names are the estate's own: it chooses them, it can
+// change them, and a name that needs escaping is a name nobody should
+// have chosen. A client id is not ours. Some other issuer assigns it,
+// this component is published for anyone to install against any OIDC
+// issuer, and the issuers people actually run mint ids with dots in them
+// — so a shape refusal here is not doctrine, it is an outage for that
+// operator with no alternative they could take. The value is therefore
+// ESCAPED at the point of use rather than refused: see claimMatch.
+var audienceRE = regexp.MustCompile(`^\S+$`)
 
 // Grant is what one principal may read on one cluster.
 //
@@ -174,7 +168,10 @@ type Grant struct {
 // and what it may read.
 //
 // Group is matched against the token's claim; it is not a display name and
-// not an address.
+// not an address. It is whatever the identity provider calls that
+// population, and is escaped and anchored where it is rendered — see
+// claimMatch — so a group that reads as a regular expression matches
+// only itself.
 type Principal struct {
 	Group  string  `json:"group" yaml:"group"`
 	Grants []Grant `json:"grants" yaml:"grants"`
@@ -202,6 +199,12 @@ type Config struct {
 	// whichever principal its groups match. `match_claims` is the only
 	// place the check can be made, which is why the audience goes there
 	// rather than beside the issuer.
+	//
+	// It is whatever the issuer assigned — a UUID, a name, an
+	// `<id>@<project>` — and is escaped and anchored where it is
+	// rendered, so a client id carrying a dot or a `|` pins itself and
+	// nothing else. See claimMatch, which is also where the reason this
+	// value is escaped and a namespace name is refused is written down.
 	//
 	// It works whether the issuer mints `aud` as a string or as a list:
 	// vmauth tests a `match_claims` entry against an array claim element
@@ -296,7 +299,7 @@ func (c Config) Validate() error {
 	// `vm_access` body carries no audience and it is the proxy, not the
 	// claim, that has to do the checking. See RenderVMAuth.
 	if c.Audience != "" && !audienceRE.MatchString(c.Audience) {
-		errs = append(errs, fmt.Errorf("audience %q is not a usable client id (%s). vmauth compiles every `match_claims` value as a REGULAR EXPRESSION, so a value carrying `.`, `|`, `*` or `(` is matched as a pattern rather than as itself and pins more than the one client it names — the same shape as the unanchored-claim advisory this design's vmauth floor exists for. Such a value is refused rather than escaped", c.Audience, audienceRE))
+		errs = append(errs, fmt.Errorf("audience %q is not an identifier (%s): it is blank, or carries whitespace or a newline. A client id an issuer assigned may be anything else — a dot, an `@`, a colon — and is escaped where it is rendered rather than refused here, because it is the issuer's to choose and not ours. This shape refuses only what no issuer mints, which is usually a value that arrived from the wrong place: a heredoc, a file with its trailing newline, or two ids in one string", c.Audience, audienceRE))
 	}
 	if len(c.Principals) == 0 {
 		errs = append(errs, errors.New("no principals: the rendered configuration would admit nobody, which is indistinguishable from a broken derivation"))
@@ -431,31 +434,45 @@ func sortedGrants(p Principal) []Grant {
 }
 
 // alternation renders names as an anchored regular-expression alternation.
-// Every name has already been validated against nameRE — or, for an
-// audience, against audienceRE — so nothing here needs escaping, and if
-// that ever stops being true this is the line that makes it a
-// vulnerability, which is why the check lives in Validate and not here.
+// Every name has already been validated against nameRE, so nothing here
+// needs escaping — and if that ever stops being true this is the line that
+// makes it a vulnerability, which is why the check lives in Validate and
+// not here.
 func alternation(names []string) string {
 	return "^(" + strings.Join(names, "|") + ")$"
 }
 
-// audienceMatch renders the audience as the value of a `match_claims`
-// entry: the client id, anchored.
+// claimMatch renders a value as an entry in `match_claims`: escaped, so
+// that it means itself, and anchored, so that it means only itself.
 //
-// vmauth anchors a `match_claims` value itself — it compiles the value as
-// `^(?:…)$` — and has done since v1.152.0, the release that fixed
-// GHSA-f99m-22fh-qw96 and the floor this design already requires. So
-// these anchors are redundant in front of a proxy at that floor, and are
-// rendered anyway for two reasons. An audience pin exists to NARROW, and
-// its failure mode is silent admission, so a narrowing control that works
-// only when the binary in front of it is patched is a control with a
-// version number in it. And anchoring twice costs nothing: `^(?:^(x)$)$`
-// matches exactly `x` and nothing else, which is what
-// TestTheAudiencePinSurvivesVMAuthsOwnAnchoring asserts.
+// EVERY value this package puts in that map goes through here — the
+// group and the audience alike — so the property is structural rather
+// than a thing each caller has to get right. A `match_claims` value is
+// compiled as a regular expression by vmauth, and both of these values
+// come from outside: the group from whatever a derivation produced, the
+// audience from whatever an issuer assigned. Without this, a value that
+// happened to be a pattern would match more than the one thing it names,
+// and `.*` would match every token there is.
 //
-// The anchors are the second line, not the first. The first is
-// audienceRE, which is why there is nothing inside them that could reach
-// past them.
-func audienceMatch(audience string) string {
-	return alternation([]string{audience})
+// ESCAPED rather than refused, which is the opposite of what this
+// package does with a cluster or a namespace name, and deliberately so.
+// Those names are the estate's own and a narrow shape costs it nothing;
+// a client id belongs to somebody else's issuer, and refusing a shape we
+// do not control would lock an operator out of a component published for
+// them to install. A group name is the same: it is whatever the identity
+// provider calls that population, spaces and all. So the rule is the one
+// that fits where the value comes from — refuse what we name, escape
+// what we are handed.
+//
+// ANCHORED although vmauth anchors a `match_claims` value itself, as
+// `^(?:` + value + `)$`, and has since v1.152.0 — the release that fixed
+// GHSA-f99m-22fh-qw96 and the floor this design already requires. These
+// anchors are therefore redundant in front of a proxy at that floor, and
+// are rendered anyway because a narrowing control that works only when
+// the binary in front of it is patched is a control with a version
+// number in it. Anchoring twice costs nothing: `^(?:^(x)$)$` is still
+// exactly `x`, which TestEveryMatchClaimValueMeansOnlyItself asserts
+// under both compilations.
+func claimMatch(value string) string {
+	return "^(" + regexp.QuoteMeta(value) + ")$"
 }

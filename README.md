@@ -151,7 +151,10 @@ discovery, its issuer, and nothing else — it has no audience option and
 never inspects `aud` — so without the pin any unexpired token that issuer
 minted is admitted whatever client it was minted for, including one the
 same person holds for a different application. It is rendered into every
-user's `match_claims` beside the group, under `aud`.
+user's `match_claims` beside the group, under `aud`, and both values are
+escaped and anchored there — vmauth compiles a `match_claims` value as a
+regular expression, and neither a client id nor a group name is ours to
+choose.
 
 Each route `RenderVMAuth` emits carries the filter argument that applies
 the claim — `.../?extra_filters={{.MetricsExtraFilters}}` for metrics,

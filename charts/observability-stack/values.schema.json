@@ -38,8 +38,8 @@
     },
     "audience": {
       "type": "string",
-      "pattern": "^([A-Za-z0-9][A-Za-z0-9_:@-]*)?$",
-      "description": "An OAuth client id: the audience this proxy's tokens are minted for. vmauth compiles every matchClaims value as a REGULAR EXPRESSION, so the shape admits what an opaque identifier is built from - letters, digits, -, _, : and @ - and no metacharacter at all: a value carrying a . or a | would pin a pattern, and a pattern admits clients nobody named. Empty is allowed here and refused at render time whenever a principal exists, so that the refusal can say what an unpinned audience costs."
+      "pattern": "^\\S*$",
+      "description": "An OAuth client id: the audience this proxy's tokens are minted for. It is whatever the issuer assigned - a UUID, a name, an <id>@<project> - and is escaped and anchored where it is rendered, so a dot or a pipe in it pins itself rather than a pattern. Only a value no issuer mints is refused here: one carrying whitespace or a newline, which is usually a value that arrived from the wrong place. Empty is allowed by the schema and refused at render time whenever a principal exists, so that the refusal can say what an unpinned audience costs."
     },
     "resources": {
       "type": "object",
@@ -219,7 +219,7 @@
         },
         "audience": {
           "$ref": "#/definitions/audience",
-          "description": "The client id this proxy's tokens are minted under, pinned into every reader's matchClaims as `aud`. REQUIRED whenever principals are set: vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else - it has no audience option and never inspects aud itself - so without this pin any unexpired token from that issuer is admitted whatever client it was minted for."
+          "description": "The client id this proxy's tokens are minted under, pinned into every reader's matchClaims as `aud`. REQUIRED whenever principals are set: vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else - it has no audience option and never inspects aud itself - so without this pin any unexpired token from that issuer is admitted whatever client it was minted for. Escaped and anchored where it is rendered, so whatever the issuer assigned pins itself and nothing else."
         },
         "claimName": {
           "type": "string",
