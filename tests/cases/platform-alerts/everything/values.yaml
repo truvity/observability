@@ -1,0 +1,39 @@
+# Every value set away from its default, so a change to any one of them
+# shows up in the golden diff.
+nameOverride: alerts
+ruleLabels:
+  vmalert: platform
+commonLabels:
+  tenant: example
+  env: example
+runbookBaseUrl: https://runbooks.example.com/
+interval: 30s
+namespaceSelector: "example-.*"
+
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+    freeSpaceMetric: example_free_disk_space_bytes
+    freeSpaceLimitMetric: example_free_disk_space_limit_bytes
+  - name: logs
+    rowsMetric: example_log_rows_ingested_total
+
+groups:
+  backups:
+    enabled: true
+    maxSuccessAge: 50h
+    severity: warning
+    failedSeverity: info
+  writePath:
+    enabled: true
+    window: 10m
+    for: 20m
+    severity: warning
+  volumes:
+    enabled: true
+    minCapacityRatio: 0.25
+    severity: warning
+  storeLimits:
+    enabled: true
+    headroomFactor: 3
+    severity: critical

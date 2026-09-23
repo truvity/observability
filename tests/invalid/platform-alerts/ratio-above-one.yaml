@@ -1,0 +1,15 @@
+# A mounted filesystem is always somewhat smaller than its claim, so a
+# ratio above 1 fires on every healthy volume in the estate.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  backups:
+    enabled: true
+  writePath:
+    enabled: true
+  volumes:
+    enabled: true
+    minCapacityRatio: 1.5
+  storeLimits:
+    enabled: false

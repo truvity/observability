@@ -1,0 +1,129 @@
+# platform-alerts — the rules that fire when something has stopped working
+# while everything still looks green.
+#
+# Every rule here was written after an incident, and every threshold is
+# stated against a measured healthy range rather than a guess. The comments
+# say which incident and which range; docs/safety.md says it at length.
+#
+# The expressions are MetricsQL and are evaluated by vmalert. Duration
+# literals (`26h`) are used in arithmetic, which MetricsQL supports and
+# PromQL does not.
+
+# -- Name overrides for the rendered VMRule object.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Labels on the VMRule object itself. vmalert selects rule objects by
+# these, so an install that runs more than one vmalert puts the selector
+# here.
+ruleLabels: {}
+
+# -- Labels added to every rule, merged under each rule's own `severity`.
+# The Alertmanager routing tree reads these: an estate that routes by
+# tenant or environment sets them here, once.
+commonLabels: {}
+
+# -- Base URL for the runbook link on every alert. The alert's name is
+# appended, so `https://example.com/runbooks` yields
+# `https://example.com/runbooks/WritePathDead`. Empty renders no link.
+runbookBaseUrl: ""
+
+# -- How often vmalert evaluates these groups.
+interval: 1m
+
+# -- Only consider objects in namespaces matching this regular expression.
+# `.*` is every namespace; an estate that runs these rules for the platform
+# alone narrows it here.
+namespaceSelector: ".*"
+
+# -- The stores these rules watch, one entry per store process.
+#
+# There is no default list, and a group that needs one refuses to render
+# without it. That is deliberate: every store exports its counters under
+# its own names, and a guessed metric name is how a rule silently never
+# fires — the failure this chart exists to prevent. Name the counters your
+# stores actually export.
+#
+# For the VictoriaMetrics family the shapes are:
+#
+#   stores:
+#     - name: metrics
+#       rowsMetric: vm_rows_inserted_total
+#       freeSpaceMetric: vm_free_disk_space_bytes
+#       freeSpaceLimitMetric: vm_free_disk_space_limit_bytes
+#     - name: logs
+#       rowsMetric: vl_rows_ingested_total
+#
+# `name` labels the alert. `rowsMetric` is the counter the write-path
+# deadman watches. The two free-space metrics are optional and enable the
+# read-only rule for that store; a store that exports no such limit simply
+# gets no read-only rule, which is the honest outcome.
+stores: []
+
+groups:
+  # Backups and scheduled work.
+  #
+  # The incident: a backup CronJob stopped being scheduled at all and was
+  # silent for two days. A job that never runs never produces a failed Job,
+  # so "no failures" is not "working" — only the age of the last SUCCESS
+  # can see it.
+  backups:
+    enabled: true
+    # -- Age of the last successful run past which a CronJob is considered
+    # not to be succeeding: its schedule plus enough slack that a slow run
+    # or a retry does not page. 26h suits a daily job.
+    maxSuccessAge: 26h
+    severity: critical
+    # -- A Job that has failed at all. Separate from the age rule because a
+    # job that fails loudly and a job that vanishes quietly are different
+    # failures and often have different owners.
+    failedSeverity: warning
+
+  # The write path.
+  #
+  # The incident: a metrics store went read-only and served reads happily
+  # for twenty minutes with nothing noticing. An alert on the store's own
+  # read-only FLAG cannot fire in that case, because the sample carrying it
+  # is written INTO the store that is refusing writes. Watching the rows
+  # counter stop is the only rule that can see it.
+  #
+  # Requires `stores` with a `rowsMetric` on each entry.
+  writePath:
+    enabled: true
+    # -- Window over which the ingestion rate is measured.
+    window: 5m
+    # -- How long the rate must stay at zero before the alert fires. Long
+    # enough to ride out a restart, short enough to beat the retention of
+    # whatever is buffering upstream.
+    for: 10m
+    severity: critical
+
+  # Volumes.
+  #
+  # The incident: a pod reported 1/1 Running while writing to the node's
+  # root filesystem, because its real volume was never mounted. A mounted
+  # filesystem is always somewhat smaller than the claim that satisfied it
+  # (filesystem overhead; measured healthy range here is 0.95–0.99 of the
+  # claim), but it is never a fraction of it.
+  volumes:
+    enabled: true
+    # -- Fire when the mounted filesystem is smaller than this fraction of
+    # the claim. 0.5 sits roughly 2x below the measured healthy range, so
+    # overhead can never reach it and a wrong mount always does.
+    minCapacityRatio: 0.5
+    severity: critical
+
+  # Store limits.
+  #
+  # The threshold comes from the store's OWN exported limit, never from a
+  # constant written here: a guessed constant is how a rule either never
+  # fires or always does. A store that exports no such limit gets no rule.
+  #
+  # Requires `stores` with `freeSpaceMetric` and `freeSpaceLimitMetric`.
+  storeLimits:
+    enabled: true
+    # -- Fire while free space is still this multiple of the limit at which
+    # the store stops accepting writes, so the alert arrives with room to
+    # act rather than at the moment writes fail.
+    headroomFactor: 2
+    severity: warning

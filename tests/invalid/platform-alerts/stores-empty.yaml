@@ -1,0 +1,12 @@
+# The write-path deadman is enabled but no store is named, so it would
+# watch nothing while appearing installed.
+stores: []
+groups:
+  backups:
+    enabled: true
+  writePath:
+    enabled: true
+  volumes:
+    enabled: true
+  storeLimits:
+    enabled: false

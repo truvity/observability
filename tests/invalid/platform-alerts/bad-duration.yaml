@@ -1,0 +1,15 @@
+# Not a duration: vmalert would reject the rule at load, long after this
+# chart reported a successful install.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  backups:
+    enabled: true
+    maxSuccessAge: soon
+  writePath:
+    enabled: true
+  volumes:
+    enabled: true
+  storeLimits:
+    enabled: false

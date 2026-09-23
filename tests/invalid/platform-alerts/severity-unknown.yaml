@@ -1,0 +1,15 @@
+# A severity the routing tree has no branch for is an alert that fires into
+# nowhere.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  backups:
+    enabled: true
+    severity: urgent
+  writePath:
+    enabled: true
+  volumes:
+    enabled: true
+  storeLimits:
+    enabled: false
