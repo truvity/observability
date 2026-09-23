@@ -112,6 +112,59 @@ readable lines of diff. Nothing about it is maintained by hand, because a
 hand-maintained list is one that goes stale at the first bump and then
 asserts something that is no longer true.
 
+## Two collection paths, on purpose
+
+Our own software is OpenTelemetry-only: it speaks OTLP to a gateway in its
+own cluster and knows nothing about a store. Infrastructure and
+third-party components are wired as they come — a Prometheus endpoint
+through a scrape object, a container's stdout through the log agent, OTLP
+where a component happens to offer it.
+
+Collapsing the two would mean one of two things, and both are worse than
+the seam. Either every third-party component has to be instrumented with
+an SDK we do not control, or our own software has to learn a store's
+protocol and lose the property that makes it portable. The stores do not
+know which agent sent them data, so the seam costs nothing at the far end.
+
+**The collection layer is not itself vendor-neutral, and that was
+considered.** An OpenTelemetry-only collection layer — a daemonset
+collector with `filelog` and the `prometheus` receiver fed by the Target
+Allocator, `prometheusremotewrite` out so every pre-built rule keeps its
+metric names — works. It was not taken because the store-native agents
+give by default the buffer and checkpoint semantics a collector needs
+declared and fixtured, and because it needs a second operator and a second
+admission webhook. The trigger for revisiting it: a decision that
+collection must be vendor-neutral too, or a second store family behind the
+same agents.
+
+Two rules keep that a swap rather than a redesign, and they are why they
+look pedantic:
+
+- **Scrape objects are always the Prometheus Operator kinds.** The
+  VictoriaMetrics operator converts them today and the Target Allocator
+  reads the same objects. One `VMPodScrape` is the first of the thirty
+  that follow it.
+- **The CRDs for those kinds are declared**, in `observability-crds`,
+  rather than arriving as a side effect of whichever chart installed them
+  first.
+
+## The OpenTelemetry operator is not used
+
+The collector is an ordinary workload this repository renders. The
+operator's value is zero-code instrumentation for Java, Node.js, Python
+and .NET; for Go its path is a privileged eBPF sidecar on single-container
+pods, and software we own carries the SDK already. A second operator with
+a second admission webhook, to render a StatefulSet a chart can render, is
+cost with nothing behind it.
+
+Rendering the collector's configuration here rather than passing it
+through an upstream chart is the other half of that. Every refusal this
+repository makes about the gateway is a statement about that file — which
+attributes may become stream fields, that the tenancy statements run in an
+order that cannot be reordered, that every exporter has durability behind
+it. A configuration that arrives as an opaque passthrough can be checked
+for none of it.
+
 ## Rules are proven, not asserted
 
 Every rule in `platform-alerts` was written after an incident, carries the

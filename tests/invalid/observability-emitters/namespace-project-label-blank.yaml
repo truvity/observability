@@ -1,0 +1,48 @@
+# With no project label key, nothing reads a tenant off a namespace and
+# every namespace falls through to the fallback — a single-tenant install
+# rendered to look like a multi-tenant one.
+
+metrics:
+  destinations:
+  - name: primary
+    url: https://metrics.example/api/v1/write
+otlp:
+  destinations:
+    logs:
+    - name: primary
+      url: https://logs.example
+    metrics:
+    - name: primary
+      url: https://metrics.example
+    traces:
+    - name: primary
+      url: https://traces.example
+tenancy:
+  env: example
+  fallbackTenant: infra
+  namespaceLabels:
+    layer: tenancy.example.com/layer
+    project: ''
+victoria-logs-collector:
+  collector:
+    extraFields: '{"env":"example"}'
+    streamFields:
+    - kubernetes.container_name
+    - kubernetes.pod_name
+    - kubernetes.pod_namespace
+    - env
+    - kubernetes.namespace_labels.tenancy.example.com/project
+  extraVolumeMounts:
+  - mountPath: /etc/observability-write-token
+    name: write-token
+    readOnly: true
+  extraVolumes:
+  - name: write-token
+    secret:
+      secretName: example-write-token
+  remoteWrite:
+  - bearerTokenFile: /etc/observability-write-token/token
+    maxDiskUsagePerURL: 5GB
+    url: https://logs.example
+writeCredentials:
+  secretName: example-write-token

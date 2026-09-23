@@ -1,0 +1,76 @@
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The shape this chart exists for: one emitter, two stores, every sample
+# to both.
+#
+# No store in this family replicates across a zone in a way that survives
+# one, so redundancy is the writer's — and the thing to read in the golden
+# is that nothing here shards. Two remote-write entries on the metrics
+# agent, two exporters in each of the gateway's pipelines, two
+# `-remoteWrite.url` flags on the log agent, and a buffer sized for both.
+tenancy:
+  env: example
+  fallbackTenant: infra
+  namespaceLabels:
+    project: tenancy.example.com/project
+    layer: tenancy.example.com/layer
+
+writeCredentials:
+  secretName: example-write-token
+
+metrics:
+  # 1Gi across two destinations is 500Mi each, which is the documented
+  # floor: the operator divides this by the number of destinations to
+  # derive the per-destination cap, and the chunk size is 500MB.
+  queue:
+    size: 1Gi
+  destinations:
+    - name: zone-a
+      url: https://metrics-a.example/api/v1/write
+    - name: zone-b
+      url: https://metrics-b.example/api/v1/write
+
+otlp:
+  destinations:
+    metrics:
+      - name: zone-a
+        url: https://metrics-a.example
+      - name: zone-b
+        url: https://metrics-b.example
+    logs:
+      - name: zone-a
+        url: https://logs-a.example
+      - name: zone-b
+        url: https://logs-b.example
+    traces:
+      - name: zone-a
+        url: https://traces-a.example
+      - name: zone-b
+        url: https://traces-b.example
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://logs-a.example
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+    - url: https://logs-b.example
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    streamFields:
+      - kubernetes.container_name
+      - kubernetes.pod_name
+      - kubernetes.pod_namespace
+      - env
+      - kubernetes.namespace_labels.tenancy.example.com/project
+    extraFields: '{"env":"example"}'

@@ -11,7 +11,7 @@ everything still looks green.
 | `charts/observability-crds` | The CustomResourceDefinitions the rest of the stack needs, owned as their own release rather than as a side effect of whichever chart installed them first: the VictoriaMetrics operator's, and the four Prometheus Operator scrape kinds every component authors its scrape objects in. Applied before the controllers, never pruned. | unreleased |
 | `charts/platform-alerts` | The rules that fire when something has stopped working silently: a CronJob that is no longer scheduled, a store whose write path has died, a volume that was never mounted, a store approaching its own read-only limit. Every rule carries the incident that earned it and a negative fixture that must fail. | unreleased |
 | `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces behind an authorising proxy that scopes every query to the caller's tenants; two vmalerts and Alertmanager with a deadman that leaves the cluster; network policies and backups; optionally Grafana, forwarding the signed-in user's identity. Single-replica today — `ha` is accepted and the zone-redundant behaviour follows. | unreleased |
-| `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry collector, each stamping tenancy from namespace labels and replicating to every destination with its own on-disk buffer. | planned |
+| `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry gateway, each optional, each stamping `tenant` and `env` from the namespace's own labels so an application cannot choose them, and each replicating to every destination with its own on-disk buffer. | unreleased |
 | `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. Refuses a name that could widen a grant rather than escaping it. | unreleased |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
@@ -40,6 +40,13 @@ labels, and an application cannot choose its own. An **install** is one
 set of stores serving many tenants; isolation happens at query time, where
 a proxy reads the caller's token and injects the filters that token is
 entitled to.
+
+That first sentence is the whole security property, and
+`charts/observability-emitters` is what holds it up: the metrics agent
+discards a `tenant` label a target exported itself, the gateway overwrites
+the one an SDK set, and the values that would turn either of those off are
+refusals rather than defaults. Query-time isolation over telemetry an
+application labelled itself is not isolation.
 
 Everything else follows from those two. Redundancy is the writer's job
 because no store here replicates across a zone: two independent instances,

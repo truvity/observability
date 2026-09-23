@@ -6,8 +6,21 @@
 #
 # Vendored from truvity/ci-workflows (hack/leak-canary.sh), which is public
 # for the same reason. Keep it in step with that copy.
-# There are no deltas: this copy differs from that one only in this
-# paragraph and the next.
+#
+# ONE DELTA from that copy, stated here because the contract requires a
+# narrowing to be explained rather than quietly applied. The `/secrets/`
+# pattern exists to catch a parameter-store path, and it also matches the
+# fixed address at which Kubernetes projects a pod's own service account
+# token: `/var/run/secrets/kubernetes.io/serviceaccount`. That address is
+# mechanism, not a particular — every pod in every cluster has it, it
+# names nothing about any estate, and charts/observability-emitters
+# renders it into the metrics agent's inline scrape configs so the agent
+# can authenticate to the kubelet as itself. It is excluded by its exact
+# literal below; the pattern it was matching still catches every real
+# parameter-store path, including one that happens to sit under
+# /var/run. The cost of the exclusion is that a line carrying BOTH this
+# address and a genuine particular would be missed, which is why the
+# exclusion is an exact string and not a prefix.
 #
 # Every chart value or module input that names a cluster, an account, a
 # hostname or a secret path is an INPUT with a neutral default; the
@@ -36,6 +49,11 @@ patterns=(
   'glpat-|ghp_|github_pat_'            # tokens, in case of an accident
 )
 
+# Mechanism that the patterns above necessarily match. See the delta note
+# in the header: every entry here is an address that is identical in every
+# cluster and names nothing about any estate.
+mechanism='/var/run/secrets/kubernetes\.io/serviceaccount'
+
 fail=0
 
 # Scan TRACKED FILES ONLY. The point of this canary is to stop particulars
@@ -55,7 +73,8 @@ for p in "${patterns[@]}"; do
   # Exclude this script: it necessarily contains the patterns it bans.
   if hits=$(printf '%s\0' "${tracked[@]}" \
               | grep -zZv '^hack/leak-canary\.sh$' \
-              | xargs -0 -r grep -InE "$p" 2>/dev/null); then
+              | xargs -0 -r grep -InE "$p" 2>/dev/null \
+              | grep -vE "$mechanism"); then
     echo "LEAK: pattern /$p/ matched — particulars belong in caller inputs or org variables:"
     echo "$hits" | head -5 | sed 's/^/    /'
     fail=1

@@ -1,0 +1,35 @@
+apiVersion: v2
+name: observability-emitters
+description: >-
+  Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry
+  gateway, each stamping tenancy the application cannot choose and each
+  replicating to every destination with its own on-disk buffer.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - victoriametrics
+  - victorialogs
+  - opentelemetry
+  - observability
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability
+# One dependency, pinned exactly and vendored under charts/ so a render
+# reaches no registry. A range would resolve to whatever exists on the day
+# of the install, and the zero-diff gate in docs/adoption.md would stop
+# meaning anything.
+#
+# The log agent comes from upstream because its checkpoint and buffer
+# semantics are the reason to use it rather than a collector; the metrics
+# agent is a CustomResource this chart writes itself, reconciled by the
+# VictoriaMetrics operator the stack chart installs. The OpenTelemetry
+# gateway is this chart's own workload — see docs/doctrine.md for why it is
+# neither an operator's CustomResource nor upstream's chart.
+dependencies:
+  - name: victoria-logs-collector
+    version: 0.3.7
+    repository: oci://ghcr.io/victoriametrics/helm-charts
+    condition: logs.enabled

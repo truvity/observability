@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-emitters",
+  "description": "Per-cluster collection. Strict: an unknown key fails the render rather than being silently ignored, because in a collection chart a key that does not apply is a label that is never stamped, a destination that is never written to, or a buffer that was never on a volume \u2014 and every one of those renders, syncs and reports healthy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "interval",
+    "tenancy",
+    "writeCredentials",
+    "metrics",
+    "logs",
+    "otlp",
+    "selfMonitor"
+  ],
+  "definitions": {
+    "plainName": {
+      "type": "string",
+      "description": "A lowercase plain name. Interpolated into a filter expression on the read side, so a name carrying `|` or `.*` would widen a grant rather than look odd.",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h)$"
+    },
+    "quantity": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(m|k|M|G|T|P|Ki|Mi|Gi|Ti|Pi)?$"
+    },
+    "resources": {
+      "type": "object",
+      "description": "Requests equal limits, integer CPU. Kubernetes' own shape, so it is not further constrained here; the render refuses the combinations that matter.",
+      "properties": {
+        "requests": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "tag"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "namedDestinations": {
+      "type": "array",
+      "description": "Every entry receives every sample: replication is the writer's job. An empty list is refused at render.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/definitions/plainName"
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "queue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size"
+      ],
+      "properties": {
+        "size": {
+          "$ref": "#/definitions/quantity"
+        },
+        "storageClassName": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "properties": {
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "interval": {
+      "$ref": "#/definitions/duration",
+      "description": "The scrape interval, and the number the store's deduplication window has to equal."
+    },
+    "tenancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "env",
+        "tenantLabel",
+        "envLabel",
+        "fallbackTenant",
+        "namespaceLabels"
+      ],
+      "properties": {
+        "env": {
+          "type": "string",
+          "description": "This cluster's environment name. Required; blank is refused at render because telemetry labelled env=\"\" matches no grant and is invisible."
+        },
+        "tenantLabel": {
+          "$ref": "#/definitions/plainName"
+        },
+        "envLabel": {
+          "$ref": "#/definitions/plainName"
+        },
+        "fallbackTenant": {
+          "type": "string",
+          "description": "The tenant for a namespace carrying neither tenancy label. Required."
+        },
+        "namespaceLabels": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project",
+            "layer"
+          ],
+          "properties": {
+            "project": {
+              "type": "string",
+              "description": "The namespace label whose value is the tenant. Required."
+            },
+            "layer": {
+              "type": "string",
+              "description": "Consulted only for a namespace with no project label. Empty renders no rule for it."
+            }
+          }
+        }
+      }
+    },
+    "writeCredentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "secretName",
+        "key"
+      ],
+      "properties": {
+        "secretName": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "destinations",
+        "image",
+        "replicaCount",
+        "resources",
+        "queue",
+        "scrape",
+        "spec"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "destinations": {
+          "$ref": "#/definitions/namedDestinations"
+        },
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "queue": {
+          "$ref": "#/definitions/queue"
+        },
+        "scrape": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kubelet",
+            "cadvisor"
+          ],
+          "properties": {
+            "kubelet": {
+              "type": "boolean"
+            },
+            "cadvisor": {
+              "type": "boolean"
+            }
+          }
+        },
+        "spec": {
+          "type": "object",
+          "description": "Merged over the VMAgent spec this chart renders. The vendor's surface, so it is not constrained here \u2014 but the settings that turn off tenancy stamping, replication or buffering are refused at render, against the merged result."
+        }
+      }
+    },
+    "logs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "description": "The log agent. Its destinations, stream fields and buffer are the upstream chart's own keys under `victoria-logs-collector`, read back and refused by this chart, rather than a second set that would have to be kept in step with them.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "otlp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "image",
+        "replicaCount",
+        "resources",
+        "queue",
+        "destinations",
+        "streamFields",
+        "events",
+        "service",
+        "podMonitor"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "queue": {
+          "$ref": "#/definitions/queue"
+        },
+        "destinations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "metrics",
+            "logs",
+            "traces"
+          ],
+          "properties": {
+            "metrics": {
+              "$ref": "#/definitions/namedDestinations"
+            },
+            "logs": {
+              "$ref": "#/definitions/namedDestinations"
+            },
+            "traces": {
+              "$ref": "#/definitions/namedDestinations"
+            }
+          }
+        },
+        "streamFields": {
+          "type": "array",
+          "description": "Resource attributes that become log stream fields. Refused empty, and every entry must be one the chart knows to be constant for the lifetime of a pod.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "grpcPort",
+            "httpPort"
+          ],
+          "properties": {
+            "grpcPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "httpPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "podMonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "extraLabels": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "selfMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extraLabels": {
+          "type": "object"
+        }
+      }
+    },
+    "victoria-logs-collector": {
+      "type": "object",
+      "description": "Passed through to the vendored upstream chart, and read back by this chart's refusals. Upstream's surface, not this chart's, so it is not constrained here \u2014 a key this chart does not know about is still upstream's to interpret."
+    },
+    "global": {
+      "type": "object",
+      "description": "Helm's shared subchart values. Upstream's surface."
+    }
+  }
+}

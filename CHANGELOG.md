@@ -8,6 +8,34 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## Unreleased
 
+- **`charts/observability-emitters`** — per-cluster collection: vmagent as
+  a `VMAgent` the operator reconciles, vlagent from the vendor's own
+  DaemonSet chart, and an OpenTelemetry gateway this chart renders itself.
+  Each is optional, each replicates to every destination it is given with
+  its own on-disk buffer, and each stamps `tenant` and `env` from the
+  **namespace's** labels — an application that sets them itself has them
+  overwritten. Install `charts/observability-crds` first: the chart
+  renders `PodMonitor` objects, and on a cluster without those CRDs every
+  other chart's monitor template renders nothing at all, silently, with a
+  successful sync. Twenty-six refusals, each with a fixture, and the three
+  worth knowing before you write the values file: `overrideHonorLabels`
+  cannot be turned off, because a target that exports its own `tenant`
+  label would otherwise choose its own tenant; `remoteWrite.shardByURL` is
+  refused outright, because it splits the series between a redundant pair
+  instead of replicating to both and every query still answers with half
+  of every result missing; and a buffer on an emptyDir is refused for all
+  three emitters, including the log agent's, where the same volume holds
+  the checkpoint that stops it re-reading every container log from the
+  beginning on each rollout. Five values have no default and are asked for
+  rather than guessed — `tenancy.env`, `tenancy.fallbackTenant`,
+  `tenancy.namespaceLabels.project`, `writeCredentials.secretName` and a
+  destination list per emitter — because each of them renders, runs and
+  reports healthy when it is wrong. **One thing to carry out of the
+  chart:** on the log path the tenancy stream field is
+  `kubernetes.namespace_labels.<your project label key>` and **not**
+  `tenant`, because vlagent cannot rename a field; a proxy filtering on
+  `tenant` against those streams returns an empty result rather than an
+  error. See docs/safety.md.
 - **`charts/observability-stack`** — one install of the store: the
   VictoriaMetrics family from the vendor's own pinned charts, with the
   proxy, the two vmalerts, Alertmanager, the network policies and the

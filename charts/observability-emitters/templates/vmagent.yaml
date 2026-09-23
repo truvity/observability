@@ -1,0 +1,52 @@
+{{- if .Values.metrics.enabled }}
+{{- /*
+The metrics agent, as an object the VictoriaMetrics operator reconciles.
+
+What is NOT here is as deliberate as what is. There is no scrape
+allow-list, no `shardByURL` and no list of what to collect: this agent
+selects every scrape object on the cluster, and the charts that own the
+things being watched author those objects. An agent with a list of what to
+collect is an agent somebody has to remember to edit when a component
+arrives, and the failure — a component nobody is watching — looks exactly
+like a component with nothing wrong.
+*/}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAgent
+metadata:
+  name: {{ include "observability-emitters.fullname" . }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+spec:
+  {{- include "observability-emitters.vmagent.spec" . | nindent 2 }}
+{{- if .Values.selfMonitor.enabled }}
+---
+{{- /*
+The agent's own metrics, as a PodMonitor.
+
+The operator would create a VMServiceScrape for this object by itself;
+`disableSelfServiceScrape` turns that off and this replaces it. The
+counters worth alerting on are `vmagent_remotewrite_packets_dropped_total`
+and the growth of `vmagent_remotewrite_pending_data_bytes`: an agent
+dropping blocks and an agent whose buffer is filling are the two ways this
+shape loses data, and both report a healthy pod.
+*/}}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ printf "%s-metrics-agent" (include "observability-emitters.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+    {{- with .Values.selfMonitor.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmagent
+      app.kubernetes.io/instance: {{ include "observability-emitters.fullname" . }}
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.interval }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,258 @@
+{{- if .Values.otlp.enabled }}
+{{- $full := include "observability-emitters.gateway.fullname" . }}
+{{- $config := include "observability-emitters.gateway.config" . }}
+{{- /*
+The OpenTelemetry gateway.
+
+A StatefulSet, not a Deployment. Each replica owns a persistent queue, a
+ReadWriteOnce volume cannot be shared by two pods, and a queue on an
+emptyDir is not a queue — it is a buffer that is discarded exactly when it
+is holding something. The upstream chart's Deployment shape is fine for a
+gateway with no durability; this one has durability as its reason to
+exist.
+
+No operator either. The OpenTelemetry operator's value is zero-code
+instrumentation for Java, Node.js, Python and .NET; for Go its path is a
+privileged eBPF sidecar, and our own software carries the SDK already. A
+second operator with a second admission webhook, to render a Deployment
+this chart can render, is cost with nothing behind it. The trigger for
+revisiting that is in docs/doctrine.md.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+---
+{{- /*
+The one ClusterRole among the emitters.
+
+`k8sattributes` reads pods and namespaces cluster-wide, because the
+tenancy it stamps is the NAMESPACE's property and a namespace-scoped role
+cannot see a namespace object. The Events receiver reads events. Neither
+writes anything, and the only write in the whole role is the lease the
+replicas elect a leader with.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+{{- if .Values.otlp.events.enabled }}
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $full }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ $full }}
+  apiGroup: rbac.authorization.k8s.io
+{{- if .Values.otlp.events.enabled }}
+---
+{{- /*
+The lease, and nothing more. Namespace-scoped on purpose: leader election
+is an agreement between this release's own replicas, so the permission to
+take it does not leave the release's namespace.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $full }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ $full }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- $config | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "observability-emitters.gateway.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: otlp-grpc
+      port: {{ .Values.otlp.service.grpcPort }}
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: {{ .Values.otlp.service.httpPort }}
+      targetPort: otlp-http
+      protocol: TCP
+---
+{{- /*
+The headless Service a StatefulSet needs to name its pods. It carries no
+telemetry port: applications send to the Service above, which balances
+across replicas. A caller that addressed one pod directly would keep
+sending to it while it was down.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-headless" $full | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "observability-emitters.gateway.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: otlp-grpc
+      port: {{ .Values.otlp.service.grpcPort }}
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.otlp.replicaCount }}
+  serviceName: {{ printf "%s-headless" $full | trunc 63 | trimSuffix "-" }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "observability-emitters.gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "observability-emitters.gateway.labels" . | nindent 8 }}
+      annotations:
+        {{- /*
+        The configuration's own checksum, so a change to it restarts the
+        pods. Without it a ConfigMap edit lands on disk and the running
+        collector keeps the configuration it parsed at startup — a change
+        that was applied, was synced, and did nothing.
+        */}}
+        observability-emitters/config-checksum: {{ $config | sha256sum }}
+    spec:
+      serviceAccountName: {{ $full }}
+      containers:
+        - name: collector
+          image: {{ printf "%s:%s" .Values.otlp.image.repository .Values.otlp.image.tag | quote }}
+          args:
+            - --config=/etc/otelcol/config.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: {{ .Values.otlp.service.grpcPort }}
+              protocol: TCP
+            - name: otlp-http
+              containerPort: {{ .Values.otlp.service.httpPort }}
+              protocol: TCP
+            - name: telemetry
+              containerPort: 8888
+              protocol: TCP
+          env:
+            {{- /*
+            The write credential, as an environment variable the
+            configuration interpolates into an Authorization header. Not a
+            file, because the collector has no header-from-file: the value
+            has to be in the process, and an environment variable at least
+            keeps it out of the rendered ConfigMap, where it would sit in
+            `helm get manifest` for everyone with read access to the
+            release.
+            */}}
+            - name: OBSERVABILITY_WRITE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.writeCredentials.secretName | quote }}
+                  key: {{ .Values.writeCredentials.key | quote }}
+          resources:
+            {{- toYaml .Values.otlp.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+            - name: queue
+              mountPath: /var/lib/otelcol
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $full }}
+  volumeClaimTemplates:
+    - metadata:
+        name: queue
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- with .Values.otlp.queue.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.otlp.queue.size }}
+{{- if .Values.otlp.podMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+    {{- with .Values.otlp.podMonitor.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "observability-emitters.gateway.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: telemetry
+      path: /metrics
+      interval: {{ .Values.interval }}
+{{- end }}
+{{- end }}
