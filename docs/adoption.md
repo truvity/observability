@@ -12,6 +12,14 @@ four Prometheus Operator scrape kinds — `PodMonitor`, `ServiceMonitor`,
 in. They are a separate release for two reasons that have both cost estates
 an outage.
 
+Treat the Prometheus Operator half as a **prerequisite, not a tidy-up**. On
+a cluster where nothing has installed `monitoring.coreos.com` — no
+`ServiceMonitor`, no `PodMonitor`, no `PrometheusRule` — this chart is the
+only thing that puts those kinds there, and until it has, every chart that
+offers a monitor template quietly produces none. That failure is in
+docs/safety.md, and it is why the order below is a rule rather than a
+preference.
+
 **Helm never upgrades a CRD installed from a chart's `crds/` directory.**
 The first install lays them down and every upgrade after that leaves them
 exactly as they were, with no diff, no warning and no error. The schema a
@@ -84,7 +92,23 @@ with it.
    Synced and Healthy, and the failure surfaces later in the controller
    that wanted the kind.
 
-3. **Then the stack**, at a later wave.
+3. **Then the stack**, and only then anything else that offers a monitor
+   template, at a later wave. Switching `serviceMonitor.enabled: true` on
+   in some other chart before the kinds exist installs cleanly and scrapes
+   nothing; docs/safety.md says why nobody notices.
+
+### After the first install
+
+**Restart anything that read the API surface at startup.** A controller
+that decided once, at boot, whether `monitoring.coreos.com/v1` existed goes
+on believing the answer it got — the Keycloak operator is one, and it will
+not emit its `ServiceMonitor` until it has been restarted. Rolling those
+deployments is part of installing this chart the first time, not a separate
+piece of housekeeping.
+
+**Then turn the monitor values on**, in that order, and confirm an object
+actually exists (`kubectl get servicemonitor -A`) rather than trusting a
+green deployment.
 
 ### Diff the CRDs on every bump
 

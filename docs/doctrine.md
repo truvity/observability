@@ -78,6 +78,14 @@ the archive rather than resolving it at render time keeps the render a
 function of the checked-out tree: `just golden` and `just lint` reach no
 registry, and a bump is a diff.
 
+Both sets are installed without their `description` fields, which is how
+upstream publishes its own CRD bundles: they are the whole of the size
+difference — 934 KB against 350 KB for the four Prometheus kinds — and a
+golden nobody can read asserts nothing. The `description` keys dropped are
+only those with a scalar value; a property *named* `description` is a
+mapping and is left alone, because dropping one would remove a field from
+the schema rather than a sentence from it.
+
 The **Prometheus Operator's** four scrape kinds come from ocictl's
 `crdctl`, pinned in `hack/crds/prometheus-operator/crdctl.yaml`, which is
 how every other CRD-only chart in this estate is built. There is no

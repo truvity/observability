@@ -20,6 +20,40 @@ cannot see what a cluster already has. That question is answered by the
 inventory at the foot of the render and by `kubectl diff` before the sync;
 docs/adoption.md says how.
 
+## The failure this chart's ordering prevents
+
+**A missing CRD does not fail an install. It removes a template.**
+
+The common shape upstream is a monitor template gated on the API surface:
+
+```
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+```
+
+When the kind is absent the condition is false, the template renders
+nothing, and the release installs successfully. Nothing warns. The operator
+who set `serviceMonitor.enabled: true` has a green deployment, no scrape
+object, and no metrics — and looks for the fault in the scraper, which is
+the one place it is not. Argo CD, external-secrets, Kargo and the Keycloak
+operator all ship charts that do this.
+
+That is the whole reason `observability-crds` is applied at a wave ahead of
+everything else, and the reason enabling a monitor value before the kinds
+exist is a sequencing mistake rather than a matter of taste. Two things
+make it survivable:
+
+- **Prefer an upstream mode that fails loudly.** Where a chart offers one,
+  use it: external-secrets has `serviceMonitor.renderMode`, whose
+  `failIfMissing` turns exactly this silent skip into a refused render.
+  `skipIfMissing` is the dangerous default; `alwaysRender` produces an
+  object the API server then rejects, which is at least visible.
+- **Check for the object, not for the install.** `kubectl get
+  servicemonitor -A` after enabling one answers the question a successful
+  Helm release does not.
+
+A controller that cached the answer at startup keeps it: see
+docs/adoption.md on what to restart after the CRDs first land.
+
 ## The refusals: `platform-alerts`
 
 Each of these fails the render, and each has a fixture under

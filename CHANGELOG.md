@@ -17,7 +17,11 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
   installed from a chart's `crds/` directory, so a set with two owners is
   a schema that drifts behind the controller reading it. Both upstreams are
   pinned; every render ends with the kinds it carries and the version each
-  one stores, which is what a bump is reviewed against.
+  one stores, which is what a bump is reviewed against. Install it before
+  any chart that offers a monitor template and before switching such a
+  value on: a chart whose monitor is gated on
+  `.Capabilities.APIVersions.Has "monitoring.coreos.com/v1"` renders
+  nothing when the kind is absent and still reports a successful install.
 - **`charts/platform-alerts`** — the rules that fire when something has
   stopped working while everything still looks green: a CronJob no longer
   being scheduled, a store whose write path has died, a volume that was
