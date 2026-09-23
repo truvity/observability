@@ -29,4 +29,4 @@ jobs:
       # Chart-only for now: goreleaser runs with a builds-skip config (it
       # cuts the GitHub release + changelog); the artifacts are the charts,
       # pushed as oci://ghcr.io/truvity/charts/<name>.
-      charts: '["observability-crds", "observability-stack", "platform-alerts"]'
+      charts: '["observability-crds", "observability-emitters", "observability-stack", "platform-alerts"]'
