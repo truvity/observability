@@ -229,6 +229,39 @@ function:
   either and is kept, because it carries the store's version and nothing
   from any tenant.
 
+#### What the proxy cannot defend against, and who has to
+
+**A token that carries its own `vm_access` claim wins.**
+
+```go
+// app/vmauth/main.go
+vmac := tkn.VMAccess()
+if !tkn.HasVMAccessClaim() {
+    vmac = ui.JWT.DefaultVMAccessClaim
+}
+```
+
+`defaultVMAccessClaim` applies only when the token has **no** `vm_access`
+claim at all. A token carrying one — including an empty
+`"vm_access": {}`, which counts as present — replaces the proxy-side
+mapping entirely, and an empty claim expands the placeholder to nothing,
+which removes the argument, which also removes the clash that stops the
+caller supplying their own.
+
+That is the design: the two shapes in `pkg/tenancy` exist because an
+estate may hold the mapping in the proxy **or** in the issuer, and
+`RenderClaim` renders exactly the body an issuer would mint. But it
+means the proxy-side shape is only authoritative while the issuer mints
+no `vm_access` claim, and nothing in vmauth can insist on that.
+
+So it is a property of the ISSUER, and it belongs in whatever review
+covers issuer configuration: in the proxy-side shape, `vm_access` must
+not be a claim any client can influence — not through a scope, not
+through a mapper on a user attribute, not through a token exchange that
+copies unknown claims through. The same control that stops a caller
+choosing their own `groups` has to cover `vm_access`, and it is a
+different claim in a different place.
+
 #### What the test that would have caught it looks like
 
 Nothing about the broken version looked broken. The render succeeded.
