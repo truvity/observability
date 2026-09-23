@@ -75,6 +75,29 @@ fires (the limit is lower than you assumed) or always fires (it is
 higher). A store that exports no such limit gets no rule, which is the
 honest outcome rather than a rule built on a guess.
 
+## The Enterprise boundary
+
+The VictoriaMetrics family ships a community edition (Apache 2.0) and an
+Enterprise edition whose binaries require a licence key. A chart that
+quietly pulled an Enterprise image, or rendered an Enterprise-only flag,
+would put its consumer in breach of the vendor's terms while everything
+still ran — so the boundary is a refusal, not a note.
+
+Nothing in this repository uses: downsampling, multiple retentions or
+retention filters, vmstorage auto-discovery, `vmbackupmanager`,
+`vmgateway`, per-tenant or query statistics, automatic TLS issuing, mTLS
+between components or as a routing key, IP filters in vmauth, vmalert
+multitenancy, rules read from object storage, Kafka or Pub/Sub
+integrations, or FIPS builds. The stack chart, when it lands, refuses an
+image tag containing `enterprise` and any `-license` flag, each with a
+fixture under `tests/invalid/`.
+
+What the design does rely on — vmauth's JWT verification, OIDC discovery,
+claim matching and the `vm_access` claim, `vmbackup`, the partition
+snapshot API, cardinality limits, deduplication, `-httpAuth` — is all
+community. The vmauth version floor is **v1.147.0**, where
+`default_vm_access_claim` arrived.
+
 ## A convention this chart cannot enforce
 
 **A backup job must refuse an empty source.** `rclone sync` against an
