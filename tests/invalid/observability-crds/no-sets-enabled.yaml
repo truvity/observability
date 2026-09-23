@@ -1,0 +1,6 @@
+# Every set disabled installs no CustomResourceDefinition at all while Argo
+# CD reports the application Synced and Healthy. The failure then surfaces
+# in the controller that wanted the kind, far from here.
+sets:
+  victoriaMetrics: false
+  prometheusOperator: false

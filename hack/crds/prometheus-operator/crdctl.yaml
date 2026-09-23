@@ -1,0 +1,12 @@
+# The Prometheus Operator's CRDs, fetched by ocictl's crdctl. hack/crds.sh
+# keeps four of them — PodMonitor, ServiceMonitor, ScrapeConfig and Probe —
+# and fails if any of those four names has changed upstream.
+#
+# The version is pinned by hand and bumped deliberately: these kinds are
+# what every component in a consuming estate writes its scrape objects in,
+# so a schema that has narrowed a field silently drops it from objects that
+# already exist.
+repo: prometheus-operator/prometheus-operator
+pinned_version: "0.94.1"
+paths:
+  - example/prometheus-operator-crd

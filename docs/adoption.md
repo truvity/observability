@@ -3,6 +3,110 @@
 How a platform takes these charts into use, and what to do at each upgrade
 that changes what runs.
 
+## The CRDs come first, and they are a release of their own
+
+`charts/observability-crds` installs the CustomResourceDefinitions the rest
+of this stack needs: the VictoriaMetrics operator's twenty-five, and the
+four Prometheus Operator scrape kinds — `PodMonitor`, `ServiceMonitor`,
+`ScrapeConfig` and `Probe` — that every component authors its scrape objects
+in. They are a separate release for two reasons that have both cost estates
+an outage.
+
+**Helm never upgrades a CRD installed from a chart's `crds/` directory.**
+The first install lays them down and every upgrade after that leaves them
+exactly as they were, with no diff, no warning and no error. The schema a
+cluster validates against then drifts behind the controller reconciling it,
+and the symptom arrives much later as a field silently dropped from an
+object somebody just wrote.
+
+**A CRD that arrives as a side effect has no owner.** Where the scrape kinds
+exist only because whichever chart happened to install them did so, the
+answer to "which release owns `ScrapeConfig`?" is "the last one that
+applied", and removing that chart takes the kind — and every object of it —
+with it.
+
+### Install order
+
+1. **This chart, before anything that uses the kinds.** As its own Argo CD
+   `Application` at a sync wave ahead of the stack:
+
+   ```yaml
+   apiVersion: argoproj.io/v1alpha1
+   kind: Application
+   metadata:
+     name: observability-crds
+     annotations:
+       argocd.argoproj.io/sync-wave: "10"
+   spec:
+     sources:
+       - repoURL: oci://ghcr.io/truvity/charts/observability-crds
+         targetRevision: <version>
+         path: .
+     destination:
+       name: <cluster>
+       namespace: observability
+     syncPolicy:
+       automated:
+         prune: false
+         selfHeal: true
+       syncOptions:
+         - ServerSideApply=true
+   ```
+
+   `prune: false` is not tidiness. Deleting a CustomResourceDefinition
+   deletes every object of that kind on the cluster, including the ones
+   other releases created, and nothing asks first. `ServerSideApply=true`
+   is not tidiness either: client-side apply writes the whole object into
+   the `kubectl.kubernetes.io/last-applied-configuration` annotation, which
+   Kubernetes caps at 262144 bytes, and a single one of these CRDs is
+   several times that.
+
+2. **Then tell the operator not to manage CRDs.** The VictoriaMetrics
+   operator chart installs its own by default; left on, two releases own
+   the same objects and take turns overwriting each other, the winner being
+   whichever reconciled last. In its values:
+
+   ```yaml
+   crds:
+     enabled: false
+   ```
+
+   An estate that runs the Prometheus Operator itself makes the mirror
+   choice here instead, leaving that operator to own its kinds and turning
+   the set off in this chart:
+
+   ```yaml
+   sets:
+     prometheusOperator: false
+   ```
+
+   Both sets off is refused: a CRD release that installs nothing reports
+   Synced and Healthy, and the failure surfaces later in the controller
+   that wanted the kind.
+
+3. **Then the stack**, at a later wave.
+
+### Diff the CRDs on every bump
+
+Both upstreams are pinned, and a bump of either is a deliberate change with
+a render to read before it is applied. Every release of this chart carries
+an inventory — every kind, the versions it serves and the one it stores —
+as the last document of its own render, so the question that matters can be
+answered without reading a megabyte of schema:
+
+```console
+helm template observability-crds \
+  oci://ghcr.io/truvity/charts/observability-crds --version <version> \
+  | tail -40
+```
+
+Compare that block against the release you are running. A kind that has
+disappeared, been renamed, or moved its storage version is a migration,
+not a bump: existing objects are stored under the old version, and the
+conversion has to happen while both are still served. Then, before the
+sync, `kubectl diff` the render against the cluster — an upstream that has
+narrowed a field is visible there and nowhere else.
+
 ## What must already exist
 
 `platform-alerts` renders `VMRule` objects and nothing else. It assumes:
@@ -19,7 +123,7 @@ The expressions are MetricsQL. They use duration literals in arithmetic
 (`> 26h`), which MetricsQL supports and PromQL does not, so they are for
 vmalert rather than for Prometheus.
 
-## Install order
+## Installing platform-alerts
 
 1. Decide the store list. The chart has no default for it and refuses to
    render without one, because a guessed metric name is a rule that never

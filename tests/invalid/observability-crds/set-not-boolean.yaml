@@ -1,0 +1,5 @@
+# `sets.victoriaMetrics: "false"` is a non-empty string, which Helm's `if`
+# reads as true: the set the consumer meant to disable would install.
+sets:
+  victoriaMetrics: "false"
+  prometheusOperator: true

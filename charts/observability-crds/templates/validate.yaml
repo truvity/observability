@@ -1,0 +1,12 @@
+{{/*
+Renders no object. It exists for the one refusal this chart has.
+
+A CRD release that installs nothing is the worst shape of all: Argo CD
+reports it Synced and Healthy, and the failure surfaces much later, in the
+controller that wanted the kind, as an error nobody connects back to this
+release. The upstream Envoy Gateway CRDs chart defaults both of its sets to
+false and is exactly this trap; here it is a refusal instead.
+*/}}
+{{- if not (or .Values.sets.victoriaMetrics .Values.sets.prometheusOperator) -}}
+{{- fail "observability-crds: every set is disabled, so this release would install no CustomResourceDefinition at all and still report Synced. Enable at least one of sets.victoriaMetrics or sets.prometheusOperator, or do not install this chart." -}}
+{{- end -}}

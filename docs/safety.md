@@ -5,7 +5,22 @@ failure that earned each rule. Thresholds are stated against a measured
 healthy range, because a threshold without one is a guess that will either
 never fire or always fire.
 
-## The refusals
+## The refusals: `observability-crds`
+
+Fixtures under `tests/invalid/observability-crds/`.
+
+| Refusal | The failure it prevents |
+|---|---|
+| An unknown key | A misspelled set name leaves a set installed that the consumer believed they had turned off, and two owners then take turns overwriting the same CustomResourceDefinition. |
+| Every set disabled | The release installs no CustomResourceDefinition at all and still reports Synced and Healthy. The failure surfaces much later, in the controller that wanted the kind, as an error nobody connects back to this release. The upstream Envoy Gateway CRDs chart defaults both of its sets to false and is exactly this trap. |
+| A set that is not a boolean | `victoriaMetrics: "false"` is a non-empty string, which Helm's `if` reads as true: the set the consumer meant to disable installs anyway. |
+
+There is no refusal for a kind that upstream has removed, because a chart
+cannot see what a cluster already has. That question is answered by the
+inventory at the foot of the render and by `kubectl diff` before the sync;
+docs/adoption.md says how.
+
+## The refusals: `platform-alerts`
 
 Each of these fails the render, and each has a fixture under
 `tests/invalid/platform-alerts/` that must keep failing.

@@ -49,6 +49,61 @@ morning.
 Cluster mode exists and buys sharding. It is the escape hatch for a volume
 this shape cannot carry, not the starting point.
 
+## CRDs are owned, and owned separately
+
+Helm never upgrades a CRD installed from a chart's `crds/` directory, so a
+chart that ships its CRDs that way installs a schema once and then diverges
+from the controller that reads it, silently, for as long as the install
+lives. And a CRD that arrives as a side effect of whichever chart happened
+to install it has no owner at all: removing that chart takes the kind, and
+every object of it, with it.
+
+So the CustomResourceDefinitions are a release of their own, applied ahead
+of the controllers, never pruned, and the controllers are told not to
+manage them. That is `charts/observability-crds`.
+
+### Two upstreams, two mechanisms, and why
+
+The chart carries two sets, and it fetches them differently. This is a
+measurement, not a preference.
+
+The **VictoriaMetrics operator's** CRDs come from upstream's own
+`victoria-metrics-operator-crds` chart, declared as a dependency at an
+exact version and vendored into the chart's `charts/` directory by
+`just crds`. Upstream publishes that chart with descriptions stripped —
+3.0 MB against the 8.8 MB of the same twenty-five definitions in the
+operator repository — and it is upstream's own statement of which CRDs
+belong to a release, which is exactly the thing we want to track. Vendoring
+the archive rather than resolving it at render time keeps the render a
+function of the checked-out tree: `just golden` and `just lint` reach no
+registry, and a bump is a diff.
+
+The **Prometheus Operator's** four scrape kinds come from ocictl's
+`crdctl`, pinned in `hack/crds/prometheus-operator/crdctl.yaml`, which is
+how every other CRD-only chart in this estate is built. There is no
+upstream chart carrying those four alone; `crdctl` fetches the directory
+and `hack/crds.sh` keeps the four by name, failing if one of those names
+has changed rather than quietly installing nine.
+
+Mixing the two has one trap, and it is closed in `lint`: a chart renders
+with whatever archive is in its `charts/` directory, so moving the version
+in `Chart.yaml` and leaving the vendored archive behind installs the old
+CRDs while every check passes and the golden does not move. `helm
+dependency list` reports that as `wrong version`, and the lint recipe reads
+it.
+
+### The golden is a kind list
+
+A CRD chart's golden render is megabytes of upstream schema, and the
+question a bump has to answer is none of it: did a kind disappear, get
+renamed, or move the version it stores? So the chart renders the answer —
+every kind, its group, the versions it serves and the one it stores — as a
+comment block generated from the same files it installs, and that block is
+the last document of every golden. A bump that drops a kind is a few
+readable lines of diff. Nothing about it is maintained by hand, because a
+hand-maintained list is one that goes stale at the first bump and then
+asserts something that is no longer true.
+
 ## Rules are proven, not asserted
 
 Every rule in `platform-alerts` was written after an incident, carries the

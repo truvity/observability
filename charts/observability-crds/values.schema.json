@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-crds",
+  "description": "The CustomResourceDefinitions this stack depends on, owned as their own release. Strict: an unknown key fails the render rather than being silently ignored, because a misspelled set name would leave a set installed that the consumer believed they had turned off.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sets"],
+  "properties": {
+    "sets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["victoriaMetrics", "prometheusOperator"],
+      "description": "Which CRD sets this release installs. Both false is refused at render.",
+      "properties": {
+        "victoriaMetrics": {
+          "type": "boolean",
+          "description": "The VictoriaMetrics operator's CRDs, from upstream's own CRDs chart."
+        },
+        "prometheusOperator": {
+          "type": "boolean",
+          "description": "PodMonitor, ServiceMonitor, ScrapeConfig and Probe."
+        }
+      }
+    },
+    "vmoc": {
+      "type": "object",
+      "description": "Passed through to the vendored victoria-metrics-operator-crds chart. Upstream's surface, not this chart's, so it is not constrained here."
+    }
+  }
+}

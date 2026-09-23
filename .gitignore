@@ -12,6 +12,9 @@ dist/
 # Devbox
 .devbox/
 
+# crdctl's upstream fetch cache
+.cache/
+
 # Coverage
 coverage.out
 

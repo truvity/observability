@@ -1,0 +1,7 @@
+# An estate that runs the Prometheus Operator itself keeps its scrape kinds
+# and hands the VictoriaMetrics set to whatever already owns it. The case
+# exists to prove a disabled set renders nothing at all rather than
+# rendering under a different name.
+sets:
+  victoriaMetrics: false
+  prometheusOperator: true
