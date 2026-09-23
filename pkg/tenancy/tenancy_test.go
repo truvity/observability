@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/truvity/observability/pkg/tenancy"
 )
@@ -434,8 +435,8 @@ func TestVMAuthConfig(t *testing.T) {
 	assert.Equal(t, "https://issuer.example", viewer.JWT.OIDC)
 
 	// The whole point, asserted: two principals, two different reaches.
-	assert.Equal(t, []string{`{env="devel"}`}, viewer.DefaultVMAccess.MetricsExtraFilters)
-	assert.Equal(t, []string{`{env="devel",tenant=~"^(dms)$"}`}, deployer.DefaultVMAccess.MetricsExtraFilters)
+	assert.Equal(t, []string{`{env="devel"}`}, viewer.JWT.DefaultVMAccess.MetricsExtraFilters)
+	assert.Equal(t, []string{`{env="devel",tenant=~"^(dms)$"}`}, deployer.JWT.DefaultVMAccess.MetricsExtraFilters)
 
 	assert.Equal(t, "first_available", viewer.LoadBalancingPol,
 		"a read balanced onto the replica still replaying its buffer returns a gap, and a gap reads as an outage")
@@ -716,4 +717,45 @@ func TestClaimNeverRendersAnEmptyFilterList(t *testing.T) {
 			assert.NotEmpty(t, f, "an empty filter string is the same hole spelled differently")
 		}
 	}
+}
+
+// vmauth's own struct, not ours, decides where the default claim lives.
+//
+// This package once rendered `default_vm_access_claim` beside `url_map`,
+// which reads perfectly well and is not a field vmauth's `UserInfo` has.
+// The result was not a missing default: vmauth refused the whole file and
+// exited, so the proxy never started at all.
+//
+//	cannot unmarshal AuthConfig data: yaml: unmarshal errors:
+//	  field default_vm_access_claim not found in type main.UserInfo
+//
+// Nothing in this repository could have caught that, because every test
+// compared our output against our own idea of the shape. It was found by
+// running the rendered file against the binary, and this test is here so
+// the next person moving these structs around does not have to.
+func TestTheDefaultClaimIsNestedInsideTheTokenBlock(t *testing.T) {
+	c := base()
+	c.TracesBackend = "" // the trace route has its own refusal; not what this test is about
+	cfg, err := c.RenderVMAuth("https://issuer.example")
+	require.NoError(t, err)
+
+	out, err := yaml.Marshal(cfg)
+	require.NoError(t, err)
+
+	var parsed struct {
+		Users []struct {
+			JWT map[string]any `yaml:"jwt"`
+			// Deliberately typed as a catch-all: the assertion below is
+			// that vmauth would find NOTHING here, whatever it is called.
+			Rest map[string]any `yaml:",inline"`
+		} `yaml:"users"`
+	}
+	require.NoError(t, yaml.Unmarshal(out, &parsed))
+	require.Len(t, parsed.Users, 1)
+
+	u := parsed.Users[0]
+	assert.Contains(t, u.JWT, "default_vm_access_claim",
+		"the default claim must sit inside the jwt block, where vmauth reads it")
+	assert.NotContains(t, u.Rest, "default_vm_access_claim",
+		"a default claim beside url_map is not a field vmauth has: it refuses to parse the file and the proxy does not start")
 }

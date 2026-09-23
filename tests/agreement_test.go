@@ -153,10 +153,10 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 
 			// The filters. This is the whole of it: these strings are
 			// what the store applies to every query the principal makes.
-			assert.Equal(t, user.DefaultVMAccess.MetricsExtraFilters,
+			assert.Equal(t, user.JWT.DefaultVMAccess.MetricsExtraFilters,
 				chart.Spec.JWT.DefaultVMAccessClaim.MetricsExtraFilters,
 				"the chart and the library disagree about what this principal may read")
-			assert.Equal(t, user.DefaultVMAccess.LogsExtraStreamFilters,
+			assert.Equal(t, user.JWT.DefaultVMAccess.LogsExtraStreamFilters,
 				chart.Spec.JWT.DefaultVMAccessClaim.LogsExtraStreamFilters,
 				"the chart and the library disagree about what this principal may read")
 

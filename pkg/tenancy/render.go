@@ -32,13 +32,27 @@ type VMAuthUser struct {
 	URLMap           []VMAuthURLMapRow `json:"url_map,omitempty" yaml:"url_map,omitempty"`
 	RetryStatusCodes []int             `json:"retry_status_codes,omitempty" yaml:"retry_status_codes,omitempty"`
 	LoadBalancingPol string            `json:"load_balancing_policy,omitempty" yaml:"load_balancing_policy,omitempty"`
-	DefaultVMAccess  *Claim            `json:"default_vm_access_claim,omitempty" yaml:"default_vm_access_claim,omitempty"`
 }
 
-// VMAuthJWT selects a user by the claims on its token.
+// VMAuthJWT selects a user by the claims on its token, and says what that
+// token is taken to grant when it carries no `vm_access` claim of its own.
+//
+// DefaultVMAccess belongs HERE and not beside url_map, which is where an
+// earlier version of this file put it. vmauth's `UserInfo` has no such
+// field, so a configuration with it one level higher does not merely lose
+// the default — vmauth refuses to parse the file and exits:
+//
+//	cannot unmarshal AuthConfig data: yaml: unmarshal errors:
+//	  line N: field default_vm_access_claim not found in type main.UserInfo
+//
+// That is a fail-closed mistake rather than a leak, and the only reason it
+// was caught is that somebody ran the rendered file against the binary. No
+// golden can tell you that a field a program does not have is a field a
+// program does not have.
 type VMAuthJWT struct {
-	OIDC        string            `json:"oidc,omitempty" yaml:"oidc,omitempty"`
-	MatchClaims map[string]string `json:"match_claims,omitempty" yaml:"match_claims,omitempty"`
+	OIDC            string            `json:"oidc,omitempty" yaml:"oidc,omitempty"`
+	MatchClaims     map[string]string `json:"match_claims,omitempty" yaml:"match_claims,omitempty"`
+	DefaultVMAccess *Claim            `json:"default_vm_access_claim,omitempty" yaml:"default_vm_access_claim,omitempty"`
 }
 
 // VMAuthURLMapRow routes a set of paths to a backend.
@@ -212,11 +226,11 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 		out.Users = append(out.Users, VMAuthUser{
 			Name: p.Group,
 			JWT: &VMAuthJWT{
-				OIDC:        issuer,
-				MatchClaims: map[string]string{c.ClaimName: p.Group},
+				OIDC:            issuer,
+				MatchClaims:     map[string]string{c.ClaimName: p.Group},
+				DefaultVMAccess: &claim,
 			},
-			DefaultVMAccess: &claim,
-			URLMap:          append([]VMAuthURLMapRow(nil), rows...),
+			URLMap: append([]VMAuthURLMapRow(nil), rows...),
 			// Reads go to the first healthy backend rather than round-robin:
 			// with a redundant pair, a query balanced onto the replica that
 			// is still replaying its buffer after a restart returns a gap,
