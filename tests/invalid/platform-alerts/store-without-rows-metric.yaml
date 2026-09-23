@@ -1,0 +1,5 @@
+# A store the deadman cannot watch, because nothing names its rows counter.
+stores:
+  - name: metrics
+    freeSpaceMetric: example_free_disk_space_bytes
+    freeSpaceLimitMetric: example_free_disk_space_limit_bytes

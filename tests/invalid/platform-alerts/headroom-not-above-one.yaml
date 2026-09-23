@@ -1,0 +1,17 @@
+# Headroom of 1 means the alert arrives at the moment writes already fail,
+# which is the failure it exists to precede.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+    freeSpaceMetric: example_free_disk_space_bytes
+    freeSpaceLimitMetric: example_free_disk_space_limit_bytes
+groups:
+  backups:
+    enabled: true
+  writePath:
+    enabled: true
+  volumes:
+    enabled: true
+  storeLimits:
+    enabled: true
+    headroomFactor: 1

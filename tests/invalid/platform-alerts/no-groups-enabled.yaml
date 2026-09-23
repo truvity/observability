@@ -1,0 +1,14 @@
+# A release that renders no rules at all reports success and alerts on
+# nothing. Refused.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false

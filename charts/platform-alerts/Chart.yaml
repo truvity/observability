@@ -1,0 +1,17 @@
+apiVersion: v2
+name: platform-alerts
+description: >-
+  Alerting rules that catch a backup, a store or a volume failing silently,
+  as VMRule groups for vmalert.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - alerting
+  - victoriametrics
+  - vmalert
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability

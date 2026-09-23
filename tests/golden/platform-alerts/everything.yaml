@@ -1,0 +1,159 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    vmalert: platform
+spec:
+  groups:
+    - name: platform-alerts.backups
+      interval: 30s
+      rules:
+        # A CronJob that has not SUCCEEDED within its schedule plus slack.
+        # This is the rule that matters: a CronJob which stops being
+        # scheduled at all never produces a failed Job, so a rule watching
+        # failures reports healthy while nothing runs. Measured healthy
+        # range for a daily job: age resets below 24h on every run.
+        - alert: CronJobNotSucceeding
+          expr: >-
+            time() - max by (namespace, cronjob) (
+              kube_cronjob_status_last_successful_time{namespace=~"example-.*"}
+            ) > 50h
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded within 50h"
+            description: >-
+              No successful run in 50h. A job that has stopped being
+              scheduled produces no failures at all, so this is the only rule that
+              can see it. Check that the CronJob exists, is not suspended, and that
+              its last Job completed.
+            runbook_url: "https://runbooks.example.com/CronJobNotSucceeding"
+        # A Job that failed outright. Separate from the age rule because a
+        # job that fails loudly and one that vanishes quietly are different
+        # failures, often with different owners.
+        - alert: BackupJobFailed
+          expr: >-
+            max by (namespace, job_name) (
+              kube_job_status_failed{namespace=~"example-.*"}
+            ) > 0
+          labels:
+            env: example
+            severity: info
+            tenant: example
+          annotations:
+            summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed"
+            description: >-
+              The Job reported a failed pod. If it is a backup, treat the last
+              successful run as the real recovery point until this is resolved.
+            runbook_url: "https://runbooks.example.com/BackupJobFailed"
+    - name: platform-alerts.write-path
+      interval: 30s
+      rules:
+        # The write-path deadman for metrics.
+        #
+        # An alert on a store's read-only FLAG cannot fire in its own
+        # headline case: that sample is written INTO the store that is
+        # refusing writes. Reads keep working when writes do not, so
+        # watching the rows counter stop is the only rule that sees it.
+        #
+        # `or vector(0)` makes the rule fire for both shapes of the
+        # failure: the counter stops moving, and the counter disappears
+        # because the store is gone.
+        - alert: WritePathDead
+          expr: >-
+            (sum(rate(example_rows_inserted_total[10m])) or vector(0)) == 0
+          for: 20m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+            store: "metrics"
+          annotations:
+            summary: "No rows written to the metrics store for 20m"
+            description: >-
+              example_rows_inserted_total has not advanced in 20m. The store may be
+              read-only, out of disk, or gone; reads can keep working throughout, so
+              nothing else will report this.
+            runbook_url: "https://runbooks.example.com/WritePathDead"
+        # The write-path deadman for logs.
+        #
+        # An alert on a store's read-only FLAG cannot fire in its own
+        # headline case: that sample is written INTO the store that is
+        # refusing writes. Reads keep working when writes do not, so
+        # watching the rows counter stop is the only rule that sees it.
+        #
+        # `or vector(0)` makes the rule fire for both shapes of the
+        # failure: the counter stops moving, and the counter disappears
+        # because the store is gone.
+        - alert: WritePathDead
+          expr: >-
+            (sum(rate(example_log_rows_ingested_total[10m])) or vector(0)) == 0
+          for: 20m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+            store: "logs"
+          annotations:
+            summary: "No rows written to the logs store for 20m"
+            description: >-
+              example_log_rows_ingested_total has not advanced in 20m. The store may be
+              read-only, out of disk, or gone; reads can keep working throughout, so
+              nothing else will report this.
+            runbook_url: "https://runbooks.example.com/WritePathDead"
+    - name: platform-alerts.volumes
+      interval: 30s
+      rules:
+        # A mounted filesystem far smaller than the claim that satisfied it
+        # cannot legitimately happen: it means the real volume is not
+        # mounted and the pod is writing to the node's root filesystem
+        # while reporting 1/1 Running. Measured healthy range is 0.95-0.99
+        # of the claim (filesystem overhead); the threshold sits well below
+        # it so overhead can never reach it and a wrong mount always does.
+        - alert: VolumeSmallerThanClaimed
+          expr: >-
+            kubelet_volume_stats_capacity_bytes{namespace=~"example-.*"}
+            / on (namespace, persistentvolumeclaim)
+            kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=~"example-.*"}
+            < 0.25
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is mounted on a filesystem far smaller than it claimed"
+            description: >-
+              The mounted filesystem is under 0.25 of the claim. The
+              volume is probably not mounted at all and the pod is writing to the
+              node's root filesystem. Data written since it started is not on the
+              volume.
+            runbook_url: "https://runbooks.example.com/VolumeSmallerThanClaimed"
+    - name: platform-alerts.store-limits
+      interval: 30s
+      rules:
+        # Read from the store's OWN exported limit, never a constant
+        # written here: a guessed constant is how a rule never fires or
+        # always does. Fires while there is still headroom to act.
+        - alert: StoreApproachingReadOnly
+          expr: >-
+            example_free_disk_space_bytes / example_free_disk_space_limit_bytes < 3
+          labels:
+            env: example
+            severity: critical
+            tenant: example
+            store: "metrics"
+          annotations:
+            summary: "The metrics store is approaching its read-only limit"
+            description: >-
+              Free space is under 3x the limit at which this store stops
+              accepting writes. It is still serving reads and will keep doing so
+              after it stops writing, so nothing else will report this.
+            runbook_url: "https://runbooks.example.com/StoreApproachingReadOnly"

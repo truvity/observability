@@ -1,0 +1,6 @@
+# The smallest values file that renders: the default groups, and the store
+# counters they watch. There is no smaller one — a store list is required
+# rather than guessed.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total

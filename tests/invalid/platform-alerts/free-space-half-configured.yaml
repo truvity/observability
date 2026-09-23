@@ -1,0 +1,6 @@
+# One free-space metric without the other: the read-only rule would compare
+# a gauge against nothing.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+    freeSpaceMetric: example_free_disk_space_bytes

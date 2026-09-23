@@ -1,0 +1,6 @@
+# A typo in an alerting chart is a rule that never fires, so an unknown key
+# must fail the render rather than be ignored.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+severityy: critical

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "platform-alerts",
+  "description": "Alerting rules that catch a backup, a store or a volume failing silently. Strict: an unknown key fails the render rather than being silently ignored, because a typo in an alerting chart is a rule that never fires.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["groups"],
+  "definitions": {
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h|d|w|y)$",
+      "description": "A MetricsQL duration, e.g. 30s, 5m, 26h."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "warning", "info"],
+      "description": "The severity label the Alertmanager routing tree reads."
+    },
+    "labelMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "ruleLabels": { "$ref": "#/definitions/labelMap" },
+    "commonLabels": { "$ref": "#/definitions/labelMap" },
+    "runbookBaseUrl": { "type": "string" },
+    "interval": { "$ref": "#/definitions/duration" },
+    "namespaceSelector": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A regular expression. Objects in namespaces that do not match are ignored."
+    },
+    "stores": {
+      "type": "array",
+      "description": "One entry per store process. No default: a guessed metric name is how a rule silently never fires.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Labels the alert; not a Kubernetes object name."
+          },
+          "rowsMetric": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The counter the write-path deadman watches."
+          },
+          "freeSpaceMetric": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The store's own exported free-space gauge."
+          },
+          "freeSpaceLimitMetric": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The store's own exported limit at which it stops accepting writes."
+          }
+        },
+        "dependencies": {
+          "freeSpaceMetric": ["freeSpaceLimitMetric"],
+          "freeSpaceLimitMetric": ["freeSpaceMetric"]
+        }
+      }
+    },
+    "groups": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backups", "writePath", "volumes", "storeLimits"],
+      "properties": {
+        "backups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "maxSuccessAge": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/severity" },
+            "failedSeverity": { "$ref": "#/definitions/severity" }
+          }
+        },
+        "writePath": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/severity" }
+          }
+        },
+        "volumes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "minCapacityRatio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "description": "A ratio, so never above 1: a mounted filesystem is always somewhat smaller than its claim."
+            },
+            "severity": { "$ref": "#/definitions/severity" }
+          }
+        },
+        "storeLimits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "headroomFactor": {
+              "type": "number",
+              "exclusiveMinimum": 1,
+              "description": "Above 1, or the alert arrives at the moment writes already fail."
+            },
+            "severity": { "$ref": "#/definitions/severity" }
+          }
+        }
+      }
+    }
+  }
+}
