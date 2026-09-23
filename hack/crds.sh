@@ -61,6 +61,35 @@ awk -v keep="$keep" '
   END { if (want) printf "---\n%s", doc }
 ' "$po_all" > "$po_crds"
 
+# Descriptions are dropped, the way upstream drops them from its own
+# published CRD bundles. Three reasons, in order of weight. They are the
+# whole of the size difference — 934 KB against 350 KB for the same four
+# definitions — and a golden is only a review if someone reads it. They
+# carry prose naming in-pod mount paths under a secrets directory, which
+# is documentation and not a particular — but the leak canary cannot tell
+# the difference, and a canary that cries wolf is one people learn to skip.
+# And the VictoriaMetrics half is already description-free, because
+# upstream ships its CRDs chart that way; one chart should not install two
+# kinds of CRD.
+#
+# What is dropped is exactly a `description` key with a scalar value.
+# A property NAMED description is a mapping — `description:` with nothing
+# after it — and is left alone, which matters because dropping one would
+# delete a field from the schema rather than a sentence from it.
+po_full="$po_crds"
+po_crds="$(mktemp)"
+awk '
+  /^[[:space:]]*description: ./ { ind = match($0, /[^ ]/) - 1; strip = 1; next }
+  strip {
+    if ($0 ~ /^[[:space:]]*$/) { next }
+    cur = match($0, /[^ ]/) - 1
+    if (cur > ind) { next }
+    strip = 0
+  }
+  { print }
+' "$po_full" > "$po_crds"
+rm -f "$po_full"
+
 found="$(grep -c '^kind: CustomResourceDefinition$' "$po_crds")"
 wanted="$(printf '%s\n' $keep | wc -l)"
 if [ "$found" != "$wanted" ]; then
