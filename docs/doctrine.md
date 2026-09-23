@@ -152,7 +152,8 @@ they secure the path between components with a bearer and the stores'
 own `-httpAuth`, because mTLS between components is Enterprise; and they
 never wrap `vmbackupmanager` or `vmgateway`. The tenancy mechanism rests
 on vmauth's JWT support, which is community from v1.137.0 and complete
-for this design from v1.147.0 — and which the vendor itself now
+for this design from v1.147.0, and safe for it only from v1.152.0
+(see [safety.md](safety.md)) — and which the vendor itself now
 recommends over the Enterprise gateway it replaces.
 
 Grafana and its VictoriaMetrics data source plugin are AGPL-3.0. Running

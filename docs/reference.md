@@ -135,7 +135,7 @@ values.yaml, listed here, and enforced rather than remembered.
 |---|---|---|---|
 | `vmauth.enabled` | bool | `true` | Renders the `VMAuth` and its `VMUser` objects. |
 | `vmauth.image.repository` | string | `victoriametrics/vmauth` | |
-| `vmauth.image.tag` | string | `v1.152.0` | **Refused below v1.152.0.** `default_vm_access_claim` arrived in v1.147.0, and v1.147.0–v1.151.x matched claim values unanchored (GHSA-f99m-22fh-qw96). The operator's own default tag is older than both, so it is set here. |
+| `vmauth.image.tag` | string | `v1.152.0` | **Refused below v1.152.0.** `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0, where claim matching was introduced, through v1.151.x matched claim values unanchored (GHSA-f99m-22fh-qw96). The operator's own default tag is older than both, so it is set here. |
 | `vmauth.replicaCount` | int | `1` | |
 | `vmauth.resources` | object | 1 CPU / 512Mi | Requests equal limits, integer CPU. |
 | `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | A rejected token that logs nothing is an access problem nobody can diagnose. Note the trade: with this flag vmauth also returns the offending token in the 401 body. |
@@ -318,7 +318,7 @@ a name is refused rather than escaped.
 |---|---|
 | `Validate() error` | Every problem found, joined, not just the first. |
 | `RenderClaim(Principal) (Claim, error)` | The `vm_access` body an issuer mints. |
-| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Needs vmauth **v1.152.0 or later**: `default_vm_access_claim` arrived in v1.147.0, but v1.147.0–v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96). JWT auth itself is community from v1.137.0. |
+| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Needs vmauth **v1.152.0 or later**, or a patched v1.148 LTS: `default_vm_access_claim` arrived in v1.147.0, but every release from v1.138.0 through v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96). JWT auth itself is community from v1.137.0. |
 
 Rendering does not mutate its input, and output order is stable: grants
 sort by environment and tenants sort by name, so an unrelated change
