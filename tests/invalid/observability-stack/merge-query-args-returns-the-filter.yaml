@@ -11,6 +11,7 @@
 # route and the rendered filter all stay exactly right.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   allowUnfilteredTraceReads: true
   principals:
     - group: example:k8s:viewer

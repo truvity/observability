@@ -1,0 +1,20 @@
+# Readers, an issuer, and no audience.
+#
+# vmauth validates a token's expiry and, under OIDC discovery, its
+# issuer, and nothing else: it has no audience option and never inspects
+# `aud` on its own. So each reader here would be selected by its group
+# alone, and every unexpired token that issuer minted would be admitted
+# whatever client it was minted for — a token the same person holds for
+# another application of the same issuer reads their namespaces through
+# this proxy. Nothing reports it, because the token verifies and the
+# filters apply.
+#
+# `tenancy.audience` is the pin, and its absence is how this fixture
+# fails.
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

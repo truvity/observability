@@ -5,6 +5,7 @@
 # look right.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   clusterLabel: k8s_namespace_name
   principals:
     - group: example:k8s:viewer

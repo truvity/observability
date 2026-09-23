@@ -5,6 +5,7 @@
 # wrote. Such a name is refused, never escaped.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   logsNamespaceField: 'ns"=~"^(.*)$" or {"k8s.cluster.name'
   principals:
     - group: example:app:deployer

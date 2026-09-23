@@ -133,7 +133,40 @@ tenancy:
   # signature, and a proxy that trusts an unverified token is worse than
   # no proxy.
   issuerUrl: ""
-  # -- The token claim carrying the caller's groups.
+  # -- The client id this proxy's own tokens are minted under, pinned
+  # into every reader's `matchClaims` as `aud`. Required whenever
+  # `principals` is non-empty.
+  #
+  # vmauth validates a token's expiry and, under OIDC discovery, its
+  # issuer. It has no audience option and never inspects `aud` on its
+  # own. So without this pin each reader below is selected by its group
+  # alone, and every unexpired token the issuer minted is admitted
+  # whatever client it was minted for: a token the same person holds for
+  # another application of the same issuer reads their namespaces here,
+  # and nothing reports it, because the token verifies and the filters
+  # apply.
+  #
+  # The claim name is `aud` and is not a value: it is the name OpenID
+  # Connect gives the claim, and a second spelling of it is a way to pin
+  # nothing while the configuration reads as though something were
+  # pinned.
+  #
+  # The value is an opaque client id — whatever the issuer registered
+  # this proxy's client under — and vmauth compiles every `matchClaims`
+  # value as a REGULAR EXPRESSION. So it is held to
+  # `^[A-Za-z0-9][A-Za-z0-9_:@-]*$`, which admits a UUID, a hyphenated
+  # name and the `<id>@<project>` form some issuers mint, and carries no
+  # metacharacter: a value containing `.` or `|` would pin a pattern, and
+  # a pattern admits clients nobody named. Such a value is refused rather
+  # than escaped, and the rendered pin is anchored on top of that.
+  #
+  # It works whether the issuer mints `aud` as a string or as a list:
+  # vmauth matches a `matchClaims` entry against an array claim element
+  # by element.
+  audience: ""
+  # -- The token claim carrying the caller's groups. It may not be `aud`,
+  # which the audience above is pinned under: both are entries in one
+  # `matchClaims` map, and one would overwrite the other.
   claimName: groups
   # -- The keys the filters select on, per signal.
   #

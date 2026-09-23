@@ -2219,6 +2219,7 @@ spec:
       issuer: "https://issuer.example"
     matchClaims:
       groups: "example:k8s:viewer"
+      aud: "^(example-observability-client)$"
     defaultVMAccessClaim:
       metricsExtraFilters:
         - '{k8s_cluster_name="example-cluster"}'

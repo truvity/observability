@@ -6,6 +6,62 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.0
+
+The audience pin. vmauth checks a token's expiry and its issuer; who the
+token was minted FOR is the caller's to state, and now has to be.
+
+- **Breaking: `pkg/tenancy` and `charts/observability-stack`** —
+  `Config.Audience` and `tenancy.audience` are new and **required**
+  wherever a proxy configuration is rendered. The migration is one line:
+  set it to the client id this proxy's own tokens are minted under. It is
+  rendered into every reader's `match_claims` beside the group, under
+  `aud`.
+
+  **This narrows who the proxy admits.** vmauth validates a token's
+  expiry and, with OIDC discovery configured, its issuer — and nothing
+  else. It has no audience option and never inspects `aud` on its own. So
+  until now a reader was selected by its group alone, and every unexpired
+  token the issuer minted was admitted whatever client it was minted for:
+  an estate whose issuer serves several applications was admitting a
+  token a person holds for a different one, which then read that person's
+  namespaces. Nothing reported it, because the token verified, the claim
+  matched and the filters applied.
+  - **The claim name is fixed, not an input.** `aud` is OpenID Connect's
+    own name for it, and a second spelling of a spec-defined claim is how
+    a configuration comes to read as though something were pinned when
+    nothing is. `tenancy.claimName` may therefore no longer be `aud`:
+    both are entries in one `matchClaims` map, and one would overwrite
+    the other.
+  - **The value is a client id and is refused, never escaped.** vmauth
+    compiles every `match_claims` value as a regular expression, so a
+    value carrying `.`, `|`, `*` or `(` pins a pattern rather than a
+    client and admits clients nobody named — the shape of
+    GHSA-f99m-22fh-qw96, one field over. It is held to
+    `^[A-Za-z0-9][A-Za-z0-9_:@-]*$`, which admits a UUID, a hyphenated
+    name and the `<id>@<project>` form some issuers mint. An issuer whose
+    client ids carry a dot has to be given one that does not.
+  - **The rendered pin is anchored** (`^(<client id>)$`) although vmauth
+    anchors `match_claims` values itself from v1.152.0, which is already
+    this design's floor: a pin whose narrowing depends on the binary in
+    front of it being patched is a pin with a version number in it.
+  - **A list `aud` needs no special case.** vmauth tests a
+    `match_claims` entry against an array claim element by element, so
+    the pin works whether the issuer mints the claim as a string or as a
+    list.
+  - Three negative fixtures under `tests/invalid/observability-stack/`
+    (no audience beside principals, an audience that is a pattern, the
+    groups claim named `aud`), the Go refusals beside them, and the
+    rendered pin walked in the OUTPUT on both sides — the chart's VMUsers
+    and the library's users — because a pin both sides dropped would
+    leave every comparison between them satisfied.
+
+  Adopting: register a client for this proxy if there is not one already,
+  and set `tenancy.audience` / `Config.Audience` to its id. A render
+  refuses until you do. Readers whose tokens are minted for that client
+  are unaffected; readers arriving with a token for some other client of
+  the same issuer stop being admitted, which is the point.
+
 ## 0.2.0
 
 The vocabulary rework. `tenant` × `env`, derived from namespace labels,

@@ -117,6 +117,7 @@ runbookBaseUrl: https://runbooks.example.com
 ```go
 cfg := tenancy.Config{
     ClaimName:      "groups",
+    Audience:       "example-observability-client",
     MetricsBackend: "http://metrics.example:8428",
     LogsBackend:    "http://logs.example:9428",
 
@@ -143,6 +144,14 @@ Both come from the same input on purpose. A difference between them is a
 difference between what a token says a person may read and what the proxy
 lets them read, and that is not a difference anyone notices until it
 matters.
+
+`Audience` is the client id this proxy's own tokens are minted under, and
+it is required. vmauth validates a token's expiry and, under OIDC
+discovery, its issuer, and nothing else — it has no audience option and
+never inspects `aud` — so without the pin any unexpired token that issuer
+minted is admitted whatever client it was minted for, including one the
+same person holds for a different application. It is rendered into every
+user's `match_claims` beside the group, under `aud`.
 
 Each route `RenderVMAuth` emits carries the filter argument that applies
 the claim — `.../?extra_filters={{.MetricsExtraFilters}}` for metrics,

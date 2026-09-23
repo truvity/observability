@@ -2,6 +2,7 @@
 # dimension twice and the other not at all.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   logsClusterField: kubernetes.pod_namespace
   principals:
     - group: example:k8s:viewer

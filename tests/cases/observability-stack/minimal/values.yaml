@@ -14,6 +14,7 @@ global:
 # principal to admit is a stack nobody can read.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   # The trace store is on by default, and this proxy cannot scope trace
   # reads: vmauth applies a grant by substituting it into the route, and
   # VictoriaTraces' Jaeger and Tempo select APIs accept no query

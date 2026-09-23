@@ -60,8 +60,24 @@ spec:
   jwt:
     oidc:
       issuer: {{ $root.Values.tenancy.issuerUrl | quote }}
+    {{- /*
+    Two claims, answering two different questions. The group says WHICH
+    PRINCIPAL a token is. The audience says the token was minted for
+    THIS PROXY at all — which vmauth checks nowhere else: it validates
+    expiry and issuer and stops, with no audience option and no look at
+    `aud` of its own. Without the pin, any unexpired token from the
+    issuer is admitted whatever client it was minted for.
+
+    The value is anchored here as well as by vmauth (which wraps a
+    `matchClaims` value in `^(?:…)$` from v1.152.0, the floor this chart
+    already requires), because a pin whose narrowing depends on the
+    proxy being patched is a pin with a version number in it. There is
+    nothing inside the anchors to escape: _validate.tpl holds the value
+    to an identifier shape with no metacharacter in it.
+    */}}
     matchClaims:
       {{ $root.Values.tenancy.claimName }}: {{ $p.group | quote }}
+      aud: {{ printf "^(%s)$" $root.Values.tenancy.audience | quote }}
     {{- /*
     The filters this group is entitled to, used when the token itself
     carries no `vm_access` claim — which is every token, in the shape

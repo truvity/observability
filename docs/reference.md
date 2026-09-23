@@ -148,7 +148,8 @@ values.yaml, listed here, and enforced rather than remembered.
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `tenancy.issuerUrl` | string | `""` | The OIDC issuer vmauth discovers keys from. **Required whenever `principals` is set.** |
-| `tenancy.claimName` | string | `groups` | The claim carrying the caller's groups. |
+| `tenancy.audience` | client id | `""` | The client id this proxy's tokens are minted under, pinned into every reader's `matchClaims` as `aud`. **Required whenever `principals` is set.** vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else — it has no audience option and never inspects `aud` — so without this pin any unexpired token from that issuer is admitted whatever client it was minted for. |
+| `tenancy.claimName` | string | `groups` | The claim carrying the caller's groups. May not be `aud`: both are entries in one `matchClaims` map, and one would overwrite the other. |
 | `tenancy.clusterLabel` | label name | `k8s_cluster_name` | The metrics label carrying the cluster. What `observability-emitters` stamps; set it only for collectors not built here. |
 | `tenancy.namespaceLabel` | label name | `k8s_namespace_name` | The metrics label carrying the namespace. |
 | `tenancy.logsClusterField` | log field name | `k8s.cluster.name` | The log **stream field** carrying the cluster — the conventional name, which both log writers stamp. |
@@ -169,6 +170,16 @@ is not a label on the telemetry. Names must match
 `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` — the same shape, for the same reason,
 as `pkg/tenancy`: they are interpolated into a filter expression, so one
 carrying `|` or `.*` widens the grant rather than looking odd.
+
+The **audience** is an opaque client id and is held to
+`^[A-Za-z0-9][A-Za-z0-9_:@-]*$`: vmauth compiles every `matchClaims` value
+as a regular expression, so a value carrying `.` or `|` pins a pattern
+rather than a client and admits clients nobody named. A UUID, a
+hyphenated name and the `<id>@<project>` form all pass; anything else is
+refused rather than escaped. The rendered pin is anchored on top of that,
+and works whether the issuer mints `aud` as a string or as a list.
+docs/safety.md, "What vmauth checks on a token, and what it does not",
+has the reasoning.
 
 A **metrics key** is a Prometheus label name, `^[a-zA-Z_][a-zA-Z0-9_]*$`,
 because the defaults carry underscores and a label carries no dot. A
@@ -452,7 +463,8 @@ docs/safety.md has the two writer collisions and how each one is closed.
 
 | Field | Required | What it does |
 |---|---|---|
-| `ClaimName` | yes | The token claim carrying the caller's groups, e.g. `groups`. |
+| `ClaimName` | yes | The token claim carrying the caller's groups, e.g. `groups`. May not be `aud`, which the audience is pinned under. |
+| `Audience` | for `RenderVMAuth` | The client id this proxy's tokens are minted under, rendered into every user's `match_claims` as `aud` — the claim name is OpenID Connect's and is not an input. vmauth validates a token's expiry and its issuer and nothing else, so without this pin any unexpired token from the issuer is admitted whatever client it was minted for. Held to `^[A-Za-z0-9][A-Za-z0-9_:@-]*$` and rendered anchored, because a `match_claims` value is compiled as a regular expression. `AudienceClaim` is the constant. |
 | `Principals` | yes | One entry per named population. |
 | `ClusterLabel` | no, `k8s_cluster_name` | The metrics label carrying the cluster. `DefaultClusterLabel`. |
 | `NamespaceLabel` | no, `k8s_namespace_name` | The metrics label carrying the namespace. `DefaultNamespaceLabel`. |

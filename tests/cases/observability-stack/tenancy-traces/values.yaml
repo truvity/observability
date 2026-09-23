@@ -21,6 +21,7 @@ global:
 # tests/invalid/observability-stack/traces-without-unfiltered-optin.yaml.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   claimName: groups
   allowUnfilteredTraceReads: true
   principals:

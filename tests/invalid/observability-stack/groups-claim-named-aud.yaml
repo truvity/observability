@@ -1,0 +1,15 @@
+# The groups claim named `aud`, which is where the audience is pinned.
+#
+# Both are entries in one `matchClaims` map, so one would overwrite the
+# other. Whichever survived would decide either which principal a token
+# is or which client it was minted for, never both — and the rendered
+# manifest would look exactly like one that did both.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: aud
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

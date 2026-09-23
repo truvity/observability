@@ -117,6 +117,39 @@ var labelRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 // because LogsQL will not start an unquoted token with one.
 var fieldRE = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`)
 
+// AudienceClaim is the claim the audience pin is rendered under.
+//
+// It is fixed rather than an input. `aud` is the name OpenID Connect
+// gives the claim, every issuer mints it under that name, and a second
+// spelling of a spec-defined claim is not flexibility — it is a way to
+// pin nothing at all while the configuration reads as though something
+// were pinned.
+const AudienceClaim = "aud"
+
+// audienceRE is what an audience may look like: an OAuth client id, with
+// no regular-expression metacharacter in it.
+//
+// A client id is opaque. The issuer chooses it, nothing here gets to
+// design it, and it carries no meaning this package can check. What
+// constrains its shape is where it lands: vmauth compiles every
+// `match_claims` VALUE as a regular expression, so a client id carrying
+// `.`, `|`, `*` or `(` is matched as a PATTERN rather than as itself,
+// and a pattern is a pin that admits more than the one client it names.
+// That is the same shape as GHSA-f99m-22fh-qw96 — a claim value reaching
+// a regular expression as something other than a literal — which is the
+// advisory this design's vmauth floor exists for.
+//
+// So the shape admits what an opaque identifier is built from and no
+// metacharacter at all: letters, digits, `-`, `_`, `:` and `@`, opening
+// on a letter or a digit. A UUID passes, an ordinary hyphenated name
+// passes, and so does the `<id>@<project>` form some issuers mint. A
+// client id carrying a dot does not, and is refused rather than escaped,
+// for the reason a namespace name is: the alternative is a value that
+// means one thing in the issuer's console and another in the proxy.
+//
+// The rendered value is anchored on top of this — see audienceMatch.
+var audienceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_:@-]*$`)
+
 // Grant is what one principal may read on one cluster.
 //
 // Namespaces lists them by name. AllNamespaces means every namespace on
@@ -155,7 +188,27 @@ type Principal struct {
 // nor validates them beyond requiring them to be present when a vmauth
 // configuration is rendered.
 type Config struct {
-	ClaimName      string      `json:"claimName" yaml:"claimName"`
+	ClaimName string `json:"claimName" yaml:"claimName"`
+
+	// Audience is the OAuth client id this proxy's own tokens are minted
+	// for, pinned into every user's `match_claims` under AudienceClaim.
+	// It is required to render a vmauth configuration.
+	//
+	// It is required because vmauth validates a token's EXPIRY and, with
+	// OIDC discovery configured, its ISSUER, and nothing else. It has no
+	// audience option and never inspects `aud` on its own, so a token
+	// minted for any other client of the same issuer verifies here
+	// exactly as one minted for this proxy does, and is then selected by
+	// whichever principal its groups match. `match_claims` is the only
+	// place the check can be made, which is why the audience goes there
+	// rather than beside the issuer.
+	//
+	// It works whether the issuer mints `aud` as a string or as a list:
+	// vmauth tests a `match_claims` entry against an array claim element
+	// by element and matches if any one of them does, so the list form
+	// needs no special case here.
+	Audience string `json:"audience" yaml:"audience"`
+
 	MetricsBackend string      `json:"metricsBackend,omitempty" yaml:"metricsBackend,omitempty"`
 	LogsBackend    string      `json:"logsBackend,omitempty" yaml:"logsBackend,omitempty"`
 	TracesBackend  string      `json:"tracesBackend,omitempty" yaml:"tracesBackend,omitempty"`
@@ -234,6 +287,16 @@ func (c Config) Validate() error {
 
 	if c.ClaimName == "" {
 		errs = append(errs, errors.New("claimName is empty: nothing would select a principal, so every token would match none of them"))
+	}
+	if c.ClaimName == AudienceClaim {
+		errs = append(errs, fmt.Errorf("claimName is %q, which is the claim the audience is pinned under. Both are entries in one `match_claims` map, so one of them would overwrite the other — and the entry that survives decides either which principal a token is or which client it was minted for, never both. Name the groups claim something else", AudienceClaim))
+	}
+	// Checked when set, required when a vmauth configuration is rendered:
+	// a Config is usable for RenderClaim without it, because the
+	// `vm_access` body carries no audience and it is the proxy, not the
+	// claim, that has to do the checking. See RenderVMAuth.
+	if c.Audience != "" && !audienceRE.MatchString(c.Audience) {
+		errs = append(errs, fmt.Errorf("audience %q is not a usable client id (%s). vmauth compiles every `match_claims` value as a REGULAR EXPRESSION, so a value carrying `.`, `|`, `*` or `(` is matched as a pattern rather than as itself and pins more than the one client it names — the same shape as the unanchored-claim advisory this design's vmauth floor exists for. Such a value is refused rather than escaped", c.Audience, audienceRE))
 	}
 	if len(c.Principals) == 0 {
 		errs = append(errs, errors.New("no principals: the rendered configuration would admit nobody, which is indistinguishable from a broken derivation"))
@@ -368,10 +431,31 @@ func sortedGrants(p Principal) []Grant {
 }
 
 // alternation renders names as an anchored regular-expression alternation.
-// Every name has already been validated against nameRE, so nothing here
-// needs escaping — and if that ever stops being true this is the line that
-// makes it a vulnerability, which is why the check lives in Validate and
-// not here.
+// Every name has already been validated against nameRE — or, for an
+// audience, against audienceRE — so nothing here needs escaping, and if
+// that ever stops being true this is the line that makes it a
+// vulnerability, which is why the check lives in Validate and not here.
 func alternation(names []string) string {
 	return "^(" + strings.Join(names, "|") + ")$"
+}
+
+// audienceMatch renders the audience as the value of a `match_claims`
+// entry: the client id, anchored.
+//
+// vmauth anchors a `match_claims` value itself — it compiles the value as
+// `^(?:…)$` — and has done since v1.152.0, the release that fixed
+// GHSA-f99m-22fh-qw96 and the floor this design already requires. So
+// these anchors are redundant in front of a proxy at that floor, and are
+// rendered anyway for two reasons. An audience pin exists to NARROW, and
+// its failure mode is silent admission, so a narrowing control that works
+// only when the binary in front of it is patched is a control with a
+// version number in it. And anchoring twice costs nothing: `^(?:^(x)$)$`
+// matches exactly `x` and nothing else, which is what
+// TestTheAudiencePinSurvivesVMAuthsOwnAnchoring asserts.
+//
+// The anchors are the second line, not the first. The first is
+// audienceRE, which is why there is nothing inside them that could reach
+// past them.
+func audienceMatch(audience string) string {
+	return alternation([]string{audience})
 }

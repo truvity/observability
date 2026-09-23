@@ -5,6 +5,7 @@
 # has — an empty result, with no error anywhere. Refused by the schema.
 tenancy:
   issuerUrl: https://issuer.example
+  audience: example-observability-client
   namespaceLabel: k8s.namespace.name
   principals:
     - group: example:k8s:viewer

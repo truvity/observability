@@ -36,6 +36,11 @@
       "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$",
       "description": "A LOG FIELD NAME, which is a different question from a plain name and has a different answer. A log agent names its own fields, and a real one carries dots: kubernetes.pod_namespace, k8s.cluster.name. The shape admits those and refuses everything that is stream-filter syntax - a quote, a brace, a comma, an equals sign, a pipe, a colon, whitespace - because the name is interpolated into the filter and one of those would widen the grant rather than look odd."
     },
+    "audience": {
+      "type": "string",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9_:@-]*)?$",
+      "description": "An OAuth client id: the audience this proxy's tokens are minted for. vmauth compiles every matchClaims value as a REGULAR EXPRESSION, so the shape admits what an opaque identifier is built from - letters, digits, -, _, : and @ - and no metacharacter at all: a value carrying a . or a | would pin a pattern, and a pattern admits clients nobody named. Empty is allowed here and refused at render time whenever a principal exists, so that the refusal can say what an unpinned audience costs."
+    },
     "resources": {
       "type": "object",
       "description": "Kubernetes resource requirements; passed through untouched. The chart refuses requests that differ from limits and a fractional CPU.",
@@ -211,6 +216,10 @@
       "properties": {
         "issuerUrl": {
           "type": "string"
+        },
+        "audience": {
+          "$ref": "#/definitions/audience",
+          "description": "The client id this proxy's tokens are minted under, pinned into every reader's matchClaims as `aud`. REQUIRED whenever principals are set: vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else - it has no audience option and never inspects aud itself - so without this pin any unexpired token from that issuer is admitted whatever client it was minted for."
         },
         "claimName": {
           "type": "string",
