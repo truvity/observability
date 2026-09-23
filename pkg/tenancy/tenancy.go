@@ -15,6 +15,14 @@
 // proxy lets them read, and that is not a difference anyone notices until
 // it matters.
 //
+// The scoping key is the CLUSTER and the NAMESPACE, under OpenTelemetry's
+// names. A grant says "these namespaces on this cluster"; a project, a
+// team or a product is a derivation from a name to a list of namespaces
+// that lives with whoever writes the grants, never a label on the
+// telemetry. The environment tier (`deployment.environment.name`) rides
+// along on every signal and is deliberately not a key: two clusters can
+// share a tier, so a filter on it would select both.
+//
 // This package knows nothing about any estate. It takes principals and
 // grants, validates them, and returns data structures. It reads no files
 // and contacts nothing.
@@ -28,8 +36,49 @@ import (
 	"strings"
 )
 
-// nameRE is what a tenant or environment name may look like: the
-// Kubernetes label-value shape, lowercase.
+// The vocabulary: what every writer stamps and every filter selects on,
+// per signal. These are OpenTelemetry's semantic-convention names, spelled
+// the way each store can carry them.
+//
+// The metrics spellings have underscores because a Prometheus label name
+// cannot carry a dot. The log-path namespace field is the container-log
+// agent's own native name rather than the convention's, because that
+// agent cannot rename a field and the OTLP gateway can — so the gateway
+// yields, and emits that spelling on its log pipeline beside the
+// conventional one. charts/observability-emitters stamps exactly these;
+// tests/agreement_test.go walks its rendered output and fails on any
+// writer that spells one differently.
+const (
+	// DefaultClusterLabel and DefaultNamespaceLabel are the METRICS label
+	// keys, and what Config.ClusterLabel and Config.NamespaceLabel mean
+	// when empty.
+	DefaultClusterLabel   = "k8s_cluster_name"
+	DefaultNamespaceLabel = "k8s_namespace_name"
+
+	// DefaultLogsClusterField and DefaultLogsNamespaceField are the LOG
+	// stream fields, and what Config.LogsClusterField and
+	// Config.LogsNamespaceField mean when empty.
+	DefaultLogsClusterField   = "k8s.cluster.name"
+	DefaultLogsNamespaceField = "kubernetes.pod_namespace"
+
+	// TracesClusterAttribute and TracesNamespaceAttribute are the span
+	// resource attributes. Nothing in this package filters on them — the
+	// trace store cannot be scoped, see AllowUnfilteredTraceReads — but
+	// they are the third column of the same table, and a writer that
+	// spells them differently is caught by the same test.
+	TracesClusterAttribute   = "k8s.cluster.name"
+	TracesNamespaceAttribute = "k8s.namespace.name"
+
+	// EnvironmentLabel and EnvironmentAttribute carry the environment
+	// tier — `production`, `staging`, `development`, `test`, or whatever
+	// the estate calls one. Descriptive only: it is never a key, because
+	// two clusters can share a tier and a filter on it would select both.
+	EnvironmentLabel     = "deployment_environment_name"
+	EnvironmentAttribute = "deployment.environment.name"
+)
+
+// nameRE is what a cluster or namespace name may look like: the
+// Kubernetes DNS-label shape, which is what a namespace name already is.
 //
 // This is a security boundary, not a style rule. Both names are
 // interpolated into a regular expression in the rendered filter, so a name
@@ -39,15 +88,21 @@ import (
 // escaping is a name nobody should have chosen.
 var nameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
+// labelRE is what a METRICS LABEL KEY may look like: the Prometheus label
+// name shape. The defaults carry underscores, which nameRE would refuse,
+// and a key is not a value — it is never inside the alternation, so the
+// regular-expression metacharacters nameRE exists to keep out are not the
+// concern here. What it still refuses is anything a MetricsQL selector
+// would read as syntax.
+var labelRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
 // fieldRE is what a LOG FIELD NAME may look like, which is a different
-// question from what a tenant may be called and has a different answer.
+// question from what a namespace may be called and has a different answer.
 //
-// A tenant name is chosen by whoever writes the grant, so it is held to
-// the narrowest shape that can express one. A log field name is not
-// chosen at all: it is whatever the log agent produces, and vlagent
-// produces `kubernetes.namespace_labels.<kubernetes label key>` — a name
-// carrying dots, and a slash whenever the label key has a prefix. Holding
-// it to nameRE would refuse every real one, so this shape admits the
+// A namespace name is held to the narrowest shape that can express one. A
+// log field name is whatever the log agent produces, and the ones here
+// carry dots: `kubernetes.pod_namespace`, `k8s.cluster.name`. Holding them
+// to nameRE would refuse every real one, so this shape admits the
 // characters a Kubernetes label key and its prefix can contain, and
 // nothing else.
 //
@@ -57,24 +112,29 @@ var nameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 // end the filter early, or open a second alternative beside it, and either
 // way the grant would be wider than the one somebody wrote. Those are
 // refused here rather than escaped at the point of use, for the same
-// reason a tenant name is: a name that needs escaping is a name nobody
+// reason a namespace name is: a name that needs escaping is a name nobody
 // should have chosen. The first character excludes `.`, `/` and `-`
 // because LogsQL will not start an unquoted token with one.
 var fieldRE = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`)
 
-// Grant is what one principal may read in one environment.
+// Grant is what one principal may read on one cluster.
 //
-// Tenants lists the tenants by name. AllTenants means every tenant in that
-// environment, present or future.
+// Namespaces lists them by name. AllNamespaces means every namespace on
+// that cluster, present or future.
 //
-// The two are mutually exclusive and one is required. An empty Tenants
+// The two are mutually exclusive and one is required. An empty Namespaces
 // list does NOT mean "everything": a list that is empty because a
 // derivation produced nothing is the most likely way to widen a grant by
 // accident, so it is refused and breadth has to be asked for by name.
+//
+// There is no project, team or product here on purpose. Those are
+// derivations — a name that expands to a list of namespaces — and the
+// expansion belongs to whoever writes the grants, where adding a namespace
+// to a project is a visible act rather than a label somebody forgets.
 type Grant struct {
-	Env        string   `json:"env" yaml:"env"`
-	Tenants    []string `json:"tenants,omitempty" yaml:"tenants,omitempty"`
-	AllTenants bool     `json:"allTenants,omitempty" yaml:"allTenants,omitempty"`
+	Cluster       string   `json:"cluster" yaml:"cluster"`
+	Namespaces    []string `json:"namespaces,omitempty" yaml:"namespaces,omitempty"`
+	AllNamespaces bool     `json:"allNamespaces,omitempty" yaml:"allNamespaces,omitempty"`
 }
 
 // Principal is a named population — a group in the issuer's vocabulary —
@@ -101,32 +161,38 @@ type Config struct {
 	TracesBackend  string      `json:"tracesBackend,omitempty" yaml:"tracesBackend,omitempty"`
 	Principals     []Principal `json:"principals" yaml:"principals"`
 
-	// TenantLabel and EnvLabel are the label keys the collectors stamp on
-	// METRICS and on spans. They are inputs because they are the estate's
-	// vocabulary, not this package's. Empty means "tenant" and "env".
-	TenantLabel string `json:"tenantLabel,omitempty" yaml:"tenantLabel,omitempty"`
-	EnvLabel    string `json:"envLabel,omitempty" yaml:"envLabel,omitempty"`
+	// ClusterLabel and NamespaceLabel are the label keys the collectors
+	// stamp on METRICS. Empty means DefaultClusterLabel and
+	// DefaultNamespaceLabel, which is what charts/observability-emitters
+	// stamps; they are inputs so that an estate whose collectors were not
+	// built here can state what its series actually carry.
+	ClusterLabel   string `json:"clusterLabel,omitempty" yaml:"clusterLabel,omitempty"`
+	NamespaceLabel string `json:"namespaceLabel,omitempty" yaml:"namespaceLabel,omitempty"`
 
-	// LogsTenantField and LogsEnvField are the FIELD names the log store
-	// carries those same two dimensions under, and they are required:
-	// there is no default, because every default anyone would write here
-	// is wrong somewhere and wrong silently.
+	// LogsClusterField and LogsNamespaceField are the stream FIELD names
+	// the log store carries the same two dimensions under. Empty means
+	// DefaultLogsClusterField and DefaultLogsNamespaceField.
 	//
-	// The log path does not use the label keys above, and it cannot be
-	// made to. vlagent delivers a namespace label as
-	// `kubernetes.namespace_labels.<key>`, and it has no flag, header or
-	// ingest pipeline that renames a field; VictoriaLogs' own `rename` and
-	// `copy` pipes run at query time, after an injected stream filter has
-	// already been applied, so they cannot rescue it either. A filter
-	// naming a field the streams do not have matches nothing, and a stream
-	// filter that matches nothing is an empty result rather than an error.
+	// They are separate inputs from the label keys, and defaulted
+	// separately, because the log path cannot carry the metrics names: a
+	// Prometheus label has no dots, and the container-log agent has no
+	// flag, header or ingest pipeline that renames a field. So the default
+	// on this path is what that agent natively writes — the namespace
+	// under `kubernetes.pod_namespace`, and the cluster under the
+	// conventional name it is given as a static extra field — and the
+	// OTLP gateway is configured to write the same spelling on its log
+	// pipeline. An earlier version of this package had no default here,
+	// because every default was right on one estate and wrong on the
+	// next; that was true while the field was derived from an estate's
+	// own namespace label, and it stopped being true when the key became
+	// the namespace's name, which every estate spells the same way.
 	//
-	// So the names are stated by the caller, who is the only one that
-	// knows which agent wrote the logs. charts/observability-emitters
-	// derives the same pair and refuses to render until they appear in the
-	// log agent's own stream fields; docs/safety.md has the rest.
-	LogsTenantField string `json:"logsTenantField" yaml:"logsTenantField"`
-	LogsEnvField    string `json:"logsEnvField" yaml:"logsEnvField"`
+	// A filter naming a field the streams do not have matches nothing,
+	// and a stream filter that matches nothing is an empty result rather
+	// than an error. That is why these still exist as inputs: an estate
+	// whose log agent writes something else has to say so here.
+	LogsClusterField   string `json:"logsClusterField,omitempty" yaml:"logsClusterField,omitempty"`
+	LogsNamespaceField string `json:"logsNamespaceField,omitempty" yaml:"logsNamespaceField,omitempty"`
 
 	// AllowUnfilteredTraceReads admits the trace store's read route even
 	// though nothing can scope it, and it has this name because that is
@@ -135,11 +201,11 @@ type Config struct {
 	// vmauth applies a principal's filters by substituting them into the
 	// route, and VictoriaTraces' Jaeger and Tempo select APIs accept no
 	// query argument to substitute them into — see TracesRead. So a
-	// reader given those paths reads every tenant's spans, whatever the
-	// claim beside the route says.
+	// reader given those paths reads every namespace's spans on every
+	// cluster, whatever the claim beside the route says.
 	//
 	// The option exists because for some estates that is the right
-	// trade: one environment, one team, traces that carry nothing a
+	// trade: one cluster, one team, traces that carry nothing a
 	// colleague may not see. It is off by default and has to be written
 	// down because the alternative — rendering the route anyway, since it
 	// looks like the other two — is the defect this package was fixed to
@@ -151,18 +217,13 @@ type Config struct {
 	AllowUnfilteredTraceReads bool `json:"allowUnfilteredTraceReads,omitempty" yaml:"allowUnfilteredTraceReads,omitempty"`
 }
 
-func (c Config) tenantLabel() string {
-	if c.TenantLabel == "" {
-		return "tenant"
-	}
-	return c.TenantLabel
+func (c Config) clusterLabel() string   { return orDefault(c.ClusterLabel, DefaultClusterLabel) }
+func (c Config) namespaceLabel() string { return orDefault(c.NamespaceLabel, DefaultNamespaceLabel) }
+func (c Config) logsClusterField() string {
+	return orDefault(c.LogsClusterField, DefaultLogsClusterField)
 }
-
-func (c Config) envLabel() string {
-	if c.EnvLabel == "" {
-		return "env"
-	}
-	return c.EnvLabel
+func (c Config) logsNamespaceField() string {
+	return orDefault(c.LogsNamespaceField, DefaultLogsNamespaceField)
 }
 
 // Validate reports every problem it can find, not just the first: a
@@ -178,14 +239,7 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New("no principals: the rendered configuration would admit nobody, which is indistinguishable from a broken derivation"))
 	}
 
-	if c.TenantLabel != "" && !nameRE.MatchString(c.TenantLabel) {
-		errs = append(errs, fmt.Errorf("tenantLabel %q is not a valid label name (%s)", c.TenantLabel, nameRE))
-	}
-	if c.EnvLabel != "" && !nameRE.MatchString(c.EnvLabel) {
-		errs = append(errs, fmt.Errorf("envLabel %q is not a valid label name (%s)", c.EnvLabel, nameRE))
-	}
-
-	errs = append(errs, c.validateLogFields()...)
+	errs = append(errs, c.validateKeys()...)
 
 	// The routes are this package's own, so this check does not guard
 	// against a caller. It guards against an edit to route.go: a read
@@ -215,36 +269,36 @@ func (c Config) Validate() error {
 			errs = append(errs, fmt.Errorf("%s: no grants. A principal that may read nothing is written by leaving it out, not by granting it nothing", where))
 		}
 
-		envs := map[string]bool{}
+		clusters := map[string]bool{}
 		for j, g := range p.Grants {
 			gw := fmt.Sprintf("%s grant[%d]", where, j)
 
 			switch {
-			case g.Env == "":
-				errs = append(errs, fmt.Errorf("%s: env is empty", gw))
-			case !nameRE.MatchString(g.Env):
-				errs = append(errs, fmt.Errorf("%s: env %q is not a valid name (%s). Names are interpolated into a filter expression, so one outside this shape could widen the grant", gw, g.Env, nameRE))
+			case g.Cluster == "":
+				errs = append(errs, fmt.Errorf("%s: cluster is empty. The cluster is half of the scoping key — a grant is namespaces ON a cluster — and a filter on cluster=\"\" selects the telemetry of no cluster at all, which is an empty result rather than an error", gw))
+			case !nameRE.MatchString(g.Cluster):
+				errs = append(errs, fmt.Errorf("%s: cluster %q is not a valid name (%s). Names are interpolated into a filter expression, so one outside this shape could widen the grant", gw, g.Cluster, nameRE))
 			default:
-				if envs[g.Env] {
-					errs = append(errs, fmt.Errorf("%s: env %q is granted twice to the same principal; merge them, or one grant is silently ignored", gw, g.Env))
+				if clusters[g.Cluster] {
+					errs = append(errs, fmt.Errorf("%s: cluster %q is granted twice to the same principal; merge them, or one grant is silently ignored", gw, g.Cluster))
 				}
-				envs[g.Env] = true
+				clusters[g.Cluster] = true
 			}
 
 			switch {
-			case g.AllTenants && len(g.Tenants) > 0:
-				errs = append(errs, fmt.Errorf("%s: allTenants is set and tenants are listed. One of them is wrong, and guessing which would be how a grant quietly widens", gw))
-			case !g.AllTenants && len(g.Tenants) == 0:
-				errs = append(errs, fmt.Errorf("%s: no tenants and allTenants is not set. An empty list is refused rather than read as \"everything\": that is the likeliest way a derivation widens a grant by accident", gw))
+			case g.AllNamespaces && len(g.Namespaces) > 0:
+				errs = append(errs, fmt.Errorf("%s: allNamespaces is set and namespaces are listed. One of them is wrong, and guessing which would be how a grant quietly widens", gw))
+			case !g.AllNamespaces && len(g.Namespaces) == 0:
+				errs = append(errs, fmt.Errorf("%s: no namespaces and allNamespaces is not set. An empty list is refused rather than read as \"everything\": a project that expands to no namespaces is the likeliest way a derivation widens a grant by accident", gw))
 			}
 
-			for _, t := range g.Tenants {
-				if !nameRE.MatchString(t) {
-					errs = append(errs, fmt.Errorf("%s: tenant %q is not a valid name (%s). Names are interpolated into a filter expression, so one outside this shape could widen the grant", gw, t, nameRE))
+			for _, ns := range g.Namespaces {
+				if !nameRE.MatchString(ns) {
+					errs = append(errs, fmt.Errorf("%s: namespace %q is not a valid name (%s). Names are interpolated into a filter expression, so one outside this shape could widen the grant", gw, ns, nameRE))
 				}
 			}
-			if dup := firstDuplicate(g.Tenants); dup != "" {
-				errs = append(errs, fmt.Errorf("%s: tenant %q is listed twice", gw, dup))
+			if dup := firstDuplicate(g.Namespaces); dup != "" {
+				errs = append(errs, fmt.Errorf("%s: namespace %q is listed twice", gw, dup))
 			}
 		}
 	}
@@ -252,25 +306,38 @@ func (c Config) Validate() error {
 	return errors.Join(errs...)
 }
 
-// validateLogFields refuses a log path that has not been named.
+// validateKeys refuses a key the filters would be rendered with that the
+// stores could not have.
 //
-// This is the one place where a missing value is refused instead of
-// defaulted, and the messages say why at length on purpose: the failure
-// it prevents produces no error anywhere, so somebody reading this
+// The messages say why at length on purpose: the failure each one
+// prevents produces no error anywhere — a filter selecting on a name the
+// telemetry does not carry is an empty result — so somebody reading this
 // refusal is the last person who gets to be told.
-func (c Config) validateLogFields() []error {
+func (c Config) validateKeys() []error {
 	var errs []error
 
-	if c.LogsTenantField == "" {
-		errs = append(errs, errors.New(`logsTenantField is empty, and it has no default. On the log path the tenant is not carried in a field named "tenant" and cannot be: vlagent delivers a namespace label as "kubernetes.namespace_labels.<key>" and can rename no field, so a stream filter naming anything else selects a field the streams do not have — which is an empty result rather than an error, and reads as "this tenant writes nothing" to the person who gets it. Name the field the log agent actually writes; charts/observability-emitters derives it and refuses to render until it is in the agent's own streamFields`))
-	} else if !fieldRE.MatchString(c.LogsTenantField) {
-		errs = append(errs, fmt.Errorf("logsTenantField %q is not a valid log field name (%s). The name is interpolated into a stream filter, where a quote, a brace, a comma or a `|` is syntax rather than a character — so a name carrying one could end the filter early or open a second alternative beside it, and widen the grant. Such a name is refused rather than escaped", c.LogsTenantField, fieldRE))
+	for key, value := range map[string]string{
+		"clusterLabel":   c.ClusterLabel,
+		"namespaceLabel": c.NamespaceLabel,
+	} {
+		if value != "" && !labelRE.MatchString(value) {
+			errs = append(errs, fmt.Errorf("%s %q is not a Prometheus label name (%s). This is the key every metrics filter selects on, so it has to be one a series can carry: a Prometheus label name has no dots, no dashes and no slashes. Leave it empty for the OpenTelemetry-derived default, which is what charts/observability-emitters stamps", key, value, labelRE))
+		}
+	}
+	if c.clusterLabel() == c.namespaceLabel() {
+		errs = append(errs, fmt.Errorf("clusterLabel and namespaceLabel are both %q. The two are the scoping key, and a filter with one name for both dimensions selects on one of them and ignores the other", c.clusterLabel()))
 	}
 
-	if c.LogsEnvField == "" {
-		errs = append(errs, errors.New(`logsEnvField is empty, and it has no default for the same reason logsTenantField has none: the log store's field names are the log agent's, not this package's. An agent that adds the environment as a static extra field writes it under the name it was given, and a filter naming any other one returns nothing at all, silently`))
-	} else if !fieldRE.MatchString(c.LogsEnvField) {
-		errs = append(errs, fmt.Errorf("logsEnvField %q is not a valid log field name (%s). The name is interpolated into a stream filter, so one carrying filter syntax could widen the grant rather than look odd, and is refused rather than escaped", c.LogsEnvField, fieldRE))
+	for key, value := range map[string]string{
+		"logsClusterField":   c.LogsClusterField,
+		"logsNamespaceField": c.LogsNamespaceField,
+	} {
+		if value != "" && !fieldRE.MatchString(value) {
+			errs = append(errs, fmt.Errorf("%s %q is not a valid log field name (%s). The name is interpolated into a stream filter, where a quote, a brace, a comma or a `|` is syntax rather than a character — so a name carrying one could end the filter early or open a second alternative beside it, and widen the grant. Such a name is refused rather than escaped. Leave it empty for the default, which is the field the container-log agent natively writes and the gateway is configured to match", key, value, fieldRE))
+		}
+	}
+	if c.logsClusterField() == c.logsNamespaceField() {
+		errs = append(errs, fmt.Errorf("logsClusterField and logsNamespaceField are both %q; one stream filter would carry one dimension twice and the other not at all", c.logsClusterField()))
 	}
 
 	return errs
@@ -287,15 +354,15 @@ func firstDuplicate(names []string) string {
 	return ""
 }
 
-// sortedGrants returns a principal's grants ordered by environment, so
-// that rendering is deterministic and a diff shows a real change rather
-// than a map iteration.
+// sortedGrants returns a principal's grants ordered by cluster, so that
+// rendering is deterministic and a diff shows a real change rather than a
+// map iteration.
 func sortedGrants(p Principal) []Grant {
 	out := append([]Grant(nil), p.Grants...)
-	sort.Slice(out, func(i, j int) bool { return out[i].Env < out[j].Env })
+	sort.Slice(out, func(i, j int) bool { return out[i].Cluster < out[j].Cluster })
 	for i := range out {
-		out[i].Tenants = append([]string(nil), out[i].Tenants...)
-		sort.Strings(out[i].Tenants)
+		out[i].Namespaces = append([]string(nil), out[i].Namespaces...)
+		sort.Strings(out[i].Namespaces)
 	}
 	return out
 }

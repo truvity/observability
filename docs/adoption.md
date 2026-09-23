@@ -286,24 +286,27 @@ store. The order matters twice over:
 | `observability-crds` | `PodMonitor` is one of its kinds, and so is `VMAgent`. |
 | The VictoriaMetrics operator | It reconciles the `VMAgent`. `observability-stack` installs it. |
 | A Secret with the cluster's write token | Its **name** is `writeCredentials.secretName`; the chart neither creates nor reads it. |
-| Namespaces carrying the tenancy labels | Everything unlabelled becomes `tenancy.fallbackTenant` on the metrics and OTLP paths, and carries no tenant at all on the log path. |
+| Nothing about the namespaces | The namespace is the key and every pod has one; there is no label to carry and no fallback to choose. A project's reach is the namespace list in its grant, on the read side. |
 | Reachable store addresses | Every destination URL, from this cluster. A NetworkPolicy in the way is a buffer that fills. |
 
 ### The values that have no default
 
-Five, and none of them can be guessed. Each renders, runs and reports
+Three, and none of them can be guessed. Each renders, runs and reports
 healthy when wrong, which is why the chart refuses rather than defaults:
 
 ```yaml
 tenancy:
-  env: example                       # this cluster
-  fallbackTenant: infra              # whatever nobody has labelled yet
-  namespaceLabels:
-    project: example.com/project     # the label whose VALUE is the tenant
-    layer: example.com/layer         # consulted only without a project label
+  cluster: example-cluster           # this cluster — half of the scoping key
+  environment: development           # the tier: never a key, always stamped
 
 writeCredentials:
   secretName: example-write-token
+
+victoria-logs-collector:
+  collector:
+    # A mirror of the two above, because Helm cannot compute a subchart's
+    # values; the chart refuses it when it disagrees.
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
 ```
 
 Plus a destination list per emitter. `tests/cases/observability-emitters/`
@@ -313,15 +316,15 @@ produces beside it.
 
 ### Two things to carry out of this chart
 
-**The log store's tenancy field.** It is
-`kubernetes.namespace_labels.<your project label key>`, not `tenant`, and
-the proxy has to filter on that name. docs/safety.md says why. The chart
-makes you write it into the log agent's `streamFields`, so it is visible
-rather than derived — carry it to the read side, where it is
-`tenancy.logsTenantField` on `observability-stack` (with
-`tenancy.logsEnvField` beside it, which is your `tenancy.envLabel`). Both
-are required and neither has a default: the read side refuses to render a
-filter it would have had to guess the name for.
+**The names, which you do not set.** Every writer stamps the cluster and
+the namespace under OpenTelemetry's names as each store can carry them —
+`k8s_cluster_name` / `k8s_namespace_name` on metrics, `k8s.cluster.name`
+/ `kubernetes.pod_namespace` on logs, `k8s.cluster.name` /
+`k8s.namespace.name` on spans — and the read side (`observability-stack`,
+`pkg/tenancy`) defaults to the same. Nothing to carry across. The one
+name that is not the convention's, the log-path namespace, is the
+container-log agent's own because it cannot rename a field; docs/safety.md
+has why the gateway yields to it.
 
 **Enabling a component's monitor is a second step.** This chart collects
 every `PodMonitor` and `ServiceMonitor` on the cluster, so wiring a
@@ -334,9 +337,9 @@ omission this chart can see.
 An estate replacing hand-written collection objects adopts this chart in
 one pull request whose render diff is empty, then tightens in later ones.
 The two diffs to read first are the `VMAgent`'s `scrapeClasses` block and
-the gateway's `transform/tenancy` statements: they are where the labels
-come from, and a difference there is a difference in what every query
-returns.
+the gateway's `transform/disown` and `transform/tenancy` statements: they
+are where the keys come from, and a difference there is a difference in
+what every query returns.
 
 ### Turning an emitter off
 

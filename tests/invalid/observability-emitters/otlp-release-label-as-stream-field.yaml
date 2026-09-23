@@ -1,5 +1,7 @@
-# Telemetry labelled env="" matches no grant the proxy injects. It is
-# stored, it is paid for, and it is invisible to everyone.
+# The Helm release is navigation, not a key, and never a stream: it is
+# constant per pod, but a stream field is a cardinality decision made at
+# collection time, and the allow-list is the chart's. The attribute the
+# gateway extracts it under is refused here.
 
 metrics:
   destinations:
@@ -16,21 +18,21 @@ otlp:
     traces:
     - name: primary
       url: https://traces.example
+  streamFields:
+  - k8s.cluster.name
+  - kubernetes.pod_namespace
+  - k8s.pod.labels.app.kubernetes.io/instance
 tenancy:
-  env: ''
-  fallbackTenant: infra
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: tenancy.example.com/project
+  cluster: example-cluster
+  environment: development
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
     - kubernetes.pod_namespace
-    - env
-    - kubernetes.namespace_labels.tenancy.example.com/project
+    - k8s.cluster.name
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

@@ -1,12 +1,10 @@
 tenancy:
   issuerUrl: https://issuer.example
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
 
 # Requests below limits put a store in the Burstable class, so it is
 # evicted before a Guaranteed pod — at the moment of node pressure, which

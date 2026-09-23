@@ -203,7 +203,7 @@ mechanism this chart selects users with.
 {{- range $site := $licenceSites -}}
 {{- $l := $site.value | default dict -}}
 {{- if or $l.key (($l.keyRef).name) (($l.secret).name) -}}
-{{- fail (printf "observability-stack: %s carries a licence key. A licence key is only useful to an Enterprise binary, and this chart renders none: it wraps the community edition, which is Apache 2.0 and free for any number of tenants. Remove it, or install the vendor's own chart directly." $site.key) -}}
+{{- fail (printf "observability-stack: %s carries a licence key. A licence key is only useful to an Enterprise binary, and this chart renders none: it wraps the community edition, which is Apache 2.0 and free for any number of tenants or clusters. Remove it, or install the vendor's own chart directly." $site.key) -}}
 {{- end -}}
 {{- end -}}
 {{- range $where, $args := dict "vmauth.extraArgs" .Values.vmauth.extraArgs "victoria-metrics-k8s-stack.vmsingle.spec.extraArgs" ((($vmks.vmsingle).spec).extraArgs | default dict) "victoria-logs-single.server.extraArgs" ((((index .Values "victoria-logs-single").server).extraArgs) | default dict) "victoria-traces-single.server.extraArgs" ((((index .Values "victoria-traces-single").server).extraArgs) | default dict) -}}
@@ -241,7 +241,7 @@ scrape interval silently discards good samples rather than failing.
 {{- end -}}
 {{- $want := .Values.storeCredentials.secretName -}}
 {{- if not $want -}}
-{{- fail "observability-stack: `storeCredentials.secretName` is empty, so the stores would run with no `-httpAuth.*` at all and anything that can reach a Service could read every tenant's data around the proxy. Name the Secret the estate created; this chart never creates one." -}}
+{{- fail "observability-stack: `storeCredentials.secretName` is empty, so the stores would run with no `-httpAuth.*` at all and anything that can reach a Service could read every namespace's data around the proxy. Name the Secret the estate created; this chart never creates one." -}}
 {{- end -}}
 {{- $envSites := list -}}
 {{- if $metricsOn -}}{{- $envSites = append $envSites (dict "key" "victoria-metrics-k8s-stack.vmsingle.spec.extraEnvs" "value" ((($vmks.vmsingle).spec).extraEnvs)) -}}{{- end -}}
@@ -271,7 +271,7 @@ Tenancy.
 
 The names in a grant are interpolated into a filter expression, so this
 is the same security boundary `pkg/tenancy` enforces in Go and for the
-same reason: a tenant named `a|b` or `.*` would not look odd in a
+same reason: a namespace named `a|b` or `.*` would not look odd in a
 rendered filter, it would widen the grant it appears in. Such a name is
 refused rather than escaped.
 
@@ -297,27 +297,26 @@ would override its `-httpAuth.*`.
 {{- fail "observability-stack: `tenancy.principals` is set but `tenancy.issuerUrl` is empty. vmauth verifies a token against the issuer's OIDC discovery document; with no issuer there is nothing to verify a signature against, and a proxy that trusts an unverified token is worse than no proxy at all." -}}
 {{- end -}}
 {{- /*
-The log path has to be named.
+The keys.
 
-This is the one required value here whose absence would otherwise render
-cleanly, install, pass every health check and answer every log query with
-nothing. It has no default because every default is wrong somewhere and
-wrong silently: vlagent can rename no field, so the tenant reaches
-VictoriaLogs as `kubernetes.namespace_labels.<key>` and a filter naming
-`tenant` selects a field the streams do not have.
+Each is a value with a default, and the defaults are what
+charts/observability-emitters stamps. A key is interpolated into a filter
+expression exactly as a name is, so a log field carrying stream-filter
+syntax is refused for the same reason a namespace name is; the metrics
+keys are held to the Prometheus label shape by the schema. And the two
+keys of one signal must differ: one name for both dimensions is a filter
+that selects on one of them and ignores the other.
 */}}
-{{- if $t.principals -}}
-{{- if not $t.logsTenantField -}}
-{{- fail "observability-stack: `tenancy.principals` is set but `tenancy.logsTenantField` is empty, and it has no default. On the log path the tenant is not carried in a field named `tenant` and cannot be: vlagent delivers a namespace label as `kubernetes.namespace_labels.<key>` and can rename no field — no flag, no header, and no ingest pipeline, since VictoriaLogs' `rename` and `copy` pipes run at query time, after the filter this chart injects has already been applied. A stream filter naming any other field selects one the streams do not have, which returns an EMPTY RESULT rather than an error and reads as \"my service logged nothing\". Set it to the field your log agent writes; with charts/observability-emitters that is `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`, which that chart already requires in the agent's own `streamFields`." -}}
-{{- end -}}
-{{- if not $t.logsEnvField -}}
-{{- fail "observability-stack: `tenancy.principals` is set but `tenancy.logsEnvField` is empty, and it has no default for the same reason `tenancy.logsTenantField` has none: the log store's field names are the log agent's, not this chart's. An agent that adds the environment as a static extra field writes it under the name it was given, and a filter naming any other one returns nothing at all, silently. With charts/observability-emitters it is `tenancy.envLabel`, because the agent receives it through `-kubernetesCollector.extraFields` under exactly that name." -}}
+{{- range $key, $field := dict "logsClusterField" $t.logsClusterField "logsNamespaceField" $t.logsNamespaceField -}}
+{{- if not (regexMatch $fieldShape (toString $field)) -}}
+{{- fail (printf "observability-stack: `tenancy.%s` is %q, which is not a log field name (%s). A log field name may carry dots, and nothing that is stream-filter syntax: a quote, a brace, a comma, an equals sign, a `|`, a colon or a space would end the filter early or open a second alternative beside it, and the grant would be wider than the one somebody wrote. Such a name is refused, never escaped. Leave it at the default, which is the field charts/observability-emitters writes." $key (toString $field) $fieldShape) -}}
 {{- end -}}
 {{- end -}}
-{{- range $key, $field := dict "logsTenantField" $t.logsTenantField "logsEnvField" $t.logsEnvField -}}
-{{- if and $field (not (regexMatch $fieldShape (toString $field))) -}}
-{{- fail (printf "observability-stack: `tenancy.%s` is %q, which is not a log field name (%s). A log field name may carry the dots and the slash a Kubernetes label key has, and nothing that is stream-filter syntax: a quote, a brace, a comma, an equals sign, a `|`, a colon or a space would end the filter early or open a second alternative beside it, and the grant would be wider than the one somebody wrote. Such a name is refused, never escaped." $key (toString $field) $fieldShape) -}}
+{{- if eq (toString $t.clusterLabel) (toString $t.namespaceLabel) -}}
+{{- fail (printf "observability-stack: `tenancy.clusterLabel` and `tenancy.namespaceLabel` are both %q. The two are the scoping key; a metrics filter with one name for both dimensions selects on one of them and ignores the other, so every grant would be wider or narrower than written." (toString $t.clusterLabel)) -}}
 {{- end -}}
+{{- if eq (toString $t.logsClusterField) (toString $t.logsNamespaceField) -}}
+{{- fail (printf "observability-stack: `tenancy.logsClusterField` and `tenancy.logsNamespaceField` are both %q. One stream filter would carry one dimension twice and the other not at all." (toString $t.logsClusterField)) -}}
 {{- end -}}
 {{- $groups := dict -}}
 {{- range $i, $p := $t.principals -}}
@@ -331,24 +330,24 @@ VictoriaLogs as `kubernetes.namespace_labels.<key>` and a filter naming
 {{- if not $p.grants -}}
 {{- fail (printf "observability-stack: principal %q has no grants. A principal that may read nothing is written by leaving it out, not by granting it nothing." $p.group) -}}
 {{- end -}}
-{{- $envs := dict -}}
+{{- $clusters := dict -}}
 {{- range $g := $p.grants -}}
-{{- if not (regexMatch $shape (toString $g.env)) -}}
-{{- fail (printf "observability-stack: principal %q has env %q, which is not a plain name (%s). Names are interpolated into a filter expression, so one carrying `|`, `)` or `.*` would widen the grant rather than look odd. Such a name is refused, never escaped." $p.group (toString $g.env) $shape) -}}
+{{- if not (regexMatch $shape (toString $g.cluster)) -}}
+{{- fail (printf "observability-stack: principal %q has cluster %q, which is not a plain name (%s). The cluster is half of the scoping key, and names are interpolated into a filter expression, so one carrying `|`, `)` or `.*` would widen the grant rather than look odd. Such a name is refused, never escaped." $p.group (toString $g.cluster) $shape) -}}
 {{- end -}}
-{{- if hasKey $envs $g.env -}}
-{{- fail (printf "observability-stack: principal %q is granted env %q twice. Merge them, or one grant is silently ignored." $p.group $g.env) -}}
+{{- if hasKey $clusters $g.cluster -}}
+{{- fail (printf "observability-stack: principal %q is granted cluster %q twice. Merge them, or one grant is silently ignored." $p.group $g.cluster) -}}
 {{- end -}}
-{{- $_ := set $envs $g.env true -}}
-{{- if and $g.allTenants $g.tenants -}}
-{{- fail (printf "observability-stack: principal %q grants env %q with both `allTenants` and a `tenants` list. One of them is wrong, and guessing which is how a grant quietly widens." $p.group $g.env) -}}
+{{- $_ := set $clusters $g.cluster true -}}
+{{- if and $g.allNamespaces $g.namespaces -}}
+{{- fail (printf "observability-stack: principal %q grants cluster %q with both `allNamespaces` and a `namespaces` list. One of them is wrong, and guessing which is how a grant quietly widens." $p.group $g.cluster) -}}
 {{- end -}}
-{{- if and (not $g.allTenants) (not $g.tenants) -}}
-{{- fail (printf "observability-stack: principal %q grants env %q with neither `tenants` nor `allTenants`. An empty list is refused rather than read as \"everything\": a list that is empty because a derivation produced nothing is the likeliest way a grant widens by accident." $p.group $g.env) -}}
+{{- if and (not $g.allNamespaces) (not $g.namespaces) -}}
+{{- fail (printf "observability-stack: principal %q grants cluster %q with neither `namespaces` nor `allNamespaces`. An empty list is refused rather than read as \"everything\": a project that expands to no namespaces is the likeliest way a grant widens by accident. A grant is namespaces on a cluster; a project is the derivation that produces the list, and it lives with whoever writes this file." $p.group $g.cluster) -}}
 {{- end -}}
-{{- range $tenant := ($g.tenants | default list) -}}
-{{- if not (regexMatch $shape (toString $tenant)) -}}
-{{- fail (printf "observability-stack: principal %q grants tenant %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $p.group (toString $tenant) $shape) -}}
+{{- range $ns := ($g.namespaces | default list) -}}
+{{- if not (regexMatch $shape (toString $ns)) -}}
+{{- fail (printf "observability-stack: principal %q grants namespace %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $p.group (toString $ns) $shape) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -362,8 +361,8 @@ forwards on. VictoriaTraces' Jaeger and Tempo select APIs accept no
 query argument to substitute it into — their handlers take a tenant id
 from headers, `hidden_fields_filters` (which hides fields, not rows) and
 `allow_partial_response`, and nothing else — so a reader given those
-paths reads every tenant's spans whatever `defaultVMAccessClaim` says
-beside it.
+paths reads every namespace's spans on every cluster, whatever
+`defaultVMAccessClaim` says beside it.
 
 Rendering it anyway, because it looks like the metrics and logs routes,
 is exactly the failure this chart was fixed to remove. So it is a
@@ -371,7 +370,7 @@ refusal with a value whose name says what accepting it means.
 */}}
 {{- if and $t.principals (include "observability-stack.tracesEnabled" .) -}}
 {{- if not $t.allowUnfilteredTraceReads -}}
-{{- fail "observability-stack: a trace store is enabled and `tenancy.principals` is set, but `tenancy.allowUnfilteredTraceReads` is not. The proxy enforces a grant by substituting the principal's filter into the route it forwards on, and VictoriaTraces' Jaeger and Tempo select APIs accept NO query argument to substitute it into: their handlers take a tenant id from headers, `hidden_fields_filters` (which hides fields from a result, not rows) and `allow_partial_response`, and nothing else. There is no way through this proxy to give one principal a narrower view of traces than another, so the trace read route would be an unscoped route sitting beside two scoped ones and looking identical to them. Either turn the trace store off, or set `tenancy.allowUnfilteredTraceReads: true` and record that every principal who can reach the proxy reads every tenant's spans. Metrics and logs are unaffected either way." -}}
+{{- fail "observability-stack: a trace store is enabled and `tenancy.principals` is set, but `tenancy.allowUnfilteredTraceReads` is not. The proxy enforces a grant by substituting the principal's filter into the route it forwards on, and VictoriaTraces' Jaeger and Tempo select APIs accept NO query argument to substitute it into: their handlers take a tenant id from headers, `hidden_fields_filters` (which hides fields from a result, not rows) and `allow_partial_response`, and nothing else. There is no way through this proxy to give one principal a narrower view of traces than another, so the trace read route would be an unscoped route sitting beside two scoped ones and looking identical to them. Either turn the trace store off, or set `tenancy.allowUnfilteredTraceReads: true` and record that every principal who can reach the proxy reads every namespace's spans on every cluster. Metrics and logs are unaffected either way." -}}
 {{- end -}}
 {{- end -}}
 {{- /*
@@ -395,7 +394,7 @@ edit to this chart rather than against a value somebody wrote.
 {{- end -}}
 {{- end -}}
 {{- if not $found -}}
-{{- fail (printf "observability-stack: the %s read route does not carry %s=%s. vmauth applies a `vm_access` claim ONLY by substituting a placeholder into the route, so without it every principal's query reaches the store unfiltered while `defaultVMAccessClaim` beside it still states the grant. Nothing downstream reports that: the render succeeds, the install succeeds, and a query for one tenant returns exactly what it would have returned if the filter had been applied." $signal $arg $placeholder) -}}
+{{- fail (printf "observability-stack: the %s read route does not carry %s=%s. vmauth applies a `vm_access` claim ONLY by substituting a placeholder into the route, so without it every principal's query reaches the store unfiltered while `defaultVMAccessClaim` beside it still states the grant. Nothing downstream reports that: the render succeeds, the install succeeds, and a query for one namespace returns exactly what it would have returned if the filter had been applied." $signal $arg $placeholder) -}}
 {{- end -}}
 {{- end -}}
 {{- /*
@@ -421,7 +420,7 @@ is refused rather than trusted.
 {{- if eq (toString $arg) "mergeQueryArgs" -}}
 {{- range $merged := (splitList "," (toString $value)) -}}
 {{- if has (trim $merged) (list "extra_filters" "extra_filters[]" "extra_stream_filters") -}}
-{{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q, which is the argument this chart enforces a principal's grant with. vmauth drops a client query argument that CLASHES with one the route already set, and that drop is the only thing stopping a reader from sending its own filter; `mergeQueryArgs` exempts an argument from it entirely. vmselect treats each `extra_filters` as an ALTERNATIVE and ORs them, so a caller adding an empty one reads every tenant — with the claim, the route and the filter all still exactly right. Remove it, or stop enforcing tenancy here." (trim $merged)) -}}
+{{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q, which is the argument this chart enforces a principal's grant with. vmauth drops a client query argument that CLASHES with one the route already set, and that drop is the only thing stopping a reader from sending its own filter; `mergeQueryArgs` exempts an argument from it entirely. vmselect treats each `extra_filters` as an ALTERNATIVE and ORs them, so a caller adding an empty one reads every cluster and namespace — with the claim, the route and the filter all still exactly right. Remove it, or stop enforcing tenancy here." (trim $merged)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -489,7 +488,7 @@ nobody watches.
 {{- range $file, $doc := ($g.datasources | default dict) -}}
 {{- range $ds := ($doc.datasources | default list) -}}
 {{- if not (($ds.jsonData).oauthPassThru) -}}
-{{- fail (printf "observability-stack: Grafana datasource %q (in %s) does not set `jsonData.oauthPassThru: true`. Without it every query reaches the proxy as GRAFANA's identity rather than the signed-in person's, so the proxy scopes nothing and a viewer sees every tenant Grafana can see. That is the failure this whole chart exists to prevent, and it looks exactly like a working dashboard." (toString $ds.name) $file) -}}
+{{- fail (printf "observability-stack: Grafana datasource %q (in %s) does not set `jsonData.oauthPassThru: true`. Without it every query reaches the proxy as GRAFANA's identity rather than the signed-in person's, so the proxy scopes nothing and a viewer sees every namespace on every cluster Grafana can see. That is the failure this whole chart exists to prevent, and it looks exactly like a working dashboard." (toString $ds.name) $file) -}}
 {{- end -}}
 {{- if not (hasKey $ds "version") -}}
 {{- fail (printf "observability-stack: Grafana datasource %q (in %s) has no `version`. With more than one replica Grafana only updates a provisioned datasource whose version is greater than or equal to the stored one, so an edit without a bump lands on a fresh install and nowhere else." (toString $ds.name) $file) -}}

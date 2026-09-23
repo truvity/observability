@@ -184,9 +184,9 @@ spec:
       groups: "example:k8s:viewer"
     defaultVMAccessClaim:
       metricsExtraFilters:
-        - '{env="devel"}'
+        - '{k8s_cluster_name="example-cluster"}'
       logsExtraStreamFilters:
-        - _stream:{"env"="devel"}
+        - _stream:{"k8s.cluster.name"="example-cluster"}
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500

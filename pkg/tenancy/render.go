@@ -74,12 +74,12 @@ type VMAuthConfig struct {
 // says.
 func (c Config) RenderClaim(p Principal) (Claim, error) {
 	if err := (Config{
-		ClaimName:       orDefault(c.ClaimName, "groups"),
-		TenantLabel:     c.TenantLabel,
-		EnvLabel:        c.EnvLabel,
-		LogsTenantField: c.LogsTenantField,
-		LogsEnvField:    c.LogsEnvField,
-		Principals:      []Principal{p},
+		ClaimName:          orDefault(c.ClaimName, "groups"),
+		ClusterLabel:       c.ClusterLabel,
+		NamespaceLabel:     c.NamespaceLabel,
+		LogsClusterField:   c.LogsClusterField,
+		LogsNamespaceField: c.LogsNamespaceField,
+		Principals:         []Principal{p},
 	}).Validate(); err != nil {
 		return Claim{}, fmt.Errorf("rendering claim for %q: %w", p.Group, err)
 	}
@@ -112,17 +112,18 @@ func (c Config) RenderClaim(p Principal) (Claim, error) {
 // metricsFilter renders one grant as a MetricsQL series selector, which
 // vmauth appends to every query the principal makes.
 //
-//	{env=~"^(devel)$",tenant=~"^(example-app|other-app)$"}
+//	{k8s_cluster_name="example-cluster",k8s_namespace_name=~"^(example-app|other-app)$"}
 //
-// A grant of every tenant omits the tenant matcher entirely rather than
-// rendering a match-all: a matcher that has to match everything is one
-// more place for a mistake to hide, and it would also drop series that
-// carry no tenant label at all — which, for an estate mid-rollout, is
-// exactly the data someone is looking for.
+// A grant of every namespace omits the namespace matcher entirely rather
+// than rendering a match-all: a matcher that has to match everything is
+// one more place for a mistake to hide, and it would also drop series
+// that carry no namespace label at all — the node-level series from the
+// kubelet, and anything from a cluster-scoped scrape — which for a
+// principal allowed the whole cluster is exactly the data they came for.
 func (c Config) metricsFilter(g Grant) string {
-	parts := []string{fmt.Sprintf("%s=%q", c.envLabel(), g.Env)}
-	if !g.AllTenants {
-		parts = append(parts, fmt.Sprintf("%s=~%q", c.tenantLabel(), alternation(g.Tenants)))
+	parts := []string{fmt.Sprintf("%s=%q", c.clusterLabel(), g.Cluster)}
+	if !g.AllNamespaces {
+		parts = append(parts, fmt.Sprintf("%s=~%q", c.namespaceLabel(), alternation(g.Namespaces)))
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }
@@ -130,28 +131,27 @@ func (c Config) metricsFilter(g Grant) string {
 // logsFilter renders a principal's WHOLE reach as one LogsQL stream
 // filter, with the grants as alternatives inside it.
 //
-//	{"env"="devel","kubernetes.namespace_labels.example.com/project"=~"^(example-app)$" or "env"="prod","kubernetes.namespace_labels.example.com/project"=~"^(example-app|other-app)$"}
+//	_stream:{"k8s.cluster.name"="example-cluster","kubernetes.pod_namespace"=~"^(example-app)$" or "k8s.cluster.name"="other-cluster","kubernetes.pod_namespace"=~"^(example-app|other-app)$"}
 //
 // Three things differ from the metrics filter, and none of them is a
 // matter of taste.
 //
-// The FIELD NAMES are the caller's log-path names rather than the label
-// keys, because the log store cannot be made to carry the label keys. See
-// Config.LogsTenantField.
+// The FIELD NAMES are the log path's names rather than the label keys,
+// because the log store cannot carry the label keys. See
+// Config.LogsNamespaceField.
 //
 // The NAMES ARE QUOTED. A LogsQL word is [a-zA-Z0-9_] and nothing else, so
-// a real log field name — which has dots, and a slash when the label key
-// has a prefix — is not a word and has to be quoted to be read as one
-// name. Quoting is unconditional rather than applied where it looks
-// needed: an unquoted name that happens to collide with a keyword or a
-// pipe name parses as that keyword, and the shape in fieldRE guarantees
-// there is nothing inside the quotes to escape.
+// a real log field name — which has dots — is not a word and has to be
+// quoted to be read as one name. Quoting is unconditional rather than
+// applied where it looks needed: an unquoted name that happens to collide
+// with a keyword or a pipe name parses as that keyword, and the shape in
+// fieldRE guarantees there is nothing inside the quotes to escape.
 //
 // And it is ONE filter rather than one per grant. Every
 // `extra_stream_filters` argument VictoriaLogs receives is AND-ed into the
 // query as a separate global constraint, so a second entry does not widen
 // a principal's reach — it narrows it to the intersection, and two grants
-// naming two environments intersect in nothing at all. That is an empty
+// naming two clusters intersect in nothing at all. That is an empty
 // result for exactly the people with the most access. The metrics path
 // takes the opposite convention (vmselect OR-s its `extra_filters`), which
 // is why the two claim fields are not the same list and a test asserts
@@ -159,14 +159,15 @@ func (c Config) metricsFilter(g Grant) string {
 func (c Config) logsFilter(grants []Grant) string {
 	alternatives := make([]string, 0, len(grants))
 	for _, g := range grants {
-		parts := []string{fmt.Sprintf("%s=%q", strconv.Quote(c.LogsEnvField), g.Env)}
-		if !g.AllTenants {
-			parts = append(parts, fmt.Sprintf("%s=~%q", strconv.Quote(c.LogsTenantField), alternation(g.Tenants)))
+		parts := []string{fmt.Sprintf("%s=%q", strconv.Quote(c.logsClusterField()), g.Cluster)}
+		if !g.AllNamespaces {
+			parts = append(parts, fmt.Sprintf("%s=~%q", strconv.Quote(c.logsNamespaceField()), alternation(g.Namespaces)))
 		}
 		alternatives = append(alternatives, strings.Join(parts, ","))
 	}
 	// Comma binds tighter than `or` inside `{...}`, so each alternative is
-	// its own conjunction and a grant cannot borrow another grant's tenants.
+	// its own conjunction and a grant cannot borrow another grant's
+	// namespaces.
 	//
 	// `_stream:` is not decoration. VictoriaLogs reads an
 	// `extra_stream_filters` argument that begins with `{"` as the JSON

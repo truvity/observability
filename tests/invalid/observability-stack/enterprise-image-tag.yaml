@@ -1,12 +1,10 @@
 tenancy:
   issuerUrl: https://issuer.example
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
 
 # An Enterprise image runs. It refuses only the Enterprise features, so
 # the install succeeds, the store serves, and nothing reports that the

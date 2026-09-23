@@ -1,0 +1,10 @@
+# The same collision on the log path: one stream filter would carry one
+# dimension twice and the other not at all.
+tenancy:
+  issuerUrl: https://issuer.example
+  logsClusterField: kubernetes.pod_namespace
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

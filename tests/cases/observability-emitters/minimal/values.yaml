@@ -7,16 +7,13 @@ global:
 
 # The smallest values file that renders something worth installing.
 #
-# Everything here has no default that could be safe. An environment name,
-# a fallback tenant and a namespace label key cannot be guessed: a guess
-# renders, runs, and produces telemetry nobody can select. A write
-# credential cannot be guessed either, and a destination list least of all.
+# Everything here has no default that could be safe. A cluster name and a
+# tier cannot be guessed: a guess renders, runs, and produces telemetry
+# filed under a cluster that does not exist. A write credential cannot be
+# guessed either, and a destination list least of all.
 tenancy:
-  env: example
-  fallbackTenant: infra
-  namespaceLabels:
-    project: tenancy.example.com/project
-    layer: tenancy.example.com/layer
+  cluster: example-cluster
+  environment: development
 
 writeCredentials:
   secretName: example-write-token
@@ -56,14 +53,9 @@ victoria-logs-collector:
       bearerTokenFile: /etc/observability-write-token/token
       maxDiskUsagePerURL: 5GB
   collector:
-    # The tenant field is the namespace label's own name, prefixed: vlagent
-    # cannot rename a field, so this is what the log store's streams carry
-    # and what the proxy has to filter on. The chart refuses to render
-    # until it is here.
-    streamFields:
-      - kubernetes.container_name
-      - kubernetes.pod_name
-      - kubernetes.pod_namespace
-      - env
-      - kubernetes.namespace_labels.tenancy.example.com/project
-    extraFields: '{"env":"example"}'
+    # The cluster and the tier reach the log store as two static fields
+    # under the exact conventional names — a mirror of `tenancy`, checked
+    # rather than trusted, because Helm cannot compute a subchart's values.
+    # The cluster joins the stream fields beside the agent's own
+    # `kubernetes.pod_namespace`, which is the namespace key on this path.
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'

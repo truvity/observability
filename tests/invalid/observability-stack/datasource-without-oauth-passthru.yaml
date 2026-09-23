@@ -1,16 +1,14 @@
 tenancy:
   issuerUrl: https://issuer.example
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
 
 # A datasource without oauthPassThru queries as GRAFANA's identity rather
 # than the signed-in person's, so the proxy scopes nothing and a viewer
-# sees every tenant. It looks exactly like a working dashboard.
+# sees every namespace on every cluster. It looks exactly like a working dashboard.
 grafana:
   enabled: true
   admin:

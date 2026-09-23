@@ -1,13 +1,13 @@
 {{- if .Values.vmauth.enabled }}
 {{- $root := . }}
 {{- $fullname := include "observability-stack.fullname" . }}
-{{- $labels := dict "env" .Values.tenancy.envLabel "tenant" .Values.tenancy.tenantLabel }}
+{{- $labels := dict "cluster" .Values.tenancy.clusterLabel "namespace" .Values.tenancy.namespaceLabel }}
 {{- /*
-The log store's field names are NOT the label keys, and there is no
-default for them — see `tenancy.logsTenantField` in values.yaml, and
-templates/_validate.tpl for the refusal.
+The log store's field names are NOT the label keys: a label cannot carry
+a dot, and the log-path namespace key is the container-log agent's own
+spelling. See `tenancy.logsNamespaceField` in values.yaml.
 */}}
-{{- $logFields := dict "env" .Values.tenancy.logsEnvField "tenant" .Values.tenancy.logsTenantField }}
+{{- $logFields := dict "cluster" .Values.tenancy.logsClusterField "namespace" .Values.tenancy.logsNamespaceField }}
 {{- $metrics := include "observability-stack.metrics.url" . }}
 {{- $logs := include "observability-stack.logs.url" . }}
 {{- $traces := include "observability-stack.traces.url" . }}
@@ -26,16 +26,16 @@ anyone notices until it matters.
 */}}
 {{- range $i, $p := .Values.tenancy.principals }}
 {{- $slug := regexReplaceAll "[^a-z0-9]+" (lower $p.group) "-" | trimAll "-" | trunc 40 | trimSuffix "-" }}
-{{- /* Grants sort by environment, so an unrelated edit produces no diff. */}}
-{{- $byEnv := dict }}
+{{- /* Grants sort by cluster, so an unrelated edit produces no diff. */}}
+{{- $byCluster := dict }}
 {{- range $grant := $p.grants }}
-{{- $_ := set $byEnv $grant.env $grant }}
+{{- $_ := set $byCluster $grant.cluster $grant }}
 {{- end }}
 {{- $filters := list }}
 {{- $sortedGrants := list }}
-{{- range $env := (keys $byEnv | sortAlpha) }}
-{{- $filters = append $filters (include "observability-stack.filter" (dict "grant" (index $byEnv $env) "labels" $labels)) }}
-{{- $sortedGrants = append $sortedGrants (index $byEnv $env) }}
+{{- range $cluster := (keys $byCluster | sortAlpha) }}
+{{- $filters = append $filters (include "observability-stack.filter" (dict "grant" (index $byCluster $cluster) "labels" $labels)) }}
+{{- $sortedGrants = append $sortedGrants (index $byCluster $cluster) }}
 {{- end }}
 {{- $logsFilter := include "observability-stack.logsFilter" (dict "grants" $sortedGrants "fields" $logFields) }}
 ---
@@ -114,7 +114,7 @@ spec:
     no argument to put them in: VictoriaTraces' Jaeger and Tempo select
     APIs take a tenant id from headers, `hidden_fields_filters` (which
     hides fields, not rows) and `allow_partial_response`, and nothing
-    else. A principal given these paths reads every tenant's spans.
+    else. A principal given these paths reads every namespace's spans on every cluster.
 
     It renders only when the operator has set
     `tenancy.allowUnfilteredTraceReads`, which _validate.tpl requires
@@ -136,7 +136,7 @@ The writers.
 A collector authenticates with a bearer token rather than a person's
 identity, and its routes are WRITE paths only: a token that lives in a
 DaemonSet on every node is the one most likely to leak, and a leaked
-writer that can also read is a leak of every tenant's data rather than of
+writer that can also read is a leak of every namespace's data rather than of
 the ability to append to it.
 */}}
 {{- range $w := .Values.tenancy.writers }}

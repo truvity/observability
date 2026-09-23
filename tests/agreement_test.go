@@ -1,29 +1,31 @@
 // Package tests holds the checks that span an artifact boundary: what the
-// Go library renders, and what the chart renders, for the same input.
+// Go library renders, and what the charts render, for the same input.
 //
-// There is exactly one of those, and it is the one that matters. An
-// estate can hold the tenant mapping in the proxy's configuration or in
-// the token its issuer mints, and pkg/tenancy renders both from one input
-// so they cannot disagree. charts/observability-stack renders the same
-// mapping a third time, in the operator's spelling — and a third shape is
-// a third place to drift. A difference between them is a difference
-// between what a token says a person may read and what the proxy lets
-// them read, which nobody notices until someone sees data they should
-// not.
+// There are two of those boundaries, and both matter for the same reason.
 //
-// So this test renders the README's principals through
-// tenancy.RenderVMAuth and compares the result, field by field, against
-// the VMUser objects in tests/golden/observability-stack/tenancy.yaml.
-// The two spellings differ (vmauth's own config file is snake_case, the
-// operator's CRD is camelCase) and that is exactly why the comparison is
-// written out rather than assumed.
+// The first is the proxy's configuration. An estate can hold the grant
+// mapping in the proxy's configuration or in the token its issuer mints,
+// and pkg/tenancy renders both from one input so they cannot disagree.
+// charts/observability-stack renders the same mapping a third time, in
+// the operator's spelling — and a third shape is a third place to drift.
+// A difference between them is a difference between what a token says a
+// person may read and what the proxy lets them read, which nobody notices
+// until someone sees data they should not.
+//
+// The second is the vocabulary. charts/observability-emitters STAMPS the
+// cluster, the namespace and the tier on every series, log stream and
+// span; pkg/tenancy renders the filters that SELECT on the cluster and
+// the namespace. One name per dimension per signal, held in two
+// artifacts, and a difference between them is not an error anywhere — it
+// is an empty result. So the invariant is proved against the rendered
+// output of every writer, for every dimension, and not against a value
+// file: a writer is only stamping where it is emitted.
 package tests
 
 import (
-	"fmt"
+	"encoding/json"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -43,11 +45,6 @@ const (
 	goldenIssuer     = "https://issuer.example"
 	goldenMetricsURL = "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
 	goldenLogsURL    = "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
-
-	// The log-path field names from the same values file. They are not
-	// the label keys and cannot be: see pkg/tenancy.Config.
-	goldenLogsTenantField = "kubernetes.namespace_labels.tenancy.example.com/project"
-	goldenLogsEnvField    = "env"
 )
 
 // vmUser is the part of the operator's VMUser that carries tenancy.
@@ -111,19 +108,19 @@ func (r vmTargetRef) urlPrefix() string {
 func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 	// The principals from the repository's README, and from
 	// tests/cases/observability-stack/tenancy/values.yaml. The two are
-	// the same list on purpose.
+	// the same list on purpose. No key is set: the chart's defaults and
+	// the library's must be the same names, and this is where that is
+	// proved.
 	cfg := tenancy.Config{
-		ClaimName:       "groups",
-		MetricsBackend:  goldenMetricsURL,
-		LogsBackend:     goldenLogsURL,
-		LogsTenantField: goldenLogsTenantField,
-		LogsEnvField:    goldenLogsEnvField,
+		ClaimName:      "groups",
+		MetricsBackend: goldenMetricsURL,
+		LogsBackend:    goldenLogsURL,
 		Principals: []tenancy.Principal{
 			{Group: "example:k8s:viewer", Grants: []tenancy.Grant{
-				{Env: "devel", AllTenants: true},
+				{Cluster: "example-cluster", AllNamespaces: true},
 			}},
 			{Group: "example:example-app:deployer", Grants: []tenancy.Grant{
-				{Env: "devel", Tenants: []string{"example-app"}},
+				{Cluster: "example-cluster", Namespaces: []string{"example-app"}},
 			}},
 		},
 	}
@@ -187,10 +184,11 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 // What makes that defect survive review is that the two cases are
 // identical everywhere except in the answer to a question nobody asks.
 // The manifest shows the grant either way. The install succeeds either
-// way. The proxy is healthy either way. And a query for the ONE tenant
-// the reviewer has data for returns the same rows either way, because
-// the filter that was not applied would not have removed anything. It
-// takes a second tenant, or this assertion, to tell them apart.
+// way. The proxy is healthy either way. And a query for the ONE
+// namespace the reviewer has data for returns the same rows either way,
+// because the filter that was not applied would not have removed
+// anything. It takes a second namespace, or this assertion, to tell them
+// apart.
 func TestEveryRenderedReadRouteCarriesItsFilter(t *testing.T) {
 	for _, user := range readVMUsers(t, "golden/observability-stack/tenancy.yaml") {
 		require.NotEmpty(t, user.Spec.TargetRefs)
@@ -300,198 +298,563 @@ func readVMUsers(t *testing.T, path string) []vmUser {
 // The second boundary: what the collectors STAMP and what the proxy
 // FILTERS ON.
 //
-// charts/observability-emitters writes `tenant` and `env` onto every
-// series, log stream and span; pkg/tenancy renders the filters that select
-// on those names. The two are one vocabulary, held in two places, and a
-// difference between them is not an error anywhere — it is an empty
-// result. A person asks for their tenant's data, gets nothing back, and
-// reads it as "nothing is running" rather than as "the filter names a
-// label that does not exist".
+// One filter key per dimension per signal; every writer on that signal
+// stamps it under that exact name. The names below come from the
+// library — the metrics and log keys read back out of a rendered filter
+// rather than from a constant, because the filter is what the store
+// applies and so the only statement of them that can be wrong; the trace
+// attributes and the tier from the constants the library exports, since
+// no filter names them.
 //
-// So: the chart's defaults must be the library's defaults, and the values
-// must actually reach every site that stamps. The second half matters more
-// than it looks — a key that is a value in one template and a constant in
-// another renders correctly for anyone who leaves the default alone and
-// silently wrong for anyone who does not.
-const emittersValues = "../charts/observability-emitters/values.yaml"
+// What is checked is the RENDERED manifest of every writer: the metrics
+// agent's relabel rules for both kinds of scrape, the container-log
+// agent's flags, and the gateway's three pipelines. Two writer collisions
+// exist on the way — a Prometheus label cannot carry a dot, and the
+// container-log agent cannot rename a field — and each is closed by the
+// flexible writer matching the inflexible one, so the assertion for a
+// gateway pipeline is not "it emits the conventional name" but "it emits
+// the name the OTHER writer on this signal is stuck with".
+type vocabulary struct {
+	metricsCluster, metricsNamespace, metricsTier string
+	logsCluster, logsNamespace, logsTier          string
+	tracesCluster, tracesNamespace, tracesTier    string
+}
 
-func TestEmittersStampWhatTheLibraryFilters(t *testing.T) {
-	var chart struct {
-		Tenancy struct {
-			TenantLabel string `yaml:"tenantLabel"`
-			EnvLabel    string `yaml:"envLabel"`
-		} `yaml:"tenancy"`
-	}
-	raw, err := os.ReadFile(emittersValues)
-	require.NoError(t, err)
-	require.NoError(t, yaml.Unmarshal(raw, &chart))
-
-	// The library's own defaults, read back out of a rendered filter rather
-	// than from an unexported function: the filter is what the store
-	// applies, so it is the only statement of these names that can be
-	// wrong.
+func libraryVocabulary(t *testing.T) vocabulary {
+	t.Helper()
 	claim, err := tenancy.Config{
-		ClaimName:       "groups",
-		LogsTenantField: goldenLogsTenantField,
-		LogsEnvField:    goldenLogsEnvField,
+		ClaimName: "groups",
 		Principals: []tenancy.Principal{
-			{Group: "example:reader", Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}}},
+			{Group: "example:reader", Grants: []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{"example-app"}}}},
 		},
 	}.RenderClaim(tenancy.Principal{
 		Group:  "example:reader",
-		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}},
+		Grants: []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{"example-app"}}},
 	})
 	require.NoError(t, err)
 	require.Len(t, claim.MetricsExtraFilters, 1)
+	require.Len(t, claim.LogsExtraStreamFilters, 1)
 
-	matchers := regexp.MustCompile(`([a-z0-9-]+)=~?"`).FindAllStringSubmatch(claim.MetricsExtraFilters[0], -1)
-	require.Len(t, matchers, 2, "the filter should carry one env matcher and one tenant matcher: %s", claim.MetricsExtraFilters[0])
+	// {k8s_cluster_name="example-cluster",k8s_namespace_name=~"^(example-app)$"}
+	m := strings.Split(strings.Trim(claim.MetricsExtraFilters[0], "{}"), ",")
+	require.Len(t, m, 2, "one cluster matcher and one namespace matcher: %s", claim.MetricsExtraFilters[0])
+	// _stream:{"k8s.cluster.name"="example-cluster","kubernetes.pod_namespace"=~"^(example-app)$"}
+	l := strings.Split(strings.Trim(strings.TrimPrefix(claim.LogsExtraStreamFilters[0], "_stream:"), "{}"), ",")
+	require.Len(t, l, 2, "one cluster matcher and one namespace matcher: %s", claim.LogsExtraStreamFilters[0])
 
-	assert.Equal(t, matchers[0][1], chart.Tenancy.EnvLabel,
-		"the emitters stamp an environment label the proxy's filters do not select on: every query scoped to an environment would return nothing, and nothing would report it")
-	assert.Equal(t, matchers[1][1], chart.Tenancy.TenantLabel,
-		"the emitters stamp a tenant label the proxy's filters do not select on: every tenant-scoped query would return nothing, and nothing would report it")
+	key := func(matcher string) string {
+		name, _, ok := strings.Cut(matcher, "=")
+		require.True(t, ok, "not a matcher: %s", matcher)
+		return strings.Trim(name, `"`)
+	}
+	return vocabulary{
+		metricsCluster: key(m[0]), metricsNamespace: key(m[1]), metricsTier: tenancy.EnvironmentLabel,
+		logsCluster: key(l[0]), logsNamespace: key(l[1]), logsTier: tenancy.EnvironmentAttribute,
+		tracesCluster: tenancy.TracesClusterAttribute, tracesNamespace: tenancy.TracesNamespaceAttribute, tracesTier: tenancy.EnvironmentAttribute,
+	}
+}
+
+// The values in tests/cases/observability-emitters/minimal, which the
+// stamps below must carry. Written out rather than read from the values
+// file so that a chart which stops plumbing a value fails here and not
+// only in the golden diff.
+const (
+	minimalCluster = "example-cluster"
+	minimalTier    = "development"
+)
+
+func TestEveryWriterStampsEveryDimensionUnderTheLibrarysName(t *testing.T) {
+	v := libraryVocabulary(t)
+	docs := renderedDocs(t, "golden/observability-emitters/minimal.yaml")
+
+	t.Run("metrics/the metrics agent", func(t *testing.T) {
+		agent := vmAgent(t, docs)
+
+		// Every scrape object this chart does not own — which is all of
+		// them — goes through the default scrape class.
+		class := agent.defaultScrapeClass(t)
+		assert.Equal(t, minimalCluster, class.replacementFor(v.metricsCluster),
+			"the default scrape class does not stamp the cluster under the name the filters select on")
+		assert.Equal(t, minimalTier, class.replacementFor(v.metricsTier))
+		assert.Equal(t, []string{"__meta_kubernetes_namespace"}, class.sourceFor(v.metricsNamespace),
+			"the namespace key has to come from service discovery — the namespace the pod is IN — not from anything the target exported")
+
+		// And the two node-level jobs, which have no namespace in service
+		// discovery, stamp the cluster and the tier on the target and copy
+		// the container's own namespace into the key after the scrape.
+		jobs := agent.inlineJobs(t)
+		require.NotEmpty(t, jobs)
+		for _, job := range jobs {
+			assert.Equal(t, minimalCluster, job.relabel.replacementFor(v.metricsCluster), "job %s", job.name)
+			assert.Equal(t, minimalTier, job.relabel.replacementFor(v.metricsTier), "job %s", job.name)
+			assert.Equal(t, []string{"namespace"}, job.metricRelabel.sourceFor(v.metricsNamespace),
+				"job %s: a container series from the node agent carries `namespace`, and a grant on that namespace should reach it", job.name)
+		}
+	})
+
+	t.Run("metrics/the gateway", func(t *testing.T) {
+		cfg := gatewayConfig(t, docs)
+		exporters := pipelineExporters(t, cfg, "metrics")
+		require.NotEmpty(t, exporters)
+		for _, name := range exporters {
+			// A resource attribute becomes a label only when the exporter
+			// is told to promote it, and on the way out the exporter
+			// spells it with underscores. So the check is: the dotted
+			// attribute is in the promoted list, and its underscore
+			// spelling is the label the filter selects on.
+			promoted := stringList(t, dig(cfg, "exporters", name, "resource_constant_labels", "included"))
+			for _, want := range []struct{ label string }{{v.metricsCluster}, {v.metricsNamespace}, {v.metricsTier}} {
+				var found bool
+				for _, attr := range promoted {
+					if strings.ReplaceAll(attr, ".", "_") == want.label {
+						found = true
+					}
+				}
+				assert.True(t, found,
+					"exporter %s promotes %v, none of which the remote-write exporter would spell %q — so OTLP-derived series would reach the store without it, and every scoped query would miss them", name, promoted, want.label)
+			}
+			// And nothing more: the rest of the resource carries the pod
+			// UID, and a label that changes per restart is a series that
+			// changes per restart.
+			assert.Len(t, promoted, 3, "exporter %s promotes more than the three keys: %v", name, promoted)
+		}
+		// The cluster and tier values come from the values file — the
+		// processor that resolves the pod cannot know either.
+		statements := transformStatements(t, cfg, "metric")
+		assert.Contains(t, statements, `set(attributes["k8s.cluster.name"], "`+minimalCluster+`")`)
+		assert.Contains(t, statements, `set(attributes["deployment.environment.name"], "`+minimalTier+`")`)
+	})
+
+	t.Run("logs/the container-log agent", func(t *testing.T) {
+		args := vlagentArgs(t, docs)
+		stream := flagList(t, args, "--kubernetesCollector.streamFields=")
+		assert.Contains(t, stream, v.logsCluster,
+			"the cluster key is not a stream field, so a stream filter on it selects nothing")
+		assert.Contains(t, stream, v.logsNamespace,
+			"the namespace key is not a stream field; it is the agent's own default, so somebody removed it")
+
+		extra := flagJSON(t, args, "--kubernetesCollector.extraFields=")
+		assert.Equal(t, minimalCluster, extra[v.logsCluster],
+			"the cluster reaches the log store as a static field, and this is where it is given")
+		assert.Equal(t, minimalTier, extra[v.logsTier])
+	})
+
+	t.Run("logs/the gateway", func(t *testing.T) {
+		cfg := gatewayConfig(t, docs)
+		exporters := pipelineExporters(t, cfg, "logs")
+		require.NotEmpty(t, exporters)
+		for _, name := range exporters {
+			header, _ := dig(cfg, "exporters", name, "headers", "VL-Stream-Fields").(string)
+			fields := strings.Split(header, ",")
+			assert.Contains(t, fields, v.logsCluster, "exporter %s", name)
+			assert.Contains(t, fields, v.logsNamespace,
+				"exporter %s: the gateway's half of the log store has to be keyed the way the agent's half is, or one scoped query returns one writer's logs and silently omits the other's", name)
+		}
+		statements := transformStatements(t, cfg, "log")
+		assert.Contains(t, statements, `set(attributes["`+v.logsCluster+`"], "`+minimalCluster+`")`)
+		assert.Contains(t, statements, `set(attributes["`+v.logsTier+`"], "`+minimalTier+`")`)
+		// The one place a writer yields: the gateway writes the agent's
+		// spelling beside its own, because the agent cannot.
+		assert.Contains(t, statements,
+			`set(attributes["`+v.logsNamespace+`"], attributes["k8s.namespace.name"]) where attributes["k8s.namespace.name"] != nil`,
+			"the gateway does not write the namespace under the container-log agent's spelling, and the agent cannot write it under the gateway's")
+	})
+
+	t.Run("traces/the gateway", func(t *testing.T) {
+		cfg := gatewayConfig(t, docs)
+		require.NotEmpty(t, pipelineExporters(t, cfg, "traces"))
+		statements := transformStatements(t, cfg, "trace")
+		assert.Contains(t, statements, `set(attributes["`+v.tracesCluster+`"], "`+minimalCluster+`")`)
+		assert.Contains(t, statements, `set(attributes["`+v.tracesTier+`"], "`+minimalTier+`")`)
+		// The namespace on spans is the processor's own extraction, under
+		// the conventional name, from the pod object.
+		assert.Contains(t, stringList(t, dig(cfg, "processors", "k8sattributes", "extract", "metadata")), v.tracesNamespace)
+		assert.Contains(t, stringList(t, dig(cfg, "service", "pipelines", "traces", "processors")), "k8sattributes")
+	})
+}
+
+// A target that exports its own key must not win. Two mechanisms, both
+// asserted on the render: `overrideHonorLabels` so the agent's stamp
+// replaces the target's, and a labeldrop for the `exported_` copy the
+// agent keeps of a conflicting label — because a series carrying
+// `exported_k8s_namespace_name` is a series somebody will eventually
+// query by.
+func TestATargetCannotExportItsOwnKey(t *testing.T) {
+	v := libraryVocabulary(t)
+	agent := vmAgent(t, renderedDocs(t, "golden/observability-emitters/minimal.yaml"))
+
+	assert.Equal(t, true, agent.Spec["overrideHonorLabels"])
+
+	var drops []string
+	for _, r := range agent.GlobalScrapeMetricRelabelConfigs {
+		if r.Action == "labeldrop" {
+			drops = append(drops, r.Regex)
+		}
+	}
+	require.NotEmpty(t, drops, "no labeldrop at all")
+	for _, label := range []string{v.metricsCluster, v.metricsNamespace, v.metricsTier} {
+		var covered bool
+		for _, re := range drops {
+			if matchesWhole(t, re, "exported_"+label) {
+				covered = true
+			}
+		}
+		assert.True(t, covered, "a target exporting its own %q keeps it as exported_%s; no labeldrop covers that", label, label)
+	}
+}
+
+// The gateway strips the namespace an SDK stated about itself BEFORE the
+// processor that resolves the pod runs, because that processor writes an
+// attribute only when it is absent. Without the strip, a resource that
+// arrived carrying `k8s.namespace.name` would keep the application's
+// claim, and the namespace is the key.
+func TestTheGatewayDisownsTheNamespaceAnSDKClaims(t *testing.T) {
+	v := libraryVocabulary(t)
+	cfg := gatewayConfig(t, renderedDocs(t, "golden/observability-emitters/minimal.yaml"))
+
+	for _, signal := range []string{"metrics", "logs", "traces"} {
+		processors := stringList(t, dig(cfg, "service", "pipelines", signal, "processors"))
+		disown, k8s := indexOf(processors, "transform/disown"), indexOf(processors, "k8sattributes")
+		require.NotEqual(t, -1, disown, "%s pipeline has no transform/disown", signal)
+		require.NotEqual(t, -1, k8s, "%s pipeline has no k8sattributes", signal)
+		assert.Less(t, disown, k8s, "%s pipeline strips the claimed namespace AFTER the processor that only writes an absent one", signal)
+	}
+	for _, context := range []string{"metric", "log", "trace"} {
+		statements := statementsOf(t, cfg, "transform/disown", context)
+		assert.Contains(t, statements, `delete_key(attributes, "`+v.tracesNamespace+`")`)
+		assert.Contains(t, statements, `delete_key(attributes, "`+v.logsNamespace+`")`)
+	}
+
+	// And the pod is resolved from the socket first. The other sources read
+	// the pod's identity from attributes the sender supplied.
+	sources := dig(cfg, "processors", "k8sattributes", "pod_association").([]any)
+	require.NotEmpty(t, sources)
+	firstSource := dig(sources[0], "sources").([]any)[0]
+	assert.Equal(t, "connection", dig(firstSource, "from"))
+}
+
+// The Helm release is navigation: it passes through on every path and is
+// never a key and never a stream field.
+func TestTheHelmReleasePassesThroughAndIsNeverAStreamField(t *testing.T) {
+	docs := renderedDocs(t, "golden/observability-emitters/minimal.yaml")
+	const label = "app.kubernetes.io/instance"
+
+	agent := vmAgent(t, docs)
+	assert.Equal(t, []string{"__meta_kubernetes_pod_label_app_kubernetes_io_instance"},
+		agent.defaultScrapeClass(t).sourceFor("app_kubernetes_io_instance"))
+
+	args := vlagentArgs(t, docs)
+	assert.Contains(t, args, "--kubernetesCollector.includePodLabels",
+		"pod labels are how the release reaches the log store from the container-log agent")
+	assert.NotContains(t, args, "--kubernetesCollector.includePodLabels=false")
+	for _, f := range flagList(t, args, "--kubernetesCollector.streamFields=") {
+		assert.NotContains(t, f, label, "the release is a stream field on the agent")
+	}
+
+	cfg := gatewayConfig(t, docs)
+	var extracted bool
+	for _, l := range dig(cfg, "processors", "k8sattributes", "extract", "labels").([]any) {
+		if dig(l, "key") == label {
+			extracted = true
+		}
+	}
+	assert.True(t, extracted, "the gateway does not extract the release label")
+	for _, name := range pipelineExporters(t, cfg, "logs") {
+		header, _ := dig(cfg, "exporters", name, "headers", "VL-Stream-Fields").(string)
+		assert.NotContains(t, header, label, "the release is a stream field on the gateway")
+	}
+}
+
+// The tier is never a key: no filter the library renders names it, and
+// that is a property of the library. What the chart has to hold is the
+// other half — that it is stamped everywhere anyway, so a dashboard can
+// pin it. Checked above; this pins the name against the constant.
+func TestTheTierIsStampedUnderTheConventionalNameAndNeverFiltered(t *testing.T) {
+	assert.Equal(t, strings.ReplaceAll(tenancy.EnvironmentAttribute, ".", "_"), tenancy.EnvironmentLabel,
+		"the metrics spelling of the tier is the attribute with underscores, which is what the remote-write exporter produces")
+	v := libraryVocabulary(t)
+	for _, key := range []string{v.metricsCluster, v.metricsNamespace, v.logsCluster, v.logsNamespace} {
+		assert.NotEqual(t, tenancy.EnvironmentLabel, key)
+		assert.NotEqual(t, tenancy.EnvironmentAttribute, key)
+	}
 }
 
 // And the values are plumbed, not decorative.
 //
-// tests/cases/observability-emitters/everything sets `tenantLabel: owner`
-// and `envLabel: cell` for exactly this: every place the chart stamps has
-// to carry those names, and none of them may carry the defaults. A site
-// that hardcoded `tenant` renders identically for everyone who leaves the
-// default alone, which is how it survives review.
-func TestEmittersLabelKeysReachEverySite(t *testing.T) {
+// tests/cases/observability-emitters/everything sets a different cluster
+// and tier from the minimal case for exactly this: every place the chart
+// stamps has to carry those, and none may carry the minimal case's. A
+// site that hardcoded one renders identically for everyone whose cluster
+// happens to be called that, which is how it survives review.
+func TestEmittersValuesReachEverySite(t *testing.T) {
 	raw, err := os.ReadFile("golden/observability-emitters/everything.yaml")
 	require.NoError(t, err, "regenerate the golden renders with `just golden`")
 	golden := string(raw)
 
 	for _, site := range []struct{ what, needle string }{
-		{"the metrics agent's env stamp", "target_label: cell"},
-		{"the metrics agent's tenant stamp", "target_label: owner"},
-		{"the label the agent drops when a target exports its own", "regex: exported_(owner|cell)"},
-		{"the gateway's env statement", `set(attributes["cell"], "example-two")`},
-		{"the gateway's tenant statement", `set(attributes["owner"], "platform")`},
-		{"the log stream fields the gateway declares", `VL-Stream-Fields: "owner,cell,`},
-		{"the log agent's env field", `--kubernetesCollector.extraFields={"cell":"example-two"}`},
+		{"the metrics agent's cluster stamp", `replacement: "other-cluster"`},
+		{"the metrics agent's tier stamp", `replacement: "staging"`},
+		{"the gateway's cluster statement", `set(attributes["k8s.cluster.name"], "other-cluster")`},
+		{"the gateway's tier statement", `set(attributes["deployment.environment.name"], "staging")`},
+		{"the log agent's static fields", `--kubernetesCollector.extraFields={"k8s.cluster.name":"other-cluster","deployment.environment.name":"staging"}`},
 	} {
 		assert.Contains(t, golden, site.needle,
-			"%s does not use the configured label key, so that key is a constant somewhere it should be a value", site.what)
+			"%s does not carry the configured value, so that value is a constant somewhere it should be plumbed", site.what)
 	}
-
-	// The defaults must not survive anywhere the chart stamps. Checked as
-	// exact rendered fragments rather than as bare words, because `tenant`
-	// and `env` legitimately appear in this file's own comments.
-	for _, leak := range []string{
-		"target_label: tenant",
-		"target_label: env",
-		`set(attributes["tenant"]`,
-		`set(attributes["env"]`,
-	} {
+	for _, leak := range []string{`"` + minimalCluster + `"`, `"` + minimalTier + `"`} {
 		assert.NotContains(t, golden, leak,
-			"a stamping site renders the DEFAULT label key while the values set another one — it would look correct for everyone who never changed it")
+			"a stamping site renders another case's value while the values set this one — it would look correct for everyone whose cluster is called that")
 	}
 }
 
-// The same boundary, on the log path, which is where it was missing.
-//
-// The metrics half above compares two label keys and stops there, because
-// on the metrics path the collector's label key IS the name the filter
-// selects on. On the log path it is not, and cannot be made to be:
-// vlagent delivers a namespace label as `kubernetes.namespace_labels.<key>`
-// and can rename no field. So the agreement is between three things —
-// what the log agent is told to make a STREAM FIELD, what the chart
-// derives from the namespace label key, and what pkg/tenancy puts in the
-// filter — and it is checked against the rendered manifest rather than
-// against a value, because the flag is the only one of the three that the
-// store ever sees.
-//
-// The last assertion is the defect this test exists for. `tenant` is not
-// among the agent's stream fields and cannot be, so a logs filter naming
-// it selects nothing: an empty result, no error, and a reader who
-// concludes their service logged nothing.
-const (
-	emittersLogsCase   = "cases/observability-emitters/minimal/values.yaml"
-	emittersLogsGolden = "golden/observability-emitters/minimal.yaml"
-)
+// ---- reading the rendered manifests
 
-func TestEmittersStampTheLogFieldsTheLibraryFilters(t *testing.T) {
-	var defaults struct {
-		Tenancy struct {
-			TenantLabel string `yaml:"tenantLabel"`
-			EnvLabel    string `yaml:"envLabel"`
-		} `yaml:"tenancy"`
-	}
-	raw, err := os.ReadFile(emittersValues)
-	require.NoError(t, err)
-	require.NoError(t, yaml.Unmarshal(raw, &defaults))
-
-	var values struct {
-		Tenancy struct {
-			NamespaceLabels struct {
-				Project string `yaml:"project"`
-			} `yaml:"namespaceLabels"`
-		} `yaml:"tenancy"`
-	}
-	raw, err = os.ReadFile(emittersLogsCase)
-	require.NoError(t, err)
-	require.NoError(t, yaml.Unmarshal(raw, &values))
-	require.NotEmpty(t, values.Tenancy.NamespaceLabels.Project)
-
-	// What the chart derives, spelled out here rather than imported, so
-	// that a chart which starts deriving something else fails this test
-	// and not only the golden diff.
-	wantTenantField := "kubernetes.namespace_labels." + values.Tenancy.NamespaceLabels.Project
-	wantEnvField := defaults.Tenancy.EnvLabel
-
-	// What the agent is actually told, read out of the rendered manifest.
-	golden, err := os.ReadFile(emittersLogsGolden)
+func renderedDocs(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(path)
 	require.NoError(t, err, "regenerate the golden renders with `just golden`")
 
-	streamFields := flagList(t, string(golden), "--kubernetesCollector.streamFields=")
-	assert.Contains(t, streamFields, wantTenantField,
-		"the tenant field the proxy filters on is not one of the log agent's stream fields; a LogsQL stream filter selects only on stream fields, so every tenant-scoped log query would return nothing")
-	assert.Contains(t, streamFields, wantEnvField,
-		"the environment field the proxy filters on is not one of the log agent's stream fields")
-	assert.Contains(t, string(golden), fmt.Sprintf("--kubernetesCollector.extraFields={%q:", wantEnvField),
-		"the environment reaches the log store under the name the agent was given, and this is where it is given")
-
-	// And what the library puts in the filter, for the same two names.
-	claim, err := tenancy.Config{
-		ClaimName:       "groups",
-		LogsTenantField: wantTenantField,
-		LogsEnvField:    wantEnvField,
-		Principals: []tenancy.Principal{
-			{Group: "example:reader", Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}}},
-		},
-	}.RenderClaim(tenancy.Principal{
-		Group:  "example:reader",
-		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}},
-	})
-	require.NoError(t, err)
-	require.Len(t, claim.LogsExtraStreamFilters, 1)
-	filter := claim.LogsExtraStreamFilters[0]
-
-	assert.Contains(t, filter, strconv.Quote(wantTenantField))
-	assert.Contains(t, filter, strconv.Quote(wantEnvField))
-
-	// The defect, asserted from the collector's side.
-	assert.NotContains(t, streamFields, defaults.Tenancy.TenantLabel,
-		"%q is not a stream field on the log path and cannot be one — vlagent can rename no field — so a filter naming it returns an empty result with no error at all", defaults.Tenancy.TenantLabel)
-	assert.NotContains(t, filter, strconv.Quote(defaults.Tenancy.TenantLabel),
-		"the logs filter names the metrics tenant label; nothing on the log path carries it")
+	var docs []map[string]any
+	dec := yaml.NewDecoder(strings.NewReader(string(raw)))
+	for {
+		var d map[string]any
+		err := dec.Decode(&d)
+		if err != nil {
+			break
+		}
+		if d != nil {
+			docs = append(docs, d)
+		}
+	}
+	require.NotEmpty(t, docs)
+	return docs
 }
 
-// flagList returns the comma-separated value of the first container
-// argument in the rendered manifest that starts with prefix.
-func flagList(t *testing.T, golden, prefix string) []string {
+func findDoc(t *testing.T, docs []map[string]any, kind string, match func(map[string]any) bool) map[string]any {
 	t.Helper()
+	for _, d := range docs {
+		if d["kind"] == kind && (match == nil || match(d)) {
+			return d
+		}
+	}
+	t.Fatalf("no %s in the rendered manifest", kind)
+	return nil
+}
 
-	for _, line := range strings.Split(golden, "\n") {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "- "))
-		if after, ok := strings.CutPrefix(line, prefix); ok {
+// dig walks nested maps and returns nil where the path does not exist.
+func dig(v any, path ...string) any {
+	for _, p := range path {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil
+		}
+		v = m[p]
+	}
+	return v
+}
+
+func stringList(t *testing.T, v any) []string {
+	t.Helper()
+	list, ok := v.([]any)
+	require.True(t, ok, "not a list: %#v", v)
+	out := make([]string, 0, len(list))
+	for _, e := range list {
+		out = append(out, e.(string))
+	}
+	return out
+}
+
+func indexOf(list []string, s string) int {
+	for i, e := range list {
+		if e == s {
+			return i
+		}
+	}
+	return -1
+}
+
+func matchesWhole(t *testing.T, re, s string) bool {
+	t.Helper()
+	// vmagent anchors a relabel regex itself, so the golden carries it
+	// unanchored; anchor it here the same way.
+	ok, err := regexp.MatchString("^(?:"+re+")$", s)
+	require.NoError(t, err)
+	return ok
+}
+
+// ---- the metrics agent
+
+type relabelRule struct {
+	Action       string   `yaml:"action"`
+	SourceLabels []string `yaml:"source_labels"`
+	TargetLabel  string   `yaml:"target_label"`
+	Regex        string   `yaml:"regex"`
+	Replacement  string   `yaml:"replacement"`
+}
+
+type relabelRules []relabelRule
+
+func (rs relabelRules) replacementFor(target string) string {
+	for _, r := range rs {
+		if r.TargetLabel == target && len(r.SourceLabels) == 0 {
+			return r.Replacement
+		}
+	}
+	return ""
+}
+
+func (rs relabelRules) sourceFor(target string) []string {
+	for _, r := range rs {
+		if r.TargetLabel == target && len(r.SourceLabels) > 0 {
+			return r.SourceLabels
+		}
+	}
+	return nil
+}
+
+type scrapeClass struct {
+	Name           string       `yaml:"name"`
+	Default        bool         `yaml:"default"`
+	RelabelConfigs relabelRules `yaml:"relabelConfigs"`
+}
+
+type inlineJob struct {
+	name          string
+	relabel       relabelRules
+	metricRelabel relabelRules
+}
+
+type vmAgentSpec struct {
+	Spec                             map[string]any
+	ScrapeClasses                    []scrapeClass
+	GlobalScrapeMetricRelabelConfigs relabelRules
+	InlineScrapeConfig               string
+}
+
+func vmAgent(t *testing.T, docs []map[string]any) vmAgentSpec {
+	t.Helper()
+	doc := findDoc(t, docs, "VMAgent", nil)
+	spec, ok := doc["spec"].(map[string]any)
+	require.True(t, ok)
+
+	// Round-trip through YAML into typed structs: the golden is untyped
+	// and the rules are easier to assert on typed.
+	raw, err := yaml.Marshal(spec)
+	require.NoError(t, err)
+	var typed struct {
+		ScrapeClasses                    []scrapeClass `yaml:"scrapeClasses"`
+		GlobalScrapeMetricRelabelConfigs relabelRules  `yaml:"globalScrapeMetricRelabelConfigs"`
+		InlineScrapeConfig               string        `yaml:"inlineScrapeConfig"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &typed))
+	return vmAgentSpec{
+		Spec:                             spec,
+		ScrapeClasses:                    typed.ScrapeClasses,
+		GlobalScrapeMetricRelabelConfigs: typed.GlobalScrapeMetricRelabelConfigs,
+		InlineScrapeConfig:               typed.InlineScrapeConfig,
+	}
+}
+
+func (a vmAgentSpec) defaultScrapeClass(t *testing.T) relabelRules {
+	t.Helper()
+	for _, c := range a.ScrapeClasses {
+		if c.Default {
+			return c.RelabelConfigs
+		}
+	}
+	t.Fatal("the metrics agent has no default scrape class")
+	return nil
+}
+
+func (a vmAgentSpec) inlineJobs(t *testing.T) []inlineJob {
+	t.Helper()
+	var jobs []struct {
+		JobName              string       `yaml:"job_name"`
+		RelabelConfigs       relabelRules `yaml:"relabel_configs"`
+		MetricRelabelConfigs relabelRules `yaml:"metric_relabel_configs"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(a.InlineScrapeConfig), &jobs))
+	out := make([]inlineJob, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, inlineJob{name: j.JobName, relabel: j.RelabelConfigs, metricRelabel: j.MetricRelabelConfigs})
+	}
+	return out
+}
+
+// ---- the container-log agent
+
+func vlagentArgs(t *testing.T, docs []map[string]any) []string {
+	t.Helper()
+	ds := findDoc(t, docs, "DaemonSet", nil)
+	containers := dig(ds, "spec", "template", "spec", "containers").([]any)
+	require.NotEmpty(t, containers)
+	return stringList(t, dig(containers[0], "args"))
+}
+
+// flagList returns the comma-separated value of the first argument that
+// starts with prefix.
+func flagList(t *testing.T, args []string, prefix string) []string {
+	t.Helper()
+	for _, a := range args {
+		if after, ok := strings.CutPrefix(a, prefix); ok {
 			return strings.Split(after, ",")
 		}
 	}
-	t.Fatalf("no %s argument in the rendered manifest", prefix)
+	t.Fatalf("no %s argument", prefix)
 	return nil
+}
+
+// flagJSON returns the JSON object that is the value of the first
+// argument that starts with prefix.
+func flagJSON(t *testing.T, args []string, prefix string) map[string]string {
+	t.Helper()
+	for _, a := range args {
+		if after, ok := strings.CutPrefix(a, prefix); ok {
+			var out map[string]string
+			require.NoError(t, json.Unmarshal([]byte(after), &out), "%s is not a JSON object: %s", prefix, after)
+			return out
+		}
+	}
+	t.Fatalf("no %s argument", prefix)
+	return nil
+}
+
+// ---- the gateway
+
+func gatewayConfig(t *testing.T, docs []map[string]any) map[string]any {
+	t.Helper()
+	cm := findDoc(t, docs, "ConfigMap", func(d map[string]any) bool {
+		_, ok := dig(d, "data", "config.yaml").(string)
+		return ok
+	})
+	var cfg map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(dig(cm, "data", "config.yaml").(string)), &cfg))
+	return cfg
+}
+
+func pipelineExporters(t *testing.T, cfg map[string]any, signal string) []string {
+	t.Helper()
+	v := dig(cfg, "service", "pipelines", signal, "exporters")
+	if v == nil {
+		return nil
+	}
+	return stringList(t, v)
+}
+
+// transformStatements flattens every statement of transform/tenancy for
+// one signal, across contexts.
+func transformStatements(t *testing.T, cfg map[string]any, context string) []string {
+	t.Helper()
+	return statementsOf(t, cfg, "transform/tenancy", context)
+}
+
+func statementsOf(t *testing.T, cfg map[string]any, processor, context string) []string {
+	t.Helper()
+	groups, ok := dig(cfg, "processors", processor, context+"_statements").([]any)
+	require.True(t, ok, "%s has no %s_statements", processor, context)
+	var out []string
+	for _, g := range groups {
+		out = append(out, stringList(t, dig(g, "statements"))...)
+	}
+	return out
 }

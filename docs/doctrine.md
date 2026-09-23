@@ -6,44 +6,81 @@ owns, and why the shape is what it is.
 ## What this repository owns
 
 The **mechanism** of a self-hosted observability stack: how the stores are
-laid out, how a query is scoped to its tenant, how the collectors stamp
-what they collect, and which rules catch a failure that is silent by
-nature. All of it configurable, none of it naming an estate.
+laid out, how a query is scoped to the clusters and namespaces its caller
+may read, how the collectors stamp what they collect, and which rules
+catch a failure that is silent by nature. All of it configurable, none of
+it naming an estate.
 
 ## What the consuming estate owns
 
-Every particular: the issuer URL and its audience, the label keys that
-carry tenancy, the hostnames, the buckets, the Slack receivers, the
-retention, and every secret — which arrives as the *name* of a Secret, never
+Every particular: the issuer URL and its audience, the cluster names and
+which namespaces each project owns, the hostnames, the buckets, the Slack
+receivers, the retention, and every secret — which arrives as the *name* of a Secret, never
 as a value. An estate supplies these from its own private repository, and
 the leak canary in CI is what keeps that boundary from eroding one
 convenient default at a time.
 
-## Tenancy is a label pair, enforced at the door
+## Tenancy is cluster × namespace, enforced at the door
 
 A tenant is not an instance. Running a store per team multiplies the
 operational surface by the number of teams, and — for the log and trace
 stores, which cannot query across their own tenant ids — makes the
 fleet-wide question unanswerable exactly when an incident demands it.
 
-So telemetry carries a `tenant` and an `env` label, stamped by the
-collectors from the namespace's own labels, and isolation happens at query
-time: a proxy in front of the stores reads the caller's token and injects
-the filters that token is entitled to. A viewer's reach follows from their
-identity, not from which address they happened to query.
+So telemetry carries the **cluster** it came from and the **namespace**
+the pod ran in, under OpenTelemetry's names, stamped by the collectors
+from what they can see and never from what the application said; and
+isolation happens at query time, where a proxy in front of the stores
+reads the caller's token and injects the filters that token is entitled
+to. A grant is namespaces on a cluster. A viewer's reach follows from
+their identity, not from which address they happened to query.
 
-The consequence worth stating plainly: **an application cannot choose its
-own tenant.** The label is applied by the platform, from metadata the
-application does not control.
+The consequence worth stating plainly: **an application cannot choose
+where its telemetry is filed.** The cluster is a value the collector was
+installed with; the namespace is the pod's own, resolved from service
+discovery or from the pod object, and whatever the application stamped
+on itself is overwritten or discarded first.
 
-One dimension, two names. On metrics and on spans the tenant is a label
-called `tenant`; in the log store it is a **field** whose name the log
-agent chose, because vlagent can rename no field and a namespace label
-arrives as `kubernetes.namespace_labels.<key>`. Isolation is still one
-pair of dimensions and one grant, but the read side has to be told both
-names and refuses to render a filter until it is. A filter naming a field
-the streams do not have does not fail: it returns nothing, and nothing is
-the one answer a person will believe. docs/safety.md has the mechanism.
+Three things follow from choosing those two as the key, and each one
+closed a defect the previous vocabulary had.
+
+**A project is a derivation, not a label.** A team, a product, a
+"project" — the thing a person actually wants to be granted — is a name
+that expands to a list of namespaces, and that expansion lives with
+whoever writes the grants. It is not a label on the telemetry. The
+previous design read a tenant off a namespace label at collection time,
+which meant an unlabelled namespace produced telemetry nobody could
+select, needed a fallback tenant nobody could safely guess, and on the
+log path had no fallback at all. A namespace always has a name, so none
+of that exists any more; adding a namespace to a project is now a
+visible edit in the grants rather than a label somebody forgets.
+
+**The environment tier is descriptive and never a key.** Every signal
+also carries `deployment.environment.name` — `production`, `staging`,
+`development`, `test` — so a dashboard can pin it. It cannot be a key
+because two clusters can share a tier: an estate's control-plane cluster
+and its customer-facing one are both `production`, and a filter on the
+tier would hand a principal both. The cluster is the key; the tier is
+what the cluster is for.
+
+**One name per dimension per signal, and the flexible writer yields.**
+The names are the convention's, spelled the way each store can carry
+them: `k8s_cluster_name` and `k8s_namespace_name` on metrics, because a
+Prometheus label has no dots; `k8s.cluster.name` and `k8s.namespace.name`
+on spans. On logs, where two writers share one store, the namespace is
+`kubernetes.pod_namespace` — the container-log agent's own native field,
+because that agent cannot rename a field and the OTLP gateway can, so
+the gateway writes that spelling on its log pipeline beside the
+conventional one. Cluster and tier are per-cluster constants, so the
+agent adds them under the exact conventional names through its static
+extra-fields lever and the two writers agree for free. On the metrics
+side the gateway's remote-write exporter does not promote a resource
+attribute to a label unless told to, so it is told to, for exactly those
+three. `tests/agreement_test.go` walks the rendered output of every
+writer for every dimension and fails on any that spells one differently,
+because a filter naming a field the telemetry does not have does not
+fail: it returns nothing, and nothing is the one answer a person will
+believe. docs/safety.md has both collisions.
 
 "Injects" is the load-bearing word, and it is a separate thing from
 deciding. The proxy works out what the caller is entitled to and then
@@ -206,7 +243,7 @@ carrying it is written into the store that has stopped accepting writes.
 
 ## One input, two shapes
 
-An estate can hold the tenant mapping in the proxy's configuration or in
+An estate can hold the grant mapping in the proxy's configuration or in
 the token its issuer mints. Both are reasonable; which one fits depends on
 where the estate would rather make the change.
 
@@ -242,9 +279,9 @@ never vendors their code into an MIT-licensed tree.
 
 ## Examples are invented, not borrowed
 
-Every tenant, group, namespace and hostname in this repository is made up:
-`example-app`, `other-app`, `example:k8s:viewer`, `tenancy.example.com`.
-None of them names anything that exists anywhere.
+Every cluster, group, namespace and hostname in this repository is made
+up: `example-cluster`, `other-cluster`, `example-app`, `other-app`,
+`example:k8s:viewer`. None of them names anything that exists anywhere.
 
 This is not tidiness. A component published for anyone to install is read
 by people who do not work where it was written, and an example borrowed

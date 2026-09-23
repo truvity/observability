@@ -6,6 +6,111 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.2.0
+
+The vocabulary rework. `tenant` × `env`, derived from namespace labels,
+is retired; the scoping key is the **cluster and the namespace**, under
+OpenTelemetry's names, and the environment tier rides along as a
+descriptive dimension that is never a key.
+
+- **Breaking: `pkg/tenancy`, `charts/observability-stack`,
+  `charts/observability-emitters`** — one coordinated change, and the
+  migration is two lines: a grant's `env` becomes `cluster` and its
+  `tenants` become `namespaces` (`allTenants` → `allNamespaces`); the
+  emitters' `tenancy` block is replaced by `tenancy.cluster` and
+  `tenancy.environment`. What every writer stamps and every filter
+  selects on, per signal:
+
+  | dimension | metrics label | log field (both writers) | span attribute |
+  |---|---|---|---|
+  | cluster — key | `k8s_cluster_name` | `k8s.cluster.name` | `k8s.cluster.name` |
+  | namespace — key | `k8s_namespace_name` (`namespace` stays too) | `kubernetes.pod_namespace` | `k8s.namespace.name` |
+  | tier — descriptive | `deployment_environment_name` | `deployment.environment.name` | `deployment.environment.name` |
+
+  A project is not a label on the telemetry any more: it is a
+  derivation from a name to the namespaces it owns, held with whoever
+  writes the grants. That is what removes `tenancy.namespaceLabels`,
+  `tenancy.fallbackTenant`, `tenancy.tenantLabel` and `tenancy.envLabel`
+  from the emitters chart — a namespace always has a name, so the
+  unlabelled-namespace case, the fallback tenant, and the no-fallback gap
+  on the log path all stop existing. The tier is never a key because two
+  clusters can share one.
+  - **`Grant{Env, Tenants, AllTenants}` is `Grant{Cluster, Namespaces,
+    AllNamespaces}`**; the empty-list refusal, the hostile-name refusals
+    and every message stay, rewritten to teach the new model.
+  - **The keys are inputs with defaults on both paths.** `ClusterLabel`
+    / `NamespaceLabel` (`tenancy.clusterLabel` / `tenancy.namespaceLabel`)
+    default to `k8s_cluster_name` / `k8s_namespace_name`;
+    `LogsClusterField` / `LogsNamespaceField` (`tenancy.logsClusterField`
+    / `tenancy.logsNamespaceField`) default to `k8s.cluster.name` /
+    `kubernetes.pod_namespace`. The log fields had no default in 0.1.0
+    because the field was derived from an estate's own namespace label,
+    which every estate spelled differently; the key is the namespace's
+    name now, which every estate spells the same way, and the default is
+    the field the container-log agent natively writes. A metrics key is
+    held to the Prometheus label shape rather than the plain-name shape,
+    because the defaults carry underscores.
+  - **The two log writers name the namespace the same way**, which
+    0.1.0's docs/safety.md listed as not fixed. The container-log agent
+    cannot rename a field, so its native `kubernetes.pod_namespace` is
+    the key and the gateway writes that spelling on its log pipeline
+    beside `k8s.namespace.name`; cluster and tier reach the agent
+    through `-kubernetesCollector.extraFields` under the exact
+    conventional names, so the two agree for free. `extraFields` is a
+    mirror of `tenancy` and is refused when it disagrees.
+  - **OTLP-derived metrics carry the keys as labels.** The Prometheus
+    remote-write exporter puts a resource attribute on `target_info`
+    and nowhere else unless told to promote it, so a series would have
+    reached the store with no cluster and no namespace and every scoped
+    query would have missed it. The gateway's metrics exporters now
+    promote exactly the three through `resource_constant_labels`
+    (dots to underscores on the way out), verified against the collector
+    binary the chart pins. The gateway's components are also declared
+    under the pinned version's current type names —
+    `prometheus_remote_write`, `otlp_http`, `delta_to_cumulative` — since
+    the old aliases log a deprecation warning at 0.161.0; and the queue
+    extension now creates its directory, because a fresh volume is empty
+    and the extension refuses to start on a directory that does not
+    exist, which would have crash-looped every first boot on a new
+    PersistentVolume. Both found by running the rendered file.
+  - **The gateway strips a namespace an SDK claims before resolving the
+    pod**, in a `transform/disown` step, because `k8sattributes` writes
+    an attribute only when it is absent — a resource that arrived
+    carrying `k8s.namespace.name` would have kept the application's
+    claim, and the namespace is now the key. The pod is resolved from
+    the connection first; the pod-UID and pod-IP attributes an SDK
+    supplies are fallbacks.
+  - **The metrics agent** relabels `k8s_namespace_name` from service
+    discovery on every scrape object, copies the container's own
+    `namespace` into it on the two node-level jobs after the scrape,
+    stamps the cluster and the tier statically, and passes the Helm
+    release through as `app_kubernetes_io_instance`. `attachMetadata.namespace`
+    on the scrape class, and its refusal, are gone: the namespace name
+    needs no metadata. The `overrideHonorLabels` guard and its
+    `exported_(…)` labeldrop, and the "default scrape class stamps
+    nothing" refusal, are re-targeted to the three new labels.
+  - **The Helm release passes through everywhere and is never a stream
+    field**: pod labels are on for the container-log agent (upstream's
+    default, reversed from 0.1.0), the gateway extracts
+    `app.kubernetes.io/instance` as `k8s.pod.labels.app.kubernetes.io/instance`,
+    and the stream-field allow-list refuses it.
+  - **`tests/agreement_test.go` walks the rendered output of every
+    writer for every dimension** — the metrics agent's two scrape
+    shapes, the container-log agent's flags, and the gateway's three
+    pipelines — against the names read back out of a rendered library
+    filter. Negative fixtures: a blank `tenancy.cluster`, a blank
+    `tenancy.environment`, a hostile value of either, a static-fields
+    mirror that disagrees or is not JSON, either log key missing from
+    either writer's stream fields, the release label as a stream field,
+    and the two keys colliding on the stack chart.
+
+  Adopting: rename the grant fields, replace the emitters' `tenancy`
+  block, write the log agent's `extraFields` as the chart tells you to,
+  and drop `logsTenantField` / `logsEnvField` unless your log agent is
+  not this chart's. Existing data stamped `tenant`/`env` is not
+  rewritten; it stops matching grants once the proxy is upgraded, which
+  is the intended shape rather than a migration to run.
+
 ## 0.1.0
 
 The first release. Everything below is new to a consumer, so the two

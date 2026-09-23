@@ -1,5 +1,5 @@
 # observability-stack — one install of the store, behind a proxy that
-# scopes every query to the caller's own tenants.
+# scopes every query to the caller's own clusters and namespaces.
 #
 # This chart wraps the upstream charts rather than replacing them: the
 # stores, the operator and Grafana come from the vendor, pinned to exact
@@ -135,38 +135,28 @@ tenancy:
   issuerUrl: ""
   # -- The token claim carrying the caller's groups.
   claimName: groups
-  # -- The label keys the collectors stamp on METRICS and on spans. They
-  # are the estate's vocabulary, not this chart's.
-  tenantLabel: tenant
-  envLabel: env
-  # -- The FIELD names the log store carries the same two dimensions
-  # under. **Required whenever `principals` is set**, and deliberately
-  # without a default.
+  # -- The keys the filters select on, per signal.
   #
-  # The log path does not use the label keys above and cannot be made to.
-  # vlagent delivers a namespace label as
-  # `kubernetes.namespace_labels.<key>` and can rename no field: there is
-  # no flag, no header and no ingest pipeline that turns it into `tenant`,
-  # and VictoriaLogs' `rename` and `copy` pipes run at query time, after
-  # the proxy's stream filter has already been applied.
+  # The scoping key is the CLUSTER and the NAMESPACE, under OpenTelemetry's
+  # names spelled the way each store can carry them: on metrics a label
+  # cannot hold a dot, and on logs the namespace key is the container-log
+  # agent's own native field, because that agent cannot rename a field and
+  # the gateway can — so the gateway yields and writes the same spelling.
+  # These defaults are what charts/observability-emitters stamps and what
+  # `pkg/tenancy` defaults to; `tests/agreement_test.go` reads them back
+  # out of that chart's rendered manifest and fails on any drift. They are
+  # values so an estate whose collectors were not built here can state
+  # what its telemetry actually carries — a filter selecting on one name
+  # against telemetry labelled with another returns an empty result rather
+  # than an error, which reads as "no data" rather than as a mistake.
   #
-  # So a filter naming `tenant` against those streams selects a field they
-  # do not have. That is not an error: it is an empty result, and the
-  # person who gets it reads it as "my service logged nothing". This chart
-  # asks for the names rather than guessing them, for the same reason
-  # charts/observability-emitters derives the tenant field and then
-  # refuses to render until it is in the log agent's own `streamFields` —
-  # the value has to travel from the agent to the proxy, and a value
-  # nobody writes is a value nobody carries.
-  #
-  #   logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  #   logsEnvField: env
-  #
-  # `logsEnvField` is whatever the agent was told to add the environment
-  # as — with the emitters chart, `tenancy.envLabel`, because it arrives
-  # through `-kubernetesCollector.extraFields` under exactly that name.
-  logsTenantField: ""
-  logsEnvField: ""
+  # The environment tier (`deployment_environment_name`) is deliberately
+  # not among them: two clusters can share a tier, so a filter on it would
+  # select both. It rides on every signal for dashboards and is never a key.
+  clusterLabel: k8s_cluster_name
+  namespaceLabel: k8s_namespace_name
+  logsClusterField: k8s.cluster.name
+  logsNamespaceField: kubernetes.pod_namespace
   # -- Admit the trace read route although nothing can scope it.
   #
   # The proxy enforces a grant by substituting the principal's filter
@@ -181,7 +171,7 @@ tenancy:
   # So with a trace store and `principals` both set, the chart refuses
   # to render until this is `true`. Setting it says, in a place people
   # read: **every principal who can reach the proxy reads every
-  # tenant's spans.** Metrics and logs are unaffected by it; it admits
+  # namespace's spans on every cluster.** Metrics and logs are unaffected by it; it admits
   # the trace route and nothing else.
   #
   # The alternative — rendering the trace route anyway, because it looks
@@ -195,20 +185,25 @@ tenancy:
   #   principals:
   #     - group: example:k8s:viewer
   #       grants:
-  #         - env: devel
-  #           allTenants: true
+  #         - cluster: example-cluster
+  #           allNamespaces: true
   #     - group: example:example-app:deployer
   #       grants:
-  #         - env: devel
-  #           tenants: [example-app]
+  #         - cluster: example-cluster
+  #           namespaces: [example-app]
   #
-  # `tenants` and `allTenants` are mutually exclusive and one is required:
-  # an empty list is refused rather than read as "everything", because a
-  # list empty because a derivation produced nothing is the likeliest way
-  # a grant widens by accident. Names must match the plain-name shape
-  # `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` — they are interpolated into a
-  # filter expression, so a name carrying `|` or `.*` would widen the
-  # grant it appears in, and such a name is refused rather than escaped.
+  # A grant is namespaces ON a cluster. A project, a team or a product is
+  # not a label anywhere in the telemetry: it is a derivation from a name
+  # to a list of namespaces that lives with whoever writes these grants,
+  # so adding a namespace to a project is a visible edit here rather than
+  # a label somebody forgets. `namespaces` and `allNamespaces` are
+  # mutually exclusive and one is required: an empty list is refused
+  # rather than read as "everything", because a project that expands to
+  # no namespaces is the likeliest way a grant widens by accident. Names
+  # must match the plain-name shape `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` —
+  # they are interpolated into a filter expression, so a name carrying
+  # `|` or `.*` would widen the grant it appears in, and such a name is
+  # refused rather than escaped.
   principals: []
   # -- The writers: collectors and agents that push, authenticated by a
   # bearer token rather than by a person's identity.
@@ -324,7 +319,7 @@ alertmanager:
   config:
     route:
       receiver: blackhole
-      groupBy: [alertname, tenant, env]
+      groupBy: [alertname, k8s_cluster_name, k8s_namespace_name]
       groupWait: 30s
       groupInterval: 5m
       repeatInterval: 4h
@@ -739,7 +734,7 @@ grafana:
   #
   # Each one points at the PROXY, never at a store, and carries
   # `oauthPassThru: true` so the signed-in person's own token travels with
-  # the query and the proxy scopes it to their tenants. Without it every
+  # the query and the proxy scopes it to their clusters and namespaces. Without it every
   # query arrives as Grafana's own identity, and a viewer sees everything
   # Grafana can see — the chart refuses a datasource without it.
   #

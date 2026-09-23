@@ -4,10 +4,10 @@ Every refusal in this chart.
 The rule for what belongs here is the repository's: a value whose wrong
 setting is SILENT. An agent that will not start is loud and is fixed in
 ten minutes. An agent that starts, scrapes the whole cluster and stamps
-the wrong tenant on all of it is an install that reports healthy while the
-people who needed the data cannot see it and the people who should not
-see it can. So does an agent buffering to a volume that is discarded on
-every rollout, or one replicating to a single destination because the
+the wrong cluster on all of it is an install that reports healthy while
+the people who needed the data cannot see it and the people who should
+not see it can. So does an agent buffering to a volume that is discarded
+on every rollout, or one replicating to a single destination because the
 second URL was a typo.
 
 Every one of these has a fixture under
@@ -42,49 +42,35 @@ saying otherwise.
 {{- end -}}
 
 {{/*
-Tenancy: the security property, and every way of losing it quietly.
+Tenancy: the two values, and the two ways of losing the key quietly.
 
 A blank value here does not fail anything at runtime. It produces
-telemetry labelled `tenant=""` or `env=""`, which is stored, costs what
-every other series costs, and matches no grant the proxy injects — so it
-is invisible to every person who might have acted on it, and nothing
-anywhere says so. That is why each of these is asked for rather than
-defaulted.
+telemetry stamped `k8s_cluster_name=""`, which is stored, costs what every
+other series costs, and matches no grant the proxy injects — because a
+grant names a cluster, and no cluster is called nothing. So it is
+invisible to every person who might have acted on it, and nothing anywhere
+says so. That is why both are asked for rather than defaulted.
 
 The name shape is the same one `pkg/tenancy` enforces, for the same
-reason: these names are interpolated into a filter expression on the read
-side, and one carrying `|` or `.*` widens the grant it appears in rather
-than looking odd.
+reason: the cluster name is interpolated into a filter expression on the
+read side, and one carrying `|` or `.*` widens the grant it appears in
+rather than looking odd. The tier is held to the same shape because it
+is stamped into the same places, even though no filter selects on it.
 */}}
 {{- define "observability-emitters.validate.tenancy" -}}
 {{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
 {{- $t := .Values.tenancy -}}
-{{- if not $t.env -}}
-{{- fail "observability-emitters: `tenancy.env` is empty. Every sample, log line and span this cluster emits would carry env=\"\", which matches no grant the proxy injects — so the data is stored, is paid for, and is invisible to everyone. Name this cluster's environment; it is matched exactly, so it is the estate's own vocabulary and not a display name." -}}
+{{- if not $t.cluster -}}
+{{- fail "observability-emitters: `tenancy.cluster` is empty. Every sample, log line and span this cluster emits would carry k8s_cluster_name=\"\" (k8s.cluster.name on logs and spans), and the cluster is half of the scoping key: a grant names a cluster and namespaces on it, so telemetry from a cluster called nothing matches no grant at all — stored, paid for, and invisible to everyone. Name this cluster; it is matched exactly, so it is the estate's own vocabulary and not a display name." -}}
 {{- end -}}
-{{- if not (regexMatch $shape (toString $t.env)) -}}
-{{- fail (printf "observability-emitters: `tenancy.env` is %q, which is not a plain name (%s). Environment names are interpolated into the filter expression the proxy applies to every query, so one carrying `|`, `)` or `.*` would widen a grant rather than look odd. Such a name is refused, never escaped." (toString $t.env) $shape) -}}
+{{- if not (regexMatch $shape (toString $t.cluster)) -}}
+{{- fail (printf "observability-emitters: `tenancy.cluster` is %q, which is not a plain name (%s). Cluster names are interpolated into the filter expression the proxy applies to every query, so one carrying `|`, `)` or `.*` would widen a grant rather than look odd. Such a name is refused, never escaped." (toString $t.cluster) $shape) -}}
 {{- end -}}
-{{- if not $t.fallbackTenant -}}
-{{- fail "observability-emitters: `tenancy.fallbackTenant` is empty. A namespace carrying neither tenancy label would then produce telemetry with no tenant at all — stored, charged for, and matched by no grant. There is no safe guess for this value, which is why it is asked for: name the tenant that owns whatever nobody has labelled yet." -}}
+{{- if not $t.environment -}}
+{{- fail "observability-emitters: `tenancy.environment` is empty. It is the value of `deployment.environment.name` on every signal this cluster emits — the environment tier a dashboard pins and a person reads, `production`, `staging`, `development`, `test` or the estate's own word. It is never a key, so a blank one selects nothing wrongly; it is refused because a tier of \"\" on every series is a dimension that exists and says nothing, and nobody notices until the first dashboard that groups by it. Name the tier." -}}
 {{- end -}}
-{{- if not (regexMatch $shape (toString $t.fallbackTenant)) -}}
-{{- fail (printf "observability-emitters: `tenancy.fallbackTenant` is %q, which is not a plain name (%s). It is interpolated into a filter expression, where `|` or `.*` widens the grant it appears in." (toString $t.fallbackTenant) $shape) -}}
-{{- end -}}
-{{- range $key := list "tenantLabel" "envLabel" -}}
-{{- $v := index $t $key -}}
-{{- if not (regexMatch $shape (toString $v)) -}}
-{{- fail (printf "observability-emitters: `tenancy.%s` is %q, which is not a plain label name (%s). This is the key the emitters stamp AND the key pkg/tenancy renders into the proxy's filters: a filter selecting on one name against telemetry labelled with another returns an empty result, which reads as \"this tenant produces nothing\" rather than as a misconfiguration. Blank is the worst of them — it renders a label with no name at all." $key (toString $v) $shape) -}}
-{{- end -}}
-{{- end -}}
-{{- if eq (toString $t.tenantLabel) (toString $t.envLabel) -}}
-{{- fail (printf "observability-emitters: `tenancy.tenantLabel` and `tenancy.envLabel` are both %q. One relabel rule would overwrite the other, so every series would carry one dimension and the grants would select on a dimension that is not there." (toString $t.tenantLabel)) -}}
-{{- end -}}
-{{- if not $t.namespaceLabels.project -}}
-{{- fail "observability-emitters: `tenancy.namespaceLabels.project` is empty, so nothing would read a tenant off a namespace and every namespace on the cluster would fall through to `tenancy.fallbackTenant`. The install renders, runs, and is a single-tenant install that looks like a multi-tenant one. Name the label key this estate puts a project name in." -}}
-{{- end -}}
-{{- if eq (toString $t.namespaceLabels.project) (toString $t.namespaceLabels.layer) -}}
-{{- fail (printf "observability-emitters: `tenancy.namespaceLabels.project` and `tenancy.namespaceLabels.layer` are both %q. They are consulted in order, so the second would never be reached and one of the two rules somebody wrote does nothing." (toString $t.namespaceLabels.project)) -}}
+{{- if not (regexMatch $shape (toString $t.environment)) -}}
+{{- fail (printf "observability-emitters: `tenancy.environment` is %q, which is not a plain name (%s). It is stamped into the same places the cluster name is, and held to the same shape." (toString $t.environment) $shape) -}}
 {{- end -}}
 {{- end -}}
 
@@ -198,10 +184,10 @@ pass exactly the value it exists to refuse. */ -}}
 {{- fail "observability-emitters: the metrics agent has no `statefulStorage.volumeClaimTemplate`, so its persistent queue has no volume behind it. Set `metrics.queue.size`." -}}
 {{- end -}}
 {{- /*
-The application choosing its own tenant.
+The application choosing its own cluster or namespace.
 */}}
 {{- if not $spec.overrideHonorLabels -}}
-{{- fail "observability-emitters: the metrics agent has `overrideHonorLabels: false`. With it false, a label a target exports itself WINS over the label this agent stamps — so any workload that exposes a `tenant` metric label chooses its own tenant, which is the one thing the whole tenancy design says it cannot do. It can write into another team's data or hide its own from the people responsible for it, and the render, the sync and the dashboards all look correct. Leave it true." -}}
+{{- fail "observability-emitters: the metrics agent has `overrideHonorLabels: false`. With it false, a label a target exports itself WINS over the label this agent stamps — so any workload that exposes its own `k8s_namespace_name` or `k8s_cluster_name` metric label chooses where its series are filed, which is the one thing the whole tenancy design says it cannot do. It can write into another team's data or hide its own from the people responsible for it, and the render, the sync and the dashboards all look correct. Leave it true." -}}
 {{- end -}}
 {{- if not $spec.selectAllByDefault -}}
 {{- fail "observability-emitters: the metrics agent has `selectAllByDefault: false`, which — with no selectors set — means it selects NO scrape objects at all: not a narrower set, none. The agent starts, stays Ready, and scrapes nothing but the inline node jobs. A component whose PodMonitor is ignored looks exactly like a component with nothing wrong." -}}
@@ -212,27 +198,25 @@ The application choosing its own tenant.
 {{- if $c.default -}}{{- $default = $c -}}{{- end -}}
 {{- end -}}
 {{- if not $default -}}
-{{- fail "observability-emitters: the metrics agent has no default scrape class, so nothing stamps tenancy on the scrape objects this chart does not own — which is all of them. Every series from every PodMonitor on the cluster would carry no tenant and no env." -}}
-{{- end -}}
-{{- if not (($default.attachMetadata).namespace) -}}
-{{- fail "observability-emitters: the metrics agent's default scrape class does not set `attachMetadata.namespace`. A namespace's labels are NOT part of Kubernetes service discovery unless it is asked for, so `__meta_kubernetes_namespace_label_*` would be absent, the tenancy rules would match nothing, and every namespace on the cluster would silently collapse onto `tenancy.fallbackTenant` — one tenant, rendered as many." -}}
+{{- fail "observability-emitters: the metrics agent has no default scrape class, so nothing stamps the scoping key on the scrape objects this chart does not own — which is all of them. Every series from every PodMonitor on the cluster would carry no cluster and no namespace, and would match no grant." -}}
 {{- end -}}
 {{- /*
 And the class has to actually stamp.
 
 `mergeOverwrite` replaces a list wholesale, so a caller who adds one
 scrape class of their own replaces the tenancy one — and a replacement
-that happens to set `attachMetadata` would pass every check above while
+that happens to be the default class would pass the check above while
 stamping nothing at all. The rules themselves are checked, not just their
-container.
+container, and they are checked for the two KEYS: a class that stamps
+the tier and nothing else has stamped nothing a grant can select on.
 */}}
 {{- $targets := dict -}}
 {{- range $r := ($default.relabelConfigs | default list) -}}
 {{- $_ := set $targets (toString (or $r.target_label $r.targetLabel)) true -}}
 {{- end -}}
-{{- range $label := list (toString .Values.tenancy.tenantLabel) (toString .Values.tenancy.envLabel) -}}
+{{- range $label := list "k8s_cluster_name" "k8s_namespace_name" -}}
 {{- if not (hasKey $targets $label) -}}
-{{- fail (printf "observability-emitters: the metrics agent's default scrape class writes no %q label. Nothing would stamp it on any scrape object this chart does not own — which is all of them — so every series would carry one dimension and the grants would select on a dimension that is not there. If you replaced `scrapeClasses` through `metrics.spec`, note that a list is replaced wholesale rather than merged: the tenancy rules went with it." $label) -}}
+{{- fail (printf "observability-emitters: the metrics agent's default scrape class writes no %q label. That is half of the scoping key, and nothing else would stamp it on any scrape object this chart does not own — which is all of them — so every series would carry one dimension and the grants would select on a dimension that is not there. If you replaced `scrapeClasses` through `metrics.spec`, note that a list is replaced wholesale rather than merged: the stamping rules went with it." $label) -}}
 {{- end -}}
 {{- end -}}
 
@@ -248,40 +232,26 @@ The one interval.
 {{/*
 The log agent.
 
-Three failures, all of them silent, and the first one is a design
+Four failures, all of them silent, and the first one is a design
 constraint rather than a mistake anyone made.
 */}}
 {{- define "observability-emitters.validate.logs" -}}
 {{- if .Values.logs.enabled -}}
 {{- $vlc := index .Values "victoria-logs-collector" -}}
-{{- $want := include "observability-emitters.logs.tenantField" . -}}
-{{- /*
-The tenant field the log store can actually have.
-
-vlagent cannot rename a field: there is no flag, header or pipeline that
-turns a namespace label into a field called `tenant`. So the log store's
-tenancy field is `kubernetes.namespace_labels.<key>`, it has to be a
-stream field for the proxy's stream filter to select on it, and the proxy
-has to filter on THAT name. A filter on `tenant` against these streams
-matches nothing, returns an empty result, and reads as "this namespace
-writes no logs".
-
-The chart derives the name and still makes the caller write it into
-`streamFields`, for the same reason the stack chart mirrors a value rather
-than computing it: this one has to travel out of the chart and into the
-proxy's configuration, and a value nobody writes is a value nobody
-carries.
-*/}}
-{{- if not ($vlc.collector).includeNamespaceLabels -}}
-{{- fail "observability-emitters: `victoria-logs-collector.collector.includeNamespaceLabels` is false, so no namespace label reaches a log line and the tenant field this chart filters on does not exist. Every log would be stored under a stream no tenant-scoped query selects." -}}
-{{- end -}}
 {{- /*
 The stream fields.
+
+A LogsQL stream filter — which is what the proxy injects — selects only
+on stream fields. The namespace key on this path is the agent's own
+`kubernetes.pod_namespace`, an upstream default; the cluster key is
+`k8s.cluster.name`, which arrives from `extraFields` and has to be added.
+A key that is an ordinary field rather than a stream field is a key every
+scoped query misses, silently.
 */}}
 {{- $stream := ($vlc.collector).streamFields | default list -}}
-{{- range $required := list (toString .Values.tenancy.envLabel) $want -}}
+{{- range $required := list "k8s.cluster.name" "kubernetes.pod_namespace" -}}
 {{- if not (has $required $stream) -}}
-{{- fail (printf "observability-emitters: %q is not in `victoria-logs-collector.collector.streamFields`, so it is an ordinary field rather than part of the log stream — and a LogsQL stream filter, which is what the proxy injects, only selects on stream fields. Every tenant-scoped query would return nothing. Add it; it is constant for the lifetime of a pod, which is the rule for a stream field." $required) -}}
+{{- fail (printf "observability-emitters: %q is not in `victoria-logs-collector.collector.streamFields`, so it is an ordinary field rather than part of the log stream — and a LogsQL stream filter, which is what the proxy injects, only selects on stream fields. It is half of the scoping key, so every scoped log query would return nothing at all. Add it; it is constant for the lifetime of a pod, which is the rule for a stream field." $required) -}}
 {{- end -}}
 {{- end -}}
 {{- /*
@@ -331,12 +301,27 @@ The scrape kind.
 {{- fail "observability-emitters: `victoria-logs-collector.podMonitor.vm` is true, which renders a VMPodScrape instead of a PodMonitor. Every scrape object on a cluster this chart collects from is a Prometheus Operator kind, and that is not a style rule: it is the only thing keeping the agent under them replaceable. One object in the vendor's own spelling is the first of the ones that follow it, and by then swapping the agent means rewriting every chart that authors a scrape." -}}
 {{- end -}}
 {{- /*
-The env mirror.
+The cluster and tier mirror.
+
+Helm evaluates a subchart's values before any template runs, so this
+chart cannot write the agent's static fields itself: they have to be
+written twice, and two values that are supposed to be equal stop being
+equal the first time somebody changes one. So the JSON is parsed and
+both keys are checked against `tenancy`. A wrong cluster here is the
+worst shape of wrong — every container log on the cluster filed under a
+cluster that does not exist, or under another one.
 */}}
-{{- $wantExtra := printf "{%q:%q}" (toString .Values.tenancy.envLabel) (toString .Values.tenancy.env) -}}
+{{- $wantExtra := printf "{%q:%q,%q:%q}" "k8s.cluster.name" (toString .Values.tenancy.cluster) "deployment.environment.name" (toString .Values.tenancy.environment) -}}
 {{- $got := toString (($vlc.collector).extraFields | default "") -}}
-{{- if ne $got $wantExtra -}}
-{{- fail (printf "observability-emitters: `victoria-logs-collector.collector.extraFields` is %q but `tenancy.env` is %q. Helm evaluates a subchart's values before any template runs, so this chart cannot compute that field and it has to be written twice — which is why the two are checked rather than trusted. Write exactly: %s" $got (toString .Values.tenancy.env) $wantExtra) -}}
+{{- $parsed := fromJson $got -}}
+{{- if or (not (kindIs "map" $parsed)) (hasKey $parsed "Error") -}}
+{{- fail (printf "observability-emitters: `victoria-logs-collector.collector.extraFields` is %q, which is not a JSON object. It is how the container-log agent stamps the cluster and the tier on every line — the agent cannot rename a field, but it can add a static one, and these two are static for the cluster. Helm evaluates a subchart's values before any template runs, so this chart cannot write it for you. Write exactly: %s" $got $wantExtra) -}}
+{{- end -}}
+{{- range $field, $want := dict "k8s.cluster.name" (toString .Values.tenancy.cluster) "deployment.environment.name" (toString .Values.tenancy.environment) -}}
+{{- $have := toString (index $parsed $field | default "") -}}
+{{- if ne $have $want -}}
+{{- fail (printf "observability-emitters: `victoria-logs-collector.collector.extraFields` carries %q as %q but `tenancy` says %q. The two are written twice because Helm evaluates a subchart's values before any template runs, which is why they are checked rather than trusted: a disagreement here files every container log on this cluster under the wrong cluster, where no grant for this one reaches it. Write exactly: %s" $field $have $want $wantExtra) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -354,24 +339,25 @@ store degrades over weeks in a way that looks like growth.
 */}}
 {{- define "observability-emitters.validate.otlp" -}}
 {{- if .Values.otlp.enabled -}}
-{{- $t := .Values.tenancy -}}
 {{- $fields := .Values.otlp.streamFields | default list -}}
 {{- if not $fields -}}
 {{- fail "observability-emitters: `otlp.streamFields` is empty, so no `VL-Stream-Fields` header is sent — and with none, VictoriaLogs treats EVERY resource attribute as a log stream field. An OpenTelemetry SDK's resource carries the pod's UID and its start time, so every restart of every workload mints a stream that is never written to again. The store does not fail; it degrades, over weeks, in a way that reads as growth. Name the fields." -}}
 {{- end -}}
 {{- /*
 The allow-list is in the chart rather than in values on purpose: an
-allow-list a caller can extend is a comment.
+allow-list a caller can extend is a comment. The Helm release attribute
+is deliberately absent from it — it is a pod-level navigation handle,
+and a stream field is a cardinality decision.
 */}}
-{{- $allowed := list (toString $t.tenantLabel) (toString $t.envLabel) "service.name" "service.namespace" "service.instance.id" "k8s.namespace.name" "k8s.pod.name" "k8s.container.name" "k8s.node.name" -}}
+{{- $allowed := list "k8s.cluster.name" "kubernetes.pod_namespace" "deployment.environment.name" "k8s.namespace.name" "service.name" "service.namespace" "service.instance.id" "k8s.pod.name" "k8s.container.name" "k8s.node.name" -}}
 {{- range $f := $fields -}}
 {{- if not (has (toString $f) $allowed) -}}
 {{- fail (printf "observability-emitters: `otlp.streamFields` contains %q, which is not one of the attributes that are constant for the lifetime of a pod (%s). A stream field that changes per request — an address, a user id, a trace id — creates a new stream for every value it takes, and that is the documented way to wreck this store. It fails slowly and it does not recover on its own, which is why the list is the chart's and not a value." (toString $f) (join ", " $allowed)) -}}
 {{- end -}}
 {{- end -}}
-{{- range $required := list (toString $t.tenantLabel) (toString $t.envLabel) -}}
+{{- range $required := list "k8s.cluster.name" "kubernetes.pod_namespace" -}}
 {{- if not (has $required $fields) -}}
-{{- fail (printf "observability-emitters: %q is not in `otlp.streamFields`, so it is an ordinary field rather than part of the log stream — and the stream filter the proxy injects only selects on stream fields. Every tenant-scoped log query would return nothing at all." $required) -}}
+{{- fail (printf "observability-emitters: %q is not in `otlp.streamFields`, so it is an ordinary field rather than part of the log stream — and the stream filter the proxy injects only selects on stream fields. It is half of the scoping key, so every scoped log query would miss everything this gateway wrote, while the container-log agent's half of the same store still answered. Add it." $required) -}}
 {{- end -}}
 {{- end -}}
 {{- if not .Values.otlp.queue.size -}}

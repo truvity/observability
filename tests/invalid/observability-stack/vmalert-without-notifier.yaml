@@ -1,12 +1,10 @@
 tenancy:
   issuerUrl: https://issuer.example
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
 
 # A vmalert with no notifier evaluates every rule and sends the result
 # nowhere, which is indistinguishable from an estate with no problems.

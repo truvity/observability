@@ -1,19 +1,26 @@
 # observability-emitters — per-cluster collection.
 #
 # Three emitters, each optional, each writing to every destination it is
-# given with its own on-disk buffer, and each stamping the same two labels
-# on everything it collects.
+# given with its own on-disk buffer, and each stamping the same three
+# dimensions on everything it collects.
 #
 # Three things to know before reading further.
 #
-# FIRST, and it is the whole point of this chart: TENANCY IS STAMPED HERE
-# AND NOWHERE ELSE. `tenant` and `env` are derived from the NAMESPACE's
-# labels by the emitter, and an application that sets them itself has them
+# FIRST, and it is the whole point of this chart: THE SCOPING KEY IS
+# STAMPED HERE AND NOWHERE ELSE. Every series, log stream and span carries
+# the CLUSTER and the NAMESPACE under OpenTelemetry's names — the cluster
+# from this values file, the namespace from the pod the emitter resolved
+# the data to — and an application that sets either itself has it
 # overwritten rather than merged. Query-time isolation in
-# charts/observability-stack is only as good as this: a workload that could
-# choose its own tenant could write into another team's data or hide its own
-# from the people responsible for it. Every setting below that could weaken
-# that is a refusal in templates/_validate.tpl, not a default.
+# charts/observability-stack is only as good as this: a workload that
+# could choose its own namespace could write into another team's data or
+# hide its own from the people responsible for it. Every setting below
+# that could weaken that is a refusal in templates/_validate.tpl, not a
+# default.
+#
+# The third dimension, the environment tier, is DESCRIPTIVE: it rides on
+# every signal so a dashboard can pin it, and it is never a key, because
+# two clusters can share a tier and a filter on it would select both.
 #
 # SECOND: REPLICATION IS THE WRITER'S JOB. No store in this family
 # replicates across a zone in a way that survives one, so each emitter
@@ -44,49 +51,36 @@ fullnameOverride: ""
 # nothing. Neither says anything at the time.
 interval: 30s
 
-# Tenancy: where `tenant` and `env` come from.
+# Tenancy: the two values that are constant for the cluster.
 #
-# `env` is a constant for the cluster. `tenant` is read from the
-# namespace's own labels, in this order, first match winning:
+# The names the emitters stamp are NOT values. They are OpenTelemetry's,
+# spelled the way each store can carry them, and `pkg/tenancy` filters on
+# the same spellings — so a key that could be changed here is a key that
+# could stop matching the filter, which is an empty result rather than an
+# error. What each writer stamps:
 #
-#   1. the `namespaceLabels.project` label — a namespace that belongs to
-#      one product or team carries its name here;
-#   2. the `namespaceLabels.layer` label — for namespaces that belong to
-#      the platform rather than to a product, where the estate's own
-#      vocabulary for "which layer is this" becomes the tenant;
-#   3. `fallbackTenant`, for a namespace carrying neither.
+#   dimension   metrics label                  log field (both writers)       span attribute
+#   cluster     k8s_cluster_name               k8s.cluster.name               k8s.cluster.name
+#   namespace   k8s_namespace_name             kubernetes.pod_namespace       k8s.namespace.name
+#   tier        deployment_environment_name    deployment.environment.name    deployment.environment.name
 #
-# The fallback is required and has no default. A series with no `tenant`
-# label matches no grant, so it is stored, costs what every other series
-# costs, and is invisible to every person who might have acted on it. That
-# is the most expensive shape of failure this chart can produce, so the
-# value that prevents it is asked for rather than guessed.
+# The namespace needs no value: it is the namespace of the pod the data
+# came from, which every emitter can see. The log field for it is the
+# container-log agent's native spelling rather than the convention's,
+# because that agent cannot rename a field and the gateway can — so the
+# gateway yields, and writes that spelling on its log pipeline beside the
+# conventional one. The Helm release (`app.kubernetes.io/instance`) passes
+# through on every path for navigation and is never a key.
 tenancy:
-  # -- This cluster's environment name. Required.
-  #
-  # It is matched exactly by every grant the proxy injects, so it is the
-  # estate's vocabulary and not a display name.
-  env: ""
-  # -- The label keys the emitters stamp, and the keys `pkg/tenancy`
-  # renders into the proxy's filters. They are one vocabulary: a filter
-  # that selects on `tenant` against telemetry labelled `team` returns
-  # nothing at all, which reads as "no data" rather than as a mistake.
-  # `tests/agreement_test.go` fails when these two defaults drift from the
-  # library's.
-  tenantLabel: tenant
-  envLabel: env
-  # -- The tenant for a namespace that carries neither label. Required.
-  fallbackTenant: ""
-  # -- The namespace labels the tenant is read from. `project` is
-  # required; `layer` is optional and is only consulted when a namespace
-  # has no `project` label.
-  #
-  # These are the estate's keys, so there is no default: a guessed key
-  # matches no namespace, every namespace falls through to
-  # `fallbackTenant`, and the install renders and runs as one tenant.
-  namespaceLabels:
-    project: ""
-    layer: ""
+  # -- This cluster's name. Required, and matched exactly by every grant
+  # the proxy injects: it is half of the scoping key, so it is the
+  # estate's own vocabulary and not a display name.
+  cluster: ""
+  # -- This cluster's environment tier: the value of
+  # `deployment.environment.name`. The convention's well-known values are
+  # `production`, `staging`, `development` and `test`; any plain name is
+  # accepted. Required, and never a key — several clusters may share it.
+  environment: ""
 
 # -- The credential every emitter writes with.
 #
@@ -165,8 +159,8 @@ metrics:
   # renders.
   #
   # It is an escape hatch and it is guarded: the settings that make the
-  # agent stop stamping tenancy, stop replicating or stop buffering are
-  # refused here as firmly as they would be anywhere else, because an
+  # agent stop stamping the scoping key, stop replicating or stop buffering
+  # are refused here as firmly as they would be anywhere else, because an
   # escape hatch that can turn off the security property is not an escape
   # hatch, it is the door.
   spec: {}
@@ -244,10 +238,12 @@ otlp:
   # Only attributes that are constant for the lifetime of a pod may appear.
   # The chart holds the list of those and refuses anything else: `ip`,
   # `user_id` and `trace_id` on a stream are the documented way to wreck
-  # this store, and nothing about it looks wrong for the first week.
+  # this store, and nothing about it looks wrong for the first week. The
+  # two scoping keys are required; the Helm release label is a pod-level
+  # field and is refused here — it is navigation, not a stream.
   streamFields:
-    - tenant
-    - env
+    - k8s.cluster.name
+    - kubernetes.pod_namespace
     - service.name
   events:
     # -- Kubernetes Events, through the `k8s_events` receiver.
@@ -320,26 +316,20 @@ victoria-logs-collector:
   # retrying it.
   remoteWrite: []
   collector:
-    # -- The stream fields, and THE PLACE THE LOG PATH'S TENANCY IS
+    # -- The stream fields, and THE PLACE THE LOG PATH'S SCOPING KEY IS
     # DECLARED.
     #
-    # The three defaults are constant for the lifetime of a pod and stay.
-    # Two more have to join them before the log path is usable, and the
-    # chart refuses to render until they do:
-    #
-    #   - `env`, which arrives as a constant field from `extraFields`
-    #     below;
-    #   - the tenant, which arrives as
-    #     `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`.
-    #
-    # THAT SECOND NAME IS NOT `tenant`, and it cannot be. vlagent has no
-    # way to rename a field: there is no flag, header or pipeline that
-    # turns a namespace label into a plain one. So the log store's tenancy
-    # field is that long name, whoever configures the proxy has to filter
-    # on it, and it is written here rather than derived silently because
-    # the value has to travel out of this chart. A filter on `tenant`
-    # against these streams matches nothing, returns an empty result, and
-    # reads as "this namespace writes no logs".
+    # Upstream's three defaults are constant for the lifetime of a pod and
+    # stay; `kubernetes.pod_namespace` among them is the namespace key on
+    # this path, under the agent's own native spelling, because vlagent
+    # cannot rename a field and the OTLP gateway can — so the gateway
+    # writes this same name on its log pipeline and the two writers agree.
+    # The cluster joins the list under its conventional name,
+    # `k8s.cluster.name`, which is how it arrives from `extraFields` below.
+    # The chart refuses to render until both keys are here: a LogsQL
+    # stream filter, which is what the proxy injects, selects only on
+    # stream fields, and a key that is an ordinary field is a key every
+    # scoped query silently misses.
     #
     # Nothing an application writes ever becomes a stream field. That is
     # not a preference: a field that changes per request mints a stream
@@ -350,20 +340,22 @@ victoria-logs-collector:
       - kubernetes.container_name
       - kubernetes.pod_name
       - kubernetes.pod_namespace
-    # -- Namespace labels as fields. This is where the tenant comes from on
-    # the log path, so it is on, and the chart refuses it off while a
-    # tenant field derived from a namespace label is in use.
-    includeNamespaceLabels: true
-    # -- Pod labels as fields. Off, against upstream's default: they are an
-    # application's own vocabulary, they change without a deploy, and a
-    # store that indexes them grows with somebody else's naming habits.
-    includePodLabels: false
+      - k8s.cluster.name
+    # -- Pod labels as ordinary fields, which is upstream's default and is
+    # what carries the Helm release: `kubernetes.pod_labels.app.kubernetes.io/instance`
+    # is the navigation handle on this path. Fields, not stream fields —
+    # they cost per line, not per stream.
+    includePodLabels: true
     includePodAnnotations: false
     includeNodeLabels: false
     includeNodeAnnotations: false
-    # -- MIRROR: `tenancy.env`. A constant field on every line, because
-    # `env` is a property of the cluster rather than of a pod. The chart
-    # refuses a value that does not match `tenancy.env`.
+    # -- MIRROR: `tenancy.cluster` and `tenancy.environment`, as the two
+    # static fields this agent adds to every line, under the exact
+    # conventional names. Both are constants for the cluster, which is
+    # precisely what a static extra field can carry. The chart refuses a
+    # value that does not carry both, equal to the values above:
+    #
+    #   extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     extraFields: ""
   extraArgs:
     envflag.enable: true

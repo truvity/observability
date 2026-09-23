@@ -1,6 +1,6 @@
-# With no project label key, nothing reads a tenant off a namespace and
-# every namespace falls through to the fallback — a single-tenant install
-# rendered to look like a multi-tenant one.
+# The gateway's half of the log store has to carry the same stream keys
+# as the agent's half, or a scoped query returns the container logs and
+# silently omits everything an application sent over OTLP.
 
 metrics:
   destinations:
@@ -17,21 +17,20 @@ otlp:
     traces:
     - name: primary
       url: https://traces.example
+  streamFields:
+  - k8s.cluster.name
+  - service.name
 tenancy:
-  env: example
-  fallbackTenant: infra
-  namespaceLabels:
-    layer: tenancy.example.com/layer
-    project: ''
+  cluster: example-cluster
+  environment: development
 victoria-logs-collector:
   collector:
-    extraFields: '{"env":"example"}'
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
     streamFields:
     - kubernetes.container_name
     - kubernetes.pod_name
     - kubernetes.pod_namespace
-    - env
-    - kubernetes.namespace_labels.tenancy.example.com/project
+    - k8s.cluster.name
   extraVolumeMounts:
   - mountPath: /etc/observability-write-token
     name: write-token

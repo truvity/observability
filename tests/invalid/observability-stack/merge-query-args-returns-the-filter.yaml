@@ -7,18 +7,16 @@
 #
 # On the metrics path that is a full bypass rather than a narrowing:
 # vmselect treats each `extra_filters` as an ALTERNATIVE and ORs them, so
-# a caller adding an empty one reads every tenant — while the claim, the
+# a caller adding an empty one reads every cluster and namespace — while the claim, the
 # route and the rendered filter all stay exactly right.
 tenancy:
   issuerUrl: https://issuer.example
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   allowUnfilteredTraceReads: true
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
 
 vmauth:
   extraArgs:

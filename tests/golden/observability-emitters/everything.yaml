@@ -43,6 +43,12 @@ data:
     extensions:
       file_storage:
         directory: /var/lib/otelcol/queue
+        # A fresh volume is empty, and the extension refuses to start on a
+        # directory that does not exist rather than creating it — so without
+        # this every first boot on a new PersistentVolume crash-loops before
+        # the first byte is queued. Found by running the rendered file
+        # against the binary; no render can tell you a directory is missing.
+        create_directory: true
         # The collector is killed with a queue on disk often enough that a
         # corrupt database has to be survivable: without this the process
         # crash-loops on the file it cannot open, and the only way out is
@@ -71,21 +77,41 @@ data:
         k8s_leader_elector: k8s_leader_elector
     
     processors:
-      # Two processors, in this order, and the order is the security property.
+      # Three processors, in this order, and the order is the security
+      # property.
       #
-      # k8sattributes resolves the sending pod and copies the NAMESPACE's own
-      # labels onto the resource, under names of this chart's choosing rather
-      # than the estate's. Nothing is decided here.
+      # transform/disown removes the namespace an SDK may have stated about
+      # itself, under both spellings. It has to run FIRST, because
+      # k8sattributes writes an attribute only when it is absent or empty —
+      # so a resource that arrived already carrying `k8s.namespace.name`
+      # would keep the application's claim, and the namespace is the key.
       #
-      # transform/tenancy then writes `owner` and `cell` from
-      # those, unconditionally, with `set` — which overwrites whatever an SDK
-      # put there. It finishes by deleting the intermediate attributes, so the
-      # namespace's raw labels do not reach the store as a second vocabulary.
+      # k8sattributes then resolves the sending pod and writes the NAMESPACE's
+      # name from the pod object, not from anything the sender said. The
+      # cluster and the tier are constants from this values file; the
+      # processor cannot know either.
       #
-      # Doing it the obvious way — letting k8sattributes write `owner`
-      # directly — is what this avoids: that processor leaves an attribute that
-      # is already present alone, so an SDK that set its own tenant would keep
-      # it, and the label would be the application's claim about itself.
+      # transform/tenancy finishes by writing those two with `set`, which
+      # overwrites whatever an SDK put there, and on the log pipeline copies
+      # the namespace to the spelling the container-log agent uses, so one
+      # store holds one name for it.
+      transform/disown:
+        error_mode: ignore
+        metric_statements:
+          - context: resource
+            statements:
+              - delete_key(attributes, "k8s.namespace.name")
+              - delete_key(attributes, "kubernetes.pod_namespace")
+        log_statements:
+          - context: resource
+            statements:
+              - delete_key(attributes, "k8s.namespace.name")
+              - delete_key(attributes, "kubernetes.pod_namespace")
+        trace_statements:
+          - context: resource
+            statements:
+              - delete_key(attributes, "k8s.namespace.name")
+              - delete_key(attributes, "kubernetes.pod_namespace")
       k8sattributes:
         auth_type: serviceAccount
         passthrough: false
@@ -96,82 +122,92 @@ data:
             - k8s.pod.uid
             - k8s.node.name
           labels:
-            - tag_name: observability.tenancy.layer
-              key: "example.com/layer"
-              from: namespace
-            - tag_name: observability.tenancy.project
-              key: "example.com/project"
-              from: namespace
+            # The Helm release, for navigation. Named explicitly rather than
+            # left to the processor's default pattern, so the attribute a
+            # reader searches for is the one the rendered file says.
+            - tag_name: k8s.pod.labels.app.kubernetes.io/instance
+              key: app.kubernetes.io/instance
+              from: pod
+        # The connection comes first. The other two sources read the pod's
+        # identity from attributes the SENDER supplied, which for an
+        # in-cluster application is a claim about itself; the peer address of
+        # the socket it opened is not. They remain for a sender whose address
+        # resolves to no pod — a host-network pod carries its node's.
         pod_association:
+          - sources:
+              - from: connection
           - sources:
               - from: resource_attribute
                 name: k8s.pod.uid
           - sources:
               - from: resource_attribute
                 name: k8s.pod.ip
-          - sources:
-              - from: connection
       transform/tenancy:
         error_mode: ignore
         metric_statements:
           - context: resource
             statements:
-              - set(attributes["cell"], "example-two")
-              - set(attributes["owner"], "platform")
-              - set(attributes["owner"], attributes["observability.tenancy.layer"]) where attributes["observability.tenancy.layer"] != nil
-              - set(attributes["owner"], attributes["observability.tenancy.project"]) where attributes["observability.tenancy.project"] != nil
-              - delete_key(attributes, "observability.tenancy.layer")
-              - delete_key(attributes, "observability.tenancy.project")
+              - set(attributes["k8s.cluster.name"], "other-cluster")
+              - set(attributes["deployment.environment.name"], "staging")
         log_statements:
           - context: resource
             statements:
-              - set(attributes["cell"], "example-two")
-              - set(attributes["owner"], "platform")
-              - set(attributes["owner"], attributes["observability.tenancy.layer"]) where attributes["observability.tenancy.layer"] != nil
-              - set(attributes["owner"], attributes["observability.tenancy.project"]) where attributes["observability.tenancy.project"] != nil
-              - delete_key(attributes, "observability.tenancy.layer")
-              - delete_key(attributes, "observability.tenancy.project")
+              - set(attributes["k8s.cluster.name"], "other-cluster")
+              - set(attributes["deployment.environment.name"], "staging")
+              # The container-log agent cannot rename a field, so its native
+              # spelling is the log-path key and this writer yields to it.
+              - set(attributes["kubernetes.pod_namespace"], attributes["k8s.namespace.name"]) where attributes["k8s.namespace.name"] != nil
         trace_statements:
           - context: resource
             statements:
-              - set(attributes["cell"], "example-two")
-              - set(attributes["owner"], "platform")
-              - set(attributes["owner"], attributes["observability.tenancy.layer"]) where attributes["observability.tenancy.layer"] != nil
-              - set(attributes["owner"], attributes["observability.tenancy.project"]) where attributes["observability.tenancy.project"] != nil
-              - delete_key(attributes, "observability.tenancy.layer")
-              - delete_key(attributes, "observability.tenancy.project")
+              - set(attributes["k8s.cluster.name"], "other-cluster")
+              - set(attributes["deployment.environment.name"], "staging")
       # Delta metrics and deduplication do not mix: the store keeps one sample
       # per interval, and dropping one sample of a delta series loses the
       # increment it carried rather than a repetition of a total. An SDK's
       # default temporality is the caller's business, so the conversion happens
       # here and is not configurable.
-      deltatocumulative: {}
+      delta_to_cumulative: {}
       batch: {}
     
     exporters:
       # No `sending_queue` here, and it is not an omission: the Prometheus
       # remote-write exporter does not have one. Its durability is a
       # write-ahead log, per exporter, on the same volume the others queue on.
-      prometheusremotewrite/primary:
+      prometheus_remote_write/primary:
         endpoint: "https://metrics.example/api/v1/write"
         wal:
           directory: /var/lib/otelcol/wal/primary
         headers:
           Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
-      otlphttp/logs-primary:
+        # A resource attribute does not become a label on its own: this
+        # exporter puts the resource on a `target_info` series and nothing
+        # else, so a series would reach the store carrying no cluster and no
+        # namespace, and every scoped query would miss it. These three are
+        # promoted onto every series, under the dotted names — the exporter
+        # spells them with underscores on the way out, which is how they
+        # match the metrics agent's labels and the proxy's filters. Only
+        # these three: the rest of the resource, the pod UID among it, stays
+        # on `target_info`.
+        resource_constant_labels:
+          included:
+            - k8s.cluster.name
+            - k8s.namespace.name
+            - deployment.environment.name
+      otlp_http/logs-primary:
         logs_endpoint: "https://logs.example/insert/opentelemetry/v1/logs"
         headers:
           Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
           # Without this header every resource attribute becomes a stream
           # field, and an SDK's resource carries the pod's UID and start time —
           # so every restart mints a stream the store never reuses.
-          VL-Stream-Fields: "owner,cell,service.name,service.namespace"
+          VL-Stream-Fields: "k8s.cluster.name,kubernetes.pod_namespace,deployment.environment.name,service.name,service.namespace"
         sending_queue:
           enabled: true
           storage: file_storage
         retry_on_failure:
           enabled: true
-      otlphttp/traces-primary:
+      otlp_http/traces-primary:
         traces_endpoint: "https://traces.example/insert/opentelemetry/v1/traces"
         headers:
           Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
@@ -196,16 +232,16 @@ data:
       pipelines:
         metrics:
           receivers: [otlp]
-          processors: [k8sattributes, transform/tenancy, deltatocumulative, batch]
-          exporters: [prometheusremotewrite/primary]
+          processors: [transform/disown, k8sattributes, transform/tenancy, delta_to_cumulative, batch]
+          exporters: [prometheus_remote_write/primary]
         logs:
           receivers: [otlp, k8s_events]
-          processors: [k8sattributes, transform/tenancy, batch]
-          exporters: [otlphttp/logs-primary]
+          processors: [transform/disown, k8sattributes, transform/tenancy, batch]
+          exporters: [otlp_http/logs-primary]
         traces:
           receivers: [otlp]
-          processors: [k8sattributes, transform/tenancy, batch]
-          exporters: [otlphttp/traces-primary]
+          processors: [transform/disown, k8sattributes, transform/tenancy, batch]
+          exporters: [otlp_http/traces-primary]
 
 ---
 # Source: observability-emitters/charts/victoria-logs-collector/templates/rbac.yaml
@@ -421,14 +457,13 @@ spec:
           - --envflag.enable
           - --envflag.prefix=VL_
           - --kubernetesCollector
-          - --kubernetesCollector.extraFields={"cell":"example-two"}
-          - --kubernetesCollector.includeNamespaceLabels
+          - --kubernetesCollector.extraFields={"k8s.cluster.name":"other-cluster","deployment.environment.name":"staging"}
           - --kubernetesCollector.includeNodeAnnotations=false
           - --kubernetesCollector.includeNodeLabels=false
           - --kubernetesCollector.includePodAnnotations=false
-          - --kubernetesCollector.includePodLabels=false
+          - --kubernetesCollector.includePodLabels
           - --kubernetesCollector.msgField=message,msg,log
-          - --kubernetesCollector.streamFields=kubernetes.container_name,kubernetes.pod_name,kubernetes.pod_namespace,cell,kubernetes.namespace_labels.example.com/project
+          - --kubernetesCollector.streamFields=kubernetes.container_name,kubernetes.pod_name,kubernetes.pod_namespace,k8s.cluster.name,deployment.environment.name
           - --kubernetesCollector.timeField=time,ts,timestamp
           - --loggerFormat=json
           - --remoteWrite.bearerTokenFile=/etc/observability-write-token/bearer
@@ -491,7 +526,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: observability-emitters
       annotations:
-        observability-emitters/config-checksum: 6db18035702ca12c488f9582b4cc2af503e33a4a06aa8f35e3d89a2020070eff
+        observability-emitters/config-checksum: 9382f69150ddc28ef9aa709fd072b7cddcdc8af58b06390862db3febe848a0d1
     spec:
       serviceAccountName: observability-emitters-gateway
       containers:
@@ -624,12 +659,12 @@ metadata:
 spec:
   disableSelfServiceScrape: true
   externalLabels:
-    cluster: example
+    region: example
   extraArgs:
     promscrape.suppressScrapeErrors: "true"
   globalScrapeMetricRelabelConfigs:
   - action: labeldrop
-    regex: exported_(owner|cell)
+    regex: exported_(k8s_cluster_name|k8s_namespace_name|deployment_environment_name)
   image:
     repository: victoriametrics/vmagent
     tag: v1.152.0
@@ -646,10 +681,14 @@ spec:
       relabel_configs:
         - action: labelmap
           regex: __meta_kubernetes_node_label_(.+)
-        - target_label: cell
-          replacement: "example-two"
-        - target_label: owner
-          replacement: "platform"
+        - target_label: k8s_cluster_name
+          replacement: "other-cluster"
+        - target_label: deployment_environment_name
+          replacement: "staging"
+      metric_relabel_configs:
+        - source_labels: [namespace]
+          regex: (.+)
+          target_label: k8s_namespace_name
   overrideHonorLabels: true
   remoteWrite:
   - bearerTokenSecret:
@@ -665,25 +704,20 @@ spec:
       cpu: "2"
       memory: 2Gi
   scrapeClasses:
-  - attachMetadata:
-      namespace: true
-    default: true
+  - default: true
     name: tenancy
     relabelConfigs:
-    - replacement: example-two
-      target_label: cell
-    - replacement: platform
-      target_label: owner
+    - replacement: other-cluster
+      target_label: k8s_cluster_name
+    - replacement: staging
+      target_label: deployment_environment_name
+    - source_labels:
+      - __meta_kubernetes_namespace
+      target_label: k8s_namespace_name
     - regex: (.+)
-      replacement: $1
       source_labels:
-      - __meta_kubernetes_namespace_label_example_com_layer
-      target_label: owner
-    - regex: (.+)
-      replacement: $1
-      source_labels:
-      - __meta_kubernetes_namespace_label_example_com_project
-      target_label: owner
+      - __meta_kubernetes_pod_label_app_kubernetes_io_instance
+      target_label: app_kubernetes_io_instance
   scrapeInterval: 60s
   selectAllByDefault: true
   statefulMode: true

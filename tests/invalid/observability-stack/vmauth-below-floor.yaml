@@ -1,12 +1,10 @@
 tenancy:
   issuerUrl: https://issuer.example
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
 
 # Every build from v1.138.0, where claim matching was introduced, to
 # v1.151.x matched claim values UNANCHORED, so a claim of `admin` also

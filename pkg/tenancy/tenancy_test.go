@@ -13,26 +13,15 @@ import (
 	"github.com/truvity/observability/pkg/tenancy"
 )
 
-// The log-path field names a Kubernetes collector actually produces. They
-// are written out rather than defaulted because the package refuses to
-// default them, and the shape is the point: a namespace label reaches the
-// log store prefixed, and its key carries dots and a slash.
-const (
-	logsTenantField = "kubernetes.namespace_labels.tenancy.example.com/project"
-	logsEnvField    = "env"
-)
-
 func base() tenancy.Config {
 	return tenancy.Config{
-		ClaimName:       "groups",
-		MetricsBackend:  "http://metrics.example:8428",
-		LogsBackend:     "http://logs.example:9428",
-		TracesBackend:   "http://traces.example:10428",
-		LogsTenantField: logsTenantField,
-		LogsEnvField:    logsEnvField,
+		ClaimName:      "groups",
+		MetricsBackend: "http://metrics.example:8428",
+		LogsBackend:    "http://logs.example:9428",
+		TracesBackend:  "http://traces.example:10428",
 		Principals: []tenancy.Principal{{
 			Group:  "example:k8s:viewer",
-			Grants: []tenancy.Grant{{Env: "devel", AllTenants: true}},
+			Grants: []tenancy.Grant{{Cluster: "example-cluster", AllNamespaces: true}},
 		}},
 	}
 }
@@ -41,13 +30,32 @@ func twoGrants() tenancy.Principal {
 	return tenancy.Principal{
 		Group: "example:app:deployer",
 		Grants: []tenancy.Grant{
-			// Deliberately unsorted, and the tenants too: the render must
-			// be stable, or every unrelated change produces a diff and
+			// Deliberately unsorted, and the namespaces too: the render
+			// must be stable, or every unrelated change produces a diff and
 			// people stop reading them.
-			{Env: "prod", Tenants: []string{"other-app", "example-app"}},
-			{Env: "devel", Tenants: []string{"example-app"}},
+			{Cluster: "other-cluster", Namespaces: []string{"other-app", "example-app"}},
+			{Cluster: "example-cluster", Namespaces: []string{"example-app"}},
 		},
 	}
+}
+
+// The vocabulary is OpenTelemetry's, spelled the way each store can carry
+// it, and it is pinned here as literal strings on purpose: these are the
+// names charts/observability-emitters stamps, so a change to a constant
+// is a change to what every filter selects on and has to be made in both
+// places at once.
+func TestTheVocabularyIsOpenTelemetrys(t *testing.T) {
+	assert.Equal(t, "k8s_cluster_name", tenancy.DefaultClusterLabel)
+	assert.Equal(t, "k8s_namespace_name", tenancy.DefaultNamespaceLabel)
+	assert.Equal(t, "deployment_environment_name", tenancy.EnvironmentLabel)
+
+	assert.Equal(t, "k8s.cluster.name", tenancy.DefaultLogsClusterField)
+	assert.Equal(t, "kubernetes.pod_namespace", tenancy.DefaultLogsNamespaceField,
+		"the log-path namespace key is the container-log agent's native spelling, because it cannot rename a field and the gateway can")
+	assert.Equal(t, "deployment.environment.name", tenancy.EnvironmentAttribute)
+
+	assert.Equal(t, "k8s.cluster.name", tenancy.TracesClusterAttribute)
+	assert.Equal(t, "k8s.namespace.name", tenancy.TracesNamespaceAttribute)
 }
 
 func TestClaimRendersOneMetricsFilterPerGrant(t *testing.T) {
@@ -55,8 +63,8 @@ func TestClaimRendersOneMetricsFilterPerGrant(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		`{env="devel",tenant=~"^(example-app)$"}`,
-		`{env="prod",tenant=~"^(example-app|other-app)$"}`,
+		`{k8s_cluster_name="example-cluster",k8s_namespace_name=~"^(example-app)$"}`,
+		`{k8s_cluster_name="other-cluster",k8s_namespace_name=~"^(example-app|other-app)$"}`,
 	}, claim.MetricsExtraFilters)
 }
 
@@ -65,7 +73,7 @@ func TestClaimRendersOneMetricsFilterPerGrant(t *testing.T) {
 //
 // Not one per grant: VictoriaLogs AND-s every `extra_stream_filters`
 // argument into the query as its own global constraint, so two entries
-// naming two environments intersect in nothing and the principal with the
+// naming two clusters intersect in nothing and the principal with the
 // most access is the one who gets an empty screen.
 func TestClaimRendersOneLogsFilterForEveryGrant(t *testing.T) {
 	claim, err := base().RenderClaim(twoGrants())
@@ -74,18 +82,16 @@ func TestClaimRendersOneLogsFilterForEveryGrant(t *testing.T) {
 	require.Len(t, claim.LogsExtraStreamFilters, 1,
 		"a second entry would be AND-ed with the first, not OR-ed: %v", claim.LogsExtraStreamFilters)
 	assert.Equal(t,
-		`_stream:{"env"="devel","kubernetes.namespace_labels.tenancy.example.com/project"=~"^(example-app)$"`+
-			` or "env"="prod","kubernetes.namespace_labels.tenancy.example.com/project"=~"^(example-app|other-app)$"}`,
+		`_stream:{"k8s.cluster.name"="example-cluster","kubernetes.pod_namespace"=~"^(example-app)$"`+
+			` or "k8s.cluster.name"="other-cluster","kubernetes.pod_namespace"=~"^(example-app|other-app)$"}`,
 		claim.LogsExtraStreamFilters[0])
 }
 
-// The inversion of the test this replaces, which asserted that the two
-// filter sets were identical and so encoded the defect as a requirement.
-//
-// They are not identical and must not be. The metrics store carries the
-// tenant in a label; the log store carries it in a field whose name the
-// log agent chose, and vlagent cannot rename a field. A logs filter
-// naming the metrics label selects a field the streams do not have, which
+// The two paths name different fields and must. The metrics store carries
+// the namespace in a label that cannot hold a dot; the log store carries
+// it in the field the container-log agent natively writes, which is
+// neither the label nor the OpenTelemetry attribute. A logs filter naming
+// the metrics label selects a field the streams do not have, which
 // returns an empty result rather than an error — the one failure this
 // repository exists to prevent.
 func TestLogsFiltersNeverNameTheMetricsFields(t *testing.T) {
@@ -95,69 +101,121 @@ func TestLogsFiltersNeverNameTheMetricsFields(t *testing.T) {
 
 	require.NotEmpty(t, claim.LogsExtraStreamFilters)
 	for _, f := range claim.LogsExtraStreamFilters {
-		assert.NotContains(t, f, `"tenant"=`,
-			"the logs filter names the METRICS tenant label; on the log path no such field exists, and the query would return nothing with no error at all: %s", f)
-		assert.Contains(t, f, strconv.Quote(c.LogsTenantField),
-			"the logs filter does not name the field the caller stated: %s", f)
+		assert.NotContains(t, f, tenancy.DefaultNamespaceLabel,
+			"the logs filter names the METRICS namespace label; on the log path no such field exists, and the query would return nothing with no error at all: %s", f)
+		assert.NotContains(t, f, tenancy.DefaultClusterLabel, "same, for the cluster: %s", f)
+		assert.Contains(t, f, strconv.Quote(tenancy.DefaultLogsNamespaceField),
+			"the logs filter does not name the field the log agent writes: %s", f)
+		assert.Contains(t, f, strconv.Quote(tenancy.DefaultLogsClusterField))
 	}
 
 	assert.NotEqual(t, claim.MetricsExtraFilters, claim.LogsExtraStreamFilters,
 		"the two paths name different fields and combine their entries differently; identical lists mean one of them is not being rendered")
 }
 
-func TestAllTenantsOmitsTheTenantMatcher(t *testing.T) {
+// The tier is descriptive and never a key: two clusters can share it, so
+// a filter on it would select both. No filter this package renders may
+// mention it.
+func TestTheEnvironmentTierIsNeverAKey(t *testing.T) {
+	claim, err := base().RenderClaim(twoGrants())
+	require.NoError(t, err)
+	for _, f := range append(append([]string{}, claim.MetricsExtraFilters...), claim.LogsExtraStreamFilters...) {
+		assert.NotContains(t, f, tenancy.EnvironmentLabel, "a filter on the tier selects every cluster that shares it: %s", f)
+		assert.NotContains(t, f, tenancy.EnvironmentAttribute, "a filter on the tier selects every cluster that shares it: %s", f)
+	}
+}
+
+func TestAllNamespacesOmitsTheNamespaceMatcher(t *testing.T) {
 	c := base()
 	claim, err := c.RenderClaim(c.Principals[0])
 	require.NoError(t, err)
 
 	require.Len(t, claim.MetricsExtraFilters, 1)
-	assert.Equal(t, `{env="devel"}`, claim.MetricsExtraFilters[0])
-	assert.NotContains(t, claim.MetricsExtraFilters[0], "tenant",
-		"a match-all tenant matcher would drop series that carry no tenant label at all, which mid-rollout is exactly the data someone is looking for")
+	assert.Equal(t, `{k8s_cluster_name="example-cluster"}`, claim.MetricsExtraFilters[0])
+	assert.NotContains(t, claim.MetricsExtraFilters[0], tenancy.DefaultNamespaceLabel,
+		"a match-all namespace matcher would drop series that carry no namespace label at all — the node-level series — which for a principal allowed the whole cluster is exactly the data they came for")
 
-	// The same on the log path, where it matters more: a namespace with no
-	// project label produces streams with no tenancy field at all, and a
-	// match-all matcher would hide every one of them.
 	require.Len(t, claim.LogsExtraStreamFilters, 1)
-	assert.Equal(t, `_stream:{"env"="devel"}`, claim.LogsExtraStreamFilters[0])
+	assert.Equal(t, `_stream:{"k8s.cluster.name"="example-cluster"}`, claim.LogsExtraStreamFilters[0])
 }
 
-func TestLabelKeysAreInputs(t *testing.T) {
+// The keys are inputs with defaults, for an estate whose collectors were
+// not built here. Setting them has to reach the filter.
+func TestKeysAreInputs(t *testing.T) {
 	c := base()
-	c.TenantLabel = "owner"
-	c.EnvLabel = "stage"
-	c.LogsTenantField = "kubernetes.namespace_labels.owner"
-	c.LogsEnvField = "stage"
+	c.ClusterLabel = "cell"
+	c.NamespaceLabel = "ns"
+	c.LogsClusterField = "k8s.cell"
+	c.LogsNamespaceField = "kubernetes.namespace_name"
 	claim, err := c.RenderClaim(tenancy.Principal{
 		Group:  "g",
-		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example-app"}}},
+		Grants: []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{"example-app"}}},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, `{stage="devel",owner=~"^(example-app)$"}`, claim.MetricsExtraFilters[0])
-	assert.Equal(t, `_stream:{"stage"="devel","kubernetes.namespace_labels.owner"=~"^(example-app)$"}`,
+	assert.Equal(t, `{cell="example-cluster",ns=~"^(example-app)$"}`, claim.MetricsExtraFilters[0])
+	assert.Equal(t, `_stream:{"k8s.cell"="example-cluster","kubernetes.namespace_name"=~"^(example-app)$"}`,
 		claim.LogsExtraStreamFilters[0])
 }
 
-// The log field names are held to a different shape from the tenant
-// names, and this is the shape a real one has: prefixed by the collector,
-// and carrying the dots and the slash of a Kubernetes label key with a
-// domain prefix. nameRE would refuse every one of these, which is why
-// there are two shapes and not one loosened one.
+// And unset, they are the OpenTelemetry-derived defaults — the names the
+// emitters chart stamps — rather than a refusal. The refusal that used to
+// live here guarded a field derived from an estate's own namespace label,
+// which every estate spelled differently; the key is the namespace's
+// name now, which every estate spells the same way.
+func TestUnsetKeysAreTheDefaults(t *testing.T) {
+	c := base()
+	require.Empty(t, c.ClusterLabel+c.NamespaceLabel+c.LogsClusterField+c.LogsNamespaceField)
+	require.NoError(t, c.Validate())
+
+	claim, err := c.RenderClaim(twoGrants())
+	require.NoError(t, err)
+	assert.Contains(t, claim.MetricsExtraFilters[0], tenancy.DefaultClusterLabel+"=")
+	assert.Contains(t, claim.MetricsExtraFilters[0], tenancy.DefaultNamespaceLabel+"=~")
+	assert.Contains(t, claim.LogsExtraStreamFilters[0], strconv.Quote(tenancy.DefaultLogsClusterField)+"=")
+	assert.Contains(t, claim.LogsExtraStreamFilters[0], strconv.Quote(tenancy.DefaultLogsNamespaceField)+"=~")
+}
+
+// A metrics label key is held to the Prometheus label-name shape, which
+// is not the namespace-name shape: the defaults carry underscores.
+func TestLabelKeysAreHeldToThePrometheusShape(t *testing.T) {
+	for _, key := range []string{"k8s_namespace_name", "namespace", "_ns", "Ns2"} {
+		c := base()
+		c.NamespaceLabel = key
+		assert.NoError(t, c.Validate(), "%q is a Prometheus label name", key)
+	}
+	for what, key := range map[string]string{
+		"a dot":       "k8s.namespace.name",
+		"a dash":      "k8s-namespace",
+		"a brace":     "ns}",
+		"a leading 0": "0ns",
+		"a space":     "ns x",
+	} {
+		t.Run(what, func(t *testing.T) {
+			c := base()
+			c.NamespaceLabel = key
+			err := c.Validate()
+			require.Error(t, err, "%q is not a label a series can carry", key)
+			assert.Contains(t, err.Error(), "not a Prometheus label name")
+		})
+	}
+}
+
+// The log field names admit the shape a real one has — dots — and refuse
+// everything that is stream-filter syntax.
 func TestRealLogFieldNamesAreAccepted(t *testing.T) {
 	for _, field := range []string{
-		"kubernetes.namespace_labels.tenancy.example.com/project",
-		"kubernetes.namespace_labels.project",
 		"kubernetes.pod_namespace",
-		"tenant",
+		"k8s.namespace.name",
+		"kubernetes.namespace_name",
 		"resource_attr_service.namespace",
 		"a-b_c.d/e",
 	} {
 		t.Run(field, func(t *testing.T) {
 			c := base()
-			c.LogsTenantField = field
+			c.LogsNamespaceField = field
 			c.Principals = []tenancy.Principal{{
 				Group:  "g",
-				Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example-app"}}},
+				Grants: []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{"example-app"}}},
 			}}
 			require.NoError(t, c.Validate())
 
@@ -168,35 +226,35 @@ func TestRealLogFieldNamesAreAccepted(t *testing.T) {
 	}
 }
 
-// The same security property as TestHostileNamesAreRefused, on the new
-// surface: the field name is interpolated into the same filter, so a name
-// that is not a plain field name must never reach the renderer.
+// The same security property as TestHostileNamesAreRefused, on the field
+// surface: the name is interpolated into the same filter, so a name that
+// is not a plain field name must never reach the renderer.
 func TestHostileLogFieldNamesAreRefused(t *testing.T) {
 	hostile := map[string]string{
-		`quote closes the name`:     `tenant"=~"^(.*)$"} or {"env`,
-		`brace ends the filter`:     `tenant"} or {"x`,
-		`comma opens a second term`: `tenant,x`,
-		`equals ends the name`:      `tenant=x`,
-		`alternation`:               `tenant|other`,
-		`backslash`:                 `tenant\x`,
-		`space`:                     `tenant field`,
-		`colon is logsql syntax`:    `tenant:x`,
-		`leading dot`:               `.tenant`,
-		`leading slash`:             `/tenant`,
-		`leading dash`:              `-tenant`,
-		`newline`:                   "tenant\nx",
+		`quote closes the name`:     `ns"=~"^(.*)$"} or {"k8s.cluster.name`,
+		`brace ends the filter`:     `ns"} or {"x`,
+		`comma opens a second term`: `ns,x`,
+		`equals ends the name`:      `ns=x`,
+		`alternation`:               `ns|other`,
+		`backslash`:                 `ns\x`,
+		`space`:                     `ns field`,
+		`colon is logsql syntax`:    `ns:x`,
+		`leading dot`:               `.ns`,
+		`leading slash`:             `/ns`,
+		`leading dash`:              `-ns`,
+		`newline`:                   "ns\nx",
 		`a lone glue character`:     `.`,
 		`regexp that matches all`:   `.*`,
-		`backtick`:                  "tenant`x",
-		`single quote`:              `tenant'x`,
-		`parenthesis`:               `tenant(x)`,
-		`tilde`:                     `tenant~x`,
+		`backtick`:                  "ns`x",
+		`single quote`:              `ns'x`,
+		`parenthesis`:               `ns(x)`,
+		`tilde`:                     `ns~x`,
 	}
 
 	for what, field := range hostile {
-		t.Run("tenantField/"+what, func(t *testing.T) {
+		t.Run("namespaceField/"+what, func(t *testing.T) {
 			c := base()
-			c.LogsTenantField = field
+			c.LogsNamespaceField = field
 			err := c.Validate()
 			require.Error(t, err, "a log field named %q must be refused, not escaped", field)
 			assert.Contains(t, err.Error(), "not a valid log field name")
@@ -205,76 +263,77 @@ func TestHostileLogFieldNamesAreRefused(t *testing.T) {
 			require.Error(t, renderErr, "and it must not survive as far as a rendered filter")
 		})
 
-		t.Run("envField/"+what, func(t *testing.T) {
+		t.Run("clusterField/"+what, func(t *testing.T) {
 			c := base()
-			c.LogsEnvField = field
+			c.LogsClusterField = field
 			require.Error(t, c.Validate(), "a log field named %q must be refused", field)
 		})
 	}
 }
 
-// The tenant-name rule is NOT loosened to make a field name fit. A field
-// name may carry a dot and a slash; a tenant may not, because a tenant
-// name goes inside the alternation where a `.` is a regular-expression
-// metacharacter.
-func TestTheFieldShapeDoesNotLoosenTheTenantShape(t *testing.T) {
+// The namespace-name rule is NOT loosened to make a field name fit. A
+// field name may carry a dot and a slash; a namespace may not, because a
+// namespace name goes inside the alternation where a `.` is a
+// regular-expression metacharacter.
+func TestTheFieldShapeDoesNotLoosenTheNamespaceShape(t *testing.T) {
 	c := base()
 	c.Principals = []tenancy.Principal{{
 		Group:  "g",
-		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example.com/app"}}},
+		Grants: []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{"example.com/app"}}},
 	}}
 	err := c.Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a valid name")
 }
 
-// A log path nobody has named is refused rather than guessed, from both
-// entry points.
-func TestTheLogPathMustBeNamed(t *testing.T) {
-	for _, tc := range []struct {
-		what   string
-		mutate func(*tenancy.Config)
-		want   string
-	}{
-		{"tenant field", func(c *tenancy.Config) { c.LogsTenantField = "" }, "logsTenantField is empty"},
-		{"env field", func(c *tenancy.Config) { c.LogsEnvField = "" }, "logsEnvField is empty"},
-	} {
-		t.Run(tc.what, func(t *testing.T) {
-			c := base()
-			tc.mutate(&c)
+// One name for both dimensions is one dimension. Refused on both paths.
+func TestTheTwoKeysMustDiffer(t *testing.T) {
+	c := base()
+	c.ClusterLabel = "k8s_namespace_name"
+	err := c.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "clusterLabel and namespaceLabel are both")
 
-			err := c.Validate()
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.want)
-
-			_, err = c.RenderClaim(c.Principals[0])
-			require.Error(t, err, "RenderClaim must refuse rather than render a filter on a guessed field")
-
-			_, err = c.RenderVMAuth("https://issuer.example")
-			require.Error(t, err, "RenderVMAuth must refuse for the same reason")
-		})
-	}
+	c = base()
+	c.LogsClusterField = "kubernetes.pod_namespace"
+	err = c.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "logsClusterField and logsNamespaceField are both")
 }
 
 // The refusal has to teach, because the failure it prevents teaches
 // nothing: an empty result carries no message at all.
-func TestTheRefusalExplainsWhyTheLogPathIsDifferent(t *testing.T) {
+func TestTheRefusalExplainsTheModel(t *testing.T) {
 	c := base()
-	c.LogsTenantField = ""
-
+	c.Principals[0].Grants = []tenancy.Grant{{Cluster: "example-cluster"}}
 	err := c.Validate()
 	require.Error(t, err)
-	msg := err.Error()
-
 	for _, phrase := range []string{
-		"has no default",
-		"kubernetes.namespace_labels",
-		"rename no field",
+		"refused rather than read as",
+		"project that expands to no namespaces",
+	} {
+		assert.Contains(t, err.Error(), phrase,
+			"the refusal should leave the reader knowing that a grant is namespaces on a cluster and that a project is a derivation")
+	}
+
+	c = base()
+	c.Principals[0].Grants = []tenancy.Grant{{Cluster: "", AllNamespaces: true}}
+	err = c.Validate()
+	require.Error(t, err)
+	for _, phrase := range []string{
+		"cluster is empty",
+		"half of the scoping key",
 		"empty result rather than an error",
 	} {
-		assert.Contains(t, msg, phrase,
-			"the refusal should leave the reader knowing why the log path is not the metrics path")
+		assert.Contains(t, err.Error(), phrase)
 	}
+
+	c = base()
+	c.LogsNamespaceField = "ns|x"
+	err = c.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "container-log agent natively writes",
+		"the refusal should say where the default comes from, because that is the field the reader has to match")
 }
 
 // The security property this package exists for: a name is interpolated
@@ -282,35 +341,35 @@ func TestTheRefusalExplainsWhyTheLogPathIsDifferent(t *testing.T) {
 // reach the renderer.
 func TestHostileNamesAreRefused(t *testing.T) {
 	hostile := []string{
-		"example-app|other-app", // alternation: would grant a second tenant
-		".*",                // would grant every tenant
-		"example-app)|(.*",          // would close the group and open a new one
-		"example-app$|^",            // would defeat the anchors
-		"DMS",               // uppercase is not the label shape
-		"example-app ",              // trailing space
-		"-example-app",              // must start alphanumeric
-		"",                  // empty
+		"example-app|other-app", // alternation: would grant a second namespace
+		".*",                    // would grant every namespace
+		"example-app)|(.*",      // would close the group and open a new one
+		"example-app$|^",        // would defeat the anchors
+		"DMS",                   // uppercase is not the DNS-label shape
+		"example-app ",          // trailing space
+		"-example-app",          // must start alphanumeric
+		"",                      // empty
 	}
 
 	for _, name := range hostile {
-		t.Run("tenant/"+name, func(t *testing.T) {
+		t.Run("namespace/"+name, func(t *testing.T) {
 			c := base()
 			c.Principals = []tenancy.Principal{{
 				Group:  "g",
-				Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{name}}},
+				Grants: []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{name}}},
 			}}
 			err := c.Validate()
-			require.Error(t, err, "a tenant named %q must be refused, not escaped", name)
+			require.Error(t, err, "a namespace named %q must be refused, not escaped", name)
 			assert.Contains(t, err.Error(), "not a valid name")
 		})
 
-		t.Run("env/"+name, func(t *testing.T) {
+		t.Run("cluster/"+name, func(t *testing.T) {
 			c := base()
 			c.Principals = []tenancy.Principal{{
 				Group:  "g",
-				Grants: []tenancy.Grant{{Env: name, Tenants: []string{"example-app"}}},
+				Grants: []tenancy.Grant{{Cluster: name, Namespaces: []string{"example-app"}}},
 			}}
-			require.Error(t, c.Validate(), "an env named %q must be refused", name)
+			require.Error(t, c.Validate(), "a cluster named %q must be refused", name)
 		})
 	}
 }
@@ -321,7 +380,7 @@ func TestHostileNameNeverReachesAFilter(t *testing.T) {
 	c := base()
 	_, err := c.RenderClaim(tenancy.Principal{
 		Group:  "g",
-		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example-app)|(.*"}}},
+		Grants: []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{"example-app)|(.*"}}},
 	})
 	require.Error(t, err)
 }
@@ -331,15 +390,15 @@ func TestRefusals(t *testing.T) {
 		mutate func(*tenancy.Config)
 		want   string
 	}{
-		"empty tenant list is not everything": {
+		"empty namespace list is not everything": {
 			mutate: func(c *tenancy.Config) {
-				c.Principals[0].Grants = []tenancy.Grant{{Env: "devel"}}
+				c.Principals[0].Grants = []tenancy.Grant{{Cluster: "example-cluster"}}
 			},
 			want: "refused rather than read as",
 		},
-		"allTenants and a list together": {
+		"allNamespaces and a list together": {
 			mutate: func(c *tenancy.Config) {
-				c.Principals[0].Grants = []tenancy.Grant{{Env: "devel", AllTenants: true, Tenants: []string{"example-app"}}}
+				c.Principals[0].Grants = []tenancy.Grant{{Cluster: "example-cluster", AllNamespaces: true, Namespaces: []string{"example-app"}}}
 			},
 			want: "One of them is wrong",
 		},
@@ -357,18 +416,18 @@ func TestRefusals(t *testing.T) {
 			},
 			want: "appears twice",
 		},
-		"the same env granted twice to one principal": {
+		"the same cluster granted twice to one principal": {
 			mutate: func(c *tenancy.Config) {
 				c.Principals[0].Grants = []tenancy.Grant{
-					{Env: "devel", Tenants: []string{"example-app"}},
-					{Env: "devel", Tenants: []string{"other-app"}},
+					{Cluster: "example-cluster", Namespaces: []string{"example-app"}},
+					{Cluster: "example-cluster", Namespaces: []string{"other-app"}},
 				}
 			},
 			want: "granted twice",
 		},
-		"a tenant listed twice": {
+		"a namespace listed twice": {
 			mutate: func(c *tenancy.Config) {
-				c.Principals[0].Grants = []tenancy.Grant{{Env: "devel", Tenants: []string{"example-app", "example-app"}}}
+				c.Principals[0].Grants = []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{"example-app", "example-app"}}}
 			},
 			want: "listed twice",
 		},
@@ -401,8 +460,8 @@ func TestValidateReportsEveryProblem(t *testing.T) {
 	c.Principals = []tenancy.Principal{{
 		Group: "g",
 		Grants: []tenancy.Grant{
-			{Env: "devel", Tenants: []string{"BAD"}},
-			{Env: "PROD", Tenants: []string{"example-app"}},
+			{Cluster: "example-cluster", Namespaces: []string{"BAD"}},
+			{Cluster: "PROD", Namespaces: []string{"example-app"}},
 		},
 	}}
 
@@ -422,7 +481,7 @@ func TestVMAuthConfig(t *testing.T) {
 	c.AllowUnfilteredTraceReads = true
 	c.Principals = append(c.Principals, tenancy.Principal{
 		Group:  "example:example-app:deployer",
-		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example-app"}}},
+		Grants: []tenancy.Grant{{Cluster: "example-cluster", Namespaces: []string{"example-app"}}},
 	})
 
 	cfg, err := c.RenderVMAuth("https://issuer.example")
@@ -435,8 +494,8 @@ func TestVMAuthConfig(t *testing.T) {
 	assert.Equal(t, "https://issuer.example", viewer.JWT.OIDC)
 
 	// The whole point, asserted: two principals, two different reaches.
-	assert.Equal(t, []string{`{env="devel"}`}, viewer.JWT.DefaultVMAccess.MetricsExtraFilters)
-	assert.Equal(t, []string{`{env="devel",tenant=~"^(example-app)$"}`}, deployer.JWT.DefaultVMAccess.MetricsExtraFilters)
+	assert.Equal(t, []string{`{k8s_cluster_name="example-cluster"}`}, viewer.JWT.DefaultVMAccess.MetricsExtraFilters)
+	assert.Equal(t, []string{`{k8s_cluster_name="example-cluster",k8s_namespace_name=~"^(example-app)$"}`}, deployer.JWT.DefaultVMAccess.MetricsExtraFilters)
 
 	assert.Equal(t, "first_available", viewer.LoadBalancingPol,
 		"a read balanced onto the replica still replaying its buffer returns a gap, and a gap reads as an outage")
@@ -484,7 +543,14 @@ func TestVMAuthRequiresItsInputs(t *testing.T) {
 
 	t.Run("an invalid config never renders", func(t *testing.T) {
 		c := base()
-		c.Principals[0].Grants = []tenancy.Grant{{Env: "devel"}}
+		c.Principals[0].Grants = []tenancy.Grant{{Cluster: "example-cluster"}}
+		_, err := c.RenderVMAuth("https://issuer.example")
+		require.Error(t, err)
+	})
+
+	t.Run("a hostile key never renders", func(t *testing.T) {
+		c := base()
+		c.LogsNamespaceField = `ns"} or {"x`
 		_, err := c.RenderVMAuth("https://issuer.example")
 		require.Error(t, err)
 	})
@@ -495,15 +561,15 @@ func TestVMAuthRequiresItsInputs(t *testing.T) {
 func TestRenderDoesNotMutateItsInput(t *testing.T) {
 	c := base()
 	c.Principals[0].Grants = []tenancy.Grant{
-		{Env: "prod", Tenants: []string{"other-app", "example-app"}},
-		{Env: "devel", Tenants: []string{"example-app"}},
+		{Cluster: "other-cluster", Namespaces: []string{"other-app", "example-app"}},
+		{Cluster: "example-cluster", Namespaces: []string{"example-app"}},
 	}
 
 	_, err := c.RenderClaim(c.Principals[0])
 	require.NoError(t, err)
 
-	assert.Equal(t, "prod", c.Principals[0].Grants[0].Env, "grant order changed under the caller")
-	assert.Equal(t, []string{"other-app", "example-app"}, c.Principals[0].Grants[0].Tenants, "tenant order changed under the caller")
+	assert.Equal(t, "other-cluster", c.Principals[0].Grants[0].Cluster, "grant order changed under the caller")
+	assert.Equal(t, []string{"other-app", "example-app"}, c.Principals[0].Grants[0].Namespaces, "namespace order changed under the caller")
 }
 
 // A reader's route must not also be a writer's route. The shapes this
@@ -544,7 +610,7 @@ func TestReadPathsAdmitNoWrites(t *testing.T) {
 // thing that applies the claim: a route without one forwards the query
 // with no filter at all while `default_vm_access_claim` beside it still
 // states the grant, and the two are indistinguishable in any render, any
-// health check, and any query that asks about a single tenant.
+// health check, and any query that asks about a single namespace.
 //
 // It walks what was rendered rather than checking the declarations,
 // because a route is only enforced where it is emitted.
@@ -626,7 +692,7 @@ func TestAFilterMustBeTheWholeQueryArgValue(t *testing.T) {
 	const arg, ph = tenancy.MetricsFilterArg, tenancy.MetricsFilterPlaceholder
 
 	assert.True(t, tenancy.CarriesFilter("http://x:8428?"+arg+"="+ph, arg, ph))
-	assert.False(t, tenancy.CarriesFilter("http://x:8428?"+arg+"={env=\"prod\"}"+ph, arg, ph),
+	assert.False(t, tenancy.CarriesFilter("http://x:8428?"+arg+"={k8s_cluster_name=\"prod\"}"+ph, arg, ph),
 		"a value that merely contains the placeholder is never substituted")
 	assert.False(t, tenancy.CarriesFilter("http://x:8428?other="+ph, arg, ph),
 		"the right placeholder in the wrong argument filters nothing")
@@ -678,10 +744,10 @@ func TestNoTraceBackendNeedsNoOptIn(t *testing.T) {
 // VictoriaLogs reads an `extra_stream_filters` value beginning with `{"`
 // as its JSON object form, `{"field":"value"}`. Every filter this
 // package renders begins with `{"`, because a log field name carries
-// dots and a slash and has to be quoted — so without the `_stream:`
-// prefix the value reaches a JSON parser and comes back as `cannot parse
-// JSON: missing ':' after object key`. That is a 400 on every log query
-// the principal makes.
+// dots and has to be quoted — so without the `_stream:` prefix the value
+// reaches a JSON parser and comes back as `cannot parse JSON: missing
+// ':' after object key`. That is a 400 on every log query the principal
+// makes.
 func TestLogsFilterIsParseableLogsQLAndNotJSON(t *testing.T) {
 	c := base()
 	claim, err := c.RenderClaim(twoGrants())

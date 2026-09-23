@@ -1,12 +1,10 @@
 tenancy:
   issuerUrl: https://issuer.example
-  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:
-        - env: devel
-          allTenants: true
+        - cluster: example-cluster
+          allNamespaces: true
 
 # An authKey does not add to `-httpAuth.*`, it REPLACES it for those
 # endpoints: with one set, basic auth is never checked and the endpoint
