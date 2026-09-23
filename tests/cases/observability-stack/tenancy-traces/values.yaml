@@ -1,0 +1,52 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The tenancy case with a trace store, which is the one signal this
+# proxy cannot scope.
+#
+# It exists to hold the shape of that admission in a reviewable file.
+# The metrics and logs routes in the render below carry `query_args`
+# with the placeholder vmauth substitutes the principal's filter into;
+# the trace route carries none, because VictoriaTraces' Jaeger and Tempo
+# select APIs accept no argument to substitute one into. A Go test in
+# tests/ asserts exactly that: every route but the trace route is
+# filtered, and the trace route is the only one that is not.
+#
+# `allowUnfilteredTraceReads` is what turns that from a silent hole into
+# a stated one. Without it the render refuses — see
+# tests/invalid/observability-stack/traces-without-unfiltered-optin.yaml.
+tenancy:
+  issuerUrl: https://issuer.example
+  claimName: groups
+  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
+  logsEnvField: env
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# The trace store's address is read back from the upstream chart's own
+# naming rules, so the subchart is enabled and everything else is off:
+# the render is the tenancy and nothing else.
+victoria-traces-single:
+  enabled: true
+  server:
+    persistentVolume:
+      enabled: false
+
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+networkPolicy:
+  enabled: false
+victoria-metrics-k8s-stack:
+  enabled: false
+victoria-logs-single:
+  enabled: false

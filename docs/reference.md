@@ -153,6 +153,7 @@ values.yaml, listed here, and enforced rather than remembered.
 | `tenancy.envLabel` | name | `env` | The label key for the environment. |
 | `tenancy.logsTenantField` | log field name | — | The **field** the log store carries the tenant in. **Required whenever `principals` is set**, and deliberately without a default: on the log path the tenant is not in a field called `tenant` and cannot be. With `observability-emitters`, `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`. |
 | `tenancy.logsEnvField` | log field name | — | The **field** the log store carries the environment in. **Required whenever `principals` is set.** With `observability-emitters`, `tenancy.envLabel`, which is the name the agent is given in `-kubernetesCollector.extraFields`. |
+| `tenancy.allowUnfilteredTraceReads` | bool | `false` | Admit the trace read route although nothing can scope it. **Required whenever a trace store is enabled alongside `principals`**, because vmauth enforces a grant by substituting it into the route and VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to substitute one into. Setting it records that every principal who can reach the proxy reads every tenant's spans. It admits the trace route and nothing else. |
 | `tenancy.principals[].group` | string | — | Matched against `claimName`. One `VMUser` per entry. |
 | `tenancy.principals[].grants[].env` | name | — | One environment. Granting the same one twice to a principal is refused. |
 | `tenancy.principals[].grants[].tenants` | list of names | — | Tenants by name. An empty list is refused, never read as "everything". |
@@ -445,6 +446,7 @@ docs/safety.md has what this costs and what it does not cover.
 | `LogsEnvField` | **yes** | The field the log store carries the environment in. No default, for the same reason. |
 | `MetricsBackend`, `LogsBackend` | for `RenderVMAuth` | Where the proxy forwards. |
 | `TracesBackend` | no | Omitted renders no trace route. |
+| `AllowUnfilteredTraceReads` | with `TracesBackend` | Admits the trace route although nothing can scope it: vmauth enforces by substituting a filter into the route, and VictoriaTraces' select APIs accept no argument to substitute one into. Without it, `RenderVMAuth` refuses rather than render an unscoped route beside two scoped ones. It admits the trace route only. |
 
 ### `Principal` and `Grant`
 
@@ -472,7 +474,7 @@ a name is refused rather than escaped.
 |---|---|
 | `Validate() error` | Every problem found, joined, not just the first. |
 | `RenderClaim(Principal) (Claim, error)` | The `vm_access` body an issuer mints. `MetricsExtraFilters` carries one selector per grant, which vmselect OR-s. `LogsExtraStreamFilters` carries exactly one stream filter for the whole principal, because VictoriaLogs AND-s every one it is given. They name different fields and are not the same list. |
-| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Needs vmauth **v1.152.0 or later**, or a patched v1.148 LTS: `default_vm_access_claim` arrived in v1.147.0, but every release from v1.138.0 through v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96). JWT auth itself is community from v1.137.0. |
+| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Each read route carries its filter argument in the `url_prefix` — `extra_filters={{.MetricsExtraFilters}}`, `extra_stream_filters={{.LogsExtraStreamFilters}}` — because **that substitution is the only thing that applies a `vm_access` claim**; a route without it forwards unfiltered while the claim beside it states the grant. A route cannot be constructed without one, and `Validate` refuses one that is. Needs vmauth **v1.152.0 or later**, or a patched v1.148 LTS: `default_vm_access_claim` arrived in v1.147.0, but every release from v1.138.0 through v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96). JWT auth itself is community from v1.137.0. |
 
 Rendering does not mutate its input, and output order is stable: grants
 sort by environment and tenants sort by name, so an unrelated change

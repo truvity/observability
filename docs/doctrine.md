@@ -45,6 +45,24 @@ names and refuses to render a filter until it is. A filter naming a field
 the streams do not have does not fail: it returns nothing, and nothing is
 the one answer a person will believe. docs/safety.md has the mechanism.
 
+"Injects" is the load-bearing word, and it is a separate thing from
+deciding. The proxy works out what the caller is entitled to and then
+applies it by substituting that filter into the route it forwards on —
+two halves, of which only the first is visible in the rendered
+configuration. A route missing the second half forwards every query
+unfiltered while the grant beside it still reads correctly, so the
+filter is part of what a read route IS here: `pkg/tenancy` cannot
+construct one without it, and the chart refuses to render one that lost
+it.
+
+Which is also why **traces are not scoped by this proxy, and the charts
+say so instead of pretending.** The trace store's select APIs accept no
+argument a proxy could put a filter in, so that route is admitted by a
+value whose name states what admitting it means, or it is not rendered.
+An unenforceable path that looks enforced is the failure this whole
+section exists to avoid; adding one for a third signal would be the same
+failure with better manners.
+
 ## Replication is the writer's job
 
 None of the three stores replicates across a zone in a way that survives

@@ -225,6 +225,10 @@
           "$ref": "#/definitions/logFieldName",
           "description": "The FIELD the log store carries the environment in. No default, for the same reason as logsTenantField. Required whenever principals is set."
         },
+        "allowUnfilteredTraceReads": {
+          "type": "boolean",
+          "description": "Admit the trace read route although nothing can scope it. vmauth applies a principal's filters by substituting them into the route, and VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to substitute them into - so every principal who can read traces reads EVERY tenant's spans. Off by default, and required whenever a trace store is enabled alongside principals."
+        },
         "principals": {
           "type": "array",
           "items": {

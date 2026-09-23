@@ -1,0 +1,245 @@
+---
+# Source: observability-stack/charts/victoria-traces-single/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels: 
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: vt-single
+    app.kubernetes.io/version: v0.11.0
+    helm.sh/chart: victoria-traces-single-0.1.11
+  name: observability-stack-vt-single-server
+  namespace: observability
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: http
+      port: 10428
+      protocol: TCP
+      targetPort: http
+  selector: 
+    app: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/name: vt-single
+
+---
+# Source: observability-stack/charts/victoria-traces-single/templates/server.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: observability-stack-vt-single-server
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: vt-single
+    app.kubernetes.io/version: v0.11.0
+    helm.sh/chart: victoria-traces-single-0.1.11
+spec:
+  podManagementPolicy: OrderedReady
+  updateStrategy: {}
+  replicas: 1
+  serviceName: observability-stack-vt-single-server
+  selector:
+    matchLabels: 
+      app: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: vt-single
+  template:
+    metadata:
+      labels: 
+        app: server
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: observability-stack
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: vt-single
+    spec:
+      securityContext: 
+        fsGroup: 2000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: vtraces
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          image: victoriametrics/victoria-traces:v0.11.0
+          imagePullPolicy: IfNotPresent
+          args: 
+            - --envflag.enable
+            - --envflag.prefix=VM_
+            - --http.shutdownDelay=15s
+            - --httpListenAddr=:10428
+            - --loggerFormat=json
+            - --retention.maxDiskUsagePercent=80
+            - --retentionPeriod=30d
+            - --storage.minFreeDiskSpaceBytes=10GiB
+            - --storageDataPath=/storage
+          env: 
+            - name: VM_httpAuth_username
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: observability-store-credentials
+            - name: VM_httpAuth_password
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: observability-store-credentials
+          ports:
+            - name: http
+              containerPort: 10428
+          readinessProbe: 
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe: 
+            failureThreshold: 10
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          resources: 
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: server-volume
+              mountPath: /storage
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: server-volume
+          emptyDir: 
+            {}
+
+---
+# Source: observability-stack/templates/vmauth.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAuth
+metadata:
+  name: observability-stack
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  image:
+    repository: victoriametrics/vmauth
+    tag: v1.152.0
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: "1"
+      memory: 512Mi
+  selectAllByDefault: false
+  userSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: observability-stack
+      app.kubernetes.io/instance: observability-stack
+  userNamespaceSelector: {}
+  unauthorizedUserAccessSpec:
+    disabled: true
+  extraArgs:
+    logInvalidAuthTokens: "true"
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-example-k8s-viewer
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: reader
+spec:
+  name: "example:k8s:viewer"
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: "https://issuer.example"
+    matchClaims:
+      groups: "example:k8s:viewer"
+    defaultVMAccessClaim:
+      metricsExtraFilters:
+        - '{env="devel"}'
+      logsExtraStreamFilters:
+        - _stream:{"env"="devel"}
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+      paths:
+        - /prometheus/api/v1/query
+        - /prometheus/api/v1/query_range
+        - /prometheus/api/v1/series
+        - /prometheus/api/v1/labels
+        - /prometheus/api/v1/label/[^/]+/values
+        - /prometheus/api/v1/status/tsdb
+        - /prometheus/api/v1/status/buildinfo
+        - /prometheus/vmui.*
+      query_args:
+        - name: extra_filters
+          values:
+            - "{{.MetricsExtraFilters}}"
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+    - static:
+        url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+      paths:
+        - /select/logsql/.*
+        - /select/vmui.*
+      query_args:
+        - name: extra_stream_filters
+          values:
+            - "{{.LogsExtraStreamFilters}}"
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+    - static:
+        url: "http://observability-stack-vt-single-server.observability.svc:10428"
+      paths:
+        - /select/jaeger/.*
+        - /select/tempo/.*
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
