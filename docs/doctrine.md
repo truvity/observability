@@ -73,6 +73,29 @@ between what a token says a person may read and what the proxy lets them
 read — and nothing surfaces that difference until someone sees data they
 should not, or fails to see data they should.
 
+## Community edition only
+
+Everything here wraps the community edition of the VictoriaMetrics family,
+which is Apache 2.0 and free to use for any number of tenants, companies
+or customers. The Enterprise edition is a different thing: its binaries
+need a licence key, and running them without one is a breach of the
+vendor's terms, not a configuration mistake.
+
+So the charts stay inside the community boundary by construction. They
+default to community images and refuse an image tag containing
+`enterprise`; they never render a `-license` or `-licenseFile` flag; they
+offer no per-tenant retention, because retention filters are Enterprise;
+they secure the path between components with a bearer and the stores'
+own `-httpAuth`, because mTLS between components is Enterprise; and they
+never wrap `vmbackupmanager` or `vmgateway`. The tenancy mechanism rests
+on vmauth's JWT support, which is community from v1.137.0 and complete
+for this design from v1.147.0 — and which the vendor itself now
+recommends over the Enterprise gateway it replaces.
+
+Grafana and its VictoriaMetrics data source plugin are AGPL-3.0. Running
+them unmodified is fine; this repository references them by name and
+never vendors their code into an MIT-licensed tree.
+
 ## Refusals over defaults
 
 Where a wrong value would be silently harmful, the chart refuses rather

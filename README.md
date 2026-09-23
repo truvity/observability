@@ -129,6 +129,19 @@ because public history cannot be unpublished.
 Secrets are the caller's: a chart takes the *name* of a Secret and never
 stores one, generates one into a manifest, or knows a secret manager.
 
+## Licences, and the Enterprise boundary
+
+This repository is MIT. It wraps the **community edition** of the
+VictoriaMetrics family, which is Apache 2.0 and free to use for any number
+of tenants or companies. It never pulls an Enterprise image, never renders
+a licence flag, and never uses an Enterprise-only feature — the charts
+refuse rather than warn. [docs/doctrine.md](docs/doctrine.md) lists the
+boundary; [docs/safety.md](docs/safety.md) lists what is deliberately
+absent because of it.
+
+Grafana and its VictoriaMetrics data source plugin are AGPL-3.0; they are
+referenced by name and never vendored here.
+
 ## Status
 
 Used in production by its maintainers.

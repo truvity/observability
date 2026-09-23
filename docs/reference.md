@@ -128,7 +128,7 @@ a name is refused rather than escaped.
 |---|---|
 | `Validate() error` | Every problem found, joined, not just the first. |
 | `RenderClaim(Principal) (Claim, error)` | The `vm_access` body an issuer mints. |
-| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. |
+| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Needs vmauth **v1.147.0 or later** (`default_vm_access_claim`); JWT auth itself is community from v1.137.0. |
 
 Rendering does not mutate its input, and output order is stable: grants
 sort by environment and tenants sort by name, so an unrelated change
