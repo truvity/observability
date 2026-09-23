@@ -8,8 +8,9 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## 0.3.0
 
-The audience pin. vmauth checks a token's expiry and its issuer; who the
-token was minted FOR is the caller's to state, and now has to be.
+The audience pin, and every `match_claims` value meaning only itself.
+vmauth checks a token's expiry and its issuer; who the token was minted
+FOR is the caller's to state, and now has to be.
 
 - **Breaking: `pkg/tenancy` and `charts/observability-stack`** —
   `Config.Audience` and `tenancy.audience` are new and **required**
@@ -33,28 +34,43 @@ token was minted FOR is the caller's to state, and now has to be.
     nothing is. `tenancy.claimName` may therefore no longer be `aud`:
     both are entries in one `matchClaims` map, and one would overwrite
     the other.
-  - **The value is a client id and is refused, never escaped.** vmauth
-    compiles every `match_claims` value as a regular expression, so a
-    value carrying `.`, `|`, `*` or `(` pins a pattern rather than a
-    client and admits clients nobody named — the shape of
-    GHSA-f99m-22fh-qw96, one field over. It is held to
-    `^[A-Za-z0-9][A-Za-z0-9_:@-]*$`, which admits a UUID, a hyphenated
-    name and the `<id>@<project>` form some issuers mint. An issuer whose
-    client ids carry a dot has to be given one that does not.
-  - **The rendered pin is anchored** (`^(<client id>)$`) although vmauth
-    anchors `match_claims` values itself from v1.152.0, which is already
-    this design's floor: a pin whose narrowing depends on the binary in
-    front of it being patched is a pin with a version number in it.
+  - **Every `match_claims` value is now escaped and anchored** — the
+    audience and the **group** alike, on both the library and the chart
+    side. vmauth compiles each value as a regular expression, and neither
+    value belongs to this repository: an issuer assigns a client id, an
+    identity provider names a population. Escaped, so a client id with a
+    dot in it pins that client rather than every id of the same length;
+    anchored, so a group written `.*` matches the literal `.*` and no
+    other token. **The rendered values change shape**: `groups:
+    "example:k8s:viewer"` becomes `groups: "^(example:k8s:viewer)$"`, and
+    `helm diff` shows it on every reader. It matches the same tokens it
+    was meant to match and fewer of the ones it was not, so no grant
+    widens and no principal that was reachable stops being reachable.
+  - **Escaped rather than refused, unlike a cluster or namespace name.**
+    Those names are the estate's own and are still refused outside the
+    plain-name shape. A client id and a group name are handed to the
+    estate by an identity provider it does not control — issuers mint
+    ids with dots in them — so refusing a shape we do not control would
+    be an outage with no alternative available to the operator. The rule
+    is: refuse what we name, escape what we are handed. What is still
+    refused on the audience is a value no issuer mints: one carrying
+    whitespace or a newline, which is how a value that arrived from the
+    wrong place looks.
+  - **The anchors are rendered although vmauth anchors too**
+    (`^(?:…)$`, since v1.152.0, which is already this design's floor):
+    a narrowing control that works only when the binary in front of it is
+    patched is a control with a version number in it. Both sides are
+    tested under both compilations.
   - **A list `aud` needs no special case.** vmauth tests a
     `match_claims` entry against an array claim element by element, so
     the pin works whether the issuer mints the claim as a string or as a
     list.
   - Three negative fixtures under `tests/invalid/observability-stack/`
-    (no audience beside principals, an audience that is a pattern, the
-    groups claim named `aud`), the Go refusals beside them, and the
-    rendered pin walked in the OUTPUT on both sides — the chart's VMUsers
-    and the library's users — because a pin both sides dropped would
-    leave every comparison between them satisfied.
+    (no audience beside principals, an audience that is not an identifier,
+    the groups claim named `aud`), the Go refusals beside them, and the
+    rendered values walked in the OUTPUT on both sides — the chart's
+    VMUsers and the library's users — because a pin both sides dropped
+    would leave every comparison between them satisfied.
 
   Adopting: register a client for this proxy if there is not one already,
   and set `tenancy.audience` / `Config.Audience` to its id. A render

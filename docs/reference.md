@@ -148,7 +148,7 @@ values.yaml, listed here, and enforced rather than remembered.
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `tenancy.issuerUrl` | string | `""` | The OIDC issuer vmauth discovers keys from. **Required whenever `principals` is set.** |
-| `tenancy.audience` | client id | `""` | The client id this proxy's tokens are minted under, pinned into every reader's `matchClaims` as `aud`. **Required whenever `principals` is set.** vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else — it has no audience option and never inspects `aud` — so without this pin any unexpired token from that issuer is admitted whatever client it was minted for. |
+| `tenancy.audience` | client id | `""` | The client id this proxy's tokens are minted under, pinned into every reader's `matchClaims` as `aud`. **Required whenever `principals` is set.** vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else — it has no audience option and never inspects `aud` — so without this pin any unexpired token from that issuer is admitted whatever client it was minted for. Escaped and anchored in the render; only a value carrying whitespace or a newline is refused. |
 | `tenancy.claimName` | string | `groups` | The claim carrying the caller's groups. May not be `aud`: both are entries in one `matchClaims` map, and one would overwrite the other. |
 | `tenancy.clusterLabel` | label name | `k8s_cluster_name` | The metrics label carrying the cluster. What `observability-emitters` stamps; set it only for collectors not built here. |
 | `tenancy.namespaceLabel` | label name | `k8s_namespace_name` | The metrics label carrying the namespace. |
@@ -171,14 +171,18 @@ is not a label on the telemetry. Names must match
 as `pkg/tenancy`: they are interpolated into a filter expression, so one
 carrying `|` or `.*` widens the grant rather than looking odd.
 
-The **audience** is an opaque client id and is held to
-`^[A-Za-z0-9][A-Za-z0-9_:@-]*$`: vmauth compiles every `matchClaims` value
-as a regular expression, so a value carrying `.` or `|` pins a pattern
-rather than a client and admits clients nobody named. A UUID, a
-hyphenated name and the `<id>@<project>` form all pass; anything else is
-refused rather than escaped. The rendered pin is anchored on top of that,
-and works whether the issuer mints `aud` as a string or as a list.
-docs/safety.md, "What vmauth checks on a token, and what it does not",
+The **audience** and the **group** are the two `matchClaims` values, and
+vmauth compiles each as a regular expression. Neither is this chart's to
+choose — an issuer assigns a client id, an identity provider names a
+population — so both are **escaped and anchored** in the render rather
+than held to a shape: `groups: "^(example:k8s:viewer)$"`, `aud:
+"^(123\.apps\.example-issuer)$"`. A client id with a dot in it pins that
+client; a group written `.*` matches the literal `.*`. That is the
+opposite of the treatment a cluster or namespace name gets, and
+deliberately: refuse what we name, escape what we are handed. The only
+audience the chart refuses is one no issuer mints — carrying whitespace
+or a newline. The pin works whether the issuer mints `aud` as a string or
+as a list. docs/safety.md, "Every `matchClaims` value means only itself",
 has the reasoning.
 
 A **metrics key** is a Prometheus label name, `^[a-zA-Z_][a-zA-Z0-9_]*$`,
@@ -464,7 +468,7 @@ docs/safety.md has the two writer collisions and how each one is closed.
 | Field | Required | What it does |
 |---|---|---|
 | `ClaimName` | yes | The token claim carrying the caller's groups, e.g. `groups`. May not be `aud`, which the audience is pinned under. |
-| `Audience` | for `RenderVMAuth` | The client id this proxy's tokens are minted under, rendered into every user's `match_claims` as `aud` — the claim name is OpenID Connect's and is not an input. vmauth validates a token's expiry and its issuer and nothing else, so without this pin any unexpired token from the issuer is admitted whatever client it was minted for. Held to `^[A-Za-z0-9][A-Za-z0-9_:@-]*$` and rendered anchored, because a `match_claims` value is compiled as a regular expression. `AudienceClaim` is the constant. |
+| `Audience` | for `RenderVMAuth` | The client id this proxy's tokens are minted under, rendered into every user's `match_claims` as `aud` — the claim name is OpenID Connect's and is not an input. vmauth validates a token's expiry and its issuer and nothing else, so without this pin any unexpired token from the issuer is admitted whatever client it was minted for. Escaped and anchored in the render, because a `match_claims` value is compiled as a regular expression and a client id is the issuer's to choose; only a value carrying whitespace or a newline is refused. `AudienceClaim` is the constant. |
 | `Principals` | yes | One entry per named population. |
 | `ClusterLabel` | no, `k8s_cluster_name` | The metrics label carrying the cluster. `DefaultClusterLabel`. |
 | `NamespaceLabel` | no, `k8s_namespace_name` | The metrics label carrying the namespace. `DefaultNamespaceLabel`. |
@@ -478,7 +482,7 @@ docs/safety.md has the two writer collisions and how each one is closed.
 
 | Field | Required | What it does |
 |---|---|---|
-| `Principal.Group` | yes | Matched against the claim. Not a display name or an address. |
+| `Principal.Group` | yes | Matched against the claim. Not a display name or an address. Escaped and anchored in the render, like the audience, so a group that reads as a regular expression matches only itself. |
 | `Principal.Grants` | yes | What this group may read. A principal that may read nothing is written by leaving it out. |
 | `Grant.Cluster` | yes | One cluster. Granting the same cluster twice to one principal is refused. |
 | `Grant.Namespaces` | one of | Namespaces on that cluster, by name. |

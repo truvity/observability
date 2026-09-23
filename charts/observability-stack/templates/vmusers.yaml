@@ -68,16 +68,21 @@ spec:
     `aud` of its own. Without the pin, any unexpired token from the
     issuer is admitted whatever client it was minted for.
 
-    The value is anchored here as well as by vmauth (which wraps a
-    `matchClaims` value in `^(?:…)$` from v1.152.0, the floor this chart
-    already requires), because a pin whose narrowing depends on the
-    proxy being patched is a pin with a version number in it. There is
-    nothing inside the anchors to escape: _validate.tpl holds the value
-    to an identifier shape with no metacharacter in it.
+    Both values are ESCAPED and ANCHORED, because vmauth compiles a
+    `matchClaims` value as a regular expression and neither value is
+    this chart's: a group is whatever the identity provider calls that
+    population, a client id is whatever the issuer assigned. Escaped, so
+    each means itself; anchored, so each means only itself. A group of
+    `.*` therefore matches the literal `.*` and no other token.
+
+    vmauth anchors a `matchClaims` value itself from v1.152.0, the floor
+    this chart already requires, so the anchors here are the second line
+    rather than the first — a narrowing control that works only when the
+    proxy is patched is a control with a version number in it.
     */}}
     matchClaims:
-      {{ $root.Values.tenancy.claimName }}: {{ $p.group | quote }}
-      aud: {{ printf "^(%s)$" $root.Values.tenancy.audience | quote }}
+      {{ $root.Values.tenancy.claimName }}: {{ printf "^(%s)$" (regexQuoteMeta $p.group) | quote }}
+      aud: {{ printf "^(%s)$" (regexQuoteMeta $root.Values.tenancy.audience) | quote }}
     {{- /*
     The filters this group is entitled to, used when the token itself
     carries no `vm_access` claim — which is every token, in the shape

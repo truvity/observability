@@ -239,9 +239,14 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 				// expiry and issuer and stops — so a user entry without
 				// it admits every unexpired token of the issuer whose
 				// groups happen to match.
+				//
+				// Both go through claimMatch, because vmauth compiles a
+				// `match_claims` value as a regular expression and
+				// neither value is ours: escaped, so each means itself,
+				// and anchored, so each means only itself.
 				MatchClaims: map[string]string{
-					c.ClaimName:   p.Group,
-					AudienceClaim: audienceMatch(c.Audience),
+					c.ClaimName:   claimMatch(p.Group),
+					AudienceClaim: claimMatch(c.Audience),
 				},
 				DefaultVMAccess: &claim,
 			},

@@ -1,0 +1,17 @@
+# An audience that is not a client id at all.
+#
+# A client id carrying a dot, a `|` or an `@` is NOT refused: the issuer
+# assigns it, this chart does not, and the value is escaped and anchored
+# where it is rendered so that it pins itself and nothing else. What no
+# issuer mints is a value with whitespace or a newline in it, which is
+# how a value that arrived from the wrong place looks — a file read with
+# its trailing newline, a heredoc, or two ids in one string. That is
+# what this fixture is, and it fails before it can pin nothing.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client another-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

@@ -142,7 +142,7 @@ for its one reason and no other.
 | A `-license` or `-licenseFile` flag | The same boundary from the other side. This chart wraps the community edition; an install that needs a licence flag is an install this chart is the wrong shape for. |
 | A vmauth tag below v1.152.0 | `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0 through v1.151.x matched `match_claims` values UNANCHORED (GHSA-f99m-22fh-qw96) — `admin` also matched `not-admin-really`, in the exact mechanism that decides which user a token is. |
 | `principals` with no `tenancy.audience` | vmauth validates a token's expiry and its issuer and stops: it has no audience option and never inspects `aud`. Without the pin, every reader is selected by its group alone, so any unexpired token the issuer minted is admitted whatever client it was minted for — a token the same person holds for another application reads their namespaces here, with nothing to see: the token verifies, the filters apply. |
-| An audience that is not a plain client id | The value is compiled as a regular expression, so `example-.*` pins no client at all and admits every one of them whose id starts that way. Refused, never escaped — the same shape as the advisory two rows up. |
+| An audience that is not an identifier | A client id carrying a dot or a `|` is escaped, not refused — the issuer assigns it and we do not. What is refused is a value no issuer mints: one with whitespace or a newline in it, which is a value that arrived from the wrong place rather than a client id. |
 | `tenancy.claimName` set to `aud` | The groups claim and the audience pin are entries in one `matchClaims` map, so one overwrites the other and the proxy checks either which principal a token is or which client minted it, never both. The rendered manifest looks like one that does both. |
 | An `*AuthKey` flag on a store | An authKey does not add to `-httpAuth.*`, it REPLACES it for those endpoints: basic auth is never checked, and the key travels in the query string and therefore into every access log. |
 | A cluster or namespace name outside the plain-name shape | The name is interpolated into a filter expression. `example-app\|other-app` does not look odd in the rendered filter — it grants a second namespace. Refused, never escaped. |
@@ -363,31 +363,66 @@ OpenID Connect specifies it, and a second spelling of a spec-defined
 claim is how a configuration comes to read as though something were
 pinned when nothing is.
 
-Three things about the value follow from where it lands rather than from
-taste:
-
-- **It is compiled as a regular expression.** Every `match_claims` value
-  is. So a client id carrying `.`, `|`, `*` or `(` pins a pattern rather
-  than a client, and a pattern admits clients nobody wrote down — which
-  is the same shape as the unanchored-claim advisory that sets the vmauth
-  version floor below. The value is held to
-  `^[A-Za-z0-9][A-Za-z0-9_:@-]*$`, which admits a UUID, a hyphenated name
-  and the `<id>@<project>` form some issuers mint, and is refused rather
-  than escaped when it is anything else.
-- **The rendered pin is anchored anyway.** vmauth anchors a
-  `match_claims` value itself from v1.152.0 — the release that fixed that
-  advisory, and this design's floor — so the anchors are redundant in
-  front of a proxy at the floor. They are rendered because a pin whose
-  narrowing depends on the binary in front of it being patched is a pin
-  with a version number in it, and because anchoring twice costs nothing.
-- **A list `aud` needs no special case.** An issuer mints the claim as a
-  string or as an array, and vmauth tests a `match_claims` entry against
-  an array claim element by element, matching if any one of them does.
-
 What this does not do is make a token's `vm_access` claim trustworthy, or
 limit what a holder of a token for this audience may ask for. It answers
 one question — was this token minted for this proxy — which is the
 question that was not being asked at all.
+
+### Every `match_claims` value means only itself
+
+A `match_claims` value is compiled as a **regular expression** — vmauth
+does that with both entries in the map, the group and the audience
+alike. Neither value is this repository's to choose: a group is whatever
+the identity provider calls that population and whatever a derivation
+produced from it, an audience is whatever an issuer assigned. So both
+are **escaped** where they are rendered and **anchored** around:
+
+```yaml
+matchClaims:
+  groups: "^(example:k8s:viewer)$"
+  aud: "^(123\\.apps\\.example-issuer)$"
+```
+
+Escaped, so each value means itself: a client id with a dot in it pins
+that client and not every id of the same length. Anchored, so each means
+only itself: a group written `.*` matches the literal `.*` and no other
+token, which is what a derivation that produced a pattern instead of a
+name should do.
+
+**Escaped rather than refused, which is the opposite of what this
+repository does with a cluster or a namespace name, and the distinction
+is the point.** Those names are the estate's own: it chooses them, it
+can change them, and holding them to a narrow shape costs it nothing —
+so a name carrying `|` or `.*` is refused, because a name that needs
+escaping is a name nobody should have chosen. A client id and a group
+name are handed to the estate by an identity provider it does not
+control. Issuers mint client ids with dots in them, and identity
+providers name populations with spaces and dots. Refusing a shape we do
+not control is not the doctrine applied consistently; it is an outage
+for that operator with no alternative they could take, in a component
+published for anyone to install. **The rule is: refuse what we name,
+escape what we are handed.**
+
+What is still refused on the audience is a value no issuer mints at all
+— one carrying whitespace or a newline, which is how a value that
+arrived from the wrong place looks: a file read with its trailing
+newline, a heredoc, two ids in one string. That refusal is about the
+plumbing, not about the character set.
+
+Two more things follow from where these values land:
+
+- **The anchors are rendered although vmauth anchors too.** It wraps a
+  `match_claims` value in `^(?:…)$` from v1.152.0 — the release that
+  fixed the unanchored-claim advisory that sets the version floor below
+  — so the anchors here are redundant in front of a proxy at that floor.
+  They are rendered because a narrowing control that works only when the
+  binary in front of it is patched is a control with a version number in
+  it, and because anchoring twice costs nothing: `^(?:^(x)$)$` is still
+  exactly `x`. Both the library and the chart are tested under both
+  compilations.
+- **A list `aud` needs no special case.** An issuer mints the claim as a
+  string or as an array, and vmauth tests a `match_claims` entry against
+  an array claim element by element, matching if any one of them does.
 
 ### Why there is no deny rule in the proxy's configuration
 
@@ -736,9 +771,10 @@ therefore which tenants it may read. A group name that is a substring of
 a more privileged one would have selected the more privileged entry. It
 is the same failure `Validate` refuses on the tenant-name side — a name
 reaching a regular expression without anchors — sitting in the proxy
-rather than in this library. It is why the audience pin is held to a
-shape with no metacharacter in it and rendered anchored: see "What vmauth
-checks on a token, and what it does not" above.
+rather than in this library. It is also why every `match_claims` value
+this repository renders is escaped and anchored rather than trusted to
+the proxy's own anchoring: see "Every `match_claims` value means only
+itself" above.
 
 Upstream backported the fix only to the v1.148 LTS line, and the
 operator's own default image tag is older than both, so the chart sets
