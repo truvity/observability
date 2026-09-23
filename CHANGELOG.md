@@ -6,6 +6,53 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.1
+
+The proxy had no Deployment. `charts/observability-stack` rendered
+`unauthorizedUserAccessSpec: {disabled: true}` on its VMAuth, and that
+field does not exist — no release of the VictoriaMetrics operator has ever
+had it, so the CustomResourceDefinition this repository ships has no room
+for it.
+
+- **Fix: `charts/observability-stack`** — the VMAuth no longer renders
+  `unauthorizedUserAccessSpec`. The API server pruned the unknown key and
+  stored an unauthorized section that routes nowhere, which the operator
+  then refused — *cannot build unauthorized_user config section: at least
+  one of `url_map`, `url_prefix` or `targetRefs` must be defined* — so the
+  VMAuth reported `failed`, no Deployment was created, and **there was no
+  read path at all**. Nothing upstream of the cluster showed it: the
+  template rendered, the render was valid, the chart linted and the golden
+  was byte-identical to one that works.
+
+  **The intent is unchanged, and absence is how it is expressed.** There
+  must be no unauthorized user, because from vmauth v1.147.0 a token that
+  verifies but carries no `vm_access` claim falls THROUGH to it rather than
+  being rejected. Omitting the field is what produces that: the operator
+  writes the `unauthorized_user` section of vmauth's configuration only
+  when the field is set, nothing defaults it, and with it absent the key is
+  never written. There is no "off" setting to write instead — the operator
+  rejects a section with no route, so every shape it accepts is a shape
+  that serves. Confirmed on a cluster running the pinned operator: with no
+  section, a verified token carrying no claim, a garbage token and a
+  request with no `Authorization` header are all answered **401**; with the
+  smallest section the schema accepts, all three are answered **200**.
+
+  **Nothing to do on upgrade.** No value changes, and an object already
+  holding the pruned `unauthorizedUserAccessSpec: {}` has the field removed
+  by the upgrade itself, after which the operator reconciles it
+  `operational`.
+
+- **New: rendered objects are checked against the CustomResourceDefinitions
+  this repository ships.** `TestRenderedObjectsSurviveTheCRDs` walks every
+  custom resource in every golden against the schema for its kind and fails
+  on any field the API server would prune, and `TestNoUnauthorizedUser`
+  fails if a rendered VMAuth carries an unauthorized section by either
+  spelling. `tests/pruned/` holds manifests that pass every other check and
+  are destroyed on apply, so the checker has to prove it can fail. The
+  general shape — a pruned field is indistinguishable, in a rendered
+  manifest and in every golden, from a field that works — is in
+  docs/safety.md.
+
 ## 0.3.0
 
 The audience pin, and every `match_claims` value meaning only itself.

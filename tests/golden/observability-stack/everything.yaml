@@ -2573,8 +2573,6 @@ spec:
       app.kubernetes.io/part-of: observability-stack
       app.kubernetes.io/instance: observability-stack
   userNamespaceSelector: {}
-  unauthorizedUserAccessSpec:
-    disabled: true
   extraArgs:
     logInvalidAuthTokens: "true"
     maxConcurrentRequests: "500"

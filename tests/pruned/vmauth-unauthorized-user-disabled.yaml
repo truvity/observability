@@ -1,0 +1,21 @@
+# The defect this check exists for.
+#
+# `unauthorizedUserAccessSpec.disabled` reads like the way to say "no
+# unauthorized user", and it is not a field: no release of the operator has
+# ever had it, so the VMAuth CustomResourceDefinition this repository ships
+# has no such property. The API server PRUNES it on the way in and stores
+# `unauthorizedUserAccessSpec: {}` — an unauthorized section that routes
+# nowhere, which the operator then refuses, leaving the proxy with no
+# Deployment and the estate with no read path.
+#
+# Nothing upstream of the cluster sees it. The template renders, the render
+# is valid YAML, `helm lint` passes and the golden is byte-identical to one
+# that works. Only the API server disagrees, and only once it is applied.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAuth
+metadata:
+  name: pruned-unauthorized-user
+spec:
+  selectAllByDefault: false
+  unauthorizedUserAccessSpec:
+    disabled: true

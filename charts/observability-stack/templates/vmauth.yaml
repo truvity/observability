@@ -31,17 +31,34 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   userNamespaceSelector: {}
   {{- /*
-  No unauthorized user, on purpose.
-  
+  No unauthorized user, on purpose — and the way to say that is to write
+  NOTHING here.
+
   From v1.147.0 a token that verifies but carries no `vm_access` claim
   falls THROUGH to the unauthorized user rather than being rejected. If
   an unauthorized section exists with any route at all, such a token
   quietly gets the anonymous one instead of a 401 — so there is none, and
   the answer is 401. Every VMUser here also carries a
   `defaultVMAccessClaim`, which is the other half of the same defence.
+
+  An ABSENT `unauthorizedUserAccessSpec` is what produces that, and it is
+  the only thing that does. The operator emits the `unauthorized_user`
+  section of vmauth's configuration only when this field is set (or the
+  deprecated `unauthorizedAccessConfig` is); with neither, its builder
+  returns nothing and the key is never written. Nothing defaults the
+  field, so absence survives the round trip.
+
+  There is deliberately no `disabled: true` here, and nothing else that
+  spells the intent out in the object. The field takes no such switch: the
+  operator refuses a section that routes nowhere — `at least one of
+  url_map, url_prefix or targetRefs must be defined` — so the only shapes
+  it accepts are shapes that SERVE, and a served unauthorized user is the
+  bypass above. A key this schema does not have is not an error either: the
+  API server prunes it on the way in, the object stores an empty section,
+  and the operator then rejects the VMAuth and builds no Deployment at all.
+  Both halves of that are invisible in a rendered manifest, which is why
+  tests/pruned/ and TestRenderedObjectsSurviveTheCRDs exist.
   */}}
-  unauthorizedUserAccessSpec:
-    disabled: true
   extraArgs:
     {{- toYaml .Values.vmauth.extraArgs | nindent 4 }}
 {{- end }}
