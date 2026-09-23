@@ -1,6 +1,10 @@
 {
   "packages": [
+    "go@1.27.0",
+    "golangci-lint@2.13.1",
+    "gopls@0.23.0",
     "goreleaser@latest",
+    "govulncheck@1.7.0",
     "just-lsp@latest",
     "just@latest",
     "kubernetes-helm@latest"
