@@ -1,0 +1,51 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+# It also proves the chart renders on a cluster that does not use the
+# default — an estate on the default sees exactly this one difference.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The single-replica install, written out: one of each store, one proxy,
+# two vmalerts, Alertmanager with the heartbeat leaving the cluster, the
+# network policies and the backups.
+#
+# This is the shape docs/adoption.md walks through, and the one this
+# release supports. `ha` is false, which is not a lesser mode: no store
+# here replicates across a zone, so redundancy is two of these with the
+# writers sending to both.
+ha: false
+
+tenancy:
+  issuerUrl: https://issuer.example
+  claimName: groups
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+  writers:
+    - name: metrics-agent
+      tokenSecret:
+        name: example-writer-token
+        key: token
+      destinations: [metrics]
+    - name: log-agent
+      tokenSecret:
+        name: example-writer-token
+        key: token
+      destinations: [logs]
+
+vmalert:
+  externalUrl: https://alerts.example.com
+
+alertmanager:
+  watchdog:
+    secretName: example-watchdog-receiver
+    key: url
+
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials

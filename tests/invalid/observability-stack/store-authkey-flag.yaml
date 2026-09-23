@@ -1,0 +1,16 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# An authKey does not add to `-httpAuth.*`, it REPLACES it for those
+# endpoints: with one set, basic auth is never checked and the endpoint
+# is reachable by anything holding a string that travels in the query
+# arguments, and therefore in every access log.
+victoria-logs-single:
+  server:
+    extraArgs:
+      partitionManageAuthKey: example-key

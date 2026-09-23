@@ -1,0 +1,221 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+# It also proves the chart renders on a cluster that does not use the
+# default — an estate on the default sees exactly this one difference.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# Every value set away from its default, so a change to any one of them
+# shows up in the golden diff.
+nameOverride: stack
+ha: true
+zones:
+  - example-1a
+  - example-1b
+interval: 15s
+
+vmauth:
+  image:
+    repository: victoriametrics/vmauth
+    tag: v1.153.0
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "2"
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  extraArgs:
+    logInvalidAuthTokens: "true"
+    maxConcurrentRequests: "500"
+  loadBalancingPolicy: first_available
+  retryStatusCodes: [500, 502, 503]
+
+tenancy:
+  issuerUrl: https://issuer.example
+  claimName: entitlements
+  tenantLabel: owner
+  envLabel: stage
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: prod
+          tenants: [dms, url-shortener]
+        - env: devel
+          allTenants: true
+  writers:
+    - name: otel-collector
+      tokenSecret:
+        name: example-writer-token
+        key: token
+      destinations: [metrics, logs, traces]
+
+storeCredentials:
+  secretName: example-store-credentials
+  usernameKey: user
+  passwordKey: pass
+
+vmalert:
+  externalUrl: https://alerts.example.com
+  externalLabels:
+    cluster: example
+  logs:
+    enabled: true
+  resources:
+    requests:
+      cpu: "2"
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+
+alertmanager:
+  replicaCount: 2
+  watchdog:
+    secretName: example-watchdog-receiver
+    key: url
+    repeatInterval: 2m
+  config:
+    route:
+      receiver: default
+      groupBy: [alertname, owner, stage]
+      groupWait: 10s
+      groupInterval: 2m
+      repeatInterval: 2h
+    receivers:
+      - name: default
+    routes:
+      - receiver: default
+        matchers:
+          - severity = "critical"
+    inhibitRules:
+      - sourceMatchers:
+          - severity = "critical"
+        targetMatchers:
+          - severity = "warning"
+        equal: [alertname]
+  resources:
+    requests:
+      cpu: "2"
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 512Mi
+
+networkPolicy:
+  enabled: true
+  proxyFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: example-console
+  writersFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: example-collectors
+
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials
+  activeDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 5
+  image:
+    repository: example.com/mirror/rclone
+    tag: "1.73.0"
+  metrics:
+    enabled: true
+    schedule: "0 * * * *"
+    fullSchedule: "0 2 * * 0"
+    claimName: example-metrics-claim
+    image:
+      repository: example.com/mirror/vmbackup
+      tag: v1.152.0
+  logs:
+    enabled: true
+    schedule: "20 * * * *"
+  traces:
+    enabled: true
+    schedule: "40 * * * *"
+
+# Only the operator, so the golden stays about this chart. The stores'
+# own renders are exercised by the `single` case.
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false
+
+grafana:
+  enabled: true
+  replicas: 2
+  admin:
+    existingSecret: example-grafana
+    userKey: admin-user
+    passwordKey: admin-password
+  envValueFrom:
+    GF_SECURITY_SECRET_KEY:
+      secretKeyRef:
+        name: example-grafana
+        key: secret_key
+    GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+      secretKeyRef:
+        name: example-grafana
+        key: client_id
+    GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+      secretKeyRef:
+        name: example-grafana
+        key: client_secret
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: VictoriaMetrics
+          type: prometheus
+          access: proxy
+          uid: victoriametrics
+          isDefault: true
+          version: 2
+          url: http://vmauth-observability-stack-stack:8427/prometheus
+          jsonData:
+            oauthPassThru: true
+  grafana.ini:
+    analytics:
+      check_for_updates: false
+      reporting_enabled: false
+    database:
+      locking_attempt_timeout_sec: 300
+    auth.generic_oauth:
+      enabled: true
+      name: SSO
+      allow_sign_up: true
+      use_refresh_token: true
+      role_attribute_strict: true
+      scopes: "openid profile email groups offline_access"
+      auth_url: https://issuer.example/authorize
+      token_url: https://issuer.example/token
+      api_url: https://issuer.example/userinfo
+    unified_alerting:
+      enabled: false
+    alerting:
+      enabled: false
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      provider:
+        name: sidecar
+        orgid: 1
+        updateIntervalSeconds: 60
+  resources:
+    requests:
+      cpu: "2"
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 1Gi

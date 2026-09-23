@@ -1,0 +1,30 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# A datasource without oauthPassThru queries as GRAFANA's identity rather
+# than the signed-in person's, so the proxy scopes nothing and a viewer
+# sees every tenant. It looks exactly like a working dashboard.
+grafana:
+  enabled: true
+  admin:
+    existingSecret: example-grafana
+  envValueFrom:
+    GF_SECURITY_SECRET_KEY:
+      secretKeyRef:
+        name: example-grafana
+        key: secret_key
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: VictoriaMetrics
+          type: prometheus
+          access: proxy
+          uid: victoriametrics
+          version: 1
+          url: http://vmauth-observability-stack:8427/prometheus

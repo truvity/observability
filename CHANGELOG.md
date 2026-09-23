@@ -8,6 +8,26 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## Unreleased
 
+- **`charts/observability-stack`** — one install of the store: the
+  VictoriaMetrics family from the vendor's own pinned charts, with the
+  proxy, the two vmalerts, Alertmanager, the network policies and the
+  backups this chart renders itself. Reads go through vmauth, which
+  verifies the caller's token against an OIDC issuer and injects the
+  filters that token is entitled to; `pkg/tenancy` renders the same
+  principals into the claim an issuer mints, and a test compares the two
+  so they cannot drift. Single-replica: `ha` is accepted and refuses fewer
+  than two zones, and the zone-redundant behaviour lands in a later
+  release. Install `charts/observability-crds` first and have cert-manager
+  present — the operator's own `crds.enabled` is off here, and its webhook
+  certificate comes from cert-manager rather than from a self-signed CA
+  the chart would regenerate on every upgrade. Seventeen refusals, each
+  with a fixture: a retention without a unit (a bare number is months), the
+  two disk guards that are mutually exclusive at the binary, a fractional
+  CPU (the store rounds it down and buys one thread), an `enterprise` image
+  tag, a licence flag, a vmauth below v1.152.0, a Grafana datasource
+  without `oauthPassThru`, and the rest in docs/safety.md. Three values are
+  written twice because Helm cannot compute a subchart's values; the chart
+  refuses to render when a pair disagrees.
 - **`charts/observability-crds`** — the CustomResourceDefinitions this stack
   needs, as a release of their own: the VictoriaMetrics operator's, and the
   `PodMonitor`, `ServiceMonitor`, `ScrapeConfig` and `Probe` kinds every

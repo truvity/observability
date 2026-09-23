@@ -1,0 +1,21 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+# It also proves the chart renders on a cluster that does not use the
+# default — an estate on the default sees exactly this one difference.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The smallest values file that renders something worth installing.
+#
+# Everything else has a default that is safe to leave alone; these two do
+# not, because a stack whose proxy has no issuer to verify against and no
+# principal to admit is a stack nobody can read.
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true

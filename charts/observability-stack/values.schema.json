@@ -1,0 +1,555 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-stack",
+  "description": "One install of a self-hosted observability stack. Strict where this chart defines the structure: an unknown key fails the render rather than being silently ignored, because a typo in a retention, a filter or a secret name is an install that comes up and is wrong. The upstream charts' own sections stay open \u2014 their surface is theirs, and closing it would refuse every legitimate key the vendor adds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "interval",
+    "storeCredentials",
+    "vmauth",
+    "tenancy"
+  ],
+  "definitions": {
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h|d|w|y)$",
+      "description": "A duration with a unit, e.g. 30s, 5m, 1h."
+    },
+    "retention": {
+      "type": "string",
+      "pattern": "^[0-9]+(h|d|w|M|y)$",
+      "description": "A retention period WITH A UNIT. A bare number is read as months by every store in this family, so the unit is required here rather than left to a default nobody expects. The month unit is a capital M."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "description": "A plain name. This is a security boundary rather than a style rule: tenant and environment names are interpolated into a filter expression, so one carrying | or .* would widen the grant it appears in."
+    },
+    "resources": {
+      "type": "object",
+      "description": "Kubernetes resource requirements; passed through untouched. The chart refuses requests that differ from limits and a fractional CPU.",
+      "required": [
+        "requests",
+        "limits"
+      ],
+      "properties": {
+        "requests": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
+      }
+    },
+    "secretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "key"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "subchart": {
+      "type": "object",
+      "description": "An upstream chart's own values. Left open on purpose: the vendor owns this surface."
+    },
+    "storeAddress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "tag"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        }
+      }
+    },
+    "backupJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "schedule": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "properties": {
+    "global": {
+      "$ref": "#/definitions/subchart"
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "ha": {
+      "type": "boolean",
+      "description": "Zone-redundant mode. Refused with fewer than two zones."
+    },
+    "zones": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/name"
+      }
+    },
+    "interval": {
+      "$ref": "#/definitions/duration",
+      "description": "The scrape interval, the metrics store's deduplication window and both vmalerts' evaluation interval. One value."
+    },
+    "vmauth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "image"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "tag"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1,
+              "description": "v1.152.0 or later: earlier builds matched claim values unanchored (GHSA-f99m-22fh-qw96)."
+            }
+          }
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "extraArgs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "deniedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "loadBalancingPolicy": {
+          "type": "string",
+          "enum": [
+            "first_available",
+            "least_loaded"
+          ]
+        },
+        "retryStatusCodes": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "tenancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claimName"
+      ],
+      "properties": {
+        "issuerUrl": {
+          "type": "string"
+        },
+        "claimName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenantLabel": {
+          "$ref": "#/definitions/name"
+        },
+        "envLabel": {
+          "$ref": "#/definitions/name"
+        },
+        "principals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "group",
+              "grants"
+            ],
+            "properties": {
+              "group": {
+                "type": "string",
+                "minLength": 1
+              },
+              "grants": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "env"
+                  ],
+                  "properties": {
+                    "env": {
+                      "$ref": "#/definitions/name"
+                    },
+                    "tenants": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/definitions/name"
+                      },
+                      "description": "An EMPTY list is refused rather than read as everything: a list empty because a derivation produced nothing is the likeliest way a grant widens by accident."
+                    },
+                    "allTenants": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "writers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "tokenSecret",
+              "destinations"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/name"
+              },
+              "tokenSecret": {
+                "$ref": "#/definitions/secretRef"
+              },
+              "destinations": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "metrics",
+                    "logs",
+                    "traces"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "storeCredentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "secretName",
+        "usernameKey",
+        "passwordKey"
+      ],
+      "properties": {
+        "secretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "usernameKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passwordKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "stores": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "$ref": "#/definitions/storeAddress"
+        },
+        "logs": {
+          "$ref": "#/definitions/storeAddress"
+        },
+        "traces": {
+          "$ref": "#/definitions/storeAddress"
+        }
+      }
+    },
+    "vmalert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "logs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "externalUrl": {
+          "type": "string"
+        },
+        "externalLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
+      }
+    },
+    "alertmanager": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "notifierUrl": {
+          "type": "string"
+        },
+        "watchdog": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repeatInterval": {
+              "$ref": "#/definitions/duration"
+            }
+          }
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "route": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "receiver"
+              ],
+              "properties": {
+                "receiver": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "groupBy": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "groupWait": {
+                  "$ref": "#/definitions/duration"
+                },
+                "groupInterval": {
+                  "$ref": "#/definitions/duration"
+                },
+                "repeatInterval": {
+                  "$ref": "#/definitions/duration"
+                }
+              }
+            },
+            "receivers": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object"
+              }
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "inhibitRules": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "proxyFrom": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Kubernetes NetworkPolicyPeer objects; passed through untouched."
+        },
+        "writersFrom": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "credentialsSecret": {
+          "type": "string"
+        },
+        "activeDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "successfulJobsHistoryLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failedJobsHistoryLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "schedule": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fullSchedule": {
+              "type": "string",
+              "minLength": 1
+            },
+            "claimName": {
+              "type": "string"
+            },
+            "image": {
+              "$ref": "#/definitions/image"
+            }
+          }
+        },
+        "logs": {
+          "$ref": "#/definitions/backupJob"
+        },
+        "traces": {
+          "$ref": "#/definitions/backupJob"
+        }
+      }
+    },
+    "victoria-metrics-k8s-stack": {
+      "$ref": "#/definitions/subchart"
+    },
+    "victoria-logs-single": {
+      "$ref": "#/definitions/subchart"
+    },
+    "victoria-traces-single": {
+      "$ref": "#/definitions/subchart"
+    },
+    "grafana": {
+      "$ref": "#/definitions/subchart"
+    }
+  }
+}

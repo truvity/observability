@@ -1,0 +1,47 @@
+{{- if .Values.vmauth.enabled }}
+{{- /*
+The proxy. Every read goes through it, and it is the only thing in the
+namespace that may reach a store on a read path.
+
+`userSelector` rather than `selectAllByDefault: true`: with neither a
+selector nor that flag the operator treats the VMAuth as UNMANAGED and
+generates a configuration with no users at all — a proxy that admits
+nobody, installed successfully. With `selectAllByDefault: true` it picks
+up every VMUser in the namespace, including ones another release owns.
+Naming this release's own label is the only option that means what it
+says.
+*/}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAuth
+metadata:
+  name: {{ include "observability-stack.fullname" . }}
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+spec:
+  image:
+    repository: {{ .Values.vmauth.image.repository }}
+    tag: {{ .Values.vmauth.image.tag }}
+  replicaCount: {{ .Values.vmauth.replicaCount }}
+  resources:
+    {{- toYaml .Values.vmauth.resources | nindent 4 }}
+  selectAllByDefault: false
+  userSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: observability-stack
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  userNamespaceSelector: {}
+  {{- /*
+  No unauthorized user, on purpose.
+  
+  From v1.147.0 a token that verifies but carries no `vm_access` claim
+  falls THROUGH to the unauthorized user rather than being rejected. If
+  an unauthorized section exists with any route at all, such a token
+  quietly gets the anonymous one instead of a 401 — so there is none, and
+  the answer is 401. Every VMUser here also carries a
+  `defaultVMAccessClaim`, which is the other half of the same defence.
+  */}}
+  unauthorizedUserAccessSpec:
+    disabled: true
+  extraArgs:
+    {{- toYaml .Values.vmauth.extraArgs | nindent 4 }}
+{{- end }}

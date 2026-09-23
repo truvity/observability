@@ -1,0 +1,20 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# Requests below limits put a store in the Burstable class, so it is
+# evicted before a Guaranteed pod — at the moment of node pressure, which
+# is the moment the store matters most.
+victoria-traces-single:
+  server:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi

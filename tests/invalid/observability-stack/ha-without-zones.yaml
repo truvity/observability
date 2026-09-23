@@ -1,0 +1,14 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# No store here replicates across a zone, so an install labelled highly
+# available with one zone is the single-zone install with a label that
+# stops anyone looking at it again.
+ha: true
+zones:
+  - example-1a

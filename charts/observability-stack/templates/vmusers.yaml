@@ -1,0 +1,146 @@
+{{- if .Values.vmauth.enabled }}
+{{- $root := . }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- $labels := dict "env" .Values.tenancy.envLabel "tenant" .Values.tenancy.tenantLabel }}
+{{- $metrics := include "observability-stack.metrics.url" . }}
+{{- $logs := include "observability-stack.logs.url" . }}
+{{- $traces := include "observability-stack.traces.url" . }}
+{{- $tracesEnabled := include "observability-stack.tracesEnabled" . }}
+{{- /*
+One VMUser per principal, selected by its group.
+
+These are the same entries `pkg/tenancy`'s RenderVMAuth produces, in the
+operator's spelling: the library renders vmauth's own config file
+(`match_claims`, `default_vm_access_claim`, snake_case), the operator
+renders the same config from a CR (`matchClaims`, `defaultVMAccessClaim`,
+camelCase). The `tenancy` golden case and the Go test beside it exist to
+keep the two from drifting: a difference between what a token says a
+person may read and what the proxy lets them read is not a difference
+anyone notices until it matters.
+*/}}
+{{- range $i, $p := .Values.tenancy.principals }}
+{{- $slug := regexReplaceAll "[^a-z0-9]+" (lower $p.group) "-" | trimAll "-" | trunc 40 | trimSuffix "-" }}
+{{- /* Grants sort by environment, so an unrelated edit produces no diff. */}}
+{{- $byEnv := dict }}
+{{- range $grant := $p.grants }}
+{{- $_ := set $byEnv $grant.env $grant }}
+{{- end }}
+{{- $filters := list }}
+{{- range $env := (keys $byEnv | sortAlpha) }}
+{{- $filters = append $filters (include "observability-stack.filter" (dict "grant" (index $byEnv $env) "labels" $labels)) }}
+{{- end }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-%s" $fullname $slug | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.role: reader
+spec:
+  name: {{ $p.group | quote }}
+  {{- /*
+  The operator identifies a VMUser by its generated credentials Secret
+  unless this is set, and every JWT user generates the same identity — so
+  two JWT VMUsers in one namespace collide, and all but one are dropped
+  from the rendered config with an error only visible in
+  `status.currentSyncError`. A principal that silently disappears is a
+  person who cannot see their own data with no failed object to point at.
+  */}}
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: {{ $root.Values.tenancy.issuerUrl | quote }}
+    matchClaims:
+      {{ $root.Values.tenancy.claimName }}: {{ $p.group | quote }}
+    {{- /*
+    The filters this group is entitled to, used when the token itself
+    carries no `vm_access` claim — which is every token, in the shape
+    where the mapping lives in the proxy rather than in the issuer.
+    Without it the token falls through to the unauthorized user and is
+    rejected with nothing saying why.
+    */}}
+    defaultVMAccessClaim:
+      metricsExtraFilters:
+        {{- toYaml $filters | nindent 8 }}
+      logsExtraStreamFilters:
+        {{- toYaml $filters | nindent 8 }}
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    - static:
+        url: {{ $metrics | quote }}
+      paths:
+        {{- include "observability-stack.readPaths.metrics" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    - static:
+        url: {{ $logs | quote }}
+      paths:
+        {{- include "observability-stack.readPaths.logs" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- if $tracesEnabled }}
+    - static:
+        url: {{ $traces | quote }}
+      paths:
+        {{- include "observability-stack.readPaths.traces" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- end }}
+{{- end }}
+{{- /*
+The writers.
+
+A collector authenticates with a bearer token rather than a person's
+identity, and its routes are WRITE paths only: a token that lives in a
+DaemonSet on every node is the one most likely to leak, and a leaked
+writer that can also read is a leak of every tenant's data rather than of
+the ability to append to it.
+*/}}
+{{- range $w := .Values.tenancy.writers }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-writer-%s" $fullname $w.name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.role: writer
+spec:
+  name: {{ $w.name | quote }}
+  disable_secret_creation: true
+  tokenRef:
+    name: {{ $w.tokenSecret.name | quote }}
+    key: {{ $w.tokenSecret.key | quote }}
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    {{- range $dest := $w.destinations }}
+    {{- if eq $dest "metrics" }}
+    - static:
+        url: {{ $metrics | quote }}
+      paths:
+        {{- include "observability-stack.writePaths.metrics" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- else if eq $dest "logs" }}
+    - static:
+        url: {{ $logs | quote }}
+      paths:
+        {{- include "observability-stack.writePaths.logs" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- else if eq $dest "traces" }}
+    - static:
+        url: {{ $traces | quote }}
+      paths:
+        {{- include "observability-stack.writePaths.traces" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- else }}
+    {{- fail (printf "observability-stack: writer %q names destination %q, which is not one of metrics, logs or traces. A destination nobody recognises renders no route at all, so the writer would be installed and able to write nothing." $w.name $dest) }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

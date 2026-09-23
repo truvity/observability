@@ -1,0 +1,45 @@
+apiVersion: v2
+name: observability-stack
+description: >-
+  One install of a self-hosted observability stack: the VictoriaMetrics
+  family behind an authorising proxy that scopes every query to its caller.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - victoriametrics
+  - victorialogs
+  - victoriatraces
+  - observability
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability
+# Every dependency is pinned to an exact version rather than a range. A
+# range resolves to whatever exists on the day of the install, so two
+# installs of the same chart version render different stacks, and the
+# zero-diff gate in docs/adoption.md stops meaning anything.
+#
+# The stores come from upstream: this chart wraps them, it does not
+# reimplement them. What it adds is everything an install is judged on
+# when it fails — the proxy in front of reads, the second vmalert, the
+# deadman's route out of the cluster, the network policies and the
+# backups.
+dependencies:
+  - name: victoria-metrics-k8s-stack
+    version: 0.93.0
+    repository: oci://ghcr.io/victoriametrics/helm-charts
+    condition: victoria-metrics-k8s-stack.enabled
+  - name: victoria-logs-single
+    version: 0.13.9
+    repository: oci://ghcr.io/victoriametrics/helm-charts
+    condition: victoria-logs-single.enabled
+  - name: victoria-traces-single
+    version: 0.1.11
+    repository: oci://ghcr.io/victoriametrics/helm-charts
+    condition: victoria-traces-single.enabled
+  - name: grafana
+    version: 12.7.3
+    repository: oci://ghcr.io/grafana-community/helm-charts
+    condition: grafana.enabled

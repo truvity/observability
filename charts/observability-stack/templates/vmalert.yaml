@@ -1,0 +1,75 @@
+{{- if .Values.vmalert.enabled }}
+{{- $root := . }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- $metrics := include "observability-stack.metrics.url" . }}
+{{- $notifier := .Values.alertmanager.notifierUrl | default (printf "http://vmalertmanager-%s.%s.svc:9093" $fullname .Release.Namespace) }}
+{{- /*
+Two vmalerts, because one process has one default rule type.
+
+Rules over metrics and rules over logs are evaluated by the same binary
+with different `-rule.defaultRuleType` values, so a single vmalert can
+serve one of them and silently ignores the other's rule objects — they
+load, they evaluate against the wrong store, and they never fire.
+
+Both carry the same three settings for the same three reasons:
+
+  remoteWrite AND remoteRead   vmalert keeps the state of every `for:`
+                               timer in the metrics store. With only
+                               remoteWrite it writes that state and never
+                               reads it back, so a restart re-arms every
+                               timer from zero — an alert with `for: 30m`
+                               becomes one that can never fire in a
+                               cluster that rolls its pods more often
+                               than that.
+  external.url                 defaults to the pod's own hostname, which
+                               makes every alert's source link dead the
+                               moment it leaves the cluster.
+  selectAllByDefault: true     an unset selector selects NOTHING. The
+                               install succeeds, vmalert starts, and no
+                               rule in the namespace is ever loaded.
+*/}}
+{{- range $kind := list "metrics" "logs" }}
+{{- $isLogs := eq $kind "logs" }}
+{{- if or (not $isLogs) $root.Values.vmalert.logs.enabled }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: {{ printf "%s-%s" $fullname $kind }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.rule-type: {{ ternary "vlogs" "prometheus" $isLogs }}
+spec:
+  replicaCount: 1
+  evaluationInterval: {{ $root.Values.interval }}
+  selectAllByDefault: true
+  resources:
+    {{- toYaml $root.Values.vmalert.resources | nindent 4 }}
+  datasource:
+    url: {{ ternary (include "observability-stack.logs.url" $root) $metrics $isLogs | quote }}
+    basicAuth:
+      {{- include "observability-stack.targetAuth" $root | nindent 6 }}
+  remoteWrite:
+    url: {{ $metrics | quote }}
+    basicAuth:
+      {{- include "observability-stack.targetAuth" $root | nindent 6 }}
+  remoteRead:
+    url: {{ $metrics | quote }}
+    basicAuth:
+      {{- include "observability-stack.targetAuth" $root | nindent 6 }}
+  notifiers:
+    - url: {{ $notifier | quote }}
+  {{- with $root.Values.vmalert.externalLabels }}
+  externalLabels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  extraArgs:
+    {{- if $isLogs }}
+    rule.defaultRuleType: vlogs
+    {{- end }}
+    {{- with $root.Values.vmalert.externalUrl }}
+    external.url: {{ . | quote }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

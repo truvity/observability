@@ -1,0 +1,16 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# Every build from v1.147.0 to v1.151.x matched claim values UNANCHORED,
+# so a claim of `admin` also matched `not-admin-really`
+# (GHSA-f99m-22fh-qw96) — an authorisation bypass in the exact mechanism
+# that decides which user a token is.
+vmauth:
+  image:
+    repository: victoriametrics/vmauth
+    tag: v1.149.0

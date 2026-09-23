@@ -1,0 +1,20 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# 1500m buys ONE thread: the VictoriaMetrics binaries size their thread
+# pool from the cgroup quota and round it down, so half the CPU is paid
+# for and never used, and nothing says so.
+victoria-logs-single:
+  server:
+    resources:
+      requests:
+        cpu: 1500m
+        memory: 4Gi
+      limits:
+        cpu: 1500m
+        memory: 4Gi

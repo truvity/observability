@@ -1,0 +1,2816 @@
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-metrics-store
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: observability-stack-victoria-metrics-k8s-stack
+      app.kubernetes.io/name: vmsingle
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/name: vmauth
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmalert
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/part-of: observability-stack
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: example-collectors
+      ports:
+        - protocol: TCP
+          port: 8428
+
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-logs-store
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: victoria-logs-single
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/name: vmauth
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmalert
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/part-of: observability-stack
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: example-collectors
+      ports:
+        - protocol: TCP
+          port: 9428
+
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-proxy
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vmauth
+      app.kubernetes.io/instance: observability-stack
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: example-console
+      ports:
+        - protocol: TCP
+          port: 8427
+
+---
+# Source: observability-stack/charts/grafana/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+automountServiceAccountToken: false
+metadata:
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/version: "13.1.1"
+  name: observability-stack-grafana
+  namespace: observability
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-stack-victoria-metrics-operator
+  namespace: observability
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+automountServiceAccountToken: true
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/templates/sync-job/rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-stack-victoria-metrics-k8s-stack-sync-job
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: syncJob
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-k8s-stack
+    app.kubernetes.io/version: v0.0.17
+    helm.sh/chart: victoria-metrics-k8s-stack-0.93.0
+
+---
+# Source: observability-stack/charts/grafana/templates/configmap-dashboard-provider.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/version: "13.1.1"
+  name: observability-stack-grafana-config-dashboards
+  namespace: observability
+data:
+  provider.yaml: |-
+    apiVersion: 1
+    providers:
+      - name: 'sidecar'
+        orgId: 1
+        folder: ''
+        folderUid: ''
+        type: file
+        disableDeletion: false
+        allowUiUpdates: false
+        updateIntervalSeconds: 60
+        options:
+          foldersFromFilesStructure: false
+          path: /tmp/dashboards
+
+---
+# Source: observability-stack/charts/grafana/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-stack-grafana
+  namespace: observability
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/version: "13.1.1"
+data:
+  
+  grafana.ini: |
+    [alerting]
+    enabled = false
+    [analytics]
+    check_for_updates = false
+    reporting_enabled = false
+    [auth]
+    disable_login_form = true
+    oauth_auto_login = true
+    [auth.generic_oauth]
+    allow_sign_up = true
+    api_url = https://issuer.example/userinfo
+    auth_url = https://issuer.example/authorize
+    enabled = true
+    name = SSO
+    role_attribute_path = contains(groups[*], 'example:grafana:admin') && 'Admin' || contains(groups[*], 'example:grafana:editor') && 'Editor' || 'Viewer'
+    role_attribute_strict = true
+    scopes = openid profile email groups offline_access
+    token_url = https://issuer.example/token
+    use_refresh_token = true
+    [database]
+    locking_attempt_timeout_sec = 300
+    [log]
+    mode = console
+    [paths]
+    data = /var/lib/grafana/
+    logs = /var/log/grafana
+    plugins = /var/lib/grafana/plugins
+    provisioning = /etc/grafana/provisioning
+    [server]
+    domain = ''
+    [unified_alerting]
+    enabled = false
+    [unified_storage]
+    index_path = /var/lib/grafana-search/bleve
+    [users]
+    auto_assign_org = true
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - access: proxy
+      isDefault: true
+      jsonData:
+        oauthPassThru: true
+      name: VictoriaMetrics
+      type: prometheus
+      uid: victoriametrics
+      url: http://vmauth-observability-stack-stack:8427/prometheus
+      version: 2
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/templates/sync-job/config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-stack-victoria-metrics-k8s-stack-sync-job-config
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: syncJob
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-k8s-stack
+    app.kubernetes.io/version: v0.0.17
+    helm.sh/chart: victoria-metrics-k8s-stack-0.93.0
+data:
+  config.yaml: |
+    common:
+      clusterLabel: "cluster"
+      multicluster: false
+    dashboards:
+      common:
+        grafana:
+          labelName: "grafana_dashboard"
+          labelValue: "1"
+          datasource: "prometheus"
+          datasourceUID: "VictoriaMetrics"
+      sources: 
+        []
+    rules:
+      common:
+        runbookUrl: "https://runbooks.prometheus-operator.dev/runbooks"
+        grafanaUrl: "http://"
+        group: 
+          spec: {}
+        rule: 
+          spec:
+            annotations: {}
+            labels: {}
+        alerting: 
+          spec:
+            annotations: {}
+            labels: {}
+        recording: 
+          spec:
+            annotations: {}
+            labels: {}
+      groups: 
+        alertmanager.rules:
+          labelRewrites:
+            job:
+              match: alertmanager-main
+              value: vmalertmanager-.*
+            namespace:
+              match: alertmanager-main
+              value: observability
+        kube-apiserver-burnrate.rules:
+          enabled: false
+        kube-apiserver-histogram.rules:
+          enabled: false
+        kube-apiserver-slos:
+          enabled: false
+        kube-scheduler.rules:
+          enabled: false
+        kubelet.rules:
+          enabled: false
+        kubernetes-apps:
+          labelRewrites:
+            namespace:
+              match: kube-state-metrics
+              value: .*
+        kubernetes-storage:
+          labelRewrites:
+            namespace:
+              match: kubelet
+              value: .*
+        kubernetes-system-apiserver:
+          enabled: false
+        kubernetes-system-controller-manager:
+          enabled: false
+        kubernetes-system-kubelet:
+          enabled: false
+        kubernetes-system-scheduler:
+          enabled: false
+      sources: 
+        - enabled: false
+          url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/alertmanager-prometheusRule.yaml
+        - enabled: false
+          url: https://raw.githubusercontent.com/monitoring-mixins/website/master/assets/etcd/alerts.yaml
+        - enabled: false
+          url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/kubeStateMetrics-prometheusRule.yaml
+        - url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/kubePrometheus-prometheusRule.yaml
+        - url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/kubernetesControlPlane-prometheusRule.yaml
+        - enabled: false
+          url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/nodeExporter-prometheusRule.yaml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/master/deployment/docker/rules/alerts-vlogs.yml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaTraces/master/deployment/docker/rules/alerts-vtraces.yml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/master/deployment/docker/rules/alerts-vlagent.yml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/master/deployment/docker/rules/alerts-health.yml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-vmagent.yml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-vmalert.yml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-cluster.yml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-health.yml
+        - enabled: true
+          url: https://raw.githubusercontent.com/VictoriaMetrics/operator/master/config/alerting/vmoperator-rules.yaml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-single-node.yml
+        - enabled: false
+          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaTraces/master/deployment/docker/rules/alerts-health.yml
+
+---
+# Source: observability-stack/charts/grafana/templates/clusterrole.yaml
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/version: "13.1.1"
+  name: observability-stack-grafana-clusterrole
+rules:
+  - apiGroups: [""] # "" indicates the core API group
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "watch", "list"]
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: observability-stack-victoria-metrics-operator
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+rules:
+- nonResourceURLs: 
+  - /metrics
+  - /metrics/resources
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - configmaps/finalizers
+  - endpoints
+  - events
+  - persistentvolumeclaims
+  - persistentvolumeclaims/finalizers
+  - pods
+  - pods/eviction
+  - secrets
+  - secrets/finalizers
+  - services
+  - services/finalizers
+  - serviceaccounts
+  - serviceaccounts/finalizers
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - configmaps/status
+  - nodes
+  - nodes/metrics
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  - daemonsets/finalizers
+  - deployments
+  - deployments/finalizers
+  - replicasets
+  - statefulsets
+  - statefulsets/finalizers
+  - statefulsets/status
+  verbs:
+  - "*"
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - "*"
+  verbs:
+  - "*"
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterrolebindings
+  - clusterrolebindings/finalizers
+  - clusterroles
+  - clusterroles/finalizers
+  - roles
+  - rolebindings
+  verbs:
+  - "*"
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - list
+  - get
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  - poddisruptionbudgets/finalizers
+  verbs:
+  - "*"
+- apiGroups:
+  - route.openshift.io
+  - image.openshift.io
+  resources:
+  - routers/metrics
+  - registry/metrics
+  verbs:
+  - get
+- apiGroups:
+  - autoscaling
+  verbs:
+  - "*"
+  resources:
+  - horizontalpodautoscalers
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  - ingresses/finalizers
+  - networkpolicies
+  verbs:
+  - "*"
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - list
+  - watch
+  - get
+- apiGroups:
+  - operator.victoriametrics.com
+  resources:
+  - vlagents
+  - vlagents/finalizers
+  - vlagents/status
+  - vlclusters
+  - vlclusters/finalizers
+  - vlclusters/status
+  - vldistributed
+  - vldistributed/finalizers
+  - vldistributed/status
+  - vlogs
+  - vlogs/finalizers
+  - vlogs/status
+  - vlsingles
+  - vlsingles/finalizers
+  - vlsingles/status
+  - vmagents
+  - vmagents/finalizers
+  - vmagents/status
+  - vmalertmanagerconfigs
+  - vmalertmanagerconfigs/finalizers
+  - vmalertmanagerconfigs/status
+  - vmalertmanagers
+  - vmalertmanagers/finalizers
+  - vmalertmanagers/status
+  - vmalerts
+  - vmalerts/finalizers
+  - vmalerts/status
+  - vmanomalies
+  - vmanomalies/finalizers
+  - vmanomalies/status
+  - vmanomalyconfigs
+  - vmanomalyconfigs/finalizers
+  - vmanomalyconfigs/status
+  - vmauths
+  - vmauths/finalizers
+  - vmauths/status
+  - vmclusters
+  - vmclusters/finalizers
+  - vmclusters/status
+  - vmdistributed
+  - vmdistributed/finalizers
+  - vmdistributed/status
+  - vmnodescrapes
+  - vmnodescrapes/finalizers
+  - vmnodescrapes/status
+  - vmpodscrapes
+  - vmpodscrapes/finalizers
+  - vmpodscrapes/status
+  - vmprobes
+  - vmprobes/finalizers
+  - vmprobes/status
+  - vmrules
+  - vmrules/finalizers
+  - vmrules/status
+  - vmscrapeconfigs
+  - vmscrapeconfigs/finalizers
+  - vmscrapeconfigs/status
+  - vmservicescrapes
+  - vmservicescrapes/finalizers
+  - vmservicescrapes/status
+  - vmsingles
+  - vmsingles/finalizers
+  - vmsingles/status
+  - vmstaticscrapes
+  - vmstaticscrapes/finalizers
+  - vmstaticscrapes/status
+  - vmusers
+  - vmusers/finalizers
+  - vmusers/status
+  - vtclusters
+  - vtclusters/finalizers
+  - vtclusters/status
+  - vtsingles
+  - vtsingles/finalizers
+  - vtsingles/status
+  verbs:
+  - '*'
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: observability-stack-victoria-metrics-operator-victoriametrics-admin
+  labels:
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+rules: 
+  - apiGroups:
+    - operator.victoriametrics.com
+    resources:
+    - vlagents
+    - vlagents/finalizers
+    - vlagents/status
+    - vlclusters
+    - vlclusters/finalizers
+    - vlclusters/status
+    - vldistributed
+    - vldistributed/finalizers
+    - vldistributed/status
+    - vlogs
+    - vlogs/finalizers
+    - vlogs/status
+    - vlsingles
+    - vlsingles/finalizers
+    - vlsingles/status
+    - vmagents
+    - vmagents/finalizers
+    - vmagents/status
+    - vmalertmanagerconfigs
+    - vmalertmanagerconfigs/finalizers
+    - vmalertmanagerconfigs/status
+    - vmalertmanagers
+    - vmalertmanagers/finalizers
+    - vmalertmanagers/status
+    - vmalerts
+    - vmalerts/finalizers
+    - vmalerts/status
+    - vmanomalies
+    - vmanomalies/finalizers
+    - vmanomalies/status
+    - vmanomalyconfigs
+    - vmanomalyconfigs/finalizers
+    - vmanomalyconfigs/status
+    - vmauths
+    - vmauths/finalizers
+    - vmauths/status
+    - vmclusters
+    - vmclusters/finalizers
+    - vmclusters/status
+    - vmdistributed
+    - vmdistributed/finalizers
+    - vmdistributed/status
+    - vmnodescrapes
+    - vmnodescrapes/finalizers
+    - vmnodescrapes/status
+    - vmpodscrapes
+    - vmpodscrapes/finalizers
+    - vmpodscrapes/status
+    - vmprobes
+    - vmprobes/finalizers
+    - vmprobes/status
+    - vmrules
+    - vmrules/finalizers
+    - vmrules/status
+    - vmscrapeconfigs
+    - vmscrapeconfigs/finalizers
+    - vmscrapeconfigs/status
+    - vmservicescrapes
+    - vmservicescrapes/finalizers
+    - vmservicescrapes/status
+    - vmsingles
+    - vmsingles/finalizers
+    - vmsingles/status
+    - vmstaticscrapes
+    - vmstaticscrapes/finalizers
+    - vmstaticscrapes/status
+    - vmusers
+    - vmusers/finalizers
+    - vmusers/status
+    - vtclusters
+    - vtclusters/finalizers
+    - vtclusters/status
+    - vtsingles
+    - vtsingles/finalizers
+    - vtsingles/status
+    verbs:
+    - '*'
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: observability-stack-victoria-metrics-operator-victoriametrics-view
+  labels:
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules: 
+  - apiGroups:
+    - operator.victoriametrics.com
+    resources:
+    - vlagents
+    - vlagents/finalizers
+    - vlagents/status
+    - vlclusters
+    - vlclusters/finalizers
+    - vlclusters/status
+    - vldistributed
+    - vldistributed/finalizers
+    - vldistributed/status
+    - vlogs
+    - vlogs/finalizers
+    - vlogs/status
+    - vlsingles
+    - vlsingles/finalizers
+    - vlsingles/status
+    - vmagents
+    - vmagents/finalizers
+    - vmagents/status
+    - vmalertmanagerconfigs
+    - vmalertmanagerconfigs/finalizers
+    - vmalertmanagerconfigs/status
+    - vmalertmanagers
+    - vmalertmanagers/finalizers
+    - vmalertmanagers/status
+    - vmalerts
+    - vmalerts/finalizers
+    - vmalerts/status
+    - vmanomalies
+    - vmanomalies/finalizers
+    - vmanomalies/status
+    - vmanomalyconfigs
+    - vmanomalyconfigs/finalizers
+    - vmanomalyconfigs/status
+    - vmauths
+    - vmauths/finalizers
+    - vmauths/status
+    - vmclusters
+    - vmclusters/finalizers
+    - vmclusters/status
+    - vmdistributed
+    - vmdistributed/finalizers
+    - vmdistributed/status
+    - vmnodescrapes
+    - vmnodescrapes/finalizers
+    - vmnodescrapes/status
+    - vmpodscrapes
+    - vmpodscrapes/finalizers
+    - vmpodscrapes/status
+    - vmprobes
+    - vmprobes/finalizers
+    - vmprobes/status
+    - vmrules
+    - vmrules/finalizers
+    - vmrules/status
+    - vmscrapeconfigs
+    - vmscrapeconfigs/finalizers
+    - vmscrapeconfigs/status
+    - vmservicescrapes
+    - vmservicescrapes/finalizers
+    - vmservicescrapes/status
+    - vmsingles
+    - vmsingles/finalizers
+    - vmsingles/status
+    - vmstaticscrapes
+    - vmstaticscrapes/finalizers
+    - vmstaticscrapes/status
+    - vmusers
+    - vmusers/finalizers
+    - vmusers/status
+    - vtclusters
+    - vtclusters/finalizers
+    - vtclusters/status
+    - vtsingles
+    - vtsingles/finalizers
+    - vtsingles/status
+    verbs:
+    - get
+    - list
+    - watch
+
+---
+# Source: observability-stack/charts/grafana/templates/clusterrolebinding.yaml
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: observability-stack-grafana-clusterrolebinding
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/version: "13.1.1"
+subjects:
+  - kind: ServiceAccount
+    name: observability-stack-grafana
+    namespace: observability
+roleRef:
+  kind: ClusterRole
+  name: observability-stack-grafana-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/crb.yaml
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: observability-stack-victoria-metrics-operator
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+subjects:
+- kind: ServiceAccount
+  name: observability-stack-victoria-metrics-operator
+  namespace: observability
+roleRef:
+  kind: ClusterRole
+  name: observability-stack-victoria-metrics-operator
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: observability-stack-victoria-metrics-operator
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+  namespace: observability
+rules:
+- apiGroups:
+  - coordination.k8s.io
+  verbs:
+  - create
+  - get
+  - update
+  resources:
+  - leases
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/templates/sync-job/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: observability-stack-victoria-metrics-k8s-stack-sync-job
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: syncJob
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-k8s-stack
+    app.kubernetes.io/version: v0.0.17
+    helm.sh/chart: victoria-metrics-k8s-stack-0.93.0
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get"]
+  - apiGroups: ["operator.victoriametrics.com"]
+    resources: ["vmrules"]
+    verbs: ["get", "list", "create", "update", "delete"]
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/rb.yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: observability-stack-victoria-metrics-operator
+  namespace: observability
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+subjects:
+- kind: ServiceAccount
+  name: observability-stack-victoria-metrics-operator
+  namespace: observability
+roleRef:
+  kind: Role
+  name: observability-stack-victoria-metrics-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/templates/sync-job/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: observability-stack-victoria-metrics-k8s-stack-sync-job
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: syncJob
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-k8s-stack
+    app.kubernetes.io/version: v0.0.17
+    helm.sh/chart: victoria-metrics-k8s-stack-0.93.0
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: observability-stack-victoria-metrics-k8s-stack-sync-job
+subjects:
+  - kind: ServiceAccount
+    name: observability-stack-victoria-metrics-k8s-stack-sync-job
+    namespace: observability
+
+---
+# Source: observability-stack/charts/grafana/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-stack-grafana
+  namespace: observability
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/version: "13.1.1"
+spec:
+  type: ClusterIP
+  ports:
+    - name: service
+      port: 80
+      protocol: TCP
+      targetPort: grafana
+  selector:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-stack
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: observability
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+  name: observability-stack-victoria-metrics-operator
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+    - name: webhook
+      port: 9443
+      targetPort: webhook
+  selector: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/name: victoria-metrics-operator
+
+---
+# Source: observability-stack/charts/grafana/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-stack-grafana
+  namespace: observability
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/version: "13.1.1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: observability-stack
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: grafana-12.7.3
+        app.kubernetes.io/name: grafana
+        app.kubernetes.io/instance: observability-stack
+        app.kubernetes.io/version: "13.1.1"
+      annotations:
+        checksum/config: bd00dcd7cd679011978d544f06d065e5e9170a7dbec27d2957cc859187c69964
+        checksum/sc-dashboard-provider-config: 0afdab6165b0efa0d8e5a1342cb76809acb23d4cc189852cea36a5bc024a606d
+        kubectl.kubernetes.io/default-container: grafana
+    spec:
+      
+      serviceAccountName: observability-stack-grafana
+      automountServiceAccountToken: true
+      shareProcessNamespace: false
+      securityContext:
+        fsGroup: 472
+        runAsGroup: 472
+        runAsNonRoot: true
+        runAsUser: 472
+      enableServiceLinks: true
+      containers:
+        - name: grafana-sc-dashboard
+          image: "quay.io/kiwigrid/k8s-sidecar:2.8.1"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: METHOD
+              value: WATCH
+            - name: LABEL
+              value: "grafana_dashboard"
+            - name: FOLDER
+              value: "/tmp/dashboards"
+            - name: RESOURCE
+              value: "both"
+            - name: REQ_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: example-grafana
+                  key: admin-user
+            - name: REQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: example-grafana
+                  key: admin-password
+            - name: REQ_URL
+              value: http://localhost:3000/api/admin/provisioning/dashboards/reload
+            - name: REQ_METHOD
+              value: POST
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: sc-dashboard-volume
+              mountPath: "/tmp/dashboards"
+        - name: grafana
+          image: "docker.io/grafana/grafana:13.1.1"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config
+              mountPath: "/etc/grafana/grafana.ini"
+              subPath: grafana.ini
+            - name: storage
+              mountPath: "/var/lib/grafana"
+            - name: search
+              mountPath: "/var/lib/grafana-search"
+            - name: config
+              mountPath: "/etc/grafana/provisioning/datasources/datasources.yaml"
+              subPath: "datasources.yaml"
+            - name: sc-dashboard-volume
+              mountPath: "/tmp/dashboards"
+            - name: sc-dashboard-provider
+              mountPath: "/etc/grafana/provisioning/dashboards/sc-dashboardproviders.yaml"
+              subPath: provider.yaml
+          ports:
+            - name: grafana
+              containerPort: 3000
+              protocol: TCP
+            - name: gossip-tcp
+              containerPort: 9094
+              protocol: TCP
+            - name: gossip-udp
+              containerPort: 9094
+              protocol: UDP
+            - name: profiling
+              containerPort: 6060
+              protocol: TCP
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: example-grafana
+                  key: admin-user
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: example-grafana
+                  key: admin-password
+            - name: GF_PATHS_DATA
+              value: /var/lib/grafana/
+            - name: GF_PATHS_LOGS
+              value: /var/log/grafana
+            - name: GF_PATHS_PLUGINS
+              value: /var/lib/grafana/plugins
+            - name: GF_PATHS_PROVISIONING
+              value: /etc/grafana/provisioning
+            - name: GF_UNIFIED_STORAGE_INDEX_PATH
+              value: /var/lib/grafana-search/bleve
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  divisor: "1"
+                  resource: limits.memory
+            - name: "GF_AUTH_GENERIC_OAUTH_CLIENT_ID"
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: example-grafana
+            - name: "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET"
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: example-grafana
+            - name: "GF_SECURITY_SECRET_KEY"
+              valueFrom:
+                secretKeyRef:
+                  key: secret_key
+                  name: example-grafana
+          livenessProbe:
+            failureThreshold: 10
+            httpGet:
+              path: /api/health
+              port: grafana
+            initialDelaySeconds: 60
+            timeoutSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: grafana
+          resources:
+            limits:
+              cpu: "2"
+              memory: 1Gi
+            requests:
+              cpu: "2"
+              memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: observability-stack-grafana
+        - name: storage
+          emptyDir: {}
+        - name: search
+          emptyDir: {}
+        - name: sc-dashboard-volume
+          emptyDir: {}
+        - name: sc-dashboard-provider
+          configMap:
+            name: observability-stack-grafana-config-dashboards
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/server.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-stack-victoria-metrics-operator
+  namespace: observability
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+spec:
+  replicas: 1
+  selector:
+    matchLabels: 
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: victoria-metrics-operator
+  strategy: 
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels: 
+        app.kubernetes.io/instance: observability-stack
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: victoria-metrics-operator
+    spec:
+      automountServiceAccountToken: true
+      securityContext: 
+        fsGroup: 2000
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: observability-stack-victoria-metrics-operator
+      containers:
+        - name: operator
+          image: victoriametrics/operator:v0.74.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: VM_ANOMALY_VERSION
+              value: "v1.30.4"
+            - name: VM_LOGS_VERSION
+              value: "v1.52.0"
+            - name: VM_METRICS_VERSION
+              value: "v1.152.0"
+            - name: VM_TRACES_VERSION
+              value: "v0.10.0"
+            - name: VM_VMALERTMANAGER_ALERTMANAGERVERSION
+              value: "v0.34.0"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: victoria-metrics-operator
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_PODMONITOR
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_PROMETHEUSRULE
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_PROBE
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_ALERTMANAGERCONFIG
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_SCRAPECONFIG
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTEROWNERREFERENCES
+              value: "false"
+          args:
+            - --zap-log-level=info
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+            - --webhook.enable=true
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: probe
+              containerPort: 8081
+              protocol: TCP
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+          readinessProbe: 
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: probe
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe: 
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            tcpSocket:
+              port: probe
+            timeoutSeconds: 5
+          volumeMounts:
+            - mountPath: /tmp/k8s-webhook-server/serving-certs
+              name: cert
+              readOnly: true
+          resources: 
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "1"
+              memory: 512Mi
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: cert
+          secret:
+            defaultMode: 420
+            secretName: observability-stack-victoria-metrics-operator-validation
+
+---
+# Source: observability-stack/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: observability-stack-backup-metrics-incremental
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.backup: metrics
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: stack
+            app.kubernetes.io/instance: observability-stack
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/part-of: observability-stack
+            observability.backup: metrics
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: vmsingle
+                      app.kubernetes.io/instance: observability-stack-victoria-metrics-k8s-stack
+          containers:
+            - name: vmbackup
+              image: "example.com/mirror/vmbackup:v1.152.0"
+              args:
+                # vmbackup takes an instant snapshot through the store's
+                # own API and uploads it. It is incremental BY
+                # CONSTRUCTION: a destination that already holds a backup
+                # gets only what changed, and there is no flag for it.
+                - -storageDataPath=/vm-data
+                - -snapshot.createURL=$(SNAPSHOT_CREATE_URL)
+                - -dst=:s3,env_auth=true:example-backups/observability/metrics
+              env:
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: "example-store-credentials"
+                      key: "user"
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: "example-store-credentials"
+                      key: "pass"
+                # The snapshot endpoint is behind the store's own
+                # `-httpAuth.*`, and deliberately not behind a
+                # `-snapshotAuthKey`: an authKey REPLACES basic auth for
+                # that endpoint rather than adding to it, and it travels
+                # in the query string.
+                - name: SNAPSHOT_CREATE_URL
+                  value: "http://$(VM_USERNAME):$(VM_PASSWORD)@vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428/snapshot/create"
+              envFrom:
+                - secretRef:
+                    name: "example-backup-credentials"
+              volumeMounts:
+                - name: store
+                  mountPath: /vm-data
+                  readOnly: true
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: "example-metrics-claim"
+                readOnly: true
+
+---
+# Source: observability-stack/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: observability-stack-backup-metrics-full
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.backup: metrics
+spec:
+  schedule: "0 2 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: stack
+            app.kubernetes.io/instance: observability-stack
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/part-of: observability-stack
+            observability.backup: metrics
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: vmsingle
+                      app.kubernetes.io/instance: observability-stack-victoria-metrics-k8s-stack
+          containers:
+            - name: vmbackup
+              image: "example.com/mirror/vmbackup:v1.152.0"
+              args:
+                # vmbackup takes an instant snapshot through the store's
+                # own API and uploads it. It is incremental BY
+                # CONSTRUCTION: a destination that already holds a backup
+                # gets only what changed, and there is no flag for it.
+                - -storageDataPath=/vm-data
+                - -snapshot.createURL=$(SNAPSHOT_CREATE_URL)
+                # The weekly full names the existing backup as `-origin`,
+                # so everything unchanged is copied INSIDE the object
+                # store rather than pulled down and pushed back up. It is
+                # the same backup either way; this is what it costs.
+                - -origin=:s3,env_auth=true:example-backups/observability/metrics
+                - -dst=:s3,env_auth=true:example-backups/observability/metrics-full
+              env:
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: "example-store-credentials"
+                      key: "user"
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: "example-store-credentials"
+                      key: "pass"
+                # The snapshot endpoint is behind the store's own
+                # `-httpAuth.*`, and deliberately not behind a
+                # `-snapshotAuthKey`: an authKey REPLACES basic auth for
+                # that endpoint rather than adding to it, and it travels
+                # in the query string.
+                - name: SNAPSHOT_CREATE_URL
+                  value: "http://$(VM_USERNAME):$(VM_PASSWORD)@vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428/snapshot/create"
+              envFrom:
+                - secretRef:
+                    name: "example-backup-credentials"
+              volumeMounts:
+                - name: store
+                  mountPath: /vm-data
+                  readOnly: true
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: "example-metrics-claim"
+                readOnly: true
+
+---
+# Source: observability-stack/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: observability-stack-backup-logs
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.backup: logs
+spec:
+  schedule: "20 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: stack
+            app.kubernetes.io/instance: observability-stack
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/part-of: observability-stack
+            observability.backup: logs
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app: server
+                      app.kubernetes.io/name: victoria-logs-single
+                      app.kubernetes.io/instance: observability-stack
+          containers:
+            - name: backup
+              image: "example.com/mirror/rclone:1.73.0"
+              env:
+                - name: STORE_URL
+                  value: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+                - name: DESTINATION
+                  value: ":s3,env_auth=true:example-backups/observability/logs"
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: "example-store-credentials"
+                      key: "user"
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: "example-store-credentials"
+                      key: "pass"
+              envFrom:
+                - secretRef:
+                    name: "example-backup-credentials"
+              volumeMounts:
+                - name: store
+                  mountPath: /storage
+                  readOnly: true
+              command:
+                - /bin/sh
+                - -euc
+                - |
+                  # The log store's partitions are per-day directories.
+                  # A snapshot is a directory of HARDLINKS inside the data
+                  # directory: cheap to make, and it pins every part it
+                  # references, so one left behind grows the store's disk
+                  # usage with nothing pointing at why. The binary expires
+                  # them after -snapshotsMaxAge (3 days), which is a
+                  # backstop, not a plan — this job deletes its own.
+                  auth="--user=$VM_USERNAME --password=$VM_PASSWORD"
+                  created=$(wget -q -O- $auth --post-data='' \
+                    "$STORE_URL/internal/partition/snapshot/create")
+                  echo "snapshots: $created"
+                  # REFUSE AN EMPTY SOURCE. A store with no partitions is
+                  # a store with no data, and `rclone sync` from an empty
+                  # source DELETES the destination and exits zero.
+                  case "$created" in
+                    ''|'[]') echo "no snapshot was created: the store has no partitions, or the API refused" >&2; exit 1 ;;
+                  esac
+                  for path in $(echo "$created" | tr -d '[]"' | tr ',' ' '); do
+                    test -d "$path" || { echo "snapshot $path is not on this volume" >&2; exit 1; }
+                    test -n "$(ls -A "$path")" || { echo "snapshot $path is empty" >&2; exit 1; }
+                    rclone sync "$path" "$DESTINATION/$(basename "$path")" --checksum
+                    wget -q -O- $auth --post-data='' \
+                      "$STORE_URL/internal/partition/snapshot/delete?path=$path"
+                  done
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: "server-volume-observability-stack-victoria-logs-single-server-0"
+                readOnly: true
+
+---
+# Source: observability-stack/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: observability-stack-backup-traces
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.backup: traces
+spec:
+  schedule: "40 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: stack
+            app.kubernetes.io/instance: observability-stack
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/part-of: observability-stack
+            observability.backup: traces
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app: server
+                      app.kubernetes.io/name: vt-single
+                      app.kubernetes.io/instance: observability-stack
+          containers:
+            - name: backup
+              image: "example.com/mirror/rclone:1.73.0"
+              env:
+                - name: STORE_URL
+                  value: "http://observability-stack-vt-single-server.observability.svc:10428"
+                - name: DESTINATION
+                  value: ":s3,env_auth=true:example-backups/observability/traces"
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: "example-store-credentials"
+                      key: "user"
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: "example-store-credentials"
+                      key: "pass"
+              envFrom:
+                - secretRef:
+                    name: "example-backup-credentials"
+              volumeMounts:
+                - name: store
+                  mountPath: /storage
+                  readOnly: true
+              command:
+                - /bin/sh
+                - -euc
+                - |
+                  # The trace store has no snapshot API this chart will
+                  # rely on, so the vendor's documented procedure it is:
+                  # sync, detach, sync, attach. The second pass exists
+                  # because the data files are immutable but the small
+                  # metadata files beside them are not, and the first pass
+                  # takes long enough for them to change.
+                  auth="--user=$VM_USERNAME --password=$VM_PASSWORD"
+                  test -d /storage/partitions || { echo "no partitions directory: this is not a trace store's volume" >&2; exit 1; }
+                  # REFUSE AN EMPTY SOURCE, before anything is deleted at
+                  # the destination.
+                  test -n "$(ls -A /storage/partitions)" || { echo "the trace store has no partitions; refusing to sync an empty source over the backup" >&2; exit 1; }
+                  rclone sync /storage/partitions "$DESTINATION" --checksum
+                  for p in $(ls /storage/partitions); do
+                    wget -q -O- $auth --post-data='' "$STORE_URL/internal/partition/detach?name=$p"
+                  done
+                  rclone sync /storage/partitions "$DESTINATION" --checksum
+                  for p in $(ls /storage/partitions); do
+                    wget -q -O- $auth --post-data='' "$STORE_URL/internal/partition/attach?name=$p"
+                  done
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: "server-volume-observability-stack-vt-single-server-0"
+                readOnly: true
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/webhook.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name:  observability-stack-victoria-metrics-operator-admission
+  annotations:
+    certmanager.k8s.io/inject-ca-from: "observability/observability-stack-victoria-metrics-operator-validation"
+    cert-manager.io/inject-ca-from: "observability/observability-stack-victoria-metrics-operator-validation"
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+webhooks:
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1-vlagent
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vlagents.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vlagents
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1-vlcluster
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vlclusters.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vlclusters
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1alpha1-vldistributed
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vldistributed.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vldistributed
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vlogs
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vlogs.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vlogs
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1-vlsingle
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vlsingles.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vlsingles
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmagent
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmagents.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmagents
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmalertmanagerconfig
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmalertmanagerconfigs.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmalertmanagerconfigs
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmalertmanager
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmalertmanagers.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmalertmanagers
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmalert
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmalerts.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmalerts
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1-vmanomaly
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmanomalies.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmanomalies
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1-vmanomalyconfig
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmanomalyconfigs.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmanomalyconfigs
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmauth
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmauths.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmauths
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmcluster
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmclusters.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmclusters
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1alpha1-vmdistributed
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmdistributed.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmdistributed
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmnodescrape
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmnodescrapes.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmnodescrapes
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmpodscrape
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmpodscrapes.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmpodscrapes
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmprobe
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmprobes.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmprobes
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmrule
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmrules.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmrules
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmscrapeconfig
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmscrapeconfigs.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmscrapeconfigs
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmservicescrape
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmservicescrapes.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmservicescrapes
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmsingle
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmsingles.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmsingles
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmstaticscrape
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmstaticscrapes.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmstaticscrapes
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1beta1-vmuser
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vmusers.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vmusers
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1-vtcluster
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vtclusters.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vtclusters
+  - clientConfig:
+      service:
+        namespace: observability
+        name: observability-stack-victoria-metrics-operator
+        path: /validate-operator-victoriametrics-com-v1-vtsingle
+        port: 9443
+    failurePolicy: Ignore
+    name: 'vtsingles.operator.victoriametrics.com'
+    admissionReviewVersions:
+      - v1
+    sideEffects: None
+    objectSelector:
+      matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: NotIn
+          values: [victoria-metrics-operator]
+    rules:
+      - apiGroups:
+          - operator.victoriametrics.com
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - vtsingles
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/webhook.yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: observability-stack-victoria-metrics-operator-root-ca
+  namespace: observability
+spec:
+  secretName: observability-stack-victoria-metrics-operator-root-ca
+  duration: 63800h0m0s
+  issuerRef:
+    name: observability-stack-victoria-metrics-operator-root
+  commonName: ca.validation.victoriametrics
+  isCA: true
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/webhook.yaml
+# actual cert part for operator
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: observability-stack-victoria-metrics-operator-validation
+  namespace: observability
+spec:
+  secretName: observability-stack-victoria-metrics-operator-validation
+  duration: 45800h0m0s
+  issuerRef: 
+    name: observability-stack-victoria-metrics-operator-issuer
+  dnsNames:
+    - observability-stack-victoria-metrics-operator
+    - observability-stack-victoria-metrics-operator.observability
+    - observability-stack-victoria-metrics-operator.observability.svc
+    - observability-stack-victoria-metrics-operator.observability.svc.cluster.example.
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/webhook.yaml
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: observability-stack-victoria-metrics-operator-root
+  namespace: observability
+spec:
+  selfSigned: {}
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/webhook.yaml
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: observability-stack-victoria-metrics-operator-issuer
+  namespace: observability
+spec:
+  ca:
+    secretName: observability-stack-victoria-metrics-operator-root-ca
+
+---
+# Source: observability-stack/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-metrics
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: prometheus
+spec:
+  replicaCount: 1
+  evaluationInterval: 15s
+  selectAllByDefault: true
+  resources:
+    limits:
+      cpu: "2"
+      memory: 1Gi
+    requests:
+      cpu: "2"
+      memory: 1Gi
+  datasource:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "example-store-credentials"
+        key: "user"
+      password:
+        name: "example-store-credentials"
+        key: "pass"
+  remoteWrite:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "example-store-credentials"
+        key: "user"
+      password:
+        name: "example-store-credentials"
+        key: "pass"
+  remoteRead:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "example-store-credentials"
+        key: "user"
+      password:
+        name: "example-store-credentials"
+        key: "pass"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
+  externalLabels:
+    cluster: example
+  extraArgs:
+    external.url: "https://alerts.example.com"
+
+---
+# Source: observability-stack/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-logs
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: vlogs
+spec:
+  replicaCount: 1
+  evaluationInterval: 15s
+  selectAllByDefault: true
+  resources:
+    limits:
+      cpu: "2"
+      memory: 1Gi
+    requests:
+      cpu: "2"
+      memory: 1Gi
+  datasource:
+    url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+    basicAuth:
+      username:
+        name: "example-store-credentials"
+        key: "user"
+      password:
+        name: "example-store-credentials"
+        key: "pass"
+  remoteWrite:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "example-store-credentials"
+        key: "user"
+      password:
+        name: "example-store-credentials"
+        key: "pass"
+  remoteRead:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "example-store-credentials"
+        key: "user"
+      password:
+        name: "example-store-credentials"
+        key: "pass"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
+  externalLabels:
+    cluster: example
+  extraArgs:
+    rule.defaultRuleType: vlogs
+    external.url: "https://alerts.example.com"
+
+---
+# Source: observability-stack/templates/vmalertmanager.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlertmanager
+metadata:
+  name: observability-stack
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  replicaCount: 2
+  resources:
+    limits:
+      cpu: "2"
+      memory: 512Mi
+    requests:
+      cpu: "2"
+      memory: 512Mi
+  selectAllByDefault: false
+  externalURL: "https://alerts.example.com"
+  volumes:
+    - name: watchdog
+      secret:
+        secretName: "example-watchdog-receiver"
+  volumeMounts:
+    - name: watchdog
+      mountPath: /etc/alertmanager/watchdog
+      readOnly: true
+  configRawYaml: |
+    route:
+      receiver: "default"
+      group_by: 
+        - alertname
+        - owner
+        - stage
+      group_wait: 10s
+      group_interval: 2m
+      repeat_interval: 2h
+      routes:
+        # The heartbeat, first and matched on its own: it must never be
+        # grouped with anything, never inhibited and never silenced by a
+        # rule written for a real alert.
+        - receiver: watchdog
+          matchers:
+            - alertname = "Watchdog"
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 2m
+      - matchers:
+        - severity = "critical"
+        receiver: default
+    receivers:
+      - name: default
+      - name: watchdog
+        webhook_configs:
+          - url_file: /etc/alertmanager/watchdog/url
+            send_resolved: false
+    inhibit_rules:
+      - equal:
+        - alertname
+        sourceMatchers:
+        - severity = "critical"
+        targetMatchers:
+        - severity = "warning"
+
+---
+# Source: observability-stack/templates/vmauth.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAuth
+metadata:
+  name: observability-stack
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  image:
+    repository: victoriametrics/vmauth
+    tag: v1.153.0
+  replicaCount: 2
+  resources:
+    limits:
+      cpu: "2"
+      memory: 1Gi
+    requests:
+      cpu: "2"
+      memory: 1Gi
+  selectAllByDefault: false
+  userSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: observability-stack
+      app.kubernetes.io/instance: observability-stack
+  userNamespaceSelector: {}
+  unauthorizedUserAccessSpec:
+    disabled: true
+  extraArgs:
+    logInvalidAuthTokens: "true"
+    maxConcurrentRequests: "500"
+
+---
+# Source: observability-stack/templates/vmalertmanager.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-watchdog
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    - name: observability-stack.watchdog
+      interval: 15s
+      rules:
+        - alert: Watchdog
+          expr: vector(1)
+          labels:
+            severity: none
+          annotations:
+            summary: "This alert is always firing; its absence is the signal"
+            description: >-
+              The heartbeat of this observability stack. Something outside the
+              cluster watches for it and pages when it stops arriving: an alerting
+              path that has died cannot report that it has died.
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/monitor.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: observability-stack-victoria-metrics-operator
+  namespace: observability
+  labels: 
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-operator
+    app.kubernetes.io/version: v0.74.1
+    helm.sh/chart: victoria-metrics-operator-0.67.3
+spec:
+  selector:
+    matchLabels: 
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: victoria-metrics-operator
+  endpoints:
+    - port: http
+  namespaceSelector:
+    matchNames:
+      - observability
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-example-k8s-viewer
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: reader
+spec:
+  name: "example:k8s:viewer"
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: "https://issuer.example"
+    matchClaims:
+      entitlements: "example:k8s:viewer"
+    defaultVMAccessClaim:
+      metricsExtraFilters:
+        - '{stage="devel"}'
+        - '{stage="prod",owner=~"^(dms|url-shortener)$"}'
+      logsExtraStreamFilters:
+        - '{stage="devel"}'
+        - '{stage="prod",owner=~"^(dms|url-shortener)$"}'
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+      paths:
+        - /prometheus/api/v1/query
+        - /prometheus/api/v1/query_range
+        - /prometheus/api/v1/series
+        - /prometheus/api/v1/labels
+        - /prometheus/api/v1/label/[^/]+/values
+        - /prometheus/api/v1/metadata
+        - /prometheus/api/v1/status/[^/]+
+        - /prometheus/vmui.*
+      targetRefBasicAuth:
+        username:
+          name: "example-store-credentials"
+          key: "user"
+        password:
+          name: "example-store-credentials"
+          key: "pass"
+    - static:
+        url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+      paths:
+        - /select/logsql/.*
+        - /select/vmui.*
+      targetRefBasicAuth:
+        username:
+          name: "example-store-credentials"
+          key: "user"
+        password:
+          name: "example-store-credentials"
+          key: "pass"
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-writer-otel-collector
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: writer
+spec:
+  name: "otel-collector"
+  disable_secret_creation: true
+  tokenRef:
+    name: "example-writer-token"
+    key: "token"
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+      paths:
+        - /prometheus/api/v1/write
+        - /api/v1/write
+        - /opentelemetry/v1/metrics
+      targetRefBasicAuth:
+        username:
+          name: "example-store-credentials"
+          key: "user"
+        password:
+          name: "example-store-credentials"
+          key: "pass"
+    - static:
+        url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+      paths:
+        - /insert/.*
+      targetRefBasicAuth:
+        username:
+          name: "example-store-credentials"
+          key: "user"
+        password:
+          name: "example-store-credentials"
+          key: "pass"
+    - static:
+        url: "http://observability-stack-vt-single-server.observability.svc:10428"
+      paths:
+        - /insert/opentelemetry/v1/traces
+      targetRefBasicAuth:
+        username:
+          name: "example-store-credentials"
+          key: "user"
+        password:
+          name: "example-store-credentials"
+          key: "pass"
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/templates/sync-job/job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: observability-stack-victoria-metrics-k8s-stack-sync-job
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: syncJob
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-k8s-stack
+    app.kubernetes.io/version: v0.0.17
+    helm.sh/chart: victoria-metrics-k8s-stack-0.93.0
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: 
+        app.kubernetes.io/component: syncJob
+        app.kubernetes.io/instance: observability-stack
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: victoria-metrics-k8s-stack
+        app.kubernetes.io/version: v0.0.17
+        helm.sh/chart: victoria-metrics-k8s-stack-0.93.0
+    spec:
+      serviceAccountName: observability-stack-victoria-metrics-k8s-stack-sync-job
+      restartPolicy: OnFailure
+      containers:
+        - name: sync-job
+          image: "ghcr.io/victoriametrics/sync-job:v0.0.17"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: RELEASE
+              value: "observability-stack"
+            - name: RESOURCE_PREFIX
+              value: "observability-stack-victoria-metrics-k8s-stack"
+            - name: PRUNE
+              value: "true"
+            - name: OWNER_REFERENCES
+              value: "true"
+            - name: SERVICE_ACCOUNT
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
+          volumeMounts:
+            - name: config
+              mountPath: /etc/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: observability-stack-victoria-metrics-k8s-stack-sync-job-config

@@ -100,6 +100,45 @@ func (c Config) logsFilter(g Grant) string {
 	return c.metricsFilter(g)
 }
 
+// MetricsReadPaths, LogsReadPaths and TracesReadPaths are the routes a
+// reader is given, and they are deliberately a list of named endpoints
+// rather than a prefix.
+//
+// The tempting shapes are wrong in the same way. `/prometheus/.*` also
+// matches `/prometheus/api/v1/write` and
+// `/prometheus/api/v1/admin/tsdb/delete_series`; `/api/v1/.*` also
+// matches `/api/v1/write` and `/api/v1/import`; `/.*` also matches
+// `/internal/force_merge`, whose own authKey flag REPLACES the store's
+// `-httpAuth.*` rather than adding to it. A reader's route that also
+// accepts writes is not a reader's route, and nothing about it looks
+// wrong until somebody uses it.
+//
+// charts/observability-stack renders these same lists into its VMUser
+// objects, and its `tenancy` golden case exists to prove the two have not
+// drifted.
+var (
+	MetricsReadPaths = []string{
+		"/prometheus/api/v1/query",
+		"/prometheus/api/v1/query_range",
+		"/prometheus/api/v1/series",
+		"/prometheus/api/v1/labels",
+		"/prometheus/api/v1/label/[^/]+/values",
+		"/prometheus/api/v1/metadata",
+		"/prometheus/api/v1/status/[^/]+",
+		"/prometheus/vmui.*",
+	}
+
+	LogsReadPaths = []string{
+		"/select/logsql/.*",
+		"/select/vmui.*",
+	}
+
+	TracesReadPaths = []string{
+		"/select/jaeger/.*",
+		"/select/tempo/.*",
+	}
+)
+
 // RenderVMAuth returns a vmauth configuration in which each principal is a
 // user selected by its group and carrying its own filters.
 //
@@ -126,11 +165,11 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 		}
 
 		rows := []VMAuthURLMapRow{
-			{SrcPaths: []string{"/prometheus/.*", "/api/v1/query.*", "/api/v1/series", "/api/v1/label.*"}, URLPrefix: []string{c.MetricsBackend}},
-			{SrcPaths: []string{"/select/logsql/.*"}, URLPrefix: []string{c.LogsBackend}},
+			{SrcPaths: MetricsReadPaths, URLPrefix: []string{c.MetricsBackend}},
+			{SrcPaths: LogsReadPaths, URLPrefix: []string{c.LogsBackend}},
 		}
 		if c.TracesBackend != "" {
-			rows = append(rows, VMAuthURLMapRow{SrcPaths: []string{"/select/jaeger/.*"}, URLPrefix: []string{c.TracesBackend}})
+			rows = append(rows, VMAuthURLMapRow{SrcPaths: TracesReadPaths, URLPrefix: []string{c.TracesBackend}})
 		}
 
 		out.Users = append(out.Users, VMAuthUser{

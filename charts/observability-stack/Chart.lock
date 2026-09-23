@@ -1,0 +1,15 @@
+dependencies:
+- name: victoria-metrics-k8s-stack
+  repository: oci://ghcr.io/victoriametrics/helm-charts
+  version: 0.93.0
+- name: victoria-logs-single
+  repository: oci://ghcr.io/victoriametrics/helm-charts
+  version: 0.13.9
+- name: victoria-traces-single
+  repository: oci://ghcr.io/victoriametrics/helm-charts
+  version: 0.1.11
+- name: grafana
+  repository: oci://ghcr.io/grafana-community/helm-charts
+  version: 12.7.3
+digest: sha256:1849844950446fb1a687cd3cb7a3189597afcdeb0a8049e5e5415b98bc9e9653
+generated: "2026-09-23T15:45:31.859979343+02:00"

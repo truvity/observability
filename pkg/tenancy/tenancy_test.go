@@ -1,6 +1,7 @@
 package tenancy_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -282,4 +283,35 @@ func TestRenderDoesNotMutateItsInput(t *testing.T) {
 
 	assert.Equal(t, "prod", c.Principals[0].Grants[0].Env, "grant order changed under the caller")
 	assert.Equal(t, []string{"url-shortener", "dms"}, c.Principals[0].Grants[0].Tenants, "tenant order changed under the caller")
+}
+
+// A reader's route must not also be a writer's route. The shapes this
+// guards against are the convenient ones: a prefix that covers the whole
+// API surface covers the write and delete endpoints with it, and a route
+// that reaches /internal/* reaches endpoints whose own authKey flags
+// replace the store's basic auth rather than adding to it.
+func TestReadPathsAdmitNoWrites(t *testing.T) {
+	forbidden := []string{"write", "import", "delete", "admin", "internal", "insert"}
+
+	for _, paths := range [][]string{tenancy.MetricsReadPaths, tenancy.LogsReadPaths, tenancy.TracesReadPaths} {
+		require.NotEmpty(t, paths)
+		for _, p := range paths {
+			assert.NotEqual(t, "/.*", p, "a route that matches everything is not a read route")
+			for _, word := range forbidden {
+				assert.NotContains(t, p, word, "read route %q reaches a write path", p)
+			}
+			re, err := regexp.Compile("^" + p + "$")
+			require.NoError(t, err, "every route is a regular expression vmauth has to compile")
+			for _, write := range []string{
+				"/prometheus/api/v1/write",
+				"/api/v1/write",
+				"/prometheus/api/v1/import",
+				"/prometheus/api/v1/admin/tsdb/delete_series",
+				"/internal/force_merge",
+				"/insert/jsonline",
+			} {
+				assert.False(t, re.MatchString(write), "read route %q also admits %q", p, write)
+			}
+		}
+	}
 }

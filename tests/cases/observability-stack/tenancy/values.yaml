@@ -1,0 +1,44 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+# It also proves the chart renders on a cluster that does not use the
+# default — an estate on the default sees exactly this one difference.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The tenancy case, and the reason it exists.
+#
+# These are the principals from the repository's README, and the golden
+# render beside this file is what the proxy will enforce for them. A Go
+# test in tests/ renders the SAME principals through
+# pkg/tenancy.RenderVMAuth and compares the two, so the library and the
+# chart cannot drift: a difference between them is a difference between
+# what a token says a person may read and what the proxy lets them read,
+# and nothing surfaces that until somebody sees data they should not.
+tenancy:
+  issuerUrl: https://issuer.example
+  claimName: groups
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+    - group: example:dms:deployer
+      grants:
+        - env: devel
+          tenants: [dms]
+
+# Off, so the render is the tenancy and nothing else.
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+networkPolicy:
+  enabled: false
+victoria-metrics-k8s-stack:
+  enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

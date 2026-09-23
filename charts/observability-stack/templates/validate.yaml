@@ -1,0 +1,9 @@
+{{- /*
+Every refusal, in one place, rendering no object.
+
+The alternative — a `fail` inside each template that also renders a
+resource — means a refusal only fires when the object around it is
+enabled, so turning a component off quietly turns off the check that
+protects it. This file always renders, and renders nothing.
+*/ -}}
+{{- include "observability-stack.validate" . -}}

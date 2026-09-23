@@ -1,0 +1,83 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $root := . }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- /*
+The stores talk to nothing and are talked to by three things: the proxy,
+the two vmalerts, and the backup jobs.
+
+A NetworkPolicy that selects a pod is a default-deny for that pod, which
+is the point: `-httpAuth` on the stores is a rule about who may read, and
+this is a rule about who may connect. Both, because each is a different
+mistake — a leaked credential defeats the first, a missing credential
+check defeats the second, and an estate only ever notices one of them.
+
+Egress is deliberately not restricted here. An egress policy that names
+every DNS server, every object store endpoint and every issuer is a
+policy that breaks the first time one of them moves, and the failure mode
+is a backup that stops silently — which is the failure this repository
+exists to catch, not to cause.
+*/}}
+{{- $peers := concat
+    (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmauth" "app.kubernetes.io/instance" $fullname))))
+    (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmalert"))))
+    (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/part-of" "observability-stack" "app.kubernetes.io/instance" $root.Release.Name))))
+    ($root.Values.networkPolicy.writersFrom | default list)
+}}
+{{- $stores := list
+    (dict "name" "metrics" "port" 8428 "selector" (dict "app.kubernetes.io/name" "vmsingle" "app.kubernetes.io/instance" (include "observability-stack.vmks.fullname" $root)))
+    (dict "name" "logs" "port" 9428 "selector" (dict "app" "server" "app.kubernetes.io/name" (default "victoria-logs-single" ((index $root.Values "victoria-logs-single").nameOverride)) "app.kubernetes.io/instance" $root.Release.Name))
+}}
+{{- if include "observability-stack.tracesEnabled" . }}
+{{- $stores = append $stores (dict "name" "traces" "port" 10428 "selector" (dict "app" "server" "app.kubernetes.io/name" (default "vt-single" ((index $root.Values "victoria-traces-single").nameOverride)) "app.kubernetes.io/instance" $root.Release.Name)) }}
+{{- end }}
+{{- range $store := $stores }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-%s-store" $fullname $store.name }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $store.selector | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- toYaml $peers | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ $store.port }}
+{{- end }}
+---
+{{- /*
+The proxy's own ingress. Empty `proxyFrom` means the release's namespace
+and nothing else — the smallest rule that leaves a working install, and
+the one an estate whose Grafana lives elsewhere has to widen on purpose.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-proxy
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vmauth
+      app.kubernetes.io/instance: {{ $fullname }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.proxyFrom }}
+        {{- toYaml .Values.networkPolicy.proxyFrom | nindent 8 }}
+        {{- else }}
+        - podSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8427
+{{- end }}

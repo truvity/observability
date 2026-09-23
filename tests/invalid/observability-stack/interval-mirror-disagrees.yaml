@@ -1,0 +1,13 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+# Deduplication keeps one sample per window. A window wider than the
+# scrape interval silently discards good samples; a narrower one
+# deduplicates nothing. They are one value, and Helm cannot compute a
+# subchart's values, so the chart refuses the disagreement instead.
+interval: 15s
