@@ -451,6 +451,96 @@ endpoint that takes no filter is not narrowed by one, so
 and `buildinfo` are no longer routes. See "A filter that is computed and
 never applied" above.
 
+### Why there is no unauthorized user, and why that is written as nothing
+
+vmauth has an `unauthorized_user` section: a route served to callers that
+did not authenticate. This stack has none, and the way the chart says so is
+by rendering **no `unauthorizedUserAccessSpec` at all**. The absence is the
+setting. It is worth stating why, because an empty spot in a manifest reads
+like an oversight and invites someone to fill it in.
+
+**A token that verifies but carries no `vm_access` claim falls through to
+the unauthorized user.** That is vmauth's own order from v1.147.0: find the
+user whose `match_claims` the token matches, and if that token has neither
+a `vm_access` claim of its own nor a `default_vm_access_claim` on the user
+it matched, hand the request to the unauthorized user instead of refusing
+it. So an unauthorized section is not only a door for anonymous callers —
+it is where a **half-configured principal** ends up, with a token that
+verified.
+
+**Every shape the operator accepts is a shape that serves.** There is no
+setting that means "an unauthorized user which refuses". The operator
+validates the section and rejects one that routes nowhere — *at least one
+of `url_map`, `url_prefix` or `targetRefs` must be defined* — so the
+minimum it will accept is a route. On a cluster running the pinned operator
+and vmauth v1.152.0, a proxy with the smallest acceptable section answered
+**200** to all four of: a token matching a principal, a verified token with
+no claim, a garbage token, and no `Authorization` header at all. With no
+section, the same four answered 200, **401, 401, 401**. The section is not
+a policy knob; it is an on switch.
+
+Both halves of the defence therefore have to hold at once, and neither is
+visible in the other's absence:
+
+| The control | What it stops | What it looks like when it is missing |
+|---|---|---|
+| No `unauthorizedUserAccessSpec` on the VMAuth | An unauthenticated or half-authenticated caller being served | Reads succeed for everybody, and nothing logs a refusal |
+| `defaultVMAccessClaim` on every reader VMUser | A verified token reaching the fall-through in the first place | Every token for that principal is refused, with nothing saying why |
+
+`tests/pruning_test.go` holds `TestNoUnauthorizedUser`, which fails if any
+rendered VMAuth carries either `unauthorizedUserAccessSpec` or the
+deprecated `unauthorizedAccessConfig`.
+
+### A field the API server prunes is invisible everywhere but the cluster
+
+The defect that earned the check above was two lines that looked like the
+control and were not: `unauthorizedUserAccessSpec: {disabled: true}`, a
+plausible spelling of "off" that no release of the operator has ever had.
+
+**A key a CustomResourceDefinition does not have is not an error.** The
+manifest renders. It is valid YAML. `helm lint` passes, the values schema
+has nothing to say because the key is in the template's output rather than
+in anyone's values, and the golden is byte-for-byte what a golden of a
+working chart would be. The API server then silently drops the key and
+stores what is left — here, `unauthorizedUserAccessSpec: {}`, a section
+that routes nowhere, which the operator refuses, so the proxy got **no
+Deployment and the estate had no read path at all**. A control that was
+never applied and a component that never started, from a diff that showed
+nothing wrong.
+
+Three things make this class worse than a typo:
+
+- **It is invisible in the direction people look.** Every artifact between
+  the template and the cluster agrees the field is there. Only the stored
+  object disagrees, and nobody diffs against that.
+- **Strict validation is on the path nobody delivers through.** `kubectl
+  apply` defaults to strict field validation and *does* refuse it outright.
+  Helm and Argo CD do not, so the check that would have caught it is the
+  one a person runs by hand and never the one that ships.
+- **The loud failure is the lucky one.** This field was load-bearing enough
+  that the operator refused the object. A pruned field that merely *relaxes*
+  something — a misspelled `defaultVMAccessClaim`, a filter under a key that
+  does not exist — installs cleanly and reports healthy, having quietly
+  removed a restriction.
+
+So the rule is: **a rendered field is not a configured field until something
+has checked it against the schema that will receive it.** This repository
+can check that without a cluster, because it ships both halves —
+`charts/observability-crds` vendors the definitions and the other charts
+render objects against them. `TestRenderedObjectsSurviveTheCRDs` walks every
+custom resource in every golden against the definition for its kind and
+fails on any field that would be pruned. `tests/pruned/` holds manifests
+that are destroyed by the API server and pass every other check, and
+`TestPrunedFixturesAreCaught` requires each one to be reported — a checker
+whose only evidence is that it has never failed is not evidence.
+
+One subtlety the check had to be taught, verified against a live API server
+rather than reasoned about: `x-kubernetes-preserve-unknown-fields` holds
+only at the node that sets it. `VMAuth.spec` sets it, so an unknown key
+directly under `spec` survives — but `spec.unauthorizedUserAccessSpec`
+carries `properties` of its own and prunes inside itself. A checker that
+stopped at the first preserving node would have passed this defect.
+
 ### Why the backups look the way they do
 
 Three stores, three mechanisms, and the only thing they share is the rule

@@ -1,0 +1,24 @@
+# The same shape one letter away, on the other half of the same defence.
+#
+# `defaultVMAccessClaim` is what keeps a token that carries no `vm_access`
+# claim from falling through to the unauthorized user. Spelled
+# `defaultVmAccessClaim`, it is pruned: the VMUser applies cleanly, the
+# operator is happy, and every token for that principal is silently refused
+# — or, if an unauthorized user ever existed, silently served as anonymous.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: pruned-default-claim
+spec:
+  name: example
+  jwt:
+    oidc:
+      issuer: https://issuer.example
+    matchClaims:
+      groups: "^(example)$"
+    defaultVmAccessClaim:
+      metricsExtraFilters: ['{cluster="example"}']
+  targetRefs:
+    - static:
+        url: http://store.example:8428
+      paths: ["/.*"]
