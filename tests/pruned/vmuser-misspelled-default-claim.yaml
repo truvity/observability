@@ -10,14 +10,14 @@ kind: VMUser
 metadata:
   name: pruned-default-claim
 spec:
-  name: example
+  name: example:k8s:viewer
   jwt:
     oidc:
       issuer: https://issuer.example
     matchClaims:
-      groups: "^(example)$"
+      groups: "^(example:k8s:viewer)$"
     defaultVmAccessClaim:
-      metricsExtraFilters: ['{cluster="example"}']
+      metricsExtraFilters: ['{cluster="example-cluster"}']
   targetRefs:
     - static:
         url: http://store.example:8428
