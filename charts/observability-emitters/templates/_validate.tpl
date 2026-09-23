@@ -218,6 +218,25 @@ The application choosing its own tenant.
 {{- fail "observability-emitters: the metrics agent's default scrape class does not set `attachMetadata.namespace`. A namespace's labels are NOT part of Kubernetes service discovery unless it is asked for, so `__meta_kubernetes_namespace_label_*` would be absent, the tenancy rules would match nothing, and every namespace on the cluster would silently collapse onto `tenancy.fallbackTenant` — one tenant, rendered as many." -}}
 {{- end -}}
 {{- /*
+And the class has to actually stamp.
+
+`mergeOverwrite` replaces a list wholesale, so a caller who adds one
+scrape class of their own replaces the tenancy one — and a replacement
+that happens to set `attachMetadata` would pass every check above while
+stamping nothing at all. The rules themselves are checked, not just their
+container.
+*/}}
+{{- $targets := dict -}}
+{{- range $r := ($default.relabelConfigs | default list) -}}
+{{- $_ := set $targets (toString (or $r.target_label $r.targetLabel)) true -}}
+{{- end -}}
+{{- range $label := list (toString .Values.tenancy.tenantLabel) (toString .Values.tenancy.envLabel) -}}
+{{- if not (hasKey $targets $label) -}}
+{{- fail (printf "observability-emitters: the metrics agent's default scrape class writes no %q label. Nothing would stamp it on any scrape object this chart does not own — which is all of them — so every series would carry one dimension and the grants would select on a dimension that is not there. If you replaced `scrapeClasses` through `metrics.spec`, note that a list is replaced wholesale rather than merged: the tenancy rules went with it." $label) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /*
 The one interval.
 */}}
 {{- if ne (toString $spec.scrapeInterval) (toString .Values.interval) -}}
