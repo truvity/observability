@@ -139,7 +139,7 @@ that is otherwise valid, so it fails for its one reason and no other.
 | Requests that differ from limits | A Burstable pod is evicted before a Guaranteed one — at the moment of node pressure, which is when a store matters most. |
 | An `enterprise` image tag | An Enterprise image without a licence key RUNS, refusing only the Enterprise features, so the estate is in breach of the vendor's terms with everything apparently healthy. |
 | A `-license` or `-licenseFile` flag | The same boundary from the other side. This chart wraps the community edition; an install that needs a licence flag is an install this chart is the wrong shape for. |
-| A vmauth tag below v1.152.0 | `default_vm_access_claim` arrived in v1.147.0, and v1.147.0–v1.151.x matched `match_claims` values UNANCHORED (GHSA-f99m-22fh-qw96) — `admin` also matched `not-admin-really`, in the exact mechanism that decides which user a token is. |
+| A vmauth tag below v1.152.0 | `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0 through v1.151.x matched `match_claims` values UNANCHORED (GHSA-f99m-22fh-qw96) — `admin` also matched `not-admin-really`, in the exact mechanism that decides which user a token is. |
 | An `*AuthKey` flag on a store | An authKey does not add to `-httpAuth.*`, it REPLACES it for those endpoints: basic auth is never checked, and the key travels in the query string and therefore into every access log. |
 | A tenant or environment name outside the plain-name shape | The name is interpolated into a filter expression. `dms\|prod` does not look odd in the rendered filter — it grants a second tenant. Refused, never escaped. |
 | A mirror that disagrees with `interval` | Deduplication keeps one sample per window: wider than the scrape interval it discards good samples, narrower it deduplicates nothing. Neither announces itself. |
@@ -210,8 +210,33 @@ containing `enterprise` and any `-license` flag, each with a fixture under
 What the design does rely on — vmauth's JWT verification, OIDC discovery,
 claim matching and the `vm_access` claim, `vmbackup`, the partition
 snapshot API, cardinality limits, deduplication, `-httpAuth` — is all
-community. The vmauth version floor is **v1.147.0**, where
-`default_vm_access_claim` arrived.
+community.
+
+### The vmauth version floor is a security floor
+
+**vmauth v1.152.0, or a patched v1.148 LTS.** The feature floor would be
+v1.147.0, where `default_vm_access_claim` arrived. That is not the floor,
+because of GHSA-f99m-22fh-qw96, fixed upstream in v1.152.0:
+
+> lib/jwt: fix unanchored `match_claims` regex allowing JWT
+> authorization bypass
+
+Every release from v1.138.0, where claim matching was introduced, through
+v1.151.x matched `match_claims` values **unanchored**. An entry
+configured for `admin` also matched a token claiming `notadmin`.
+
+That matters more here than it would in most places, because
+`match_claims` is how this design decides which principal a token is, and
+therefore which tenants it may read. A group name that is a substring of
+a more privileged one would have selected the more privileged entry. It
+is the same failure `Validate` refuses on the tenant-name side — a name
+reaching a regular expression without anchors — sitting in the proxy
+rather than in this library.
+
+Upstream backported the fix only to the v1.148 LTS line, and the
+operator's own default image tag is older than both, so the chart sets
+the tag explicitly rather than inheriting it, and refuses anything
+lower.
 
 ## A convention a chart could not enforce, until it could
 
