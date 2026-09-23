@@ -351,6 +351,88 @@ sets `logs.enabled: false` and keeps the other two.
 
 ## Upgrades that change what runs
 
-Each entry says what to do; none is optional reading before a bump.
+Each entry says what to do; none is optional reading before a bump. What
+changed and why is in CHANGELOG.md, and is not repeated here: an entry
+below is the work, in the order it has to happen.
 
-*Nothing yet — the first release has not been cut.*
+### 0.2.0 → 0.3.0
+
+**Set `tenancy.audience` before you upgrade, or the render refuses.** It
+is the client id this proxy's own tokens are minted under —
+`tenancy.audience` on `charts/observability-stack`, `Config.Audience` in
+`pkg/tenancy` — and it is required as soon as a principal exists. A values
+file that rendered under 0.2.0 fails until it is there, by design: there
+is no value that could be defaulted which pins anything. If this proxy has
+no client of its own yet, register one first; the id is the issuer's to
+assign, never a name to invent.
+
+**Rename the groups claim if it is `aud`.** `tenancy.claimName` /
+`ClaimName` may no longer be that spelling, because the audience is pinned
+under it and both are entries in one `matchClaims` map. Refused rather
+than merged, since whichever entry survived would decide either which
+principal a token is or which client it was minted for, never both.
+
+**Expect `helm diff` to show every reader changed, and let it through.**
+Each `matchClaims` value is escaped and anchored now, so
+`groups: "example:k8s:viewer"` renders as
+`groups: "^(example:k8s:viewer)$"`, with the new `aud` entry beside it, on
+principals whose grants you did not touch. Nothing widens: each value
+matches the tokens it was always meant to match and fewer of the ones it
+was not. See docs/safety.md, "Every `match_claims` value means only
+itself".
+
+**One thing does stop working, and that is the point.** A reader arriving
+with a token minted for another client of the same issuer was admitted
+before this release and is not after it. Nothing reported it then and
+nothing announces it now, so if the estate has more than one application
+on that issuer, confirm the tokens your readers actually present carry the
+client id you set — before the upgrade rather than from a support request
+after it.
+
+### 0.1.0 → 0.2.0
+
+The vocabulary rework. `tenant` × `env` is retired for cluster ×
+namespace, so both charts, the library and the data already in the stores
+are all in scope. Four pieces of work and one thing that will look broken.
+
+**Rewrite every grant.** `env` becomes `cluster` and `tenants` becomes
+`namespaces`, with `allTenants` becoming `allNamespaces` — on
+`tenancy.principals` in `charts/observability-stack` and on
+`Grant{Env, Tenants, AllTenants}`, now
+`Grant{Cluster, Namespaces, AllNamespaces}`, in `pkg/tenancy`. The
+namespaces a project reaches are a derivation you hold, not a label on the
+telemetry: wherever that mapping lives, it now produces namespace names.
+
+**Replace the emitters' `tenancy` block** with `tenancy.cluster` and
+`tenancy.environment`, both required and neither guessable, and mirror
+both into `victoria-logs-collector.collector.extraFields` as JSON under
+the conventional names. The chart refuses a mirror that disagrees, which
+is the only reason it is safe to write a value twice.
+
+**Delete the keys that are gone rather than leaving them behind.**
+`tenancy.namespaceLabels`, `tenancy.fallbackTenant`, `tenancy.tenantLabel`
+and `tenancy.envLabel` on the emitters chart; `tenancy.logsTenantField`
+and `tenancy.logsEnvField` on the stack chart. Both schemas are strict
+where this repository defines the structure, so a leftover key fails the
+render and names itself — the good case, and the reason this is a minute's
+work rather than a silently ignored stanza. The stack's replacements,
+`tenancy.logsClusterField` and `tenancy.logsNamespaceField`, have defaults
+now, and an estate collecting with `charts/observability-emitters` sets
+neither.
+
+**Move both sides in one change.** Between the two upgrades, whichever
+goes first, scoped reads return nothing for the data being written: the
+old proxy filters on a label the new collectors no longer stamp, and the
+new proxy filters on one the old collectors never stamped. The window is
+unavoidable and it should be minutes.
+
+**Then expect empty panels for everything written before the upgrade, and
+do not go hunting.** Series, streams and spans already in the stores carry
+`tenant` and `env`; nothing rewrites them, and no grant selects them once
+the proxy is upgraded. A scoped query answers from the data written since
+the collectors moved, and the old data is unreachable until it ages out of
+retention. Anything else of yours that selects on `tenant` or `env` — a
+dashboard, a recording rule, an Alertmanager route — now selects nothing,
+and is yours to move onto `k8s_cluster_name` and `k8s_namespace_name`,
+with `deployment_environment_name` for the tier, which is descriptive and
+never a key.
