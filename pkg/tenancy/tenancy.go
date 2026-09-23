@@ -127,6 +127,28 @@ type Config struct {
 	// log agent's own stream fields; docs/safety.md has the rest.
 	LogsTenantField string `json:"logsTenantField" yaml:"logsTenantField"`
 	LogsEnvField    string `json:"logsEnvField" yaml:"logsEnvField"`
+
+	// AllowUnfilteredTraceReads admits the trace store's read route even
+	// though nothing can scope it, and it has this name because that is
+	// what it does.
+	//
+	// vmauth applies a principal's filters by substituting them into the
+	// route, and VictoriaTraces' Jaeger and Tempo select APIs accept no
+	// query argument to substitute them into — see TracesRead. So a
+	// reader given those paths reads every tenant's spans, whatever the
+	// claim beside the route says.
+	//
+	// The option exists because for some estates that is the right
+	// trade: one environment, one team, traces that carry nothing a
+	// colleague may not see. It is off by default and has to be written
+	// down because the alternative — rendering the route anyway, since it
+	// looks like the other two — is the defect this package was fixed to
+	// remove, one level down.
+	//
+	// It admits exactly the trace route. It is not a general override,
+	// and no metrics or logs route can be rendered unfiltered by any
+	// value of it.
+	AllowUnfilteredTraceReads bool `json:"allowUnfilteredTraceReads,omitempty" yaml:"allowUnfilteredTraceReads,omitempty"`
 }
 
 func (c Config) tenantLabel() string {
@@ -164,6 +186,17 @@ func (c Config) Validate() error {
 	}
 
 	errs = append(errs, c.validateLogFields()...)
+
+	// The routes are this package's own, so this check does not guard
+	// against a caller. It guards against an edit to route.go: a read
+	// route that reaches a store without carrying the principal's filter
+	// renders cleanly, installs, answers every query and scopes none of
+	// them, and there is no later moment at which anything notices.
+	for _, binding := range c.readRoutes() {
+		if err := binding.route.validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 
 	seen := map[string]bool{}
 	for i, p := range c.Principals {

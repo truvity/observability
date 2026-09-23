@@ -126,8 +126,9 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Seventeen, each with a fixture under `tests/invalid/observability-stack/`
-that is otherwise valid, so it fails for its one reason and no other.
+Twenty-one, each with a fixture under
+`tests/invalid/observability-stack/` that is otherwise valid, so it fails
+for its one reason and no other.
 
 | Refusal | The failure it prevents |
 |---|---|
@@ -151,7 +152,137 @@ that is otherwise valid, so it fails for its one reason and no other.
 | Grafana with alerting enabled | A second alerting engine, with its own rules, silences and notification policies: a second place to look at three in the morning, and the one nobody remembers. |
 | Grafana without an admin Secret | The Grafana chart then generates a random admin password on every render: `helm upgrade` rotates it silently, and the release's manifest differs from itself when nothing changed. |
 | Grafana with `use_refresh_token` off, `role_attribute_strict` off, `locking_attempt_timeout_sec` outside 60–300, or a dashboard `updateIntervalSeconds` of 10 or less | Four defaults that leave a Grafana which looks fine: a session that outlives its token and 401s on every query, an unmapped person given the default role, a second replica crash-looping through a database migration, and dashboards that never update because a ConfigMap projection is a symlink swap that fires no watch event. |
+| A trace store enabled alongside `principals`, without `tenancy.allowUnfilteredTraceReads` | The proxy enforces a grant by substituting it into the route it forwards on, and VictoriaTraces' select APIs accept no query argument to substitute one into. The trace route would sit between two scoped routes, look exactly like them, and scope nothing. |
 | A backup with no destination or no credentials | It runs, finds nothing to do and reports success. |
+
+### A filter that is computed and never applied
+
+**This is the failure this whole design nearly shipped, so it is written
+out at length.**
+
+The proxy's job is to turn "this person may read tenant `example-app` in
+`devel`" into something the store applies. It does that in two halves,
+and only one of them is obvious.
+
+The obvious half is the claim. Each principal's `VMUser` carries a
+`defaultVMAccessClaim` with the selectors that principal is entitled to
+— a MetricsQL series selector per grant, one LogsQL stream filter for
+the whole principal. It is right there in the rendered manifest, in
+`helm get manifest`, in the golden renders, and in review.
+
+The half that actually enforces anything is the route. vmauth applies a
+`vm_access` claim **only** by substituting a placeholder into the route
+it is about to forward on:
+
+```go
+// app/vmauth/jwt.go
+func replaceJWTPlaceholders(bu *backendURL, hc HeadersConf, vma *jwt.VMAccessClaim) (*url.URL, HeadersConf) {
+    if !bu.hasPlaceHolders && !hc.hasAnyPlaceHolders {
+        return bu.url, hc
+    }
+```
+
+A route with no `{{.MetricsExtraFilters}}` in its query arguments — and
+no placeholder in a request header — returns on that first line. The
+claim was verified, selected, computed and correct, and it is discarded.
+The request goes to the store with no filter on it.
+
+So for a while every principal who passed JWT verification read every
+tenant's metrics and every tenant's logs, and the manifest said
+otherwise on the same object.
+
+Every route this chart renders now carries its filter argument, and
+`pkg/tenancy` cannot construct a read route without one. Three
+mechanical details that are easy to get wrong, all from the same
+function:
+
+- **The placeholder must be the whole value.** Substitution is a map
+  lookup on the complete value of a query argument, not a string
+  replacement, so `extra_filters=x{{.MetricsExtraFilters}}` is forwarded
+  to the store as written. Only the URL *path* is substring-replaced, and
+  only for the tenant and account placeholders.
+- **An empty filter list is not a deny, it is a hand-off.** The
+  placeholder expands to the claim's *values*, so an empty list expands
+  to nothing and the argument disappears from the request. The only
+  thing stopping a caller from sending its own `extra_filters` is that
+  such an argument *clashes* with one the route already set — and with
+  the route's argument gone there is no clash, so the caller's filter is
+  used. `RenderClaim` refuses to produce an empty list.
+- **Not every endpoint under a route reads the argument.** The route is
+  a whole `url_map` row; the filter reaches every request in it, but a
+  handler that never looks at `extra_filters` is unfiltered anyway. That
+  is why the metrics route names `/api/v1/status/tsdb` rather than
+  `/api/v1/status/[^/]+`: `/status/active_queries` and
+  `/status/top_queries` return other principals' query text,
+  `/status/metric_names_stats` returns metric names across every tenant,
+  and `/api/v1/metadata` returns the metadata of every series in the
+  store. None of the four takes a filter. `/status/buildinfo` does not
+  either and is kept, because it carries the store's version and nothing
+  from any tenant.
+
+#### What the test that would have caught it looks like
+
+Nothing about the broken version looked broken. The render succeeded.
+The install succeeded. The proxy was healthy. Every principal could sign
+in and query, and every query returned data. **And a query for the one
+tenant the reviewer had data for returned exactly the rows it would have
+returned if the filter had been applied** — because the filter that was
+not applied would not have removed any of them.
+
+A test that renders one principal and asserts the claim is correct
+passes on both versions. A test that queries as one principal and checks
+the answer passes on both versions. The two are distinguishable only by
+asking one of two questions:
+
+- **structurally**, walk every route the artifact renders and fail on any
+  that does not carry the placeholder as the whole value of its filter
+  argument. This is `TestEveryRenderedReadRouteCarriesItsFilter`, in both
+  `pkg/tenancy` and `tests/agreement_test.go`, and it is a property of
+  the output rather than of the input, because a route is only enforced
+  where it is emitted.
+- **behaviourally**, write a second tenant's data, query as a principal
+  entitled to the first, and assert the second tenant's rows are
+  **absent**. An authorization test with one tenant in it does not test
+  authorization; it tests that the query works.
+
+The general shape, worth carrying out of this repository: **a proxy that
+computes an authorization decision and then does not apply it is
+indistinguishable from one that applies it, in every test that does not
+exercise a second principal.** The decision being visible, correct and
+well tested is not evidence that anything consumes it. Assert on the
+artifact that enforces, not on the artifact that decides.
+
+### The one signal this proxy cannot scope
+
+**Traces.** vmauth enforces by substituting a filter into the route, and
+VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to
+substitute one into: `tracecommon.GetCommonParams` takes a tenant id from
+the `AccountID`/`ProjectID` headers, `hidden_fields_filters` — which
+hides *fields* from a result, not rows — and `allow_partial_response`,
+and nothing else. The Jaeger query parameters (`service`, `operation`,
+`tags`, ...) are the caller's own and are overwritten rather than
+appended to, so a proxy cannot narrow them either.
+
+The tenant headers are a real mechanism, but a different tenancy model:
+they select one of the store's own tenant ids, and this design scopes by
+*label* precisely so a fleet-wide question stays answerable across
+tenants. Nothing writes per-tenant account ids on the way in, so there
+would be nothing for them to select.
+
+So trace reads through this proxy cannot be scoped to a principal, and
+the chart says so rather than rendering a route that looks like the two
+beside it. With a trace store and `principals` both set it refuses to
+render until `tenancy.allowUnfilteredTraceReads` is `true`, and the
+library refuses the same way unless `AllowUnfilteredTraceReads` is set.
+The name is the point: what it admits is that **every principal who can
+reach the proxy reads every tenant's spans.** It admits the trace route
+and nothing else — no value of it relaxes the metrics or logs route.
+
+An estate that cannot accept that turns the trace store off. An estate
+that can has written down that it did, in a values file somebody
+reviews. What neither of them gets is the third option, which is the
+defect above one level down: a route that carries a grant nobody
+applies.
 
 ### Why there is no deny rule in the proxy's configuration
 
@@ -173,6 +304,12 @@ a write.
 The other half of that defence is at the stores: no `*AuthKey` flag is set
 on any of them, so `/internal/*` stays behind each store's own
 `-httpAuth.*` — and the chart refuses one being added.
+
+The same reasoning removed two more paths from the metrics route: an
+endpoint that takes no filter is not narrowed by one, so
+`/api/v1/metadata` and everything under `/api/v1/status/` except `tsdb`
+and `buildinfo` are no longer routes. See "A filter that is computed and
+never applied" above.
 
 ### Why the backups look the way they do
 

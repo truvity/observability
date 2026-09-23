@@ -81,20 +81,47 @@ spec:
         {{- toYaml (list $logsFilter) | nindent 8 }}
   load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
   retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  {{- /*
+  Every read route carries `query_args`, and that is what makes the
+  claim above mean anything.
+
+  The claim is not applied because it exists. vmauth substitutes it into
+  the route it picked, and only there: a `targetRef` without the
+  placeholder forwards the query with no filter, while this manifest
+  still shows the principal's grant one block up. See
+  `observability-stack.readQueryArgs.*` in _helpers.tpl.
+  */}}
   targetRefs:
     - static:
         url: {{ $metrics | quote }}
       paths:
         {{- include "observability-stack.readPaths.metrics" $root | nindent 8 }}
+      query_args:
+        {{- include "observability-stack.readQueryArgs.metrics" $root | nindent 8 }}
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
     - static:
         url: {{ $logs | quote }}
       paths:
         {{- include "observability-stack.readPaths.logs" $root | nindent 8 }}
+      query_args:
+        {{- include "observability-stack.readQueryArgs.logs" $root | nindent 8 }}
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
     {{- if $tracesEnabled }}
+    {{- /*
+    The trace route, and the one with no `query_args`, because there is
+    no argument to put them in: VictoriaTraces' Jaeger and Tempo select
+    APIs take a tenant id from headers, `hidden_fields_filters` (which
+    hides fields, not rows) and `allow_partial_response`, and nothing
+    else. A principal given these paths reads every tenant's spans.
+
+    It renders only when the operator has set
+    `tenancy.allowUnfilteredTraceReads`, which _validate.tpl requires
+    and docs/safety.md explains. The alternative — rendering it anyway,
+    because it looks like the two above — is the defect this chart was
+    fixed to remove.
+    */}}
     - static:
         url: {{ $traces | quote }}
       paths:

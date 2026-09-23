@@ -134,6 +134,18 @@ difference between what a token says a person may read and what the proxy
 lets them read, and that is not a difference anyone notices until it
 matters.
 
+Each route `RenderVMAuth` emits carries the filter argument that applies
+the claim — `.../?extra_filters={{.MetricsExtraFilters}}` for metrics,
+`extra_stream_filters={{.LogsExtraStreamFilters}}` for logs — because
+that substitution is the **only** thing vmauth does with a `vm_access`
+claim. A route without it forwards every query unfiltered while the claim
+beside it still states the grant, which is why a read route cannot be
+constructed without one. `TracesBackend` needs
+`AllowUnfilteredTraceReads` with it: the trace store's select APIs accept
+no argument to put a filter in, so that route cannot be scoped and has to
+be admitted by name. [docs/safety.md](docs/safety.md) has the mechanism
+and the test that catches it.
+
 ## Documentation
 
 - [docs/adoption.md](docs/adoption.md) — prerequisites, install order, the

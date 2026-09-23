@@ -77,6 +77,21 @@ func (c Config) RenderClaim(p Principal) (Claim, error) {
 		claim.MetricsExtraFilters = append(claim.MetricsExtraFilters, c.metricsFilter(g))
 	}
 	claim.LogsExtraStreamFilters = []string{c.logsFilter(grants)}
+
+	// An empty list here would not be a narrow grant, it would be no
+	// grant enforced at all.
+	//
+	// vmauth substitutes a placeholder with the claim's VALUES, so an
+	// empty list expands to nothing and the query argument disappears
+	// from the request entirely. The only thing stopping a caller from
+	// sending its own `extra_filters` is that such an argument CLASHES
+	// with one the route already set — and once the route's argument is
+	// gone there is no clash, so the caller's filter is forwarded
+	// instead. Refused here rather than checked at the far end, because
+	// at the far end it looks like a successful query.
+	if len(claim.MetricsExtraFilters) == 0 || len(claim.LogsExtraStreamFilters) == 0 {
+		return Claim{}, fmt.Errorf("rendering claim for %q: it carries no filter for one of the signals, which vmauth expands to an ABSENT query argument rather than to a deny — and an absent argument is one the caller may then supply itself", p.Group)
+	}
 	return claim, nil
 }
 
@@ -138,50 +153,27 @@ func (c Config) logsFilter(grants []Grant) string {
 	}
 	// Comma binds tighter than `or` inside `{...}`, so each alternative is
 	// its own conjunction and a grant cannot borrow another grant's tenants.
-	return "{" + strings.Join(alternatives, " or ") + "}"
+	//
+	// `_stream:` is not decoration. VictoriaLogs reads an
+	// `extra_stream_filters` argument that begins with `{"` as the JSON
+	// object form — `{"field":"value"}` — and every filter this function
+	// renders begins with `{"`, because the log store's field names have
+	// to be quoted. Without the prefix the value reaches `fastjson.Parse`
+	// and comes back as `cannot parse JSON: missing ':' after object
+	// key`, which is a 400 on every log query the principal makes. With
+	// it, the value does not start with `{"`, VictoriaLogs parses it as
+	// LogsQL, and `_stream:{...}` is exactly the stream filter that the
+	// bare `{...}` was meant to be.
+	return "_stream:{" + strings.Join(alternatives, " or ") + "}"
 }
 
-// MetricsReadPaths, LogsReadPaths and TracesReadPaths are the routes a
-// reader is given, and they are deliberately a list of named endpoints
-// rather than a prefix.
-//
-// The tempting shapes are wrong in the same way. `/prometheus/.*` also
-// matches `/prometheus/api/v1/write` and
-// `/prometheus/api/v1/admin/tsdb/delete_series`; `/api/v1/.*` also
-// matches `/api/v1/write` and `/api/v1/import`; `/.*` also matches
-// `/internal/force_merge`, whose own authKey flag REPLACES the store's
-// `-httpAuth.*` rather than adding to it. A reader's route that also
-// accepts writes is not a reader's route, and nothing about it looks
-// wrong until somebody uses it.
-//
-// charts/observability-stack renders these same lists into its VMUser
-// objects, and its `tenancy` golden case exists to prove the two have not
-// drifted.
-var (
-	MetricsReadPaths = []string{
-		"/prometheus/api/v1/query",
-		"/prometheus/api/v1/query_range",
-		"/prometheus/api/v1/series",
-		"/prometheus/api/v1/labels",
-		"/prometheus/api/v1/label/[^/]+/values",
-		"/prometheus/api/v1/metadata",
-		"/prometheus/api/v1/status/[^/]+",
-		"/prometheus/vmui.*",
-	}
-
-	LogsReadPaths = []string{
-		"/select/logsql/.*",
-		"/select/vmui.*",
-	}
-
-	TracesReadPaths = []string{
-		"/select/jaeger/.*",
-		"/select/tempo/.*",
-	}
-)
-
 // RenderVMAuth returns a vmauth configuration in which each principal is a
-// user selected by its group and carrying its own filters.
+// user selected by its group, carrying its own filters, and reaching each
+// store through a route that APPLIES them.
+//
+// The routes themselves live in route.go. What happens here is the
+// binding of each one to its backend, and the refusal of any binding that
+// would forward a read the claim does not scope.
 //
 // Backends are required here and not in Validate, because a Config is
 // perfectly usable for RenderClaim without them — in the issuer-side
@@ -198,19 +190,23 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 		return VMAuthConfig{}, fmt.Errorf("metricsBackend and logsBackend are required to render a vmauth configuration")
 	}
 
+	// Rendered once, outside the principal loop: every principal gets the
+	// same routes, and a refusal is about the estate rather than about a
+	// person.
+	rows := make([]VMAuthURLMapRow, 0, 3)
+	for _, binding := range c.readRoutes() {
+		row, err := binding.row(c.AllowUnfilteredTraceReads)
+		if err != nil {
+			return VMAuthConfig{}, err
+		}
+		rows = append(rows, row)
+	}
+
 	out := VMAuthConfig{}
 	for _, p := range c.Principals {
 		claim, err := c.RenderClaim(p)
 		if err != nil {
 			return VMAuthConfig{}, err
-		}
-
-		rows := []VMAuthURLMapRow{
-			{SrcPaths: MetricsReadPaths, URLPrefix: []string{c.MetricsBackend}},
-			{SrcPaths: LogsReadPaths, URLPrefix: []string{c.LogsBackend}},
-		}
-		if c.TracesBackend != "" {
-			rows = append(rows, VMAuthURLMapRow{SrcPaths: TracesReadPaths, URLPrefix: []string{c.TracesBackend}})
 		}
 
 		out.Users = append(out.Users, VMAuthUser{
@@ -220,7 +216,7 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 				MatchClaims: map[string]string{c.ClaimName: p.Group},
 			},
 			DefaultVMAccess: &claim,
-			URLMap:          rows,
+			URLMap:          append([]VMAuthURLMapRow(nil), rows...),
 			// Reads go to the first healthy backend rather than round-robin:
 			// with a redundant pair, a query balanced onto the replica that
 			// is still replaying its buffer after a restart returns a gap,

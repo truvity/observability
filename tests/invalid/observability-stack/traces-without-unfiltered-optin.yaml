@@ -1,0 +1,27 @@
+# A trace store with principals, and no statement that trace reads are
+# unscoped.
+#
+# The proxy enforces a grant by substituting the principal's filter into
+# the route it forwards on. VictoriaTraces' Jaeger and Tempo select APIs
+# accept no query argument to substitute it into: their handlers take a
+# tenant id from headers, `hidden_fields_filters` (which hides fields
+# from a result, not rows) and `allow_partial_response`, and nothing
+# else. So a reader given those paths reads every tenant's spans, while
+# the `defaultVMAccessClaim` beside the route still states the grant.
+#
+# Rendering it anyway — because it looks exactly like the metrics and
+# logs routes on either side of it — is the defect this refusal exists
+# to prevent. `tenancy.allowUnfilteredTraceReads` is how an estate says
+# it accepts that, and its absence is how this fixture fails.
+tenancy:
+  issuerUrl: https://issuer.example
+  logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
+  logsEnvField: env
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - env: devel
+          allTenants: true
+
+victoria-traces-single:
+  enabled: true

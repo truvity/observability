@@ -353,6 +353,51 @@ VictoriaLogs as `kubernetes.namespace_labels.<key>` and a filter naming
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- /*
+The trace route cannot be scoped, so it is not rendered until somebody
+says that is acceptable.
+
+vmauth applies a principal's grant by substituting it into the route it
+forwards on. VictoriaTraces' Jaeger and Tempo select APIs accept no
+query argument to substitute it into — their handlers take a tenant id
+from headers, `hidden_fields_filters` (which hides fields, not rows) and
+`allow_partial_response`, and nothing else — so a reader given those
+paths reads every tenant's spans whatever `defaultVMAccessClaim` says
+beside it.
+
+Rendering it anyway, because it looks like the metrics and logs routes,
+is exactly the failure this chart was fixed to remove. So it is a
+refusal with a value whose name says what accepting it means.
+*/}}
+{{- if and $t.principals (include "observability-stack.tracesEnabled" .) -}}
+{{- if not $t.allowUnfilteredTraceReads -}}
+{{- fail "observability-stack: a trace store is enabled and `tenancy.principals` is set, but `tenancy.allowUnfilteredTraceReads` is not. The proxy enforces a grant by substituting the principal's filter into the route it forwards on, and VictoriaTraces' Jaeger and Tempo select APIs accept NO query argument to substitute it into: their handlers take a tenant id from headers, `hidden_fields_filters` (which hides fields from a result, not rows) and `allow_partial_response`, and nothing else. There is no way through this proxy to give one principal a narrower view of traces than another, so the trace read route would be an unscoped route sitting beside two scoped ones and looking identical to them. Either turn the trace store off, or set `tenancy.allowUnfilteredTraceReads: true` and record that every principal who can reach the proxy reads every tenant's spans. Metrics and logs are unaffected either way." -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+And the enforcement the other two routes DO carry, asserted here rather
+than assumed.
+
+A `targetRef` whose `query_args` lost its placeholder renders cleanly,
+installs, answers every query and scopes none of them — the claim is
+still computed, still correct, still in the manifest, and still
+discarded. This is the one refusal in this file that guards against an
+edit to this chart rather than against a value somebody wrote.
+*/}}
+{{- range $signal := (list "metrics" "logs") -}}
+{{- $arg := include (printf "observability-stack.filterArg.%s" $signal) $ -}}
+{{- $placeholder := include (printf "observability-stack.filterPlaceholder.%s" $signal) $ -}}
+{{- $args := fromYamlArray (include (printf "observability-stack.readQueryArgs.%s" $signal) $) -}}
+{{- $found := false -}}
+{{- range $a := $args -}}
+{{- if and (eq $a.name $arg) (has $placeholder $a.values) -}}
+{{- $found = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $found -}}
+{{- fail (printf "observability-stack: the %s read route does not carry %s=%s. vmauth applies a `vm_access` claim ONLY by substituting a placeholder into the route, so without it every principal's query reaches the store unfiltered while `defaultVMAccessClaim` beside it still states the grant. Nothing downstream reports that: the render succeeds, the install succeeds, and a query for one tenant returns exactly what it would have returned if the filter had been applied." $signal $arg $placeholder) -}}
+{{- end -}}
+{{- end -}}
 {{- $paths := concat
     (fromYamlArray (include "observability-stack.readPaths.metrics" .))
     (fromYamlArray (include "observability-stack.readPaths.logs" .))

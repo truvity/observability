@@ -8,6 +8,45 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## Unreleased
 
+- **`pkg/tenancy` and `charts/observability-stack`** — the proxy now
+  APPLIES the filters it renders. **This is an authorization fix: before
+  it, every principal who passed JWT verification read every tenant's
+  metrics and logs.** A `vm_access` claim does nothing on its own —
+  vmauth applies it only by substituting a placeholder into the route it
+  forwards on, and the routes carried none, so each principal's claim was
+  verified, computed, written into the manifest and then discarded. Every
+  read route now carries its filter argument
+  (`extra_filters={{.MetricsExtraFilters}}` for metrics,
+  `extra_stream_filters={{.LogsExtraStreamFilters}}` for logs), a route
+  cannot be constructed without one, `Validate` refuses one that lost it,
+  and tests on both sides walk every rendered route and fail on any that
+  does not carry it. Four things follow:
+  - **Traces cannot be scoped at all, and now say so.** VictoriaTraces'
+    Jaeger and Tempo select APIs accept no query argument a proxy could
+    put a filter in. With a trace store and `principals` both set, the
+    chart refuses to render until `tenancy.allowUnfilteredTraceReads` is
+    `true` and the library until `AllowUnfilteredTraceReads` is set —
+    which records that every principal who can reach the proxy reads
+    every tenant's spans. It admits the trace route and nothing else.
+    **The trace store is enabled by default, so an existing values file
+    with principals in it will refuse to render until this is answered.**
+  - **The logs filter is now prefixed `_stream:`.** VictoriaLogs reads an
+    `extra_stream_filters` value beginning with `{"` as its JSON object
+    form, and every filter rendered here begins with `{"` because a log
+    field name has to be quoted — so the unprefixed value would have
+    failed to parse on every log query once it started being sent.
+  - **Two metrics routes are gone.** `/api/v1/metadata` and everything
+    under `/api/v1/status/` except `tsdb` and `buildinfo` take no filter,
+    so no filter narrows them: they returned metric names, and other
+    principals' query text, across every tenant.
+  - **A claim can no longer be rendered empty.** An empty filter list
+    does not deny anything — it removes the query argument, and with it
+    the clash that stops a caller supplying its own.
+
+  Needs no action beyond answering the traces question, and `helm diff`
+  before the upgrade shows the new `query_args` on every reader's routes.
+  See docs/safety.md, "A filter that is computed and never applied".
+
 - **`pkg/tenancy` and `charts/observability-stack`** — the logs filter
   names the field the log store actually has. Until now both rendered the
   same string for both signals, so a reader querying logs through the

@@ -131,9 +131,67 @@ case proves the two still match.
 - /prometheus/api/v1/series
 - /prometheus/api/v1/labels
 - /prometheus/api/v1/label/[^/]+/values
-- /prometheus/api/v1/metadata
-- /prometheus/api/v1/status/[^/]+
+{{- /*
+`/status/tsdb` by name, and the rest of `/status/` not at all.
+
+TSDBStatusHandler takes its label filters from the same getCommonParams
+every query handler uses, so the principal's selector reaches it. Its
+neighbours do not take one: `/status/active_queries` and
+`/status/top_queries` return other principals' query TEXT,
+`/status/metric_names_stats` returns metric names across every tenant,
+and `/api/v1/metadata` returns the metadata of every series in the
+store. `/status/[^/]+` was all three of those plus this one.
+*/}}
+- /prometheus/api/v1/status/tsdb
+{{- /*
+Carries the store's version and nothing from any tenant. Grafana's
+Prometheus datasource asks for it to decide which dialect it is talking
+to.
+*/}}
+- /prometheus/api/v1/status/buildinfo
 - /prometheus/vmui.*
+{{- end -}}
+
+{{/*
+The query argument that carries a principal's filter into each store,
+and the vmauth placeholder that fills it.
+
+This is the whole enforcement mechanism, and it is a separate helper
+because the thing that goes wrong is leaving it out.
+
+vmauth verifies the token, selects the VMUser by `matchClaims`, computes
+the principal's `vm_access` claim from `defaultVMAccessClaim` — and then
+applies it ONLY by substituting a placeholder into the route it chose.
+A `targetRef` with no `query_args` forwards the request unfiltered, with
+the claim computed, correct, visible in this manifest and discarded. It
+renders identically to a working configuration and answers a
+single-tenant question identically too.
+
+The placeholder must be the WHOLE value of the argument: vmauth looks
+the value up in a map rather than replacing a substring, so
+`extra_filters=x{{"{{"}}.MetricsExtraFilters{{"}}"}}` would be forwarded
+as written.
+
+The arguments differ per store because the stores do. vmselect OR-s the
+`extra_filters` it is given; VictoriaLogs AND-s every
+`extra_stream_filters` into the query and into every subquery inside it,
+which is what stops a subquery escaping the grant.
+*/}}
+{{- define "observability-stack.filterArg.metrics" -}}extra_filters{{- end -}}
+{{- define "observability-stack.filterArg.logs" -}}extra_stream_filters{{- end -}}
+{{- define "observability-stack.filterPlaceholder.metrics" -}}{{ "{{.MetricsExtraFilters}}" }}{{- end -}}
+{{- define "observability-stack.filterPlaceholder.logs" -}}{{ "{{.LogsExtraStreamFilters}}" }}{{- end -}}
+
+{{- define "observability-stack.readQueryArgs.metrics" -}}
+- name: {{ include "observability-stack.filterArg.metrics" . }}
+  values:
+    - {{ include "observability-stack.filterPlaceholder.metrics" . | quote }}
+{{- end -}}
+
+{{- define "observability-stack.readQueryArgs.logs" -}}
+- name: {{ include "observability-stack.filterArg.logs" . }}
+  values:
+    - {{ include "observability-stack.filterPlaceholder.logs" . | quote }}
 {{- end -}}
 
 {{- define "observability-stack.readPaths.logs" -}}
@@ -212,7 +270,17 @@ two environments intersect in nothing at all. Comma binds tighter than
 {{- $alternatives = append $alternatives (printf "%s,%s=~\"^(%s)$\"" $env ($fields.tenant | quote) (join "|" (sortAlpha $grant.tenants))) -}}
 {{- end -}}
 {{- end -}}
-{{- printf "{%s}" (join " or " $alternatives) -}}
+{{- /*
+`_stream:` is not decoration. VictoriaLogs reads an
+`extra_stream_filters` value that begins with `{"` as its JSON object
+form, and every filter rendered here begins with `{"` because the log
+store's field names have to be quoted. Without the prefix the value
+reaches a JSON parser and comes back as `cannot parse JSON: missing ':'
+after object key` — a 400 on every log query the principal makes. With
+it, the value is parsed as LogsQL, and `_stream:{...}` is exactly the
+stream filter the bare `{...}` was meant to be.
+*/}}
+{{- printf "_stream:{%s}" (join " or " $alternatives) -}}
 {{- end -}}
 
 {{/*

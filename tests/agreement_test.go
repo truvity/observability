@@ -66,15 +66,46 @@ type vmUser struct {
 				LogsExtraStreamFilters []string `yaml:"logsExtraStreamFilters"`
 			} `yaml:"defaultVMAccessClaim"`
 		} `yaml:"jwt"`
-		LoadBalancingPolicy string `yaml:"load_balancing_policy"`
-		RetryStatusCodes    []int  `yaml:"retry_status_codes"`
-		TargetRefs          []struct {
-			Static struct {
-				URL string `yaml:"url"`
-			} `yaml:"static"`
-			Paths []string `yaml:"paths"`
-		} `yaml:"targetRefs"`
+		LoadBalancingPolicy string        `yaml:"load_balancing_policy"`
+		RetryStatusCodes    []int         `yaml:"retry_status_codes"`
+		TargetRefs          []vmTargetRef `yaml:"targetRefs"`
 	} `yaml:"spec"`
+}
+
+// vmTargetRef is one route. `query_args` is the part that enforces
+// anything: vmauth applies a principal's `vm_access` claim ONLY by
+// substituting a placeholder into the route it forwards on, so a route
+// without one carries the grant in the manifest and none of it on the
+// wire.
+type vmTargetRef struct {
+	Static struct {
+		URL string `yaml:"url"`
+	} `yaml:"static"`
+	Paths     []string `yaml:"paths"`
+	QueryArgs []struct {
+		Name   string   `yaml:"name"`
+		Values []string `yaml:"values"`
+	} `yaml:"query_args"`
+}
+
+// urlPrefix rebuilds what the operator writes into vmauth's `url_prefix`
+// for this route, which is the shape pkg/tenancy renders directly.
+//
+// The two artifacts spell the same thing differently — the library
+// writes one string, the CRD splits it into an address and a typed
+// argument list — so the comparison happens on the reassembled value
+// rather than on the raw text of either.
+func (r vmTargetRef) urlPrefix() string {
+	if len(r.QueryArgs) == 0 {
+		return r.Static.URL
+	}
+	parts := make([]string, 0, len(r.QueryArgs))
+	for _, a := range r.QueryArgs {
+		for _, v := range a.Values {
+			parts = append(parts, a.Name+"="+v)
+		}
+	}
+	return r.Static.URL + "?" + strings.Join(parts, "&")
 }
 
 func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
@@ -135,12 +166,117 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 			require.Len(t, chart.Spec.TargetRefs, len(user.URLMap),
 				"one route per backend, in the same order")
 			for i, row := range user.URLMap {
-				assert.Equal(t, row.URLPrefix[0], chart.Spec.TargetRefs[i].Static.URL)
+				assert.Equal(t, row.URLPrefix[0], chart.Spec.TargetRefs[i].urlPrefix(),
+					"the chart and the library send this route somewhere else, or apply a different filter on the way")
 				assert.Equal(t, row.SrcPaths, chart.Spec.TargetRefs[i].Paths,
 					"a route the chart admits and the library does not is a route nobody reviewed")
 			}
 		})
 	}
+}
+
+// The test that would have caught it, on the chart's side.
+//
+// It walks every route in the rendered VMUser objects and fails on any
+// that does not carry the placeholder vmauth substitutes the
+// principal's filter into. That substitution is the whole of the
+// enforcement: vmauth verifies the token, selects the user, computes the
+// `vm_access` claim — and then, on a route with no placeholder, throws
+// it away and forwards the request unfiltered.
+//
+// What makes that defect survive review is that the two cases are
+// identical everywhere except in the answer to a question nobody asks.
+// The manifest shows the grant either way. The install succeeds either
+// way. The proxy is healthy either way. And a query for the ONE tenant
+// the reviewer has data for returns the same rows either way, because
+// the filter that was not applied would not have removed anything. It
+// takes a second tenant, or this assertion, to tell them apart.
+func TestEveryRenderedReadRouteCarriesItsFilter(t *testing.T) {
+	for _, user := range readVMUsers(t, "golden/observability-stack/tenancy.yaml") {
+		require.NotEmpty(t, user.Spec.TargetRefs)
+		for i, ref := range user.Spec.TargetRefs {
+			assert.True(t, carriesAFilter(ref),
+				"route %d of %q (%s) forwards with no filter argument: every query it carries reaches the store unscoped, while `defaultVMAccessClaim` on the same object still states the grant",
+				i, user.Spec.Name, strings.Join(ref.Paths, " "))
+		}
+	}
+}
+
+// And the one signal that cannot carry one, held in its own render so
+// that the exception is a file somebody has to change rather than a
+// case this test quietly tolerates.
+//
+// tests/cases/observability-stack/tenancy-traces sets
+// `allowUnfilteredTraceReads`, which is the only way the trace route
+// renders at all — see
+// tests/invalid/observability-stack/traces-without-unfiltered-optin.yaml
+// for the refusal when it is not set.
+func TestOnlyTheTraceRouteIsUnfiltered(t *testing.T) {
+	for _, user := range readVMUsers(t, "golden/observability-stack/tenancy-traces.yaml") {
+		require.Len(t, user.Spec.TargetRefs, 3, "metrics, logs and traces")
+
+		var unfiltered []string
+		for _, ref := range user.Spec.TargetRefs {
+			if !carriesAFilter(ref) {
+				unfiltered = append(unfiltered, strings.Join(ref.Paths, " "))
+			}
+		}
+
+		require.Len(t, unfiltered, 1,
+			"exactly one route in this render may be unfiltered, and it is the trace route; these are: %v", unfiltered)
+		assert.Contains(t, unfiltered[0], "/select/jaeger/",
+			"the unfiltered route is not the trace route, so a route that could be scoped is not being scoped")
+	}
+}
+
+// The filter arguments and placeholders the chart renders are the ones
+// pkg/tenancy declares.
+//
+// A chart naming `extra_label` where the library names `extra_filters`,
+// or `{{.MetricsExtraLabels}}` where it names `{{.MetricsExtraFilters}}`,
+// would render, install, and enforce something other than the grant — or
+// nothing at all, since vmauth forwards an unknown placeholder to the
+// store as a literal string.
+func TestChartUsesTheLibrarysFilterArguments(t *testing.T) {
+	want := map[string]string{
+		tenancy.MetricsFilterArg: tenancy.MetricsFilterPlaceholder,
+		tenancy.LogsFilterArg:    tenancy.LogsFilterPlaceholder,
+	}
+
+	seen := map[string]string{}
+	for _, user := range readVMUsers(t, "golden/observability-stack/tenancy.yaml") {
+		for _, ref := range user.Spec.TargetRefs {
+			for _, a := range ref.QueryArgs {
+				require.Len(t, a.Values, 1,
+					"a route carries one filter argument with one value; vmauth substitutes only a value that IS the placeholder")
+				seen[a.Name] = a.Values[0]
+			}
+		}
+	}
+	assert.Equal(t, want, seen,
+		"the chart enforces with different arguments than the library renders")
+}
+
+// carriesAFilter reports whether this route would actually apply a
+// principal's grant: one of the library's filter arguments, carrying its
+// placeholder as the WHOLE value.
+//
+// The whole-value part is not pedantry. vmauth substitutes a query
+// argument by looking its complete value up in a map, not by replacing a
+// substring, so `extra_filters=x{{.MetricsExtraFilters}}` is forwarded
+// to the store exactly as written — and the check is the library's own,
+// so the chart cannot be judged by a looser rule than the library is.
+func carriesAFilter(ref vmTargetRef) bool {
+	prefix := ref.urlPrefix()
+	for arg, placeholder := range map[string]string{
+		tenancy.MetricsFilterArg: tenancy.MetricsFilterPlaceholder,
+		tenancy.LogsFilterArg:    tenancy.LogsFilterPlaceholder,
+	} {
+		if tenancy.CarriesFilter(prefix, arg, placeholder) {
+			return true
+		}
+	}
+	return false
 }
 
 func readVMUsers(t *testing.T, path string) []vmUser {

@@ -2223,7 +2223,7 @@ spec:
       metricsExtraFilters:
         - '{env="devel"}'
       logsExtraStreamFilters:
-        - '{"env"="devel"}'
+        - _stream:{"env"="devel"}
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500
@@ -2238,9 +2238,13 @@ spec:
         - /prometheus/api/v1/series
         - /prometheus/api/v1/labels
         - /prometheus/api/v1/label/[^/]+/values
-        - /prometheus/api/v1/metadata
-        - /prometheus/api/v1/status/[^/]+
+        - /prometheus/api/v1/status/tsdb
+        - /prometheus/api/v1/status/buildinfo
         - /prometheus/vmui.*
+      query_args:
+        - name: extra_filters
+          values:
+            - "{{.MetricsExtraFilters}}"
       targetRefBasicAuth:
         username:
           name: "observability-store-credentials"
@@ -2253,6 +2257,10 @@ spec:
       paths:
         - /select/logsql/.*
         - /select/vmui.*
+      query_args:
+        - name: extra_stream_filters
+          values:
+            - "{{.LogsExtraStreamFilters}}"
       targetRefBasicAuth:
         username:
           name: "observability-store-credentials"

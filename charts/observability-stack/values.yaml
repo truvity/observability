@@ -167,6 +167,28 @@ tenancy:
   # through `-kubernetesCollector.extraFields` under exactly that name.
   logsTenantField: ""
   logsEnvField: ""
+  # -- Admit the trace read route although nothing can scope it.
+  #
+  # The proxy enforces a grant by substituting the principal's filter
+  # into the route it forwards on. VictoriaTraces' Jaeger and Tempo
+  # select APIs accept no query argument to substitute it into: their
+  # handlers take a tenant id from headers, `hidden_fields_filters`
+  # (which hides FIELDS from a result, not rows) and
+  # `allow_partial_response`, and nothing else. There is therefore no
+  # way, through this proxy, to give one principal a narrower view of
+  # traces than another.
+  #
+  # So with a trace store and `principals` both set, the chart refuses
+  # to render until this is `true`. Setting it says, in a place people
+  # read: **every principal who can reach the proxy reads every
+  # tenant's spans.** Metrics and logs are unaffected by it; it admits
+  # the trace route and nothing else.
+  #
+  # The alternative — rendering the trace route anyway, because it looks
+  # like the other two — is the failure this value exists to prevent: a
+  # route that carries a grant nobody applies is indistinguishable, from
+  # the outside, from one that does.
+  allowUnfilteredTraceReads: false
   # -- One entry per named population. Each renders one vmauth user,
   # selected by `group` matched against `claimName`.
   #

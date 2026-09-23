@@ -73,7 +73,7 @@ func TestClaimRendersOneLogsFilterForEveryGrant(t *testing.T) {
 	require.Len(t, claim.LogsExtraStreamFilters, 1,
 		"a second entry would be AND-ed with the first, not OR-ed: %v", claim.LogsExtraStreamFilters)
 	assert.Equal(t,
-		`{"env"="devel","kubernetes.namespace_labels.tenancy.example.com/project"=~"^(example-app)$"`+
+		`_stream:{"env"="devel","kubernetes.namespace_labels.tenancy.example.com/project"=~"^(example-app)$"`+
 			` or "env"="prod","kubernetes.namespace_labels.tenancy.example.com/project"=~"^(example-app|other-app)$"}`,
 		claim.LogsExtraStreamFilters[0])
 }
@@ -118,7 +118,7 @@ func TestAllTenantsOmitsTheTenantMatcher(t *testing.T) {
 	// project label produces streams with no tenancy field at all, and a
 	// match-all matcher would hide every one of them.
 	require.Len(t, claim.LogsExtraStreamFilters, 1)
-	assert.Equal(t, `{"env"="devel"}`, claim.LogsExtraStreamFilters[0])
+	assert.Equal(t, `_stream:{"env"="devel"}`, claim.LogsExtraStreamFilters[0])
 }
 
 func TestLabelKeysAreInputs(t *testing.T) {
@@ -133,7 +133,7 @@ func TestLabelKeysAreInputs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, `{stage="devel",owner=~"^(example-app)$"}`, claim.MetricsExtraFilters[0])
-	assert.Equal(t, `{"stage"="devel","kubernetes.namespace_labels.owner"=~"^(example-app)$"}`,
+	assert.Equal(t, `_stream:{"stage"="devel","kubernetes.namespace_labels.owner"=~"^(example-app)$"}`,
 		claim.LogsExtraStreamFilters[0])
 }
 
@@ -416,6 +416,9 @@ func TestValidateReportsEveryProblem(t *testing.T) {
 
 func TestVMAuthConfig(t *testing.T) {
 	c := base()
+	// The trace route cannot be scoped, so it renders only when the
+	// caller has said so. See TestTracesRouteIsRefusedUntilItIsAskedFor.
+	c.AllowUnfilteredTraceReads = true
 	c.Principals = append(c.Principals, tenancy.Principal{
 		Group:  "example:dms:deployer",
 		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"dms"}}},
@@ -439,6 +442,19 @@ func TestVMAuthConfig(t *testing.T) {
 	assert.Equal(t, []int{500, 502, 503}, viewer.RetryStatusCodes)
 
 	require.Len(t, viewer.URLMap, 3, "metrics, logs and traces")
+
+	// The two routes that can be scoped carry the placeholder vmauth
+	// substitutes the filters above into; without it the claim is
+	// computed and discarded.
+	assert.Equal(t,
+		[]string{"http://metrics.example:8428?extra_filters={{.MetricsExtraFilters}}"},
+		viewer.URLMap[0].URLPrefix)
+	assert.Equal(t,
+		[]string{"http://logs.example:9428?extra_stream_filters={{.LogsExtraStreamFilters}}"},
+		viewer.URLMap[1].URLPrefix)
+
+	// And the one that cannot carries nothing, rather than something that
+	// looks like enforcement.
 	assert.Equal(t, []string{"http://traces.example:10428"}, viewer.URLMap[2].URLPrefix)
 }
 
@@ -516,6 +532,188 @@ func TestReadPathsAdmitNoWrites(t *testing.T) {
 			} {
 				assert.False(t, re.MatchString(write), "read route %q also admits %q", p, write)
 			}
+		}
+	}
+}
+
+// The test that would have caught it.
+//
+// Every route a reader is given has to carry the placeholder vmauth
+// substitutes its filter into, because that substitution is the ONLY
+// thing that applies the claim: a route without one forwards the query
+// with no filter at all while `default_vm_access_claim` beside it still
+// states the grant, and the two are indistinguishable in any render, any
+// health check, and any query that asks about a single tenant.
+//
+// It walks what was rendered rather than checking the declarations,
+// because a route is only enforced where it is emitted.
+func TestEveryRenderedReadRouteCarriesItsFilter(t *testing.T) {
+	c := base()
+	c.AllowUnfilteredTraceReads = true
+
+	cfg, err := c.RenderVMAuth("https://issuer.example")
+	require.NoError(t, err)
+	require.NotEmpty(t, cfg.Users)
+
+	// The routes, in the order RenderVMAuth emits them, and what each one
+	// must carry. The trace route is the exception and is named as one
+	// here so that a fourth route added without a filter fails this test
+	// rather than joining it.
+	want := []struct {
+		arg         string
+		placeholder string
+	}{
+		{tenancy.MetricsFilterArg, tenancy.MetricsFilterPlaceholder},
+		{tenancy.LogsFilterArg, tenancy.LogsFilterPlaceholder},
+		{"", ""}, // traces: nothing to carry it in, admitted by name above
+	}
+
+	for _, user := range cfg.Users {
+		require.Len(t, user.URLMap, len(want),
+			"a route was added or removed without this test being told which of the two it is")
+		for i, row := range user.URLMap {
+			require.Len(t, row.URLPrefix, 1)
+			prefix := row.URLPrefix[0]
+
+			if want[i].arg == "" {
+				assert.NotContains(t, prefix, "{{",
+					"route %d is the unscoped one and must not pretend otherwise: %s", i, prefix)
+				continue
+			}
+
+			assert.True(t, tenancy.CarriesFilter(prefix, want[i].arg, want[i].placeholder),
+				"route %d of user %q reaches %s with no %s=%s, so every query it forwards is unfiltered while the claim beside it says otherwise",
+				i, user.Name, prefix, want[i].arg, want[i].placeholder)
+		}
+	}
+}
+
+// And the same property, asserted against the route declarations rather
+// than a render: a route that lost its placeholder must not survive
+// Validate either, because Validate is what a caller runs before
+// rendering anything.
+func TestValidateRefusesARouteWithoutItsFilter(t *testing.T) {
+	for _, r := range []tenancy.ReadRoute{tenancy.MetricsRead, tenancy.LogsRead} {
+		assert.NotEmpty(t, r.FilterArg(), "read route %q has no filter argument", r.Name())
+		assert.NotEmpty(t, r.Placeholder(), "read route %q has no filter placeholder", r.Name())
+		assert.Empty(t, r.Unenforceable(), "read route %q claims it cannot be scoped, but it can", r.Name())
+	}
+
+	// The trace route is the only one that may say it cannot be scoped,
+	// and it must say WHY, because that sentence is quoted back to
+	// whoever is being asked to accept it.
+	assert.NotEmpty(t, tenancy.TracesRead.Unenforceable())
+	assert.Empty(t, tenancy.TracesRead.FilterArg(),
+		"a route cannot both be unenforceable and carry a filter")
+}
+
+// A placeholder vmauth does not know is forwarded to the store as the
+// literal string `{{.Whatever}}`, so the set of names is closed.
+func TestFilterPlaceholdersAreTheOnesVMAuthSubstitutes(t *testing.T) {
+	assert.Equal(t, "{{.MetricsExtraFilters}}", tenancy.MetricsFilterPlaceholder)
+	assert.Equal(t, "{{.LogsExtraStreamFilters}}", tenancy.LogsFilterPlaceholder)
+	assert.Equal(t, "extra_filters", tenancy.MetricsFilterArg)
+	assert.Equal(t, "extra_stream_filters", tenancy.LogsFilterArg)
+}
+
+// vmauth substitutes a query argument only when the placeholder is the
+// WHOLE value: the lookup is `data[value]`, a map read on the complete
+// string, not a substring replacement. A value that merely contains a
+// placeholder is forwarded as written — which is an unparseable filter
+// at best and an ignored one at worst.
+func TestAFilterMustBeTheWholeQueryArgValue(t *testing.T) {
+	const arg, ph = tenancy.MetricsFilterArg, tenancy.MetricsFilterPlaceholder
+
+	assert.True(t, tenancy.CarriesFilter("http://x:8428?"+arg+"="+ph, arg, ph))
+	assert.False(t, tenancy.CarriesFilter("http://x:8428?"+arg+"={env=\"prod\"}"+ph, arg, ph),
+		"a value that merely contains the placeholder is never substituted")
+	assert.False(t, tenancy.CarriesFilter("http://x:8428?other="+ph, arg, ph),
+		"the right placeholder in the wrong argument filters nothing")
+	assert.False(t, tenancy.CarriesFilter("http://x:8428", arg, ph))
+}
+
+// The trace route is admitted only by name.
+//
+// Nothing can scope it — VictoriaTraces' Jaeger and Tempo select APIs
+// accept no query argument a proxy could put a filter in — so rendering
+// it beside two scoped routes, looking identical to them, is the defect
+// one level down. It is a refusal until somebody writes down that they
+// accept it.
+func TestTracesRouteIsRefusedUntilItIsAskedFor(t *testing.T) {
+	c := base()
+	require.NotEmpty(t, c.TracesBackend)
+
+	_, err := c.RenderVMAuth("https://issuer.example")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "AllowUnfilteredTraceReads")
+	assert.Contains(t, err.Error(), "cannot be scoped",
+		"the refusal has to say what is wrong, not just that something is")
+
+	c.AllowUnfilteredTraceReads = true
+	cfg, err := c.RenderVMAuth("https://issuer.example")
+	require.NoError(t, err)
+	require.Len(t, cfg.Users[0].URLMap, 3)
+
+	// And it admits the trace route ONLY. A flag that quietly relaxed the
+	// other two would be the same defect with a consent form attached.
+	assert.True(t, tenancy.CarriesFilter(cfg.Users[0].URLMap[0].URLPrefix[0],
+		tenancy.MetricsFilterArg, tenancy.MetricsFilterPlaceholder))
+	assert.True(t, tenancy.CarriesFilter(cfg.Users[0].URLMap[1].URLPrefix[0],
+		tenancy.LogsFilterArg, tenancy.LogsFilterPlaceholder))
+}
+
+// An estate without a trace store never has to answer the question.
+func TestNoTraceBackendNeedsNoOptIn(t *testing.T) {
+	c := base()
+	c.TracesBackend = ""
+	cfg, err := c.RenderVMAuth("https://issuer.example")
+	require.NoError(t, err)
+	assert.Len(t, cfg.Users[0].URLMap, 2)
+}
+
+// A logs filter has to be one VictoriaLogs will parse, and the shape
+// that looks right does not parse.
+//
+// VictoriaLogs reads an `extra_stream_filters` value beginning with `{"`
+// as its JSON object form, `{"field":"value"}`. Every filter this
+// package renders begins with `{"`, because a log field name carries
+// dots and a slash and has to be quoted — so without the `_stream:`
+// prefix the value reaches a JSON parser and comes back as `cannot parse
+// JSON: missing ':' after object key`. That is a 400 on every log query
+// the principal makes.
+func TestLogsFilterIsParseableLogsQLAndNotJSON(t *testing.T) {
+	c := base()
+	claim, err := c.RenderClaim(twoGrants())
+	require.NoError(t, err)
+
+	for _, f := range claim.LogsExtraStreamFilters {
+		assert.True(t, strings.HasPrefix(f, "_stream:{"),
+			"a stream filter has to say so: %s", f)
+		assert.False(t, strings.HasPrefix(f, `{"`),
+			`a value beginning with {" is read as the JSON object form and fails to parse: %s`, f)
+	}
+}
+
+// An empty filter list is not a narrow grant. It is no grant at all, and
+// it also hands the caller the argument.
+//
+// vmauth expands a placeholder to the claim's VALUES, so an empty list
+// expands to nothing and the query argument vanishes from the forwarded
+// request. The only thing stopping a caller sending its own
+// `extra_filters` is that such an argument CLASHES with one the route
+// already set — and with the route's argument gone there is no clash, so
+// the caller's filter is used instead. Refused here, because at the far
+// end it looks like a successful query.
+func TestClaimNeverRendersAnEmptyFilterList(t *testing.T) {
+	c := base()
+	for _, p := range []tenancy.Principal{c.Principals[0], twoGrants()} {
+		claim, err := c.RenderClaim(p)
+		require.NoError(t, err)
+		assert.NotEmpty(t, claim.MetricsExtraFilters,
+			"an empty list removes the argument rather than denying anything")
+		assert.NotEmpty(t, claim.LogsExtraStreamFilters)
+		for _, f := range append(append([]string{}, claim.MetricsExtraFilters...), claim.LogsExtraStreamFilters...) {
+			assert.NotEmpty(t, f, "an empty filter string is the same hole spelled differently")
 		}
 	}
 }
