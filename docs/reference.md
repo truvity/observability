@@ -87,8 +87,56 @@ Alerts: `VolumeSmallerThanClaimed`.
 Alerts: `StoreApproachingReadOnly`, one per qualifying store, labelled
 `store`.
 
+## `pkg/tenancy`
+
+`go get github.com/truvity/observability`
+
+### `Config`
+
+| Field | Required | What it does |
+|---|---|---|
+| `ClaimName` | yes | The token claim carrying the caller's groups, e.g. `groups`. |
+| `Principals` | yes | One entry per named population. |
+| `TenantLabel` | no, `tenant` | The label key the collectors stamp with the tenant. |
+| `EnvLabel` | no, `env` | The label key the collectors stamp with the environment. |
+| `MetricsBackend`, `LogsBackend` | for `RenderVMAuth` | Where the proxy forwards. |
+| `TracesBackend` | no | Omitted renders no trace route. |
+
+### `Principal` and `Grant`
+
+| Field | Required | What it does |
+|---|---|---|
+| `Principal.Group` | yes | Matched against the claim. Not a display name or an address. |
+| `Principal.Grants` | yes | What this group may read. A principal that may read nothing is written by leaving it out. |
+| `Grant.Env` | yes | One environment. Granting the same environment twice to one principal is refused. |
+| `Grant.Tenants` | one of | Tenants by name. |
+| `Grant.AllTenants` | one of | Every tenant in that environment. |
+
+`Tenants` and `AllTenants` are mutually exclusive and one is required. An
+empty `Tenants` list is **refused**, never read as "everything": a list
+empty because a derivation produced nothing is the likeliest way a grant
+widens by accident.
+
+Names must match `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`. This is a security
+boundary rather than a style rule — names are interpolated into a filter
+expression, so one containing `|`, `)` or `.*` would widen the grant. Such
+a name is refused rather than escaped.
+
+### Methods
+
+| Method | Returns |
+|---|---|
+| `Validate() error` | Every problem found, joined, not just the first. |
+| `RenderClaim(Principal) (Claim, error)` | The `vm_access` body an issuer mints. |
+| `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. |
+
+Rendering does not mutate its input, and output order is stable: grants
+sort by environment and tenants sort by name, so an unrelated change
+produces no diff.
+
 ## Published artifacts
 
 | Artifact | Where |
 |---|---|
 | `platform-alerts` | `oci://ghcr.io/truvity/charts/platform-alerts` |
+| `pkg/tenancy` | `github.com/truvity/observability` |

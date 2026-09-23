@@ -11,7 +11,7 @@ everything still looks green.
 | `charts/platform-alerts` | The rules that fire when something has stopped working silently: a CronJob that is no longer scheduled, a store whose write path has died, a volume that was never mounted, a store approaching its own read-only limit. Every rule carries the incident that earned it and a negative fixture that must fail. | unreleased |
 | `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces, single or as a zone-redundant pair, behind an authorising proxy that scopes every query to the caller's tenants; vmalert and Alertmanager; optionally Grafana, forwarding the signed-in user's identity. | planned |
 | `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry collector, each stamping tenancy from namespace labels and replicating to every destination with its own on-disk buffer. | planned |
-| `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. | planned |
+| `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. Refuses a name that could widen a grant rather than escaping it. | unreleased |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module
@@ -79,6 +79,32 @@ commonLabels:
 
 runbookBaseUrl: https://runbooks.example.com
 ```
+
+### Scoping a query to its caller
+
+```go
+cfg := tenancy.Config{
+    ClaimName:      "groups",
+    MetricsBackend: "http://metrics.example:8428",
+    LogsBackend:    "http://logs.example:9428",
+    Principals: []tenancy.Principal{
+        {Group: "example:k8s:viewer", Grants: []tenancy.Grant{
+            {Env: "devel", AllTenants: true},
+        }},
+        {Group: "example:dms:deployer", Grants: []tenancy.Grant{
+            {Env: "devel", Tenants: []string{"dms"}},
+        }},
+    },
+}
+
+vmauth, err := cfg.RenderVMAuth("https://issuer.example")   // the proxy's config
+claim, err := cfg.RenderClaim(cfg.Principals[1])            // what an issuer mints
+```
+
+Both come from the same input on purpose. A difference between them is a
+difference between what a token says a person may read and what the proxy
+lets them read, and that is not a difference anyone notices until it
+matters.
 
 ## Documentation
 

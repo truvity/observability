@@ -61,6 +61,18 @@ A rule whose failure case it cannot itself observe does not belong here.
 That is why there is no alert on a store's read-only flag: the sample
 carrying it is written into the store that has stopped accepting writes.
 
+## One input, two shapes
+
+An estate can hold the tenant mapping in the proxy's configuration or in
+the token its issuer mints. Both are reasonable; which one fits depends on
+where the estate would rather make the change.
+
+`pkg/tenancy` renders both from one input rather than offering two
+functions to keep in step. A difference between them is a difference
+between what a token says a person may read and what the proxy lets them
+read — and nothing surfaces that difference until someone sees data they
+should not, or fails to see data they should.
+
 ## Refusals over defaults
 
 Where a wrong value would be silently harmful, the chart refuses rather

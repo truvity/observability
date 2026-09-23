@@ -4,6 +4,10 @@
 
 charts := "platform-alerts"
 
+# The parent workspace would otherwise interfere with this standalone
+# module.
+export GOWORK := "off"
+
 # Lint every chart, and prove every refusal still refuses.
 #
 # The schema is part of the lint: an unknown key must fail the render, not
@@ -15,6 +19,7 @@ charts := "platform-alerts"
 lint:
     #!/usr/bin/env bash
     set -euo pipefail
+    golangci-lint run ./...
     for chart in {{ charts }}; do
       helm lint "charts/$chart" --values tests/cases/"$chart"/minimal/values.yaml
       # An unknown top-level key must fail the render. Not `! helm
@@ -37,9 +42,14 @@ lint:
       echo "$chart: schema and $(ls tests/invalid/"$chart"/*.yaml | wc -l | tr -d ' ') negative fixtures OK"
     done
 
-# Golden renders: render every test case and compare with tests/golden.
+# Golden renders, then the Go library's own tests.
+#
+# One recipe, because they answer the same question from two sides: the
+# goldens prove the charts render what we think, and the library tests
+# prove a grant means what it says before it ever reaches a chart.
 test:
     hack/golden.sh
+    go test ./... -coverprofile=coverage.out
 
 # Regenerate the golden renders — review the diff before committing.
 golden:
@@ -55,6 +65,16 @@ package:
     #!/usr/bin/env bash
     set -euo pipefail
     for chart in {{ charts }}; do helm package "charts/$chart" --destination dist/; done
+
+# Go vulnerability check. Deliberately NOT in `check` and not a required
+# context: a standard-library advisory with no released fix would
+# otherwise wedge every pull request on a finding nobody can act on.
+vuln:
+    govulncheck ./...
+
+# Format Go files.
+fmt:
+    golangci-lint fmt ./...
 
 # Everything CI runs on a pull request.
 check: lint test leak-canary
