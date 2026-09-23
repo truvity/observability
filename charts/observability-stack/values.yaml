@@ -135,10 +135,38 @@ tenancy:
   issuerUrl: ""
   # -- The token claim carrying the caller's groups.
   claimName: groups
-  # -- The label keys the collectors stamp. They are the estate's
-  # vocabulary, not this chart's.
+  # -- The label keys the collectors stamp on METRICS and on spans. They
+  # are the estate's vocabulary, not this chart's.
   tenantLabel: tenant
   envLabel: env
+  # -- The FIELD names the log store carries the same two dimensions
+  # under. **Required whenever `principals` is set**, and deliberately
+  # without a default.
+  #
+  # The log path does not use the label keys above and cannot be made to.
+  # vlagent delivers a namespace label as
+  # `kubernetes.namespace_labels.<key>` and can rename no field: there is
+  # no flag, no header and no ingest pipeline that turns it into `tenant`,
+  # and VictoriaLogs' `rename` and `copy` pipes run at query time, after
+  # the proxy's stream filter has already been applied.
+  #
+  # So a filter naming `tenant` against those streams selects a field they
+  # do not have. That is not an error: it is an empty result, and the
+  # person who gets it reads it as "my service logged nothing". This chart
+  # asks for the names rather than guessing them, for the same reason
+  # charts/observability-emitters derives the tenant field and then
+  # refuses to render until it is in the log agent's own `streamFields` —
+  # the value has to travel from the agent to the proxy, and a value
+  # nobody writes is a value nobody carries.
+  #
+  #   logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
+  #   logsEnvField: env
+  #
+  # `logsEnvField` is whatever the agent was told to add the environment
+  # as — with the emitters chart, `tenancy.envLabel`, because it arrives
+  # through `-kubernetesCollector.extraFields` under exactly that name.
+  logsTenantField: ""
+  logsEnvField: ""
   # -- One entry per named population. Each renders one vmauth user,
   # selected by `group` matched against `claimName`.
   #

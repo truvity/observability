@@ -238,6 +238,8 @@ exists.
 
 | Refusal | The failure it prevents |
 |---|---|
+| `tenancy.logsTenantField` or `tenancy.logsEnvField` empty with principals set (`observability-stack`) | The proxy would filter logs on a field the streams do not have. Every tenant-scoped log query returns an empty result with no error, and reads as "my service logged nothing". |
+| A log field name carrying stream-filter syntax (`observability-stack`) | The name is interpolated into the filter, so a quote or a brace ends the filter early and a second alternative opens beside it — a grant wider than the one somebody wrote. Refused, never escaped. |
 | `otlp.streamFields` empty | No `VL-Stream-Fields` header is sent, and with none VictoriaLogs treats EVERY resource attribute as a stream field. An OpenTelemetry SDK's resource carries the pod's UID and its start time, so every restart of every workload mints a stream that is never written to again. The store does not fail; it degrades, over weeks, in a way that reads as growth. |
 | A stream field outside the chart's list | A field that changes per request — an address, a user id, a trace id — creates a stream per value. It is the vendor's own named way to wreck this store, and it does not recover on its own. The list is the chart's and not a value, because an allow-list a caller can extend is a comment. |
 | The tenant or env key missing from either stream-field list | A stream filter, which is what the proxy injects, only selects on stream fields. Every tenant-scoped log query returns nothing at all. |
@@ -294,8 +296,8 @@ deliberate: the chart could compute the value silently, but the value has
 to travel out of the chart and into the proxy's configuration, and a value
 nobody writes is a value nobody carries.
 
-Two things this does **not** fix, stated because discovering them during
-an incident is worse:
+Three things this does **not** fix, stated because discovering them
+during an incident is worse:
 
 - **There is no fallback tenant on the log path.** A namespace with no
   project label produces log streams with no tenancy field at all. They
@@ -304,10 +306,70 @@ an incident is worse:
   such thing. Label every namespace.
 - **There is no layer fallback either**, for the same reason. Only the
   project label reaches the log store's streams.
+- **The two log writers do not name the tenant the same way.** The log
+  agent produces `kubernetes.namespace_labels.<key>`, as above. The OTLP
+  gateway sets its own resource attribute and declares it in
+  `VL-Stream-Fields`, so on that path the stream field is
+  `tenancy.tenantLabel` — the name the log agent cannot produce. One
+  store therefore holds streams keyed two ways, and a filter can name one
+  of them. An estate running both emitters against one log store should
+  expect the OTLP half to be invisible to a filter written for the agent
+  half, and the other way round. Naming them the same thing is a change
+  to the gateway's log pipeline, which is free to call its attribute
+  anything (the metrics and traces pipelines are not: a Prometheus label
+  cannot carry a dot or a slash). It is not done here.
 
-`pkg/tenancy` renders one pair of names for both signals, so an estate
-using the log path needs a second filter shape on the read side today.
-That is a gap in the library, not a decision.
+### What the read side does about it
+
+`pkg/tenancy` and `charts/observability-stack` take the log path's field
+names as **required input** — `logsTenantField` and `logsEnvField` on the
+chart, `LogsTenantField` and `LogsEnvField` on the `Config` — and refuse
+to render a filter until they are stated. There is no default, and in
+particular no default equal to the metrics label: every default anyone
+would write here is correct on one estate and silently wrong on the next.
+
+Two consequences of the shape, both of which the renderers handle and
+neither of which is obvious from the metrics path.
+
+**The field name is quoted, and held to its own shape.** A LogsQL word is
+`[a-zA-Z0-9_]` and nothing else, so a real field name — which carries dots,
+and a slash when the label key has a domain prefix — is not a word and has
+to be quoted to be read as one name. It is therefore held to a *field*
+shape, `^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`, rather than to the plain-name
+shape a tenant is held to. The tenant rule is not loosened to let a field
+name through: a tenant name goes inside the alternation, where a `.` is a
+metacharacter. A field name carrying stream-filter syntax — a quote, a
+brace, a comma, an equals sign, a `|`, a colon, a space — is refused
+rather than escaped, for the same reason a tenant name is.
+
+**A principal gets one stream filter, not one per grant.** VictoriaLogs
+AND-s every `extra_stream_filters` argument it receives into the query as
+its own global constraint, so a second entry does not widen a principal's
+reach: it narrows it to the intersection, and two grants naming two
+environments intersect in nothing at all. That is an empty screen for
+exactly the people with the most access. So the grants are rendered as
+`or` alternatives inside a single filter, where a comma still binds
+tighter than `or` and no grant can borrow another grant's tenants. The
+metrics path takes the opposite convention — vmselect OR-s its
+`extra_filters` — which is why the two claim fields are neither the same
+list nor the same length, and why a test asserts they are not.
+
+### Why this is a safety property and not a footnote
+
+Every other refusal in this document prevents something that eventually
+announces itself: a pod that will not start, a store that answers 401, a
+bill. This one prevents a **successful query that returns nothing**.
+
+There is no error, no failed object, no alert and no log line. The person
+who ran it sees an empty result and draws the obvious conclusion — that
+their service is not logging, or that the collector is down — and starts
+looking in the place the fault is not. During an incident that is worse
+than a refusal by a wide margin, because the empty result is *evidence*,
+and it is evidence for something untrue. A refusal at render time costs
+somebody five minutes with this page open. An empty result costs whatever
+the incident costs.
+
+That is the whole argument for asking rather than defaulting.
 
 ## Why the gateway is a StatefulSet, and why its processors are ordered
 

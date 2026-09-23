@@ -161,9 +161,11 @@ case proves the two still match.
 {{- end -}}
 
 {{/*
-One grant, as a series selector. The same string for MetricsQL and for
-LogsQL, which is only possible because this design restricts itself to
-equality and alternation on stream labels — see pkg/tenancy.
+One grant, as a MetricsQL series selector. vmselect OR-s the
+`extra_filters` it is given, so one entry per grant is the principal's
+whole reach.
+
+This is `pkg/tenancy`'s metricsFilter, in Helm.
 */}}
 {{- define "observability-stack.filter" -}}
 {{- $env := printf "%s=%q" .labels.env .grant.env -}}
@@ -172,6 +174,45 @@ equality and alternation on stream labels — see pkg/tenancy.
 {{- else -}}
 {{- printf "{%s,%s=~\"^(%s)$\"}" $env .labels.tenant (join "|" (sortAlpha .grant.tenants)) -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+A principal's WHOLE reach, as ONE LogsQL stream filter.
+
+This is `pkg/tenancy`'s logsFilter, in Helm, and it differs from the
+metrics one above in three ways that are all forced.
+
+The FIELD NAMES are `tenancy.logsTenantField` and `tenancy.logsEnvField`
+rather than the label keys: vlagent can rename no field, so the log store
+carries the tenant under the name the agent produced and a filter naming
+`tenant` selects a field that does not exist — an empty result, with no
+error anywhere.
+
+The NAMES ARE QUOTED, because a LogsQL word is [a-zA-Z0-9_] and a real
+field name has dots and a slash. Quoting is unconditional: a bare name
+that collides with a keyword or a pipe name would parse as that keyword,
+and the schema's `logFieldName` shape guarantees there is nothing inside
+the quotes to escape.
+
+And it is ONE filter with the grants as `or` alternatives, because
+VictoriaLogs AND-s every `extra_stream_filters` argument into the query as
+its own global constraint. Two entries would not widen a principal's
+reach, they would narrow it to the intersection — and two grants naming
+two environments intersect in nothing at all. Comma binds tighter than
+`or` inside `{...}`, so each alternative stays its own conjunction.
+*/}}
+{{- define "observability-stack.logsFilter" -}}
+{{- $fields := .fields -}}
+{{- $alternatives := list -}}
+{{- range $grant := .grants -}}
+{{- $env := printf "%s=%q" ($fields.env | quote) $grant.env -}}
+{{- if $grant.allTenants -}}
+{{- $alternatives = append $alternatives $env -}}
+{{- else -}}
+{{- $alternatives = append $alternatives (printf "%s,%s=~\"^(%s)$\"" $env ($fields.tenant | quote) (join "|" (sortAlpha $grant.tenants))) -}}
+{{- end -}}
+{{- end -}}
+{{- printf "{%s}" (join " or " $alternatives) -}}
 {{- end -}}
 
 {{/*

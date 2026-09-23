@@ -291,9 +291,33 @@ would override its `-httpAuth.*`.
 
 {{- define "observability-stack.validate.tenancy" -}}
 {{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
+{{- $fieldShape := "^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$" -}}
 {{- $t := .Values.tenancy -}}
 {{- if and $t.principals (not $t.issuerUrl) -}}
 {{- fail "observability-stack: `tenancy.principals` is set but `tenancy.issuerUrl` is empty. vmauth verifies a token against the issuer's OIDC discovery document; with no issuer there is nothing to verify a signature against, and a proxy that trusts an unverified token is worse than no proxy at all." -}}
+{{- end -}}
+{{- /*
+The log path has to be named.
+
+This is the one required value here whose absence would otherwise render
+cleanly, install, pass every health check and answer every log query with
+nothing. It has no default because every default is wrong somewhere and
+wrong silently: vlagent can rename no field, so the tenant reaches
+VictoriaLogs as `kubernetes.namespace_labels.<key>` and a filter naming
+`tenant` selects a field the streams do not have.
+*/}}
+{{- if $t.principals -}}
+{{- if not $t.logsTenantField -}}
+{{- fail "observability-stack: `tenancy.principals` is set but `tenancy.logsTenantField` is empty, and it has no default. On the log path the tenant is not carried in a field named `tenant` and cannot be: vlagent delivers a namespace label as `kubernetes.namespace_labels.<key>` and can rename no field — no flag, no header, and no ingest pipeline, since VictoriaLogs' `rename` and `copy` pipes run at query time, after the filter this chart injects has already been applied. A stream filter naming any other field selects one the streams do not have, which returns an EMPTY RESULT rather than an error and reads as \"my service logged nothing\". Set it to the field your log agent writes; with charts/observability-emitters that is `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`, which that chart already requires in the agent's own `streamFields`." -}}
+{{- end -}}
+{{- if not $t.logsEnvField -}}
+{{- fail "observability-stack: `tenancy.principals` is set but `tenancy.logsEnvField` is empty, and it has no default for the same reason `tenancy.logsTenantField` has none: the log store's field names are the log agent's, not this chart's. An agent that adds the environment as a static extra field writes it under the name it was given, and a filter naming any other one returns nothing at all, silently. With charts/observability-emitters it is `tenancy.envLabel`, because the agent receives it through `-kubernetesCollector.extraFields` under exactly that name." -}}
+{{- end -}}
+{{- end -}}
+{{- range $key, $field := dict "logsTenantField" $t.logsTenantField "logsEnvField" $t.logsEnvField -}}
+{{- if and $field (not (regexMatch $fieldShape (toString $field))) -}}
+{{- fail (printf "observability-stack: `tenancy.%s` is %q, which is not a log field name (%s). A log field name may carry the dots and the slash a Kubernetes label key has, and nothing that is stream-filter syntax: a quote, a brace, a comma, an equals sign, a `|`, a colon or a space would end the filter early or open a second alternative beside it, and the grant would be wider than the one somebody wrote. Such a name is refused, never escaped." $key (toString $field) $fieldShape) -}}
+{{- end -}}
 {{- end -}}
 {{- $groups := dict -}}
 {{- range $i, $p := $t.principals -}}

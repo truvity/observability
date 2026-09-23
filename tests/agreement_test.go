@@ -20,8 +20,10 @@
 package tests
 
 import (
+	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -41,6 +43,11 @@ const (
 	goldenIssuer     = "https://issuer.example"
 	goldenMetricsURL = "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
 	goldenLogsURL    = "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+
+	// The log-path field names from the same values file. They are not
+	// the label keys and cannot be: see pkg/tenancy.Config.
+	goldenLogsTenantField = "kubernetes.namespace_labels.tenancy.example.com/project"
+	goldenLogsEnvField    = "env"
 )
 
 // vmUser is the part of the operator's VMUser that carries tenancy.
@@ -75,9 +82,11 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 	// tests/cases/observability-stack/tenancy/values.yaml. The two are
 	// the same list on purpose.
 	cfg := tenancy.Config{
-		ClaimName:      "groups",
-		MetricsBackend: goldenMetricsURL,
-		LogsBackend:    goldenLogsURL,
+		ClaimName:       "groups",
+		MetricsBackend:  goldenMetricsURL,
+		LogsBackend:     goldenLogsURL,
+		LogsTenantField: goldenLogsTenantField,
+		LogsEnvField:    goldenLogsEnvField,
 		Principals: []tenancy.Principal{
 			{Group: "example:k8s:viewer", Grants: []tenancy.Grant{
 				{Env: "devel", AllTenants: true},
@@ -186,7 +195,9 @@ func TestEmittersStampWhatTheLibraryFilters(t *testing.T) {
 	// applies, so it is the only statement of these names that can be
 	// wrong.
 	claim, err := tenancy.Config{
-		ClaimName: "groups",
+		ClaimName:       "groups",
+		LogsTenantField: goldenLogsTenantField,
+		LogsEnvField:    goldenLogsEnvField,
 		Principals: []tenancy.Principal{
 			{Group: "example:reader", Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}}},
 		},
@@ -243,4 +254,108 @@ func TestEmittersLabelKeysReachEverySite(t *testing.T) {
 		assert.NotContains(t, golden, leak,
 			"a stamping site renders the DEFAULT label key while the values set another one — it would look correct for everyone who never changed it")
 	}
+}
+
+// The same boundary, on the log path, which is where it was missing.
+//
+// The metrics half above compares two label keys and stops there, because
+// on the metrics path the collector's label key IS the name the filter
+// selects on. On the log path it is not, and cannot be made to be:
+// vlagent delivers a namespace label as `kubernetes.namespace_labels.<key>`
+// and can rename no field. So the agreement is between three things —
+// what the log agent is told to make a STREAM FIELD, what the chart
+// derives from the namespace label key, and what pkg/tenancy puts in the
+// filter — and it is checked against the rendered manifest rather than
+// against a value, because the flag is the only one of the three that the
+// store ever sees.
+//
+// The last assertion is the defect this test exists for. `tenant` is not
+// among the agent's stream fields and cannot be, so a logs filter naming
+// it selects nothing: an empty result, no error, and a reader who
+// concludes their service logged nothing.
+const (
+	emittersLogsCase   = "cases/observability-emitters/minimal/values.yaml"
+	emittersLogsGolden = "golden/observability-emitters/minimal.yaml"
+)
+
+func TestEmittersStampTheLogFieldsTheLibraryFilters(t *testing.T) {
+	var defaults struct {
+		Tenancy struct {
+			TenantLabel string `yaml:"tenantLabel"`
+			EnvLabel    string `yaml:"envLabel"`
+		} `yaml:"tenancy"`
+	}
+	raw, err := os.ReadFile(emittersValues)
+	require.NoError(t, err)
+	require.NoError(t, yaml.Unmarshal(raw, &defaults))
+
+	var values struct {
+		Tenancy struct {
+			NamespaceLabels struct {
+				Project string `yaml:"project"`
+			} `yaml:"namespaceLabels"`
+		} `yaml:"tenancy"`
+	}
+	raw, err = os.ReadFile(emittersLogsCase)
+	require.NoError(t, err)
+	require.NoError(t, yaml.Unmarshal(raw, &values))
+	require.NotEmpty(t, values.Tenancy.NamespaceLabels.Project)
+
+	// What the chart derives, spelled out here rather than imported, so
+	// that a chart which starts deriving something else fails this test
+	// and not only the golden diff.
+	wantTenantField := "kubernetes.namespace_labels." + values.Tenancy.NamespaceLabels.Project
+	wantEnvField := defaults.Tenancy.EnvLabel
+
+	// What the agent is actually told, read out of the rendered manifest.
+	golden, err := os.ReadFile(emittersLogsGolden)
+	require.NoError(t, err, "regenerate the golden renders with `just golden`")
+
+	streamFields := flagList(t, string(golden), "--kubernetesCollector.streamFields=")
+	assert.Contains(t, streamFields, wantTenantField,
+		"the tenant field the proxy filters on is not one of the log agent's stream fields; a LogsQL stream filter selects only on stream fields, so every tenant-scoped log query would return nothing")
+	assert.Contains(t, streamFields, wantEnvField,
+		"the environment field the proxy filters on is not one of the log agent's stream fields")
+	assert.Contains(t, string(golden), fmt.Sprintf("--kubernetesCollector.extraFields={%q:", wantEnvField),
+		"the environment reaches the log store under the name the agent was given, and this is where it is given")
+
+	// And what the library puts in the filter, for the same two names.
+	claim, err := tenancy.Config{
+		ClaimName:       "groups",
+		LogsTenantField: wantTenantField,
+		LogsEnvField:    wantEnvField,
+		Principals: []tenancy.Principal{
+			{Group: "example:reader", Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}}},
+		},
+	}.RenderClaim(tenancy.Principal{
+		Group:  "example:reader",
+		Grants: []tenancy.Grant{{Env: "devel", Tenants: []string{"example"}}},
+	})
+	require.NoError(t, err)
+	require.Len(t, claim.LogsExtraStreamFilters, 1)
+	filter := claim.LogsExtraStreamFilters[0]
+
+	assert.Contains(t, filter, strconv.Quote(wantTenantField))
+	assert.Contains(t, filter, strconv.Quote(wantEnvField))
+
+	// The defect, asserted from the collector's side.
+	assert.NotContains(t, streamFields, defaults.Tenancy.TenantLabel,
+		"%q is not a stream field on the log path and cannot be one — vlagent can rename no field — so a filter naming it returns an empty result with no error at all", defaults.Tenancy.TenantLabel)
+	assert.NotContains(t, filter, strconv.Quote(defaults.Tenancy.TenantLabel),
+		"the logs filter names the metrics tenant label; nothing on the log path carries it")
+}
+
+// flagList returns the comma-separated value of the first container
+// argument in the rendered manifest that starts with prefix.
+func flagList(t *testing.T, golden, prefix string) []string {
+	t.Helper()
+
+	for _, line := range strings.Split(golden, "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "- "))
+		if after, ok := strings.CutPrefix(line, prefix); ok {
+			return strings.Split(after, ",")
+		}
+	}
+	t.Fatalf("no %s argument in the rendered manifest", prefix)
+	return nil
 }

@@ -26,6 +26,11 @@
       "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
       "description": "A plain name. This is a security boundary rather than a style rule: tenant and environment names are interpolated into a filter expression, so one carrying | or .* would widen the grant it appears in."
     },
+    "logFieldName": {
+      "type": "string",
+      "pattern": "^$|^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$",
+      "description": "A LOG FIELD NAME, which is a different question from a plain name and has a different answer. A log agent names its own fields: vlagent delivers a namespace label as kubernetes.namespace_labels.<key>, so a real one carries dots, and a slash when the label key has a domain prefix. The shape admits those and refuses everything that is stream-filter syntax - a quote, a brace, a comma, an equals sign, a pipe, a colon, whitespace - because the name is interpolated into the filter and one of those would widen the grant rather than look odd. Empty is allowed HERE and refused in templates/_validate.tpl, where the refusal can say why the log path is not the metrics path."
+    },
     "resources": {
       "type": "object",
       "description": "Kubernetes resource requirements; passed through untouched. The chart refuses requests that differ from limits and a fractional CPU.",
@@ -211,6 +216,14 @@
         },
         "envLabel": {
           "$ref": "#/definitions/name"
+        },
+        "logsTenantField": {
+          "$ref": "#/definitions/logFieldName",
+          "description": "The FIELD the log store carries the tenant in. No default: on the log path the tenant is not in a field called tenant and cannot be, because vlagent can rename no field. Required whenever principals is set."
+        },
+        "logsEnvField": {
+          "$ref": "#/definitions/logFieldName",
+          "description": "The FIELD the log store carries the environment in. No default, for the same reason as logsTenantField. Required whenever principals is set."
         },
         "principals": {
           "type": "array",

@@ -8,6 +8,31 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## Unreleased
 
+- **`pkg/tenancy` and `charts/observability-stack`** — the logs filter
+  names the field the log store actually has. Until now both rendered the
+  same string for both signals, so a reader querying logs through the
+  proxy was filtered on `tenant` — a field the log path does not have and
+  cannot have, because vlagent can rename no field and a namespace label
+  arrives as `kubernetes.namespace_labels.<key>`. The query did not fail;
+  it returned nothing, which reads as "my service logged nothing".
+  **Breaking, and deliberately so:** `tenancy.logsTenantField` and
+  `tenancy.logsEnvField` on the chart, `LogsTenantField` and
+  `LogsEnvField` on `tenancy.Config`, are now required whenever there is a
+  principal, and there is no default — every default anyone would write is
+  right on one estate and silently wrong on the next. With
+  `charts/observability-emitters` they are
+  `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>` and
+  `tenancy.envLabel`, which that chart already refuses to render without.
+  Two further changes follow from LogsQL rather than from taste: the field
+  name is quoted and held to a field shape (`^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`)
+  rather than to the plain-name shape a tenant is held to, since a real
+  field name carries dots and a slash; and a principal now gets **one**
+  stream filter with its grants as `or` alternatives instead of one entry
+  per grant, because VictoriaLogs AND-s every `extra_stream_filters`
+  argument it is given — two entries naming two environments intersected
+  in nothing, so the principal with the most access got the emptiest
+  screen. The metrics and traces paths are unchanged. See docs/safety.md.
+
 - **`charts/observability-emitters`** — per-cluster collection: vmagent as
   a `VMAgent` the operator reconciles, vlagent from the vendor's own
   DaemonSet chart, and an OpenTelemetry gateway this chart renders itself.

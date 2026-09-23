@@ -317,7 +317,11 @@ produces beside it.
 `kubernetes.namespace_labels.<your project label key>`, not `tenant`, and
 the proxy has to filter on that name. docs/safety.md says why. The chart
 makes you write it into the log agent's `streamFields`, so it is visible
-rather than derived — carry it to the read side.
+rather than derived — carry it to the read side, where it is
+`tenancy.logsTenantField` on `observability-stack` (with
+`tenancy.logsEnvField` beside it, which is your `tenancy.envLabel`). Both
+are required and neither has a default: the read side refuses to render a
+filter it would have had to guess the name for.
 
 **Enabling a component's monitor is a second step.** This chart collects
 every `PodMonitor` and `ServiceMonitor` on the cluster, so wiring a

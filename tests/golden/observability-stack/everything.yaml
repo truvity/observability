@@ -2655,8 +2655,7 @@ spec:
         - '{stage="devel"}'
         - '{stage="prod",owner=~"^(dms|url-shortener)$"}'
       logsExtraStreamFilters:
-        - '{stage="devel"}'
-        - '{stage="prod",owner=~"^(dms|url-shortener)$"}'
+        - '{"stage"="devel" or "stage"="prod","kubernetes.namespace_labels.tenancy.example.com/owner"=~"^(dms|url-shortener)$"}'
   load_balancing_policy: first_available
   retry_status_codes: 
     - 500

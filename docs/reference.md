@@ -149,8 +149,10 @@ values.yaml, listed here, and enforced rather than remembered.
 |---|---|---|---|
 | `tenancy.issuerUrl` | string | `""` | The OIDC issuer vmauth discovers keys from. **Required whenever `principals` is set.** |
 | `tenancy.claimName` | string | `groups` | The claim carrying the caller's groups. |
-| `tenancy.tenantLabel` | name | `tenant` | The label key the collectors stamp with the tenant. |
+| `tenancy.tenantLabel` | name | `tenant` | The label key the collectors stamp with the tenant, on metrics and on spans. |
 | `tenancy.envLabel` | name | `env` | The label key for the environment. |
+| `tenancy.logsTenantField` | log field name | — | The **field** the log store carries the tenant in. **Required whenever `principals` is set**, and deliberately without a default: on the log path the tenant is not in a field called `tenant` and cannot be. With `observability-emitters`, `kubernetes.namespace_labels.<tenancy.namespaceLabels.project>`. |
+| `tenancy.logsEnvField` | log field name | — | The **field** the log store carries the environment in. **Required whenever `principals` is set.** With `observability-emitters`, `tenancy.envLabel`, which is the name the agent is given in `-kubernetesCollector.extraFields`. |
 | `tenancy.principals[].group` | string | — | Matched against `claimName`. One `VMUser` per entry. |
 | `tenancy.principals[].grants[].env` | name | — | One environment. Granting the same one twice to a principal is refused. |
 | `tenancy.principals[].grants[].tenants` | list of names | — | Tenants by name. An empty list is refused, never read as "everything". |
@@ -163,6 +165,18 @@ Names must match `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` — the same shape, for
 the same reason, as `pkg/tenancy`: they are interpolated into a filter
 expression, so one carrying `|` or `.*` widens the grant rather than
 looking odd.
+
+A **log field name** is a different question and has a different answer:
+`^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`, because a log agent names its own fields
+and a real one carries the dots and the slash of a Kubernetes label key.
+It admits those and refuses everything that is stream-filter syntax. The
+tenant rule is not loosened to fit it: a tenant name goes inside the
+alternation, where a `.` is a metacharacter.
+
+The rendered logs filter is **one** entry for the whole principal, with
+the grants as `or` alternatives, and its field names are quoted. Both
+follow from LogsQL rather than from taste; docs/safety.md has the
+mechanism.
 
 ### `storeCredentials`
 
@@ -411,7 +425,9 @@ would have to be kept in step with them.
 **The tenant on the log path is not called `tenant`.** vlagent cannot
 rename a field, so a namespace label reaches the store as
 `kubernetes.namespace_labels.<key>` and the proxy has to filter on that
-name. docs/safety.md has what this costs and what it does not cover.
+name — which is why `observability-stack` and `pkg/tenancy` take the log
+path's field names as required input and refuse to render without them.
+docs/safety.md has what this costs and what it does not cover.
 
 ## `pkg/tenancy`
 
@@ -423,8 +439,10 @@ name. docs/safety.md has what this costs and what it does not cover.
 |---|---|---|
 | `ClaimName` | yes | The token claim carrying the caller's groups, e.g. `groups`. |
 | `Principals` | yes | One entry per named population. |
-| `TenantLabel` | no, `tenant` | The label key the collectors stamp with the tenant. |
+| `TenantLabel` | no, `tenant` | The label key the collectors stamp with the tenant, on metrics and on spans. |
 | `EnvLabel` | no, `env` | The label key the collectors stamp with the environment. |
+| `LogsTenantField` | **yes** | The field the log store carries the tenant in. No default: the log path cannot carry the label key above, and a filter naming it returns an empty result rather than an error. |
+| `LogsEnvField` | **yes** | The field the log store carries the environment in. No default, for the same reason. |
 | `MetricsBackend`, `LogsBackend` | for `RenderVMAuth` | Where the proxy forwards. |
 | `TracesBackend` | no | Omitted renders no trace route. |
 
@@ -453,7 +471,7 @@ a name is refused rather than escaped.
 | Method | Returns |
 |---|---|
 | `Validate() error` | Every problem found, joined, not just the first. |
-| `RenderClaim(Principal) (Claim, error)` | The `vm_access` body an issuer mints. |
+| `RenderClaim(Principal) (Claim, error)` | The `vm_access` body an issuer mints. `MetricsExtraFilters` carries one selector per grant, which vmselect OR-s. `LogsExtraStreamFilters` carries exactly one stream filter for the whole principal, because VictoriaLogs AND-s every one it is given. They name different fields and are not the same list. |
 | `RenderVMAuth(issuer string) (VMAuthConfig, error)` | The proxy's `users` list, one entry per principal, reads `first_available` with retry on 500/502/503. Needs vmauth **v1.152.0 or later**, or a patched v1.148 LTS: `default_vm_access_claim` arrived in v1.147.0, but every release from v1.138.0 through v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96). JWT auth itself is community from v1.137.0. |
 
 Rendering does not mutate its input, and output order is stable: grants

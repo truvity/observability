@@ -1,14 +1,11 @@
+# The other half of the same statement. The environment reaches the log
+# store under whatever name the agent was told to add it as, and a filter
+# naming any other one returns nothing at all, silently.
 tenancy:
   issuerUrl: https://issuer.example
   logsTenantField: kubernetes.namespace_labels.tenancy.example.com/project
-  logsEnvField: env
   principals:
     - group: example:k8s:viewer
       grants:
         - env: devel
           allTenants: true
-
-# A vmalert with no notifier evaluates every rule and sends the result
-# nowhere, which is indistinguishable from an estate with no problems.
-alertmanager:
-  enabled: false

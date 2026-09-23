@@ -36,6 +36,15 @@ The consequence worth stating plainly: **an application cannot choose its
 own tenant.** The label is applied by the platform, from metadata the
 application does not control.
 
+One dimension, two names. On metrics and on spans the tenant is a label
+called `tenant`; in the log store it is a **field** whose name the log
+agent chose, because vlagent can rename no field and a namespace label
+arrives as `kubernetes.namespace_labels.<key>`. Isolation is still one
+pair of dimensions and one grant, but the read side has to be told both
+names and refuses to render a filter until it is. A filter naming a field
+the streams do not have does not fail: it returns nothing, and nothing is
+the one answer a person will believe. docs/safety.md has the mechanism.
+
 ## Replication is the writer's job
 
 None of the three stores replicates across a zone in a way that survives

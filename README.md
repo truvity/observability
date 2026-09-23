@@ -107,6 +107,14 @@ cfg := tenancy.Config{
     ClaimName:      "groups",
     MetricsBackend: "http://metrics.example:8428",
     LogsBackend:    "http://logs.example:9428",
+
+    // The log store's own field names. Required, and there is no default:
+    // the tenant is not carried in a field called `tenant` on the log
+    // path and cannot be, so a filter that guessed would return an empty
+    // result rather than an error.
+    LogsTenantField: "kubernetes.namespace_labels.example.com/project",
+    LogsEnvField:    "env",
+
     Principals: []tenancy.Principal{
         {Group: "example:k8s:viewer", Grants: []tenancy.Grant{
             {Env: "devel", AllTenants: true},
