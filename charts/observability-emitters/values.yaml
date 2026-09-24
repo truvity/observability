@@ -187,6 +187,20 @@ logs:
 ###############################################################################
 otlp:
   enabled: true
+  # -- Where the gateway may run. Empty means wherever the scheduler puts
+  # it, which is correct on an untainted cluster and wrong on one where the
+  # only nodes a workload should use carry a taint: the gateway then lands
+  # on whatever is left, which tends to be the pool that is cheapest to
+  # reclaim -- and this is a StatefulSet whose queue volume does not want
+  # to be moved. The metrics agent takes the same settings through
+  # `metrics.spec` and the log agent through its own subchart, so this is
+  # the third of three rather than a new idea.
+  nodeSelector: {}
+  # -- Taints the gateway tolerates. NOT the log agent's blanket
+  # `operator: Exists`: that one is a node agent and has to run everywhere,
+  # while this is one replica per queue volume and should be placed
+  # deliberately.
+  tolerations: []
   image:
     repository: otel/opentelemetry-collector-contrib
     tag: 0.161.0
