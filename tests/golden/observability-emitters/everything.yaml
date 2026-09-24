@@ -529,6 +529,13 @@ spec:
         observability-emitters/config-checksum: 9382f69150ddc28ef9aa709fd072b7cddcdc8af58b06390862db3febe848a0d1
     spec:
       serviceAccountName: observability-emitters-gateway
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      tolerations:
+        - effect: NoSchedule
+          key: arch
+          operator: Equal
+          value: arm64
       containers:
         - name: collector
           image: "otel/opentelemetry-collector-contrib:0.161.0"

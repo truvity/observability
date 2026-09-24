@@ -59,6 +59,16 @@ logs:
   enabled: true
 
 otlp:
+  # Placed, rather than left to the scheduler: on a cluster where every
+  # node a workload should use is tainted, the gateway otherwise lands on
+  # whatever is left.
+  nodeSelector:
+    kubernetes.io/arch: arm64
+  tolerations:
+    - key: arch
+      operator: Equal
+      value: arm64
+      effect: NoSchedule
   enabled: true
   image:
     repository: otel/opentelemetry-collector-contrib

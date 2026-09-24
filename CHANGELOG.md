@@ -6,6 +6,33 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.4
+
+The OTLP gateway could not be placed. `charts/observability-emitters` gave
+its metrics agent scheduling through `metrics.spec` and its log agent
+through the upstream subchart, and gave the gateway nothing — so on a
+cluster where the nodes a workload should use are tainted, the only
+release that would render was one where the gateway lands wherever is
+left.
+
+- **`charts/observability-emitters`** — new `otlp.nodeSelector` and
+  `otlp.tolerations`, both empty by default, so nothing changes for an
+  install that does not set them.
+
+  This is the third of three rather than a new idea: the other two
+  emitters already had a way to say where they run, and the gap was only
+  visible on a cluster that is fully tainted, where the schema correctly
+  refused the values an operator would reach for first.
+
+  Worth stating because it is not symmetric: the gateway is **not** given
+  the log agent's blanket `operator: Exists`. A log agent is a node agent
+  and has to run everywhere or the logs it skipped are missing — and
+  missing logs look exactly like quiet ones. The gateway is one replica
+  per queue volume and should be placed deliberately, on a pool that is
+  not reclaimed underneath it.
+
+  **Nothing to do on upgrade.**
+
 ## 0.3.3
 
 Both alerters loaded every rule in the cluster. `charts/observability-stack`

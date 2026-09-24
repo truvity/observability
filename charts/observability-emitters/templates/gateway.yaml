@@ -182,6 +182,14 @@ spec:
         observability-emitters/config-checksum: {{ $config | sha256sum }}
     spec:
       serviceAccountName: {{ $full }}
+      {{- with .Values.otlp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.otlp.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: collector
           image: {{ printf "%s:%s" .Values.otlp.image.repository .Values.otlp.image.tag | quote }}
