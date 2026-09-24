@@ -155,6 +155,14 @@ metrics:
     # authored by the chart that owns the thing being watched.
     kubelet: true
     cadvisor: true
+    # -- Node labels to copy onto every kubelet and cadvisor series, by
+    # name. Empty is the default, and the node's own `node` label is always
+    # present. Opt-in rather than a `labelmap` of every node label because
+    # those labels belong to the cloud provider: on EKS there are around
+    # forty, which puts every node series past the store's
+    # `-maxLabelsPerTimeseries` -- where it is IGNORED and the write still
+    # answers 200.
+    nodeLabels: []
   # -- Anything else in the VMAgent spec, merged over what this chart
   # renders.
   #

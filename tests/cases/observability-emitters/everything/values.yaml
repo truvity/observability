@@ -48,6 +48,11 @@ metrics:
   scrape:
     kubelet: true
     cadvisor: false
+    # Named, and therefore countable. The blanket labelmap this replaced
+    # put every node series past the store's label ceiling.
+    nodeLabels:
+      - topology.kubernetes.io/zone
+      - node.kubernetes.io/instance-type
   spec:
     scrapeInterval: 60s
     externalLabels:
