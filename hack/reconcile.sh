@@ -123,6 +123,13 @@ metadata:
 spec:
   groups:
     - name: reconcile.logs-rule
+      # `type: vlogs` is NOT optional and is not the same thing as the
+      # chart's selection label. The label decides WHICH alerter loads the
+      # rule; this decides which language the operator parses it as. Without
+      # it the operator reads LogsQL as MetricsQL, rejects the expression,
+      # and the rule is silently absent from the alerter's rule files --
+      # which is indistinguishable from a selector that did not match.
+      type: vlogs
       rules:
         - alert: CrossNamespaceLogsRuleWasSelected
           expr: '* | stats count() as hits'
@@ -248,6 +255,20 @@ refuse_group metrics reconcile.logs-rule \
 
 if [ "$failures" != 0 ]; then
   echo "selected groups were: ${groups:-<none>}" >&2
+  # Say WHY, rather than leaving the next person to guess between "the
+  # selector did not match", "the operator rejected the rule" and "it had
+  # not got there yet". These three look identical from the outside.
+  echo "--- VMRules and what the operator made of them ---" >&2
+  kubectl get vmrule -A -o json 2>/dev/null | python3 -c '
+import json,sys
+for i in json.load(sys.stdin).get("items",[]):
+    m,s = i["metadata"], i.get("status") or {}
+    groups = [g.get("name") for g in (i["spec"].get("groups") or [])]
+    types  = [g.get("type","<none>") for g in (i["spec"].get("groups") or [])]
+    print(f"  {m["namespace"]}/{m["name"]} labels={m.get("labels",{})} groups={groups} types={types} status={s.get("updateStatus","<none>")} reason={s.get("reason","")}")
+' >&2 || true
+  echo "--- rule-file configmaps that exist ---" >&2
+  kubectl get configmap -n "$namespace" -o name 2>/dev/null | grep rulefiles >&2 || echo "  (none)" >&2
   exit 1
 fi
 
