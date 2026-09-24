@@ -14,6 +14,10 @@ everything still looks green.
 | `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces behind an authorising proxy that scopes every query to the clusters and namespaces the caller may read; two vmalerts and Alertmanager with a deadman that leaves the cluster; network policies and backups; optionally Grafana, forwarding the signed-in user's identity. Single-replica today — `ha` is accepted and the zone-redundant behaviour follows. | unreleased |
 | `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry gateway, each optional, each stamping the cluster, the namespace and the environment tier under OpenTelemetry's names — from what the collector can see, never from what the application said — and each replicating to every destination with its own on-disk buffer. | unreleased |
 | `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. Refuses a name that could widen a grant rather than escaping it. | unreleased |
+| `notifications:` in `observability-stack` | The one router: receiver kinds and how their secret is mounted, the routing shape by cluster × namespace × severity, the message template, and the refusals that retire the `blackhole` default — plus the stack's own self-alerts. | [designed](docs/notifications.md) |
+| `charts/alert-ingress` + `cmd/alert-ingress` | Events born outside the cluster — a threat finding, a root sign-in, a key use, a budget — into the same router: signed notifications from an allow-listed topic, mapped by values, never dropped. | [designed](docs/alert-ingress.md) |
+| `pkg/statusbox` (Go, Pulumi) + `setup.sh` | The watcher outside every cluster: several Gatus instances on one immutable box behind a tunnel and a private network — the deadman, outside-in probes, public status pages per company, and the bridge from an internal alert to a status component. | [designed](docs/statusbox.md) |
+| `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | [designed](docs/dashboards.md) |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module
@@ -65,6 +69,13 @@ because no store here replicates across a zone: two independent instances,
 collectors sending to both with per-destination buffers, the proxy in
 front of reads. High availability is a values flag, not a different
 architecture.
+
+And one router. Every alert an install evaluates and every event the
+cloud publishes about it reach a person through the same Alertmanager,
+routed by cluster × namespace × severity; the only things outside that
+router are the ones that must notice the router itself has died — a
+watcher on a box outside every cluster, and the edge provider watching
+the box. [docs/target-state.md](docs/target-state.md) draws it.
 
 ## Install
 
@@ -170,6 +181,9 @@ and the test that catches it.
 
 ## Documentation
 
+- [docs/target-state.md](docs/target-state.md) — what this repository is
+  when complete, the boundary between it and an estate, and the whole of
+  what a consumer writes.
 - [docs/adoption.md](docs/adoption.md) — prerequisites, install order, the
   zero-diff gate, proving a rule before trusting it, and every breaking
   upgrade with its steps.
@@ -179,6 +193,15 @@ and the test that catches it.
   what it does, when it is required.
 - [docs/doctrine.md](docs/doctrine.md) — what this repository owns, what
   the consuming estate owns, and why the shape is what it is.
+- [docs/notifications.md](docs/notifications.md),
+  [docs/alert-ingress.md](docs/alert-ingress.md),
+  [docs/statusbox.md](docs/statusbox.md),
+  [docs/dashboards.md](docs/dashboards.md) — one design page per
+  planned piece: the values it takes, what it renders, what it refuses,
+  how it is proven.
+- [docs/emitting.md](docs/emitting.md) — for whoever wires a service's
+  SDK: the one address, which attributes are theirs and which are taken
+  from them, and how to ask the store rather than trust a 200.
 
 ## The rule that makes this repository public
 

@@ -297,6 +297,94 @@ The same applies to a name that is merely a habit. An internal shorthand
 reads as generic to the person who types it every day and as a proper
 noun to everybody else.
 
+## One router
+
+Every alert reaches a person through one Alertmanager: the rules the
+stack evaluates, the rules an estate adds, and the events the cloud
+publishes about the estate. Not a chat integration the cloud provider
+offers beside it, not a function per event, not a monitoring product's
+own paging, not Grafana's alerting.
+
+The reason is silences. An alert that can arrive by two routes is an
+alert that has to be silenced in two places, grouped by two policies and
+templated twice, and the second route is the one nobody remembers during
+the incident. A second route only helps if somebody would notice it
+failing, and the evidence is that they would not.
+
+So events born outside the cluster are brought *in* — by
+[`alert-ingress`](alert-ingress.md), which turns a cloud notification
+into an Alertmanager alert — rather than routed *around*. The cloud is
+reduced to "POST JSON at us", and the estate keeps one routing tree.
+
+## Mechanism here, data there — for the alert route too
+
+The routing tree has a shape and a content. The shape — severity tiers,
+grouping by cluster and namespace, inhibition, the message template,
+which receiver kinds exist and how their secret is mounted — is the same
+for every estate and lives here. The content — which cluster and which
+namespace go to which channel, and the webhook that reaches it — is the
+estate's, rendered from wherever it derives projects from namespaces,
+the same derivation its read grants come from.
+
+The chart refuses the shape it ships with by default: an Alertmanager
+with no receiver configured is a stack that evaluates every rule and
+tells nobody, and it looks exactly like a quiet estate.
+
+## A 200 is not storage
+
+Every fault this stack has had returned 200 to the sender. A collector
+answers 200 when it has queued a batch; a store answers 200 when it has
+accepted a write, including one it then discards for carrying too many
+labels; a datasource saves and passes its health check with a URL that
+fails only on a query. The sender's view is never evidence.
+
+So every proof in this repository asks the destination: the store's own
+counters, the store's own query API, the page a person would look at.
+The self-alerts ship inside the stack chart because the counters they
+watch — rows ignored, rows dropped, buffers growing, queues filling —
+are the only place those failures report themselves. And the guide for
+whoever wires a service ends with how to ask the store, because a 200
+from the exporter is where every one of those faults was hiding.
+
+## The watcher lives outside
+
+Nothing inside a cluster can report the cluster's absence. The deadman —
+the alert that fires when the alerting pipeline has stopped — has to be
+received somewhere the estate's own failure cannot reach, and so does
+the page that tells customers the estate is down.
+
+That "somewhere" is not one of the estate's clusters, and it is not the
+edge provider that already fronts everything: putting the watcher there
+collapses the edge, the status page and the deadman into one party that
+fails together. It is a small box, provisioned by a package here, on a
+provider the estate chooses, reached over a private network and exposed
+through a tunnel. Three parties then watch each other — the install
+heartbeats into the box, the box probes the estate, the edge provider
+watches the box — and each one's death is noticed by another.
+
+The box is immutable. Its configuration is applied once, at creation,
+and a change replaces it; the alternative is a credential on the box to
+pull with, and a watcher holding a credential to the thing it watches is
+one more way for the thing it watches to take it down. The script it
+runs is fetched from a release of this repository by version and
+verified by checksum before it runs, so the box is a function of a tag.
+
+## Notifications are not on-call
+
+This repository routes an alert to a receiver. It does not decide who is
+on call, escalate when nobody acknowledges, or ring a phone. Those are
+about a team's rotation, and a rotation has to exist before tooling can
+formalise it; a team that has not yet got one buys a schedule with one
+name in it.
+
+Alertmanager can hand an alert to any such tool as a receiver kind. The
+chart surfaces the ones a small team uses first — a chat channel, a
+webhook, a push service for the deadman — and leaves the rest as a values
+key to add when a consumer asks. Email is deliberately not among the
+first: a notification to a mailbox is a notification nobody is looking
+at, and one to a directory group is one the group's mail policy may
+silently reject.
+
 ## Refusals over defaults
 
 Where a wrong value would be silently harmful, the chart refuses rather
