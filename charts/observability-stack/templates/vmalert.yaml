@@ -24,9 +24,12 @@ Both carry the same three settings for the same three reasons:
   external.url                 defaults to the pod's own hostname, which
                                makes every alert's source link dead the
                                moment it leaves the cluster.
-  selectAllByDefault: true     an unset selector selects NOTHING. The
-                               install succeeds, vmalert starts, and no
-                               rule in the namespace is ever loaded.
+  ruleSelector                 an unset selector selects NOTHING, and
+  ruleNamespaceSelector        `selectAllByDefault: true` with no selector
+                               selects EVERYTHING -- including the rules
+                               written in the other query language. Both
+                               are set here, explicitly, because the two
+                               alerters in this release must not overlap.
 */}}
 {{- range $kind := list "metrics" "logs" }}
 {{- $isLogs := eq $kind "logs" }}
@@ -42,7 +45,41 @@ metadata:
 spec:
   replicaCount: 1
   evaluationInterval: {{ $root.Values.interval }}
-  selectAllByDefault: true
+  {{- /*
+    The two alerters speak different query languages, and a rule loaded by
+    the wrong one is fatal rather than ignored: vmalert parses every rule
+    at startup and EXITS on the first it cannot parse, so one PromQL rule
+    reaching the logs alerter (which runs with `-rule.defaultRuleType=vlogs`)
+    crash-loops it and takes every log rule down with it.
+
+    `selectAllByDefault: true` with no selector is what does that, and it
+    does it only once somebody creates rules -- an install with none looks
+    perfectly healthy. Measured on a live install: 23 PromQL rules from the
+    metrics subchart, all of them loaded by BOTH alerters.
+
+    So selection is by label, in both directions. The metrics alerter takes
+    everything that is not marked as LogsQL, which keeps the unlabelled
+    rules that other charts ship; the logs alerter takes only what is
+    marked. `NotIn` matches an object that does not carry the key at all --
+    verified against an API server, not assumed.
+
+    A LogsQL rule MUST carry `observability.rule-type: vlogs` to be
+    evaluated. In platform-alerts that is the `ruleLabels` value.
+  */}}
+  ruleSelector:
+    {{- if $isLogs }}
+    matchLabels:
+      observability.rule-type: vlogs
+    {{- else }}
+    matchExpressions:
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
+    {{- end }}
+  {{- /* Empty selector: every namespace, which is what the release did
+         before selection was narrowed by label. */}}
+  ruleNamespaceSelector: {}
   resources:
     {{- toYaml $root.Values.vmalert.resources | nindent 4 }}
   datasource:

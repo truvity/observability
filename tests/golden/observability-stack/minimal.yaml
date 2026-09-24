@@ -1961,7 +1961,13 @@ metadata:
 spec:
   replicaCount: 1
   evaluationInterval: 30s
-  selectAllByDefault: true
+  ruleSelector:
+    matchExpressions:
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
+  ruleNamespaceSelector: {}
   resources:
     limits:
       cpu: "1"
@@ -2014,7 +2020,10 @@ metadata:
 spec:
   replicaCount: 1
   evaluationInterval: 30s
-  selectAllByDefault: true
+  ruleSelector:
+    matchLabels:
+      observability.rule-type: vlogs
+  ruleNamespaceSelector: {}
   resources:
     limits:
       cpu: "1"

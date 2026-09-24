@@ -225,10 +225,28 @@ mechanism.
 | `vmalert.externalLabels` | map | `{}` | Labels on every alert and recording rule. |
 | `vmalert.resources` | object | 1 CPU / 512Mi | |
 
-Both carry `remoteWrite` **and** `remoteRead` against the metrics store,
-and `selectAllByDefault: true`; none of the three is configurable, because
-each has exactly one correct value and the wrong one is silent. See
-docs/safety.md.
+Both carry `remoteWrite` **and** `remoteRead` against the metrics store;
+neither is configurable, because each has exactly one correct value and the
+wrong one is silent. See docs/safety.md.
+
+**Which rules each one loads is decided by a label, and a LogsQL rule that
+does not carry it is never evaluated.**
+
+| Rule carries | Loaded by |
+|---|---|
+| `observability.rule-type: vlogs` | the logs alerter, only |
+| any other value, or no label at all | the metrics alerter, only |
+
+So a rule written in LogsQL **must** be labelled `observability.rule-type:
+vlogs` — in `platform-alerts` that is the `ruleLabels` value — and a PromQL
+rule needs no label, which is what keeps the rules other charts ship
+working without changing them.
+
+The selectors are not configurable either. They replaced
+`selectAllByDefault: true`, which gave **both** alerters **every** rule in
+the cluster: vmalert exits on the first rule it cannot parse, so the logs
+alerter crash-looped on the metrics subchart's PromQL and took every log
+rule with it. An install with no rules yet shows none of this.
 
 ### `alertmanager`
 

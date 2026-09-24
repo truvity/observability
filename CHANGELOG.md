@@ -6,6 +6,47 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.3
+
+Both alerters loaded every rule in the cluster. `charts/observability-stack`
+runs two vmalerts that speak different query languages, and gave each of
+them `selectAllByDefault: true` with no selector.
+
+- **Fix: `charts/observability-stack`** — each alerter now selects its
+  rules by label. Before, the logs alerter (which runs with
+  `-rule.defaultRuleType=vlogs`) was handed the metrics subchart's PromQL
+  and **crash-looped**, because vmalert parses every rule at startup and
+  exits on the first one it cannot parse:
+
+  *cannot parse configuration file: errors(23): invalid expression for rule
+  "TargetDown": bad LogsQL expr … probably, the whole string must be put
+  into quotes*
+
+  So every log rule stopped being evaluated too, and the reverse pairing —
+  LogsQL reaching the metrics alerter — is the same failure the other way
+  round.
+
+  **The label is now load-bearing.** A rule written in LogsQL must carry
+  `observability.rule-type: vlogs` to be evaluated; in `platform-alerts`
+  that is the `ruleLabels` value. A PromQL rule needs no label, because the
+  metrics alerter selects everything *not* marked as LogsQL — which is what
+  keeps the rules other charts ship working untouched.
+
+  **Nothing to do on upgrade unless you already ship LogsQL rules.** If you
+  do, label them: until you do they are selected by nobody, and a rule
+  nobody selects is a file on the cluster rather than an alert.
+
+  Why it was invisible: an install with no rules yet is perfectly healthy.
+  It fires the moment the first rules exist — for the metrics subchart,
+  when its own sync job runs.
+
+- **Check: `tests/selection_test.go`** — the property is about the pair, so
+  the test is too. No rule shape may be selected by two alerters at once,
+  and none may be selected by none of them: a selector pair that overlaps
+  nowhere is otherwise satisfied perfectly by two selectors that match
+  nothing, which is an install where no rule is ever evaluated and every
+  pod is green.
+
 ## 0.3.2
 
 The metrics alerter was refused by the API server. `charts/observability-stack`
