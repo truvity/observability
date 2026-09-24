@@ -6,6 +6,31 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.6
+
+The gateway's release never converged. `charts/observability-emitters`
+rendered its `volumeClaimTemplates` entry without `apiVersion` or `kind`,
+the API server defaults both in, and continuous delivery then compared
+what it rendered against what the cluster holds and reported the release
+**OutOfSync for ever** — with nothing to converge on, because each sync
+writes the same manifest and the server adds them back.
+
+- **Fix: `charts/observability-emitters`** — the queue's
+  `volumeClaimTemplate` spells out `apiVersion: v1` and
+  `kind: PersistentVolumeClaim`.
+
+  Declaring the defaults is the fix rather than teaching a differ to
+  ignore those fields: an ignore rule would hide a real change in the same
+  field later, and this costs nothing. Both upstream stores already did
+  it, which is how the shape was recognised.
+
+  **Nothing to do on upgrade.** The rendered object is the same one the
+  cluster already holds; the release simply stops reporting a difference.
+
+- **Check: `tests/volumes_test.go`** — every `volumeClaimTemplate` in
+  every golden must declare both. Stated about the shape rather than this
+  chart, because every claimed volume has the same trap.
+
 ## 0.3.5
 
 **Every kubelet and cadvisor series was being discarded by the store**, and

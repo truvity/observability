@@ -249,7 +249,21 @@ spec:
           configMap:
             name: {{ $full }}
   volumeClaimTemplates:
-    - metadata:
+    {{- /*
+      apiVersion and kind are spelled out although a volumeClaimTemplate
+      needs neither: the API SERVER DEFAULTS THEM IN, and a continuous
+      delivery system that compares what it rendered against what the
+      cluster holds then sees two fields it never wrote and reports the
+      release OutOfSync -- for ever, with nothing to converge on, because
+      each sync writes the same manifest and the server adds them back.
+
+      Declaring them is the fix rather than teaching the differ to ignore
+      them: an ignore rule hides a real change in the same field later,
+      and this costs nothing.
+    */}}
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: queue
       spec:
         accessModes:
