@@ -116,7 +116,7 @@ pack, if any, is the estate's own chart.
 
 ```yaml
 topics:
-  - arn:aws:sns:eu-west-1:111122223333:security-alerts
+  - "<the security-alerts topic ARN>"
 mappings:
   - name: guardduty
     match: {"detail-type": "GuardDuty Finding"}

@@ -36,8 +36,8 @@ alertmanager:
 # endpoint that confirms anything can be subscribed to anyone's topic
 # and fed alerts, so this list is required and refused empty.
 topics:
-  - arn:aws:sns:eu-west-1:111122223333:security-alerts
-  - arn:aws:sns:eu-west-1:111122223333:budgets
+  - "<the security-alerts topic ARN>"
+  - "<the budgets topic ARN>"
 
 # Mapping rules, in order; the first whose `match` holds is applied.
 # `match` is a set of JSON-path equalities against the message body.
