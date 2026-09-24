@@ -182,6 +182,22 @@ spec:
         observability-emitters/config-checksum: {{ $config | sha256sum }}
     spec:
       serviceAccountName: {{ $full }}
+      {{- /*
+        The queue volume arrives owned by root, and the collector image
+        does not run as root. Without an fsGroup the extension that owns
+        the queue cannot create its directory and the container exits
+        before it serves anything:
+
+          failed to build extensions: failed to create extension
+          "file_storage": mkdir /var/lib/otelcol/queue: permission denied
+
+        fsGroup is what makes a dynamically provisioned volume group
+        writable, so it is set by default rather than left to the
+        consumer: a StatefulSet that declares a volume it cannot write to
+        is not a configuration choice.
+      */}}
+      securityContext:
+        {{- toYaml .Values.otlp.podSecurityContext | nindent 8 }}
       {{- with .Values.otlp.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

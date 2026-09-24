@@ -529,6 +529,8 @@ spec:
         observability-emitters/config-checksum: 12405bdda9e2f8f3316138279343f1cfa8af188517b18265400158d76b1c87da
     spec:
       serviceAccountName: observability-emitters-gateway
+      securityContext:
+        fsGroup: 10001
       containers:
         - name: collector
           image: "otel/opentelemetry-collector-contrib:0.161.0"

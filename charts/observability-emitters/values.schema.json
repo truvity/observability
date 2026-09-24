@@ -221,7 +221,8 @@
         "streamFields",
         "events",
         "service",
-        "podMonitor"
+        "podMonitor",
+        "podSecurityContext"
       ],
       "properties": {
         "enabled": {
@@ -326,6 +327,9 @@
           "items": {
             "type": "object"
           }
+        },
+        "podSecurityContext": {
+          "type": "object"
         }
       }
     },
