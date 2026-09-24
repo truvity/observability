@@ -49,12 +49,16 @@ docker info >/dev/null 2>&1 || {
 kubeconfig="$(mktemp -t observability-reconcile-kubeconfig.XXXXXX)"
 export KUBECONFIG="$kubeconfig"
 
+# Where the cluster's own answers are written down before they are read.
+docs_dir="$(mktemp -d -t observability-reconcile.XXXXXX)"
+
 created=0
 cleanup() {
   if [ "$created" = 1 ] && [ "$keep" != 1 ]; then
     kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
   fi
   rm -f "$kubeconfig"
+  rm -rf "$docs_dir"
 }
 trap cleanup EXIT
 
@@ -137,60 +141,35 @@ spec:
 RULE
 
 echo "waiting for reconciliation"
+crs="$docs_dir/crs.json"
+kinds=vmauth,vmalert,vmsingle,vmalertmanager,vmagent
+
 deadline=$(( $(date +%s) + 300 ))
 while :; do
-  pending="$(kubectl get vmauth,vmalert,vmsingle,vmalertmanager,vmagent \
-    --namespace "$namespace" -o json 2>/dev/null \
-    | python3 -c '
-import json,sys
-items=json.load(sys.stdin).get("items",[])
-print(" ".join(f"{i[\"kind\"]}/{i[\"metadata\"][\"name\"]}={(i.get(\"status\") or {}).get(\"updateStatus\",\"<none>\")}"
-                for i in items
-                if ((i.get("status") or {}).get("updateStatus") or "") != "operational"))
-')"
+  kubectl get "$kinds" --namespace "$namespace" -o json > "$crs" 2>/dev/null || true
+  pending="$(python3 "$root/hack/crstatus.py" "$crs" pending)"
   [ -z "$pending" ] && break
   case "$pending" in *=failed*) break;; esac
   [ "$(date +%s)" -gt "$deadline" ] && break
   sleep 5
 done
 
-status_json="$(kubectl get vmauth,vmalert,vmsingle,vmalertmanager,vmagent --namespace "$namespace" -o json)"
-echo "$status_json" | python3 -c '
-import json,sys
-items=json.load(sys.stdin).get("items",[])
-if not items:
-    print("no custom resource was installed at all — the chart or the values moved", file=sys.stderr)
-    raise SystemExit(1)
-bad=[]
-for i in items:
-    st=i.get("status") or {}
-    state=st.get("updateStatus","<none>")
-    if state!="operational":
-        bad.append(f"  {i[\"kind\"]}/{i[\"metadata\"][\"name\"]}: {state} — {st.get(\"reason\",\"no reason given\")}")
-if bad:
-    print("the operator did not accept:", file=sys.stderr)
-    print("\n".join(bad), file=sys.stderr)
-    raise SystemExit(1)
-print(f"operator accepted {len(items)} custom resources")
-'
+kubectl get "$kinds" --namespace "$namespace" -o json > "$crs"
+python3 "$root/hack/crstatus.py" "$crs" report
 
 # A status is a claim; the workload is the thing. 0.3.1 was a resource that
 # existed and produced nothing.
 missing=0
-for kind_name in $(echo "$status_json" | python3 -c '
-import json,sys
-for i in json.load(sys.stdin).get("items",[]):
-    print(f"{i[\"kind\"]}:{i[\"metadata\"][\"name\"]}")
-'); do
-  kind_lower="$(echo "${kind_name%%:*}" | tr "[:upper:]" "[:lower:]")"
-  name="${kind_name##*:}"
-  workload="$kind_lower-$name"
+while IFS=: read -r kind name; do
+  [ -n "$kind" ] || continue
+  workload="$(echo "$kind" | tr '[:upper:]' '[:lower:]')-$name"
   if ! kubectl get deployment "$workload" --namespace "$namespace" >/dev/null 2>&1 \
     && ! kubectl get statefulset "$workload" --namespace "$namespace" >/dev/null 2>&1; then
-    echo "NO WORKLOAD: ${kind_name%%:*}/$name reports operational but the operator created neither Deployment nor StatefulSet $workload" >&2
+    echo "NO WORKLOAD: $kind/$name reports operational but the operator created neither Deployment nor StatefulSet $workload" >&2
     missing=$((missing + 1))
   fi
-done
+done < <(python3 "$root/hack/crstatus.py" "$crs" names)
+
 [ "$missing" = 0 ] || exit 1
 echo "every custom resource produced its workload"
 
