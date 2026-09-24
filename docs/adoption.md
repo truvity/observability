@@ -3,6 +3,32 @@
 How a platform takes these charts into use, and what to do at each upgrade
 that changes what runs.
 
+## The complete set, in order
+
+What a consumer installs when this repository is complete
+([target-state.md](target-state.md)), and the order, because every step
+is a floor for the next. Steps marked *planned* have a design page and
+no release yet.
+
+| # | Piece | Floor it needs | Proof before the next step |
+|---|---|---|---|
+| 1 | `observability-crds` | — | every kind present on the cluster |
+| 2 | `observability-stack` (stores, proxy, alerters, Alertmanager) | 1, cert-manager, an issuer, the Secrets | a query through the proxy with a real token returns only that token's grants |
+| 3 | `observability-emitters`, on every cluster | 1, 2 | **ask the store**: a line, a series and a span from a real namespace, stamped with that namespace |
+| 4 | `notifications:` on the stack *(planned)* | 2, a webhook Secret | a synthetic critical reaches the right channel |
+| 5 | `pkg/statusbox` → the box *(planned)* | a private network, an edge tunnel | the public pages render; the ops page answers only privately |
+| 6 | the deadman *(planned)* | 4, 5 | scaling Alertmanager to zero fires the box, on two providers, within five minutes |
+| 7 | `platform-alerts` with the store list | 4 | `WritePathDead` fires when a store's writes are stopped |
+| 8 | the store self-alerts *(planned, inside 2)* | 4 | each fires on its inverted condition, silent on a week of healthy data |
+| 9 | `alert-ingress` *(planned)* | 4, a public route, topics | a real finding reaches the channel; suspending the heartbeat fires the deadman rule |
+| 10 | `observability-dashboards` *(planned)* | Grafana | the store-health dashboard shows step 3's write path |
+| 11 | the estate's own rule packs and dashboards | 4, 10 | the same contract: incident, healthy range, fixture; the same lint |
+
+Receivers before packs, because a rule that fires into a receiver named
+`blackhole` proves nothing. The box before the deadman, because the
+deadman is what proves the router; and the router before the rules,
+because the rules are what the router is for.
+
 ## The CRDs come first, and they are a release of their own
 
 `charts/observability-crds` installs the CustomResourceDefinitions the rest
