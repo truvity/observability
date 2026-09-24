@@ -6,6 +6,55 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.8
+
+Grafana here could be configured into two shapes that look right and are
+not: more replicas than its database can serve, and a store nobody can
+query.
+
+- **New refusal: `charts/observability-stack`** — `grafana.replicas`
+  above one is refused unless `grafana.ini`'s `[database] type` names
+  something shared.
+
+  Grafana's default is SQLite, a file on the pod. Two replicas on it are
+  either two separate databases — a dashboard saved on one is missing
+  from the other — or one ReadWriteOnce volume with two processes writing
+  it, which answers `500 database is locked` on whichever request loses
+  while the rest of the UI keeps working. The pods are Running and Ready
+  throughout.
+
+  The replica count and the database are one decision, and they were two
+  values in different parts of the file set by different people at
+  different times.
+
+  **On upgrade**: an install running more than one replica on SQLite now
+  fails to render. It was already losing data. Point `[database]` at
+  Postgres or MySQL — the password belongs in
+  `envValueFrom.GF_DATABASE_PASSWORD`, since `grafana.ini` renders into a
+  ConfigMap — or drop to one replica.
+
+- **New refusal: `charts/observability-stack`** — an enabled store that
+  no Grafana datasource type reads is refused, when Grafana is enabled
+  here.
+
+  A store with no datasource ingests, retains and answers exactly as if
+  it were being read. Nothing is unhealthy and no metric moves the wrong
+  way; the only symptom is that nobody ever looks at it.
+
+- **Fix: `charts/observability-stack`** — the default datasource list
+  gains **VictoriaTraces**. It had the fault above: the trace store is
+  enabled by default and only metrics and logs were readable.
+
+  It is `type: jaeger` — the store serves the Jaeger select API and
+  Grafana ships that datasource in core, so there is no plugin to
+  install. Note that the three stores take three unlike URL shapes; see
+  the table in `docs/safety.md`.
+
+- **Docs** — `docs/safety.md` gains *Grafana's replica count and its
+  database are one decision* and *A store nobody can query*;
+  `docs/adoption.md` gains the database prerequisite; `docs/reference.md`
+  gains the three values.
+
 ## 0.3.7
 
 Every span a writer sent went to the **log** store and was rejected. The

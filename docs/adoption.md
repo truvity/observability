@@ -206,6 +206,7 @@ for a different version of the exporter.
 | A Secret with the stores' credentials | Named by `storeCredentials.secretName`, default `observability-store-credentials`, with `username` and `password` keys. Every store runs with `-httpAuth.*` so nothing in the cluster can reach one around the proxy; the chart takes the name and never creates the Secret. |
 | A `StorageClass` that binds | The stores are stateful and their volumes are ReadWriteOnce. The backup jobs mount the same volumes, which is why each carries a pod affinity onto its store's node. |
 | A deadman watcher outside the cluster | Optional, and the only alert that can see this stack's own alerting path fail. `alertmanager.watchdog.secretName` names the Secret holding its receiver URL. |
+| A database for Grafana, above one replica | Only when `grafana.enabled` is true with `replicas` above one. Grafana's default is SQLite on the pod: two replicas either hold two separate databases or collide on one file and answer `500 database is locked` per request. The chart refuses the combination. Point `grafana.ini`'s `[database]` at Postgres or MySQL and put the password in `envValueFrom.GF_DATABASE_PASSWORD` — `grafana.ini` renders into a ConfigMap. |
 
 ### Install order
 
@@ -264,6 +265,11 @@ the proxy stops rendering the routes for a store that is off, the network
 policy for it disappears, and the mirror checks for it stop applying. An
 estate that keeps its log store elsewhere sets
 `victoria-logs-single.enabled: false` and `stores.logs.url`.
+
+Turning one off is also the way to satisfy the datasource refusal: with
+Grafana enabled here, every enabled store must have a datasource that
+reads it. A store nobody can query ingests and retains exactly as if it
+were being read, and nothing reports the difference.
 
 ## Installing observability-emitters
 

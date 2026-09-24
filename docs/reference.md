@@ -346,7 +346,9 @@ through.
 | `victoria-traces-single.server.extraArgs['retention.maxDiskUsagePercent']` | `80` | The trace chart has no value of its own for it. |
 | `grafana.enabled` | `false` | An estate that already runs one points it at this stack's proxy instead. |
 | `grafana.admin.existingSecret` | `""` | **Required when Grafana is enabled**: with none, the chart generates a random admin password on every render. |
-| `grafana.datasources` | one per store, through the proxy | Every datasource needs `jsonData.oauthPassThru: true` and a `version`. |
+| `grafana.replicas` | `1` | **Above one requires a shared database.** Grafana's default is SQLite on the pod; the chart refuses more than one replica on it. |
+| `grafana.datasources` | one per **enabled** store, through the proxy | Every datasource needs `jsonData.oauthPassThru: true` and a `version`. The chart refuses an enabled store that no datasource type reads. |
+| `grafana.grafana.ini.database.type` | unset (`sqlite3`) | `postgres` or `mysql` to share it. The password belongs in `envValueFrom.GF_DATABASE_PASSWORD`, never here — this section renders into a ConfigMap. |
 | `grafana.sidecar.dashboards.provider.updateIntervalSeconds` | `30` | **Above 10.** At 10 or below Grafana watches the filesystem, and a ConfigMap projection is a symlink swap that fires no watch event. |
 | `grafana.grafana.ini` | see values.yaml | `use_refresh_token` true, `role_attribute_strict` true, `locking_attempt_timeout_sec` 60–300, analytics off, `[unified_alerting]` and `[alerting]` off. |
 

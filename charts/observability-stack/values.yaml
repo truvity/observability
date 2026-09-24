@@ -798,6 +798,27 @@ grafana:
           url: http://vmauth-observability-stack:8427
           jsonData:
             oauthPassThru: true
+        # The trace store, through the same proxy. `jaeger` rather than a
+        # VictoriaTraces plugin: the store serves the Jaeger select API
+        # and Grafana ships that datasource in core, so there is no
+        # plugin to install.
+        #
+        # Three stores, three URL SHAPES, and they do not resemble each
+        # other. The metrics datasource takes a `/prometheus` base and
+        # appends `/api/v1/...`; the logs plugin takes the ROOT and
+        # appends `/select/logsql/query` itself; this one takes
+        # `/select/jaeger`. Naming the logs plugin's query path here is
+        # the mistake that reads back as
+        # `/select/logsql/select/logsql/query` and
+        # `unsupported path requested`.
+        - name: VictoriaTraces
+          type: jaeger
+          access: proxy
+          uid: victoriatraces
+          version: 1
+          url: http://vmauth-observability-stack:8427/select/jaeger
+          jsonData:
+            oauthPassThru: true
   sidecar:
     dashboards:
       enabled: true

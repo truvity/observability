@@ -1,0 +1,31 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# Every store is on, and only the metrics one can be read. The log and
+# trace stores ingest, retain and answer for as long as they are up, and
+# nobody ever sees them — which is not a failure anything reports.
+grafana:
+  enabled: true
+  admin:
+    existingSecret: example-grafana
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: VictoriaMetrics
+          type: prometheus
+          access: proxy
+          uid: victoriametrics
+          version: 1
+          url: http://vmauth-observability-stack:8427/prometheus
+          jsonData:
+            oauthPassThru: true
+  grafana.ini:
+    database:
+      locking_attempt_timeout_sec: 120
