@@ -1,0 +1,23 @@
+# The object that broke a live install: a VMAlert whose `extraArgs` key was
+# written unconditionally while everything under it was conditional, so the
+# alerter that had no flags to set rendered the key with an empty body.
+#
+# An empty body is null, the definition types the field as an object, and
+# the API server refuses the whole resource:
+#
+#   VMAlert.operator.victoriametrics.com "observability-stack-metrics" is
+#   invalid: [spec.extraArgs: Invalid value: "null": spec.extraArgs in body
+#   must be of type object: "null"]
+#
+# It renders, it lints, it reads as deliberate in a diff, and its golden is
+# a perfectly ordinary golden.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: rejected-null-extraargs
+spec:
+  extraArgs:
+  datasource:
+    url: http://example.invalid:8428
+  notifiers:
+    - url: http://example.invalid:9093

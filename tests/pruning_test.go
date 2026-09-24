@@ -53,16 +53,23 @@ type schemaKey struct {
 func (k schemaKey) String() string { return k.apiVersion + "/" + k.kind }
 
 // jsonSchema is the part of an OpenAPI v3 schema that decides whether a
-// field survives. Everything else about the schema — formats, bounds,
-// required lists — is the API server's business and not this check's: a
-// value the schema rejects produces a loud error on apply, while a field it
+// field survives, and — for the sibling check in typing_test.go — whether
+// its value is the type the definition declares.
+//
+// Everything else about the schema, formats, bounds and required lists, is
+// the API server's business and not this check's: a field the definition
 // has never heard of produces silence, and silence is what this is for.
+// A value of the wrong TYPE produces the opposite, a refusal of the whole
+// object — which this check deliberately left alone until one arrived
+// somewhere nobody was watching. TestRenderedObjectsMatchTheCRDTypes now
+// covers it.
 type jsonSchema struct {
 	Type                  string                 `yaml:"type"`
 	Properties            map[string]*jsonSchema `yaml:"properties"`
 	Items                 *jsonSchema            `yaml:"items"`
 	AdditionalProperties  *additionalProperties  `yaml:"additionalProperties"`
 	PreserveUnknownFields *bool                  `yaml:"x-kubernetes-preserve-unknown-fields"`
+	Nullable              bool                   `yaml:"nullable"`
 	IntOrString           bool                   `yaml:"x-kubernetes-int-or-string"`
 }
 

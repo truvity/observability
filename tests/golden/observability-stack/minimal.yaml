@@ -1998,7 +1998,6 @@ spec:
         key: "password"
   notifiers:
     - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
-  extraArgs:
 
 ---
 # Source: observability-stack/templates/vmalert.yaml
