@@ -6,6 +6,39 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.5
+
+**Every kubelet and cadvisor series was being discarded by the store**, and
+every counter on the writing side said success. Measured on a live
+cluster, because nothing else can see this.
+
+- **Fix: `charts/observability-emitters`** — the node scrapes no longer
+  `labelmap` every node label onto every series.
+
+  That snippet is conventional and it is unbounded by construction: the
+  labels belong to the cloud provider, not to this chart. On EKS a node
+  carries around forty (`eks_amazonaws_com_instance_*`, karpenter,
+  topology), so each kubelet and cadvisor series arrived with **46 to 52
+  labels** — past VictoriaMetrics' `-maxLabelsPerTimeseries=40`.
+
+  What the store does then is the part worth knowing: it **ignores the
+  series and answers 200**. The agent reported 888k rows written, zero
+  errors, zero dropped. The store held none of them. The only record
+  anywhere was a warning in the store's own log.
+
+  So node identity is now one label, `node`, from the node's name — the
+  conventional name, and the one dashboards and recording rules join on.
+
+- **New: `metrics.scrape.nodeLabels`** — node labels to copy, **by name**,
+  empty by default. Breadth is asked for where somebody can count it,
+  since every entry lands on every node series.
+
+  **On upgrade:** if your dashboards join on a node label other than
+  `node`, name it here. If they never worked, this is why.
+
+- **Check: `tests/cardinality_test.go`** — no scrape config this chart
+  renders may copy labels it has not named.
+
 ## 0.3.4
 
 The OTLP gateway could not start, and could not be placed. Both were found

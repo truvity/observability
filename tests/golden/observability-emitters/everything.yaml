@@ -688,8 +688,12 @@ spec:
         insecure_skip_verify: true
       bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
       relabel_configs:
-        - action: labelmap
-          regex: __meta_kubernetes_node_label_(.+)
+        - source_labels: [__meta_kubernetes_node_name]
+          target_label: node
+        - source_labels: [__meta_kubernetes_node_label_topology_kubernetes_io_zone]
+          target_label: topology_kubernetes_io_zone
+        - source_labels: [__meta_kubernetes_node_label_node_kubernetes_io_instance_type]
+          target_label: node_kubernetes_io_instance_type
         - target_label: k8s_cluster_name
           replacement: "other-cluster"
         - target_label: deployment_environment_name

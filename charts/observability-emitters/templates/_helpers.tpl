@@ -196,6 +196,23 @@ No series allow-list is applied. A dropped series is invisible until the
 first incident that needed it, so narrowing this belongs to an estate that
 has measured its own cardinality, not to a default that guesses which
 metrics somebody's dashboard uses.
+
+LABELS are a different question from series, and this is where that was
+learned. Copying every node label onto every node metric -- `labelmap` over
+`__meta_kubernetes_node_label_(.+)`, which is the conventional snippet --
+is unbounded by construction: the labels belong to the cloud provider, not
+to this chart. On EKS a node carries around forty of them
+(`eks_amazonaws_com_instance_*`, karpenter, topology), so every kubelet and
+cadvisor series arrived with 46 to 52 labels, past VictoriaMetrics'
+`-maxLabelsPerTimeseries=40`.
+
+The store then IGNORED those series and answered 200. The agent reported
+888k rows written, zero errors, zero dropped; the store held none of them;
+and the only record was a warning in the store's log. Measured on a live
+cluster, because nothing else can see it.
+
+So the node identity is one label, `node`, and anything further is asked
+for by name through `metrics.scrape.nodeLabels`.
 */}}
 {{- define "observability-emitters.scrapeConfig.kubelet" -}}
 - job_name: kubelet
@@ -208,8 +225,7 @@ metrics somebody's dashboard uses.
     insecure_skip_verify: true
   bearer_token_file: {{ include "observability-emitters.serviceAccountDir" . }}/token
   relabel_configs:
-    - action: labelmap
-      regex: __meta_kubernetes_node_label_(.+)
+{{ include "observability-emitters.nodeLabelRelabelConfigs" . | indent 4 }}
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
@@ -227,8 +243,7 @@ metrics somebody's dashboard uses.
     insecure_skip_verify: true
   bearer_token_file: {{ include "observability-emitters.serviceAccountDir" . }}/token
   relabel_configs:
-    - action: labelmap
-      regex: __meta_kubernetes_node_label_(.+)
+{{ include "observability-emitters.nodeLabelRelabelConfigs" . | indent 4 }}
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
@@ -463,5 +478,23 @@ service:
       receivers: [otlp]
       processors: [transform/disown, k8sattributes, transform/tenancy, batch]
       exporters: [{{ join ", " $traceExporters }}]
+{{- end }}
+{{- end -}}
+
+{{/*
+The node's identity, and only the labels asked for by name.
+
+`node` is the conventional name for it and the one every dashboard and
+recording rule joins on. Each entry in `metrics.scrape.nodeLabels` is a
+node label copied under its own sanitized name -- opt in, because each one
+lands on EVERY node series and the ceiling is the store's, not this
+chart's.
+*/}}
+{{- define "observability-emitters.nodeLabelRelabelConfigs" -}}
+- source_labels: [__meta_kubernetes_node_name]
+  target_label: node
+{{- range .Values.metrics.scrape.nodeLabels }}
+- source_labels: [__meta_kubernetes_node_label_{{ . | replace "." "_" | replace "/" "_" | replace "-" "_" }}]
+  target_label: {{ . | replace "." "_" | replace "/" "_" | replace "-" "_" }}
 {{- end }}
 {{- end -}}

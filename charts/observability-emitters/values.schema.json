@@ -186,6 +186,12 @@
             },
             "cadvisor": {
               "type": "boolean"
+            },
+            "nodeLabels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         },
