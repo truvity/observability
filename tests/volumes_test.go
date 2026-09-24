@@ -34,7 +34,9 @@ type statefulSetDoc struct {
 	} `yaml:"metadata"`
 	Spec struct {
 		VolumeClaimTemplates []struct {
-			Metadata struct {
+			APIVersion string `yaml:"apiVersion"`
+			Kind       string `yaml:"kind"`
+			Metadata   struct {
 				Name string `yaml:"name"`
 			} `yaml:"metadata"`
 		} `yaml:"volumeClaimTemplates"`
@@ -72,6 +74,24 @@ func TestEveryClaimedVolumeIsWritable(t *testing.T) {
 			}
 
 			checked++
+
+			for _, claim := range set.Spec.VolumeClaimTemplates {
+				// The API server defaults these two in. A differ that
+				// compares what was rendered against what the cluster
+				// holds then sees two fields nobody wrote and calls the
+				// release OutOfSync for ever, with nothing to converge
+				// on: each sync writes the same manifest and the server
+				// adds them back. Declaring them costs nothing; ignoring
+				// them would hide a real change in the same field later.
+				assert.Equalf(t, "v1", claim.APIVersion,
+					"%s: StatefulSet %s volumeClaimTemplate %q sets no apiVersion, which the API server "+
+						"defaults to v1 — leaving the release permanently OutOfSync against its own render",
+					g, set.Metadata.Name, claim.Metadata.Name)
+				assert.Equalf(t, "PersistentVolumeClaim", claim.Kind,
+					"%s: StatefulSet %s volumeClaimTemplate %q sets no kind, which the API server defaults "+
+						"to PersistentVolumeClaim — same permanent diff",
+					g, set.Metadata.Name, claim.Metadata.Name)
+			}
 
 			assert.NotNilf(t, set.Spec.Template.Spec.SecurityContext.FSGroup,
 				"%s: StatefulSet %s claims a volume but its pod sets no fsGroup. "+

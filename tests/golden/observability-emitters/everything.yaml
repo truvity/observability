@@ -577,7 +577,9 @@ spec:
           configMap:
             name: observability-emitters-gateway
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: queue
       spec:
         accessModes:
