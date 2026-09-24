@@ -2265,7 +2265,7 @@ spec:
   notifiers:
     - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
   extraArgs:
-    external.url: "https://alerts.example.com"
+    external.url: https://alerts.example.com
 
 ---
 # Source: observability-stack/templates/vmalert.yaml
@@ -2320,8 +2320,8 @@ spec:
   notifiers:
     - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
   extraArgs:
+    external.url: https://alerts.example.com
     rule.defaultRuleType: vlogs
-    external.url: "https://alerts.example.com"
 
 ---
 # Source: observability-stack/templates/vmalertmanager.yaml

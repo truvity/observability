@@ -63,13 +63,27 @@ spec:
   externalLabels:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  {{- /*
+    Built as a map and emitted only when it has something in it. Written
+    the other way round -- the key always, its contents conditionally --
+    the metrics alerter renders `extraArgs:` with an empty body, which is
+    null, and the CustomResourceDefinition types the field as an object:
+    the API server refuses the whole object, and ArgoCD reports a sync
+    that fails on one resource while every other object in the release is
+    already healthy. The logs alerter hid it, because its one flag is
+    unconditional.
+  */}}
+  {{- $extraArgs := dict }}
+  {{- if $isLogs }}
+  {{- $_ := set $extraArgs "rule.defaultRuleType" "vlogs" }}
+  {{- end }}
+  {{- with $root.Values.vmalert.externalUrl }}
+  {{- $_ := set $extraArgs "external.url" . }}
+  {{- end }}
+  {{- with $extraArgs }}
   extraArgs:
-    {{- if $isLogs }}
-    rule.defaultRuleType: vlogs
-    {{- end }}
-    {{- with $root.Values.vmalert.externalUrl }}
-    external.url: {{ . | quote }}
-    {{- end }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

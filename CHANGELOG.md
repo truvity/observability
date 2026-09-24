@@ -6,6 +6,46 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.2
+
+The metrics alerter was refused by the API server. `charts/observability-stack`
+wrote `extraArgs` on its VMAlert unconditionally while everything under it
+was conditional, so the alerter that had no flags to set rendered the key
+with an empty body — and an empty body is null, where the definition types
+the field as an object.
+
+- **Fix: `charts/observability-stack`** — the VMAlert renders `extraArgs`
+  only when it has something to put there. Before, the metrics alerter
+  rendered a bare `extraArgs:` and the API server refused the **whole
+  object**:
+
+  *VMAlert.operator.victoriametrics.com "…-metrics" is invalid:
+  [spec.extraArgs: Invalid value: "null": spec.extraArgs in body must be of
+  type object]*
+
+  The logs alerter hid it, because its one flag (`rule.defaultRuleType`) is
+  unconditional and so its body was never empty.
+
+  What this costs is not the field. The resource never exists, so **the
+  metrics alerter does not run and no metrics rule is evaluated** — while
+  every other object in the release applies and reports healthy. In
+  continuous delivery the whole sync is marked failed on that one resource,
+  and on a self-healing install the same revision is not retried, so the
+  next unrelated change to that cluster waits behind it.
+
+  **Nothing to do on upgrade.** No value changes. An install that carries
+  `vmalert.externalUrl` renders the same flag as before, now serialized by
+  `toYaml` and therefore unquoted — the same string either way.
+
+- **Check: `tests/typing_test.go`** — every custom resource these charts
+  render is now walked against the definition this repository installs for
+  its kind, and a value whose type the definition contradicts fails the
+  test. This is the sibling of the pruning check: that one catches a field
+  the API server silently *drops*, this one a value it *refuses*. The
+  reasoning that left types out was that a refusal is loud — it is, but it
+  is loud at apply, which is not a place anyone is watching. Fixtures under
+  `tests/rejected/` prove it can fail.
+
 ## 0.3.1
 
 The proxy had no Deployment. `charts/observability-stack` rendered
