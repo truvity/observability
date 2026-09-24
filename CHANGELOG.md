@@ -6,6 +6,46 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.7
+
+Every span a writer sent went to the **log** store and was rejected. The
+trace store had never held anything.
+
+- **Fix: `charts/observability-stack`** — the log store's write routes are
+  now enumerated instead of `/insert/.*`.
+
+  vmauth matches a VMUser's `src_paths` in the order its `targetRefs`
+  render and stops at the first hit, and a writer's routes render metrics,
+  logs, traces. `/insert/.*` matched `/insert/opentelemetry/v1/traces`
+  before the trace store's own route was reached, so spans were posted to
+  the log store, which answered:
+
+  *Permanent error: rpc error: code = InvalidArgument desc = error
+  exporting items, request to …/insert/opentelemetry/v1/traces responded
+  with HTTP Status Code 400*
+
+  The collector treats that as permanent, drops the batch and moves on.
+  Nothing was unhealthy, every query answered, and the trace store stayed
+  empty — which is indistinguishable from an estate that emits no spans.
+
+  The catch-all also routed `/insert/multitenant/*`, the endpoint a writer
+  uses to NAME the tenant it writes to. Deciding that is what this proxy is
+  for, so the route around it is gone with it.
+
+  **Nothing to do on upgrade**, unless a writer here ingests logs through
+  an endpoint outside the store's own list — the routes are now
+  `/insert/{datadog/api/v2/logs,elasticsearch/_bulk,journald/upload,jsonline,loki/api/v1/push,native,opentelemetry/v1/logs,splunk}`.
+  Add an endpoint deliberately rather than widening one back to a pattern.
+
+- **New refusal: `charts/observability-stack`** — the render now refuses
+  any route declared before another store's that also matches it, naming
+  both. `tests/routing_test.go` holds the same property against the routes
+  as they are ORDERED in a rendered VMUser, which is what vmauth actually
+  reads.
+
+  How it was found: by sending one span and then asking the *store*
+  whether it had arrived. The sender's 200 said nothing — it only means
+  the collector accepted the batch for its queue.
 ## 0.3.6
 
 The gateway's release never converged. `charts/observability-emitters`

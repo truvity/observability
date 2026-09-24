@@ -210,8 +210,36 @@ which is what stops a subquery escaping the grant.
 - /opentelemetry/v1/metrics
 {{- end -}}
 
+{{/*
+The log store's ingestion endpoints, ENUMERATED.
+
+This was `/insert/.*` — one line, every endpoint, and two faults in it.
+
+vmauth matches `src_paths` in the order the routes are declared and stops
+at the first hit, and the writer's routes are declared metrics, logs,
+traces. So `/insert/.*` matched `/insert/opentelemetry/v1/traces` before
+the trace store's own route was ever reached, and EVERY span a writer
+sent was posted to the log store, which answered 400. Nothing said so:
+the collector recorded a permanent rejection and dropped the batch, the
+trace store stayed empty, and an empty trace store is indistinguishable
+from an estate that emits no spans. It is how this install shipped.
+
+The second fault is `/insert/multitenant/*`, which the log store offers
+so a writer can NAME the tenant it is writing to. This proxy exists to
+decide that, so the catch-all was also a route around it.
+
+The list is the store's own, and a new endpoint has to be added here
+deliberately -- which is the point.
+*/}}
 {{- define "observability-stack.writePaths.logs" -}}
-- /insert/.*
+- /insert/datadog/api/v2/logs
+- /insert/elasticsearch/_bulk
+- /insert/journald/upload
+- /insert/jsonline
+- /insert/loki/api/v1/push
+- /insert/native
+- /insert/opentelemetry/v1/logs
+- /insert/splunk
 {{- end -}}
 
 {{- define "observability-stack.writePaths.traces" -}}
