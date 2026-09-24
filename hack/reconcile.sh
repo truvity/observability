@@ -157,20 +157,41 @@ done
 kubectl get "$kinds" --namespace "$namespace" -o json > "$crs"
 python3 "$root/hack/crstatus.py" "$crs" report
 
-# A status is a claim; the workload is the thing. 0.3.1 was a resource that
-# existed and produced nothing.
-missing=0
-while IFS=: read -r kind name; do
-  [ -n "$kind" ] || continue
-  workload="$(echo "$kind" | tr '[:upper:]' '[:lower:]')-$name"
-  if ! kubectl get deployment "$workload" --namespace "$namespace" >/dev/null 2>&1 \
-    && ! kubectl get statefulset "$workload" --namespace "$namespace" >/dev/null 2>&1; then
-    echo "NO WORKLOAD: $kind/$name reports operational but the operator created neither Deployment nor StatefulSet $workload" >&2
-    missing=$((missing + 1))
-  fi
-done < <(python3 "$root/hack/crstatus.py" "$crs" names)
+# A status is a claim; the workload is the thing. 0.3.1 was a resource the
+# operator had a status for and which produced nothing.
+#
+# Retried, because a resource reports `expanding` from the moment the
+# operator picks it up, which can be a moment before the object it creates
+# is readable. What is NOT waited for is the workload becoming ready: that
+# needs image pulls, and an image pull says nothing about whether the spec
+# was right.
+check_workloads() {
+  local kind name workload
+  missing=0
+  while IFS=: read -r kind name; do
+    [ -n "$kind" ] || continue
+    workload="$(echo "$kind" | tr '[:upper:]' '[:lower:]')-$name"
+    if ! kubectl get deployment "$workload" --namespace "$namespace" >/dev/null 2>&1 \
+      && ! kubectl get statefulset "$workload" --namespace "$namespace" >/dev/null 2>&1; then
+      last_missing="$kind/$name (expected Deployment or StatefulSet $workload)"
+      missing=$((missing + 1))
+    fi
+  done < <(python3 "$root/hack/crstatus.py" "$crs" names)
+}
 
-[ "$missing" = 0 ] || exit 1
+deadline=$(( $(date +%s) + 120 ))
+while :; do
+  check_workloads
+  [ "$missing" = 0 ] && break
+  [ "$(date +%s)" -gt "$deadline" ] && break
+  sleep 5
+done
+
+if [ "$missing" != 0 ]; then
+  echo "NO WORKLOAD: $missing resource(s) the operator has a status for produced nothing — last: $last_missing" >&2
+  echo "That is the 0.3.1 shape: the resource exists, the operator has seen it, and nothing was created." >&2
+  exit 1
+fi
 echo "every custom resource produced its workload"
 
 # And the two selector questions, answered rather than assumed. The
