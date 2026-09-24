@@ -94,6 +94,20 @@ leak-canary:
 apply:
     hack/apply.sh
 
+# Install the release and require the OPERATOR to accept it.
+#
+# `apply` proves the API server accepts every object; this proves the
+# thing that reconciles them does. They are not the same question -- 0.3.1
+# was an object the API server took happily and the operator then refused,
+# leaving no Deployment and no read path.
+#
+# Needs Docker, and more inotify instances than a laptop already running
+# another kind cluster tends to have: kube-proxy dies with "too many open
+# files" and everything downstream looks like a chart bug. kind's own docs
+# say to raise fs.inotify.max_user_instances.
+reconcile:
+    hack/reconcile.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:
