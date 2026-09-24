@@ -84,6 +84,16 @@ vendor chart:
 leak-canary:
     hack/leak-canary.sh
 
+# Apply every golden to a real API server and require it to be accepted.
+#
+# Needs Docker: it runs a throwaway kind cluster. Deliberately NOT part of
+# `check`, which must stay a thing a laptop can run in seconds without a
+# container runtime -- but it IS a CI job, because the defects it catches
+# are the ones that reach a cluster otherwise. `KEEP=1 just apply` leaves
+# the cluster up.
+apply:
+    hack/apply.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

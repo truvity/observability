@@ -7,11 +7,13 @@
     "govulncheck@1.7.0",
     "just-lsp@latest",
     "just@latest",
-    "kubernetes-helm@latest"
+    "kubernetes-helm@latest",
+    "kind@latest",
+    "kubectl@latest"
   ],
   "env": {},
   "shell": {
     "init_hook": [],
-    "scripts": {}
+    "scripts":   {}
   }
 }
