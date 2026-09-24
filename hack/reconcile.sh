@@ -202,11 +202,22 @@ read_groups() {
   python3 "$root/hack/rulegroups.py" "$docs_dir/cms.json"
 }
 
+# Wait for BOTH alerters to have written their rule files, not for the
+# first one: the two are reconciled independently and the metrics alerter
+# gets there first, so breaking on the first `reconcile.` group that
+# appears reports the other alerter as having selected nothing when it has
+# simply not been reached yet. The deadline is what keeps this a test --
+# it waits for the expected state, then asserts it, and a state that never
+# arrives still fails.
 echo "waiting for the operator to write the rule files"
-deadline=$(( $(date +%s) + 180 ))
+deadline=$(( $(date +%s) + 240 ))
 while :; do
   groups="$(read_groups)"
-  case "$groups" in *reconcile.*) break;; esac
+  seen_logs=0
+  seen_metrics=0
+  case "$groups" in *"logs:reconcile.logs-rule"*) seen_logs=1;; esac
+  case "$groups" in *"metrics:reconcile.metrics-rule"*) seen_metrics=1;; esac
+  [ "$seen_logs" = 1 ] && [ "$seen_metrics" = 1 ] && break
   [ "$(date +%s)" -gt "$deadline" ] && break
   sleep 5
 done
