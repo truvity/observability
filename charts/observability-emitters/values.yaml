@@ -187,6 +187,14 @@ logs:
 ###############################################################################
 otlp:
   enabled: true
+  # -- Pod security context for the gateway. The default exists because
+  # the queue volume must be writable by the collector: a dynamically
+  # provisioned volume arrives owned by root, the image does not run as
+  # root, and `fsGroup` is what bridges the two. Replace it wholesale if
+  # your cluster's policy says otherwise -- but a gateway with no fsGroup
+  # cannot create its queue directory and exits at startup.
+  podSecurityContext:
+    fsGroup: 10001
   # -- Where the gateway may run. Empty means wherever the scheduler puts
   # it, which is correct on an untainted cluster and wrong on one where the
   # only nodes a workload should use carry a taint: the gateway then lands

@@ -8,12 +8,38 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## 0.3.4
 
-The OTLP gateway could not be placed. `charts/observability-emitters` gave
-its metrics agent scheduling through `metrics.spec` and its log agent
-through the upstream subchart, and gave the gateway nothing — so on a
-cluster where the nodes a workload should use are tainted, the only
-release that would render was one where the gateway lands wherever is
-left.
+The OTLP gateway could not start, and could not be placed. Both were found
+by installing the chart on a real cluster for the first time, which is
+where this pair of defects had to be found: neither is visible to a render,
+a lint, a golden, an API server or the operator.
+
+- **Fix: `charts/observability-emitters`** — the gateway pod now sets an
+  `fsGroup`, so the queue volume it declares is one it can write to.
+  Before, it exited at startup on **any** cluster with a default
+  StorageClass:
+
+  *failed to build extensions: failed to create extension "file_storage":
+  mkdir /var/lib/otelcol/queue: permission denied*
+
+  A dynamically provisioned volume arrives owned by root and the collector
+  image does not run as root; `fsGroup` is the only thing that bridges the
+  two. It is a default rather than a value to discover, because a
+  StatefulSet that declares a volume it cannot write to is not a
+  configuration choice. Replace `otlp.podSecurityContext` wholesale if
+  your policy differs.
+
+  Nothing upstream of the cluster could see it: the template renders, the
+  chart lints, the golden is ordinary, the API server accepts the object
+  and the operator has no opinion. The only thing that disagreed was the
+  container, after the volume was attached.
+
+- **Check: `tests/volumes_test.go`** — every StatefulSet in every golden
+  that claims storage must say who may write to it. Stated about the shape
+  rather than this chart: a pod that asks for storage intends to write to
+  it. The upstream stores already passed; ours was the only one that did
+  not.
+
+  **Nothing to do on upgrade.**
 
 - **`charts/observability-emitters`** — new `otlp.nodeSelector` and
   `otlp.tolerations`, both empty by default, so nothing changes for an
