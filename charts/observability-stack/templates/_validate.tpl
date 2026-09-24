@@ -24,6 +24,7 @@ second debugging session.
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
 {{- include "observability-stack.validate.grafana" . -}}
+{{- include "observability-stack.validate.routeOverlap" . -}}
 {{- end -}}
 
 {{/*
@@ -459,6 +460,55 @@ is refused rather than trusted.
 {{- range $denied := $.Values.vmauth.deniedPaths -}}
 {{- if regexMatch $denied $path -}}
 {{- fail (printf "observability-stack: the route %q matches the denied path %q. `/internal/*` carries the partition and snapshot APIs, and those endpoints have their own query-string auth keys which OVERRIDE `-httpAuth.*` — so a route to them through this proxy is a route around the stores' own authentication." $path $denied) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+No store's route may SWALLOW another store's.
+
+vmauth matches `src_paths` in declaration order and stops at the first
+hit, and both the writer and the reader declare their three stores in one
+`url_map`: metrics, then logs, then traces. So a path belonging to an
+earlier store that also matches a later store's path silently takes that
+store's traffic, and the sender is told nothing useful — the wrong store
+answers, with its own opinion of a request it was never meant to see.
+
+That is not hypothetical. `/insert/.*` on the log store matched
+`/insert/opentelemetry/v1/traces`, so every span went to the log store
+and came back 400, and the trace store sat empty for as long as it took
+somebody to send a span and then go and ASK the store whether it had
+arrived. A 200 from the collector says nothing; the store is the only
+witness.
+
+This walks the declared order and refuses any earlier path that matches
+a later one. A path's regular expression is probed with a concrete
+string, because `regexMatch` compares a pattern against text and two
+patterns cannot be compared directly.
+*/}}
+{{- define "observability-stack.validate.routeOverlap" -}}
+{{- $groups := list
+    (dict "kind" "read" "signal" "metrics" "paths" (fromYamlArray (include "observability-stack.readPaths.metrics" .)))
+    (dict "kind" "read" "signal" "logs" "paths" (fromYamlArray (include "observability-stack.readPaths.logs" .)))
+    (dict "kind" "read" "signal" "traces" "paths" (fromYamlArray (include "observability-stack.readPaths.traces" .)))
+    (dict "kind" "write" "signal" "metrics" "paths" (fromYamlArray (include "observability-stack.writePaths.metrics" .)))
+    (dict "kind" "write" "signal" "logs" "paths" (fromYamlArray (include "observability-stack.writePaths.logs" .)))
+    (dict "kind" "write" "signal" "traces" "paths" (fromYamlArray (include "observability-stack.writePaths.traces" .)))
+-}}
+{{- range $i, $earlier := $groups -}}
+{{- range $j, $later := $groups -}}
+{{- if and (lt $i $j) (eq $earlier.kind $later.kind) -}}
+{{- range $pattern := $earlier.paths -}}
+{{- range $path := $later.paths -}}
+{{- /* A concrete stand-in for whatever the later path's own wildcards
+     would accept, so one pattern can be tested against the other. */ -}}
+{{- $probe := $path | replace ".*" "x" | replace ".+" "x" | replace "[^/]+" "x" -}}
+{{- if regexMatch (printf "^%s$" $pattern) $probe -}}
+{{- fail (printf "observability-stack: the %s route %q on the %s store is declared before the %s store's %q and MATCHES it, so the %s store would answer every request meant for the %s store and the %s store would be unreachable. Narrow the first path; the store's own endpoint list is the right source for it." $earlier.kind $pattern $earlier.signal $later.signal $path $earlier.signal $later.signal $later.signal) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

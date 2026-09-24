@@ -2749,7 +2749,14 @@ spec:
     - static:
         url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
       paths:
-        - /insert/.*
+        - /insert/datadog/api/v2/logs
+        - /insert/elasticsearch/_bulk
+        - /insert/journald/upload
+        - /insert/jsonline
+        - /insert/loki/api/v1/push
+        - /insert/native
+        - /insert/opentelemetry/v1/logs
+        - /insert/splunk
       targetRefBasicAuth:
         username:
           name: "example-store-credentials"
