@@ -242,6 +242,26 @@ vlogs` — in `platform-alerts` that is the `ruleLabels` value — and a PromQL
 rule needs no label, which is what keeps the rules other charts ship
 working without changing them.
 
+**A LogsQL rule needs a second thing, and the two are not the same.** Its
+group must also carry `type: vlogs`:
+
+```yaml
+spec:
+  groups:
+    - name: my.logs-rules
+      type: vlogs          # which LANGUAGE the operator parses it as
+      rules:
+        - alert: SomethingInTheLogs
+          expr: '* | stats count() as hits'
+```
+
+The label decides **which alerter loads** the rule. `type` decides **which
+language it is parsed as**. Without `type`, the operator reads the
+expression as MetricsQL, rejects it, and the rule is simply absent from
+the alerter's rule files — which from the outside is indistinguishable
+from a selector that did not match, from the rule not having been created,
+and from the operator not having got to it yet.
+
 The selectors are not configurable either. They replaced
 `selectAllByDefault: true`, which gave **both** alerters **every** rule in
 the cluster: vmalert exits on the first rule it cannot parse, so the logs
