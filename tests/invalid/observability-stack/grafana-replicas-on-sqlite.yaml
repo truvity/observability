@@ -1,0 +1,22 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# Two replicas on Grafana's default database, which is a SQLite file on
+# the pod. Either each replica holds its own dashboards, or they share
+# one ReadWriteOnce volume and collide: the console answers 500
+# `database is locked` on whichever request loses, while the rest of the
+# UI keeps working.
+grafana:
+  enabled: true
+  replicas: 2
+  admin:
+    existingSecret: example-grafana
+  grafana.ini:
+    database:
+      locking_attempt_timeout_sec: 120

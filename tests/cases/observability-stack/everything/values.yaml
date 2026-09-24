@@ -201,11 +201,33 @@ grafana:
           url: http://vmauth-observability-stack-stack:8427/prometheus
           jsonData:
             oauthPassThru: true
+        - name: VictoriaLogs
+          type: victoriametrics-logs-datasource
+          access: proxy
+          uid: victorialogs
+          version: 2
+          url: http://vmauth-observability-stack-stack:8427
+          jsonData:
+            oauthPassThru: true
+        - name: VictoriaTraces
+          type: jaeger
+          access: proxy
+          uid: victoriatraces
+          version: 2
+          url: http://vmauth-observability-stack-stack:8427/select/jaeger
+          jsonData:
+            oauthPassThru: true
   grafana.ini:
     analytics:
       check_for_updates: false
       reporting_enabled: false
     database:
+      # Two replicas, so a database two replicas can share. On SQLite
+      # this fixture describes an install that answers 500 `database is
+      # locked` on whichever request loses.
+      type: postgres
+      host: example-pg-rw:5432
+      name: grafana
       locking_attempt_timeout_sec: 300
     auth.generic_oauth:
       enabled: true

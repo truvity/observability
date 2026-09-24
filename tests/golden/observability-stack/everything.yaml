@@ -209,7 +209,10 @@ data:
     token_url = https://issuer.example/token
     use_refresh_token = true
     [database]
+    host = example-pg-rw:5432
     locking_attempt_timeout_sec = 300
+    name = grafana
+    type = postgres
     [log]
     mode = console
     [paths]
@@ -236,6 +239,22 @@ data:
       type: prometheus
       uid: victoriametrics
       url: http://vmauth-observability-stack-stack:8427/prometheus
+      version: 2
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
+      name: VictoriaLogs
+      type: victoriametrics-logs-datasource
+      uid: victorialogs
+      url: http://vmauth-observability-stack-stack:8427
+      version: 2
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
+      name: VictoriaTraces
+      type: jaeger
+      uid: victoriatraces
+      url: http://vmauth-observability-stack-stack:8427/select/jaeger
       version: 2
 
 ---
@@ -985,7 +1004,7 @@ spec:
         app.kubernetes.io/instance: observability-stack
         app.kubernetes.io/version: "13.1.1"
       annotations:
-        checksum/config: bd00dcd7cd679011978d544f06d065e5e9170a7dbec27d2957cc859187c69964
+        checksum/config: 6a8ecc2ff0b4d5047ee22aa3e5cb3fda2b430182d015fc9582e6705d122b9bcf
         checksum/sc-dashboard-provider-config: 0afdab6165b0efa0d8e5a1342cb76809acb23d4cc189852cea36a5bc024a606d
         kubectl.kubernetes.io/default-container: grafana
     spec:

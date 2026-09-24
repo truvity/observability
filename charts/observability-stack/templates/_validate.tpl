@@ -546,6 +546,78 @@ nobody watches.
 {{- if or (lt $lock 60) (gt $lock 300) -}}
 {{- fail (printf "observability-stack: grafana.ini's [database] `locking_attempt_timeout_sec` is %d; it must be between 60 and 300. Grafana takes a database lock through its schema migration at startup, and the default of 0 means \"do not wait\" — so the second replica of a rolling update finds the lock held and crash-loops through the migration." $lock) -}}
 {{- end -}}
+{{/*
+More than one replica needs a database more than one replica can share.
+
+Grafana's default is SQLite on the pod's own filesystem. With two
+replicas that is either two databases with one dashboard each, or -- on a
+shared ReadWriteOnce volume -- one file two processes write, which is the
+shape that answers:
+
+    500  database is locked (SQLITE_BUSY)
+
+not at startup, but on whichever request happens to collide. Half the UI
+works. Measured on a live install: two replicas, one volume, and a
+console that failed on about one click in three.
+
+So the replica count and the database are ONE decision, and the chart
+refuses to let them be made separately. `[database] type` is the
+caller's: `postgres` and `mysql` are both shared, `sqlite3` is not, and
+unset means sqlite3.
+*/}}
+{{- $dbType := ($db.type | default "sqlite3") -}}
+{{- if and (gt (int ($g.replicas | default 1)) 1) (eq $dbType "sqlite3") -}}
+{{- fail (printf "observability-stack: Grafana is enabled with %d replicas and grafana.ini's [database] `type` is %q. SQLite is a file on one pod: with more than one replica each holds its own dashboards, users and preferences, or -- sharing one ReadWriteOnce volume -- they collide and the console answers 500 `database is locked` on whichever request loses, while the rest of the UI keeps working. Point `[database]` at a shared database, or run one replica." (int ($g.replicas | default 1)) $dbType) -}}
+{{- end -}}
+
+{{/*
+A store nobody can query.
+
+Enabling a store provisions it, gives it a volume, writes to it and
+retains it. Whether anyone can READ it is a separate value -- the
+datasource list -- and the two are edited in different parts of this
+file. A store with no datasource is not broken: it ingests, it answers,
+its dashboards are simply absent, and the only symptom is that nobody
+ever looks at it.
+
+That happened to the trace store, which had no datasource in this
+chart's own defaults.
+
+Only when Grafana is enabled here. An estate pointing its own Grafana at
+this stack's proxy provisions datasources somewhere this chart cannot
+see.
+*/}}
+{{- $dsTypes := dict
+    "metrics" (list "prometheus" "victoriametrics-metrics-datasource")
+    "logs" (list "victoriametrics-logs-datasource")
+    "traces" (list "jaeger" "tempo" "victoriametrics-traces-datasource")
+-}}
+{{- $stores := dict
+    "metrics" "victoria-metrics-k8s-stack"
+    "logs" "victoria-logs-single"
+    "traces" "victoria-traces-single"
+-}}
+{{- $declared := list -}}
+{{- range $file, $doc := ($g.datasources | default dict) -}}
+{{- range $ds := ($doc.datasources | default list) -}}
+{{- $declared = append $declared (toString $ds.type) -}}
+{{- end -}}
+{{- end -}}
+{{- range $signal, $subchart := $stores -}}
+{{- if (index $.Values $subchart).enabled -}}
+{{- $wanted := index $dsTypes $signal -}}
+{{- $found := false -}}
+{{- range $t := $declared -}}
+{{- if has $t $wanted -}}
+{{- $found = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $found -}}
+{{- fail (printf "observability-stack: the %s store is enabled and no Grafana datasource has a type that reads it (any of %s). The store will ingest, retain and answer for as long as it is up, and nobody will ever see it -- which is not a failure anything reports. Add a datasource, or turn the store off." $signal (join ", " $wanted)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- if not (($g.admin).existingSecret) -}}
 {{- fail "observability-stack: Grafana is enabled with no `grafana.admin.existingSecret`. The Grafana chart then generates a random admin password into a Secret of its own, freshly on every render: every `helm upgrade` rotates it, the release's manifest differs from itself when nothing changed, and the only person who can still log in is whoever wrote down the last one. Name a Secret the estate created." -}}
 {{- end -}}

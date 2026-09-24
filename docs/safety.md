@@ -871,6 +871,71 @@ operator's own default image tag is older than both, so the chart sets
 the tag explicitly rather than inheriting it, and refuses anything
 lower.
 
+## Grafana's replica count and its database are one decision
+
+Grafana's default database is SQLite, a file on the pod. Running two
+replicas on it has two shapes and neither is usable:
+
+- two filesystems, so two databases — a dashboard saved on one replica is
+  missing from the other, and which one a person gets is the load
+  balancer's business;
+- one ReadWriteOnce volume shared between them, so two processes writing
+  one SQLite file:
+
+      500  database is locked (SQLITE_BUSY)
+
+The second is the one that gets shipped, because it looks right. The
+failure is per REQUEST, not at startup: the pods are Running and Ready,
+sign-in works, the dashboard list renders, and roughly one interaction in
+three fails. Measured on a live install before it was moved to Postgres.
+
+So the chart refuses `replicas > 1` unless `[database] type` names
+something shared. It is one refusal rather than a note because the two
+values live in different parts of the file and are set by different
+people at different times — the replica count when somebody wants
+availability, the database when somebody is thinking about databases.
+
+The password goes in `envValueFrom.GF_DATABASE_PASSWORD`, not in
+`grafana.ini`: that section renders into a ConfigMap, and a ConfigMap is
+readable by anything that can read ConfigMaps.
+
+`locking_attempt_timeout_sec` is a separate refusal and a separate
+failure — Grafana takes a lock through its schema migration at startup,
+and the default of 0 means "do not wait", so the second replica of a
+rolling update crash-loops through the migration. Setting it does not
+make SQLite shareable.
+
+## A store nobody can query
+
+Enabling a store provisions it, gives it a volume, writes to it, and
+retains it for as long as its retention says. Whether anyone can READ it
+is a different value in a different part of the file: the datasource
+list.
+
+A store with no datasource is not broken. It ingests, it answers, its
+volume fills at exactly the expected rate, every alert on it evaluates —
+and nobody ever looks at it. There is no error, no unhealthy object and
+no metric that goes the wrong way. The only symptom is absence, and
+absence is what an idle store looks like too.
+
+This chart's own defaults had it: the trace store was enabled and the
+datasource list named metrics and logs. So the chart now refuses an
+enabled store that no datasource type reads. The escape is explicit —
+turn the store off, or add the datasource.
+
+Three stores, three URL **shapes**, and they do not resemble each other:
+
+| store | datasource type | url |
+| --- | --- | --- |
+| metrics | `prometheus` | `…:8427/prometheus` — the plugin appends `/api/v1/...` |
+| logs | `victoriametrics-logs-datasource` | `…:8427` — the ROOT; the plugin appends `/select/logsql/query` |
+| traces | `jaeger` | `…:8427/select/jaeger` |
+
+Naming the logs plugin's query path in its URL is the mistake that
+reaches the store as `/select/logsql/select/logsql/query` and comes back
+`unsupported path requested`. The datasource saves, the health check
+passes, and only a query fails.
+
 ## A convention a chart could not enforce, until it could
 
 **A backup job must refuse an empty source.** `rclone sync` against an
