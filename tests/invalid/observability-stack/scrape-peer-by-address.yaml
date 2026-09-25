@@ -1,3 +1,5 @@
+# expect: reintroduced by the value meant to fix it
+#
 # A store's own metrics port opened to a pod IP instead of a selector.
 #
 # The rule renders and installs, and it works for as long as the scraper
