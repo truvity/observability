@@ -372,3 +372,61 @@ password:
   name: {{ .Values.storeCredentials.secretName | quote }}
   key: {{ .Values.storeCredentials.passwordKey | quote }}
 {{- end -}}
+
+{{/*
+Notifications: a Slack channel into an Alertmanager receiver name.
+
+Every project's route only ever OVERRIDES a channel string, so the same
+channel used from two places must render as the same receiver — hence a
+name derived from the channel itself rather than invented per site.
+Lower-cased and stripped to `[a-z0-9-]` because a receiver name reaching
+this from `notifications.routes[].critical` is an estate's channel name,
+not a value this chart controls the shape of.
+*/}}
+{{- define "observability-stack.notifications.slug" -}}
+{{- $s := . | trimPrefix "#" | lower -}}
+{{- regexReplaceAll "[^a-z0-9]+" $s "-" | trimAll "-" -}}
+{{- end -}}
+
+{{- define "observability-stack.notifications.slackReceiver" -}}
+{{- printf "slack-%s" (include "observability-stack.notifications.slug" .) -}}
+{{- end -}}
+
+{{/*
+A duration string, in seconds — for comparing two of them, which Helm has
+no other way to do. Scoped to the unit suffixes `values.schema.json`
+accepts (ms, s, m, h, d, w, y); a bare number never reaches here because
+the schema already refuses one.
+*/}}
+{{- define "observability-stack.durationSeconds" -}}
+{{- $d := toString . -}}
+{{- $num := regexReplaceAll "^([0-9]+).*$" $d "${1}" | int64 -}}
+{{- $unit := regexReplaceAll "^[0-9]+(.*)$" $d "${1}" -}}
+{{- $perUnit := dict "ms" 0 "s" 1 "m" 60 "h" 3600 "d" 86400 "w" 604800 "y" 31536000 -}}
+{{- mul $num (index $perUnit $unit) -}}
+{{- end -}}
+
+{{/*
+Resolve one severity tier's target to an already-rendered receiver name.
+
+`$root` is the top-level context (for the webhook list), `$severities`
+is `notifications.severities`, `$tier` is "critical" or "warning", and
+`$override` is the channel string a project's own route entry gave for
+that tier, or "" when it gave none — in which case the tier's own
+default channel is used, which is how a project naming only `critical`
+gets its warnings routed to `severities.warning` without a second route
+ever being written.
+*/}}
+{{- define "observability-stack.notifications.receiverFor" -}}
+{{- $root := index . 0 -}}
+{{- $severities := index . 1 -}}
+{{- $tier := index . 2 -}}
+{{- $override := index . 3 -}}
+{{- $cfg := index $severities $tier -}}
+{{- if eq $cfg.receiver "slack" -}}
+{{- $channel := $override | default $cfg.channel -}}
+{{- include "observability-stack.notifications.slackReceiver" $channel -}}
+{{- else -}}
+{{- $cfg.receiver -}}
+{{- end -}}
+{{- end -}}

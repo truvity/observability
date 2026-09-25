@@ -22,6 +22,7 @@ second debugging session.
 {{- include "observability-stack.validate.licence" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
+{{- include "observability-stack.validate.notifications" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
 {{- include "observability-stack.validate.grafana" . -}}
 {{- include "observability-stack.validate.routeOverlap" . -}}
@@ -286,6 +287,87 @@ would override its `-httpAuth.*`.
 {{- if .Values.vmalert.enabled -}}
 {{- if and (not .Values.alertmanager.enabled) (not .Values.alertmanager.notifierUrl) -}}
 {{- fail "observability-stack: vmalert is enabled, Alertmanager is not, and `alertmanager.notifierUrl` is empty. vmalert would evaluate every rule and send the result nowhere — which looks exactly like an estate with no problems, for as long as nobody checks. Enable Alertmanager, or name the one the estate already runs." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Notifications: the one router, refused into existence rather than left a
+free-form passthrough. See docs/notifications.md and docs/safety.md.
+*/}}
+{{- define "observability-stack.validate.notifications" -}}
+{{- $n := .Values.notifications | default dict -}}
+{{- $slack := $n.slack | default dict -}}
+{{- $webhooks := $n.webhook | default list -}}
+{{- $severities := $n.severities | default dict -}}
+{{- $routes := $n.routes | default list -}}
+{{- $also := $n.also | default list -}}
+{{- $webhookNames := dict -}}
+{{- range $w := $webhooks -}}{{- $_ := set $webhookNames $w.name true -}}{{- end -}}
+{{- $configured := or ($slack.webhookSecret).name (gt (len $webhooks) 0) -}}
+{{- if and .Values.alertmanager.enabled (not $configured) -}}
+{{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.webhookSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, or set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs." -}}
+{{- end -}}
+{{- if and $configured (not $n.externalUrl) -}}
+{{- fail "observability-stack: `notifications` configures a receiver but `notifications.externalUrl` is empty. It is the base of the Grafana link this chart puts in every Slack message; without it, every link a message carries points at nothing a person can open." -}}
+{{- end -}}
+{{- /*
+A receiver kind with no default route for a severity is the blackhole
+again, one layer down: the wrapping route's own receiver is a no-op, so
+a severity `severities` does not cover reaches it silently.
+*/ -}}
+{{- if $configured -}}
+{{- range $tier := list "critical" "warning" -}}
+{{- if not (hasKey $severities $tier) -}}
+{{- fail (printf "observability-stack: `notifications` configures a receiver but `notifications.severities.%s` is not set. Every route this chart renders falls back to a no-op receiver when none of `severities`, `routes` or `also` match, so a %s alert with no default reaches nobody and looks routed." $tier $tier) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+A severity naming a receiver that does not exist. `slack` is the one
+literal keyword; anything else must be a name from `notifications.webhook`.
+*/ -}}
+{{- range $tier, $cfg := $severities -}}
+{{- if and $cfg.receiver (ne $cfg.receiver "slack") (not (hasKey $webhookNames $cfg.receiver)) -}}
+{{- fail (printf "observability-stack: notifications.severities.%s.receiver is %q, which is neither \"slack\" nor the name of an entry in notifications.webhook. A route to a receiver that is not configured looks like a route and reaches nobody." $tier (toString $cfg.receiver)) -}}
+{{- end -}}
+{{- if and (eq $cfg.receiver "slack") (not ($slack.webhookSecret).name) -}}
+{{- fail (printf "observability-stack: notifications.severities.%s.receiver is \"slack\" but notifications.slack.webhookSecret is not set. A route to a receiver kind that is not configured looks like a route and reaches nobody." $tier) -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+A route matching outside the vocabulary the collectors actually stamp.
+Anything else matches nothing a rule carries and pages nobody while
+looking exactly like a route that works.
+*/ -}}
+{{- range $i, $r := $routes -}}
+{{- range $k, $_ := ($r.match | default dict) -}}
+{{- if not (has $k (list "k8s_cluster_name" "k8s_namespace_name")) -}}
+{{- fail (printf "observability-stack: notifications.routes[%d].match has key %q. The collectors this chart's rules run against stamp exactly two dimensions on every alert — k8s_cluster_name and k8s_namespace_name — so a route on anything else (tenant, env, team, …) matches nothing any rule actually carries." $i (toString $k)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+`also` names a webhook that is not configured. This bridge exists to
+reach a webhook beside the normal route; a name that resolves to nothing
+is a route that reaches nobody, same as the severities check above.
+*/ -}}
+{{- range $i, $a := $also -}}
+{{- if not (hasKey $webhookNames $a.receiver) -}}
+{{- fail (printf "observability-stack: notifications.also[%d].receiver is %q, which is not the name of any notifications.webhook entry." $i (toString $a.receiver)) -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+The deadman's own repeat interval against the far end's timeout, when the
+estate has stated one: the heartbeat has to land comfortably inside it, or
+a single delayed delivery reads as the estate being down.
+*/ -}}
+{{- $watchdog := .Values.alertmanager.watchdog -}}
+{{- if and $watchdog.secretName $watchdog.timeout -}}
+{{- $repeatS := include "observability-stack.durationSeconds" $watchdog.repeatInterval | int64 -}}
+{{- $timeoutS := include "observability-stack.durationSeconds" $watchdog.timeout | int64 -}}
+{{- if ge $repeatS $timeoutS -}}
+{{- fail (printf "observability-stack: alertmanager.watchdog.repeatInterval is %q and alertmanager.watchdog.timeout is %q. The heartbeat must land comfortably INSIDE the far end's own timeout, or a single delayed delivery reads as the estate being down when it is not. repeatInterval must be strictly less than timeout." (toString $watchdog.repeatInterval) (toString $watchdog.timeout)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

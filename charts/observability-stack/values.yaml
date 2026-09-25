@@ -332,6 +332,14 @@ vmalert:
   # `-rule.defaultRuleType=vlogs` and the log store as its datasource.
   logs:
     enabled: true
+    # -- `-rule.evalDelay`. vmalert's own default is 30s, chosen to match
+    # VictoriaMetrics' `-search.latencyOffset` — a flag that exists
+    # because vmselect deliberately withholds the newest samples of a
+    # query, since they may still be incomplete. VictoriaLogs has no such
+    # flag and no such withholding, so the logs alerter inheriting that
+    # default holds every log-based alert back by 30 seconds it never
+    # needed and nothing says why.
+    evalDelay: 5s
   # -- Where a person lands from an alert's source link. vmalert defaults
   # `-external.url` to its own pod hostname, which makes every alert's
   # link dead the moment it leaves the cluster. Empty renders no flag and
@@ -372,23 +380,12 @@ alertmanager:
     # -- How often the heartbeat repeats. The outside watcher's own
     # timeout must be comfortably longer than this.
     repeatInterval: 5m
-  # -- The rest of the routing tree. Receivers, inhibitions and routes are
-  # the estate's; the chart renders what is here under the Watchdog route
-  # and refuses nothing about it.
-  config:
-    route:
-      receiver: blackhole
-      groupBy: [alertname, k8s_cluster_name, k8s_namespace_name]
-      groupWait: 30s
-      groupInterval: 5m
-      repeatInterval: 4h
-    receivers:
-      - name: blackhole
-    # -- Routes under the top-level one, in Alertmanager's own shape. The
-    # Watchdog route is rendered before these and matched on its own.
-    routes: []
-    # -- Inhibition rules, in Alertmanager's own shape.
-    inhibitRules: []
+    # -- The far end's own timeout for a missing heartbeat, stated here
+    # rather than read from it, so the chart can refuse a
+    # `repeatInterval` that would not land comfortably inside it. Unset,
+    # the chart trusts whoever set `repeatInterval` to have set it
+    # sanely — which is what it always did before this existed.
+    # timeout: 15m
   resources:
     requests:
       cpu: "1"
@@ -396,6 +393,87 @@ alertmanager:
     limits:
       cpu: "1"
       memory: 256Mi
+
+# The one router. See docs/notifications.md for the design this
+# implements.
+#
+# `alertmanager.config` used to be a free-form object in Alertmanager's
+# own syntax, filled in by the consumer. That shape could not be refused:
+# an install with `alertmanager.enabled` and nothing else got a route to
+# a receiver named `blackhole`, rules evaluated into nothing, and nothing
+# about it looked unhealthy — the most expensive shape a monitoring
+# system can have, because it looks exactly like a quiet estate. It also
+# meant every consumer hand-wrote the same routing tree and copied the
+# message template — cluster in the title, runbook link, Grafana link —
+# rather than getting it shipped.
+#
+# So this chart now renders the routing tree FROM this block, and refuses
+# to render `alertmanager.enabled` with none of it configured. What stays
+# the consumer's: the channel names, the webhook, the route list, the
+# external URL, and the policy of what severity a rule carries.
+notifications:
+  # -- The base of the Grafana link this chart puts in every Slack
+  # message. Without it, every link a person clicks from an alert lands
+  # nowhere — the same failure `vmalert.externalUrl` exists to prevent
+  # for the alert's own source link, for a different link and a
+  # different reader.
+  externalUrl: ""
+  # -- Prefixed to a firing alert's `runbook` annotation to build the
+  # runbook link. Left empty, the message carries no runbook line at all
+  # — never a link to a base URL with nothing after it, which reads as a
+  # broken link rather than an absent one.
+  runbookBaseUrl: ""
+  groupWait: 30s
+  groupInterval: 5m
+  repeatInterval: 4h
+  # -- Receiver kinds. Each is a mechanism — how the secret is mounted,
+  # what the message looks like — and none carries a value: `slack` is a
+  # single webhook shared by every channel, so the channel a message
+  # lands in is chosen by `severities` and `routes` below, never here.
+  # Unset by default: a `slack.webhookSecret` with an empty name is
+  # refused by the schema rather than accepted and silently unreachable.
+  # slack:
+  #   webhookSecret: {name: "", key: url}
+  # -- Named webhook receivers, for `also` below. One URL each; there is
+  # no per-alert channel concept for a webhook the way there is for
+  # Slack.
+  webhook: []
+  # - name: ""
+  #   urlSecret: {name: "", key: url}
+  # -- Severity tiers, and where each lands when no route says otherwise.
+  # `receiver` names a configured kind above (`slack`, or an entry in
+  # `webhook`); `channel` is the Slack channel — or, for a webhook
+  # receiver, an identifying label only, since one webhook has one URL.
+  #
+  # This chart's rules carry only `critical` and `warning`: `critical`
+  # means a person should look now, `warning` means a person should look
+  # today. There is no `info` tier here on purpose — an alert that pages
+  # nobody is a dashboard, not a notification, and a rule that wants one
+  # belongs in Grafana, not in this routing tree. A consumer's own rules
+  # may carry whatever severity the consumer gives them; this chart only
+  # ships a route for the two above.
+  severities: {}
+  # critical: {receiver: slack, channel: ""}
+  # warning:  {receiver: slack, channel: ""}
+  # -- Routes, in order. The first entry whose `match` is satisfied wins,
+  # per severity; an entry naming only `critical` sends its warnings to
+  # `severities.warning`. `match` keys are the vocabulary the collectors
+  # stamp on every alert — `k8s_cluster_name` and `k8s_namespace_name` —
+  # and nothing else, because a route on a label no rule carries matches
+  # nothing and pages nobody while looking exactly like a route that
+  # works. The estate renders this list from wherever it derives projects
+  # from namespaces.
+  routes: []
+  # - match: {k8s_cluster_name: ""}
+  #   critical: ""
+  #   warning: ""
+  # -- Which alerts ALSO reach a webhook receiver, beside their normal
+  # route — the status-page bridge. Matchers, not channels: an entry adds
+  # a delivery, it never replaces the one `severities`/`routes` already
+  # picked.
+  also: []
+  # - receiver: ""
+  #   match: {severity: critical}
 
 # Network policies.
 #

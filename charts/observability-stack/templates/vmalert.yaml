@@ -113,6 +113,15 @@ spec:
   {{- $extraArgs := dict }}
   {{- if $isLogs }}
   {{- $_ := set $extraArgs "rule.defaultRuleType" "vlogs" }}
+  {{- /*
+    `-rule.evalDelay` defaults to 30s, chosen to match
+    `-search.latencyOffset` — a VictoriaMetrics flag that withholds the
+    newest samples of a metrics query because they may still be
+    incomplete. VictoriaLogs has no such flag and withholds nothing, so
+    the logs alerter inheriting that default delays every log-based alert
+    by 30 seconds for a latency the log store does not have.
+  */}}
+  {{- $_ := set $extraArgs "rule.evalDelay" $root.Values.vmalert.logs.evalDelay }}
   {{- end }}
   {{- with $root.Values.vmalert.externalUrl }}
   {{- $_ := set $extraArgs "external.url" . }}

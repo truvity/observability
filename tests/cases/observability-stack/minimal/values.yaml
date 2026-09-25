@@ -28,3 +28,14 @@ tenancy:
       grants:
         - cluster: example-cluster
           allNamespaces: true
+
+# The smallest shape that keeps `alertmanager.enabled`'s default from
+# rendering the `blackhole` route: one receiver, one default per
+# severity, nothing project-specific. See docs/notifications.md.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

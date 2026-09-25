@@ -75,6 +75,25 @@
         }
       }
     },
+    "severityTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where a severity tier lands when no route says otherwise. `receiver` names a configured receiver kind - `slack`, or the name of an entry in `notifications.webhook` - and `channel` is where the Slack template's channel and receiver-naming come from; a route may override it per project but never the receiver kind.",
+      "required": [
+        "receiver",
+        "channel"
+      ],
+      "properties": {
+        "receiver": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "subchart": {
       "type": "object",
       "description": "An upstream chart's own values. Left open on purpose: the vendor owns this surface."
@@ -381,6 +400,10 @@
           "properties": {
             "enabled": {
               "type": "boolean"
+            },
+            "evalDelay": {
+              "$ref": "#/definitions/duration",
+              "description": "`-rule.evalDelay` for the logs alerter only. The 30s default exists to match `-search.latencyOffset`, a VictoriaMetrics flag that compensates for query-time data delay on the METRICS store; VictoriaLogs has no such offset, so inheriting it delays every log-based alert by 30s for a latency that store does not have."
             }
           }
         },
@@ -428,64 +451,138 @@
             },
             "repeatInterval": {
               "$ref": "#/definitions/duration"
-            }
-          }
-        },
-        "config": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "route": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "receiver"
-              ],
-              "properties": {
-                "receiver": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "groupBy": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "groupWait": {
-                  "$ref": "#/definitions/duration"
-                },
-                "groupInterval": {
-                  "$ref": "#/definitions/duration"
-                },
-                "repeatInterval": {
-                  "$ref": "#/definitions/duration"
-                }
-              }
             },
-            "receivers": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "object"
-              }
-            },
-            "routes": {
-              "type": "array",
-              "items": {
-                "type": "object"
-              }
-            },
-            "inhibitRules": {
-              "type": "array",
-              "items": {
-                "type": "object"
-              }
+            "timeout": {
+              "$ref": "#/definitions/duration",
+              "description": "The far end's OWN timeout for a missing heartbeat - not read from it, stated here so the chart can refuse a `repeatInterval` that would not arrive comfortably inside it. Optional: leave it unset and the chart trusts the operator to have set `repeatInterval` sanely, the way it always has."
             }
           }
         },
         "resources": {
           "$ref": "#/definitions/resources"
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The one router: renders the Alertmanager configuration `alertmanager.enabled` needs so it never falls back to the `blackhole` shape. See docs/notifications.md.",
+      "properties": {
+        "externalUrl": {
+          "type": "string",
+          "description": "The base of the Grafana link this chart puts in every Slack message. Required the moment a receiver kind is configured; without it every link in a notification points at nothing a person can open."
+        },
+        "runbookBaseUrl": {
+          "type": "string",
+          "description": "Prefixed to a firing rule's `runbook` annotation to make the runbook link. Left empty, the chart renders no runbook line rather than a link to a base URL with nothing after it."
+        },
+        "groupWait": {
+          "$ref": "#/definitions/duration"
+        },
+        "groupInterval": {
+          "$ref": "#/definitions/duration"
+        },
+        "repeatInterval": {
+          "$ref": "#/definitions/duration"
+        },
+        "slack": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "webhookSecret"
+          ],
+          "properties": {
+            "webhookSecret": {
+              "$ref": "#/definitions/secretRef"
+            }
+          }
+        },
+        "webhook": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "urlSecret"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "urlSecret": {
+                "$ref": "#/definitions/secretRef"
+              }
+            }
+          }
+        },
+        "severities": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "critical": {
+              "$ref": "#/definitions/severityTarget"
+            },
+            "warning": {
+              "$ref": "#/definitions/severityTarget"
+            }
+          }
+        },
+        "routes": {
+          "type": "array",
+          "description": "In order. The first entry whose `match` is satisfied wins, per severity; an entry naming only `critical` sends its warnings to `severities.warning`.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "match"
+            ],
+            "properties": {
+              "match": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Alertmanager label matchers, exact-match only. The vocabulary the collectors stamp on every alert is `k8s_cluster_name` and `k8s_namespace_name`; anything else matches nothing a rule actually carries."
+              },
+              "critical": {
+                "type": "string",
+                "minLength": 1
+              },
+              "warning": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "also": {
+          "type": "array",
+          "description": "Which alerts ALSO reach a webhook receiver, beside their normal route - the status-page bridge. Matchers, not channels: an entry is delivered in addition to, never instead of, the primary Slack route.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receiver",
+              "match"
+            ],
+            "properties": {
+              "receiver": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The name of an entry in `notifications.webhook`."
+              },
+              "match": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     },

@@ -126,7 +126,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Twenty-six, each with a fixture under
+Thirty-six, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -153,6 +153,14 @@ for its one reason and no other.
 | A store whose credentials come from another Secret | The proxy authenticates to the stores with `storeCredentials`; a store reading a different Secret answers every query with 401, and the proxy is the only thing that ever sees it. |
 | `ha: true` with fewer than two zones | No store here replicates across a zone. An install labelled highly available with one zone is the single-zone install with a label that stops anyone looking at it again. |
 | vmalert with no notifier at all | Every rule evaluates and the result goes nowhere, which is indistinguishable from an estate with no problems. |
+| `alertmanager.enabled` with no `notifications` configured | The `blackhole` shape this chart exists to retire: every rule evaluates and Alertmanager routes the result to a receiver with no configs, and nothing about the install looks unhealthy. |
+| A receiver kind configured with `notifications.externalUrl` empty | Every Grafana link this chart puts in a Slack message is built from it; unset, every one of them points at nothing a person can open. |
+| `notifications.severities.<tier>` missing while a receiver kind is configured | Every route this chart renders falls back to a no-op receiver when nothing more specific matches; a tier with no default reaches nobody and looks routed. |
+| `notifications.severities.<tier>.receiver` naming a kind that is not configured | The same failure one level down: a route to `slack` with no `webhookSecret`, or to a name absent from `notifications.webhook`, looks like a route and reaches nobody. |
+| `notifications.also[].receiver` naming a webhook that is not configured | The status-page bridge silently does not bridge: the matcher is real, the delivery is not. |
+| `notifications.routes[].match` on a key other than `k8s_cluster_name` or `k8s_namespace_name` | The collectors stamp exactly those two dimensions on every alert; a route on anything else — `tenant`, `env`, a team name — matches nothing a rule actually carries. |
+| A Slack or webhook receiver with an empty secret name | A receiver that cannot send: the manifest, the route and the schema all agree it exists, and it never delivers anything. |
+| `alertmanager.watchdog.repeatInterval` not strictly less than `alertmanager.watchdog.timeout` | The heartbeat is due at or after the moment the far end gives up on it, so a single delayed delivery reads as the estate being down when it is not. |
 | A Grafana datasource without `oauthPassThru` | Every query reaches the proxy as GRAFANA's identity rather than the signed-in person's, so the proxy scopes nothing and a viewer sees every namespace on every cluster. It looks exactly like a working dashboard. |
 | A Grafana datasource without a `version` | With more than one replica Grafana only updates a provisioned datasource whose version is at least the stored one, so an edit without a bump lands on a fresh install and nowhere else. |
 | Grafana with alerting enabled | A second alerting engine, with its own rules, silences and notification policies: a second place to look at three in the morning, and the one nobody remembers. |
@@ -161,6 +169,49 @@ for its one reason and no other.
 | `vmauth.extraArgs.mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` | vmauth drops a client query argument that clashes with one the route already set, and that drop is the only thing stopping a reader sending its own filter beside the enforced one. `mergeQueryArgs` exempts an argument from it. vmselect ORs each `extra_filters` as an alternative, so a caller adding an empty one reads every cluster and namespace — with the claim, the route and the rendered filter all still exactly right. |
 | A trace store enabled alongside `principals`, without `tenancy.allowUnfilteredTraceReads` | The proxy enforces a grant by substituting it into the route it forwards on, and VictoriaTraces' select APIs accept no query argument to substitute one into. The trace route would sit between two scoped routes, look exactly like them, and scope nothing. |
 | A backup with no destination or no credentials | It runs, finds nothing to do and reports success. |
+
+### The quiet estate, and the restart that forgets it was already worried
+
+An install of this chart with `alertmanager.enabled` and nothing else
+used to render a route to a receiver named `blackhole` — literally that,
+because there was nothing else honest to call it. vmalert evaluated
+every rule in the cluster, Alertmanager accepted every one of them, and
+the result went to a receiver with no configuration at all. Nothing
+crashed. Nothing logged an error. The install passed every health check
+this chart or Kubernetes could run, and it was the most expensive shape
+a monitoring system can have, because it is indistinguishable from an
+estate with no problems — right up until the incident that a rule
+existed to catch and nobody heard about.
+
+`alertmanager.config` made that shape impossible to refuse: it was a
+free-form object in Alertmanager's own syntax, and an empty one, or one
+that pointed everything at a receiver with no webhook, rendered exactly
+as cleanly as a working one. `notifications` (docs/notifications.md)
+replaces it with a structure the chart can reason about — receiver
+kinds, severities, a route list — and refuses `alertmanager.enabled`
+until at least one receiver kind is configured, both severities this
+chart's rules use have a default, and every name a route or a severity
+points at resolves to something that can actually send. The table above
+is that refusal, broken into the ways a smaller piece of the same shape
+can still slip through: a project route to a receiver kind that was
+never wired up, a bridge webhook that is a typo, a route matched on a
+label no collector stamps.
+
+**The second failure lives one layer down, in the vmalerts themselves,
+and it is not a routing problem at all.** vmalert holds the state of
+every `for:` timer — how long a condition has been true — in memory,
+and it writes that state to the metrics store only so it can read it
+back on the next restart. Without `-remoteWrite.url` **and**
+`-remoteRead.url` set, that write happens and the read does not: a
+rolling upgrade, a node drain, an OOM kill, anything that restarts the
+pod, resets every pending timer to zero. A rule with `for: 30m`, sat at
+25 minutes when the pod restarted, is a rule that has to sit through
+another 30 minutes before it can fire — in a cluster that rolls its
+pods more often than that, it can never fire at all, and the dashboard
+looks exactly as green as it did before the restart. Both vmalerts this
+chart renders carry both flags unconditionally; neither is a value,
+because there is exactly one correct answer and the wrong one is silent
+in precisely the way `blackhole` was.
 
 ### A filter that is computed and never applied
 

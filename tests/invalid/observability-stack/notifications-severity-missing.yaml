@@ -1,0 +1,19 @@
+# A receiver kind is configured but `severities.warning` is not. Every
+# route this chart renders falls back to a no-op receiver when nothing
+# more specific matches, so a warning alert with no default reaches
+# nobody and looks routed.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
