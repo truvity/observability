@@ -72,6 +72,48 @@ checked against them, mostly a value list waiting for names.
   vmagent, vlagent or OpenTelemetry gateway — that chart's own scrape
   coverage is its own decision.
 
+- **New chart `charts/observability-dashboards`** — the generic
+  dashboards, shipped as their own artifact into Grafana's namespace
+  rather than left to the sidecar's own cluster, per docs/dashboards.md.
+  One ConfigMap per dashboard, labelled `grafana_dashboard: "1"` for the
+  sidecar and annotated `k8s-sidecar-target-directory` for its folder.
+
+  The generic set is fetched from the same upstream URLs the store
+  chart's own `defaultDashboards.sources` names — VictoriaMetrics
+  (single-node, vmagent, vmalert, operator), VictoriaLogs (single-node,
+  vlagent), VictoriaTraces (single-node), Alertmanager, node-exporter-full
+  and kubelet — pinned by release and committed under
+  `charts/observability-dashboards/dashboards/`, never resolved at render
+  time. `just dashboards` re-fetches; `hack/dashboards.sh` and
+  `hack/dashboards/sources.yaml` say where from and why pinned there.
+
+  Every one of the ten is rewritten to the same contract: a `datasource`
+  variable every panel uses instead of a literal UID, a `cluster`
+  variable chained off it and populated by a label-values query, `$cluster`
+  in the title, and — where a dashboard is namespace-scoped, which only
+  Alertmanager's is — a `namespace` variable chained off `cluster`.
+
+  New values: `datasources.{metrics,logs,traces}` (the provisioned
+  Grafana datasource UIDs a dashboard is pointed at; only `metrics` is
+  used by the shipped set), `folders.{infrastructure,stores}` (the two
+  folders the shipped set files into), `dashboards.<name>.enabled` (one
+  key per shipped dashboard), and `extraDashboards` (the estate's own,
+  held to the same contract, filed into their own named folder).
+
+- **New six-rule dashboard lint**, `pkg/dashboardlint` and the
+  `dashboardlint` binary it ships as `cmd/dashboardlint`, run with `just
+  dashboard-lint` — on this chart's own set by default, or against any
+  dashboard JSON an estate names. The rule that matters most: a panel
+  pinned to one datasource UID is how a fleet dashboard silently becomes
+  a one-install dashboard, and the lint fails on any panel whose
+  datasource is a literal. The other five: a `cluster` variable used in
+  every query, a `namespace` variable chained off it where the dashboard
+  is namespace-scoped, `$cluster` in the title, the environment tier
+  never a selector, and upstream's own `namespace` label accepted beside
+  `k8s_namespace_name`. `just check` now runs it in CI on the shipped
+  set; every rule has its own fixture under
+  `tests/dashboardlint/invalid/`.
+
 ## 0.4.1
 
 One background task, off, and the empty panel it explains.

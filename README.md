@@ -17,7 +17,7 @@ everything still looks green.
 | `notifications:` in `observability-stack` | The one router: receiver kinds and how their secret is mounted, the routing shape by cluster × namespace × severity, the message template, and the refusals that retire the `blackhole` default. The stack's own self-alerts are a separate release. | released |
 | `charts/alert-ingress` + `cmd/alert-ingress` | Events born outside the cluster — a threat finding, a root sign-in, a key use, a budget — into the same router: signed notifications from an allow-listed topic, mapped by values, never dropped. | released |
 | `pkg/statusbox` (Go, Pulumi) + `setup.sh` | The watcher outside every cluster: several Gatus instances on one immutable box behind a tunnel and a private network — the deadman, outside-in probes, public status pages per company, and the bridge from an internal alert to a status component. | released |
-| `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | [designed](docs/dashboards.md) |
+| `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | released |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module

@@ -1,0 +1,5 @@
+# The smallest values file that renders: nothing. Every value has a
+# working default — the whole shipped set, enabled, pointed at this
+# chart's own example datasource UIDs — so an empty file renders the
+# default set in full. docs/dashboards.md's own proof list asks for a
+# golden of exactly this: "the default set".

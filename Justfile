@@ -2,7 +2,7 @@
 # check workflow (truvity/ci-workflows) runs each one as its own job, so a
 # laptop and CI run the same thing.
 
-charts := "observability-crds observability-emitters observability-stack platform-alerts alert-ingress"
+charts := "observability-crds observability-emitters observability-stack platform-alerts alert-ingress observability-dashboards"
 
 # The parent workspace would otherwise interfere with this standalone
 # module.
@@ -72,6 +72,32 @@ golden:
 crds:
     hack/crds.sh
 
+# Re-fetch charts/observability-dashboards' generic dashboard set from its
+# pinned upstreams (hack/dashboards/sources.yaml). Needs network;
+# deliberately NOT part of `check`, for the same reason `crds` is not: it
+# writes what the checks then read. Run `just golden` and `just
+# dashboard-lint` after and read both diffs before committing.
+dashboards:
+    hack/dashboards.sh
+
+# The six-rule contract docs/dashboards.md defines, against one or more
+# dashboard JSON files. With no arguments, lints this chart's own shipped
+# set — the check CI runs. An estate runs the identical command on its
+# own dashboards, inside or outside this repository:
+#
+#   just dashboard-lint path/to/mine.json
+#
+# The rule that matters most: a panel pinned to one datasource UID is how
+# a fleet dashboard silently becomes a one-install dashboard.
+dashboard-lint *files:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    files=({{ files }})
+    if [ ${#files[@]} -eq 0 ]; then
+      files=(charts/observability-dashboards/dashboards/*.json)
+    fi
+    go run ./cmd/dashboardlint "${files[@]}"
+
 # Re-vendor one chart's pinned dependencies into its charts/ directory,
 # after moving a version in its Chart.yaml. The archives are committed on
 # purpose: a render that needs the network is a render that differs
@@ -139,4 +165,4 @@ fmt:
     golangci-lint fmt ./...
 
 # Everything CI runs on a pull request.
-check: lint test leak-canary
+check: lint test leak-canary dashboard-lint

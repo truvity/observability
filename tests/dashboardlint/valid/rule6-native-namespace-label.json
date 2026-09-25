@@ -1,0 +1,34 @@
+{
+  "title": "Example ($cluster)",
+  "templating": {
+    "list": [
+      {"name": "datasource", "type": "datasource", "query": "prometheus", "current": {"text": "", "value": ""}},
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "$datasource"},
+        "definition": "label_values(alertmanager_alerts, k8s_cluster_name)",
+        "query": {"query": "label_values(alertmanager_alerts, k8s_cluster_name)"},
+        "current": {"text": "", "value": ""}
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "$datasource"},
+        "definition": "label_values(alertmanager_alerts{k8s_cluster_name=~\"$cluster\"}, namespace)",
+        "query": {"query": "label_values(alertmanager_alerts{k8s_cluster_name=~\"$cluster\"}, namespace)"},
+        "current": {"text": "", "value": ""}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Alerts",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "$datasource"},
+      "targets": [
+        {"expr": "sum(alertmanager_alerts{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"})"}
+      ]
+    }
+  ]
+}
