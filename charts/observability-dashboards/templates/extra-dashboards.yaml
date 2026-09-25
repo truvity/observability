@@ -16,6 +16,10 @@ metadata:
   labels:
     {{- include "observability-dashboards.labels" $ | nindent 4 }}
   annotations:
+    # See templates/dashboards.yaml's comment on this same annotation:
+    # inert without the consuming Grafana's chart setting both
+    # `sidecar.dashboards.folderAnnotation` and
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true`.
     k8s-sidecar-target-directory: {{ $d.folder | quote }}
 data:
   {{ $d.name }}.json: |

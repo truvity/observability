@@ -11,11 +11,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Stores"
 data:
   alertmanager.json: |
@@ -409,11 +413,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Infra"
 data:
   kubelet.json: |
@@ -1673,11 +1681,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Infra"
 data:
   node-exporter-full.json: |
@@ -17256,11 +17268,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Stores"
 data:
   victorialogs-single.json: |
@@ -21263,11 +21279,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Stores"
 data:
   victorialogs-vlagent.json: |
@@ -26451,11 +26471,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Stores"
 data:
   victoriametrics-operator.json: |
@@ -28935,11 +28959,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Stores"
 data:
   victoriametrics-single.json: |
@@ -37834,11 +37862,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Stores"
 data:
   victoriametrics-vmagent.json: |
@@ -47079,11 +47111,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Stores"
 data:
   victoriametrics-vmalert.json: |
@@ -51744,11 +51780,15 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: "Stores"
 data:
   victoriatraces-single.json: |
@@ -58993,6 +59033,10 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
+    # See templates/dashboards.yaml's comment on this same annotation:
+    # inert without the consuming Grafana's chart setting both
+    # `sidecar.dashboards.folderAnnotation` and
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true`.
     k8s-sidecar-target-directory: "Products"
 data:
   example-app.json: |
@@ -59043,6 +59087,10 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     grafana_dashboard: "1"
   annotations:
+    # See templates/dashboards.yaml's comment on this same annotation:
+    # inert without the consuming Grafana's chart setting both
+    # `sidecar.dashboards.folderAnnotation` and
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true`.
     k8s-sidecar-target-directory: "Products"
 data:
   example-app-pods.json: |

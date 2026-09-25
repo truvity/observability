@@ -34,6 +34,27 @@ datasources:
 # one". Store dashboards are the stack's own health. A project's
 # `extraDashboards` get their own folder, named on the entry itself —
 # see below.
+#
+# THESE TAKE EFFECT ONLY IF THE GRAFANA THIS INSTALLS BESIDE IS SET UP
+# FOR IT. Every ConfigMap here carries a `k8s-sidecar-target-directory`
+# annotation naming its folder, but the sidecar ignores that annotation —
+# and Grafana ignores the subfolder it would have created — unless that
+# Grafana's own chart sets BOTH, by their exact upstream keys:
+#
+#   sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory
+#   sidecar.dashboards.provider.foldersFromFilesStructure: true
+#
+# `folderAnnotation` is what makes the sidecar read the annotation at
+# all and file the dashboard into a subdirectory on disk; without it the
+# annotation is inert. `foldersFromFilesStructure` is what makes
+# Grafana's own file provider turn that subdirectory into a folder in
+# the UI; without it the sidecar's directory layout is invisible to
+# Grafana. Neither alone is enough. As of this chart's first release,
+# `charts/observability-stack`'s own `grafana.sidecar.dashboards` block
+# sets neither — every dashboard lands in Grafana's default folder until
+# that changes, and this chart renders cleanly either way, which is
+# exactly why this is written down rather than left to be discovered by
+# looking for a dashboard that never showed up where it was filed.
 folders:
   infrastructure: Infrastructure
   stores: Observability
