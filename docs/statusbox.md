@@ -39,6 +39,20 @@ database are two independent probers that both alert. Availability of
 the watcher is a second, independent box in another place — never a
 shared store — and it is not the starting point.
 
+A Config built from `external-endpoints:` alone refuses to start: Gatus
+panics at boot ("configuration should contain at least one endpoint or
+suite") unless at least one ordinary `endpoints:` or `suites:` entry is
+present too, and separately refuses any `external-endpoints:` entry with
+no `token` ("you must specify a token for each external endpoint") — the
+credential the pushing side has to send back on every push. Neither
+constraint is optional and neither is enforced by this package; Config
+is the estate's own YAML, so both are on the estate to get right. For
+`gatus-ops` the first constraint costs nothing: its ordinary `endpoints:`
+entries are the same hostname and certificate probes the table below
+already asks it to run, so external-endpoints is never actually alone
+there — but a Config that tries to make an instance JUST a deadman
+receiver, with nothing else configured, will not boot.
+
 ### `pkg/statusbox`
 
 ```go
@@ -52,10 +66,16 @@ type Instance struct {
     Config string // the Gatus YAML, rendered by the estate
 }
 
+type Secrets struct {
+    TailscaleAuthKey pulumi.StringInput            // one-shot pre-authorised key; required
+    TunnelToken      pulumi.StringInput            // required only if any Instance is Public
+    AlertURLs        map[string]pulumi.StringInput // keyed name → ${ALERT_URL_<NAME>} in a Config
+}
+
 type Args struct {
     Version    string          // a release of this repository; setup.sh is fetched from it
     Instances  []Instance
-    Secrets    Secrets         // tailnet key, tunnel token, alert URLs — pulumi.StringInput each
+    Secrets    Secrets
     Hostnames  map[string]string // instance name → public hostname, for the tunnel ingress
 }
 
@@ -70,6 +90,41 @@ func NewLightsail(ctx *pulumi.Context, name string, a *LightsailArgs, opts ...pu
 `InstancePublicPorts` with an **empty** port list (the firewall closed
 by declaration), and a `Disk` + `DiskAttachment` for `/data` that
 survives the instance being replaced.
+
+Lightsail's user-data field accepts a single physical line — nothing
+else. It is not a cloud-init multi-part document and not a shebang
+script the way EC2's user-data is: the provider's own worked example
+chains every step with `&&` on one line rather than using a shebang at
+all, because that is the shape its user-data actually supports, and a
+script with real newlines in it is a box that never boots on this
+provider. So `CloudInit` never hands the provider plain text: it renders
+the whole bootstrap as an ordinary multi-line script, gzips it,
+base64-encodes the result, and returns one line that decodes and runs
+it — `bash -c "$(echo <blob> | base64 -d | gunzip)"` — whose own text
+contains no newline even though what it runs, once decoded on the box,
+is the multi-line script an operator can read. Gzip is not just headroom
+against the 16 KB limit below; it is also what makes a script with real
+structure fit inside a field that admits none.
+
+`Secrets.AlertURLs` is how a Config asks for a push-alert credential
+without carrying it as a literal — the mechanism, not one option among
+several. Gatus substitutes `${VAR}` inside its own YAML at start-up, so
+a Config writes `${ALERT_URL_<NAME>}` (an `AlertURLs` map key,
+upper-cased) wherever it wants that value: an external endpoint's
+`webhook-url`, for instance. `CloudInit` stages every entry as an
+exported environment variable in the boot script; `setup.sh` collects
+every `ALERT_URL_*` it finds into a `.env` file beside the box's compose
+file, and every instance's compose service names that file under its own
+`env_file:` — the directive that actually puts a variable into a
+container's environment, which listing `.env` next to a compose file on
+its own does not; `${...}` substitution WITHIN the compose file's own
+text is a different mechanism and does nothing for a container that
+never mentions the variable, which is exactly what `env_file:` is for
+here, since `AlertURLs`'s keys are the estate's own and unknown to
+`setup.sh` ahead of time. The credential still ends up in the box's
+user-data in plain text — see "readable from the instance metadata
+service" below — but a Config already written down (in the estate's own
+repository, in its catalogue) never has to carry it.
 
 ### Checksum at deploy, verify at boot
 
@@ -104,7 +159,8 @@ Immutability is the honest design; config changes here are rare.
 Two consequences, documented so nobody rediscovers them:
 
 - user-data has a size limit (16 KB on the first provider); the renderer
-  gzips the instance configs, and refuses to render past the limit;
+  gzips the whole rendered script — instance configs and all, see the
+  single-line requirement above — and refuses to render past the limit;
 - user-data is readable from the instance metadata service by any
   process on the box. The box is single-purpose, the tailnet key is
   one-shot, and an alert URL is rotated if the box is ever anything

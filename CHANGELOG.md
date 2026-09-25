@@ -98,6 +98,42 @@ The one router, and the retirement of the shape it replaces.
   off only if your cluster's CNI enforces FQDN-scoped egress and the
   real signing domain is pinned there instead.
 
+- **New package: `pkg/statusbox`, and its first provider,
+  `pkg/statusbox/lightsail`** — the watcher outside: a small virtual
+  machine, provisioned by a Pulumi call, running several Gatus instances
+  behind a tunnel and a private network with no inbound port open. It is
+  what receives the deadman (the alert that fires when this chart's own
+  Alertmanager has stopped) and what carries a public status page,
+  because both have to live somewhere the estate's own failure cannot
+  reach. docs/statusbox.md is the design; docs/target-state.md has the
+  smallest worked example.
+
+  `setup.sh` — the script the box actually runs — is a release asset of
+  this repository, not something a consumer writes or copies. A box's
+  Pulumi call pins only a `Version`; at deploy time it fetches that
+  release's `checksums.txt` and bakes `setup.sh`'s sha256 into the box's
+  own boot script, which refuses to run a `setup.sh` whose checksum does
+  not match. Nobody hand-copies a hash, and nothing about the script is
+  a moving target.
+
+  **The box is immutable.** The provider applies the rendered boot
+  script once, at creation, so changing an instance's Gatus
+  configuration — or bumping `Version` — **replaces the box**: about two
+  minutes of status-page blip while its data disk reattaches to the new
+  instance, with the SQLite history on it intact. There is no
+  in-place config update to ask for.
+
+  Two operational facts worth knowing before they are a surprise rather
+  than a line in this entry: the rendered boot script is capped at 16 KB
+  (Lightsail's own user-data limit) and `pkg/statusbox` refuses to
+  render past it rather than produce a box that silently fails to boot;
+  and that boot script — tailnet key, tunnel token, alert-push URLs and
+  all — is readable in plain text from the instance metadata service by
+  any process running on the box. Accepted rather than worked around,
+  because the box is single-purpose, the tailnet key is spent at first
+  boot, and an alert URL is rotated the day the box is ever asked to be
+  anything else.
+
 ## 0.3.10
 
 Documentation and a probe, no render change.

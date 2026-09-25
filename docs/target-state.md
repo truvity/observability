@@ -133,11 +133,18 @@ estate renders from wherever it keeps its hostnames.
 
 ```go
 statusbox.NewLightsail(ctx, "status", &statusbox.LightsailArgs{
-    Version:   "v1.0.0",
-    Tailscale: tailnetKey, Cloudflared: tunnelToken,
-    Instances: []statusbox.Instance{
-        {Name: "example-co", Port: 8081, Public: true, Config: exampleCoYAML},
-        {Name: "ops",        Port: 8084, Public: false, Config: opsYAML},
+    AvailabilityZone: "us-east-1a",
+    Args: statusbox.Args{
+        Version: "v1.0.0",
+        Secrets: statusbox.Secrets{
+            TailscaleAuthKey: tailnetKey,
+            TunnelToken:      tunnelToken,
+        },
+        Instances: []statusbox.Instance{
+            {Name: "example-co", Port: 8081, Public: true, Config: exampleCoYAML},
+            {Name: "ops",        Port: 8084, Public: false, Config: opsYAML},
+        },
+        Hostnames: map[string]string{"example-co": "status.example.com"},
     },
 })
 ```
