@@ -27,11 +27,15 @@ metadata:
   labels:
     {{- include "observability-dashboards.labels" $ | nindent 4 }}
   annotations:
-    # The k8s-sidecar convention for filing a dashboard into a Grafana
-    # subfolder rather than the sidecar's flat default: see
-    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
-    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
-    # every dashboard lands in one folder regardless of this value.
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: {{ $folder | quote }}
 data:
   {{ $name }}.json: |
