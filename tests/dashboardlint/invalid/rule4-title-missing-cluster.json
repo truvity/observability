@@ -1,0 +1,26 @@
+{
+  "title": "Example",
+  "templating": {
+    "list": [
+      {"name": "datasource", "type": "datasource", "query": "prometheus", "current": {"text": "", "value": ""}},
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "$datasource"},
+        "definition": "label_values(up, k8s_cluster_name)",
+        "query": {"query": "label_values(up, k8s_cluster_name)"},
+        "current": {"text": "", "value": ""}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Requests",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "$datasource"},
+      "targets": [
+        {"expr": "sum(rate(example_requests_total{k8s_cluster_name=~\"$cluster\"}[5m]))"}
+      ]
+    }
+  ]
+}

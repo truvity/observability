@@ -1,0 +1,19 @@
+# A typo in a values file is a dashboard that silently never ships, so an
+# unknown key must fail the render rather than be ignored.
+datasources:
+  metrics: victoriametrics
+folders:
+  infrastructure: Infrastructure
+  stores: Observability
+dashboards:
+  victoriametrics-single: {enabled: true}
+  victoriametrics-vmagent: {enabled: true}
+  victoriametrics-vmalert: {enabled: true}
+  victoriametrics-operator: {enabled: true}
+  victorialogs-single: {enabled: true}
+  victorialogs-vlagent: {enabled: true}
+  victoriatraces-single: {enabled: true}
+  alertmanager: {enabled: true}
+  node-exporter-full: {enabled: true}
+  kubelet: {enabled: true}
+datasourcess: typo

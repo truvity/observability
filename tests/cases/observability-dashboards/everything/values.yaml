@@ -1,0 +1,120 @@
+# Every value set away from its default: the whole shipped set plus two
+# `extraDashboards` — docs/dashboards.md's own proof list asks for a
+# golden of exactly this second shape, beside `minimal`'s default set.
+nameOverride: dashboards
+
+datasources:
+  metrics: example-metrics
+  logs: example-logs
+  traces: example-traces
+
+folders:
+  infrastructure: Infra
+  stores: Stores
+
+dashboards:
+  victoriametrics-single:
+    enabled: true
+  victoriametrics-vmagent:
+    enabled: true
+  victoriametrics-vmalert:
+    enabled: true
+  victoriametrics-operator:
+    enabled: true
+  victorialogs-single:
+    enabled: true
+  victorialogs-vlagent:
+    enabled: true
+  victoriatraces-single:
+    enabled: true
+  alertmanager:
+    enabled: true
+  node-exporter-full:
+    enabled: true
+  kubelet:
+    enabled: true
+
+extraDashboards:
+  # Cluster-scoped: rules 1, 2 and 4 with no namespace variable, because
+  # nothing here filters by namespace.
+  - name: example-app
+    folder: Products
+    json: |
+      {
+        "title": "Example App ($cluster)",
+        "uid": "example-app",
+        "templating": {
+          "list": [
+            {
+              "name": "datasource",
+              "type": "datasource",
+              "query": "prometheus",
+              "current": {"text": "", "value": ""}
+            },
+            {
+              "name": "cluster",
+              "type": "query",
+              "datasource": {"type": "prometheus", "uid": "$datasource"},
+              "definition": "label_values(up{job=\"example-app\"}, k8s_cluster_name)",
+              "query": {"query": "label_values(up{job=\"example-app\"}, k8s_cluster_name)"},
+              "current": {"text": "", "value": ""}
+            }
+          ]
+        },
+        "panels": [
+          {
+            "title": "Requests",
+            "type": "timeseries",
+            "datasource": {"type": "prometheus", "uid": "$datasource"},
+            "targets": [
+              {"expr": "sum(rate(example_app_requests_total{k8s_cluster_name=~\"$cluster\"}[5m]))"}
+            ]
+          }
+        ]
+      }
+
+  # Namespace-scoped: rule 3, the `namespace` variable chained off
+  # `cluster`.
+  - name: example-app-pods
+    folder: Products
+    json: |
+      {
+        "title": "Example App / Pods ($cluster)",
+        "uid": "example-app-pods",
+        "templating": {
+          "list": [
+            {
+              "name": "datasource",
+              "type": "datasource",
+              "query": "prometheus",
+              "current": {"text": "", "value": ""}
+            },
+            {
+              "name": "cluster",
+              "type": "query",
+              "datasource": {"type": "prometheus", "uid": "$datasource"},
+              "definition": "label_values(up{job=\"example-app\"}, k8s_cluster_name)",
+              "query": {"query": "label_values(up{job=\"example-app\"}, k8s_cluster_name)"},
+              "current": {"text": "", "value": ""}
+            },
+            {
+              "name": "namespace",
+              "type": "query",
+              "datasource": {"type": "prometheus", "uid": "$datasource"},
+              "definition": "label_values(up{job=\"example-app\",k8s_cluster_name=~\"$cluster\"}, k8s_namespace_name)",
+              "query": {"query": "label_values(up{job=\"example-app\",k8s_cluster_name=~\"$cluster\"}, k8s_namespace_name)"},
+              "current": {"text": "", "value": ""}
+            }
+          ]
+        },
+        "panels": [
+          {
+            "title": "Pods by phase",
+            "type": "timeseries",
+            "datasource": {"type": "prometheus", "uid": "$datasource"},
+            "targets": [
+              {"expr": "sum(kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",k8s_namespace_name=~\"$namespace\"}) by (phase)"}
+            ]
+          }
+        ]
+      }

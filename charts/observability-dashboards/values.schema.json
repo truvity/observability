@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-dashboards",
+  "description": "Dashboards shipped to Grafana as their own artifact. Strict: an unknown key fails the render rather than being silently ignored, because a typo here is a dashboard that never ships and nothing says so.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["datasources", "folders", "dashboards"],
+  "definitions": {
+    "dashboardEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    }
+  },
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "datasources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "type": "string",
+          "description": "Every shipped dashboard queries metrics. There is no schema-level requirement here on purpose: it is fine empty while every dashboard that needs it is disabled. The render itself refuses empty while one is enabled — see templates/dashboards.yaml."
+        },
+        "logs": {
+          "type": "string",
+          "description": "For extraDashboards that query VictoriaLogs; unused by the shipped set."
+        },
+        "traces": {
+          "type": "string",
+          "description": "For extraDashboards that query VictoriaTraces; unused by the shipped set."
+        }
+      }
+    },
+    "folders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["infrastructure", "stores"],
+      "properties": {
+        "infrastructure": { "type": "string", "minLength": 1 },
+        "stores": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dashboards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "victoriametrics-single",
+        "victoriametrics-vmagent",
+        "victoriametrics-vmalert",
+        "victoriametrics-operator",
+        "victorialogs-single",
+        "victorialogs-vlagent",
+        "victoriatraces-single",
+        "alertmanager",
+        "node-exporter-full",
+        "kubelet"
+      ],
+      "properties": {
+        "victoriametrics-single": { "$ref": "#/definitions/dashboardEntry" },
+        "victoriametrics-vmagent": { "$ref": "#/definitions/dashboardEntry" },
+        "victoriametrics-vmalert": { "$ref": "#/definitions/dashboardEntry" },
+        "victoriametrics-operator": { "$ref": "#/definitions/dashboardEntry" },
+        "victorialogs-single": { "$ref": "#/definitions/dashboardEntry" },
+        "victorialogs-vlagent": { "$ref": "#/definitions/dashboardEntry" },
+        "victoriatraces-single": { "$ref": "#/definitions/dashboardEntry" },
+        "alertmanager": { "$ref": "#/definitions/dashboardEntry" },
+        "node-exporter-full": { "$ref": "#/definitions/dashboardEntry" },
+        "kubelet": { "$ref": "#/definitions/dashboardEntry" }
+      }
+    },
+    "extraDashboards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "folder", "json"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+            "description": "Used as the ConfigMap's name suffix and ConfigMap data key; DNS-label safe."
+          },
+          "folder": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Grafana folder this dashboard files into. Required: an entry with none lands at the root, mixed in beside the shipped set."
+          },
+          "json": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The dashboard's own JSON, already meeting the six-rule contract — this chart labels it for the sidecar and does not rewrite it."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    }
+  }
+}

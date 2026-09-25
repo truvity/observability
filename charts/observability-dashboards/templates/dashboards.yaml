@@ -1,0 +1,41 @@
+{{- /*
+Refusals first: a dashboard enabled with nowhere to point renders
+happily and shows nothing, which is worse than failing — see
+docs/dashboards.md's Refusals table.
+*/ -}}
+{{- $catalog := include "observability-dashboards.catalog" . | fromYaml -}}
+{{- $needMetrics := list -}}
+{{- range $name, $spec := $catalog -}}
+{{- if (get $.Values.dashboards $name).enabled -}}
+{{- $needMetrics = append $needMetrics $name -}}
+{{- end -}}
+{{- end -}}
+{{- if and $needMetrics (not $.Values.datasources.metrics) -}}
+{{- fail (printf "observability-dashboards: %s are enabled, but datasources.metrics is empty — dashboards for a store nobody can point at. Set it to this Grafana's provisioned VictoriaMetrics datasource UID." (join ", " $needMetrics)) -}}
+{{- end -}}
+
+{{- range $name, $spec := $catalog }}
+{{- $entry := get $.Values.dashboards $name }}
+{{- if $entry.enabled }}
+{{- $folder := get $.Values.folders $spec.folder }}
+{{- $content := $.Files.Get (printf "dashboards/%s" $spec.file) | replace "__DATASOURCE_UID__" $.Values.datasources.metrics }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observability-dashboards.fullname" $ }}-{{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "observability-dashboards.labels" $ | nindent 4 }}
+  annotations:
+    # The k8s-sidecar convention for filing a dashboard into a Grafana
+    # subfolder rather than the sidecar's flat default: see
+    # https://github.com/kiwigrid/k8s-sidecar. Requires the consuming
+    # Grafana's sidecar to run with FOLDER_ANNOTATION set to this key, or
+    # every dashboard lands in one folder regardless of this value.
+    k8s-sidecar-target-directory: {{ $folder | quote }}
+data:
+  {{ $name }}.json: |
+    {{- $content | nindent 4 }}
+---
+{{- end }}
+{{- end }}

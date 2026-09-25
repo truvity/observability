@@ -1,0 +1,25 @@
+{{- /*
+The estate's own dashboards. Unlike dashboards.yaml, these are rendered
+verbatim — this chart does not rewrite an extraDashboards entry the way
+hack/dashboards.sh rewrites the upstream set, so whoever wrote it is
+responsible for `just dashboard-lint` passing on it before it lands
+here. `folder` being required is enforced by values.schema.json: an
+entry with none would land at the root, mixed in beside the shipped set.
+*/ -}}
+{{- range $d := .Values.extraDashboards }}
+{{- if or (not (hasKey $d "enabled")) $d.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observability-dashboards.fullname" $ }}-{{ $d.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "observability-dashboards.labels" $ | nindent 4 }}
+  annotations:
+    k8s-sidecar-target-directory: {{ $d.folder | quote }}
+data:
+  {{ $d.name }}.json: |
+    {{- $d.json | nindent 4 }}
+---
+{{- end }}
+{{- end }}

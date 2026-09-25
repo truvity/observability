@@ -1,0 +1,81 @@
+# observability-dashboards — dashboards shipped to Grafana as their own
+# artifact, because the sidecar that collects them reads the cluster
+# Grafana runs on, not the cluster an install lives on. Install this
+# chart INTO Grafana's own namespace (`--namespace <grafana's>`); every
+# ConfigMap it renders is labelled for that Grafana's sidecar.
+#
+# Every dashboard here — shipped and extra alike — is held to the same
+# six-rule lint docs/dashboards.md defines and `just dashboard-lint`
+# runs: a `datasource` variable every panel uses, a `cluster` variable
+# chained off it, `$cluster` in the title, and the rest. The rule that
+# earns its own comment in the lint's own source: a panel pinned to one
+# datasource UID is how a fleet dashboard silently becomes a one-install
+# dashboard.
+
+# -- Name overrides for rendered object names.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- The datasource UIDs this Grafana was provisioned with — a dashboard
+# names its datasource by UID, and the estate chose these when it set
+# Grafana up (see charts/observability-stack's own `grafana.datasources`,
+# whose defaults match). Every shipped dashboard here queries metrics, so
+# only `metrics` is required; `logs` and `traces` exist for
+# `extraDashboards` that query those stores instead, and the chart never
+# reads them itself.
+datasources:
+  metrics: victoriametrics
+  logs: victorialogs
+  traces: victoriatraces
+
+# -- Display names for the two folders the shipped set files into.
+# Infrastructure dashboards are keyed by cluster, in one folder: the same
+# components run on every cluster and the question is always "which
+# one". Store dashboards are the stack's own health. A project's
+# `extraDashboards` get their own folder, named on the entry itself —
+# see below.
+folders:
+  infrastructure: Infrastructure
+  stores: Observability
+
+# -- One key per shipped dashboard. `enabled: false` drops it from the
+# render; nothing here is required beyond the key existing, so trimming
+# the set is a one-line diff per dashboard.
+dashboards:
+  victoriametrics-single:
+    enabled: true
+  victoriametrics-vmagent:
+    enabled: true
+  victoriametrics-vmalert:
+    enabled: true
+  victoriametrics-operator:
+    enabled: true
+  victorialogs-single:
+    enabled: true
+  victorialogs-vlagent:
+    enabled: true
+  victoriatraces-single:
+    enabled: true
+  alertmanager:
+    enabled: true
+  node-exporter-full:
+    enabled: true
+  kubelet:
+    enabled: true
+
+# -- The estate's own dashboards, held to the same lint as the shipped
+# set. Each entry is rendered as its own ConfigMap, unmodified except for
+# the sidecar's labels — this chart does not rewrite `extraDashboards`
+# the way hack/dashboards.sh rewrites the upstream set, so an entry must
+# already carry its own `datasource`/`cluster` variables.
+#
+#   extraDashboards:
+#     - name: example-app
+#       folder: Products
+#       json: |
+#         { "title": "example-app ($cluster)", ... }
+#
+# `folder` is required: an entry with none renders at the root, mixed in
+# beside the shipped set, which is why the chart refuses it rather than
+# defaulting one.
+extraDashboards: []

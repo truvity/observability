@@ -1,0 +1,24 @@
+# Refusal: "extraDashboards entry with no folder" — an entry with none
+# would land at the root, mixed in beside the shipped set. Enforced by
+# values.schema.json's `required` on the extraDashboards item, not a
+# render-time `fail`.
+datasources:
+  metrics: victoriametrics
+folders:
+  infrastructure: Infrastructure
+  stores: Observability
+dashboards:
+  victoriametrics-single: {enabled: true}
+  victoriametrics-vmagent: {enabled: true}
+  victoriametrics-vmalert: {enabled: true}
+  victoriametrics-operator: {enabled: true}
+  victorialogs-single: {enabled: true}
+  victorialogs-vlagent: {enabled: true}
+  victoriatraces-single: {enabled: true}
+  alertmanager: {enabled: true}
+  node-exporter-full: {enabled: true}
+  kubelet: {enabled: true}
+extraDashboards:
+  - name: example-app
+    json: |
+      {"title": "Example App ($cluster)"}

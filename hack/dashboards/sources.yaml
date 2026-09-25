@@ -1,0 +1,95 @@
+# The generic dashboard set, fetched by hack/dashboards.sh.
+#
+# Every URL here is one already named in the upstream store chart's own
+# `defaultDashboards.sources` list (see
+# charts/observability-stack/charts/victoria-metrics-k8s-stack-*.tgz,
+# values.yaml) — never invented — with `master`/`main` replaced by a
+# pinned ref so a bump is a deliberate, reviewable diff rather than
+# whatever upstream's default branch holds on render day.
+#
+# `seedQuery` is the label-values selector the generated `cluster`
+# variable queries — reused from each dashboard's own pre-existing `job`
+# variable, so the cluster list comes from the same metric the dashboard
+# already trusts to exist.
+dashboards:
+  - name: victoriametrics-single
+    url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/victoriametrics.json
+    ref: v1.152.0
+    folder: stores
+    seedQuery: 'vm_app_version{version=~"victoria-metrics-.*"}'
+
+  - name: victoriametrics-vmagent
+    url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/vmagent.json
+    ref: v1.152.0
+    folder: stores
+    seedQuery: 'vm_app_version{version=~"^vmagent.*"}'
+
+  - name: victoriametrics-vmalert
+    url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/vmalert.json
+    ref: v1.152.0
+    folder: stores
+    seedQuery: 'vm_app_version{version=~"^vmalert.*"}'
+
+  - name: victoriametrics-operator
+    url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/operator.json
+    ref: v1.152.0
+    folder: stores
+    seedQuery: 'operator_log_messages_total'
+
+  - name: victorialogs-single
+    url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/{ref}/dashboards/victorialogs.json
+    ref: v1.121.0
+    folder: stores
+    seedQuery: 'vm_app_version{version=~"victoria-logs-.*"}'
+
+  - name: victorialogs-vlagent
+    url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/{ref}/dashboards/vlagent.json
+    ref: v1.121.0
+    folder: stores
+    seedQuery: 'vm_app_version{version=~"^vlagent.*"}'
+
+  - name: victoriatraces-single
+    url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaTraces/{ref}/dashboards/victoriatraces.json
+    ref: v0.11.1
+    folder: stores
+    seedQuery: 'vm_app_version{version=~"victoria-traces-.*"}'
+
+  # Alertmanager and kubelet are not standalone URLs in
+  # defaultDashboards.sources: both come bundled inside the
+  # kube-prometheus mixin's single dashboard-definitions manifest, which
+  # upstream's own `kube-prometheus` source entry points at. Each is one
+  # ConfigMap's `data` key inside that manifest's `items` list.
+  - name: alertmanager
+    bundle: kube-prometheus
+    bundleKey: alertmanager-overview.json
+    folder: stores
+    seedQuery: 'alertmanager_alerts'
+    namespaceScoped: true
+
+  - name: kubelet
+    bundle: kube-prometheus
+    bundleKey: kubelet.json
+    folder: infrastructure
+    # kubelet.json already ships its own cluster variable and filters
+    # every query by a bare `cluster` label — upstream's own multi-cluster
+    # convention. This repo's collectors stamp `k8s_cluster_name`
+    # instead (see README's "The model"), so the fetch step RENAMES the
+    # label rather than adding a second, always-empty filter beside it —
+    # left alone, `cluster="$cluster"` would match nothing, because
+    # nothing here ever sets a bare `cluster` label.
+    preRenamed: true
+
+  # node-exporter-full has no seedQuery: it is rewritten by the generic
+  # rule (every panel already keys off `job`/`nodename`, no dashboard
+  # here needs a second seed).
+  - name: node-exporter-full
+    url: https://raw.githubusercontent.com/rfmoz/grafana-dashboards/{ref}/prometheus/node-exporter-full.json
+    # rfmoz/grafana-dashboards tags no releases; pinned by commit.
+    ref: 99a25cc154c21c4fcbae1aa24352bf1b6764d847
+    folder: infrastructure
+    seedQuery: 'node_uname_info'
+
+bundles:
+  kube-prometheus:
+    url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/{ref}/manifests/grafana-dashboardDefinitions.yaml
+    ref: v0.19.0

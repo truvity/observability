@@ -1,0 +1,20 @@
+# Refusal: "a datasource UID missing for a store that is enabled" — a
+# dashboard for a store nobody can point at. Every default dashboard
+# queries metrics, so an empty `datasources.metrics` with the default set
+# still enabled must refuse.
+datasources:
+  metrics: ""
+folders:
+  infrastructure: Infrastructure
+  stores: Observability
+dashboards:
+  victoriametrics-single: {enabled: true}
+  victoriametrics-vmagent: {enabled: true}
+  victoriametrics-vmalert: {enabled: true}
+  victoriametrics-operator: {enabled: true}
+  victorialogs-single: {enabled: true}
+  victorialogs-vlagent: {enabled: true}
+  victoriatraces-single: {enabled: true}
+  alertmanager: {enabled: true}
+  node-exporter-full: {enabled: true}
+  kubelet: {enabled: true}
