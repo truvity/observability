@@ -69,3 +69,12 @@ backup:
   enabled: true
   destination: ":s3,env_auth=true:example-backups/observability"
   credentialsSecret: example-backup-credentials
+
+# This is the golden that exercises the trace store's own render (the
+# `everything` case turns the store subcharts off so their render stays
+# `single`'s job — see the comment there), so it is also where the
+# service-graph task's opt-in path gets exercised.
+victoria-traces-single:
+  server:
+    extraArgs:
+      servicegraph.enableTask: "true"

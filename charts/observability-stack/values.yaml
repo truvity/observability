@@ -839,6 +839,30 @@ victoria-traces-single:
       # mutually-exclusive pair the chart refuses.
       retention.maxDiskUsagePercent: 80
       storage.minFreeDiskSpaceBytes: 10GiB
+      # -- The Jaeger dependency graph — Grafana's "Node Graph" / service
+      # map over `api/dependencies` — is computed by a background task
+      # that upstream ships disabled. Off is written out here, not left
+      # to upstream's own default, because off LOOKS like a bug: the
+      # endpoint answers `200` with `{"data":[],"total":0}` rather than
+      # an error, so a consumer sees an empty panel with nothing naming
+      # the cause, even on an install where context propagation and the
+      # trace reads both work.
+      #
+      # This is upstream-experimental. Whether the graph it computes is
+      # written back into the store — and so costs retention headroom
+      # and write throughput the way a trace itself does — is inferred
+      # from the endpoint existing at all, not measured here.
+      #
+      # The companion flags, all with the same prefix, for whoever turns
+      # this on: `taskInterval` (how often it runs), `taskLookbehind`
+      # (the window each run covers), `taskLimit` (max service-graph
+      # relations per tenant per run), `taskTimeout`, and
+      # `databaseTaskLimit` (max service-database relations per tenant;
+      # `0` turns the database graph off on its own).
+      #
+      # Only supported on a single-node or vtstorage deployment — this
+      # chart's shape, not a cluster one.
+      servicegraph.enableTask: "false"
     # -- MIRROR: `storeCredentials`.
     env:
       - name: VM_httpAuth_username
