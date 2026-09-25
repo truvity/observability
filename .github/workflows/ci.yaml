@@ -1,12 +1,17 @@
 # CI calls the shared workflow (truvity/ci-workflows), which fans the
 # Justfile recipes out into PARALLEL jobs — one per recipe, each reporting
 # under its own name. The recipe list is this repository's own `check`
-# recipe plus `apply`, so CI and a laptop run the same thing except for the
-# one job that needs a container runtime: `apply` stands up a kind cluster
-# and requires a real API server to accept every golden. It is a CI job
-# rather than part of `check` because `check` must stay runnable in seconds
-# on a laptop, and a job rather than nothing because the two defects it
-# generalises both reached a cluster before anything here noticed.
+# recipe plus `apply`, `reconcile` and `statusbox`, so CI and a laptop run
+# the same thing except for the jobs that need a container runtime or
+# root: `apply` stands up a kind cluster and requires a real API server to
+# accept every golden, `reconcile` requires the operator to accept the
+# release, and `statusbox` runs setup.sh — the release asset a box's
+# cloud-init fetches, verifies by checksum and executes, see
+# pkg/statusbox — against a fixture and requires every instance to answer
+# /health. Each is a CI job rather than part of `check` because `check`
+# must stay runnable in seconds on a laptop with nothing destructive in
+# it, and a job rather than nothing because each one catches a class of
+# defect that reached further than anything upstream of it noticed.
 #
 # Pinned by COMMIT SHA, never by tag or branch: tags move, and every
 # repository in both organizations runs that code.
@@ -29,7 +34,7 @@ jobs:
   recipes:
     uses: truvity/ci-workflows/.github/workflows/check.yaml@98939fa99a6ac03994253fd00a7b336fac9fe0a9 # v3.2.0
     with:
-      recipes: '["lint", "test", "leak-canary", "apply", "reconcile"]'
+      recipes: '["lint", "test", "leak-canary", "apply", "reconcile", "statusbox"]'
 
   # Stable name for branch protection: the matrix reports as
   # "recipes / lint" and so on, so a required context naming them would

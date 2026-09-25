@@ -108,6 +108,19 @@ apply:
 reconcile:
     hack/reconcile.sh
 
+# Run setup.sh — the release asset a box's cloud-init fetches, verifies
+# by checksum and executes, see pkg/statusbox — against a fixture, and
+# require every instance it starts to answer /health.
+#
+# Deliberately NOT part of `check`: it needs root (apt-get, systemctl,
+# and it writes /opt/statusbox and /data for real) the same way `apply`
+# needs Docker, so a laptop run is destructive in a way `check` must
+# never be. It is a CI job for the reason the header of hack/statusbox-ci.sh
+# gives at length: the first run of setup.sh must not be on the box, on
+# a bad day.
+statusbox:
+    hack/statusbox-ci.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

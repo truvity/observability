@@ -22,3 +22,18 @@ changelog:
 
 release:
   github: {}
+  # setup.sh is a release asset, not a build output: a box's cloud-init
+  # (rendered by pkg/statusbox.CloudInit) downloads THIS exact file from
+  # THIS release. It has to be attached here, and it has to be in
+  # checksum's own extra_files below too, or checksums.txt — the thing
+  # CloudInit fetches at deploy time to bake a sha256 into every box's
+  # user-data — would carry no entry for it, and CloudInit refuses to
+  # render rather than boot a box that trusts an unverified script. See
+  # docs/statusbox.md ("Checksum at deploy, verify at boot").
+  extra_files:
+    - glob: ./setup.sh
+
+checksum:
+  name_template: "checksums.txt"
+  extra_files:
+    - glob: ./setup.sh
