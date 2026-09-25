@@ -20,3 +20,7 @@ coverage.out
 
 # Go
 vendor/
+
+# Python (hack/dashboards.py)
+__pycache__/
+*.pyc
