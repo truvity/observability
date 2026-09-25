@@ -1,3 +1,4 @@
+# expect: dashboards for a store nobody can point at
 # Refusal: "a datasource UID missing for a store that is enabled" — a
 # dashboard for a store nobody can point at. Every default dashboard
 # queries metrics, so an empty `datasources.metrics` with the default set

@@ -1,3 +1,4 @@
+# expect: missing property 'folder'
 # Refusal: "extraDashboards entry with no folder" — an entry with none
 # would land at the root, mixed in beside the shipped set. Enforced by
 # values.schema.json's `required` on the extraDashboards item, not a
