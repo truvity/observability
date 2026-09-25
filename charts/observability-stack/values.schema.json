@@ -690,7 +690,7 @@
     "selfAlerts": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The twelve store self-alerts. See docs/notifications.md, \"Store self-alerts\", and values.yaml's own comments for which of the twelve metric names this chart could confirm and which it could not.",
+      "description": "The nineteen store self-alerts. See docs/notifications.md, \"Store self-alerts\", and values.yaml's own comments for which of the nineteen metric names this chart could confirm and which it could not.",
       "required": ["enabled"],
       "properties": {
         "enabled": { "type": "boolean" },
@@ -757,7 +757,11 @@
             "exportFailedMetricPrefix": { "type": "string" },
             "exportFailWindow": { "$ref": "#/definitions/duration" },
             "exportFailFor": { "$ref": "#/definitions/duration" },
-            "exportFailSeverity": { "$ref": "#/definitions/selfAlertSeverity" }
+            "exportFailSeverity": { "$ref": "#/definitions/selfAlertSeverity" },
+            "enqueueFailedMetricPrefix": { "type": "string" },
+            "enqueueFailWindow": { "$ref": "#/definitions/duration" },
+            "enqueueFailFor": { "$ref": "#/definitions/duration" },
+            "enqueueFailSeverity": { "$ref": "#/definitions/selfAlertSeverity" }
           }
         },
         "diskGuard": {
@@ -802,8 +806,26 @@
           "additionalProperties": false,
           "properties": {
             "streamsCreatedMetric": { "type": "string" },
-            "window": { "$ref": "#/definitions/duration" },
-            "maxCreatedPerWindow": { "type": "integer", "minimum": 0 },
+            "perSecond": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Streams created per second, averaged over an hour. A healthy install creates roughly a stream per pod per day; the default is two orders of magnitude above that."
+            },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "traceStreamChurn": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streamsCreatedMetric": { "type": "string" },
+            "perSecond": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Streams created per second, averaged over an hour. A healthy install creates roughly a stream per pod per day; the default is two orders of magnitude above that."
+            },
+            "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }
           }
         },
@@ -812,7 +834,6 @@
           "additionalProperties": false,
           "properties": {
             "bufferMetric": { "type": "string" },
-            "maxBufferBytes": { "type": "integer", "minimum": 0 },
             "for": { "$ref": "#/definitions/duration" },
             "droppedPacketsMetric": { "type": "string" },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }

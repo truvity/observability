@@ -576,8 +576,8 @@ backup:
 
 # Store self-alerts.
 #
-# See docs/notifications.md, "Store self-alerts". These twelve rules are
-# not like `charts/platform-alerts`: that chart is generic across
+# See docs/notifications.md, "Store self-alerts". These nineteen rules
+# are not like `charts/platform-alerts`: that chart is generic across
 # estates and refuses to guess a metric name, because it cannot know
 # what a consumer's stores are called. This chart is not generic — it
 # vendors the stores, the proxy, both vmalerts and the backup CronJobs
@@ -609,11 +609,18 @@ backup:
 # your own store's `/metrics`; each rule then renders independently and
 # the rest stay silently absent, which is the honest outcome.
 #
-# All twelve are MetricsQL, evaluated by the METRICS vmalert. Every
+# All nineteen are MetricsQL, evaluated by the METRICS vmalert. Every
 # counter here lives on a component's own /metrics endpoint next to
 # every other Prometheus-style metric that component exports — none of
 # it is read out of the log or trace store's DATA — so none carries
 # `observability.rule-type: vlogs`.
+#
+# Rules are named per store (`MetricStore`/`LogStore`/`TraceStore`)
+# wherever the failure is one specific store's; three stores exist, and
+# a rule named just "Store..." does not say which one paged you. A rule
+# stays generic (`WriterBufferGrowing`, `WriterDroppingPackets`,
+# `ProxyAtConcurrencyLimit`) only where it genuinely is not about any one
+# store.
 #
 # This release closes part of the coverage gap directly: see
 # `victoria-logs-single.server.serviceMonitor` and
@@ -625,7 +632,7 @@ backup:
 selfAlerts:
   enabled: false
 
-  # StoreIgnoringRows.
+  # MetricStoreIgnoringRows.
   #
   # THE INCIDENT: a series pushed past the metrics store's per-day label
   # limit is discarded WHILE THE WRITE STILL ANSWERS 200 — a collector
@@ -651,7 +658,7 @@ selfAlerts:
     for: 5m
     severity: critical
 
-  # StoreCardinalityNearLimit.
+  # MetricStoreCardinalityNearLimit, MetricStoreDailyCardinalityNearLimit.
   #
   # VictoriaMetrics' hourly/daily series limiter (`storage.maxHourlySeries`
   # / `storage.maxDailySeries` above, both off by default) is believed to
@@ -662,7 +669,9 @@ selfAlerts:
   # before setting a pair; each renders independently of the other, and
   # neither renders while unset — which is the honest outcome, the same
   # one platform-alerts' storeLimits gives a store with no free-space
-  # metric.
+  # metric. Two separate alerts, not one alert with an hourly/daily
+  # label: different windows, different meanings, and a name that says
+  # which one fired.
   cardinality:
     hourlyCurrentSeriesMetric: ""
     hourlyMaxSeriesMetric: ""
@@ -701,13 +710,13 @@ selfAlerts:
     for: 5m
     severity: critical
 
-  # GatewayQueueFilling, GatewayExportFailing.
+  # GatewayQueueFilling, GatewayExportFailing, GatewayEnqueueFailing.
   #
   # THE INCIDENT (this week): a network policy change cut
   # `charts/observability-emitters`' OpenTelemetry gateway off from its
   # own proxy, and "sending queue is full" ran for hours with every pod
   # Running and nothing reporting it. `otelcol_exporter_queue_size` /
-  # `_capacity` and `otelcol_exporter_send_failed_*` /
+  # `_capacity`, `otelcol_exporter_send_failed_*` and
   # `_enqueue_failed_*` are named in the incident report and in
   # docs/reference.md's own `otlp.podMonitor` entry, which already calls
   # out the failed/enqueue-failed pair by name — but NOT DEFAULTED
@@ -719,11 +728,16 @@ selfAlerts:
   # metrics reach vmalert here directly, the same way this chart's own
   # stores' counters do, and never through the proxy.
   #
-  # `_send_failed_` and `_enqueue_failed_` both carry a per-signal suffix
-  # (spans, metric_points, log_records) this session did not enumerate
-  # with confidence; `exportFailedMetricPrefix` is matched by `__name__`
-  # PREFIX rather than an enumerated suffix, so confirming it does not
-  # also require enumerating every signal this gateway exports for.
+  # Export failure and enqueue failure are different losses — one is the
+  # DESTINATION refusing a batch the gateway already accepted, the other
+  # is the gateway's own QUEUE refusing at the door — so they are two
+  # rules, not one: a single rule cannot tell an operator which one
+  # paged them. `_send_failed_` and `_enqueue_failed_` both carry a
+  # per-signal suffix (spans, metric_points, log_records) this session
+  # did not enumerate with confidence; both `*MetricPrefix` values below
+  # are matched by `__name__` PREFIX rather than an enumerated suffix, so
+  # confirming either does not also require enumerating every signal
+  # this gateway exports for.
   gateway:
     queueSizeMetric: ""
     queueCapacityMetric: ""
@@ -735,13 +749,20 @@ selfAlerts:
     queueFor: 10m
     queueSeverity: warning
     exportFailedMetricPrefix: ""
-    # -- Healthy range: 0. A send or enqueue failure is not something a
-    # healthy exporter path produces at any rate.
+    # -- Healthy range: 0. A send failure is not something a healthy
+    # exporter path produces at any rate.
     exportFailWindow: 5m
     exportFailFor: 5m
     exportFailSeverity: critical
+    enqueueFailedMetricPrefix: ""
+    # -- Healthy range: 0, same reasoning as the export-fail window
+    # above — an enqueue failure is not something a healthy exporter
+    # path produces at any rate either.
+    enqueueFailWindow: 5m
+    enqueueFailFor: 5m
+    enqueueFailSeverity: critical
 
-  # StoreDiskNearGuard.
+  # MetricStoreDiskNearGuard, LogStoreDiskNearGuard, TraceStoreDiskNearGuard.
   #
   # `vm_free_disk_space_bytes` / `vm_free_disk_space_limit_bytes` is the
   # exact pair `charts/platform-alerts`' own `stores` example already
@@ -757,7 +778,10 @@ selfAlerts:
   # `headroomFactor` mirrors platform-alerts' `storeLimits` value and
   # default (2), comfortably above the 1x at which a store already
   # stopped accepting writes. Each store's rule renders only once its
-  # pair is set.
+  # pair is set, under its own per-store alert name — a logs or traces
+  # store that fills its disk switches to read-only and does not drop
+  # data to recover, so this covers all three stores, not only the
+  # metrics one.
   diskGuard:
     headroomFactor: 2
     severity: warning
@@ -771,7 +795,8 @@ selfAlerts:
       freeSpaceMetric: ""
       freeSpaceLimitMetric: ""
 
-  # SnapshotOlderThanWindow.
+  # MetricStoreSnapshotOlderThanWindow, LogStoreSnapshotOlderThanWindow,
+  # TraceStoreSnapshotOlderThanWindow.
   #
   # Not a store-exported counter: the newest-snapshot age this rule
   # watches is the age of the last SUCCESSFUL run of the backup CronJobs
@@ -793,7 +818,9 @@ selfAlerts:
   # Not gated behind `metric` the way the others are, because the name
   # itself is not in question — but each store's rule still renders only
   # while `backup.enabled` and `backup.<store>.enabled` are both true,
-  # since a CronJob that does not exist has nothing to watch.
+  # since a CronJob that does not exist has nothing to watch. Named per
+  # store, the same as `diskGuard` above, rather than one alert
+  # distinguished only by a label.
   #
   # Each `maxAge` is the store's own schedule plus slack, the same
   # doctrine as platform-alerts' `groups.backups.maxSuccessAge`: change
@@ -810,27 +837,49 @@ selfAlerts:
     traces:
       maxAge: 2h
 
-  # The four rules with no anchor in this repository at all — unconfirmed
-  # in BOTH spelling and coverage.
+  # LogStoreStreamsChurning, TraceStoreStreamsChurning: unconfirmed in
+  # BOTH spelling and coverage. VictoriaLogs and VictoriaTraces are each
+  # believed to export a counter of streams created, for exactly this
+  # failure (a non-constant stream field), but this session found no
+  # name for either to confirm — not in docs/notifications.md, not in
+  # `charts/platform-alerts`, not in the vendored chart archives — and,
+  # like *StoreDroppingRows above, nothing scrapes either store into
+  # this release's metrics store yet regardless. Two rules, not one:
+  # different stores key streams differently (the trace store on
+  # `service.name` AND the span name), so the usual cause differs too.
   #
-  # `LogStreamsChurning`: VictoriaLogs is believed to export a counter of
-  # streams created, for exactly this failure (a non-constant stream
-  # field), but this session found no name for it to confirm — not in
-  # docs/notifications.md, not in `charts/platform-alerts`, not in the
-  # vendored `victoria-logs-single-0.13.9.tgz` — and, like
-  # LogStoreDroppingRows above, nothing scrapes the log store into this
-  # release's metrics store yet regardless. `maxCreatedPerWindow` is
-  # likewise not defaulted: docs/notifications.md gives no number, and
-  # "faster than a partition explains" is a fact about an estate's own
-  # field cardinality, not one this chart can state generically.
-  #
-  # `WriterBufferGrowing`, `WriterDroppingPackets`: read as vmalert's own
+  # `perSecond` and `for` ARE defaulted, unlike every metric name in this
+  # file: a healthy install creates roughly a stream per pod per day, so
+  # 1 stream/second averaged over an hour is already two orders of
+  # magnitude above that baseline — a real, defensible number rather
+  # than a guessed metric name, the same distinction `diskGuard`'s
+  # `headroomFactor` and `cardinality`'s `ratio` already draw.
+  logStreamChurn:
+    streamsCreatedMetric: ""
+    perSecond: 1
+    for: 1h
+    severity: warning
+  traceStreamChurn:
+    streamsCreatedMetric: ""
+    perSecond: 1
+    for: 1h
+    severity: warning
+
+  # WriterBufferGrowing, WriterDroppingPackets: read as vmalert's own
   # `remoteWrite` path (`templates/vmalert.yaml` sets `remoteWrite` on
   # both alerters, against the metrics store) — vmalert shares its
   # remote-write client with vmagent, but whether it exports that
   # client's metrics under the SAME names was not confirmed this
   # session, and the measured live store had zero `vmagent_`-prefixed
-  # names to check either binary's family against.
+  # names to check either binary's family against. Generic across
+  # writers on purpose: whichever remote-write agent's buffer the
+  # confirmed name belongs to, growing or dropping is the same failure.
+  #
+  # `WriterBufferGrowing` fires on the buffer's own rate of change
+  # (`deriv(...) > 0`) rather than a fixed byte threshold: there is no
+  # size this chart could state generically, and a buffer that is
+  # GROWING AT ALL is already the failure worth looking at, the same
+  # "above zero" reasoning `ingest` above uses.
   #
   # `ProxyAtConcurrencyLimit`: vmauth's `VMAuth` CR accepts a concurrency
   # cap (see the `everything` test case's `maxConcurrentRequests`).
@@ -845,16 +894,10 @@ selfAlerts:
   # back the same way.
   #
   # Each renders only once its metric name is supplied — never before.
-  logStreamChurn:
-    streamsCreatedMetric: ""
-    window: 5m
-    maxCreatedPerWindow: 0
-    severity: warning
   writer:
     bufferMetric: ""
-    maxBufferBytes: 0
-    for: 10m
     droppedPacketsMetric: ""
+    for: 10m
     severity: critical
   proxyConcurrency:
     limitedRequestsMetric: ""

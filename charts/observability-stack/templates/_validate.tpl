@@ -232,24 +232,25 @@ pair.
 {{- define "observability-stack.validate.selfAlerts" -}}
 {{- $sa := .Values.selfAlerts -}}
 {{- if and $sa.cardinality.hourlyCurrentSeriesMetric (not $sa.cardinality.hourlyMaxSeriesMetric) -}}
-{{- fail "observability-stack: `selfAlerts.cardinality.hourlyCurrentSeriesMetric` is set but `hourlyMaxSeriesMetric` is not. StoreCardinalityNearLimit (hourly) would compare a gauge against nothing; set both, or neither." -}}
+{{- fail "observability-stack: `selfAlerts.cardinality.hourlyCurrentSeriesMetric` is set but `hourlyMaxSeriesMetric` is not. MetricStoreCardinalityNearLimit would compare a gauge against nothing; set both, or neither." -}}
 {{- end -}}
 {{- if and $sa.cardinality.hourlyMaxSeriesMetric (not $sa.cardinality.hourlyCurrentSeriesMetric) -}}
-{{- fail "observability-stack: `selfAlerts.cardinality.hourlyMaxSeriesMetric` is set but `hourlyCurrentSeriesMetric` is not. StoreCardinalityNearLimit (hourly) would compare a gauge against nothing; set both, or neither." -}}
+{{- fail "observability-stack: `selfAlerts.cardinality.hourlyMaxSeriesMetric` is set but `hourlyCurrentSeriesMetric` is not. MetricStoreCardinalityNearLimit would compare a gauge against nothing; set both, or neither." -}}
 {{- end -}}
 {{- if and $sa.cardinality.dailyCurrentSeriesMetric (not $sa.cardinality.dailyMaxSeriesMetric) -}}
-{{- fail "observability-stack: `selfAlerts.cardinality.dailyCurrentSeriesMetric` is set but `dailyMaxSeriesMetric` is not. StoreCardinalityNearLimit (daily) would compare a gauge against nothing; set both, or neither." -}}
+{{- fail "observability-stack: `selfAlerts.cardinality.dailyCurrentSeriesMetric` is set but `dailyMaxSeriesMetric` is not. MetricStoreDailyCardinalityNearLimit would compare a gauge against nothing; set both, or neither." -}}
 {{- end -}}
 {{- if and $sa.cardinality.dailyMaxSeriesMetric (not $sa.cardinality.dailyCurrentSeriesMetric) -}}
-{{- fail "observability-stack: `selfAlerts.cardinality.dailyMaxSeriesMetric` is set but `dailyCurrentSeriesMetric` is not. StoreCardinalityNearLimit (daily) would compare a gauge against nothing; set both, or neither." -}}
+{{- fail "observability-stack: `selfAlerts.cardinality.dailyMaxSeriesMetric` is set but `dailyCurrentSeriesMetric` is not. MetricStoreDailyCardinalityNearLimit would compare a gauge against nothing; set both, or neither." -}}
 {{- end -}}
+{{- $diskGuardAlertPrefix := dict "metrics" "MetricStore" "logs" "LogStore" "traces" "TraceStore" -}}
 {{- range $store := list "metrics" "logs" "traces" -}}
 {{- $g := index $sa.diskGuard $store -}}
 {{- if and $g.freeSpaceMetric (not $g.freeSpaceLimitMetric) -}}
-{{- fail (printf "observability-stack: `selfAlerts.diskGuard.%s.freeSpaceMetric` is set but `freeSpaceLimitMetric` is not. StoreDiskNearGuard for that store would compare a gauge against nothing; set both, or neither." $store) -}}
+{{- fail (printf "observability-stack: `selfAlerts.diskGuard.%s.freeSpaceMetric` is set but `freeSpaceLimitMetric` is not. %sDiskNearGuard would compare a gauge against nothing; set both, or neither." $store (index $diskGuardAlertPrefix $store)) -}}
 {{- end -}}
 {{- if and $g.freeSpaceLimitMetric (not $g.freeSpaceMetric) -}}
-{{- fail (printf "observability-stack: `selfAlerts.diskGuard.%s.freeSpaceLimitMetric` is set but `freeSpaceMetric` is not. StoreDiskNearGuard for that store would compare a gauge against nothing; set both, or neither." $store) -}}
+{{- fail (printf "observability-stack: `selfAlerts.diskGuard.%s.freeSpaceLimitMetric` is set but `freeSpaceMetric` is not. %sDiskNearGuard would compare a gauge against nothing; set both, or neither." $store (index $diskGuardAlertPrefix $store)) -}}
 {{- end -}}
 {{- end -}}
 {{- if and $sa.gateway.queueSizeMetric (not $sa.gateway.queueCapacityMetric) -}}
@@ -258,19 +259,13 @@ pair.
 {{- if and $sa.gateway.queueCapacityMetric (not $sa.gateway.queueSizeMetric) -}}
 {{- fail "observability-stack: `selfAlerts.gateway.queueCapacityMetric` is set but `queueSizeMetric` is not. GatewayQueueFilling would compare a gauge against nothing; set both, or neither." -}}
 {{- end -}}
-{{- if and $sa.logStreamChurn.streamsCreatedMetric (not (gt ($sa.logStreamChurn.maxCreatedPerWindow | int) 0)) -}}
-{{- fail "observability-stack: `selfAlerts.logStreamChurn.streamsCreatedMetric` is set but `maxCreatedPerWindow` is not above zero, so LogStreamsChurning would fire on the first stream ever created. State the rate your own estate's normal field cardinality produces." -}}
-{{- end -}}
-{{- if and $sa.writer.bufferMetric (not (gt ($sa.writer.maxBufferBytes | int) 0)) -}}
-{{- fail "observability-stack: `selfAlerts.writer.bufferMetric` is set but `maxBufferBytes` is not above zero, so WriterBufferGrowing would fire on any buffered byte at all. State the size a healthy buffer holds between flushes." -}}
-{{- end -}}
 {{- /*
 Every metric name here is optional, by design, since none could be
 confirmed for certain against this chart's pins. But `selfAlerts.enabled`
 with NOTHING configured renders a VMRule with an empty rule list — an
 object that looks like coverage and is not, the exact shape this file
 exists to refuse elsewhere. So at least one thing has to actually render:
-one metric name, or one enabled backup whose SnapshotOlderThanWindow can
+one metric name, or one enabled backup whose *SnapshotOlderThanWindow can
 watch it.
 */ -}}
 {{- if $sa.enabled -}}
@@ -282,6 +277,7 @@ watch it.
     $sa.traceStore.metric
     (and $sa.gateway.queueSizeMetric $sa.gateway.queueCapacityMetric)
     $sa.gateway.exportFailedMetricPrefix
+    $sa.gateway.enqueueFailedMetricPrefix
     (and $sa.diskGuard.metrics.freeSpaceMetric $sa.diskGuard.metrics.freeSpaceLimitMetric)
     (and $sa.diskGuard.logs.freeSpaceMetric $sa.diskGuard.logs.freeSpaceLimitMetric)
     (and $sa.diskGuard.traces.freeSpaceMetric $sa.diskGuard.traces.freeSpaceLimitMetric)
@@ -289,6 +285,7 @@ watch it.
     (and .Values.backup.enabled .Values.backup.logs.enabled)
     (and .Values.backup.enabled .Values.backup.traces.enabled)
     $sa.logStreamChurn.streamsCreatedMetric
+    $sa.traceStreamChurn.streamsCreatedMetric
     $sa.writer.bufferMetric
     $sa.writer.droppedPacketsMetric
     $sa.proxyConcurrency.limitedRequestsMetric

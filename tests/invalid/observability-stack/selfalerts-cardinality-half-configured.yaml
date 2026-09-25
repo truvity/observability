@@ -1,4 +1,4 @@
-# One cardinality metric without its pair: StoreCardinalityNearLimit
+# One cardinality metric without its pair: MetricStoreCardinalityNearLimit
 # would compare a gauge against nothing rather than never rendering.
 selfAlerts:
   cardinality:

@@ -181,7 +181,7 @@ backup:
     enabled: true
     schedule: "40 * * * *"
 
-# Every one of the twelve rules populated — the shape golden proves every
+# Every one of the nineteen rules populated — the shape golden proves every
 # field in docs/notifications.md's "Store self-alerts" against, and the
 # one case where every metric name below is fictional on purpose: none
 # of these `example_*` names is a claim about what a real store exports.
@@ -221,6 +221,10 @@ selfAlerts:
     exportFailWindow: 2m
     exportFailFor: 2m
     exportFailSeverity: critical
+    enqueueFailedMetricPrefix: example_otelcol_exporter
+    enqueueFailWindow: 2m
+    enqueueFailFor: 2m
+    enqueueFailSeverity: critical
   diskGuard:
     headroomFactor: 3
     severity: warning
@@ -243,12 +247,16 @@ selfAlerts:
       maxAge: 90m
   logStreamChurn:
     streamsCreatedMetric: example_vl_streams_created_total
-    window: 10m
-    maxCreatedPerWindow: 500
+    perSecond: 2
+    for: 30m
+    severity: warning
+  traceStreamChurn:
+    streamsCreatedMetric: example_vt_streams_created_total
+    perSecond: 2
+    for: 30m
     severity: warning
   writer:
     bufferMetric: example_vmalert_remotewrite_pending_data_bytes
-    maxBufferBytes: 104857600
     for: 15m
     droppedPacketsMetric: example_vmalert_remotewrite_packets_dropped_total
     severity: critical
