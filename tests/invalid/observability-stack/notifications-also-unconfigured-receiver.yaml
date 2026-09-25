@@ -1,0 +1,23 @@
+# `also[].receiver` names a webhook this chart never configured under
+# `notifications.webhook`. The bridge exists to reach a webhook beside
+# the normal route; a name that resolves to nothing is a route that
+# reaches nobody, the same failure as an unconfigured severity receiver.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+  also:
+    - receiver: status-page
+      match: {severity: critical, customer_facing: "true"}

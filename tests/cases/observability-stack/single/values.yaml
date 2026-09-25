@@ -54,6 +54,14 @@ alertmanager:
     secretName: example-watchdog-receiver
     key: url
 
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
 backup:
   enabled: true
   destination: ":s3,env_auth=true:example-backups/observability"

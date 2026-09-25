@@ -14,6 +14,29 @@ mounted and read with `url_file` rather than interpolated into the
 config, because a config rendered by Helm is in the release's manifest,
 in `helm get manifest`, and in whatever stores the release history.
 */}}
+{{- $n := .Values.notifications | default dict }}
+{{- $slack := $n.slack | default dict }}
+{{- $webhooks := $n.webhook | default list }}
+{{- $severities := $n.severities | default dict }}
+{{- $routes := $n.routes | default list }}
+{{- $also := $n.also | default list }}
+{{- $slackChannels := dict }}
+{{- range $tier, $cfg := $severities }}
+{{- if eq $cfg.receiver "slack" }}
+{{- $_ := set $slackChannels $cfg.channel true }}
+{{- end }}
+{{- end }}
+{{- range $r := $routes }}
+{{- range $tier := list "critical" "warning" }}
+{{- $override := index $r $tier }}
+{{- if $override }}
+{{- $tcfg := index $severities $tier }}
+{{- if and $tcfg (eq $tcfg.receiver "slack") }}
+{{- $_ := set $slackChannels $override true }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMAlertmanager
 metadata:
@@ -28,31 +51,66 @@ spec:
   {{- with .Values.vmalert.externalUrl }}
   externalURL: {{ . | quote }}
   {{- end }}
-  {{- if $watchdog.secretName }}
+  {{- if or $watchdog.secretName ($slack.webhookSecret).name $webhooks }}
   {{- /*
   Mounted here rather than through the CR's own `secrets` list, which
   would put it under a path this repository's leak canary bans outright —
   and the canary is right to: a path with that shape is the one thing in
-  a manifest that names where an estate keeps its secrets.
+  a manifest that names where an estate keeps its secrets. A manifest
+  that contains a webhook is a webhook in git, so every receiver's URL
+  arrives as a mounted file and is read with `*_url_file`, never
+  interpolated into the config below.
   */}}
   volumes:
+    {{- if $watchdog.secretName }}
     - name: watchdog
       secret:
         secretName: {{ $watchdog.secretName | quote }}
+    {{- end }}
+    {{- if ($slack.webhookSecret).name }}
+    - name: notifications-slack
+      secret:
+        secretName: {{ $slack.webhookSecret.name | quote }}
+    {{- end }}
+    {{- range $w := $webhooks }}
+    - name: {{ printf "notifications-webhook-%s" $w.name }}
+      secret:
+        secretName: {{ $w.urlSecret.name | quote }}
+    {{- end }}
   volumeMounts:
+    {{- if $watchdog.secretName }}
     - name: watchdog
       mountPath: /etc/alertmanager/watchdog
       readOnly: true
+    {{- end }}
+    {{- if ($slack.webhookSecret).name }}
+    - name: notifications-slack
+      mountPath: /etc/alertmanager/notifications-slack
+      readOnly: true
+    {{- end }}
+    {{- range $w := $webhooks }}
+    - name: {{ printf "notifications-webhook-%s" $w.name }}
+      mountPath: {{ printf "/etc/alertmanager/notifications-webhook-%s" $w.name }}
+      readOnly: true
+    {{- end }}
   {{- end }}
   configRawYaml: |
     route:
-      receiver: {{ .Values.alertmanager.config.route.receiver | quote }}
-      group_by: {{ toYaml .Values.alertmanager.config.route.groupBy | nindent 8 }}
-      group_wait: {{ .Values.alertmanager.config.route.groupWait }}
-      group_interval: {{ .Values.alertmanager.config.route.groupInterval }}
-      repeat_interval: {{ .Values.alertmanager.config.route.repeatInterval }}
-      {{- if $watchdog.secretName }}
+      # `notifications-none` is a receiver with no configs: Alertmanager
+      # accepts that as a legitimate "do not send" target. It is the root
+      # receiver and the catch-all for a severity this chart's routing
+      # tree does not know (there is deliberately no `info` route — see
+      # docs/notifications.md), never a route somebody forgot to write.
+      receiver: notifications-none
+      group_by:
+        - alertname
+        - k8s_cluster_name
+        - k8s_namespace_name
+      group_wait: {{ $n.groupWait | default "30s" }}
+      group_interval: {{ $n.groupInterval | default "5m" }}
+      repeat_interval: {{ $n.repeatInterval | default "4h" }}
       routes:
+        {{- if $watchdog.secretName }}
         # The heartbeat, first and matched on its own: it must never be
         # grouped with anything, never inhibited and never silenced by a
         # rule written for a real alert.
@@ -62,22 +120,94 @@ spec:
           group_wait: 0s
           group_interval: 1m
           repeat_interval: {{ $watchdog.repeatInterval }}
-      {{- end }}
-      {{- with .Values.alertmanager.config.routes }}
-      {{- toYaml . | nindent 6 }}
-      {{- end }}
+        {{- end }}
+        {{- /*
+        The primary tree, wrapped in one node that matches everything and
+        `continue: true`s past itself once it is done — the only place
+        `continue` is set, so that a project's own routing and the
+        `also` bridge below can BOTH fire for the same alert without
+        firing twice for one that only matched one of them.
+        */}}
+        - match: {}
+          receiver: notifications-none
+          continue: true
+          routes:
+            {{- range $r := $routes }}
+            - match:
+                {{- toYaml $r.match | nindent 16 }}
+              receiver: notifications-none
+              routes:
+                {{- range $tier := list "critical" "warning" }}
+                {{- $override := index $r $tier }}
+                {{- if hasKey $severities $tier }}
+                - match:
+                    severity: {{ $tier }}
+                  receiver: {{ include "observability-stack.notifications.receiverFor" (list $ $severities $tier $override) }}
+                {{- end }}
+                {{- end }}
+            {{- end }}
+            {{- /*
+            The global default: every severity this chart knows, for an
+            alert that matched none of the projects above.
+            */}}
+            {{- range $tier := list "critical" "warning" }}
+            {{- if hasKey $severities $tier }}
+            - match:
+                severity: {{ $tier }}
+              receiver: {{ include "observability-stack.notifications.receiverFor" (list $ $severities $tier "") }}
+            {{- end }}
+            {{- end }}
+        {{- range $a := $also }}
+        - match:
+            {{- toYaml $a.match | nindent 12 }}
+          receiver: {{ $a.receiver }}
+        {{- end }}
     receivers:
-      {{- toYaml .Values.alertmanager.config.receivers | nindent 6 }}
+      - name: notifications-none
+      {{- range $ch, $_ := $slackChannels }}
+      - name: {{ include "observability-stack.notifications.slackReceiver" $ch }}
+        slack_configs:
+          - channel: {{ $ch | quote }}
+            api_url_file: /etc/alertmanager/notifications-slack/{{ $slack.webhookSecret.key | default "url" }}
+            send_resolved: true
+            title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}'
+            text: |-
+              {{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }}
+              {{- if $n.runbookBaseUrl }}
+              {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
+              {{ "{{" }} end {{ "}}" }}
+              {{- end }}
+              Grafana: {{ $n.externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}&var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}
+              {{ "{{" }} end {{ "}}" }}
+              Silence: {{ "{{" }} .ExternalURL {{ "}}" }}/#/silences/new?filter=%7B{{ "{{" }} range .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} .Name {{ "}}" }}%3D%22{{ "{{" }} .Value {{ "}}" }}%22%2C{{ "{{" }} end {{ "}}" }}%7D
+      {{- end }}
+      {{- range $w := $webhooks }}
+      - name: {{ $w.name }}
+        webhook_configs:
+          - url_file: {{ printf "/etc/alertmanager/notifications-webhook-%s/%s" $w.name (default "url" $w.urlSecret.key) }}
+            send_resolved: true
+      {{- end }}
       {{- if $watchdog.secretName }}
       - name: watchdog
         webhook_configs:
           - url_file: /etc/alertmanager/watchdog/{{ $watchdog.key }}
             send_resolved: false
       {{- end }}
-    {{- with .Values.alertmanager.config.inhibitRules }}
+    {{- /*
+    One inhibit rule: a critical on a cluster+namespace silences the
+    warning on the SAME pair, so a project already paged for the loud
+    version does not also get grouped with the quiet one. Watchdog needs
+    no rule of its own here — its own route above already keeps it out of
+    grouping, inhibition and silencing meant for a real alert.
+    */}}
     inhibit_rules:
-      {{- toYaml . | nindent 6 }}
-    {{- end }}
+      - source_matchers:
+          - severity = "critical"
+        target_matchers:
+          - severity = "warning"
+        equal:
+          - k8s_cluster_name
+          - k8s_namespace_name
 {{- if $watchdog.secretName }}
 ---
 {{- /*

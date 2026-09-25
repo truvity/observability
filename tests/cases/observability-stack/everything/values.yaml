@@ -100,25 +100,10 @@ alertmanager:
     secretName: example-watchdog-receiver
     key: url
     repeatInterval: 2m
-  config:
-    route:
-      receiver: default
-      groupBy: [alertname, cell, ns]
-      groupWait: 10s
-      groupInterval: 2m
-      repeatInterval: 2h
-    receivers:
-      - name: default
-    routes:
-      - receiver: default
-        matchers:
-          - severity = "critical"
-    inhibitRules:
-      - sourceMatchers:
-          - severity = "critical"
-        targetMatchers:
-          - severity = "warning"
-        equal: [alertname]
+    # The far end (docs/statusbox.md's gatus-ops) is configured with a
+    # longer heartbeat.interval than this; stating it here is what lets
+    # the chart refuse a repeatInterval that would not land inside it.
+    timeout: 10m
   resources:
     requests:
       cpu: "2"
@@ -126,6 +111,34 @@ alertmanager:
     limits:
       cpu: "2"
       memory: 512Mi
+
+# Every receiver kind, a project that names both severities, a project
+# that names only `critical` (proving its warnings fall back to
+# `severities.warning`), and the webhook bridge — the shape golden proves
+# every field in docs/notifications.md against.
+notifications:
+  externalUrl: https://grafana.example
+  runbookBaseUrl: https://runbooks.example/
+  groupWait: 10s
+  groupInterval: 2m
+  repeatInterval: 2h
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  webhook:
+    - name: status-page
+      urlSecret: {name: example-status-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+  routes:
+    - match: {k8s_cluster_name: example-cluster}
+      critical: "#alerts-example-cluster"
+      warning: "#alerts-example-cluster"
+    - match: {k8s_namespace_name: example-app}
+      critical: "#example-app"
+  also:
+    - receiver: status-page
+      match: {severity: critical, customer_facing: "true"}
 
 networkPolicy:
   enabled: true

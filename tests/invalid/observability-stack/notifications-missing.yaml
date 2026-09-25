@@ -1,0 +1,13 @@
+# `alertmanager.enabled` defaults to true, and this file sets no
+# `notifications` at all: the blackhole shape docs/notifications.md
+# exists to retire. vmalert would evaluate every rule and Alertmanager
+# would route the result to a receiver with no configs, and nothing
+# about the install would look unhealthy.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

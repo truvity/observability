@@ -1,0 +1,26 @@
+# `repeatInterval` equal to `timeout`: the heartbeat is due at the exact
+# moment the far end gives up on it, so a single delayed delivery reads
+# as the estate being down when it is not. It has to land comfortably
+# INSIDE the far end's timeout, not merely before it.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+alertmanager:
+  watchdog:
+    secretName: example-watchdog-receiver
+    repeatInterval: 5m
+    timeout: 5m

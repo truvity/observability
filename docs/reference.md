@@ -222,6 +222,7 @@ mechanism.
 |---|---|---|---|
 | `vmalert.enabled` | bool | `true` | Renders the metrics vmalert. |
 | `vmalert.logs.enabled` | bool | `true` | Renders the second one, with `-rule.defaultRuleType=vlogs`. |
+| `vmalert.logs.evalDelay` | duration | `5s` | `-rule.evalDelay` for the logs alerter only. The upstream default (30s) exists to match VictoriaMetrics' `-search.latencyOffset`; VictoriaLogs has no such offset, so inheriting it delays every log-based alert by 30 seconds for a latency the log store does not have. |
 | `vmalert.externalUrl` | string | `""` | `-external.url`. Empty leaves vmalert's own default, which is the pod hostname — every alert's source link dead outside the cluster. |
 | `vmalert.externalLabels` | map | `{}` | Labels on every alert and recording rule. |
 | `vmalert.resources` | object | 1 CPU / 512Mi | |
@@ -279,11 +280,36 @@ rule with it. An install with no rules yet shows none of this.
 | `alertmanager.watchdog.secretName` | string | `""` | The Secret holding the deadman receiver's URL. Empty renders no Watchdog route and no Watchdog rule. |
 | `alertmanager.watchdog.key` | string | `url` | The key inside it. Read with `url_file` from a mounted volume, never interpolated into the rendered config. |
 | `alertmanager.watchdog.repeatInterval` | duration | `5m` | How often the heartbeat repeats. The outside watcher's timeout must be comfortably longer. |
-| `alertmanager.config.route` | object | receiver `blackhole` | The top-level route, in Alertmanager's own shape. |
-| `alertmanager.config.receivers` | list | `[{name: blackhole}]` | |
-| `alertmanager.config.routes` | list | `[]` | Routes under the top-level one. The Watchdog route is rendered first and matched on its own. |
-| `alertmanager.config.inhibitRules` | list | `[]` | |
+| `alertmanager.watchdog.timeout` | duration | unset | The far end's OWN timeout for a missing heartbeat, stated here rather than read from it. Set, the chart refuses a `repeatInterval` that would not land comfortably inside it. |
 | `alertmanager.resources` | object | 1 CPU / 256Mi | |
+
+`alertmanager.config` — the free-form Alertmanager routing tree a
+consumer used to fill in by hand — is gone. `notifications` (below)
+renders the routing tree instead, and the chart refuses
+`alertmanager.enabled` with none of it configured.
+
+### `notifications`
+
+The one router. See docs/notifications.md for the design and
+docs/safety.md for the failure it closes; this is the value list.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `notifications.externalUrl` | string | `""` | The base of the Grafana link in every Slack message. Required the moment a receiver kind is configured. |
+| `notifications.runbookBaseUrl` | string | `""` | Prefixed to a firing alert's `runbook` annotation. Empty renders no runbook line at all. |
+| `notifications.groupWait` | duration | `30s` | |
+| `notifications.groupInterval` | duration | `5m` | |
+| `notifications.repeatInterval` | duration | `4h` | |
+| `notifications.slack.webhookSecret` | `{name, key}` | unset | The one Slack webhook, mounted and read with `api_url_file` — never interpolated into the config. |
+| `notifications.webhook[].name` / `.urlSecret` | string / `{name, key}` | `[]` | Named webhook receivers, each one URL, mounted the same way. |
+| `notifications.severities.critical` / `.warning` | `{receiver, channel}` | unset | Where each tier lands when no route says otherwise. `receiver` is `slack` or a `webhook[].name`; `channel` is the Slack channel (or, for a webhook, an identifying label only — one webhook has one URL). Both required the moment any receiver kind is configured. |
+| `notifications.routes[].match` | map | — | Alertmanager label matchers. Only `k8s_cluster_name` and `k8s_namespace_name` — the vocabulary the collectors stamp — are accepted. |
+| `notifications.routes[].critical` / `.warning` | string | unset | Per-project channel overrides. An entry naming only one tier sends the other to `severities`' default. |
+| `notifications.also[].receiver` / `.match` | string / map | `[]` | Delivers a matching alert to a named `webhook` receiver IN ADDITION TO its normal route — the status-page bridge. Arbitrary matchers, not limited to the cluster/namespace vocabulary. |
+
+The chart renders `group_by: [alertname, k8s_cluster_name,
+k8s_namespace_name]` unconditionally — it is the vocabulary this whole
+design is built on, not a value.
 
 ### `networkPolicy`
 

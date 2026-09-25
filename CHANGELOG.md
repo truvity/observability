@@ -6,6 +6,58 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.4.0
+
+The one router, and the retirement of the shape it replaces.
+
+- **New value: `charts/observability-stack`** — `notifications`, the
+  routing tree docs/notifications.md describes: receiver kinds (Slack,
+  named webhooks), severity defaults, a project route list matched on
+  cluster and namespace, and a bridge to a webhook beside the normal
+  route. The chart renders group_by, the group/repeat intervals, an
+  inhibit rule (a `critical` silences the matching `warning`), and the
+  Slack message template — cluster and namespace in the title, the
+  alert's summary, a runbook link, a Grafana link built from the alert's
+  labels, and a silence link. Every receiver's secret is mounted and
+  read with `*_url_file`, the same mechanism the deadman's webhook
+  already used; none is ever interpolated into the rendered config.
+
+  **`alertmanager.config` is gone.** It was a free-form object in
+  Alertmanager's own syntax, and the chart could not tell an empty one
+  from a working one — which is exactly how every install used to end
+  up routing to a receiver named `blackhole`: every rule evaluated,
+  Alertmanager accepted every alert, and the result reached nobody,
+  with nothing anywhere reporting it. `alertmanager.enabled` now refuses
+  to render until `notifications` configures at least one receiver kind
+  and a default for both `critical` and `warning` — see docs/safety.md
+  for the rest of what it refuses and why each one is silent otherwise.
+
+  An existing `alertmanager.config` block does not carry over: replace
+  it with `notifications` before upgrading, or the render will refuse.
+
+- **Two defaults that made an alerting path lie about itself, fixed
+  everywhere they apply, not values:**
+
+  - Every vmalert this chart renders now carries `-remoteWrite.url`
+    **and** `-remoteRead.url` against the metrics store — it already
+    wrote that state, but never read it back. vmalert keeps every
+    `for:` timer's state there, and without the read half a restart
+    resets every pending timer to zero: a rule with `for: 30m` that was
+    25 minutes into firing has to start over, and in a cluster that
+    rolls its pods more often than that it can never fire at all.
+  - The logs alerter's `-rule.evalDelay` drops from vmalert's own 30s
+    default to 5s. That default exists to match VictoriaMetrics'
+    `-search.latencyOffset`, which withholds a metrics query's newest
+    samples because they may still be incomplete; VictoriaLogs makes no
+    such promise and needs no such offset, so inheriting it held every
+    log-based alert back by half a minute for a latency the log store
+    does not have.
+
+- **`docs/reference.md`** and **`docs/safety.md`** gain the value list
+  and the refusal table for `notifications`. docs/notifications.md is
+  the design this release implements; its "Store self-alerts" section
+  ships separately.
+
 ## 0.3.10
 
 Documentation and a probe, no render change.
