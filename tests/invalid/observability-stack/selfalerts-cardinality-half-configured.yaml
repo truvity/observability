@@ -1,3 +1,5 @@
+# expect: MetricStoreCardinalityNearLimit would compare a gauge against nothing
+#
 # One cardinality metric without its pair: MetricStoreCardinalityNearLimit
 # would compare a gauge against nothing rather than never rendering.
 selfAlerts:

@@ -1,3 +1,5 @@
+# expect: The store answers 401 to a scrape whose basic auth is not the credential it was started with
+#
 # The log store's ServiceMonitor reads a different Secret than the store
 # itself was started with: every scrape gets 401 forever, and a target
 # that always 401s looks identical to one that was never there.
