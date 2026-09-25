@@ -6,6 +6,35 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.10
+
+Documentation and a probe, no render change.
+
+- **`hack/trace-api.sh`** — probes a live trace store for the Jaeger and
+  Tempo endpoints a Grafana datasource calls, and prints which of them it
+  implements. The store answers **both** dialects on `/select/jaeger/*`
+  and `/select/tempo/*` and implements neither completely; an endpoint it
+  does not implement returns 400 `unsupported path requested`, which a
+  datasource reports as a failed query rather than as a missing feature.
+
+- **`docs/safety.md`** gains *The trace store speaks two dialects, and
+  neither one completely*, with the measured table — including **why the
+  chart's default trace datasource is `type: jaeger`**: Grafana's Jaeger
+  datasource asks for operations by the nested path
+  `api/services/{service}/operations`, which the store has, while
+  Jaeger's own UI moved to the flat `api/operations?service=`, which it
+  does not. A Tempo datasource is the shape to avoid, because
+  `api/status/buildinfo` is how it decides what the backend supports.
+
+  It also records the two 400s that look like outages and are not: an
+  Explore search with no service selected is refused correctly by the
+  store, and `api/dependencies` answers `{"data":[]}` rather than
+  refusing, so an empty service map is an empty graph and not a broken
+  route.
+
+- **`docs/reference.md`** and the datasource comment in `values.yaml` say
+  the same thing where somebody changing the type will read it.
+
 ## 0.3.9
 
 One metrics endpoint becomes an estate's decision instead of an
