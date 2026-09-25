@@ -271,6 +271,25 @@ type Config struct {
 	// and no metrics or logs route can be rendered unfiltered by any
 	// value of it.
 	AllowUnfilteredTraceReads bool `json:"allowUnfilteredTraceReads,omitempty" yaml:"allowUnfilteredTraceReads,omitempty"`
+
+	// AllowUnfilteredMetricMetadata admits `/api/v1/metadata` on the
+	// metrics read route.
+	//
+	// The endpoint returns every metric name in the store with its type
+	// and help string, and no filter reaches it — so with it on, every
+	// principal learns which metrics exist, whatever their grant says.
+	// On an install whose grants are all `allNamespaces` that is nothing
+	// they could not already query; on one with per-namespace grants it
+	// is a list of what another tenant runs.
+	//
+	// It is off by default, and the cost of leaving it off is visible
+	// rather than hidden: Grafana's Prometheus-family datasources ask
+	// for this endpoint to put descriptions on metric names, and answer
+	// a 401 into their own logs when the proxy does not route it. The
+	// query builder keeps working — metric names come from
+	// `/label/__name__/values`, which IS filtered — and only the
+	// descriptions are missing.
+	AllowUnfilteredMetricMetadata bool `json:"allowUnfilteredMetricMetadata,omitempty" yaml:"allowUnfilteredMetricMetadata,omitempty"`
 }
 
 func (c Config) clusterLabel() string   { return orDefault(c.ClusterLabel, DefaultClusterLabel) }

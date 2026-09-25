@@ -132,6 +132,15 @@ func (r ReadRoute) Name() string { return r.name }
 // Paths are the endpoints this route admits.
 func (r ReadRoute) Paths() []string { return append([]string(nil), r.paths...) }
 
+// withPath returns a copy of the route with one more path admitted. It
+// copies rather than appending in place because the routes are
+// package-level values shared by every caller in the process.
+func (r ReadRoute) withPath(path string) ReadRoute {
+	r.paths = append(append([]string(nil), r.paths...), path)
+
+	return r
+}
+
 // FilterArg is the query argument the store reads the filter from, or ""
 // on an unenforceable route.
 func (r ReadRoute) FilterArg() string { return r.filterArg }
@@ -252,6 +261,26 @@ var (
 		"/prometheus/vmui.*",
 	)
 
+	// MetricMetadataPath is the one endpoint in the paragraph above that
+	// an estate may decide to admit, through
+	// Config.AllowUnfilteredMetricMetadata.
+	//
+	// It returns every metric NAME in the store with its type and help
+	// string, and no filter reaches it: measured against the store,
+	// `extra_filters` naming a namespace that matches nothing returns
+	// the same body as no filter at all. So admitting it tells every
+	// principal which metrics exist, which on an install whose grants
+	// are per-namespace is a list of the components and products another
+	// tenant runs.
+	//
+	// It is separable from its three siblings because what it leaks is
+	// bounded and the same for everyone: names, types and help. The
+	// other three leak per-principal material — `/status/active_queries`
+	// and `/status/top_queries` return other principals' query TEXT,
+	// `/status/metric_names_stats` returns names with per-tenant counts
+	// — and no flag here admits them.
+	MetricMetadataPath = "/prometheus/api/v1/metadata"
+
 	LogsRead = filteredRoute("logs", LogsFilterArg, LogsFilterPlaceholder,
 		"/select/logsql/.*",
 		"/select/vmui.*",
@@ -302,10 +331,17 @@ var (
 )
 
 // readRoutes returns the routes this configuration would render, in
-// order. Traces appear only when a trace backend was given.
+// order. Traces appear only when a trace backend was given, and the
+// metrics route gains MetricMetadataPath only when the caller asked for
+// it.
 func (c Config) readRoutes() []routeBinding {
+	metrics := MetricsRead
+	if c.AllowUnfilteredMetricMetadata {
+		metrics = metrics.withPath(MetricMetadataPath)
+	}
+
 	out := []routeBinding{
-		{route: MetricsRead, backend: c.MetricsBackend},
+		{route: metrics, backend: c.MetricsBackend},
 		{route: LogsRead, backend: c.LogsBackend},
 	}
 	if c.TracesBackend != "" {
