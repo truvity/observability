@@ -29,6 +29,9 @@ spec:
             matchLabels:
               app.kubernetes.io/instance: observability-stack
               app.kubernetes.io/part-of: observability-stack
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
       ports:
         - protocol: TCP
           port: 8428
@@ -65,6 +68,9 @@ spec:
             matchLabels:
               app.kubernetes.io/instance: observability-stack
               app.kubernetes.io/part-of: observability-stack
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
       ports:
         - protocol: TCP
           port: 9428
@@ -101,6 +107,9 @@ spec:
             matchLabels:
               app.kubernetes.io/instance: observability-stack
               app.kubernetes.io/part-of: observability-stack
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
       ports:
         - protocol: TCP
           port: 10428

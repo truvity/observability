@@ -126,7 +126,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Forty-five, each with a fixture under
+Forty-six, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -176,6 +176,7 @@ for its one reason and no other.
 | `selfAlerts.gateway.queueSizeMetric` or `queueCapacityMetric` set without the other | GatewayQueueFilling would compare a gauge against nothing. |
 | `selfAlerts.enabled` true with no metric name set anywhere and no `backup.<store>.enabled` | The rendered `VMRule` would have an empty rule list — coverage that looks like coverage and evaluates nothing. |
 | `victoria-logs-single.server.serviceMonitor.basicAuth` or `victoria-traces-single...`'s naming a Secret other than `storeCredentials.secretName` | The store answers 401 to every scrape forever, and a target that always 401s is indistinguishable, from the outside, from one that was never there. |
+| `networkPolicy.scrapeFrom[]` naming an `ipBlock` with neither `podSelector` nor `namespaceSelector` | A pod IP is reassigned on every reschedule, eviction and rollout. The rule installs and scrapes fine today, and stops silently the first time the scraper pod moves — the same failure this value exists to fix, reintroduced by the value meant to fix it. |
 
 ### The self-alerts: nineteen rules, and what a live install did to eleven of the original twelve
 
@@ -307,7 +308,6 @@ not prove vmalert would load or evaluate the result. Confirming any of
 it — the expression parses, the name exists, the rule actually fires on
 a synthetic failure — is validation this PR could not perform and the
 next person to turn a rule on should.
-
 ### The quiet estate, and the restart that forgets it was already worried
 
 An install of this chart with `alertmanager.enabled` and nothing else
@@ -1234,6 +1234,46 @@ Naming the logs plugin's query path in its URL is the mistake that
 reaches the store as `/select/logsql/select/logsql/query` and comes back
 `unsupported path requested`. The datasource saves, the health check
 passes, and only a query fails.
+
+## A store whose own policy hides it from the scraper
+
+The NetworkPolicy in front of each store admits the proxy, vmalert and
+the store's own pods, and denies everything else — which is the point of
+a policy that selects a pod at all. For as long as this chart existed,
+that list did not include whatever scrapes the store's own `/metrics`,
+because nothing did: the metrics agent `charts/observability-emitters`
+renders carries `app.kubernetes.io/instance: observability-emitters`,
+`app.kubernetes.io/name: vmagent`, and none of the three admitted peers
+matches it.
+
+Measured on a live install: `up=0` for every store's own scrape job, no
+`scrape_samples_scraped` series for it at all, and the store's own
+`/metrics` endpoint answering with 194 `vm_`-prefixed names while the
+store held 63 of them — arriving from vmauth, vmalert, Alertmanager and
+the operator, which are all scraped. Not one from the store itself.
+
+The install looked healthy by every other measure. The store answered
+200 on every query, ingested, retained, rotated its backups — the
+NetworkPolicy did exactly what it was written to do, which is the
+failure: a policy that is present and correct for the peers it names,
+and simply never named the one peer that would have caught this. Every
+rule in `charts/platform-alerts` that names a store's own counter, and
+every one of this chart's own `selfAlerts` (INF-986), depends on a
+sample that never arrived; each evaluates against no data, which is not
+the same as evaluating to healthy, and none of them can tell the
+difference. A `TargetDown`-shaped rule watching the scrape job itself
+would have caught it days sooner — except this chart ships no
+notification path by default either, so on an install that also never
+configured `notifications`, that alert fires into the receiver
+`alertmanager.enabled` refuses to leave unconfigured: nobody. Two silent
+failures stacked exactly on top of each other look, from a dashboard, the
+same as no failure at all.
+
+`networkPolicy.scrapeFrom` (docs/reference.md) closes it: the metrics
+agent's selector is now one of the ingress peers by default, so a bare
+`helm install` self-monitors, and the same file's own refusal (above)
+stops the value from being reopened by an override that names a pod's
+address instead of its identity.
 
 ## A convention a chart could not enforce, until it could
 
