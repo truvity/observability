@@ -45,6 +45,11 @@ tenancy:
   # `\.`, matching itself and nothing else.
   audience: example-client.example@example-project
   claimName: entitlements
+  # On: this case is the one that sets everything, and it is where the
+  # golden proves the metric-metadata route is admitted only on the
+  # READER rows and never on the writer's. Every other case leaves it
+  # off, which is where the golden proves the route is absent by default.
+  allowUnfilteredMetricMetadata: true
   # Deliberately none of the defaults, on both paths: the keys are inputs
   # for an estate whose collectors were not built here, and this case
   # exists to prove they reach the rendered filter rather than being a

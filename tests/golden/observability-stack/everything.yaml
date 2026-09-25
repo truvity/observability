@@ -2700,6 +2700,7 @@ spec:
         - /prometheus/api/v1/status/tsdb
         - /prometheus/api/v1/status/buildinfo
         - /prometheus/vmui.*
+        - /prometheus/api/v1/metadata
       query_args:
         - name: extra_filters
           values:

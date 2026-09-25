@@ -2,6 +2,7 @@ package tenancy_test
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -976,4 +977,75 @@ func TestTheDefaultClaimIsNestedInsideTheTokenBlock(t *testing.T) {
 		"the default claim must sit inside the jwt block, where vmauth reads it")
 	assert.NotContains(t, u.Rest, "default_vm_access_claim",
 		"a default claim beside url_map is not a field vmauth has: it refuses to parse the file and the proxy does not start")
+}
+
+// The metric-metadata switch, and the three endpoints no switch admits.
+//
+// `/api/v1/metadata` carries every metric name, type and help in the
+// store and takes no filter, so it is the same answer for every principal
+// whatever their grant. That makes it an estate's decision rather than
+// this package's, and the default is off.
+//
+// Its siblings are not a decision: `/status/active_queries` and
+// `/status/top_queries` return other principals' query TEXT, and
+// `/status/metric_names_stats` returns names with per-tenant counts. No
+// field admits them, and the reason this test names them is that a
+// wildcard on the metrics route once admitted all four together.
+func TestMetricMetadataOptIn(t *testing.T) {
+	t.Parallel()
+
+	never := []string{
+		"/prometheus/api/v1/status/active_queries",
+		"/prometheus/api/v1/status/top_queries",
+		"/prometheus/api/v1/status/metric_names_stats",
+	}
+
+	for _, tc := range []struct {
+		what  string
+		allow bool
+		want  bool
+	}{
+		{"unset", false, false},
+		{"set", true, true},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			t.Parallel()
+
+			c := base()
+			c.AllowUnfilteredTraceReads = true
+			c.AllowUnfilteredMetricMetadata = tc.allow
+
+			cfg, err := c.RenderVMAuth("https://issuer.example")
+			require.NoError(t, err)
+			require.NotEmpty(t, cfg.Users)
+
+			var metrics []string
+
+			for _, row := range cfg.Users[0].URLMap {
+				if slices.ContainsFunc(row.SrcPaths, func(p string) bool {
+					return strings.HasPrefix(p, "/prometheus/")
+				}) {
+					metrics = append(metrics, row.SrcPaths...)
+				}
+			}
+
+			require.NotEmpty(t, metrics, "no metrics row rendered; this check cannot see the paths")
+
+			assert.Equalf(t, tc.want, slices.Contains(metrics, tenancy.MetricMetadataPath),
+				"with AllowUnfilteredMetricMetadata=%v the metrics route should%s carry %q",
+				tc.allow, map[bool]string{true: "", false: " not"}[tc.want], tenancy.MetricMetadataPath)
+
+			for _, n := range never {
+				assert.NotContainsf(t, metrics, n,
+					"%q is admitted by no field on Config: it leaks per-principal material, "+
+						"unlike the metadata endpoint, whose leak is a bounded list", n)
+			}
+
+			// The package-level value is the safe set whatever a caller
+			// asked for: it is shared by every Config in the process, so
+			// withPath must copy rather than append in place.
+			assert.NotContains(t, tenancy.MetricsReadPaths, tenancy.MetricMetadataPath,
+				"MetricsReadPaths is shared and must stay the safe set")
+		})
+	}
 }

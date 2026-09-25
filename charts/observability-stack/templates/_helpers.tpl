@@ -150,6 +150,30 @@ to.
 */}}
 - /prometheus/api/v1/status/buildinfo
 - /prometheus/vmui.*
+{{- /*
+`/api/v1/metadata` only when the estate has said so.
+
+It returns every metric NAME in the store with its type and help, and no
+filter reaches it: measured against the store, `extra_filters` naming a
+namespace that matches nothing returns the same body as no filter at
+all. So the route tells every principal which metrics exist, whatever
+their grant says.
+
+Its three siblings stay out under every setting, because what they leak
+is per-principal rather than bounded: `/status/active_queries` and
+`/status/top_queries` return other principals' query TEXT, and
+`/status/metric_names_stats` returns names with per-tenant counts.
+
+Leaving it off is visible rather than silent, which is the reason it is a
+switch and not a rule: Grafana's Prometheus-family datasources ask for
+this endpoint to put descriptions on metric names, and log a 401 when
+the proxy does not route it. The query builder still works -- the names
+come from `/label/__name__/values`, which IS filtered -- and only the
+descriptions are missing.
+*/ -}}
+{{- if .Values.tenancy.allowUnfilteredMetricMetadata }}
+- /prometheus/api/v1/metadata
+{{- end }}
 {{- end -}}
 
 {{/*

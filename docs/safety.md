@@ -300,7 +300,51 @@ exercise a second principal.** The decision being visible, correct and
 well tested is not evidence that anything consumes it. Assert on the
 artifact that enforces, not on the artifact that decides.
 
-### The one signal this proxy cannot scope
+### Four metrics endpoints, one of them a decision
+
+The metrics read route is a list of named endpoints rather than a prefix,
+and four endpoints the prefix would have caught are worth naming
+individually, because they fail in different ways.
+
+`/api/v1/status/active_queries` and `/api/v1/status/top_queries` return
+other principals' **query text**. `/api/v1/status/metric_names_stats`
+returns metric names with per-tenant counts. None of the three takes a
+filter, and no value in this chart admits any of them: what they disclose
+is per-principal, so there is no estate for which routing them is
+correct.
+
+`/api/v1/metadata` is the fourth, and it is different in degree. It
+returns every metric **name** in the store with its type and help string
+— a bounded list, the same for everybody, with no label values and no
+per-tenant counts in it. It takes no filter either: measured against the
+store, an `extra_filters` naming a namespace that matches nothing returns
+the same body as no filter at all.
+
+So whether to route it depends on the install:
+
+- where every grant is `allNamespaces`, it discloses nothing a principal
+  could not already query, and routing it costs nothing;
+- where grants are per-namespace, it is an inventory of the components
+  and products another tenant runs.
+
+That is an estate's judgement rather than this chart's, so it is
+`tenancy.allowUnfilteredMetricMetadata`, and it is **off**.
+
+**The cost of off is visible, which is the point.** Grafana's
+Prometheus-family datasources ask for this endpoint to put descriptions
+on metric names, and write a 401 into their own logs when the proxy does
+not route it:
+
+    path=/api/datasources/uid/<ds>/resources/api/v1/metadata status=401
+
+Nothing is broken: the query builder still lists metric names, because
+those come from `/label/__name__/values`, which **is** filtered — only
+the descriptions are missing. But an operator reading that 401 should
+arrive at a value they can set, not at a mystery, which is why the
+endpoint is a switch rather than a rule. A wildcard would have admitted
+all four at once and said nothing about any of them.
+
+## The one signal this proxy cannot scope
 
 **Traces.** vmauth enforces by substituting a filter into the route, and
 VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to

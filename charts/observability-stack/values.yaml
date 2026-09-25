@@ -214,6 +214,30 @@ tenancy:
   # route that carries a grant nobody applies is indistinguishable, from
   # the outside, from one that does.
   allowUnfilteredTraceReads: false
+  # -- Admit `/api/v1/metadata` on the metrics read route.
+  #
+  # The endpoint returns every metric NAME in this store with its type
+  # and help string, and no filter reaches it -- measured against the
+  # store, an `extra_filters` naming a namespace that matches nothing
+  # returns the same body as no filter at all. So with this on, every
+  # principal learns which metrics exist, whatever their grant says. On
+  # an install whose grants are all `allNamespaces` that is nothing they
+  # could not already query; on one with per-namespace grants it is a
+  # list of the components and products another tenant runs.
+  #
+  # Its three siblings are admitted by nothing, because what they leak is
+  # per-principal rather than bounded: `/status/active_queries` and
+  # `/status/top_queries` return other principals' query TEXT, and
+  # `/status/metric_names_stats` returns names with per-tenant counts.
+  #
+  # Off by default, and the cost of off is visible rather than hidden:
+  # Grafana's Prometheus-family datasources ask for this endpoint to put
+  # descriptions on metric names, and write a 401 into their own logs
+  # when the proxy does not route it. The query builder keeps working --
+  # metric names come from `/label/__name__/values`, which IS filtered --
+  # and only the descriptions are missing. An operator reading that 401
+  # should find this value rather than a mystery.
+  allowUnfilteredMetricMetadata: false
   # -- One entry per named population. Each renders one vmauth user,
   # selected by `group` matched against `claimName`.
   #

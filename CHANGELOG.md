@@ -6,6 +6,54 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.3.9
+
+One metrics endpoint becomes an estate's decision instead of an
+unexplained 401.
+
+- **New value: `charts/observability-stack`** —
+  `tenancy.allowUnfilteredMetricMetadata`, default `false`, admits
+  `/api/v1/metadata` on the metrics read route.
+
+  The endpoint returns every metric **name** in the store with its type
+  and help string, and no filter reaches it: measured against the store,
+  an `extra_filters` naming a namespace that matches nothing returns the
+  same body as no filter at all. Where every grant is `allNamespaces` it
+  discloses nothing a principal could not already query; where grants are
+  per-namespace it is an inventory of what another tenant runs. That is a
+  judgement about an install, so it is a value.
+
+  Leaving it off has always been the behaviour — the omission was
+  deliberate and reasoned in `pkg/tenancy`. What was missing is that the
+  cost of off is **visible and looked like a fault**: Grafana's
+  Prometheus-family datasources ask for this endpoint to put descriptions
+  on metric names, and write
+
+      path=…/resources/api/v1/metadata status=401
+
+  into their own logs. Nothing is broken — metric names come from
+  `/label/__name__/values`, which IS filtered, so only descriptions are
+  missing — but an operator reading that 401 should find a value rather
+  than a mystery.
+
+  **Nothing to do on upgrade.** The default is the old behaviour.
+
+- **Unchanged, and now tested as such** — `/api/v1/status/active_queries`,
+  `/api/v1/status/top_queries` and `/api/v1/status/metric_names_stats` are
+  admitted by no value. Two return other principals' query *text* and one
+  returns names with per-tenant counts, so unlike the metadata endpoint
+  there is no install for which routing them is correct. A wildcard on
+  this route once admitted all four together; `tests/metadata_test.go` and
+  `TestMetricMetadataOptIn` now fail if any of them reappears, and both
+  were shown failing on the shapes they exist to catch.
+
+- **`pkg/tenancy`** gains `Config.AllowUnfilteredMetricMetadata` and the
+  exported `MetricMetadataPath`, so the library and the chart still render
+  the same routes.
+
+- **Docs** — `docs/safety.md` gains *Four metrics endpoints, one of them a
+  decision*; `docs/reference.md` gains the value.
+
 ## 0.3.8
 
 Grafana here could be configured into two shapes that look right and are
