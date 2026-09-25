@@ -698,6 +698,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "metric": { "type": "string" },
             "window": { "$ref": "#/definitions/duration" },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }
@@ -724,6 +725,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "metric": { "type": "string" },
             "window": { "$ref": "#/definitions/duration" },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }
@@ -733,6 +735,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "metric": { "type": "string" },
             "window": { "$ref": "#/definitions/duration" },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }
@@ -742,6 +745,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "queueSizeMetric": { "type": "string" },
+            "queueCapacityMetric": { "type": "string" },
             "queueRatio": {
               "type": "number",
               "exclusiveMinimum": 0,
@@ -749,6 +754,7 @@
             },
             "queueFor": { "$ref": "#/definitions/duration" },
             "queueSeverity": { "$ref": "#/definitions/selfAlertSeverity" },
+            "exportFailedMetricPrefix": { "type": "string" },
             "exportFailWindow": { "$ref": "#/definitions/duration" },
             "exportFailFor": { "$ref": "#/definitions/duration" },
             "exportFailSeverity": { "$ref": "#/definitions/selfAlertSeverity" }

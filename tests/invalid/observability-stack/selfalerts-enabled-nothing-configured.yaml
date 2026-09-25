@@ -1,0 +1,5 @@
+# `selfAlerts.enabled: true` with no metric name anywhere and no backup
+# enabled: the rendered VMRule would have an empty rule list, which looks
+# like coverage and is not.
+selfAlerts:
+  enabled: true

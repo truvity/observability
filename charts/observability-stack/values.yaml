@@ -581,8 +581,33 @@ backup:
 # estates and refuses to guess a metric name, because it cannot know
 # what a consumer's stores are called. This chart is not generic — it
 # vendors the stores, the proxy, both vmalerts and the backup CronJobs
-# itself, so a consumer cannot write these rules and none of them is
-# optional: each is a failure that reports itself nowhere else.
+# itself — but "vendors the component" turned out NOT to mean "knows
+# what it exports": measured against a live install, ten of the eleven
+# `vm_`/`vl_`/`vt_`/`otelcol_`/`vmagent_`-family counters this design
+# names — including `vm_rows_ignored_total`, the counter the incident
+# below is about — are simply ABSENT from this chart's own metrics
+# store. Not wrong values: no series under those names at all. See
+# docs/safety.md, "The self-alerts, and the two incidents behind them",
+# for the measurement and why (the log store, the trace store and the
+# sibling chart's OpenTelemetry gateway have NOTHING scraping them into
+# this store at all — a coverage gap, not a spelling one — and even
+# `vm_rows_ignored_total`, on the ONE component that IS scraped, may be
+# a counter VictoriaMetrics only registers once a row has actually been
+# ignored, so its absence on a healthy install may be the correct,
+# healthy shape rather than evidence of a wrong name; this session could
+# not tell the two apart without causing the failure on purpose).
+#
+# So EVERY metric name below is a VALUE WITH NO DEFAULT, the same shape
+# `charts/platform-alerts` already uses for its own `stores` list and
+# for exactly the same reason: a name this chart has not seen accepted
+# by a real /metrics response is a guess, and a guessed name renders
+# cleanly and never fires, which is the one failure this whole
+# repository exists to prevent. `selfAlerts.enabled` therefore defaults
+# to FALSE — an install that turned it on today would get a `VMRule`
+# with an empty rule list, which looks like coverage and is not. Turn it
+# on once at least one rule below has a metric name confirmed against
+# your own store's `/metrics`; each rule then renders independently and
+# the rest stay silently absent, which is the honest outcome.
 #
 # All twelve are MetricsQL, evaluated by the METRICS vmalert. Every
 # counter here lives on a component's own /metrics endpoint next to
@@ -590,24 +615,15 @@ backup:
 # it is read out of the log or trace store's DATA — so none carries
 # `observability.rule-type: vlogs`.
 #
-# Where this session could confirm a counter's exact name — because
-# docs/notifications.md or the incident that produced it states it
-# outright, or because it already appears in a shipped part of this
-# repository (`charts/platform-alerts`' own `stores` example, or the
-# `kube_cronjob_status_last_successful_time` platform-alerts' own
-# CronJobNotSucceeding rule already trusts) — the rule ships on, with
-# that name written in. Where it could not, the metric name is a VALUE
-# WITH NO DEFAULT: the vendored chart archives under charts/*.tgz carry
-# no bundled default alerting rules to read a name back out of, and
-# there is no cluster this session may reach to ask — see docs/safety.md,
-# "The self-alerts, and the two incidents behind them", "No local proof
-# that any of the twelve expressions parse". Such a rule renders once you
-# have confirmed the name against your own component's `/metrics` and
-# written it here — never before, because a guessed name renders cleanly
-# and never fires, which is the failure this whole repository exists to
-# prevent.
+# This release closes part of the coverage gap directly: see
+# `victoria-logs-single.server.serviceMonitor` and
+# `victoria-traces-single.server.serviceMonitor` below, which give the
+# log and trace stores — components THIS chart itself renders — a
+# `ServiceMonitor` for the first time. It does not close the gap for
+# `charts/observability-emitters`' vmagent, vlagent or OpenTelemetry
+# gateway; that chart's scrape coverage is its own to fix.
 selfAlerts:
-  enabled: true
+  enabled: false
 
   # StoreIgnoringRows.
   #
@@ -617,11 +633,20 @@ selfAlerts:
   # none of them, and `vm_rows_ignored_total` sat at 9,748,387 with
   # nothing else showing it. This is the rule that would have caught it.
   #
+  # NOT DEFAULTED. `vm_` names ARE scraped into this store's vmsingle (63
+  # of them, measured), but this exact one was not among them on a
+  # healthy live install — plausibly because VictoriaMetrics registers a
+  # reason-labelled counter like this one lazily, only once a row has
+  # actually been ignored, which is indistinguishable from a wrong name
+  # without causing the failure on purpose. Confirm it exists before
+  # relying on it.
+  #
   # Healthy range: 0. The counter only advances when a sample is refused
   # for exceeding a configured limit; a write path that is not hitting
   # one never touches it, so `for:` exists to ride out a single scrape
   # gap rather than to tolerate a nonzero baseline.
   ingest:
+    metric: ""
     window: 5m
     for: 5m
     severity: critical
@@ -629,10 +654,10 @@ selfAlerts:
   # StoreCardinalityNearLimit.
   #
   # VictoriaMetrics' hourly/daily series limiter (`storage.maxHourlySeries`
-  # / `storage.maxDailySeries` above, both off by default) exposes a
-  # current/max gauge pair per window when a cap is set. NOT DEFAULTED:
-  # the exact metric names for the vmsingle version this chart's
-  # `victoria-metrics-k8s-stack` pin (0.93.0) brings in were not
+  # / `storage.maxDailySeries` above, both off by default) is believed to
+  # expose a current/max gauge pair per window when a cap is set. NOT
+  # DEFAULTED: the exact metric names for the vmsingle version this
+  # chart's `victoria-metrics-k8s-stack` pin (0.93.0) brings in were not
   # confirmed this session. Confirm against your own store's `/metrics`
   # before setting a pair; each renders independently of the other, and
   # neither renders while unset — which is the honest outcome, the same
@@ -652,17 +677,26 @@ selfAlerts:
 
   # LogStoreDroppingRows, TraceStoreDroppingRows.
   #
-  # `vl_rows_dropped_total` and `vt_rows_dropped_total` — named in
-  # docs/notifications.md. Healthy range: 0; like `vm_rows_ignored_total`
-  # above, a store that is not refusing rows never touches its counter.
-  # Safe to leave on with a store disabled or run elsewhere: `rate()` of
-  # a counter with no matching series returns no data, not zero, so an
-  # absent store never fires this.
+  # `vl_rows_dropped_total` and `vt_rows_dropped_total` are named in
+  # docs/notifications.md, but NOT DEFAULTED here regardless: measured
+  # against a live install, `vl_` and `vt_` have ZERO metric names in
+  # this store at all — nothing scrapes either store into it, so no
+  # name under either prefix could possibly be confirmed yet. This
+  # release adds `victoria-logs-single.server.serviceMonitor` and
+  # `victoria-traces-single.server.serviceMonitor` below, which should
+  # close that; once it does, confirm the name and set it here.
+  #
+  # Healthy range, once confirmed: 0 — a store that is not refusing rows
+  # never touches its counter. Safe to leave on with a store disabled:
+  # `rate()` of a counter with no matching series returns no data, not
+  # zero, so an absent store never fires this.
   logStore:
+    metric: ""
     window: 5m
     for: 5m
     severity: critical
   traceStore:
+    metric: ""
     window: 5m
     for: 5m
     severity: critical
@@ -676,20 +710,23 @@ selfAlerts:
   # `_capacity` and `otelcol_exporter_send_failed_*` /
   # `_enqueue_failed_*` are named in the incident report and in
   # docs/reference.md's own `otlp.podMonitor` entry, which already calls
-  # out the failed/enqueue-failed pair by name.
-  #
-  # The gateway is a component of the SIBLING chart, not this one, but
-  # its metrics land in THIS chart's own metrics store the same way any
-  # other component's do (scraped, or remote-written, into vmsingle) —
-  # so vmalert here reads them directly, the same way it reads its own
-  # stores' counters, and never through the proxy.
+  # out the failed/enqueue-failed pair by name — but NOT DEFAULTED
+  # regardless: measured against a live install, `otelcol_` has ZERO
+  # metric names in this store. The gateway is a component of the
+  # SIBLING chart, and unlike the log and trace stores this release does
+  # not add scrape coverage for it — that chart's coverage is its own to
+  # fix (see docs/safety.md). Once it is scraped into this store, its
+  # metrics reach vmalert here directly, the same way this chart's own
+  # stores' counters do, and never through the proxy.
   #
   # `_send_failed_` and `_enqueue_failed_` both carry a per-signal suffix
   # (spans, metric_points, log_records) this session did not enumerate
-  # with confidence; matched by `__name__` prefix instead of by a listed
-  # suffix, so the rule is not narrowed by a guess at which signals
-  # exist.
+  # with confidence; `exportFailedMetricPrefix` is matched by `__name__`
+  # PREFIX rather than an enumerated suffix, so confirming it does not
+  # also require enumerating every signal this gateway exports for.
   gateway:
+    queueSizeMetric: ""
+    queueCapacityMetric: ""
     # -- Healthy range: comfortably under 1, since a queue that is never
     # exercised sits near 0. 0.8 is the "queue above 80%" the incident
     # report gives — headroom before the queue is full and the collector
@@ -697,6 +734,7 @@ selfAlerts:
     queueRatio: 0.8
     queueFor: 10m
     queueSeverity: warning
+    exportFailedMetricPrefix: ""
     # -- Healthy range: 0. A send or enqueue failure is not something a
     # healthy exporter path produces at any rate.
     exportFailWindow: 5m
@@ -705,26 +743,27 @@ selfAlerts:
 
   # StoreDiskNearGuard.
   #
-  # For the metrics store: `vm_free_disk_space_bytes` and
-  # `vm_free_disk_space_limit_bytes` — the exact pair
-  # `charts/platform-alerts`' own `stores` example already documents for
-  # this store family, reused rather than re-guessed. `headroomFactor`
-  # mirrors platform-alerts' `storeLimits` value and default (2):
-  # comfortably above the 1x at which the store already stopped
-  # accepting writes.
+  # `vm_free_disk_space_bytes` / `vm_free_disk_space_limit_bytes` is the
+  # exact pair `charts/platform-alerts`' own `stores` example already
+  # documents for the metrics store — but NOT DEFAULTED here either:
+  # measured against a live install, `vm_free_disk_space_bytes` is
+  # absent from vmsingle's own 63 scraped `vm_` names, despite
+  # `storage.minFreeDiskSpaceBytes` being set above. Unlike
+  # `vm_rows_ignored_total`, a free-space GAUGE has no obvious reason to
+  # be registered lazily, so this is a real open question rather than an
+  # expected absence — see docs/safety.md.
   #
-  # For logs and traces: NOT DEFAULTED. Both stores set the same
-  # `storage.minFreeDiskSpaceBytes` guard above, but whether either
-  # binary exports it under the SAME metric name was not confirmed this
-  # session — VictoriaLogs and VictoriaTraces are separate binaries from
-  # VictoriaMetrics, sharing a family rather than a metrics namespace
-  # proven identical here. Each renders only once its pair is set.
+  # All three stores are symmetric and equally unconfirmed:
+  # `headroomFactor` mirrors platform-alerts' `storeLimits` value and
+  # default (2), comfortably above the 1x at which a store already
+  # stopped accepting writes. Each store's rule renders only once its
+  # pair is set.
   diskGuard:
     headroomFactor: 2
     severity: warning
     metrics:
-      freeSpaceMetric: vm_free_disk_space_bytes
-      freeSpaceLimitMetric: vm_free_disk_space_limit_bytes
+      freeSpaceMetric: ""
+      freeSpaceLimitMetric: ""
     logs:
       freeSpaceMetric: ""
       freeSpaceLimitMetric: ""
@@ -739,10 +778,22 @@ selfAlerts:
   # `templates/backup.yaml` itself renders in this release, read from
   # `kube_cronjob_status_last_successful_time` — the exact metric
   # `charts/platform-alerts`' own CronJobNotSucceeding rule already
-  # relies on. Scoped to this chart's own CronJob names, so it holds
-  # whether or not a consumer also installs platform-alerts against this
-  # namespace; a consumer who does gets the same fact twice, which is
-  # cheap next to a stale backup nobody hears about at all.
+  # relies on, and NOT a name this session is unsure of: kube-state-
+  # metrics' CronJob metrics are among the most standard in the
+  # ecosystem. What IS unconfirmed is coverage rather than spelling:
+  # `kube-state-metrics.enabled: false` above is deliberate — this
+  # release's own store is not meant to duplicate an estate's shared
+  # kube-state-metrics — so whether THIS store carries the metric at all
+  # depends on whether the estate's shared collection layer remote-writes
+  # kube-state-metrics data into it, which this session could not check.
+  # Confirm before relying on it the same as any other rule here; unlike
+  # the rest, the fix if it is missing is a scrape-coverage decision for
+  # the estate, not a name this chart could guess differently.
+  #
+  # Not gated behind `metric` the way the others are, because the name
+  # itself is not in question — but each store's rule still renders only
+  # while `backup.enabled` and `backup.<store>.enabled` are both true,
+  # since a CronJob that does not exist has nothing to watch.
   #
   # Each `maxAge` is the store's own schedule plus slack, the same
   # doctrine as platform-alerts' `groups.backups.maxSuccessAge`: change
@@ -758,28 +809,40 @@ selfAlerts:
       maxAge: 2h
     traces:
       maxAge: 2h
-  # -- The four rules with no anchor in this repository at all.
+
+  # The four rules with no anchor in this repository at all — unconfirmed
+  # in BOTH spelling and coverage.
   #
   # `LogStreamsChurning`: VictoriaLogs is believed to export a counter of
   # streams created, for exactly this failure (a non-constant stream
   # field), but this session found no name for it to confirm — not in
   # docs/notifications.md, not in `charts/platform-alerts`, not in the
-  # vendored `victoria-logs-single-0.13.9.tgz`. `maxCreatedPerWindow`
-  # is likewise not defaulted: docs/notifications.md gives no number,
-  # and "faster than a partition explains" is a fact about an estate's
-  # own field cardinality, not one this chart can state generically.
+  # vendored `victoria-logs-single-0.13.9.tgz` — and, like
+  # LogStoreDroppingRows above, nothing scrapes the log store into this
+  # release's metrics store yet regardless. `maxCreatedPerWindow` is
+  # likewise not defaulted: docs/notifications.md gives no number, and
+  # "faster than a partition explains" is a fact about an estate's own
+  # field cardinality, not one this chart can state generically.
   #
   # `WriterBufferGrowing`, `WriterDroppingPackets`: read as vmalert's own
   # `remoteWrite` path (`templates/vmalert.yaml` sets `remoteWrite` on
   # both alerters, against the metrics store) — vmalert shares its
   # remote-write client with vmagent, but whether it exports that
   # client's metrics under the SAME names was not confirmed this
-  # session.
+  # session, and the measured live store had zero `vmagent_`-prefixed
+  # names to check either binary's family against.
   #
   # `ProxyAtConcurrencyLimit`: vmauth's `VMAuth` CR accepts a concurrency
-  # cap (see the `everything` test case's `maxConcurrentRequests`), and
-  # is believed to count requests it refuses over it, but again under a
-  # name this session did not confirm.
+  # cap (see the `everything` test case's `maxConcurrentRequests`).
+  # UNLIKE every other rule in this file, a live measurement (see
+  # docs/safety.md) found `vmauth_concurrent_requests_limit_reached_total`
+  # PRESENT on the store — the one counter with actual evidence behind
+  # it rather than a guess. It is still not written in below: this chart
+  # holds every metric name to the same "no default" rule rather than
+  # carving out an exception for the one that happened to be confirmed
+  # by someone else's measurement instead of this session's own reading
+  # of an upstream doc or source file. Set it here once you have read it
+  # back the same way.
   #
   # Each renders only once its metric name is supplied — never before.
   logStreamChurn:
@@ -1043,6 +1106,29 @@ victoria-logs-single:
       size: 200Gi
     statefulSet:
       enabled: true
+    # -- The log store's OWN scrape object, added because measured
+    # against a live install nothing scraped this store at all: `vl_`
+    # had zero metric names in the metrics store, which is why every
+    # `selfAlerts` rule that watches this store has no default metric
+    # name to offer either. A `ServiceMonitor`, never a `VMServiceScrape`
+    # — docs/safety.md, "Scrape objects are always the Prometheus
+    # Operator kinds" — because that is the one shape this repository's
+    # collection layer is guaranteed to read regardless of which agent
+    # or Target Allocator is doing the actual scraping underneath.
+    #
+    # `basicAuth` is MIRROR: `storeCredentials` — the same credential
+    # pair `env` above already mounts into the store, read back by
+    # whatever scrapes it, since `-httpAuth.*` above refuses every
+    # unauthenticated request including this one.
+    serviceMonitor:
+      enabled: true
+      basicAuth:
+        username:
+          name: observability-store-credentials
+          key: username
+        password:
+          name: observability-store-credentials
+          key: password
 
 # -- victoria-traces-single: the trace store.
 victoria-traces-single:
@@ -1110,6 +1196,19 @@ victoria-traces-single:
     persistentVolume:
       enabled: true
       size: 100Gi
+    # -- The trace store's own scrape object. Same reasoning as the log
+    # store's above: measured against a live install `vt_` also had zero
+    # metric names in the metrics store. `basicAuth` is MIRROR:
+    # `storeCredentials`.
+    serviceMonitor:
+      enabled: true
+      basicAuth:
+        username:
+          name: observability-store-credentials
+          key: username
+        password:
+          name: observability-store-credentials
+          key: password
 
 # -- Grafana. Off by default: an estate that already runs one points it at
 # this stack's proxy instead, and two Grafanas over one store is two sets

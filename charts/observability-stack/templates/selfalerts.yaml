@@ -1,15 +1,22 @@
 {{- /*
-Store self-alerts: twelve rules over this chart's own components, none of
-them optional. See values.yaml's own comment on `selfAlerts` for which
-metric names this session could confirm and which it could not — a rule
-whose name could not be confirmed renders ONLY once the consumer supplies
-it, never before.
+Store self-alerts: twelve rules over this chart's own components. See
+values.yaml's own comment on `selfAlerts` for why every metric name below
+is a value with NO default — measured against a live install, ten of the
+eleven `vm_`/`vl_`/`vt_`/`otelcol_`/`vmagent_`-family counters this design
+names were simply absent from this chart's own metrics store, a coverage
+gap rather than a spelling one for most of them. A rule whose metric name
+has not been confirmed renders NOTHING, never a guess.
 
 All twelve are MetricsQL, evaluated by the metrics vmalert
 (templates/vmalert.yaml): every counter here lives on a component's own
 /metrics endpoint, so none carries `observability.rule-type: vlogs`, and
 none needs a special ruleSelector entry — the metrics alerter already
 takes everything that is not marked as LogsQL.
+
+`renders` (below) tracks whether at least one rule actually rendered, so
+the chart can refuse an object with an empty rule list rather than
+shipping something that looks like coverage and is not — see
+templates/_validate.tpl.
 */ -}}
 {{- if .Values.selfAlerts.enabled -}}
 {{- $root := . -}}
@@ -26,36 +33,40 @@ spec:
     - name: observability-stack.selfalerts
       interval: {{ .Values.interval }}
       rules:
+        {{- if $sa.ingest.metric }}
         # StoreIgnoringRows.
         #
         # THE INCIDENT: a series past the metrics store's per-day label
         # limit is discarded WHILE THE WRITE STILL ANSWERS 200 — a
         # collector reported 888k rows written with zero errors while the
-        # store held none of them, and vm_rows_ignored_total sat at
-        # 9,748,387 with nothing else showing it. This is the rule that
-        # would have caught it.
+        # store held none of them, and this counter sat at 9,748,387 with
+        # nothing else showing it. This is the rule that would have
+        # caught it. Confirmed for THIS install by whoever set
+        # selfAlerts.ingest.metric — see values.yaml.
         #
         # Healthy range: 0. The counter only advances when a sample is
         # refused for exceeding a configured limit, so a write path that
         # is not hitting one never touches it.
         - alert: StoreIgnoringRows
           expr: >-
-            sum(rate(vm_rows_ignored_total[{{ $sa.ingest.window }}])) by (reason) > 0
+            sum(rate({{ $sa.ingest.metric }}[{{ $sa.ingest.window }}])) by (reason) > 0
           for: {{ $sa.ingest.for }}
           labels:
             severity: {{ $sa.ingest.severity }}
           annotations:
             summary: "The metrics store is silently discarding rows"
             description: >-
-              vm_rows_ignored_total is rising. Rows past a configured limit
+              {{ $sa.ingest.metric }} is rising. Rows past a configured limit
               (label count, cardinality) are dropped while the write still
               answers 200: a sender can report a clean write with zero
               errors while the store holds none of it. Measured on a live
               install: 888k rows reported written, the store held none,
               and this counter sat at 9,748,387.
+        {{- end }}
 
         {{- if and $sa.cardinality.hourlyCurrentSeriesMetric $sa.cardinality.hourlyMaxSeriesMetric }}
-        # StoreCardinalityNearLimit (hourly).
+        # StoreCardinalityNearLimit (hourly). Confirmed for THIS install by
+        # whoever set selfAlerts.cardinality.hourly* — see values.yaml.
         #
         # docs/notifications.md: "hourly or daily series at 90% of the
         # limit". {{ $sa.cardinality.ratio }} is that headroom: comfortably
@@ -95,49 +106,61 @@ spec:
               being accepted for the rest of the day.
         {{- end }}
 
-        # LogStoreDroppingRows.
+        {{- if $sa.logStore.metric }}
+        # LogStoreDroppingRows. Confirmed for THIS install by whoever set
+        # selfAlerts.logStore.metric — see values.yaml; needs
+        # victoria-logs-single.server.serviceMonitor (or equivalent) to
+        # be scraping the log store into this metrics store at all.
         #
         # Healthy range: 0, the same as StoreIgnoringRows above. Safe with
-        # the log store disabled or run elsewhere: rate() of a counter no
-        # series carries returns no data, not zero, so an absent store
-        # never fires this.
+        # the log store disabled: rate() of a counter no series carries
+        # returns no data, not zero, so an absent store never fires this.
         - alert: LogStoreDroppingRows
           expr: >-
-            sum(rate(vl_rows_dropped_total[{{ $sa.logStore.window }}])) > 0
+            sum(rate({{ $sa.logStore.metric }}[{{ $sa.logStore.window }}])) > 0
           for: {{ $sa.logStore.for }}
           labels:
             severity: {{ $sa.logStore.severity }}
           annotations:
             summary: "The log store is dropping rows"
             description: >-
-              vl_rows_dropped_total is rising. Rows are being discarded on
+              {{ $sa.logStore.metric }} is rising. Rows are being discarded on
               write; the ingesting collector sees a successful response
               regardless.
+        {{- end }}
 
+        {{- if $sa.traceStore.metric }}
         # TraceStoreDroppingRows. Same reasoning, the trace store.
+        # Confirmed for THIS install by whoever set
+        # selfAlerts.traceStore.metric — see values.yaml.
         - alert: TraceStoreDroppingRows
           expr: >-
-            sum(rate(vt_rows_dropped_total[{{ $sa.traceStore.window }}])) > 0
+            sum(rate({{ $sa.traceStore.metric }}[{{ $sa.traceStore.window }}])) > 0
           for: {{ $sa.traceStore.for }}
           labels:
             severity: {{ $sa.traceStore.severity }}
           annotations:
             summary: "The trace store is dropping rows"
             description: >-
-              vt_rows_dropped_total is rising. Spans are being discarded on
-              write; the ingesting collector sees a successful response
+              {{ $sa.traceStore.metric }} is rising. Spans are being discarded
+              on write; the ingesting collector sees a successful response
               regardless.
+        {{- end }}
 
+        {{- if and $sa.gateway.queueSizeMetric $sa.gateway.queueCapacityMetric }}
         # GatewayQueueFilling.
         #
         # THE INCIDENT (this week): a network policy change cut
         # charts/observability-emitters' OpenTelemetry gateway off from
         # its own proxy, and "sending queue is full" ran for hours with
         # every pod Running and nothing reporting it. The gateway is a
-        # component of the sibling chart, not this one, but its metrics
-        # land in THIS store the same way any other component's do, and
-        # vmalert here reads them directly — never through the proxy, the
-        # same as every other rule in this file.
+        # component of the sibling chart, not this one; this rule fires
+        # once its metrics reach THIS store (scraped, or remote-written,
+        # into vmsingle), and vmalert here reads them directly — never
+        # through the proxy, the same as every other rule in this file.
+        # Confirmed for THIS install by whoever set
+        # selfAlerts.gateway.queueSizeMetric / queueCapacityMetric — see
+        # values.yaml.
         #
         # Healthy range: comfortably under 1; a queue that is never
         # exercised sits near 0. {{ $sa.gateway.queueRatio }} is the "queue
@@ -145,92 +168,69 @@ spec:
         # queue is full and the collector starts blocking or dropping.
         - alert: GatewayQueueFilling
           expr: >-
-            otelcol_exporter_queue_size / otelcol_exporter_queue_capacity > {{ $sa.gateway.queueRatio }}
+            {{ $sa.gateway.queueSizeMetric }} / {{ $sa.gateway.queueCapacityMetric }} > {{ $sa.gateway.queueRatio }}
           for: {{ $sa.gateway.queueFor }}
           labels:
             severity: {{ $sa.gateway.queueSeverity }}
           annotations:
             summary: "The OpenTelemetry gateway's export queue is filling"
             description: >-
-              otelcol_exporter_queue_size is above {{ mulf $sa.gateway.queueRatio 100 }}% of
-              otelcol_exporter_queue_capacity. Once it is full the
+              {{ $sa.gateway.queueSizeMetric }} is above {{ mulf $sa.gateway.queueRatio 100 }}% of
+              {{ $sa.gateway.queueCapacityMetric }}. Once it is full the
               collector blocks or drops, and "sending queue is full" is
               exactly the failure that ran for hours unreported.
+        {{- end }}
 
+        {{- if $sa.gateway.exportFailedMetricPrefix }}
         # GatewayExportFailing.
         #
         # otelcol_exporter_send_failed_* and _enqueue_failed_* both carry
         # a per-signal suffix (spans, metric_points, log_records) this
-        # session did not enumerate with confidence, so this matches on
-        # the METRIC NAME PREFIX rather than a listed suffix — every
-        # signal the gateway exports for, without guessing which exist.
+        # session did not enumerate with confidence, so
+        # exportFailedMetricPrefix is matched by METRIC NAME PREFIX rather
+        # than a listed suffix — every signal the gateway exports for,
+        # without guessing which exist. Confirmed for THIS install by
+        # whoever set selfAlerts.gateway.exportFailedMetricPrefix — see
+        # values.yaml.
         #
         # Healthy range: 0. A send or enqueue failure is not something a
         # healthy exporter path produces at any rate.
         - alert: GatewayExportFailing
           expr: >-
-            sum(rate({__name__=~"otelcol_exporter_(send|enqueue)_failed_.*"}[{{ $sa.gateway.exportFailWindow }}])) by (exporter) > 0
+            sum(rate({__name__=~{{ printf "%s.*" $sa.gateway.exportFailedMetricPrefix | quote }}}[{{ $sa.gateway.exportFailWindow }}])) by (exporter) > 0
           for: {{ $sa.gateway.exportFailFor }}
           labels:
             severity: {{ $sa.gateway.exportFailSeverity }}
           annotations:
             summary: "The OpenTelemetry gateway is failing to export"
             description: >-
-              otelcol_exporter_send_failed_* or _enqueue_failed_* is
-              advancing for exporter {{`{{ $labels.exporter }}`}}. Data the
-              gateway accepted is not reaching its destination.
+              A {{ $sa.gateway.exportFailedMetricPrefix }}* series is advancing for
+              exporter {{`{{ $labels.exporter }}`}}. Data the gateway
+              accepted is not reaching its destination.
+        {{- end }}
 
-        # StoreDiskNearGuard (metrics store).
-        #
-        # vm_free_disk_space_bytes / vm_free_disk_space_limit_bytes:
-        # the exact pair charts/platform-alerts' own `stores` example
-        # already documents for this store family, reused rather than
-        # re-guessed. headroomFactor mirrors platform-alerts'
+        {{- range $store := list "metrics" "logs" "traces" }}
+        {{- $g := index $sa.diskGuard $store }}
+        {{- if and $g.freeSpaceMetric $g.freeSpaceLimitMetric }}
+        # StoreDiskNearGuard ({{ $store }} store). Confirmed for THIS
+        # install by whoever set selfAlerts.diskGuard.{{ $store }} — see
+        # values.yaml. headroomFactor mirrors platform-alerts'
         # storeLimits.headroomFactor and its default (2): comfortably
         # above the 1x at which the store already stopped accepting
         # writes.
         - alert: StoreDiskNearGuard
           expr: >-
-            {{ $sa.diskGuard.metrics.freeSpaceMetric }} / {{ $sa.diskGuard.metrics.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
+            {{ $g.freeSpaceMetric }} / {{ $g.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
           labels:
             severity: {{ $sa.diskGuard.severity }}
-            store: metrics
+            store: {{ $store }}
           annotations:
-            summary: "The metrics store is approaching its disk guard"
+            summary: "The {{ $store }} store is approaching its disk guard"
             description: >-
               Free space is under {{ $sa.diskGuard.headroomFactor }}x the
-              storage.minFreeDiskSpaceBytes guard. It is still serving
+              store's own minFreeDiskSpaceBytes guard. It is still serving
               reads and will keep doing so after it stops writing.
-
-        {{- if and $sa.diskGuard.logs.freeSpaceMetric $sa.diskGuard.logs.freeSpaceLimitMetric }}
-        # StoreDiskNearGuard (log store). Confirmed for this install by
-        # whoever set selfAlerts.diskGuard.logs — see values.yaml.
-        - alert: StoreDiskNearGuard
-          expr: >-
-            {{ $sa.diskGuard.logs.freeSpaceMetric }} / {{ $sa.diskGuard.logs.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
-          labels:
-            severity: {{ $sa.diskGuard.severity }}
-            store: logs
-          annotations:
-            summary: "The log store is approaching its disk guard"
-            description: >-
-              Free space is under {{ $sa.diskGuard.headroomFactor }}x the
-              store's own minFreeDiskSpaceBytes guard.
         {{- end }}
-        {{- if and $sa.diskGuard.traces.freeSpaceMetric $sa.diskGuard.traces.freeSpaceLimitMetric }}
-        # StoreDiskNearGuard (trace store). Confirmed for this install by
-        # whoever set selfAlerts.diskGuard.traces — see values.yaml.
-        - alert: StoreDiskNearGuard
-          expr: >-
-            {{ $sa.diskGuard.traces.freeSpaceMetric }} / {{ $sa.diskGuard.traces.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
-          labels:
-            severity: {{ $sa.diskGuard.severity }}
-            store: traces
-          annotations:
-            summary: "The trace store is approaching its disk guard"
-            description: >-
-              Free space is under {{ $sa.diskGuard.headroomFactor }}x the
-              store's own minFreeDiskSpaceBytes guard.
         {{- end }}
 
         {{- /*
@@ -239,11 +239,16 @@ spec:
         Not a store-exported counter: the newest-snapshot age this watches
         is the age of the last SUCCESSFUL run of the backup CronJobs
         templates/backup.yaml itself renders, read from
-        kube_cronjob_status_last_successful_time — the exact metric
-        platform-alerts' own CronJobNotSucceeding rule already relies on.
-        Scoped to this release's own CronJob names and namespace, so it
-        holds whether or not a consumer also installs platform-alerts
-        against this namespace.
+        kube_cronjob_status_last_successful_time — a standard kube-state-
+        metrics field, not a guessed one, so it is not gated behind a
+        `metric` value the way the rest of this file is. What IS
+        unconfirmed is whether THIS release's own metrics store carries
+        kube-state-metrics data at all (kube-state-metrics.enabled is
+        false above, deliberately, so it is the estate's shared instance
+        or nothing) — see values.yaml and docs/safety.md. Scoped to this
+        release's own CronJob names and namespace, so it holds whether or
+        not a consumer also installs platform-alerts against this
+        namespace.
         */}}
         {{- if and $root.Values.backup.enabled $root.Values.backup.metrics.enabled }}
         - alert: SnapshotOlderThanWindow
