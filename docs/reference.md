@@ -270,6 +270,31 @@ the cluster: vmalert exits on the first rule it cannot parse, so the logs
 alerter crash-looped on the metrics subchart's PromQL and took every log
 rule with it. An install with no rules yet shows none of this.
 
+### `selfAlerts` — the stack watching itself
+
+Off by default. Every expression names a counter this chart's own
+components export, which is why a consumer cannot write these: the metric
+names follow the stores it installed, and a guessed name renders cleanly
+and never fires.
+
+| Value | Default | Note |
+|---|---|---|
+| `selfAlerts.enabled` | `false` | An install without these has no rule that can see its own ingestion failing. Enabled with every group off is **refused** — a VMRule holding no rules is an install that looks configured and evaluates nothing. |
+| `selfAlerts.interval` | `30s` | Matched to the scrape and deduplication interval, so a rule never reads a window the store deduplicated differently. |
+| `selfAlerts.runbookBaseUrl` | `""` | Prefixed to each alert's name. Empty means no runbook line at all, never a link to a base URL with nothing after it. |
+| `selfAlerts.commonLabels` | `{}` | Added to every rule, for routing. |
+| `selfAlerts.ingest` | on, `critical`, `10m` | Rows the store **accepted and discarded**. |
+| `selfAlerts.cardinality` | on, `warning`, `0.9`, `30m` | Against the store's own exported limit, never a constant. |
+| `selfAlerts.streams` | on, `warning`, `1`/s, `1h` | Streams created faster than pods explain. |
+| `selfAlerts.writers` | on, `critical`, `15m` | A writer's buffer growing, or dropping packets. |
+| `selfAlerts.gateway` | on, `critical`, `0.8`, `10m` | The OpenTelemetry gateway's queue and its exporters. |
+| `selfAlerts.proxy` | on, `warning`, `10m` | vmauth refusing at its concurrency limit. |
+| `selfAlerts.disk` | on, `critical`, `3`×, `15m` | Free space against the store's own guard, with headroom to act. |
+
+The rules are MetricsQL and carry `observability.rule-type: prometheus`,
+so the LogsQL alerter does not load them — without that label it parses
+them, exits, and takes every log rule with it.
+
 ### `alertmanager`
 
 | Value | Type | Default | What it does |

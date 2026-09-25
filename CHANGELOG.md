@@ -1,3 +1,46 @@
+## Unreleased
+
+- **New: `selfAlerts` — the stack watching itself.** Fourteen rules, off
+  unless enabled, each watching a failure that reports itself **nowhere
+  else**: a store that accepts a write and discards it, a writer whose
+  buffer is growing, a gateway queue filling, a proxy refusing at its
+  concurrency limit, free space approaching the store's own guard.
+
+  They share one shape, which is why they belong in this chart rather than
+  in a consumer's: **something accepted work, answered 200, and did not
+  keep it.** The counter is the only witness, and the metric names follow
+  the stores this chart installed — a guessed name renders cleanly and
+  never fires.
+
+  The rule that earned the section is `MetricStoreIgnoringRows`. A series
+  carrying more labels than the store's limit is *ignored* and the write
+  still answers 200: on a live install that was 9.7 million rows discarded
+  while the sender reported 888k written with zero errors, for days, with
+  every object Healthy.
+
+  Two things follow from that shape and are visible in the values. The
+  thresholds are mostly *above zero at all* rather than a magnitude, since
+  there is no acceptable rate of silently discarded rows. And the limits
+  are read from the store — `vm_hourly_series_limit_max_series`,
+  `vm_free_disk_space_limit_bytes` — never written here, because an install
+  whose limits were tuned would otherwise carry a rule that never fires or
+  one that always does.
+
+  **`selfAlerts.enabled` with every group off is refused**: a VMRule
+  holding no rules is an install that looks configured and evaluates
+  nothing, which is the exact shape these rules exist to catch.
+
+  The rules are MetricsQL and carry `observability.rule-type: prometheus`,
+  so the LogsQL alerter does not load them — without that label it parses
+  them, exits, and takes every log rule down with it.
+
+  `tests/selfalerts_test.go` holds the contract on the *rendered* rules: a
+  severity the routing tree can act on, a `for` so one bad scrape pages
+  nobody, a description long enough to carry what to look at, and no
+  template in a label — vmalert tracks an alert by its labels, so a value
+  that changes per evaluation restarts `for` every time and the rule never
+  fires.
+
 # Changelog
 
 Prose bullets, written for the consumer: what changes in the render, what

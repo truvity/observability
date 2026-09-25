@@ -1020,6 +1020,41 @@ operator's own default image tag is older than both, so the chart sets
 the tag explicitly rather than inheriting it, and refuses anything
 lower.
 
+## The failures only a counter can witness
+
+Every rule in `selfAlerts` watches the same shape: something accepted
+work, answered **200**, and then did not keep it. That is why the counter
+is the only witness, and why these rules ship inside this chart rather
+than in a consumer's.
+
+| The rule | What answered 200 while losing data |
+|---|---|
+| `MetricStoreIgnoringRows` | a series past the store's label limit is **ignored** and the write succeeds. Measured: 9.7M rows discarded while the sender reported 888k written with zero errors |
+| `LogStoreDroppingRows`, `TraceStoreDroppingRows` | a line over the size limit, a field name over 128 bytes, more fields than the per-line limit — refused at ingest, counted nowhere the sender looks |
+| `WriterDroppingPackets` | both agents treat a **400** as permanent and drop the block; the log agent does the same on a 404. A wrong write path is unrecoverable loss, not a retry |
+| `GatewayExportFailing` | a not-retryable export is that batch gone. A trace exporter answering 400 is how a trace store stayed empty while every pod was Healthy |
+| `GatewayQueueFilling` | `sending queue is full` ran for hours with every collector Running and nothing in their status to show it |
+| `ProxyAtConcurrencyLimit` | reads fail while every store is healthy — the shape that gets diagnosed as the store first |
+
+Two consequences of that shape, worth stating because they decide how the
+rules are written:
+
+**The threshold is usually "above zero at all", not a magnitude.** There is
+no acceptable rate of silently discarded rows, so these rules do not have
+a healthy band to sit inside — they have a healthy value, which is nothing.
+
+**The limits come from the store, not from this chart.** Cardinality is
+measured against `vm_hourly_series_limit_max_series` and free space against
+`vm_free_disk_space_limit_bytes`, because an install whose limits were
+tuned would otherwise carry a rule that never fires or one that always
+does.
+
+`tests/selfalerts_test.go` holds the contract mechanically on the rendered
+rules: a severity the routing tree can act on, a `for` so one bad scrape
+pages nobody, a description long enough to carry what to look at, and no
+template in a label — a dynamic label value restarts `for` on every
+evaluation, so the rule never fires at all.
+
 ## Grafana's replica count and its database are one decision
 
 Grafana's default database is SQLite, a file on the pod. Running two

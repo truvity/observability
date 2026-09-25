@@ -1,0 +1,302 @@
+{{- if .Values.selfAlerts.enabled }}
+{{- $a := .Values.selfAlerts }}
+{{- /*
+Enabled with every group off renders a VMRule holding no rules at all --
+an object the operator accepts, an alerter that loads it, and not one
+expression evaluated. Refused for the same reason `platform-alerts`
+refuses it: the install looks configured and watches nothing.
+*/ -}}
+{{- $on := list -}}
+{{- range $name, $group := $a -}}
+{{- if and (kindIs "map" $group) (get $group "enabled") -}}{{- $on = append $on $name -}}{{- end -}}
+{{- end -}}
+{{- if not $on -}}
+{{- fail "observability-stack: `selfAlerts.enabled` is true with every group disabled, so this release would render a VMRule containing no rules. Enable at least one group, or set `selfAlerts.enabled: false` -- an install that looks configured and evaluates nothing is the shape these rules exist to catch." -}}
+{{- end -}}
+{{- /*
+The stack watching itself.
+
+Every rule below watches a failure that reports itself NOWHERE ELSE, and
+each one has the same shape: something accepted work, answered 200, and
+then did not keep it. That is why the counter is the only witness, and why
+these rules cannot live in a consumer's chart -- the metric names follow
+the stores this chart installed.
+
+Scraped directly, never through the proxy. A rule that stops being
+evaluated when the proxy is unhealthy is a rule missing at the moment it
+is needed.
+*/ -}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ include "observability-stack.fullname" . }}-self
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+    observability.rule-type: prometheus
+spec:
+  groups:
+    {{- if $a.ingest.enabled }}
+    - name: observability-stack.ingest
+      interval: {{ $a.interval }}
+      rules:
+        # THE RULE THAT EARNED THIS SECTION.
+        #
+        # A series carrying more labels than `-maxLabelsPerTimeseries` is
+        # IGNORED and the write still answers 200. Measured on a live
+        # install: 9.7 million rows discarded while the sender reported
+        # 888k written with zero errors, for a week, with every object
+        # Healthy. Nothing but this counter can see it.
+        #
+        # Healthy range: flat. There is no acceptable rate of silently
+        # discarded rows, so the threshold is "above zero at all" rather
+        # than a magnitude.
+        - alert: MetricStoreIgnoringRows
+          expr: sum by (reason) (rate(vm_rows_ignored_total[5m])) > 0
+          for: {{ $a.ingest.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.ingest.severity) | nindent 12 }}
+          annotations:
+            summary: "The metric store is discarding rows it accepted ({{`{{ $labels.reason }}`}})"
+            description: >-
+              The store answered 200 and kept nothing. `too_many_labels` means a
+              sender's series carry more labels than the store's limit -- look for a
+              relabeling rule copying node or pod labels onto every series. Ask the
+              STORE what it holds; the sender's own counters will say it succeeded.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "MetricStoreIgnoringRows")) }}{{ . | nindent 12 }}{{- end }}
+        # The log and trace stores drop at ingest rather than ignoring, and
+        # they count it separately. Same failure to a reader: it arrived
+        # and it is not there.
+        - alert: LogStoreDroppingRows
+          expr: sum(rate(vl_rows_dropped_total[5m])) > 0
+          for: {{ $a.ingest.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.ingest.severity) | nindent 12 }}
+          annotations:
+            summary: "The log store is dropping rows at ingest"
+            description: >-
+              Lines are being refused as they arrive. The usual causes are a line over
+              `-insert.maxLineSizeBytes` (stack traces and base64 payloads), a field
+              name over 128 bytes, or more fields on one entry than
+              `-insert.maxFieldsPerLine` allows.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "LogStoreDroppingRows")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: TraceStoreDroppingRows
+          expr: sum(rate(vt_rows_dropped_total[5m])) > 0
+          for: {{ $a.ingest.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.ingest.severity) | nindent 12 }}
+          annotations:
+            summary: "The trace store is dropping spans at ingest"
+            description: >-
+              Spans are being refused as they arrive. An empty trace store is
+              indistinguishable from an estate that emits no spans, so this rule is
+              the only thing between the two.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "TraceStoreDroppingRows")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if $a.cardinality.enabled }}
+    - name: observability-stack.cardinality
+      interval: {{ $a.interval }}
+      rules:
+        # Against the store's OWN exported limit, never a constant: an
+        # install whose limits were tuned would otherwise have a rule that
+        # never fires, or one that always does.
+        - alert: MetricStoreCardinalityNearLimit
+          expr: >-
+            vm_hourly_series_limit_current_series / vm_hourly_series_limit_max_series
+              > {{ $a.cardinality.threshold }}
+          for: {{ $a.cardinality.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.cardinality.severity) | nindent 12 }}
+          annotations:
+            summary: "The metric store is near its hourly series limit"
+            description: >-
+              At the limit the store refuses NEW series while continuing to accept the
+              ones it already knows, so the symptom is a newly deployed service that
+              never appears rather than an outage. Find the sender adding series.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "MetricStoreCardinalityNearLimit")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: MetricStoreDailyCardinalityNearLimit
+          expr: >-
+            vm_daily_series_limit_current_series / vm_daily_series_limit_max_series
+              > {{ $a.cardinality.threshold }}
+          for: {{ $a.cardinality.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.cardinality.severity) | nindent 12 }}
+          annotations:
+            summary: "The metric store is near its daily series limit"
+            description: >-
+              As the hourly rule, over a day: churn rather than a burst. A workload
+              whose pod names change on every deploy is the usual source.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "MetricStoreDailyCardinalityNearLimit")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if $a.streams.enabled }}
+    - name: observability-stack.streams
+      interval: {{ $a.interval }}
+      rules:
+        # A stream field that is not constant for the life of a pod. The
+        # documented way to wreck either store, and it looks fine for the
+        # first week: the count grows, queries slow, and nothing errors.
+        #
+        # Healthy range: a stream per pod per day. The threshold is two
+        # orders of magnitude above that.
+        - alert: LogStoreStreamsChurning
+          expr: sum(rate(vl_streams_created_total[1h])) > {{ $a.streams.perSecond }}
+          for: {{ $a.streams.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.streams.severity) | nindent 12 }}
+          annotations:
+            summary: "The log store is creating streams faster than pods explain"
+            description: >-
+              A stream field is varying when it should be constant. `ip`, `user_id`
+              and `trace_id` are the documented ways to do this; so is any resource
+              attribute an SDK sets per request. Check `VL-Stream-Fields` on the
+              writers and the log agent's own stream fields.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "LogStoreStreamsChurning")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: TraceStoreStreamsChurning
+          expr: sum(rate(vt_streams_created_total[1h])) > {{ $a.streams.perSecond }}
+          for: {{ $a.streams.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.streams.severity) | nindent 12 }}
+          annotations:
+            summary: "The trace store is creating streams faster than services explain"
+            description: >-
+              The trace store keys streams on `service.name` AND the span name, so a
+              span name carrying an id -- a URL with a path parameter in it -- is the
+              usual cause.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "TraceStoreStreamsChurning")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if $a.writers.enabled }}
+    - name: observability-stack.writers
+      interval: {{ $a.interval }}
+      rules:
+        # Growing buffer: the write path is blocked and the eventual loss
+        # is proportional to how long it takes somebody to look.
+        - alert: WriterBufferGrowing
+          expr: >-
+            sum by (job) (
+              deriv(vmagent_remotewrite_pending_data_bytes[15m])
+                or deriv(vlagent_remotewrite_pending_data_bytes[15m])
+            ) > 0
+          for: {{ $a.writers.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.writers.severity) | nindent 12 }}
+          annotations:
+            summary: "A writer's buffer is growing ({{`{{ $labels.job }}`}})"
+            description: >-
+              The agent is accepting faster than it can deliver. Nothing is lost yet
+              -- that is what the buffer is for -- and everything will be once it is
+              full. Check the destination and the network policy in front of it.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "WriterBufferGrowing")) }}{{ . | nindent 12 }}{{- end }}
+        # Dropping outright: the buffer is full and data is gone. A 400 or
+        # 404 from a destination is treated as permanent by both agents, so
+        # a wrong write path drops silently and forever.
+        - alert: WriterDroppingPackets
+          expr: >-
+            sum by (job) (
+              rate(vmagent_remotewrite_packets_dropped_total[5m])
+                or rate(vlagent_remotewrite_packets_dropped_total[5m])
+            ) > 0
+          for: {{ $a.writers.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.writers.severity) | nindent 12 }}
+          annotations:
+            summary: "A writer is dropping data ({{`{{ $labels.job }}`}})"
+            description: >-
+              Data is being discarded, not delayed. Both agents drop a block on a 400,
+              and the log agent on a 404 as well, so a wrong path or a proxy rule that
+              does not match is unrecoverable loss rather than a retry.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "WriterDroppingPackets")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if $a.gateway.enabled }}
+    - name: observability-stack.gateway
+      interval: {{ $a.interval }}
+      rules:
+        - alert: GatewayQueueFilling
+          expr: >-
+            otelcol_exporter_queue_size / otelcol_exporter_queue_capacity
+              > {{ $a.gateway.queueThreshold }}
+          for: {{ $a.gateway.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.gateway.severity) | nindent 12 }}
+          annotations:
+            summary: "The OpenTelemetry gateway's queue is filling ({{`{{ $labels.exporter }}`}})"
+            description: >-
+              The queue drains slower than it fills, which ends in dropped batches.
+              Measured on a live install: `sending queue is full` ran for hours with
+              every collector Running and nothing in their status to show it -- the
+              cause was a network policy that had stopped admitting the collectors to
+              their own proxy.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "GatewayQueueFilling")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: GatewayExportFailing
+          expr: >-
+            sum by (exporter) (
+              rate(otelcol_exporter_send_failed_metric_points[5m])
+                + rate(otelcol_exporter_send_failed_log_records[5m])
+                + rate(otelcol_exporter_send_failed_spans[5m])
+            ) > 0
+          for: {{ $a.gateway.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.gateway.severity) | nindent 12 }}
+          annotations:
+            summary: "The gateway is failing to export ({{`{{ $labels.exporter }}`}})"
+            description: >-
+              A destination is refusing. A NOT-RETRYABLE failure is permanent loss of
+              that batch: the trace exporter answering 400 for a month is how a trace
+              store stayed empty while every pod was healthy.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "GatewayExportFailing")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: GatewayEnqueueFailing
+          expr: >-
+            sum by (exporter) (
+              rate(otelcol_exporter_enqueue_failed_metric_points[5m])
+                + rate(otelcol_exporter_enqueue_failed_log_records[5m])
+                + rate(otelcol_exporter_enqueue_failed_spans[5m])
+            ) > 0
+          for: {{ $a.gateway.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.gateway.severity) | nindent 12 }}
+          annotations:
+            summary: "The gateway is refusing what senders hand it ({{`{{ $labels.exporter }}`}})"
+            description: >-
+              The queue is full, so the gateway is rejecting at the door. Senders see
+              an error here, unlike every other rule in this group -- but only the ones
+              that look at their own return codes.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "GatewayEnqueueFailing")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if $a.proxy.enabled }}
+    - name: observability-stack.proxy
+      interval: {{ $a.interval }}
+      rules:
+        - alert: ProxyAtConcurrencyLimit
+          expr: sum(rate(vmauth_concurrent_requests_limit_reached_total[5m])) > 0
+          for: {{ $a.proxy.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.proxy.severity) | nindent 12 }}
+          annotations:
+            summary: "The proxy is refusing requests at its concurrency limit"
+            description: >-
+              Reads are failing while every store is healthy, which is the shape that
+              gets diagnosed as the store for an hour first. Either a caller is
+              hammering it or the limit is too low for the readers it now has.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "ProxyAtConcurrencyLimit")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if $a.disk.enabled }}
+    - name: observability-stack.disk
+      interval: {{ $a.interval }}
+      rules:
+        # Against the store's own guard, with headroom to act. A logs
+        # store that fills its disk switches to read-only and does NOT
+        # drop data to recover, so arriving late here is arriving after an
+        # outage rather than before one.
+        - alert: MetricStoreDiskNearGuard
+          expr: >-
+            vm_free_disk_space_bytes
+              < vm_free_disk_space_limit_bytes * {{ $a.disk.headroomFactor }}
+          for: {{ $a.disk.for }}
+          labels:
+            {{- include "observability-stack.selfLabels" (dict "root" $ "severity" $a.disk.severity) | nindent 12 }}
+          annotations:
+            summary: "The metric store is approaching its free-space guard"
+            description: >-
+              At the guard the store stops accepting writes. Raise the volume or lower
+              retention; a store that has already hit it does not recover on its own.
+            {{- with (include "observability-stack.selfRunbook" (dict "root" $ "alert" "MetricStoreDiskNearGuard")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+{{- end }}

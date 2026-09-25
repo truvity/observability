@@ -684,6 +684,216 @@
     },
     "grafana": {
       "$ref": "#/definitions/subchart"
+    },
+    "selfAlerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The stack's own health as rules. Every expression names a counter this chart's components export, so a consumer cannot write them; each watches a failure that reports itself nowhere else.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Render the self-alert rules. Off by default; an install without them has no rule that can see its own ingestion failing."
+        },
+        "interval": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h)$",
+          "description": "Evaluation interval. Matched to the scrape and deduplication interval, so a rule never reads a window the store deduplicated differently."
+        },
+        "runbookBaseUrl": {
+          "type": "string",
+          "description": "Prefixed to each alert's name to build its runbook link. Empty means no runbook line at all, never a link to a base URL with nothing after it."
+        },
+        "commonLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels added to every self-alert, for routing."
+        },
+        "ingest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render this group."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "warning"
+              ],
+              "description": "The severity every rule in this group carries; the routing tree reads it."
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$",
+              "description": "How long the condition must hold before it fires."
+            }
+          }
+        },
+        "cardinality": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render this group."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "warning"
+              ],
+              "description": "The severity every rule in this group carries; the routing tree reads it."
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$",
+              "description": "How long the condition must hold before it fires."
+            },
+            "threshold": {
+              "type": "number",
+              "description": "Fraction of the store's own exported series limit. Never a constant series count: an install whose limits were tuned would otherwise have a rule that never fires.",
+              "minimum": 0,
+              "exclusiveMaximum": 1
+            }
+          }
+        },
+        "streams": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render this group."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "warning"
+              ],
+              "description": "The severity every rule in this group carries; the routing tree reads it."
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$",
+              "description": "How long the condition must hold before it fires."
+            },
+            "perSecond": {
+              "type": "number",
+              "description": "Streams created per second, averaged over an hour. A healthy install creates a stream per pod per day.",
+              "minimum": 0
+            }
+          }
+        },
+        "writers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render this group."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "warning"
+              ],
+              "description": "The severity every rule in this group carries; the routing tree reads it."
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$",
+              "description": "How long the condition must hold before it fires."
+            }
+          }
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render this group."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "warning"
+              ],
+              "description": "The severity every rule in this group carries; the routing tree reads it."
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$",
+              "description": "How long the condition must hold before it fires."
+            },
+            "queueThreshold": {
+              "type": "number",
+              "description": "Fraction of the exporter queue's capacity above which it is filling faster than it drains.",
+              "minimum": 0,
+              "exclusiveMaximum": 1
+            }
+          }
+        },
+        "proxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render this group."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "warning"
+              ],
+              "description": "The severity every rule in this group carries; the routing tree reads it."
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$",
+              "description": "How long the condition must hold before it fires."
+            }
+          }
+        },
+        "disk": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render this group."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "warning"
+              ],
+              "description": "The severity every rule in this group carries; the routing tree reads it."
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$",
+              "description": "How long the condition must hold before it fires."
+            },
+            "headroomFactor": {
+              "type": "number",
+              "description": "Multiple of the store's own minimum-free-space guard. At 1 the store is already refusing writes, so the alert must arrive with room to act.",
+              "minimum": 1
+            }
+          }
+        }
+      }
     }
   }
 }

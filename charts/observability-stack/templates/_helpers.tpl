@@ -430,3 +430,19 @@ ever being written.
 {{- $cfg.receiver -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Labels on a self-alert, and its runbook link. Mirrors the two helpers in
+`platform-alerts` so a reader who has seen one recognises the other, and
+so both packs can be routed by the same `severity`.
+*/}}
+{{- define "observability-stack.selfLabels" -}}
+{{- $labels := merge (dict "severity" .severity) (deepCopy .root.Values.selfAlerts.commonLabels) -}}
+{{- toYaml $labels -}}
+{{- end -}}
+
+{{- define "observability-stack.selfRunbook" -}}
+{{- if .root.Values.selfAlerts.runbookBaseUrl -}}
+runbook_url: {{ printf "%s/%s" (trimSuffix "/" .root.Values.selfAlerts.runbookBaseUrl) .alert | quote }}
+{{- end -}}
+{{- end -}}

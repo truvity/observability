@@ -491,6 +491,115 @@ notifications:
   # - receiver: ""
   #   match: {severity: critical}
 
+# The stack's own health, as rules.
+#
+# These belong here rather than in `platform-alerts` because every
+# expression names a counter THIS chart's components export, and a
+# consumer cannot write them: the metric names follow the stores it
+# installed, and a guessed name renders cleanly and never fires.
+#
+# They are also the rules nobody else can write, in a stronger sense. Each
+# one watches a failure that reports itself NOWHERE ELSE — a store that
+# accepts a write and discards it, a collector whose queue is filling, a
+# proxy refusing at its concurrency limit. Every one of them answers 200
+# to whoever is sending, which is why the counter is the only witness.
+#
+# Scraped DIRECTLY, never through the proxy: vmauth is in front of reads,
+# and a rule that could not be evaluated while the proxy is unhealthy is a
+# rule missing at exactly the moment it is needed.
+selfAlerts:
+  # -- Off by default like every other opinion in this chart, and worth
+  # turning on: an install without these has no rule that can see its own
+  # ingestion failing.
+  enabled: false
+  # -- How often the group is evaluated. Matched to the scrape and
+  # deduplication interval elsewhere in this chart, for the reason
+  # `vmalert` documents: a rule evaluated more often than the data arrives
+  # reads windows the store has already deduplicated differently.
+  interval: 30s
+  # -- Prefixed to each alert's `runbook` annotation, as in
+  # `platform-alerts`. Empty means no runbook line at all, never a link to
+  # a base URL with nothing after it.
+  runbookBaseUrl: ""
+  # -- Labels added to every rule this section renders, for routing.
+  commonLabels: {}
+  # -- Rules that watch a store DISCARDING what it accepted.
+  #
+  # The one that earned this whole section: a series carrying more labels
+  # than the store's limit is IGNORED and the write still answers 200. A
+  # sender can report millions of rows written with zero errors while the
+  # store holds none of them, and nothing else in the estate can see it.
+  ingest:
+    enabled: true
+    severity: critical
+    # -- Measured healthy range: flat at zero. Any sustained increase is a
+    # sender whose series the store is dropping, so the threshold is the
+    # rate being above zero at all rather than a magnitude — there is no
+    # acceptable number of silently discarded rows.
+    for: 10m
+  # -- Cardinality against the store's OWN exported limit, never a
+  # constant. A guessed constant is how a rule never fires, or always
+  # does, on an install whose limits were tuned.
+  cardinality:
+    enabled: true
+    severity: warning
+    # -- Fraction of the hourly and daily series limits. 0.9 leaves a
+    # margin to act in; the store starts refusing new series at 1.
+    threshold: 0.9
+    for: 30m
+  # -- A log or trace store creating streams faster than its partitions
+  # explain. The shape a non-constant stream field produces, and the way
+  # to wreck either store slowly: nothing looks wrong for the first week.
+  streams:
+    enabled: true
+    severity: warning
+    # -- Streams per second, averaged over an hour. A healthy install
+    # creates a stream per pod per day; this is two orders above that.
+    perSecond: 1
+    for: 1h
+  # -- A writer's buffer growing, or dropping packets outright.
+  #
+  # Growth means the write path is blocked and the loss so far is
+  # proportional to how long it takes somebody to look; drops mean the
+  # buffer is already full and data is gone. Both, because they are
+  # different moments of the same failure and the first is the one worth
+  # catching.
+  writers:
+    enabled: true
+    severity: critical
+    for: 15m
+  # -- The OpenTelemetry gateway's queue and its exporters.
+  #
+  # `sending queue is full` ran for hours on a live install while every
+  # collector reported Running and nothing in their status showed it.
+  gateway:
+    enabled: true
+    severity: critical
+    # -- Fraction of the queue's capacity. Above this the queue is filling
+    # faster than it drains, which ends in dropped batches.
+    queueThreshold: 0.8
+    for: 10m
+  # -- The proxy refusing requests at its concurrency limit. Reads fail
+  # while every store is healthy, which is the shape that gets diagnosed
+  # as the store.
+  proxy:
+    enabled: true
+    severity: warning
+    for: 10m
+  # -- Free disk against the store's own guard, and a snapshot older than
+  # the backup schedule allows.
+  #
+  # A logs store that fills its disk "switches to read-only mode and
+  # cannot drop data as expected" — it does not recover on its own, so the
+  # alert has to arrive with room to act.
+  disk:
+    enabled: true
+    severity: critical
+    # -- Multiple of the store's own minimum-free-space guard. At 1 the
+    # store is already refusing writes.
+    headroomFactor: 3
+    for: 15m
+
 # Network policies.
 #
 # The proxy is the only way in, and the stores talk to nothing. A policy

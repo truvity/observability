@@ -1,0 +1,20 @@
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# Turned on, and every group off. The VMRule renders, the operator accepts
+# it, the alerter loads it, and not one expression is evaluated.
+selfAlerts:
+  enabled: true
+  ingest: {enabled: false}
+  cardinality: {enabled: false}
+  streams: {enabled: false}
+  writers: {enabled: false}
+  gateway: {enabled: false}
+  proxy: {enabled: false}
+  disk: {enabled: false}

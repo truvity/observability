@@ -281,3 +281,11 @@ grafana:
     limits:
       cpu: "2"
       memory: 1Gi
+
+# The stack watching itself. On here so the golden carries every rule, and
+# with a runbook base so the link the messages hold is rendered too.
+selfAlerts:
+  enabled: true
+  runbookBaseUrl: https://runbooks.example/observability
+  commonLabels:
+    pack: observability-stack

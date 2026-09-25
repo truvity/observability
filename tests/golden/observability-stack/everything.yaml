@@ -2712,6 +2712,285 @@ spec:
     maxConcurrentRequests: "500"
 
 ---
+# Source: observability-stack/templates/selfalerts.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-self
+  labels:
+    app.kubernetes.io/name: stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: prometheus
+spec:
+  groups:
+    - name: observability-stack.ingest
+      interval: 30s
+      rules:
+        # THE RULE THAT EARNED THIS SECTION.
+        #
+        # A series carrying more labels than `-maxLabelsPerTimeseries` is
+        # IGNORED and the write still answers 200. Measured on a live
+        # install: 9.7 million rows discarded while the sender reported
+        # 888k written with zero errors, for a week, with every object
+        # Healthy. Nothing but this counter can see it.
+        #
+        # Healthy range: flat. There is no acceptable rate of silently
+        # discarded rows, so the threshold is "above zero at all" rather
+        # than a magnitude.
+        - alert: MetricStoreIgnoringRows
+          expr: sum by (reason) (rate(vm_rows_ignored_total[5m])) > 0
+          for: 10m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "The metric store is discarding rows it accepted ({{ $labels.reason }})"
+            description: >-
+              The store answered 200 and kept nothing. `too_many_labels` means a
+              sender's series carry more labels than the store's limit -- look for a
+              relabeling rule copying node or pod labels onto every series. Ask the
+              STORE what it holds; the sender's own counters will say it succeeded.
+            runbook_url: "https://runbooks.example/observability/MetricStoreIgnoringRows"
+        # The log and trace stores drop at ingest rather than ignoring, and
+        # they count it separately. Same failure to a reader: it arrived
+        # and it is not there.
+        - alert: LogStoreDroppingRows
+          expr: sum(rate(vl_rows_dropped_total[5m])) > 0
+          for: 10m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "The log store is dropping rows at ingest"
+            description: >-
+              Lines are being refused as they arrive. The usual causes are a line over
+              `-insert.maxLineSizeBytes` (stack traces and base64 payloads), a field
+              name over 128 bytes, or more fields on one entry than
+              `-insert.maxFieldsPerLine` allows.
+            runbook_url: "https://runbooks.example/observability/LogStoreDroppingRows"
+        - alert: TraceStoreDroppingRows
+          expr: sum(rate(vt_rows_dropped_total[5m])) > 0
+          for: 10m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "The trace store is dropping spans at ingest"
+            description: >-
+              Spans are being refused as they arrive. An empty trace store is
+              indistinguishable from an estate that emits no spans, so this rule is
+              the only thing between the two.
+            runbook_url: "https://runbooks.example/observability/TraceStoreDroppingRows"
+    - name: observability-stack.cardinality
+      interval: 30s
+      rules:
+        # Against the store's OWN exported limit, never a constant: an
+        # install whose limits were tuned would otherwise have a rule that
+        # never fires, or one that always does.
+        - alert: MetricStoreCardinalityNearLimit
+          expr: >-
+            vm_hourly_series_limit_current_series / vm_hourly_series_limit_max_series
+              > 0.9
+          for: 30m
+          labels:
+            pack: observability-stack
+            severity: warning
+          annotations:
+            summary: "The metric store is near its hourly series limit"
+            description: >-
+              At the limit the store refuses NEW series while continuing to accept the
+              ones it already knows, so the symptom is a newly deployed service that
+              never appears rather than an outage. Find the sender adding series.
+            runbook_url: "https://runbooks.example/observability/MetricStoreCardinalityNearLimit"
+        - alert: MetricStoreDailyCardinalityNearLimit
+          expr: >-
+            vm_daily_series_limit_current_series / vm_daily_series_limit_max_series
+              > 0.9
+          for: 30m
+          labels:
+            pack: observability-stack
+            severity: warning
+          annotations:
+            summary: "The metric store is near its daily series limit"
+            description: >-
+              As the hourly rule, over a day: churn rather than a burst. A workload
+              whose pod names change on every deploy is the usual source.
+            runbook_url: "https://runbooks.example/observability/MetricStoreDailyCardinalityNearLimit"
+    - name: observability-stack.streams
+      interval: 30s
+      rules:
+        # A stream field that is not constant for the life of a pod. The
+        # documented way to wreck either store, and it looks fine for the
+        # first week: the count grows, queries slow, and nothing errors.
+        #
+        # Healthy range: a stream per pod per day. The threshold is two
+        # orders of magnitude above that.
+        - alert: LogStoreStreamsChurning
+          expr: sum(rate(vl_streams_created_total[1h])) > 1
+          for: 1h
+          labels:
+            pack: observability-stack
+            severity: warning
+          annotations:
+            summary: "The log store is creating streams faster than pods explain"
+            description: >-
+              A stream field is varying when it should be constant. `ip`, `user_id`
+              and `trace_id` are the documented ways to do this; so is any resource
+              attribute an SDK sets per request. Check `VL-Stream-Fields` on the
+              writers and the log agent's own stream fields.
+            runbook_url: "https://runbooks.example/observability/LogStoreStreamsChurning"
+        - alert: TraceStoreStreamsChurning
+          expr: sum(rate(vt_streams_created_total[1h])) > 1
+          for: 1h
+          labels:
+            pack: observability-stack
+            severity: warning
+          annotations:
+            summary: "The trace store is creating streams faster than services explain"
+            description: >-
+              The trace store keys streams on `service.name` AND the span name, so a
+              span name carrying an id -- a URL with a path parameter in it -- is the
+              usual cause.
+            runbook_url: "https://runbooks.example/observability/TraceStoreStreamsChurning"
+    - name: observability-stack.writers
+      interval: 30s
+      rules:
+        # Growing buffer: the write path is blocked and the eventual loss
+        # is proportional to how long it takes somebody to look.
+        - alert: WriterBufferGrowing
+          expr: >-
+            sum by (job) (
+              deriv(vmagent_remotewrite_pending_data_bytes[15m])
+                or deriv(vlagent_remotewrite_pending_data_bytes[15m])
+            ) > 0
+          for: 15m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "A writer's buffer is growing ({{ $labels.job }})"
+            description: >-
+              The agent is accepting faster than it can deliver. Nothing is lost yet
+              -- that is what the buffer is for -- and everything will be once it is
+              full. Check the destination and the network policy in front of it.
+            runbook_url: "https://runbooks.example/observability/WriterBufferGrowing"
+        # Dropping outright: the buffer is full and data is gone. A 400 or
+        # 404 from a destination is treated as permanent by both agents, so
+        # a wrong write path drops silently and forever.
+        - alert: WriterDroppingPackets
+          expr: >-
+            sum by (job) (
+              rate(vmagent_remotewrite_packets_dropped_total[5m])
+                or rate(vlagent_remotewrite_packets_dropped_total[5m])
+            ) > 0
+          for: 15m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "A writer is dropping data ({{ $labels.job }})"
+            description: >-
+              Data is being discarded, not delayed. Both agents drop a block on a 400,
+              and the log agent on a 404 as well, so a wrong path or a proxy rule that
+              does not match is unrecoverable loss rather than a retry.
+            runbook_url: "https://runbooks.example/observability/WriterDroppingPackets"
+    - name: observability-stack.gateway
+      interval: 30s
+      rules:
+        - alert: GatewayQueueFilling
+          expr: >-
+            otelcol_exporter_queue_size / otelcol_exporter_queue_capacity
+              > 0.8
+          for: 10m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "The OpenTelemetry gateway's queue is filling ({{ $labels.exporter }})"
+            description: >-
+              The queue drains slower than it fills, which ends in dropped batches.
+              Measured on a live install: `sending queue is full` ran for hours with
+              every collector Running and nothing in their status to show it -- the
+              cause was a network policy that had stopped admitting the collectors to
+              their own proxy.
+            runbook_url: "https://runbooks.example/observability/GatewayQueueFilling"
+        - alert: GatewayExportFailing
+          expr: >-
+            sum by (exporter) (
+              rate(otelcol_exporter_send_failed_metric_points[5m])
+                + rate(otelcol_exporter_send_failed_log_records[5m])
+                + rate(otelcol_exporter_send_failed_spans[5m])
+            ) > 0
+          for: 10m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "The gateway is failing to export ({{ $labels.exporter }})"
+            description: >-
+              A destination is refusing. A NOT-RETRYABLE failure is permanent loss of
+              that batch: the trace exporter answering 400 for a month is how a trace
+              store stayed empty while every pod was healthy.
+            runbook_url: "https://runbooks.example/observability/GatewayExportFailing"
+        - alert: GatewayEnqueueFailing
+          expr: >-
+            sum by (exporter) (
+              rate(otelcol_exporter_enqueue_failed_metric_points[5m])
+                + rate(otelcol_exporter_enqueue_failed_log_records[5m])
+                + rate(otelcol_exporter_enqueue_failed_spans[5m])
+            ) > 0
+          for: 10m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "The gateway is refusing what senders hand it ({{ $labels.exporter }})"
+            description: >-
+              The queue is full, so the gateway is rejecting at the door. Senders see
+              an error here, unlike every other rule in this group -- but only the ones
+              that look at their own return codes.
+            runbook_url: "https://runbooks.example/observability/GatewayEnqueueFailing"
+    - name: observability-stack.proxy
+      interval: 30s
+      rules:
+        - alert: ProxyAtConcurrencyLimit
+          expr: sum(rate(vmauth_concurrent_requests_limit_reached_total[5m])) > 0
+          for: 10m
+          labels:
+            pack: observability-stack
+            severity: warning
+          annotations:
+            summary: "The proxy is refusing requests at its concurrency limit"
+            description: >-
+              Reads are failing while every store is healthy, which is the shape that
+              gets diagnosed as the store for an hour first. Either a caller is
+              hammering it or the limit is too low for the readers it now has.
+            runbook_url: "https://runbooks.example/observability/ProxyAtConcurrencyLimit"
+    - name: observability-stack.disk
+      interval: 30s
+      rules:
+        # Against the store's own guard, with headroom to act. A logs
+        # store that fills its disk switches to read-only and does NOT
+        # drop data to recover, so arriving late here is arriving after an
+        # outage rather than before one.
+        - alert: MetricStoreDiskNearGuard
+          expr: >-
+            vm_free_disk_space_bytes
+              < vm_free_disk_space_limit_bytes * 3
+          for: 15m
+          labels:
+            pack: observability-stack
+            severity: critical
+          annotations:
+            summary: "The metric store is approaching its free-space guard"
+            description: >-
+              At the guard the store stops accepting writes. Raise the volume or lower
+              retention; a store that has already hit it does not recover on its own.
+            runbook_url: "https://runbooks.example/observability/MetricStoreDiskNearGuard"
+
+---
 # Source: observability-stack/templates/vmalertmanager.yaml
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
