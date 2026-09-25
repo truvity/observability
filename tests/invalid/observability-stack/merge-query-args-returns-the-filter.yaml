@@ -1,3 +1,4 @@
+# expect: vmselect treats each `extra_filters` as an ALTERNATIVE and ORs them
 # The flag that hands a principal's own filter back to them.
 #
 # vmauth drops a client query argument that clashes with one the route
@@ -23,3 +24,15 @@ vmauth:
   extraArgs:
     logInvalidAuthTokens: "true"
     mergeQueryArgs: extra_filters
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

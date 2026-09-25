@@ -1,3 +1,4 @@
+# expect: "k8s.cluster.name" is not in `victoria-logs-collector.collector.streamFields`
 # A LogsQL stream filter — which is what the proxy injects — only
 # selects on stream fields. With the cluster key an ordinary field rather
 # than a stream field, every scoped log query returns nothing at all.

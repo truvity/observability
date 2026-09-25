@@ -1,3 +1,4 @@
+# expect: it REPLACES it for those endpoints
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

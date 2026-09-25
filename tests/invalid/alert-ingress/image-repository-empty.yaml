@@ -1,3 +1,4 @@
+# expect: at '/image/repository'
 # image.repository has NO default: this repository ships no image-build
 # workflow (see .github/workflows/release.yaml), so an empty value here
 # would render cleanly and pull nothing. Required by the schema.

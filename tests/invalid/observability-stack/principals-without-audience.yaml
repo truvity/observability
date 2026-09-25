@@ -1,3 +1,4 @@
+# expect: each reader below would be selected by its group alone
 # Readers, an issuer, and no audience.
 #
 # vmauth validates a token's expiry and, under OIDC discovery, its
@@ -18,3 +19,15 @@ tenancy:
       grants:
         - cluster: example-cluster
           allNamespaces: true
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

@@ -1,3 +1,4 @@
+# expect: every group is disabled, so this release would render no rules at all
 # A release that renders no rules at all reports success and alerts on
 # nothing. Refused.
 stores:

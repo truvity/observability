@@ -1,3 +1,4 @@
+# expect: has both a percentage and a byte disk guard
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

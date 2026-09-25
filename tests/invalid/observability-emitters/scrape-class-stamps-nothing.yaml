@@ -1,3 +1,4 @@
+# expect: the metrics agent's default scrape class writes no "k8s_cluster_name" label
 # `mergeOverwrite` replaces a list wholesale, so a caller who adds one
 # scrape class of their own replaces the stamping one. A replacement that
 # is still the default class but carries no relabel rules stamps neither

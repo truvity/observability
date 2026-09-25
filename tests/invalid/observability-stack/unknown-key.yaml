@@ -1,3 +1,4 @@
+# expect: additional properties 'storeCredentialsName' not allowed
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

@@ -1,3 +1,4 @@
+# expect: has no `alert.alertname`
 # Every Alertmanager alert needs a name the routing tree and every
 # notification template can refer to. See
 # templates/_validate.tpl#validate.mappings.

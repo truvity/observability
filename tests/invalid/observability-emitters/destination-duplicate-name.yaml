@@ -1,3 +1,4 @@
+# expect: uses the name "primary" twice
 # The names become exporter ids and queue directories. Two destinations
 # sharing one share a queue, and only one of them is ever written to —
 # so an install that looks zone-redundant has one copy of the data.

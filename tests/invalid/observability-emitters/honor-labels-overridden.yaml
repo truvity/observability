@@ -1,3 +1,4 @@
+# expect: a label a target exports itself WINS over the label this agent stamps
 # THE security refusal. With honor labels not overridden, a label a
 # target exports itself wins over the label the agent stamps — so any
 # workload that exposes its own `k8s_namespace_name` or `k8s_cluster_name`

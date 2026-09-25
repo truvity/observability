@@ -1,3 +1,4 @@
+# expect: The only path that accepts this agent's protocol is `/insert/native`
 # The only path that accepts this protocol is /insert/native. A wrong
 # one answers 404, which vlagent treats as a permanent rejection and
 # DROPS the block rather than retrying it.

@@ -1,3 +1,4 @@
+# expect: `tenancy.cluster` is empty
 # The cluster is half of the scoping key. Telemetry stamped with a
 # cluster called nothing matches no grant the proxy injects: stored, paid
 # for, and invisible to everyone.

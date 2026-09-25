@@ -1,3 +1,4 @@
+# expect: groups writePath watch the stores' own counters, but `stores` is empty
 # The write-path deadman is enabled but no store is named, so it would
 # watch nothing while appearing installed.
 stores: []

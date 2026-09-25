@@ -1,3 +1,4 @@
+# expect: `selectAllByDefault: false`, which — with no selectors set — means it selects NO scrape objects at all
 # With selectAllByDefault false and no selectors set, the agent selects
 # NO scrape objects — not a narrower set, none. A component whose
 # PodMonitor is ignored looks exactly like a component with nothing

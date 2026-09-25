@@ -42,16 +42,13 @@ lint:
         echo "$chart: an unknown key rendered" >&2
         exit 1
       fi
-      # Every negative fixture must fail; one that renders is a hole in the
-      # validation, and a hole in an alerting chart is silent by nature.
-      for values in tests/invalid/"$chart"/*.yaml; do
-        if helm template invalid "charts/$chart" -f "$values" >/dev/null 2>&1; then
-          echo "RENDERED BUT SHOULD HAVE FAILED: $values" >&2
-          exit 1
-        fi
-      done
-      echo "$chart: schema and $(ls tests/invalid/"$chart"/*.yaml | wc -l | tr -d ' ') negative fixtures OK"
+      echo "$chart: schema OK"
     done
+    # Every negative fixture must fail, AND for the refusal it is named
+    # for — an exit code alone cannot tell a fixture guarding its own
+    # refusal from one an earlier, unrelated refusal preempted. See
+    # hack/lint-fixtures.sh and docs/safety.md.
+    hack/lint-fixtures.sh
 
 # Golden renders, then the Go library's own tests.
 #

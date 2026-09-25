@@ -5,6 +5,50 @@ failure that earned each rule. Thresholds are stated against a measured
 healthy range, because a threshold without one is a guess that will either
 never fire or always fire.
 
+## The negative-fixture suite counted refusals it was not guarding
+
+`just lint` renders every fixture under `tests/invalid/<chart>/` alone
+and required only that `helm template` exit non-zero. It never checked
+*which* refusal fired — and a fixture that fails is not evidence that it
+failed for the reason its name claims.
+
+Measured on `charts/observability-stack`, after an early, unconditional
+refusal was added (`alertmanager.enabled` true with no `notifications`
+configured — it fires before every other check in `_validate.tpl`), 12
+of the 38 fixtures then under `tests/invalid/observability-stack/` hit
+that refusal first and never reached the one they were named for:
+`backup-without-destination`, `datasource-without-oauth-passthru`,
+`grafana-alerting-enabled`, `grafana-replicas-on-sqlite`,
+`grafana-without-admin-secret`, `groups-claim-named-aud`,
+`label-keys-collide`, `log-fields-collide`,
+`merge-query-args-returns-the-filter`, `principals-without-audience`,
+`store-without-a-datasource` and `traces-without-unfiltered-optin`. Each
+one exited non-zero. None of them exercised the check its own name
+promised. Any one of those twelve refusals could have been deleted
+outright and the fixture written to guard it would still have "passed"
+— a hole in the exact mechanism this repository exists to be, sitting in
+that mechanism itself. (Six of the twelve, once past that one, hit a
+*second* preemption before their own: the trace store is enabled by
+default and every fixture in this chart sets `tenancy.principals`, so
+`tenancy.allowUnfilteredTraceReads` fires ahead of the Grafana and
+backup checks those six fixtures were actually testing.)
+
+So every fixture under `tests/invalid/<chart>/` now starts with a
+leading declaration, kept in the fixture itself rather than a companion
+file so the two cannot drift apart in separate diffs:
+
+```
+# expect: <distinctive substring of the refusal's own message>
+```
+
+`hack/lint-fixtures.sh`, run as part of `just lint`, requires BOTH a
+non-zero exit AND that substring in the fixture's combined output — the
+`fail` message from a template, or the JSON Schema's own `- at
+'<path>': ...` line for a fixture the schema rejects before any
+template runs. A fixture with no `# expect:` line fails the recipe too,
+by name: the check that caught the twelve above has to also catch the
+next fixture added without anyone asking what it proves.
+
 ## The refusals: `observability-crds`
 
 Fixtures under `tests/invalid/observability-crds/`.

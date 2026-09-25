@@ -1,3 +1,4 @@
+# expect: "http.request.header.x-forwarded-for", which is not one of the attributes that are constant
 # A stream field that changes per request creates a new stream for every
 # value it takes. It is the documented way to wreck this store, it fails
 # slowly, and it does not recover on its own.

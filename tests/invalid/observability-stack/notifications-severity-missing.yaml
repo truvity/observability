@@ -1,3 +1,4 @@
+# expect: notifications.severities.warning` is not set
 # A receiver kind is configured but `severities.warning` is not. Every
 # route this chart renders falls back to a no-op receiver when nothing
 # more specific matches, so a warning alert with no default reaches

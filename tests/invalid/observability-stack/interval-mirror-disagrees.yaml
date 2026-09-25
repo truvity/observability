@@ -1,3 +1,4 @@
+# expect: deduplication keeps one sample per window
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

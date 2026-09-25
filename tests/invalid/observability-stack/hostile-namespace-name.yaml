@@ -1,3 +1,4 @@
+# expect: at '/tenancy/principals/0/grants/0/namespaces/0'
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

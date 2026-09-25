@@ -1,3 +1,4 @@
+# expect: neither `notifications.externalUrl` nor `vmalert.externalUrl` is set
 # A receiver kind is configured but `externalUrl` is not. Every link
 # this chart puts in a Slack message is built from it; without it, every
 # one of them points at nothing a person can open.

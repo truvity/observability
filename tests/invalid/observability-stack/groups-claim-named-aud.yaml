@@ -1,3 +1,4 @@
+# expect: Both are entries in one `matchClaims` map, so one would overwrite the other
 # The groups claim named `aud`, which is where the audience is pinned.
 #
 # Both are entries in one `matchClaims` map, so one would overwrite the
@@ -13,3 +14,15 @@ tenancy:
       grants:
         - cluster: example-cluster
           allNamespaces: true
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

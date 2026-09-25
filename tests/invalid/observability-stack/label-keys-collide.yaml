@@ -1,3 +1,4 @@
+# expect: a metrics filter with one name for both dimensions selects on one of them and ignores the other
 # One name for both dimensions is one dimension. A metrics filter with
 # `k8s_namespace_name` for the cluster AND the namespace selects on one
 # of them and ignores the other, so every grant is wider or narrower than
@@ -12,3 +13,15 @@ tenancy:
       grants:
         - cluster: example-cluster
           allNamespaces: true
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

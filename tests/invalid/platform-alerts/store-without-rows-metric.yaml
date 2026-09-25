@@ -1,3 +1,4 @@
+# expect: has no `rowsMetric`, so the write-path deadman cannot watch it
 # A store the deadman cannot watch, because nothing names its rows counter.
 stores:
   - name: metrics

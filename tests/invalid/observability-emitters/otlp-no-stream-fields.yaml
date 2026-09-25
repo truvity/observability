@@ -1,3 +1,4 @@
+# expect: no `VL-Stream-Fields` header is sent
 # With no VL-Stream-Fields header VictoriaLogs treats EVERY resource
 # attribute as a stream field, and an SDK's resource carries the pod UID
 # and its start time. Every restart then mints a stream that is never

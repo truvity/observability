@@ -1,3 +1,4 @@
+# expect: `topics` is empty
 # An endpoint that confirms any topic can be subscribed to anyone's topic
 # and fed alerts. See templates/_validate.tpl#validate.topics.
 image:

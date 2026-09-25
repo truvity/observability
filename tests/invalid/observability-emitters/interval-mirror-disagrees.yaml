@@ -1,3 +1,4 @@
+# expect: the same number as the store's `-dedup.minScrapeInterval`
 # The scrape interval, the deduplication window on the store and the
 # evaluation interval are one number. A dedup window wider than the
 # scrape interval silently discards good samples.

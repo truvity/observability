@@ -1,3 +1,4 @@
+# expect: has no `alert.severity`
 # A mapping with no severity routes to the default tier by accident: the
 # alert still posts, but Alertmanager's routing tree matches none of
 # critical/warning/info and falls through to the tree's own default

@@ -1,3 +1,4 @@
+# expect: at '/groups/storeLimits/headroomFactor'
 # Headroom of 1 means the alert arrives at the moment writes already fail,
 # which is the failure it exists to precede.
 stores:

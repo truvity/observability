@@ -1,3 +1,4 @@
+# expect: additional properties 'severityy' not allowed
 # A typo in an alerting chart is a rule that never fires, so an unknown key
 # must fail the render rather than be ignored.
 stores:

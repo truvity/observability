@@ -1,3 +1,4 @@
+# expect: at '/alertmanager/url'
 # alertmanager.url is required by the schema: empty, there is nowhere to
 # POST an alert at all.
 image:

@@ -1,3 +1,4 @@
+# expect: is read as MONTHS by every store in this family
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

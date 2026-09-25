@@ -90,6 +90,21 @@ names, and one more peer a policy had never admitted.
   still not written in), and a doctrine refinement on which store
   read-only flags are observable in principle.
 
+- **`just lint`** — the negative-fixture check now requires the RIGHT
+  refusal, not just a non-zero exit. 12 of the 38 fixtures under
+  `tests/invalid/observability-stack/` were passing for the wrong
+  reason: an early, unconditional refusal (`alertmanager.enabled` true
+  with no `notifications` configured) fired first on any fixture that
+  had not configured one, whatever that fixture actually meant to test.
+  Every fixture under `tests/invalid/<chart>/` now starts with a `#
+  expect: <substring>` line, and `hack/lint-fixtures.sh` fails the
+  recipe if that substring is missing from the fixture's output — or if
+  the line itself is missing. See `docs/safety.md`, *The negative-fixture
+  suite counted refusals it was not guarding*.
+
+  **Nothing to do on upgrade.** This changes the test suite only; no
+  chart output moves.
+
 - **New value: `victoria-logs-single.server.serviceMonitor.enabled` /
   `victoria-traces-single.server.serviceMonitor.enabled`**, both now
   `true`. The two components this chart itself renders that the

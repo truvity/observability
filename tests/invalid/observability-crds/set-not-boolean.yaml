@@ -1,3 +1,4 @@
+# expect: got string, want boolean
 # `sets.victoriaMetrics: "false"` is a non-empty string, which Helm's `if`
 # reads as true: the set the consumer meant to disable would install.
 sets:

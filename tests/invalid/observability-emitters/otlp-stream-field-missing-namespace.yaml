@@ -1,3 +1,4 @@
+# expect: is not in `otlp.streamFields`
 # The gateway's half of the log store has to carry the same stream keys
 # as the agent's half, or a scoped query returns the container logs and
 # silently omits everything an application sent over OTLP.

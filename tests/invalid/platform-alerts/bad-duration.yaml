@@ -1,3 +1,4 @@
+# expect: at '/groups/backups/maxSuccessAge'
 # Not a duration: vmalert would reject the rule at load, long after this
 # chart reported a successful install.
 stores:
