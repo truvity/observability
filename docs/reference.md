@@ -349,49 +349,61 @@ node. Every job refuses an empty source before it copies anything.
 
 ### `selfAlerts`
 
-The twelve store self-alerts. See docs/notifications.md, "Store
-self-alerts", for the design and docs/safety.md, "The self-alerts: twelve
-rules, and what a live install did to eleven of them", for why every
-metric name below is unconfirmed until you set it. Rendered as one more
-`VMRule` (`templates/selfalerts.yaml`), evaluated by the metrics vmalert
-like any other rule — none of it is LogsQL.
+The nineteen store self-alerts. See docs/notifications.md, "Store
+self-alerts", for the design and docs/safety.md, "The self-alerts:
+nineteen rules, and what a live install did to eleven of the original
+twelve", for why every metric name below is unconfirmed until you set
+it. Rendered as one more `VMRule` (`templates/selfalerts.yaml`),
+evaluated by the metrics vmalert like any other rule — none of it is
+LogsQL.
 
 **Every metric name is a value with NO default**, the same shape
 `charts/platform-alerts` already uses for its own `stores` list and for
 the same reason: measured against a live install, ten of the eleven
-counters this design names were simply absent from this chart's own
-metrics store — nothing scrapes the log store, the trace store or the
-sibling chart's OpenTelemetry gateway into it at all, and even the one
-counter on a store that IS scraped may be a lazily-registered one whose
-absence on a healthy install is expected rather than wrong. `selfAlerts.enabled`
-therefore defaults to `false`: with nothing confirmed, "on" would render
-a `VMRule` with an empty rule list, which looks like coverage and is
-not. Each rule renders independently once its metric name (or names) is
-set; the render refuses a half-configured pair, a metric name with no
-usable threshold, or `enabled: true` with nothing that would actually
-render.
+counters this design originally named were simply absent from this
+chart's own metrics store — nothing scrapes the log store, the trace
+store or the sibling chart's OpenTelemetry gateway into it at all, and
+even the one counter on a store that IS scraped may be a
+lazily-registered one whose absence on a healthy install is expected
+rather than wrong. `selfAlerts.enabled` therefore defaults to `false`:
+with nothing confirmed, "on" would render a `VMRule` with an empty rule
+list, which looks like coverage and is not. Each rule renders
+independently once its metric name (or names) is set; the render
+refuses a half-configured pair or `enabled: true` with nothing that
+would actually render.
+
+**Rules are named per store** — `MetricStore`/`LogStore`/`TraceStore` —
+wherever the failure is one specific store's; three stores exist, and a
+rule named just "Store..." does not say which one paged you. A rule
+stays generic (`WriterBufferGrowing`, `WriterDroppingPackets`,
+`ProxyAtConcurrencyLimit`) only where it genuinely is not about any one
+store.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `selfAlerts.enabled` | bool | `false` | Renders the `VMRule`. Refused `true` if nothing under it would actually render. |
-| `selfAlerts.ingest.metric` | string | `""` | **StoreIgnoringRows** — the incident counter (`vm_rows_ignored_total` in the incident report). **NOT DEFAULTED**: absent from a measured live vmsingle, though plausibly a lazily-registered counter that never fires on a healthy install rather than a wrong name. |
+| `selfAlerts.ingest.metric` | string | `""` | **MetricStoreIgnoringRows** — the incident counter (`vm_rows_ignored_total` in the incident report). **NOT DEFAULTED**: absent from a measured live vmsingle, though plausibly a lazily-registered counter that never fires on a healthy install rather than a wrong name. |
 | `selfAlerts.ingest.window` / `.for` / `.severity` | duration / duration / severity | `5m` / `5m` / `critical` | |
-| `selfAlerts.cardinality.hourlyCurrentSeriesMetric` / `.hourlyMaxSeriesMetric` / `.dailyCurrentSeriesMetric` / `.dailyMaxSeriesMetric` | string | `""` | **StoreCardinalityNearLimit**: **NOT DEFAULTED.** Renders the hourly comparison only with both hourly names set, the daily one only with both daily names set; each is independent. Setting one of a pair without the other is refused. |
+| `selfAlerts.cardinality.hourlyCurrentSeriesMetric` / `.hourlyMaxSeriesMetric` / `.dailyCurrentSeriesMetric` / `.dailyMaxSeriesMetric` | string | `""` | **MetricStoreCardinalityNearLimit** (hourly pair), **MetricStoreDailyCardinalityNearLimit** (daily pair): **NOT DEFAULTED.** Two separate alerts, not one with an hourly/daily label — different windows, different meanings. Renders the hourly comparison only with both hourly names set, the daily one only with both daily names set; each is independent. Setting one of a pair without the other is refused. |
 | `selfAlerts.cardinality.ratio` / `.severity` | number / severity | `0.9` / `warning` | The fraction of the limit at which it fires — docs/notifications.md's own "90% of the limit". Refused at or above 1. |
 | `selfAlerts.logStore.metric` | string | `""` | **LogStoreDroppingRows** (`vl_rows_dropped_total` in docs/notifications.md). **NOT DEFAULTED**: `vl_` has zero metric names in a measured live install — nothing scrapes the log store into this store at all. See `victoria-logs-single.server.serviceMonitor` below, which this release adds to start closing that. |
 | `selfAlerts.logStore.window` / `.for` / `.severity` | duration / duration / severity | `5m` / `5m` / `critical` | |
 | `selfAlerts.traceStore.metric` | string | `""` | **TraceStoreDroppingRows** (`vt_rows_dropped_total`). **NOT DEFAULTED**, same reasoning as `logStore.metric`; see `victoria-traces-single.server.serviceMonitor` below. |
 | `selfAlerts.traceStore.window` / `.for` / `.severity` | duration / duration / severity | `5m` / `5m` / `critical` | |
+| `selfAlerts.logStreamChurn.streamsCreatedMetric` | string | `""` | **LogStoreStreamsChurning**: **NOT DEFAULTED** — name and coverage both unconfirmed, the same as `logStore.metric`. |
+| `selfAlerts.logStreamChurn.perSecond` / `.for` / `.severity` | number / duration / severity | `1` / `1h` / `warning` | Streams/second averaged over an hour. **Defaulted**, unlike the metric name: a healthy install creates roughly a stream per pod per day, and 1/s is two orders of magnitude above that — a real, defensible number rather than a guessed metric name. |
+| `selfAlerts.traceStreamChurn.streamsCreatedMetric` / `.perSecond` / `.for` / `.severity` | string / number / duration / severity | `""` / `1` / `1h` / `warning` | **TraceStoreStreamsChurning**, same shape as `logStreamChurn`, the trace store's own stream-created counter — which keys on `service.name` **and** the span name, so its usual cause (a span name carrying an id) differs from the log store's. |
 | `selfAlerts.gateway.queueSizeMetric` / `.queueCapacityMetric` | string | `""` | **GatewayQueueFilling** (`otelcol_exporter_queue_size` / `_capacity` in the incident report and in this repository's own `otlp.podMonitor` entry). **NOT DEFAULTED**: `otelcol_` has zero metric names in a measured live install. The gateway is a component of `charts/observability-emitters`; this release does not add scrape coverage for it. Setting one without the other is refused. |
 | `selfAlerts.gateway.queueRatio` / `.queueFor` / `.queueSeverity` | number / duration / severity | `0.8` / `10m` / `warning` | |
-| `selfAlerts.gateway.exportFailedMetricPrefix` | string | `""` | **GatewayExportFailing**: matched by metric-name PREFIX (`{__name__=~"<prefix>.*"}`) rather than an enumerated per-signal suffix, since this session did not confirm which signal suffixes (spans, metric_points, log_records) this gateway exports. **NOT DEFAULTED**, same reasoning as the queue pair above. |
+| `selfAlerts.gateway.exportFailedMetricPrefix` | string | `""` | **GatewayExportFailing**: a destination refusing a batch the gateway already accepted. Matched by metric-name PREFIX (`{__name__=~"<prefix>.*"}`) rather than an enumerated per-signal suffix, since this session did not confirm which signal suffixes (spans, metric_points, log_records) this gateway exports. **NOT DEFAULTED**, same reasoning as the queue pair above. |
 | `selfAlerts.gateway.exportFailWindow` / `.exportFailFor` / `.exportFailSeverity` | duration / duration / severity | `5m` / `5m` / `critical` | |
-| `selfAlerts.diskGuard.headroomFactor` / `.severity` | number / severity | `2` / `warning` | Shared by all three stores' StoreDiskNearGuard rules. Mirrors `platform-alerts`' `storeLimits.headroomFactor`; refused at or below 1. |
-| `selfAlerts.diskGuard.metrics` / `.logs` / `.traces` (each `{freeSpaceMetric, freeSpaceLimitMetric}`) | string | `""` / `""` (all three) | **StoreDiskNearGuard**, one per store. **NOT DEFAULTED for any of the three**: `vm_free_disk_space_bytes` is absent from a measured live vmsingile despite `storage.minFreeDiskSpaceBytes` being set — a real open question, since a gauge has no obvious reason to be registered lazily the way a reason-labelled counter might be (see docs/safety.md). Renders per store only once its pair is set; one name without the other is refused. |
-| `selfAlerts.snapshotAge.severity` | severity | `critical` | **SnapshotOlderThanWindow**, one per enabled `backup.<store>`. Reads `kube_cronjob_status_last_successful_time` — a standard kube-state-metrics field, not a guessed one — scoped to the exact CronJob names `templates/backup.yaml` renders in this release. **Not gated behind a `metric` value**: the name itself is not in question, only whether THIS release's store carries kube-state-metrics data at all (`kube-state-metrics.enabled: false` above is deliberate — see docs/safety.md). |
+| `selfAlerts.gateway.enqueueFailedMetricPrefix` | string | `""` | **GatewayEnqueueFailing**: the gateway's own queue refusing what a sender hands it, separate from `exportFailedMetricPrefix` — a send failure and an enqueue failure are different losses, and a single rule cannot tell an operator which one paged them. Same prefix-matching reasoning; **NOT DEFAULTED**. |
+| `selfAlerts.gateway.enqueueFailWindow` / `.enqueueFailFor` / `.enqueueFailSeverity` | duration / duration / severity | `5m` / `5m` / `critical` | |
+| `selfAlerts.diskGuard.headroomFactor` / `.severity` | number / severity | `2` / `warning` | Shared by all three stores' `*StoreDiskNearGuard` rules. Mirrors `platform-alerts`' `storeLimits.headroomFactor`; refused at or below 1. |
+| `selfAlerts.diskGuard.metrics` / `.logs` / `.traces` (each `{freeSpaceMetric, freeSpaceLimitMetric}`) | string | `""` / `""` (all three) | **MetricStoreDiskNearGuard**, **LogStoreDiskNearGuard**, **TraceStoreDiskNearGuard** — one per store, named per store rather than one alert distinguished by a `store` label. **NOT DEFAULTED for any of the three**: `vm_free_disk_space_bytes` is absent from a measured live vmsingile despite `storage.minFreeDiskSpaceBytes` being set — a real open question, since a gauge has no obvious reason to be registered lazily the way a reason-labelled counter might be (see docs/safety.md). Renders per store only once its pair is set; one name without the other is refused. |
+| `selfAlerts.snapshotAge.severity` | severity | `critical` | **MetricStoreSnapshotOlderThanWindow**, **LogStoreSnapshotOlderThanWindow**, **TraceStoreSnapshotOlderThanWindow** — one per enabled `backup.<store>`, named per store the same as `diskGuard` above. Reads `kube_cronjob_status_last_successful_time` — a standard kube-state-metrics field, not a guessed one — scoped to the exact CronJob names `templates/backup.yaml` renders in this release. **Not gated behind a `metric` value**: the name itself is not in question, only whether THIS release's store carries kube-state-metrics data at all (`kube-state-metrics.enabled: false` above is deliberate — see docs/safety.md). |
 | `selfAlerts.snapshotAge.metrics.maxAge` / `.logs.maxAge` / `.traces.maxAge` | duration | `150m` / `2h` / `2h` | The matching `backup.<store>.schedule` plus slack — stated here rather than derived from the cron expression, the same doctrine as `platform-alerts`' `groups.backups.maxSuccessAge`. Update it if you change the schedule; the two are not derived from one another. |
-| `selfAlerts.logStreamChurn.streamsCreatedMetric` / `.window` / `.maxCreatedPerWindow` / `.severity` | string / duration / int / severity | `""` / `5m` / `0` / `warning` | **LogStreamsChurning**: **NOT DEFAULTED**, name and threshold both — docs/notifications.md gives no number, and "faster than a partition explains" is a fact about an estate's own field cardinality. A metric name with no threshold above zero is refused. |
-| `selfAlerts.writer.bufferMetric` / `.maxBufferBytes` / `.for` / `.severity` | string / int / duration / severity | `""` / `0` / `10m` / `critical` | **WriterBufferGrowing**: read as vmalert's own `remoteWrite` path (`templates/vmalert.yaml` sets one on both alerters). **NOT DEFAULTED.** A metric name with no threshold above zero is refused. |
+| `selfAlerts.writer.bufferMetric` / `.for` / `.severity` | string / duration / severity | `""` / `10m` / `critical` | **WriterBufferGrowing**: read as vmalert's own `remoteWrite` path (`templates/vmalert.yaml` sets one on both alerters), generic across writers on purpose. Fires on the buffer's own rate of change (`deriv(...) > 0`) rather than a fixed byte threshold — no magnitude this chart could state generically, and a buffer growing at all is already the failure. **NOT DEFAULTED.** |
 | `selfAlerts.writer.droppedPacketsMetric` | string | `""` | **WriterDroppingPackets**, same `writer` block. **NOT DEFAULTED.** |
 | `selfAlerts.proxyConcurrency.limitedRequestsMetric` / `.window` / `.for` / `.severity` | string / duration / duration / severity | `""` / `5m` / `5m` / `warning` | **ProxyAtConcurrencyLimit**: vmauth refusing requests over its own concurrency cap. **NOT DEFAULTED** even though a live measurement found `vmauth_concurrent_requests_limit_reached_total` present on the store — the one counter with actual evidence behind it, still held to the same "no default" rule as the rest. |
 

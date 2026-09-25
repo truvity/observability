@@ -129,19 +129,21 @@ threshold's headroom, a negative fixture.
 
 | Rule | Catches |
 |---|---|
-| `StoreIgnoringRows` | `vm_rows_ignored_total` rising — a series past the label limit is discarded and the write answers 200; a sender can report millions written with zero errors while the store holds none |
-| `StoreCardinalityNearLimit` | hourly or daily series at 90% of the limit |
+| `MetricStoreIgnoringRows` | `vm_rows_ignored_total` rising — a series past the label limit is discarded and the write answers 200; a sender can report millions written with zero errors while the store holds none |
+| `MetricStoreCardinalityNearLimit`, `MetricStoreDailyCardinalityNearLimit` | hourly, or daily, series at 90% of the limit — two rules, different windows |
 | `LogStoreDroppingRows`, `TraceStoreDroppingRows` | `vl_rows_dropped_total`, `vt_rows_dropped_total` rate above zero |
-| `LogStreamsChurning` | streams created faster than a partition explains — the shape a non-constant stream field produces |
+| `LogStoreStreamsChurning`, `TraceStoreStreamsChurning` | streams created faster than a partition explains — the shape a non-constant stream field produces, one rule per store since each keys streams differently |
 | `WriterBufferGrowing`, `WriterDroppingPackets` | a collector's remote-write buffer growing, or packets dropped — the write path is blocked and the loss is proportional to how long it takes to look |
-| `GatewayQueueFilling`, `GatewayExportFailing` | the OpenTelemetry gateway's queue above 80%, or send/enqueue failures — "sending queue is full" running for hours |
+| `GatewayQueueFilling`, `GatewayExportFailing`, `GatewayEnqueueFailing` | the OpenTelemetry gateway's queue above 80%, a destination refusing a batch already accepted, or the gateway's own queue refusing at the door — three different moments of "sending queue is full" running for hours |
 | `ProxyAtConcurrencyLimit` | vmauth refusing requests |
-| `StoreDiskNearGuard` | free disk approaching the store's own minimum |
-| `SnapshotOlderThanWindow` | the newest snapshot older than the backup schedule allows |
+| `MetricStoreDiskNearGuard`, `LogStoreDiskNearGuard`, `TraceStoreDiskNearGuard` | free disk approaching the store's own minimum, one rule per store |
+| `MetricStoreSnapshotOlderThanWindow`, `LogStoreSnapshotOlderThanWindow`, `TraceStoreSnapshotOlderThanWindow` | the newest snapshot older than the backup schedule allows, one rule per store |
 
 None of these can be written by a consumer, because each names a
 counter the chart controls; and none is optional, because each is a
-failure that reports itself nowhere else.
+failure that reports itself nowhere else. Every rule that watches one
+specific store is named for that store — three stores exist, and a rule
+named just "Store..." does not say which one paged you.
 
 ## Proof, before release
 

@@ -2727,7 +2727,7 @@ spec:
     - name: observability-stack.selfalerts
       interval: 15s
       rules:
-        # StoreIgnoringRows.
+        # MetricStoreIgnoringRows.
         #
         # THE INCIDENT: a series past the metrics store's per-day label
         # limit is discarded WHILE THE WRITE STILL ANSWERS 200 — a
@@ -2740,7 +2740,7 @@ spec:
         # Healthy range: 0. The counter only advances when a sample is
         # refused for exceeding a configured limit, so a write path that
         # is not hitting one never touches it.
-        - alert: StoreIgnoringRows
+        - alert: MetricStoreIgnoringRows
           expr: >-
             sum(rate(example_vm_rows_ignored_total[2m])) by (reason) > 0
           for: 2m
@@ -2755,51 +2755,15 @@ spec:
               errors while the store holds none of it. Measured on a live
               install: 888k rows reported written, the store held none,
               and this counter sat at 9,748,387.
-        # StoreCardinalityNearLimit (hourly). Confirmed for THIS install by
-        # whoever set selfAlerts.cardinality.hourly* — see values.yaml.
-        #
-        # docs/notifications.md: "hourly or daily series at 90% of the
-        # limit". 0.85 is that headroom: comfortably
-        # under the cap at which new series stop being accepted for the
-        # rest of the window.
-        - alert: StoreCardinalityNearLimit
-          expr: >-
-            (example_vm_hourly_series_limit_max_series > 0)
-            and
-            (example_vm_hourly_series_limit_current_series / example_vm_hourly_series_limit_max_series) > 0.85
-          labels:
-            severity: warning
-            window: hourly
-          annotations:
-            summary: "The metrics store is close to its hourly series limit"
-            description: >-
-              Hourly active series are above 85% of
-              storage.maxHourlySeries. Above the limit, new series stop
-              being accepted for the rest of the hour — the exact shape of
-              an exporter that appears to have stopped exporting.
-        # StoreCardinalityNearLimit (daily). Same reasoning, the daily cap.
-        - alert: StoreCardinalityNearLimit
-          expr: >-
-            (example_vm_daily_series_limit_max_series > 0)
-            and
-            (example_vm_daily_series_limit_current_series / example_vm_daily_series_limit_max_series) > 0.85
-          labels:
-            severity: warning
-            window: daily
-          annotations:
-            summary: "The metrics store is close to its daily series limit"
-            description: >-
-              Daily active series are above 85% of
-              storage.maxDailySeries. Above the limit, new series stop
-              being accepted for the rest of the day.
         # LogStoreDroppingRows. Confirmed for THIS install by whoever set
         # selfAlerts.logStore.metric — see values.yaml; needs
         # victoria-logs-single.server.serviceMonitor (or equivalent) to
         # be scraping the log store into this metrics store at all.
         #
-        # Healthy range: 0, the same as StoreIgnoringRows above. Safe with
-        # the log store disabled: rate() of a counter no series carries
-        # returns no data, not zero, so an absent store never fires this.
+        # Healthy range: 0, the same as MetricStoreIgnoringRows above.
+        # Safe with the log store disabled: rate() of a counter no series
+        # carries returns no data, not zero, so an absent store never
+        # fires this.
         - alert: LogStoreDroppingRows
           expr: >-
             sum(rate(example_vl_rows_dropped_total[2m])) > 0
@@ -2827,6 +2791,127 @@ spec:
               example_vt_rows_dropped_total is rising. Spans are being discarded
               on write; the ingesting collector sees a successful response
               regardless.
+        # MetricStoreCardinalityNearLimit (hourly). Confirmed for THIS
+        # install by whoever set selfAlerts.cardinality.hourly* — see
+        # values.yaml.
+        #
+        # docs/notifications.md: "hourly or daily series at 90% of the
+        # limit". 0.85 is that headroom: comfortably
+        # under the cap at which new series stop being accepted for the
+        # rest of the window. A separate alert from the daily rule below
+        # — different window, different meaning, and a name that says
+        # which one fired rather than a `window` label a reader has to go
+        # look at.
+        - alert: MetricStoreCardinalityNearLimit
+          expr: >-
+            (example_vm_hourly_series_limit_max_series > 0)
+            and
+            (example_vm_hourly_series_limit_current_series / example_vm_hourly_series_limit_max_series) > 0.85
+          labels:
+            severity: warning
+          annotations:
+            summary: "The metrics store is close to its hourly series limit"
+            description: >-
+              Hourly active series are above 85% of
+              storage.maxHourlySeries. Above the limit, new series stop
+              being accepted for the rest of the hour — the exact shape of
+              an exporter that appears to have stopped exporting.
+        # MetricStoreDailyCardinalityNearLimit. Same reasoning as the
+        # hourly rule, the daily cap — churn over a day rather than a
+        # burst within an hour, which is why it is a second rule and not
+        # the same alert with a different label.
+        - alert: MetricStoreDailyCardinalityNearLimit
+          expr: >-
+            (example_vm_daily_series_limit_max_series > 0)
+            and
+            (example_vm_daily_series_limit_current_series / example_vm_daily_series_limit_max_series) > 0.85
+          labels:
+            severity: warning
+          annotations:
+            summary: "The metrics store is close to its daily series limit"
+            description: >-
+              Daily active series are above 85% of
+              storage.maxDailySeries. Above the limit, new series stop
+              being accepted for the rest of the day. A workload whose pod
+              names change on every deploy is the usual source of churn
+              this rule catches that the hourly one has not yet.
+        # LogStoreStreamsChurning.
+        #
+        # A stream field that is not constant for the life of a pod —
+        # `ip`, `user_id`, `trace_id`, or any per-request resource
+        # attribute an SDK sets — is the documented way to wreck the log
+        # store, and it looks fine for the first week: the count grows,
+        # queries slow, and nothing errors. Check `VL-Stream-Fields` on
+        # the writers and the log agent's own stream fields.
+        #
+        # Healthy range: a stream per pod per day. 2
+        # streams/second, averaged over an hour, is two orders of
+        # magnitude above that baseline.
+        - alert: LogStoreStreamsChurning
+          expr: >-
+            sum(rate(example_vl_streams_created_total[1h])) > 2
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The log store is creating streams faster than pods explain"
+            description: >-
+              example_vl_streams_created_total is above
+              2 streams/s averaged over an hour — a
+              stream field is varying when it should be constant.
+        # TraceStoreStreamsChurning. Same failure, the trace store, which
+        # keys streams on `service.name` AND the span name — a span name
+        # carrying an id (a URL with a path parameter in it) is the usual
+        # cause there rather than a label copied from the pod.
+        - alert: TraceStoreStreamsChurning
+          expr: >-
+            sum(rate(example_vt_streams_created_total[1h])) > 2
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The trace store is creating streams faster than services explain"
+            description: >-
+              example_vt_streams_created_total is above
+              2 streams/s averaged over an hour.
+        # WriterBufferGrowing. Generic across writers on purpose: this
+        # chart's own vmalert remote-write client shares its metrics
+        # family with vmagent's, so whichever writer's buffer this name
+        # is confirmed against, the shape it watches is the same.
+        #
+        # Rate of change rather than a fixed byte threshold — a magnitude
+        # this chart has no basis to guess — so the rule fires on the
+        # buffer GROWING rather than on crossing a size nobody confirmed.
+        # Growth means the write path is blocked and the eventual loss is
+        # proportional to how long it takes somebody to look.
+        - alert: WriterBufferGrowing
+          expr: >-
+            deriv(example_vmalert_remotewrite_pending_data_bytes[15m]) > 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "A writer's remote-write buffer is growing"
+            description: >-
+              example_vmalert_remotewrite_pending_data_bytes has been increasing for
+              15m. Nothing is lost yet — that is what the
+              buffer is for — and everything will be once it is full.
+              Check the destination and the network policy in front of it.
+        # WriterDroppingPackets. Same `writer` block, the buffer already
+        # full: both remote-write agents in this family treat a 400 as
+        # permanent and drop the block, and the log agent does the same
+        # on a 404 — a wrong write path is unrecoverable loss, not a
+        # retry.
+        - alert: WriterDroppingPackets
+          expr: >-
+            sum(rate(example_vmalert_remotewrite_packets_dropped_total[5m])) > 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "A writer is dropping packets on its remote-write path"
+            description: >-
+              example_vmalert_remotewrite_packets_dropped_total is rising.
         # GatewayQueueFilling.
         #
         # THE INCIDENT (this week): a network policy change cut
@@ -2860,6 +2945,12 @@ spec:
               exactly the failure that ran for hours unreported.
         # GatewayExportFailing.
         #
+        # Separate from GatewayEnqueueFailing below: a SEND failure is a
+        # destination refusing a batch the gateway already accepted, an
+        # ENQUEUE failure is the gateway's own queue refusing at the
+        # door. Different losses, and a single rule cannot tell an
+        # operator which one paged them.
+        #
         # otelcol_exporter_send_failed_* and _enqueue_failed_* both carry
         # a per-signal suffix (spans, metric_points, log_records) this
         # session did not enumerate with confidence, so
@@ -2870,7 +2961,9 @@ spec:
         # values.yaml.
         #
         # Healthy range: 0. A send or enqueue failure is not something a
-        # healthy exporter path produces at any rate.
+        # healthy exporter path produces at any rate. Measured on a live
+        # install: a NOT-RETRYABLE export answering 400 for a month is
+        # how a trace store stayed empty while every pod was Healthy.
         - alert: GatewayExportFailing
           expr: >-
             sum(rate({__name__=~"example_otelcol_exporter.*"}[2m])) by (exporter) > 0
@@ -2883,136 +2976,43 @@ spec:
               A example_otelcol_exporter* series is advancing for
               exporter {{ $labels.exporter }}. Data the gateway
               accepted is not reaching its destination.
-        # StoreDiskNearGuard (metrics store). Confirmed for THIS
-        # install by whoever set selfAlerts.diskGuard.metrics — see
-        # values.yaml. headroomFactor mirrors platform-alerts'
-        # storeLimits.headroomFactor and its default (2): comfortably
-        # above the 1x at which the store already stopped accepting
-        # writes.
-        - alert: StoreDiskNearGuard
+        # GatewayEnqueueFailing. Same `gateway` group, the OTHER queue
+        # failure: this one is the gateway itself refusing what a sender
+        # hands it, rather than the destination refusing what the
+        # gateway already accepted (GatewayExportFailing above). A sender
+        # that checks its own return code sees THIS one as an error —
+        # unlike every other rule in this group, which are all invisible
+        # to whoever is sending.
+        #
+        # Matched by metric-name PREFIX, same reasoning as
+        # exportFailedMetricPrefix: `_enqueue_failed_` carries the same
+        # per-signal suffix `_send_failed_` does, and this session did
+        # not enumerate them with confidence either. Confirmed for THIS
+        # install by whoever set
+        # selfAlerts.gateway.enqueueFailedMetricPrefix — see values.yaml.
+        #
+        # Healthy range: 0. An enqueue failure is not something a healthy
+        # exporter path produces at any rate.
+        - alert: GatewayEnqueueFailing
           expr: >-
-            example_vm_free_disk_space_bytes / example_vm_free_disk_space_limit_bytes < 3
-          labels:
-            severity: warning
-            store: metrics
-          annotations:
-            summary: "The metrics store is approaching its disk guard"
-            description: >-
-              Free space is under 3x the
-              store's own minFreeDiskSpaceBytes guard. It is still serving
-              reads and will keep doing so after it stops writing.
-        # StoreDiskNearGuard (logs store). Confirmed for THIS
-        # install by whoever set selfAlerts.diskGuard.logs — see
-        # values.yaml. headroomFactor mirrors platform-alerts'
-        # storeLimits.headroomFactor and its default (2): comfortably
-        # above the 1x at which the store already stopped accepting
-        # writes.
-        - alert: StoreDiskNearGuard
-          expr: >-
-            example_vl_free_disk_space_bytes / example_vl_free_disk_space_limit_bytes < 3
-          labels:
-            severity: warning
-            store: logs
-          annotations:
-            summary: "The logs store is approaching its disk guard"
-            description: >-
-              Free space is under 3x the
-              store's own minFreeDiskSpaceBytes guard. It is still serving
-              reads and will keep doing so after it stops writing.
-        # StoreDiskNearGuard (traces store). Confirmed for THIS
-        # install by whoever set selfAlerts.diskGuard.traces — see
-        # values.yaml. headroomFactor mirrors platform-alerts'
-        # storeLimits.headroomFactor and its default (2): comfortably
-        # above the 1x at which the store already stopped accepting
-        # writes.
-        - alert: StoreDiskNearGuard
-          expr: >-
-            example_vt_free_disk_space_bytes / example_vt_free_disk_space_limit_bytes < 3
-          labels:
-            severity: warning
-            store: traces
-          annotations:
-            summary: "The traces store is approaching its disk guard"
-            description: >-
-              Free space is under 3x the
-              store's own minFreeDiskSpaceBytes guard. It is still serving
-              reads and will keep doing so after it stops writing.
-        - alert: SnapshotOlderThanWindow
-          expr: >-
-            time() - max(
-              kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-metrics-incremental"}
-            ) > 3h
-          labels:
-            severity: critical
-            store: metrics
-          annotations:
-            summary: "The metrics store's newest backup snapshot is stale"
-            description: >-
-              No successful run of observability-stack-backup-metrics-incremental
-              within 3h. A CronJob that has stopped
-              being scheduled produces no failures at all, which is the
-              same reasoning platform-alerts' CronJobNotSucceeding rule
-              uses for any other CronJob.
-        - alert: SnapshotOlderThanWindow
-          expr: >-
-            time() - max(
-              kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-logs"}
-            ) > 90m
-          labels:
-            severity: critical
-            store: logs
-          annotations:
-            summary: "The log store's newest backup snapshot is stale"
-            description: >-
-              No successful run of observability-stack-backup-logs
-              within 90m.
-        - alert: SnapshotOlderThanWindow
-          expr: >-
-            time() - max(
-              kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-traces"}
-            ) > 90m
-          labels:
-            severity: critical
-            store: traces
-          annotations:
-            summary: "The trace store's newest backup snapshot is stale"
-            description: >-
-              No successful run of observability-stack-backup-traces
-              within 90m.
-        - alert: LogStreamsChurning
-          expr: >-
-            increase(example_vl_streams_created_total[10m]) > 500
-          labels:
-            severity: warning
-          annotations:
-            summary: "Log streams are being created faster than a partition explains"
-            description: >-
-              example_vl_streams_created_total rose by more than
-              500 in 10m —
-              the shape a non-constant stream field produces.
-        - alert: WriterBufferGrowing
-          expr: >-
-            example_vmalert_remotewrite_pending_data_bytes > 1.048576e+08
-          for: 15m
+            sum(rate({__name__=~"example_otelcol_exporter.*"}[2m])) by (exporter) > 0
+          for: 2m
           labels:
             severity: critical
           annotations:
-            summary: "A writer's remote-write buffer is growing"
+            summary: "The OpenTelemetry gateway is refusing what senders hand it"
             description: >-
-              example_vmalert_remotewrite_pending_data_bytes has stayed above
-              1.048576e+08 bytes for 15m. The write
-              path is blocked, and the loss is proportional to how long it
-              takes to look.
-        - alert: WriterDroppingPackets
-          expr: >-
-            sum(rate(example_vmalert_remotewrite_packets_dropped_total[5m])) > 0
-          for: 15m
-          labels:
-            severity: critical
-          annotations:
-            summary: "A writer is dropping packets on its remote-write path"
-            description: >-
-              example_vmalert_remotewrite_packets_dropped_total is rising.
+              A example_otelcol_exporter* series is advancing for
+              exporter {{ $labels.exporter }}. The queue is full, so
+              the gateway is rejecting at the door rather than accepting
+              and later failing to send.
+        # ProxyAtConcurrencyLimit. Confirmed for THIS install by whoever
+        # set selfAlerts.proxyConcurrency.limitedRequestsMetric — see
+        # values.yaml. UNLIKE every other rule in this file, a live
+        # measurement found vmauth_concurrent_requests_limit_reached_total
+        # present on the store — the one counter with actual evidence
+        # behind it rather than a guess — but it is still not written in
+        # below; this chart holds every metric name to the same rule.
         - alert: ProxyAtConcurrencyLimit
           expr: >-
             sum(rate(example_vmauth_concurrent_requests_limit_reached_total[2m])) > 0
@@ -3022,9 +3022,107 @@ spec:
           annotations:
             summary: "The proxy is refusing requests at its concurrency limit"
             description: >-
-              example_vmauth_concurrent_requests_limit_reached_total is rising. A caller
-              within its grant is being refused for a reason that has
-              nothing to do with the grant.
+              example_vmauth_concurrent_requests_limit_reached_total is rising. Reads are
+              failing while every store is healthy, which is the shape
+              that gets diagnosed as the store for an hour first. Either
+              a caller is hammering it or the limit is too low for the
+              readers it now has.
+        # MetricStoreDiskNearGuard. Confirmed for
+        # THIS install by whoever set selfAlerts.diskGuard.metrics —
+        # see values.yaml. headroomFactor mirrors platform-alerts'
+        # storeLimits.headroomFactor and its default (2): comfortably
+        # above the 1x at which the store already stopped accepting
+        # writes. A logs or traces store that fills its disk switches to
+        # read-only and does NOT drop data to recover, so arriving late
+        # here is arriving after an outage rather than before one.
+        - alert: MetricStoreDiskNearGuard
+          expr: >-
+            example_vm_free_disk_space_bytes / example_vm_free_disk_space_limit_bytes < 3
+          labels:
+            severity: warning
+          annotations:
+            summary: "The metrics store is approaching its disk guard"
+            description: >-
+              Free space is under 3x the
+              store's own minFreeDiskSpaceBytes guard. It is still serving
+              reads and will keep doing so after it stops writing.
+        # LogStoreDiskNearGuard. Confirmed for
+        # THIS install by whoever set selfAlerts.diskGuard.logs —
+        # see values.yaml. headroomFactor mirrors platform-alerts'
+        # storeLimits.headroomFactor and its default (2): comfortably
+        # above the 1x at which the store already stopped accepting
+        # writes. A logs or traces store that fills its disk switches to
+        # read-only and does NOT drop data to recover, so arriving late
+        # here is arriving after an outage rather than before one.
+        - alert: LogStoreDiskNearGuard
+          expr: >-
+            example_vl_free_disk_space_bytes / example_vl_free_disk_space_limit_bytes < 3
+          labels:
+            severity: warning
+          annotations:
+            summary: "The logs store is approaching its disk guard"
+            description: >-
+              Free space is under 3x the
+              store's own minFreeDiskSpaceBytes guard. It is still serving
+              reads and will keep doing so after it stops writing.
+        # TraceStoreDiskNearGuard. Confirmed for
+        # THIS install by whoever set selfAlerts.diskGuard.traces —
+        # see values.yaml. headroomFactor mirrors platform-alerts'
+        # storeLimits.headroomFactor and its default (2): comfortably
+        # above the 1x at which the store already stopped accepting
+        # writes. A logs or traces store that fills its disk switches to
+        # read-only and does NOT drop data to recover, so arriving late
+        # here is arriving after an outage rather than before one.
+        - alert: TraceStoreDiskNearGuard
+          expr: >-
+            example_vt_free_disk_space_bytes / example_vt_free_disk_space_limit_bytes < 3
+          labels:
+            severity: warning
+          annotations:
+            summary: "The traces store is approaching its disk guard"
+            description: >-
+              Free space is under 3x the
+              store's own minFreeDiskSpaceBytes guard. It is still serving
+              reads and will keep doing so after it stops writing.
+        - alert: MetricStoreSnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-metrics-incremental"}
+            ) > 3h
+          labels:
+            severity: critical
+          annotations:
+            summary: "The metrics store's newest backup snapshot is stale"
+            description: >-
+              No successful run of observability-stack-backup-metrics-incremental
+              within 3h. A CronJob that has stopped
+              being scheduled produces no failures at all, which is the
+              same reasoning platform-alerts' CronJobNotSucceeding rule
+              uses for any other CronJob.
+        - alert: LogStoreSnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-logs"}
+            ) > 90m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The log store's newest backup snapshot is stale"
+            description: >-
+              No successful run of observability-stack-backup-logs
+              within 90m.
+        - alert: TraceStoreSnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-traces"}
+            ) > 90m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The trace store's newest backup snapshot is stale"
+            description: >-
+              No successful run of observability-stack-backup-traces
+              within 90m.
 
 ---
 # Source: observability-stack/templates/vmalertmanager.yaml

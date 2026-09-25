@@ -1,5 +1,0 @@
-# A metric name with no threshold: LogStreamsChurning would fire on the
-# first stream ever created.
-selfAlerts:
-  logStreamChurn:
-    streamsCreatedMetric: example_vl_streams_created_total

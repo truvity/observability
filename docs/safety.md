@@ -170,44 +170,57 @@ for its one reason and no other.
 | `vmauth.extraArgs.mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` | vmauth drops a client query argument that clashes with one the route already set, and that drop is the only thing stopping a reader sending its own filter beside the enforced one. `mergeQueryArgs` exempts an argument from it. vmselect ORs each `extra_filters` as an alternative, so a caller adding an empty one reads every cluster and namespace — with the claim, the route and the rendered filter all still exactly right. |
 | A trace store enabled alongside `principals`, without `tenancy.allowUnfilteredTraceReads` | The proxy enforces a grant by substituting it into the route it forwards on, and VictoriaTraces' select APIs accept no query argument to substitute one into. The trace route would sit between two scoped routes, look exactly like them, and scope nothing. |
 | A backup with no destination or no credentials | It runs, finds nothing to do and reports success. |
-| `selfAlerts.cardinality.hourlyCurrentSeriesMetric` or `hourlyMaxSeriesMetric` (or the daily pair) set without its other half | StoreCardinalityNearLimit would compare a gauge against nothing instead of never rendering, the same failure platform-alerts refuses for its own `stores[].freeSpaceMetric`. |
+| `selfAlerts.cardinality.hourlyCurrentSeriesMetric` or `hourlyMaxSeriesMetric` (or the daily pair) set without its other half | MetricStoreCardinalityNearLimit / MetricStoreDailyCardinalityNearLimit would compare a gauge against nothing instead of never rendering, the same failure platform-alerts refuses for its own `stores[].freeSpaceMetric`. |
 | `selfAlerts.cardinality.ratio` at or above 1 | The alert arrives at the moment the limit has already bitten, not before it. |
-| `selfAlerts.diskGuard.<store>` with one free-space metric name and not the other | StoreDiskNearGuard for that store would compare a gauge against nothing. |
+| `selfAlerts.diskGuard.<store>` with one free-space metric name and not the other | `{Metric,Log,Trace}StoreDiskNearGuard` for that store would compare a gauge against nothing. |
 | `selfAlerts.gateway.queueSizeMetric` or `queueCapacityMetric` set without the other | GatewayQueueFilling would compare a gauge against nothing. |
-| `selfAlerts.logStreamChurn.streamsCreatedMetric` set with no `maxCreatedPerWindow` above zero | LogStreamsChurning would fire on the first stream any estate ever creates. |
-| `selfAlerts.writer.bufferMetric` set with no `maxBufferBytes` above zero | WriterBufferGrowing would fire on any buffered byte at all. |
 | `selfAlerts.enabled` true with no metric name set anywhere and no `backup.<store>.enabled` | The rendered `VMRule` would have an empty rule list — coverage that looks like coverage and evaluates nothing. |
 | `victoria-logs-single.server.serviceMonitor.basicAuth` or `victoria-traces-single...`'s naming a Secret other than `storeCredentials.secretName` | The store answers 401 to every scrape forever, and a target that always 401s is indistinguishable, from the outside, from one that was never there. |
 
-### The self-alerts: twelve rules, and what a live install did to eleven of them
+### The self-alerts: nineteen rules, and what a live install did to eleven of the original twelve
 
-Twelve rules, rendered as one more `VMRule` alongside this chart's other
-own objects — `templates/selfalerts.yaml` — and evaluated by the metrics
-vmalert like any other rule this repository ships. See
+Nineteen rules, rendered as one more `VMRule` alongside this chart's
+other own objects — `templates/selfalerts.yaml` — and evaluated by the
+metrics vmalert like any other rule this repository ships. See
 docs/notifications.md, "Store self-alerts", for the full list.
 
-**StoreIgnoringRows** is the rule the header incident of this release
-needed. A series pushed past the metrics store's per-day label limit is
-discarded WHILE THE WRITE STILL ANSWERS 200: a collector reported 888k
-rows written with zero errors while the store held none of them, and
-`vm_rows_ignored_total` sat at 9,748,387 with nothing else showing it. An
-alert on the store's own health looked fine, the collector's own logs
-looked fine, and the only place the loss was visible was a counter
-nobody was watching.
+The set grew from the twelve this release first shipped after a second
+pass over the same design: hourly and daily cardinality are two rules,
+not one distinguished by a `window` label; log and trace stream churn
+are two rules, not one that only watched the log store; every rule that
+is genuinely about one specific store — `MetricStoreIgnoringRows`,
+`{Metric,Log,Trace}StoreDiskNearGuard`,
+`{Metric,Log,Trace}StoreSnapshotOlderThanWindow` — is named for that
+store rather than distinguished only by a label, because three stores
+exist and a rule named just "Store..." does not say which one paged
+you. `GatewayEnqueueFailing` joined `GatewayExportFailing` as a rule of
+its own: the gateway's own queue refusing what a sender hands it is a
+different loss from a destination refusing a batch it already accepted,
+and a single rule cannot tell an operator which one happened.
 
-**GatewayQueueFilling** and **GatewayExportFailing** are the rule pair a
-network-policy change needed, the same week: it cut
-`charts/observability-emitters`' OpenTelemetry gateway off from its own
-proxy, and "sending queue is full" ran for hours with every pod Running
-and nothing reporting it. The gateway is a component of a SIBLING chart
-— `otelcol_exporter_queue_size` / `_capacity` and
-`otelcol_exporter_send_failed_*` / `_enqueue_failed_*` are named in
-`docs/reference.md`'s own `otlp.podMonitor` entry, not rendered by this
-one — but its metrics land in this chart's own metrics store the same
-way any other component's do, once something scrapes it there; vmalert
-here would then read them directly, never through the proxy, the same as
-every rule in this file. A self-alert that only ever watched its OWN
-chart's objects would have missed this one too.
+**MetricStoreIgnoringRows** is the rule the header incident of this
+release needed. A series pushed past the metrics store's per-day label
+limit is discarded WHILE THE WRITE STILL ANSWERS 200: a collector
+reported 888k rows written with zero errors while the store held none of
+them, and `vm_rows_ignored_total` sat at 9,748,387 with nothing else
+showing it. An alert on the store's own health looked fine, the
+collector's own logs looked fine, and the only place the loss was
+visible was a counter nobody was watching.
+
+**GatewayQueueFilling**, **GatewayExportFailing** and
+**GatewayEnqueueFailing** are the rule group a network-policy change
+needed, the same week: it cut `charts/observability-emitters`'
+OpenTelemetry gateway off from its own proxy, and "sending queue is
+full" ran for hours with every pod Running and nothing reporting it. The
+gateway is a component of a SIBLING chart — `otelcol_exporter_queue_size`
+/ `_capacity` and `otelcol_exporter_send_failed_*` /
+`_enqueue_failed_*` are named in `docs/reference.md`'s own
+`otlp.podMonitor` entry, not rendered by this one — but its metrics land
+in this chart's own metrics store the same way any other component's
+do, once something scrapes it there; vmalert here would then read them
+directly, never through the proxy, the same as every rule in this file.
+A self-alert that only ever watched its OWN chart's objects would have
+missed this one too.
 
 **Measured against a live install, ten of the eleven counters this design
 names are simply ABSENT from this chart's own metrics store — not wrong
@@ -282,18 +295,18 @@ scraped either store into anywhere at all until this release's
 written; the metrics store's own flag is the one case it correctly rules
 out, not a statement about every store's flag.
 
-**No local proof that any of the twelve expressions parse, even now.**
+**No local proof that any of the nineteen expressions parse, even now.**
 This repository has no vendored MetricsQL or LogsQL evaluator and no
 bundled default-rules file inside `charts/*.tgz` to check a name against,
 and `hack/rulegroups.py` reads a LIVE cluster's rendered configmaps rather
 than evaluating anything offline — none of which this change may reach
 (no cluster was touched to produce this PR; the live measurement above
-was run and reported separately). `just golden` proves the twelve render
-into the shape intended when a metric name is supplied; it does not prove
-vmalert would load or evaluate the result. Confirming any of it — the
-expression parses, the name exists, the rule actually fires on a
-synthetic failure — is validation this PR could not perform and the next
-person to turn a rule on should.
+was run and reported separately). `just golden` proves the nineteen
+render into the shape intended when a metric name is supplied; it does
+not prove vmalert would load or evaluate the result. Confirming any of
+it — the expression parses, the name exists, the rule actually fires on
+a synthetic failure — is validation this PR could not perform and the
+next person to turn a rule on should.
 
 ### The quiet estate, and the restart that forgets it was already worried
 
