@@ -1,0 +1,16 @@
+# An endpoint that confirms any topic can be subscribed to anyone's topic
+# and fed alerts. See templates/_validate.tpl#validate.topics.
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.0.0"
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics: []
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

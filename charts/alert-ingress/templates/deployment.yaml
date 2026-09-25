@@ -1,0 +1,121 @@
+{{- include "alert-ingress.validate" . -}}
+{{- $full := include "alert-ingress.fullname" . -}}
+{{- $config := include "alert-ingress.config" . -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "alert-ingress.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "alert-ingress.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- $config | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "alert-ingress.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "alert-ingress.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "alert-ingress.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "alert-ingress.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "alert-ingress.labels" . | nindent 8 }}
+      annotations:
+        # The configuration's own checksum, so a change to `topics`,
+        # `mappings` or `heartbeat` restarts the pods. Without it a
+        # ConfigMap edit lands on disk and the running process keeps the
+        # configuration it read at startup — a values change that
+        # applied, synced, and did nothing.
+        alert-ingress/config-checksum: {{ $config | sha256sum }}
+    spec:
+      serviceAccountName: {{ $full }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alert-ingress
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config=/etc/alert-ingress/config.yaml
+            - {{ printf "--listen-addr=:%d" (.Values.service.port | int) | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          # A static binary FROM SCRATCH has no shell for exec probes and
+          # needs none: /healthz answers before the configuration is even
+          # re-read, so a probe here can only ever report "the process is
+          # up", which is exactly what a liveness/readiness probe is for.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alert-ingress
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $full }}
+{{- if .Values.selfMonitor }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "alert-ingress.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "alert-ingress.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+{{- end }}

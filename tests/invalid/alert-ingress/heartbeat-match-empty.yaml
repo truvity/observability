@@ -1,0 +1,19 @@
+# heartbeat.match empty recognises nothing, so the counter it feeds never
+# advances and the chart's own deadman VMRule fires on day one whether or
+# not the estate ever wired up the scheduled ping. See
+# templates/_validate.tpl#validate.heartbeat.
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.0.0"
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics:
+  - "<the security-alerts topic ARN>"
+heartbeat:
+  match: {}
+  interval: 15m
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

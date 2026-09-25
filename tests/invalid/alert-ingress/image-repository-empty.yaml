@@ -1,0 +1,18 @@
+# image.repository has NO default: this repository ships no image-build
+# workflow (see .github/workflows/release.yaml), so an empty value here
+# would render cleanly and pull nothing. Required by the schema.
+image:
+  repository: ""
+  tag: "1.0.0"
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics:
+  - "<the security-alerts topic ARN>"
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

@@ -1,0 +1,17 @@
+apiVersion: v2
+name: alert-ingress
+description: >-
+  Turns a cloud provider's own notification topic into an Alertmanager
+  alert, so a finding, a root sign-in or a budget threshold reaches the
+  estate's one routing tree instead of a second one.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - alerting
+  - alertmanager
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability

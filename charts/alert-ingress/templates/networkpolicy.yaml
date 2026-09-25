@@ -1,0 +1,65 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- include "alert-ingress.validate" . -}}
+{{- $full := include "alert-ingress.fullname" . -}}
+{{- /*
+Egress only: this chart never restricts who may REACH the pod (a
+Service's own consumers are the estate's edge routing and any in-cluster
+sender), only what the pod may reach once it is compromised. See
+docs/alert-ingress.md's security properties: "it can reach one thing:
+Alertmanager."
+
+Three rules, and only the first is the claim above. The other two are
+what actually makes the first one true rather than merely written down:
+without DNS the Alertmanager Service name in `alertmanager.url` cannot be
+resolved at all, and without SOME path to the internet neither
+Verify (fetching the provider's signing certificate) nor Confirm (the
+subscription GET) can ever complete — both pinned, in the BINARY, to the
+provider's own signing domain (cmd/alert-ingress/sns.go), which is as far
+as that pin can travel: vanilla Kubernetes NetworkPolicy has no way to
+select egress by hostname, only by podSelector, namespaceSelector or a
+CIDR block, and no CIDR here would stay correct as the provider's own
+address ranges change. So rule two is HTTPS to anywhere, stated as that
+rather than dressed up as a hostname pin it cannot be.
+*/}}
+{{- $am := urlParse .Values.alertmanager.url -}}
+{{- $amPort := $am.port | default (ternary "443" "80" (eq $am.scheme "https")) -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "alert-ingress.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "alert-ingress.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # 1. Alertmanager. The one thing this service is FOR reaching.
+    - to:
+        {{- toYaml .Values.networkPolicy.alertmanagerPeer | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ $amPort | int }}
+    # 2. Cluster DNS, or rule 1 above cannot even be resolved.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- if .Values.networkPolicy.allowCloudHTTPS }}
+    # 3. The cloud provider itself, for signature verification and
+    # subscription confirmation. See the comment above this block.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+{{- end }}
