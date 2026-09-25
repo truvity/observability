@@ -827,6 +827,16 @@ grafana:
         # and Grafana ships that datasource in core, so there is no
         # plugin to install.
         #
+        # `jaeger` rather than `tempo` is also not arbitrary. The store
+        # answers both dialects and implements neither completely, and an
+        # endpoint it does not implement returns 400, which a datasource
+        # reports as a failed query rather than as a missing feature.
+        # Grafana's Jaeger datasource happens to call only endpoints the
+        # store has; its Tempo datasource calls `api/status/buildinfo` to
+        # decide which features the backend supports, and that one is
+        # unsupported. docs/safety.md has the measured table, and
+        # hack/trace-api.sh re-measures it.
+        #
         # Three stores, three URL SHAPES, and they do not resemble each
         # other. The metrics datasource takes a `/prometheus` base and
         # appends `/api/v1/...`; the logs plugin takes the ROOT and

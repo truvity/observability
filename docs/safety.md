@@ -300,7 +300,60 @@ exercise a second principal.** The decision being visible, correct and
 well tested is not evidence that anything consumes it. Assert on the
 artifact that enforces, not on the artifact that decides.
 
-### Four metrics endpoints, one of them a decision
+### The trace store speaks two dialects, and neither one completely
+
+The read route admits `/select/jaeger/*` and `/select/tempo/*`, because
+the store answers both. It implements neither in full, and an endpoint it
+does not implement answers **400** with `unsupported path requested` —
+which a Grafana datasource reports as a failed query rather than as a
+missing feature. So the symptom of choosing the wrong dialect is "traces
+do not work", with nothing naming the cause.
+
+Measured against VictoriaTraces 0.x with `hack/trace-api.sh`, which is in
+this repository so the table below can be re-measured rather than
+believed:
+
+| Dialect | Endpoint | |
+|---|---|---|
+| jaeger | `api/services` | ok |
+| jaeger | `api/services/{service}/operations` | ok |
+| jaeger | `api/traces?service=…` | ok |
+| jaeger | `api/dependencies?endTs=…&lookback=…` | ok |
+| jaeger | `api/operations?service=…` | **unsupported** |
+| tempo | `api/echo` | ok |
+| tempo | `api/search` | ok |
+| tempo | `api/v2/search/tags` | ok |
+| tempo | `api/search/tags` | **unsupported** |
+| tempo | `api/status/buildinfo` | **unsupported** |
+
+**This is why the chart's default trace datasource is `type: jaeger`.**
+Grafana's Jaeger datasource calls the four endpoints the store
+implements and none of the one it does not: it asks for operations by the
+NESTED path, `api/services/{service}/operations`, while Jaeger's own UI
+moved to the flat `api/operations?service=`. That divergence is the only
+reason the gap is not a problem, and it is somebody else's decision to
+keep — if a Grafana release ever switches to the flat form, the Operation
+dropdown empties and nothing else changes.
+
+**A Tempo datasource against this store is the shape to avoid.** Search
+works, but `api/status/buildinfo` is how Grafana's Tempo datasource
+decides which features the backend has, and a 400 there degrades it for a
+reason no message connects to the cause.
+
+Two consequences worth stating, because neither is obvious from a working
+install:
+
+- **A 400 from this store is usually not about your query.** Read the
+  body: `unsupported path requested` names an endpoint, and
+  `incorrect trace query params` names a missing argument. The second is
+  ordinary — Grafana's Explore posts a Jaeger search with no service
+  selected and the store refuses it, which is correct, and which looks
+  identical to an outage until the body is read.
+- **The dependency graph answers empty rather than refusing.** `api/dependencies`
+  returns `{"data":[]}`, so a service map that renders nothing is a store
+  with no computed dependencies, not a broken route.
+
+## Four metrics endpoints, one of them a decision
 
 The metrics read route is a list of named endpoints rather than a prefix,
 and four endpoints the prefix would have caught are worth naming
