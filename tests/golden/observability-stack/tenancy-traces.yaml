@@ -80,6 +80,7 @@ spec:
             - --loggerFormat=json
             - --retention.maxDiskUsagePercent=80
             - --retentionPeriod=30d
+            - --servicegraph.enableTask=false
             - --storage.minFreeDiskSpaceBytes=10GiB
             - --storageDataPath=/storage
           env: 

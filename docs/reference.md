@@ -371,6 +371,7 @@ through.
 | `victoria-logs-single.server.env` | the credential pair | MIRROR of `storeCredentials`. |
 | `victoria-traces-single.server.retentionPeriod` | `30d` | Traces are the shortest-lived and the largest per unit of value. |
 | `victoria-traces-single.server.extraArgs['retention.maxDiskUsagePercent']` | `80` | The trace chart has no value of its own for it. |
+| `victoria-traces-single.server.extraArgs['servicegraph.enableTask']` | `"false"` | Upstream-experimental background task that computes the Jaeger dependency graph. Off by default because the endpoint answers `200` with an empty list rather than an error when nothing is computing it — see docs/safety.md. |
 | `grafana.enabled` | `false` | An estate that already runs one points it at this stack's proxy instead. |
 | `grafana.admin.existingSecret` | `""` | **Required when Grafana is enabled**: with none, the chart generates a random admin password on every render. |
 | `grafana.replicas` | `1` | **Above one requires a shared database.** Grafana's default is SQLite on the pod; the chart refuses more than one replica on it. |

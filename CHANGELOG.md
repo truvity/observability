@@ -6,6 +6,44 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.4.1
+
+One background task, off, and the empty panel it explains.
+
+- **New value: `charts/observability-stack`** —
+  `victoria-traces-single.server.extraArgs['servicegraph.enableTask']`,
+  default `"false"`. It turns on the Jaeger dependency graph (Grafana's
+  service map, over `api/dependencies`), which the trace store computes
+  with a background task that upstream ships disabled — this chart now
+  writes that default out explicitly instead of leaving it to upstream's
+  own.
+
+  Off looks like a bug and always has: the endpoint answers `200` with
+  `{"data":[],"total":0}` rather than an error, so a consumer sees an
+  empty panel with nothing naming the cause, even on an install where
+  the trace reads and context propagation both work. That is the whole
+  reason the flag is now spelled out where somebody tuning the store can
+  find it, alongside its companions — `taskInterval`, `taskLookbehind`,
+  `taskLimit`, `taskTimeout`, `databaseTaskLimit` — rather than left to
+  a background task nobody knew existed.
+
+  It is upstream-experimental and only supported on a single-node or
+  vtstorage deployment, which is this chart's shape. Whether the graph
+  it computes is written back into the store, and so costs retention
+  headroom and write throughput, is inferred from the endpoint's
+  existence, not measured.
+
+  **Nothing to do on upgrade.** The default is upstream's own behaviour,
+  now written down.
+
+- **`docs/safety.md`** — *The trace store speaks two dialects, and
+  neither one completely* corrected: an empty service map was said to be
+  "an empty graph, not a broken route", which is true but was
+  incomplete. By default nothing computes the graph at all, which is why
+  it is empty.
+
+- **`docs/reference.md`** gains the value.
+
 ## 0.4.0
 
 The one router, and the retirement of the shape it replaces.

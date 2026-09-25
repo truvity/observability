@@ -401,9 +401,22 @@ install:
   ordinary — Grafana's Explore posts a Jaeger search with no service
   selected and the store refuses it, which is correct, and which looks
   identical to an outage until the body is read.
-- **The dependency graph answers empty rather than refusing.** `api/dependencies`
-  returns `{"data":[]}`, so a service map that renders nothing is a store
-  with no computed dependencies, not a broken route.
+- **The dependency graph answers empty rather than refusing, and by
+  default nothing is computing it.** `api/dependencies` returns
+  `{"data":[],"total":0}` with a `200`, so a service map with nothing on
+  it looks like a store with no dependencies to report, not a disabled
+  feature — and on this chart it usually is the latter: the graph is
+  built by a background task, `-servicegraph.enableTask`, that upstream
+  ships off and this chart writes out explicitly as `"false"` in
+  `victoria-traces-single.server.extraArgs` for exactly that reason —
+  see the comment there. Turning it on does not change the failure mode
+  above, it changes which of the two causes is true: the endpoint still
+  answers `200` with an empty body until the task has had at least one
+  `taskInterval` to run, and it is upstream-experimental, supported only
+  on a single-node or vtstorage deployment. Whether the relations it
+  computes are written back into the store, and so count against
+  retention and disk the way a trace does, is inferred from the endpoint
+  existing at all — nobody has measured it here.
 
 ## Four metrics endpoints, one of them a decision
 
