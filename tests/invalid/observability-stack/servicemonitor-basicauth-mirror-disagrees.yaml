@@ -1,0 +1,10 @@
+# The log store's ServiceMonitor reads a different Secret than the store
+# itself was started with: every scrape gets 401 forever, and a target
+# that always 401s looks identical to one that was never there.
+victoria-logs-single:
+  server:
+    serviceMonitor:
+      enabled: true
+      basicAuth:
+        username: {name: example-other-credentials, key: username}
+        password: {name: example-other-credentials, key: password}

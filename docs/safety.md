@@ -126,7 +126,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Forty-two, each with a fixture under
+Forty-five, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -172,18 +172,19 @@ for its one reason and no other.
 | A backup with no destination or no credentials | It runs, finds nothing to do and reports success. |
 | `selfAlerts.cardinality.hourlyCurrentSeriesMetric` or `hourlyMaxSeriesMetric` (or the daily pair) set without its other half | StoreCardinalityNearLimit would compare a gauge against nothing instead of never rendering, the same failure platform-alerts refuses for its own `stores[].freeSpaceMetric`. |
 | `selfAlerts.cardinality.ratio` at or above 1 | The alert arrives at the moment the limit has already bitten, not before it. |
-| `selfAlerts.diskGuard.logs` or `.traces` with one free-space metric name and not the other | StoreDiskNearGuard for that store would compare a gauge against nothing. |
+| `selfAlerts.diskGuard.<store>` with one free-space metric name and not the other | StoreDiskNearGuard for that store would compare a gauge against nothing. |
+| `selfAlerts.gateway.queueSizeMetric` or `queueCapacityMetric` set without the other | GatewayQueueFilling would compare a gauge against nothing. |
 | `selfAlerts.logStreamChurn.streamsCreatedMetric` set with no `maxCreatedPerWindow` above zero | LogStreamsChurning would fire on the first stream any estate ever creates. |
 | `selfAlerts.writer.bufferMetric` set with no `maxBufferBytes` above zero | WriterBufferGrowing would fire on any buffered byte at all. |
+| `selfAlerts.enabled` true with no metric name set anywhere and no `backup.<store>.enabled` | The rendered `VMRule` would have an empty rule list — coverage that looks like coverage and evaluates nothing. |
+| `victoria-logs-single.server.serviceMonitor.basicAuth` or `victoria-traces-single...`'s naming a Secret other than `storeCredentials.secretName` | The store answers 401 to every scrape forever, and a target that always 401s is indistinguishable, from the outside, from one that was never there. |
 
-### The self-alerts, and the two incidents behind them
+### The self-alerts: twelve rules, and what a live install did to eleven of them
 
 Twelve rules, rendered as one more `VMRule` alongside this chart's other
 own objects — `templates/selfalerts.yaml` — and evaluated by the metrics
 vmalert like any other rule this repository ships. See
-docs/notifications.md, "Store self-alerts", for the full list and
-values.yaml's own comment on `selfAlerts` for exactly which of the twelve
-metric names this session could confirm and which it could not.
+docs/notifications.md, "Store self-alerts", for the full list.
 
 **StoreIgnoringRows** is the rule the header incident of this release
 needed. A series pushed past the metrics store's per-day label limit is
@@ -203,24 +204,96 @@ and nothing reporting it. The gateway is a component of a SIBLING chart
 `otelcol_exporter_send_failed_*` / `_enqueue_failed_*` are named in
 `docs/reference.md`'s own `otlp.podMonitor` entry, not rendered by this
 one — but its metrics land in this chart's own metrics store the same
-way any other component's do, so vmalert here reads them directly, never
-through the proxy, the same as every rule in this file. A self-alert
-that only ever watched its OWN chart's objects would have missed this
-one too.
+way any other component's do, once something scrapes it there; vmalert
+here would then read them directly, never through the proxy, the same as
+every rule in this file. A self-alert that only ever watched its OWN
+chart's objects would have missed this one too.
 
-**No local proof that any of the twelve expressions parse.** This
-repository has no vendored MetricsQL or LogsQL evaluator and no bundled
-default-rules file inside `charts/*.tgz` to check a name against, and
-`hack/rulegroups.py` reads a LIVE cluster's rendered configmaps rather
-than evaluating anything offline — none of which this change may reach.
-`just golden` proves the twelve render into the shape intended; it does
-not prove vmalert would load them. That is exactly the failure a guessed
-metric name produces — a render that looks right — which is why five of
-the twelve (`StoreCardinalityNearLimit` beyond the metrics store,
-`LogStreamsChurning`, `WriterBufferGrowing`, `WriterDroppingPackets`,
-`ProxyAtConcurrencyLimit`) ship with NO default metric name rather than
-a guessed one, and render nothing until a consumer supplies one
-confirmed against their own component's `/metrics`.
+**Measured against a live install, ten of the eleven counters this design
+names are simply ABSENT from this chart's own metrics store — not wrong
+values, no series under those names at all.** `count by (job) (up)`
+against that store's own scrape targets shows twelve jobs: cadvisor,
+kubelet, the operator, both vmalerts, Alertmanager, vmauth and vmsingle.
+Nothing scrapes the log store, the trace store, vmagent, the OpenTelemetry
+gateway or vlagent: `vl_`, `vt_`, `vmagent_`, `otelcol_` and `vlagent_`
+each have ZERO metric names in that store. `vm_` has 63, so vmsingle
+itself is scraped — but `vm_rows_ignored_total` and
+`vm_free_disk_space_bytes` are not among them, which is its own question
+(below). The one exception:
+`vmauth_concurrent_requests_limit_reached_total` IS present.
+
+So the design page's rule list could not be evaluated on a real install
+as originally shipped in this PR, and shipping it with the metric names
+written in would have produced exactly the shape this repository exists
+to refuse: rules that render cleanly, look like coverage, and never fire.
+Every metric name in `selfAlerts` is now a value with NO default — the
+same shape `charts/platform-alerts` already uses for its own `stores`
+list, for the same reason — and `selfAlerts.enabled` defaults to `false`,
+because with nothing confirmed yet, "on" would mean an empty rule list.
+`templates/_validate.tpl` refuses `enabled: true` with nothing that would
+actually render, for the same reason it refuses `platform-alerts`' every
+group disabled: a chart that renders nothing while claiming to render
+something is worse than one that renders nothing and says so.
+
+**Two possible reasons behind the absences, and this session could not
+tell them apart.** `vm_rows_ignored_total` is plausibly a counter
+VictoriaMetrics only registers once a row has actually been ignored — a
+LAZY, reason-labelled counter, common in the metrics libraries this
+family uses — in which case its absence on a HEALTHY install is the
+correct, expected shape, not evidence of a wrong name. `vm_free_disk_space_bytes`
+has no such excuse: it is a plain gauge with no obvious reason to be
+registered lazily, so its absence despite `storage.minFreeDiskSpaceBytes`
+being set is a genuinely open question — possibly a wrong name, possibly a
+flag this vmsingle build reads differently, possibly something this
+session does not have the visibility to explain. Recorded here rather
+than resolved, because guessing which one it is would be exactly the
+mistake this file exists to avoid.
+
+**This release closes part of the coverage gap directly, for the two
+components this chart itself renders.** `victoria-logs-single.server.serviceMonitor`
+and `victoria-traces-single.server.serviceMonitor` are both upstream
+values this chart had not been setting; turning them on gives the log and
+trace stores a scrape object for the first time. Both upstream charts
+already support the toggle — no new template was needed, only a value
+this chart had left at its default. `ServiceMonitor`, never
+`VMServiceScrape` — "Scrape objects are always the Prometheus Operator
+kinds", above — because that is the one shape this repository's
+collection layer is documented to read regardless of which agent or
+Target Allocator ends up doing the scraping. It does NOT close the gap
+for `charts/observability-emitters`' vmagent, vlagent or OpenTelemetry
+gateway; that chart's own scrape coverage is its own chart's decision,
+not this one's.
+
+**A doctrine refinement, while on the subject of what can and cannot be
+observed.** docs/doctrine.md, "Rules are proven, not asserted", says: "A
+rule whose failure case it cannot itself observe does not belong here.
+That is why there is no alert on a store's read-only flag: the sample
+carrying it is written into the store that has stopped accepting
+writes." True as written for the METRICS store's own read-only flag —
+that is genuinely self-referential, the exact failure the sentence
+describes. It is NOT true in general: `vl_storage_is_read_only` and
+`vt_storage_is_read_only` exist on the log and trace stores, and a
+sample carrying either would be scraped into a DIFFERENT process — this
+chart's own metrics store, a separate vmsingle — so it is observable IN
+PRINCIPLE the same way `vl_rows_dropped_total` is. Today it is not
+observed, for the same reason `vl_rows_dropped_total` was not: nothing
+scraped either store into anywhere at all until this release's
+`serviceMonitor` change. The doctrine sentence is over-general as
+written; the metrics store's own flag is the one case it correctly rules
+out, not a statement about every store's flag.
+
+**No local proof that any of the twelve expressions parse, even now.**
+This repository has no vendored MetricsQL or LogsQL evaluator and no
+bundled default-rules file inside `charts/*.tgz` to check a name against,
+and `hack/rulegroups.py` reads a LIVE cluster's rendered configmaps rather
+than evaluating anything offline — none of which this change may reach
+(no cluster was touched to produce this PR; the live measurement above
+was run and reported separately). `just golden` proves the twelve render
+into the shape intended when a metric name is supplied; it does not prove
+vmalert would load or evaluate the result. Confirming any of it — the
+expression parses, the name exists, the rule actually fires on a
+synthetic failure — is validation this PR could not perform and the next
+person to turn a rule on should.
 
 ### The quiet estate, and the restart that forgets it was already worried
 

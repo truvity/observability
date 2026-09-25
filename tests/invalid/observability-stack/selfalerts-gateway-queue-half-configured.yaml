@@ -1,0 +1,5 @@
+# The queue size metric without its capacity: GatewayQueueFilling would
+# compare a gauge against nothing.
+selfAlerts:
+  gateway:
+    queueSizeMetric: example_otelcol_exporter_queue_size

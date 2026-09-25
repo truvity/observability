@@ -181,6 +181,83 @@ backup:
     enabled: true
     schedule: "40 * * * *"
 
+# Every one of the twelve rules populated — the shape golden proves every
+# field in docs/notifications.md's "Store self-alerts" against, and the
+# one case where every metric name below is fictional on purpose: none
+# of these `example_*` names is a claim about what a real store exports.
+# See values.yaml's own comment on `selfAlerts` for why none of them
+# ships as a default.
+selfAlerts:
+  enabled: true
+  ingest:
+    metric: example_vm_rows_ignored_total
+    window: 2m
+    for: 2m
+    severity: critical
+  cardinality:
+    hourlyCurrentSeriesMetric: example_vm_hourly_series_limit_current_series
+    hourlyMaxSeriesMetric: example_vm_hourly_series_limit_max_series
+    dailyCurrentSeriesMetric: example_vm_daily_series_limit_current_series
+    dailyMaxSeriesMetric: example_vm_daily_series_limit_max_series
+    ratio: 0.85
+    severity: warning
+  logStore:
+    metric: example_vl_rows_dropped_total
+    window: 2m
+    for: 2m
+    severity: critical
+  traceStore:
+    metric: example_vt_rows_dropped_total
+    window: 2m
+    for: 2m
+    severity: critical
+  gateway:
+    queueSizeMetric: example_otelcol_exporter_queue_size
+    queueCapacityMetric: example_otelcol_exporter_queue_capacity
+    queueRatio: 0.75
+    queueFor: 5m
+    queueSeverity: warning
+    exportFailedMetricPrefix: example_otelcol_exporter
+    exportFailWindow: 2m
+    exportFailFor: 2m
+    exportFailSeverity: critical
+  diskGuard:
+    headroomFactor: 3
+    severity: warning
+    metrics:
+      freeSpaceMetric: example_vm_free_disk_space_bytes
+      freeSpaceLimitMetric: example_vm_free_disk_space_limit_bytes
+    logs:
+      freeSpaceMetric: example_vl_free_disk_space_bytes
+      freeSpaceLimitMetric: example_vl_free_disk_space_limit_bytes
+    traces:
+      freeSpaceMetric: example_vt_free_disk_space_bytes
+      freeSpaceLimitMetric: example_vt_free_disk_space_limit_bytes
+  snapshotAge:
+    severity: critical
+    metrics:
+      maxAge: 3h
+    logs:
+      maxAge: 90m
+    traces:
+      maxAge: 90m
+  logStreamChurn:
+    streamsCreatedMetric: example_vl_streams_created_total
+    window: 10m
+    maxCreatedPerWindow: 500
+    severity: warning
+  writer:
+    bufferMetric: example_vmalert_remotewrite_pending_data_bytes
+    maxBufferBytes: 104857600
+    for: 15m
+    droppedPacketsMetric: example_vmalert_remotewrite_packets_dropped_total
+    severity: critical
+  proxyConcurrency:
+    limitedRequestsMetric: example_vmauth_concurrent_requests_limit_reached_total
+    window: 2m
+    for: 2m
+    severity: warning
+
 # Only the operator, so the golden stays about this chart. The stores'
 # own renders are exercised by the `single` case.
 victoria-metrics-k8s-stack:

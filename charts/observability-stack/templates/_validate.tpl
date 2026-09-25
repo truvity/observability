@@ -243,7 +243,7 @@ pair.
 {{- if and $sa.cardinality.dailyMaxSeriesMetric (not $sa.cardinality.dailyCurrentSeriesMetric) -}}
 {{- fail "observability-stack: `selfAlerts.cardinality.dailyMaxSeriesMetric` is set but `dailyCurrentSeriesMetric` is not. StoreCardinalityNearLimit (daily) would compare a gauge against nothing; set both, or neither." -}}
 {{- end -}}
-{{- range $store := list "logs" "traces" -}}
+{{- range $store := list "metrics" "logs" "traces" -}}
 {{- $g := index $sa.diskGuard $store -}}
 {{- if and $g.freeSpaceMetric (not $g.freeSpaceLimitMetric) -}}
 {{- fail (printf "observability-stack: `selfAlerts.diskGuard.%s.freeSpaceMetric` is set but `freeSpaceLimitMetric` is not. StoreDiskNearGuard for that store would compare a gauge against nothing; set both, or neither." $store) -}}
@@ -252,11 +252,50 @@ pair.
 {{- fail (printf "observability-stack: `selfAlerts.diskGuard.%s.freeSpaceLimitMetric` is set but `freeSpaceMetric` is not. StoreDiskNearGuard for that store would compare a gauge against nothing; set both, or neither." $store) -}}
 {{- end -}}
 {{- end -}}
+{{- if and $sa.gateway.queueSizeMetric (not $sa.gateway.queueCapacityMetric) -}}
+{{- fail "observability-stack: `selfAlerts.gateway.queueSizeMetric` is set but `queueCapacityMetric` is not. GatewayQueueFilling would compare a gauge against nothing; set both, or neither." -}}
+{{- end -}}
+{{- if and $sa.gateway.queueCapacityMetric (not $sa.gateway.queueSizeMetric) -}}
+{{- fail "observability-stack: `selfAlerts.gateway.queueCapacityMetric` is set but `queueSizeMetric` is not. GatewayQueueFilling would compare a gauge against nothing; set both, or neither." -}}
+{{- end -}}
 {{- if and $sa.logStreamChurn.streamsCreatedMetric (not (gt ($sa.logStreamChurn.maxCreatedPerWindow | int) 0)) -}}
 {{- fail "observability-stack: `selfAlerts.logStreamChurn.streamsCreatedMetric` is set but `maxCreatedPerWindow` is not above zero, so LogStreamsChurning would fire on the first stream ever created. State the rate your own estate's normal field cardinality produces." -}}
 {{- end -}}
 {{- if and $sa.writer.bufferMetric (not (gt ($sa.writer.maxBufferBytes | int) 0)) -}}
 {{- fail "observability-stack: `selfAlerts.writer.bufferMetric` is set but `maxBufferBytes` is not above zero, so WriterBufferGrowing would fire on any buffered byte at all. State the size a healthy buffer holds between flushes." -}}
+{{- end -}}
+{{- /*
+Every metric name here is optional, by design, since none could be
+confirmed for certain against this chart's pins. But `selfAlerts.enabled`
+with NOTHING configured renders a VMRule with an empty rule list — an
+object that looks like coverage and is not, the exact shape this file
+exists to refuse elsewhere. So at least one thing has to actually render:
+one metric name, or one enabled backup whose SnapshotOlderThanWindow can
+watch it.
+*/ -}}
+{{- if $sa.enabled -}}
+{{- $anyRule := or
+    $sa.ingest.metric
+    (and $sa.cardinality.hourlyCurrentSeriesMetric $sa.cardinality.hourlyMaxSeriesMetric)
+    (and $sa.cardinality.dailyCurrentSeriesMetric $sa.cardinality.dailyMaxSeriesMetric)
+    $sa.logStore.metric
+    $sa.traceStore.metric
+    (and $sa.gateway.queueSizeMetric $sa.gateway.queueCapacityMetric)
+    $sa.gateway.exportFailedMetricPrefix
+    (and $sa.diskGuard.metrics.freeSpaceMetric $sa.diskGuard.metrics.freeSpaceLimitMetric)
+    (and $sa.diskGuard.logs.freeSpaceMetric $sa.diskGuard.logs.freeSpaceLimitMetric)
+    (and $sa.diskGuard.traces.freeSpaceMetric $sa.diskGuard.traces.freeSpaceLimitMetric)
+    (and .Values.backup.enabled .Values.backup.metrics.enabled)
+    (and .Values.backup.enabled .Values.backup.logs.enabled)
+    (and .Values.backup.enabled .Values.backup.traces.enabled)
+    $sa.logStreamChurn.streamsCreatedMetric
+    $sa.writer.bufferMetric
+    $sa.writer.droppedPacketsMetric
+    $sa.proxyConcurrency.limitedRequestsMetric
+-}}
+{{- if not $anyRule -}}
+{{- fail "observability-stack: `selfAlerts.enabled` is true but no rule would actually render — no metric name is set anywhere under `selfAlerts`, and no `backup.<store>.enabled` is true either. A VMRule with an empty rule list looks like coverage and is not. Confirm at least one metric name against your own component's /metrics and set it here, or leave `selfAlerts.enabled: false` until you have." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
@@ -302,6 +341,26 @@ scrape interval silently discards good samples rather than failing.
 {{- end -}}
 {{- if ne $got $want -}}
 {{- fail (printf "observability-stack: %s reads `%s` from Secret %q, but `storeCredentials.secretName` is %q. The proxy authenticates to the stores with the credentials from `storeCredentials`, so a store reading a different Secret is a store the proxy cannot reach — and nothing says so until the first query returns 401. Set both to the same name." $site.key $name $got $want) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+The log and trace stores' own ServiceMonitor, MIRROR of
+storeCredentials the same way their `env` is above: the store runs with
+`-httpAuth.*` on, so a scrape with the wrong basic-auth Secret gets 401
+forever, the same silent failure as a writer reading the wrong Secret.
+*/ -}}
+{{- $smSites := list -}}
+{{- if $logsOn -}}{{- $smSites = append $smSites (dict "key" "victoria-logs-single.server.serviceMonitor.basicAuth" "value" (((index .Values "victoria-logs-single").server).serviceMonitor)) -}}{{- end -}}
+{{- if $tracesOn -}}{{- $smSites = append $smSites (dict "key" "victoria-traces-single.server.serviceMonitor.basicAuth" "value" (((index .Values "victoria-traces-single").server).serviceMonitor)) -}}{{- end -}}
+{{- range $site := $smSites -}}
+{{- $sm := $site.value | default dict -}}
+{{- if $sm.enabled -}}
+{{- $auth := $sm.basicAuth | default dict -}}
+{{- $u := (($auth.username).name) | default "" -}}
+{{- $p := (($auth.password).name) | default "" -}}
+{{- if or (ne $u $want) (ne $p $want) -}}
+{{- fail (printf "observability-stack: %s names Secret(s) %q / %q, but `storeCredentials.secretName` is %q. The store answers 401 to a scrape whose basic auth is not the credential it was started with, and a ServiceMonitor whose target always 401s looks identical to one that is not there at all. Set both to the same name." $site.key $u $p $want) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
