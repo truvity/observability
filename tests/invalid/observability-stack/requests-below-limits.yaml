@@ -1,3 +1,4 @@
+# expect: They must be equal, for the same reason the CPUs must
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

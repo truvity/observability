@@ -1,3 +1,4 @@
+# expect: "Production Tier", which is not a plain name
 # The tier is stamped into the same places the cluster is, and held to
 # the same shape.
 

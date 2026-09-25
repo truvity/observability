@@ -1,3 +1,4 @@
+# expect: SHARDS the series between the remote-write destinations
 # shardByURL SPLITS the series between the destinations instead of
 # replicating to all of them, so a zone-redundant pair holds half the
 # data each. Every query still answers, with half of every result

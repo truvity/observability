@@ -1,3 +1,4 @@
+# expect: "kubernetes.pod_namespace" is not in `victoria-logs-collector.collector.streamFields`
 # The namespace key on the log path is the agent's own
 # `kubernetes.pod_namespace`, an upstream default stream field. A caller
 # who replaces the list and drops it has removed half of the scoping key

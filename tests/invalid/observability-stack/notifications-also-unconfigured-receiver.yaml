@@ -1,3 +1,4 @@
+# expect: which is not the name of any notifications.webhook entry
 # `also[].receiver` names a webhook this chart never configured under
 # `notifications.webhook`. The bridge exists to reach a webhook beside
 # the normal route; a name that resolves to nothing is a route that

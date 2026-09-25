@@ -1,3 +1,4 @@
+# expect: has no `maxDiskUsagePerURL`, so its buffer is uncapped
 # This buffer is on a hostPath, so an uncapped one does not fill a
 # volume — it fills the NODE's disk, and a node under disk pressure
 # evicts every pod on it.

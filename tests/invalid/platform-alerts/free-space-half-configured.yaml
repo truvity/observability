@@ -1,3 +1,4 @@
+# expect: 'freeSpaceLimitMetric' required, if 'freeSpaceMetric' exists
 # One free-space metric without the other: the read-only rule would compare
 # a gauge against nothing.
 stores:

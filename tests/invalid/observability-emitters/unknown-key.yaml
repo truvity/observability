@@ -1,3 +1,4 @@
+# expect: additional properties 'writeCredentialsSecretName' not allowed
 # A typo in a values file is a setting that does not apply. In this chart
 # that is a label that is never stamped, a destination that is never
 # written to, or a buffer that was never on a volume — each of them

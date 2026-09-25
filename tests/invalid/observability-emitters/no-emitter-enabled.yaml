@@ -1,3 +1,4 @@
+# expect: every emitter is disabled, so this release would collect nothing at all
 # Three optional emitters and nothing else in the chart. All three off is
 # a release that collects nothing and reports Synced, which is one more
 # green application saying the cluster is fine.

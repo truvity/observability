@@ -1,3 +1,4 @@
+# expect: Jaeger and Tempo select APIs accept NO query argument to substitute it into
 # A trace store with principals, and no statement that trace reads are
 # unscoped.
 #
@@ -24,3 +25,15 @@ tenancy:
 
 victoria-traces-single:
   enabled: true
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

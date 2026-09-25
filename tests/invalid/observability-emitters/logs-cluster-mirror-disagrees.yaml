@@ -1,3 +1,4 @@
+# expect: files every container log on this cluster under the wrong cluster
 # Helm evaluates a subchart's values before any template runs, so the
 # log agent's static fields cannot be computed and have to be written
 # twice. A cluster that disagrees here files every container log on this

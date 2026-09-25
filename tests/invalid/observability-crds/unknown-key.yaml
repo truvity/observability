@@ -1,3 +1,4 @@
+# expect: additional properties 'prometheusOperatorr' not allowed
 # A misspelled set name must fail the render. Silently ignored, it leaves a
 # set installed that the consumer believed they had turned off, and two
 # owners then take turns overwriting the same CustomResourceDefinition.

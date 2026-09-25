@@ -1,3 +1,4 @@
+# expect: "k8s.pod.labels.app.kubernetes.io/instance", which is not one of the attributes that are constant
 # The Helm release is navigation, not a key, and never a stream: it is
 # constant per pod, but a stream field is a cardinality decision made at
 # collection time, and the allow-list is the chart's. The attribute the

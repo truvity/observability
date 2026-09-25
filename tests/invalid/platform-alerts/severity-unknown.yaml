@@ -1,3 +1,4 @@
+# expect: at '/groups/backups/severity'
 # A severity the routing tree has no branch for is an alert that fires into
 # nowhere.
 stores:

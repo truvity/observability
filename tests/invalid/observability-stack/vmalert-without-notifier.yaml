@@ -1,3 +1,4 @@
+# expect: vmalert would evaluate every rule and send the result nowhere
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

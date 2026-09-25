@@ -1,3 +1,4 @@
+# expect: renders a VMPodScrape instead of a PodMonitor
 # `podMonitor.vm: true` renders a VMPodScrape instead of a PodMonitor.
 # Every scrape object on the cluster is a Prometheus Operator kind so the
 # agent under them stays replaceable; one in the vendor's spelling is the

@@ -1,3 +1,4 @@
+# expect: `tenancy.environment` is empty
 # The tier is never a key, so a blank one selects nothing wrongly. It is
 # refused because a `deployment.environment.name` of "" on every series
 # is a dimension that exists and says nothing, and nobody notices until

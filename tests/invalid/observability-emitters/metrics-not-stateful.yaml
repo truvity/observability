@@ -1,3 +1,4 @@
+# expect: the persistent queue lands on `/tmp`, which is an emptyDir
 # Without stateful mode the operator renders a Deployment and the queue
 # lands on /tmp, which is the same loss with an extra step.
 

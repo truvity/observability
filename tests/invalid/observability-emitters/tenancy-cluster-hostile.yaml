@@ -1,3 +1,4 @@
+# expect: "example-cluster|other-cluster", which is not a plain name
 # The cluster name is interpolated into the filter expression the proxy
 # applies to every query. `example-cluster|other-cluster` would not look
 # odd in a rendered filter — it would grant a second cluster. Such a name

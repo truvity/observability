@@ -1,3 +1,4 @@
+# expect: at '/otlp/queue/size'
 # The OTLP sending queues and the remote-write write-ahead log both live
 # on this volume. Without it every replica holds undelivered data in
 # memory and loses it on the next rollout — which is the most likely

@@ -1,3 +1,4 @@
+# expect: at '/tenancy/namespaceLabel'
 # A metrics key has to be a label a series can carry. `k8s.namespace.name`
 # is the OpenTelemetry spelling, and it is exactly what a Prometheus label
 # cannot be: the remote-write exporter turns the dots into underscores on

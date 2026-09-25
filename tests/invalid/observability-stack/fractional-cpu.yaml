@@ -1,3 +1,4 @@
+# expect: size their thread pool from the cgroup CPU quota and round it DOWN
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

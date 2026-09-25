@@ -1,3 +1,4 @@
+# expect: at '/tenancy/audience'
 # An audience that is not a client id at all.
 #
 # A client id carrying a dot, a `|` or an `@` is NOT refused: the issuer

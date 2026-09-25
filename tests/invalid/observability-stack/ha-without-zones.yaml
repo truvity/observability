@@ -1,3 +1,4 @@
+# expect: No store here replicates across a zone
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

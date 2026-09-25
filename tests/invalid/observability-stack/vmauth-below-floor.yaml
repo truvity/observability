@@ -1,3 +1,4 @@
+# expect: GHSA-f99m-22fh-qw96
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

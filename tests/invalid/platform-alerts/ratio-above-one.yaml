@@ -1,3 +1,4 @@
+# expect: at '/groups/volumes/minCapacityRatio'
 # A mounted filesystem is always somewhat smaller than its claim, so a
 # ratio above 1 fires on every healthy volume in the estate.
 stores:

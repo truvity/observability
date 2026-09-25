@@ -1,3 +1,4 @@
+# expect: which is neither "slack" nor the name of an entry in notifications.webhook
 # `severities.critical.receiver` names a receiver kind this chart never
 # configured. Alertmanager's route to it exists in the rendered
 # manifest and looks like a route; it reaches nobody.

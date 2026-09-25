@@ -1,3 +1,4 @@
+# expect: This chart wraps the COMMUNITY edition only
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

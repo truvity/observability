@@ -1,4 +1,9 @@
+# expect: SQLite is a file on one pod
 tenancy:
+  # The trace store is enabled by default and `tenancy.principals` is
+  # set below, so without this the trace-tenancy refusal fires first
+  # (see docs/safety.md). Not the fixture's own check.
+  allowUnfilteredTraceReads: true
   issuerUrl: https://issuer.example
   audience: example-observability-client
   principals:
@@ -20,3 +25,15 @@ grafana:
   grafana.ini:
     database:
       locking_attempt_timeout_sec: 120
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

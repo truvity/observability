@@ -1,3 +1,4 @@
+# expect: stamp exactly two dimensions on every alert
 # A route matching on `tenant`, which no collector this chart's rules
 # run against stamps on an alert. The vocabulary is cluster ×
 # namespace; a route on anything else matches nothing a rule actually

@@ -1,3 +1,4 @@
+# expect: the same fact — the base URL a link leaving the cluster should point at
 # `notifications.externalUrl` and `vmalert.externalUrl` are the same
 # fact — the base URL a link leaving the cluster should point at — and
 # here they disagree. A difference between them is a difference nobody

@@ -1,3 +1,4 @@
+# expect: the CHECKPOINT that records how far into each container's log file the agent has read
 # The checkpoint records how far into each container's log file the agent
 # has read. An agent that forgets re-reads every file from the beginning
 # on every rollout and ships every line a second time — a duplicate is

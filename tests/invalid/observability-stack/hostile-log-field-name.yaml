@@ -1,3 +1,4 @@
+# expect: at '/tenancy/logsNamespaceField'
 # A log field name is interpolated into the stream filter, exactly as a
 # namespace name is. This one closes the quoted field name, ends the
 # alternative and opens a second one that matches every namespace — it

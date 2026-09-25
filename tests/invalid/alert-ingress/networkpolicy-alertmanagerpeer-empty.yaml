@@ -1,3 +1,4 @@
+# expect: `networkPolicy.alertmanagerPeer` is empty
 # An enabled NetworkPolicy with no alertmanagerPeer allows egress to
 # Alertmanager from nowhere: every alert this service tries to post fails
 # silently, which looks from outside exactly like a quiet estate. See

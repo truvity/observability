@@ -1,3 +1,4 @@
+# expect: is an Enterprise flag, and this chart never renders one
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

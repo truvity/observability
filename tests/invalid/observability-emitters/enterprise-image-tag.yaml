@@ -1,3 +1,4 @@
+# expect: This chart wraps the COMMUNITY edition only
 # An Enterprise image without a licence key RUNS — it refuses only the
 # Enterprise features — so nothing reports that the estate is in breach
 # of the vendor's terms.

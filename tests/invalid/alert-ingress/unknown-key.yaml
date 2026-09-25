@@ -1,3 +1,4 @@
+# expect: additional properties 'toppics' not allowed
 # A typo in an alerting path is a rule that never fires, so an unknown
 # key must fail the render rather than be silently ignored.
 image:

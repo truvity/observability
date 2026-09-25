@@ -1,3 +1,4 @@
+# expect: `metrics.destinations` is empty while its emitter is enabled
 # An agent with nowhere to write scrapes the whole cluster, fills its
 # buffer, and drops the oldest data — with a Ready pod throughout.
 

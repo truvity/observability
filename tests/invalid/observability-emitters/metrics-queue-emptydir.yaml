@@ -1,3 +1,4 @@
+# expect: the same loss `statefulMode` was turned on to prevent
 # The persistent queue on an emptyDir is discarded exactly when it is
 # holding something: every rollout, eviction and node replacement drops
 # whatever had not been delivered.
