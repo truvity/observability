@@ -1,3 +1,4 @@
+# expect: additional properties 'datasourcess' not allowed
 # A typo in a values file is a dashboard that silently never ships, so an
 # unknown key must fail the render rather than be ignored.
 datasources:
