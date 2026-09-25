@@ -1,3 +1,5 @@
+# expect: GatewayQueueFilling would compare a gauge against nothing
+#
 # The queue size metric without its capacity: GatewayQueueFilling would
 # compare a gauge against nothing.
 selfAlerts:

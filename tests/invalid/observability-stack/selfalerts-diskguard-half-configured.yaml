@@ -1,3 +1,5 @@
+# expect: LogStoreDiskNearGuard would compare a gauge against nothing
+#
 # The log store's free-space metric without its limit: LogStoreDiskNearGuard
 # would compare a gauge against nothing.
 selfAlerts:
