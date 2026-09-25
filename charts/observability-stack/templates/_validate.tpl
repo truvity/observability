@@ -308,8 +308,21 @@ free-form passthrough. See docs/notifications.md and docs/safety.md.
 {{- if and .Values.alertmanager.enabled (not $configured) -}}
 {{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.webhookSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, or set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs." -}}
 {{- end -}}
-{{- if and $configured (not $n.externalUrl) -}}
-{{- fail "observability-stack: `notifications` configures a receiver but `notifications.externalUrl` is empty. It is the base of the Grafana link this chart puts in every Slack message; without it, every link a message carries points at nothing a person can open." -}}
+{{- /*
+`notifications.externalUrl` and `vmalert.externalUrl` are one fact — the
+base URL a link leaving the cluster should point at — kept as two
+values only because `vmalert.externalUrl` has to keep working on its
+own for an install with `alertmanager.enabled: false`, which has no
+`notifications` block at all. Two inputs for one fact is refused rather
+than left to disagree quietly: see docs/doctrine.md, "One input, two
+shapes".
+*/ -}}
+{{- if and $n.externalUrl .Values.vmalert.externalUrl (ne $n.externalUrl .Values.vmalert.externalUrl) -}}
+{{- fail (printf "observability-stack: notifications.externalUrl is %q and vmalert.externalUrl is %q. They are the same fact — the base URL a link leaving the cluster should point at — so a difference between them is a difference nobody notices until an alert fires and one link works while the other does not. Set them to the same value, or leave notifications.externalUrl unset and let it default to vmalert.externalUrl." (toString $n.externalUrl) (toString .Values.vmalert.externalUrl)) -}}
+{{- end -}}
+{{- $effectiveExternalUrl := $n.externalUrl | default .Values.vmalert.externalUrl -}}
+{{- if and $configured (not $effectiveExternalUrl) -}}
+{{- fail "observability-stack: `notifications` configures a receiver but neither `notifications.externalUrl` nor `vmalert.externalUrl` is set. One of them is the base of the Grafana link this chart puts in every Slack message; without it, every link a message carries points at nothing a person can open." -}}
 {{- end -}}
 {{- /*
 A receiver kind with no default route for a severity is the blackhole

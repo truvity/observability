@@ -116,8 +116,13 @@ alertmanager:
 # that names only `critical` (proving its warnings fall back to
 # `severities.warning`), and the webhook bridge — the shape golden proves
 # every field in docs/notifications.md against.
+#
+# `externalUrl` is set here to the SAME value as `vmalert.externalUrl`
+# above — the chart refuses if the two disagree, and this case is where
+# the golden proves it renders cleanly when a consumer states the one
+# fact in both places and gets it right. `single` proves the default.
 notifications:
-  externalUrl: https://grafana.example
+  externalUrl: https://alerts.example.com
   runbookBaseUrl: https://runbooks.example/
   groupWait: 10s
   groupInterval: 2m

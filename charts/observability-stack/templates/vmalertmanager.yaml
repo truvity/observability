@@ -20,6 +20,12 @@ in `helm get manifest`, and in whatever stores the release history.
 {{- $severities := $n.severities | default dict }}
 {{- $routes := $n.routes | default list }}
 {{- $also := $n.also | default list }}
+{{- /*
+`notifications.externalUrl` defaults to `vmalert.externalUrl`: they are
+one fact (see the refusal in _validate.tpl), and a consumer who already
+set the vmalert one gets a working Grafana link in Slack for free.
+*/}}
+{{- $externalUrl := $n.externalUrl | default .Values.vmalert.externalUrl }}
 {{- $slackChannels := dict }}
 {{- range $tier, $cfg := $severities }}
 {{- if eq $cfg.receiver "slack" }}
@@ -177,7 +183,7 @@ spec:
               {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
               {{- end }}
-              Grafana: {{ $n.externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}&var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}
+              Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}&var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
               Silence: {{ "{{" }} .ExternalURL {{ "}}" }}/#/silences/new?filter=%7B{{ "{{" }} range .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} .Name {{ "}}" }}%3D%22{{ "{{" }} .Value {{ "}}" }}%22%2C{{ "{{" }} end {{ "}}" }}%7D
       {{- end }}

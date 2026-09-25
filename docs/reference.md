@@ -295,7 +295,7 @@ docs/safety.md for the failure it closes; this is the value list.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
-| `notifications.externalUrl` | string | `""` | The base of the Grafana link in every Slack message. Required the moment a receiver kind is configured. |
+| `notifications.externalUrl` | string | `vmalert.externalUrl` | The base of the Grafana link in every Slack message. The same fact as `vmalert.externalUrl` — set this one only when it needs to differ; the chart refuses if both are set and disagree. Required (one or the other) the moment a receiver kind is configured. |
 | `notifications.runbookBaseUrl` | string | `""` | Prefixed to a firing alert's `runbook` annotation. Empty renders no runbook line at all. |
 | `notifications.groupWait` | duration | `30s` | |
 | `notifications.groupInterval` | duration | `5m` | |

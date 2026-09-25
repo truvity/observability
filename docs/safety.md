@@ -126,7 +126,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Thirty-six, each with a fixture under
+Thirty-seven, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -154,7 +154,8 @@ for its one reason and no other.
 | `ha: true` with fewer than two zones | No store here replicates across a zone. An install labelled highly available with one zone is the single-zone install with a label that stops anyone looking at it again. |
 | vmalert with no notifier at all | Every rule evaluates and the result goes nowhere, which is indistinguishable from an estate with no problems. |
 | `alertmanager.enabled` with no `notifications` configured | The `blackhole` shape this chart exists to retire: every rule evaluates and Alertmanager routes the result to a receiver with no configs, and nothing about the install looks unhealthy. |
-| A receiver kind configured with `notifications.externalUrl` empty | Every Grafana link this chart puts in a Slack message is built from it; unset, every one of them points at nothing a person can open. |
+| A receiver kind configured with neither `notifications.externalUrl` nor `vmalert.externalUrl` set | Every Grafana link this chart puts in a Slack message is built from one of them; with neither set, every one of them points at nothing a person can open. |
+| `notifications.externalUrl` and `vmalert.externalUrl` both set and disagreeing | Two inputs for one fact: the alert's own source link and the Slack message's Grafana link would point at two different places, and nothing notices until somebody clicks the one that is wrong. |
 | `notifications.severities.<tier>` missing while a receiver kind is configured | Every route this chart renders falls back to a no-op receiver when nothing more specific matches; a tier with no default reaches nobody and looks routed. |
 | `notifications.severities.<tier>.receiver` naming a kind that is not configured | The same failure one level down: a route to `slack` with no `webhookSecret`, or to a name absent from `notifications.webhook`, looks like a route and reaches nobody. |
 | `notifications.also[].receiver` naming a webhook that is not configured | The status-page bridge silently does not bridge: the matcher is real, the delivery is not. |

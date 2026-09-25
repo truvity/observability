@@ -344,6 +344,13 @@ vmalert:
   # `-external.url` to its own pod hostname, which makes every alert's
   # link dead the moment it leaves the cluster. Empty renders no flag and
   # keeps the broken default, so set it.
+  #
+  # `notifications.externalUrl` (below) is the SAME fact for the Slack
+  # template's Grafana link, and defaults to this value — set this one
+  # and both work. This one has to keep existing on its own regardless,
+  # because an install with `alertmanager.enabled: false` renders no
+  # `notifications` block at all and still needs its source links to
+  # resolve.
   externalUrl: ""
   # -- Labels on every alert and recording rule these vmalerts produce.
   externalLabels: {}
@@ -417,6 +424,15 @@ notifications:
   # nowhere — the same failure `vmalert.externalUrl` exists to prevent
   # for the alert's own source link, for a different link and a
   # different reader.
+  #
+  # Both settings are the SAME fact — the base URL a link leaving the
+  # cluster should point at — and this chart refuses to render if they
+  # disagree, so this one defaults to `vmalert.externalUrl` and is worth
+  # setting on its own only when it needs to differ. The pair exists
+  # because `vmalert.externalUrl` has to keep working by itself: an
+  # install with `alertmanager.enabled: false` — an estate pointing
+  # vmalert at an Alertmanager it already runs — has no `notifications`
+  # block at all, and still needs its alerts' source links to resolve.
   externalUrl: ""
   # -- Prefixed to a firing alert's `runbook` annotation to build the
   # runbook link. Left empty, the message carries no runbook line at all

@@ -35,6 +35,15 @@ The one router, and the retirement of the shape it replaces.
   An existing `alertmanager.config` block does not carry over: replace
   it with `notifications` before upgrading, or the render will refuse.
 
+  `notifications.externalUrl` defaults to `vmalert.externalUrl` — they
+  are the same fact, the base URL a link leaving the cluster should
+  point at, and the chart refuses if both are set and disagree. Set
+  `vmalert.externalUrl` and the Slack template's Grafana link works too,
+  with nothing else to set; `notifications.externalUrl` stays a
+  separate value because `vmalert.externalUrl` still has to work on its
+  own for an install with `alertmanager.enabled: false`, which renders
+  no `notifications` block at all.
+
 - **Two defaults that made an alerting path lie about itself, fixed
   everywhere they apply, not values:**
 
