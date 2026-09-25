@@ -67,6 +67,37 @@ The one router, and the retirement of the shape it replaces.
   the design this release implements; its "Store self-alerts" section
   ships separately.
 
+- **New chart `charts/alert-ingress`, and a new image, `cmd/alert-ingress`**
+  — turns a cloud provider's own notification topic (a threat-detection
+  finding, a root sign-in, a signing operation on a key that should
+  never sign, a budget crossing its line) into an alert on the same
+  Alertmanager `notifications` now routes everything else through,
+  rather than a second router with its own silences to keep. Every
+  message is signature-verified against a certificate fetched only from
+  the provider's own signing domain, pinned by pattern in the binary; a
+  subscription is confirmed only for an allow-listed topic; a message no
+  mapping rule matches is never dropped — it becomes `CloudEventUnmapped`
+  rather than vanishing. The chart renders its own deadman `VMRule`,
+  because a notification service retries and then gives up quietly and
+  nothing else would say so.
+
+  **`image.repository` has no default and is a required value.** This
+  repository has never built or published an image for a Go binary —
+  every release to date has been chart-only, via goreleaser's
+  `builds-skip` — and this one does not change that: no image-build
+  workflow was invented for it. Point it at wherever your estate builds
+  and pushes `cmd/alert-ingress` from this tag.
+
+  **`networkPolicy.allowCloudHTTPS`** (default `true`) is a decision for
+  the installing estate, not a footnote. Verifying a signature and
+  confirming a subscription both need HTTPS egress to the cloud
+  provider, and vanilla Kubernetes NetworkPolicy has no way to pin
+  egress to a hostname — only to a peer selector or a CIDR block. The
+  rendered policy says so rather than pretending otherwise: Alertmanager
+  (peer-scoped, required), cluster DNS, and HTTPS to anywhere. Turn it
+  off only if your cluster's CNI enforces FQDN-scoped egress and the
+  real signing domain is pinned there instead.
+
 ## 0.3.10
 
 Documentation and a probe, no render change.
