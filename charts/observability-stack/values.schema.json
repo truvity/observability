@@ -622,6 +622,13 @@
           "items": {
             "type": "object"
           }
+        },
+        "scrapeFrom": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Kubernetes NetworkPolicyPeer objects; passed through untouched. Empty means the metrics agent charts/observability-emitters renders."
         }
       }
     },

@@ -2,8 +2,9 @@
 {{- $root := . }}
 {{- $fullname := include "observability-stack.fullname" . }}
 {{- /*
-The stores talk to nothing and are talked to by three things: the proxy,
-the two vmalerts, and the backup jobs.
+The stores talk to nothing and are talked to by four things: the proxy,
+the two vmalerts, the backup jobs, and whatever scrapes each store's own
+metrics port.
 
 A NetworkPolicy that selects a pod is a default-deny for that pod, which
 is the point: `-httpAuth` on the stores is a rule about who may read, and
@@ -11,16 +12,30 @@ this is a rule about who may connect. Both, because each is a different
 mistake — a leaked credential defeats the first, a missing credential
 check defeats the second, and an estate only ever notices one of them.
 
+The fourth peer was missing for as long as this file existed: the stores
+admitted the proxy, vmalert and their own pods, and nothing else, so the
+metrics agent charts/observability-emitters renders —
+`app.kubernetes.io/instance: observability-emitters`, `name: vmagent` —
+matched none of them. Measured on a live install: `up=0` for every
+store's own scrape job, no `scrape_samples_scraped` series for it at all,
+and every rule in charts/platform-alerts naming a store's own counter,
+plus this chart's own `selfAlerts`, unable to fire. `networkPolicy.
+scrapeFrom` below closes it, on by default rather than left for an
+estate to discover the same way this one did — see docs/safety.md, "A
+store nobody can alert on".
+
 Egress is deliberately not restricted here. An egress policy that names
 every DNS server, every object store endpoint and every issuer is a
 policy that breaks the first time one of them moves, and the failure mode
 is a backup that stops silently — which is the failure this repository
 exists to catch, not to cause.
 */}}
+{{- $scrapeDefault := list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmagent"))) -}}
 {{- $peers := concat
     (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmauth" "app.kubernetes.io/instance" $fullname))))
     (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmalert"))))
     (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/part-of" "observability-stack" "app.kubernetes.io/instance" $root.Release.Name))))
+    ($root.Values.networkPolicy.scrapeFrom | default $scrapeDefault)
     ($root.Values.networkPolicy.writersFrom | default list)
 }}
 {{- $stores := list

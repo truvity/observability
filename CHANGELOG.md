@@ -8,8 +8,36 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## 0.5.0
 
-The nineteen store self-alerts, INF-986 — and, once a live install was
-checked against them, mostly a value list waiting for names.
+The nineteen store self-alerts, INF-986, and the NetworkPolicy gap that
+had kept every store from ever being scraped in the first place — once a
+live install was checked against both, mostly a value list waiting for
+names, and one more peer a policy had never admitted.
+
+- **New value: `charts/observability-stack`** — `networkPolicy.scrapeFrom`,
+  beside the existing `proxyFrom` and `writersFrom`. Every store's own
+  NetworkPolicy admitted the proxy, vmalert and the store's own pods, and
+  nothing else — so the metrics agent `charts/observability-emitters`
+  renders matched none of the three peers, and no store in this stack was
+  ever scraped by anything but itself indirectly through the peers above.
+  Measured on a live install: `up=0` for every store's own scrape job, no
+  `scrape_samples_scraped` series for it, and every rule naming a store's
+  own counter — including this chart's own `selfAlerts` — evaluating
+  against a sample that never arrived. See docs/safety.md, "A store whose
+  own policy hides it from the scraper".
+
+  Empty (the default) now admits `app.kubernetes.io/name: vmagent` in the
+  release's own namespace — the selector the sibling chart's agent
+  carries — so a bare `helm install` self-monitors without a values
+  change. A non-empty list REPLACES that default rather than adding to
+  it, the same trap `proxyFrom` already carries: an estate renaming the
+  agent or running it in another namespace has to re-state the default
+  peer alongside whatever it adds, or the store goes dark again.
+
+  A new refusal closes the value against a peer that would fail the same
+  way silently: `scrapeFrom[]` naming an `ipBlock` with no `podSelector`
+  or `namespaceSelector` is refused, because a pod IP is reassigned on
+  every reschedule and the rule would work today and stop, unannounced,
+  on the next one.
 
 - **New value: `charts/observability-stack`** — `selfAlerts`, one more
   `VMRule` alongside this chart's other own objects, watching the stack's

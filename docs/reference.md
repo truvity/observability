@@ -318,6 +318,7 @@ design is built on, not a value.
 | `networkPolicy.enabled` | bool | `true` | One policy per store plus one for the proxy. A policy that selects a pod is a default-deny for it. |
 | `networkPolicy.proxyFrom` | list | `[]` | Who may reach the proxy, as `NetworkPolicyPeer` objects. Empty means the release's own namespace. |
 | `networkPolicy.writersFrom` | list | `[]` | Who may write to a store directly. The collectors need this; nothing else does. |
+| `networkPolicy.scrapeFrom` | list | `[]` | Who may scrape a store's metrics port directly, as `NetworkPolicyPeer` objects. Empty means the metrics agent `charts/observability-emitters` renders (`app.kubernetes.io/name: vmagent`) in the release's own namespace. Non-empty REPLACES that default, the same way `proxyFrom` replaces its own. |
 
 Egress is deliberately unrestricted: a policy naming every DNS server,
 object store and issuer breaks the first time one moves, and it breaks as

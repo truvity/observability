@@ -1,0 +1,10 @@
+# A store's own metrics port opened to a pod IP instead of a selector.
+#
+# The rule renders and installs, and it works for as long as the scraper
+# pod happens to hold that address. The first reschedule, eviction or
+# rollout gives it a new one, and the store stops being scraped again —
+# silently, the same way it already was before `scrapeFrom` existed.
+networkPolicy:
+  scrapeFrom:
+    - ipBlock:
+        cidr: 10.0.0.5/32

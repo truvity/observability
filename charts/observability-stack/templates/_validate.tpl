@@ -22,6 +22,7 @@ second debugging session.
 {{- include "observability-stack.validate.licence" . -}}
 {{- include "observability-stack.validate.selfAlerts" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
+{{- include "observability-stack.validate.scrapeFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
@@ -359,6 +360,32 @@ forever, the same silent failure as a writer reading the wrong Secret.
 {{- if or (ne $u $want) (ne $p $want) -}}
 {{- fail (printf "observability-stack: %s names Secret(s) %q / %q, but `storeCredentials.secretName` is %q. The store answers 401 to a scrape whose basic auth is not the credential it was started with, and a ServiceMonitor whose target always 401s looks identical to one that is not there at all. Set both to the same name." $site.key $u $p $want) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+A store's scraper, named by address rather than by identity.
+
+`networkPolicy.scrapeFrom` admits whatever it is given at face value —
+that is the same choice `proxyFrom` and `writersFrom` already make, and
+this file does not second-guess it by trying to confirm a selector
+matches a real pod, which it cannot know at render time.
+
+What it CAN see is a peer that identifies a scraper by `ipBlock` alone: a
+pod IP, reassigned on every reschedule, eviction and rollout. Such a rule
+renders, installs and works — right up to the first time the scraper
+pod moves, at which point the store stops being scraped exactly the way
+it already was before this value existed, and just as silently. This is
+the same principle `tenancy` is built on for the read side: "a viewer's
+reach follows from their identity, not from which address they happened
+to query" (docs/doctrine.md) — a scraper's admission should follow from
+what it IS, not from an address it holds today.
+*/}}
+{{- define "observability-stack.validate.scrapeFrom" -}}
+{{- range $i, $peer := (.Values.networkPolicy.scrapeFrom | default list) -}}
+{{- if and (not $peer.podSelector) (not $peer.namespaceSelector) (hasKey $peer "ipBlock") -}}
+{{- fail (printf "observability-stack: networkPolicy.scrapeFrom[%d] admits a scraper by `ipBlock` alone. A pod IP is reassigned on every reschedule, eviction and rollout, so this rule works today and stops working silently the first time the scraper pod moves — the same failure this value exists to fix, reintroduced by the value meant to fix it. Name the scraper by a `podSelector` (and a `namespaceSelector` if it runs outside this release's namespace), the way this chart's own default does." $i) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
