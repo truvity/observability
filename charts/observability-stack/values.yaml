@@ -682,6 +682,13 @@ selfAlerts:
     # storeLimits `headroomFactor`, read the other way round: arrive
     # before the cap silently starts dropping new series, not after.
     ratio: 0.9
+    # -- The most spike-prone rule in this file: it is a RATIO, and a
+    # series burst that the store absorbs on its own pushes the ratio up
+    # and back down within minutes. 5m is short enough that a real climb
+    # toward either limit is still caught with margin before it bites —
+    # the hourly window itself is only 12x this long — and long enough
+    # that a burst which resolves itself does not page anyone.
+    for: 5m
     severity: warning
 
   # LogStoreDroppingRows, TraceStoreDroppingRows.
@@ -784,6 +791,14 @@ selfAlerts:
   # metrics one.
   diskGuard:
     headroomFactor: 2
+    # -- Free space falls MONOTONICALLY under normal operation — nothing
+    # gives space back to a store between writes — so a single reading
+    # under the guard is a measurement artefact (a stale scrape, a
+    # momentary read against a filesystem mid-flush), not a trend.
+    # Minutes, not seconds: long enough to ride out one bad reading,
+    # short enough that a real approach to the guard is still caught
+    # with the headroom above to act in.
+    for: 10m
     severity: warning
     metrics:
       freeSpaceMetric: ""
@@ -829,6 +844,15 @@ selfAlerts:
   # defaults below suit the hourly schedules `backup.yaml` ships by
   # default (2x the schedule plus a little).
   snapshotAge:
+    # -- The condition itself is slow-moving — a snapshot is hours old or
+    # it is not — but the signal behind it is a live CronJob status field,
+    # and `kube_cronjob_status_last_successful_time` can be briefly
+    # absent from a scrape while a job is actively running and the
+    # controller has not yet written its result. Long enough that a job
+    # in flight does not page; short against each `maxAge` below, which
+    # is already hours, so a real stale snapshot is not meaningfully
+    # delayed.
+    for: 30m
     severity: critical
     metrics:
       maxAge: 150m

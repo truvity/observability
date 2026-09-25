@@ -2807,6 +2807,7 @@ spec:
             (example_vm_hourly_series_limit_max_series > 0)
             and
             (example_vm_hourly_series_limit_current_series / example_vm_hourly_series_limit_max_series) > 0.85
+          for: 3m
           labels:
             severity: warning
           annotations:
@@ -2825,6 +2826,7 @@ spec:
             (example_vm_daily_series_limit_max_series > 0)
             and
             (example_vm_daily_series_limit_current_series / example_vm_daily_series_limit_max_series) > 0.85
+          for: 3m
           labels:
             severity: warning
           annotations:
@@ -2873,7 +2875,8 @@ spec:
             summary: "The trace store is creating streams faster than services explain"
             description: >-
               example_vt_streams_created_total is above
-              2 streams/s averaged over an hour.
+              2 streams/s averaged over an hour — a span
+              name is carrying an id rather than staying constant per service.
         # WriterBufferGrowing. Generic across writers on purpose: this
         # chart's own vmalert remote-write client shares its metrics
         # family with vmagent's, so whichever writer's buffer this name
@@ -2911,7 +2914,9 @@ spec:
           annotations:
             summary: "A writer is dropping packets on its remote-write path"
             description: >-
-              example_vmalert_remotewrite_packets_dropped_total is rising.
+              example_vmalert_remotewrite_packets_dropped_total is rising. Data is being
+              discarded, not delayed: a 400 or 404 from the destination is
+              treated as permanent, and the block is gone, not retried.
         # GatewayQueueFilling.
         #
         # THE INCIDENT (this week): a network policy change cut
@@ -3035,9 +3040,15 @@ spec:
         # writes. A logs or traces store that fills its disk switches to
         # read-only and does NOT drop data to recover, so arriving late
         # here is arriving after an outage rather than before one.
+        #
+        # `for:` exists because free space falls MONOTONICALLY under
+        # normal operation, so one reading under the guard is a
+        # measurement artefact, not a trend — see selfAlerts.diskGuard.for
+        # in values.yaml.
         - alert: MetricStoreDiskNearGuard
           expr: >-
             example_vm_free_disk_space_bytes / example_vm_free_disk_space_limit_bytes < 3
+          for: 8m
           labels:
             severity: warning
           annotations:
@@ -3054,9 +3065,15 @@ spec:
         # writes. A logs or traces store that fills its disk switches to
         # read-only and does NOT drop data to recover, so arriving late
         # here is arriving after an outage rather than before one.
+        #
+        # `for:` exists because free space falls MONOTONICALLY under
+        # normal operation, so one reading under the guard is a
+        # measurement artefact, not a trend — see selfAlerts.diskGuard.for
+        # in values.yaml.
         - alert: LogStoreDiskNearGuard
           expr: >-
             example_vl_free_disk_space_bytes / example_vl_free_disk_space_limit_bytes < 3
+          for: 8m
           labels:
             severity: warning
           annotations:
@@ -3073,9 +3090,15 @@ spec:
         # writes. A logs or traces store that fills its disk switches to
         # read-only and does NOT drop data to recover, so arriving late
         # here is arriving after an outage rather than before one.
+        #
+        # `for:` exists because free space falls MONOTONICALLY under
+        # normal operation, so one reading under the guard is a
+        # measurement artefact, not a trend — see selfAlerts.diskGuard.for
+        # in values.yaml.
         - alert: TraceStoreDiskNearGuard
           expr: >-
             example_vt_free_disk_space_bytes / example_vt_free_disk_space_limit_bytes < 3
+          for: 8m
           labels:
             severity: warning
           annotations:
@@ -3089,6 +3112,7 @@ spec:
             time() - max(
               kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-metrics-incremental"}
             ) > 3h
+          for: 20m
           labels:
             severity: critical
           annotations:
@@ -3104,25 +3128,31 @@ spec:
             time() - max(
               kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-logs"}
             ) > 90m
+          for: 20m
           labels:
             severity: critical
           annotations:
             summary: "The log store's newest backup snapshot is stale"
             description: >-
               No successful run of observability-stack-backup-logs
-              within 90m.
+              within 90m. A CronJob that has
+              stopped being scheduled produces no failures at all — the
+              same blind spot the metrics store's own rule exists for.
         - alert: TraceStoreSnapshotOlderThanWindow
           expr: >-
             time() - max(
               kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-traces"}
             ) > 90m
+          for: 20m
           labels:
             severity: critical
           annotations:
             summary: "The trace store's newest backup snapshot is stale"
             description: >-
               No successful run of observability-stack-backup-traces
-              within 90m.
+              within 90m. A CronJob that has
+              stopped being scheduled produces no failures at all — the
+              same blind spot the metrics store's own rule exists for.
 
 ---
 # Source: observability-stack/templates/vmalertmanager.yaml
