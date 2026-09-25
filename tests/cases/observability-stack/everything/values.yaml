@@ -200,6 +200,7 @@ selfAlerts:
     dailyCurrentSeriesMetric: example_vm_daily_series_limit_current_series
     dailyMaxSeriesMetric: example_vm_daily_series_limit_max_series
     ratio: 0.85
+    for: 3m
     severity: warning
   logStore:
     metric: example_vl_rows_dropped_total
@@ -227,6 +228,7 @@ selfAlerts:
     enqueueFailSeverity: critical
   diskGuard:
     headroomFactor: 3
+    for: 8m
     severity: warning
     metrics:
       freeSpaceMetric: example_vm_free_disk_space_bytes
@@ -238,6 +240,7 @@ selfAlerts:
       freeSpaceMetric: example_vt_free_disk_space_bytes
       freeSpaceLimitMetric: example_vt_free_disk_space_limit_bytes
   snapshotAge:
+    for: 20m
     severity: critical
     metrics:
       maxAge: 3h

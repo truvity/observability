@@ -130,6 +130,7 @@ spec:
             ({{ $sa.cardinality.hourlyMaxSeriesMetric }} > 0)
             and
             ({{ $sa.cardinality.hourlyCurrentSeriesMetric }} / {{ $sa.cardinality.hourlyMaxSeriesMetric }}) > {{ $sa.cardinality.ratio }}
+          for: {{ $sa.cardinality.for }}
           labels:
             severity: {{ $sa.cardinality.severity }}
           annotations:
@@ -150,6 +151,7 @@ spec:
             ({{ $sa.cardinality.dailyMaxSeriesMetric }} > 0)
             and
             ({{ $sa.cardinality.dailyCurrentSeriesMetric }} / {{ $sa.cardinality.dailyMaxSeriesMetric }}) > {{ $sa.cardinality.ratio }}
+          for: {{ $sa.cardinality.for }}
           labels:
             severity: {{ $sa.cardinality.severity }}
           annotations:
@@ -203,7 +205,8 @@ spec:
             summary: "The trace store is creating streams faster than services explain"
             description: >-
               {{ $sa.traceStreamChurn.streamsCreatedMetric }} is above
-              {{ $sa.traceStreamChurn.perSecond }} streams/s averaged over an hour.
+              {{ $sa.traceStreamChurn.perSecond }} streams/s averaged over an hour — a span
+              name is carrying an id rather than staying constant per service.
         {{- end }}
 
         {{- if $sa.writer.bufferMetric }}
@@ -246,7 +249,9 @@ spec:
           annotations:
             summary: "A writer is dropping packets on its remote-write path"
             description: >-
-              {{ $sa.writer.droppedPacketsMetric }} is rising.
+              {{ $sa.writer.droppedPacketsMetric }} is rising. Data is being
+              discarded, not delayed: a 400 or 404 from the destination is
+              treated as permanent, and the block is gone, not retried.
         {{- end }}
 
         {{- if and $sa.gateway.queueSizeMetric $sa.gateway.queueCapacityMetric }}
@@ -387,9 +392,15 @@ spec:
         # writes. A logs or traces store that fills its disk switches to
         # read-only and does NOT drop data to recover, so arriving late
         # here is arriving after an outage rather than before one.
+        #
+        # `for:` exists because free space falls MONOTONICALLY under
+        # normal operation, so one reading under the guard is a
+        # measurement artefact, not a trend — see selfAlerts.diskGuard.for
+        # in values.yaml.
         - alert: {{ index $storeAlertPrefix $store }}DiskNearGuard
           expr: >-
             {{ $g.freeSpaceMetric }} / {{ $g.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
+          for: {{ $sa.diskGuard.for }}
           labels:
             severity: {{ $sa.diskGuard.severity }}
           annotations:
@@ -419,6 +430,11 @@ spec:
         namespace. Named per store, same as every other rule three stores
         can trigger, rather than one alert distinguished only by a
         `store` label.
+
+        `for:` exists because the underlying field,
+        kube_cronjob_status_last_successful_time, can be briefly absent
+        from a scrape while a job is actively running — see
+        selfAlerts.snapshotAge.for in values.yaml.
         */}}
         {{- if and $root.Values.backup.enabled $root.Values.backup.metrics.enabled }}
         - alert: MetricStoreSnapshotOlderThanWindow
@@ -426,6 +442,7 @@ spec:
             time() - max(
               kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-metrics-incremental" $fullname | trunc 52 | quote }}}
             ) > {{ $sa.snapshotAge.metrics.maxAge }}
+          for: {{ $sa.snapshotAge.for }}
           labels:
             severity: {{ $sa.snapshotAge.severity }}
           annotations:
@@ -443,13 +460,16 @@ spec:
             time() - max(
               kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-logs" $fullname | trunc 52 | quote }}}
             ) > {{ $sa.snapshotAge.logs.maxAge }}
+          for: {{ $sa.snapshotAge.for }}
           labels:
             severity: {{ $sa.snapshotAge.severity }}
           annotations:
             summary: "The log store's newest backup snapshot is stale"
             description: >-
               No successful run of {{ printf "%s-backup-logs" $fullname | trunc 52 }}
-              within {{ $sa.snapshotAge.logs.maxAge }}.
+              within {{ $sa.snapshotAge.logs.maxAge }}. A CronJob that has
+              stopped being scheduled produces no failures at all — the
+              same blind spot the metrics store's own rule exists for.
         {{- end }}
         {{- if and $root.Values.backup.enabled $root.Values.backup.traces.enabled }}
         - alert: TraceStoreSnapshotOlderThanWindow
@@ -457,12 +477,15 @@ spec:
             time() - max(
               kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-traces" $fullname | trunc 52 | quote }}}
             ) > {{ $sa.snapshotAge.traces.maxAge }}
+          for: {{ $sa.snapshotAge.for }}
           labels:
             severity: {{ $sa.snapshotAge.severity }}
           annotations:
             summary: "The trace store's newest backup snapshot is stale"
             description: >-
               No successful run of {{ printf "%s-backup-traces" $fullname | trunc 52 }}
-              within {{ $sa.snapshotAge.traces.maxAge }}.
+              within {{ $sa.snapshotAge.traces.maxAge }}. A CronJob that has
+              stopped being scheduled produces no failures at all — the
+              same blind spot the metrics store's own rule exists for.
         {{- end }}
 {{- end }}

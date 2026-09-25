@@ -718,6 +718,10 @@
               "exclusiveMaximum": 1,
               "description": "Above 0 and below 1: at or above 1 the alert arrives at the moment the limit has already bitten."
             },
+            "for": {
+              "$ref": "#/definitions/duration",
+              "description": "A ratio spikes transiently on a series burst that resolves on its own; long enough that such a burst does not page, short enough that a real climb toward the limit is still caught with margin before it bites."
+            },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }
           }
         },
@@ -773,6 +777,10 @@
               "exclusiveMinimum": 1,
               "description": "Above 1, or the alert arrives at the moment the store already stopped accepting writes. Mirrors platform-alerts' storeLimits.headroomFactor."
             },
+            "for": {
+              "$ref": "#/definitions/duration",
+              "description": "Free space falls monotonically under normal operation, so a brief dip is a measurement artefact, not a trend. Minutes, not seconds."
+            },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" },
             "metrics": { "$ref": "#/definitions/optionalMetricPair" },
             "logs": { "$ref": "#/definitions/optionalMetricPair" },
@@ -783,6 +791,10 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "for": {
+              "$ref": "#/definitions/duration",
+              "description": "The condition is inherently slow-moving -- a snapshot is hours old or it is not -- but the signal behind it, kube_cronjob_status_last_successful_time, can be briefly absent while a job is actively running. Long enough that a job in flight does not page."
+            },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" },
             "metrics": {
               "type": "object",
