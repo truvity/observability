@@ -1,0 +1,6 @@
+# A ratio at or above 1 means the alert arrives at the moment the limit
+# has already bitten, which is the failure the headroom exists to
+# precede.
+selfAlerts:
+  cardinality:
+    ratio: 1

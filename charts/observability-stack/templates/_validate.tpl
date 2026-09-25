@@ -20,6 +20,7 @@ second debugging session.
 {{- include "observability-stack.validate.disk" . -}}
 {{- include "observability-stack.validate.resources" . -}}
 {{- include "observability-stack.validate.licence" . -}}
+{{- include "observability-stack.validate.selfAlerts" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
@@ -218,6 +219,44 @@ mechanism this chart selects users with.
 {{- $tag := trimPrefix "v" (toString .Values.vmauth.image.tag) -}}
 {{- if not (semverCompare ">=1.152.0" $tag) -}}
 {{- fail (printf "observability-stack: vmauth.image.tag is %q. The floor for this design is v1.152.0: `default_vm_access_claim` arrived in v1.147.0, and every build from v1.138.0, where claim matching was introduced, to v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96), so `admin` also matched `not-admin-really` — an authorisation bypass in the mechanism that selects which user a token is. Pin v1.152.0 or later." (toString .Values.vmauth.image.tag)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Self-alerts: metric-name pairs that must arrive together, and a rule
+enabled with a metric name but no usable threshold — shapes the schema
+cannot express on its own, mirroring the exact refusal
+`charts/platform-alerts` already gives its own `stores[].freeSpaceMetric`
+pair.
+*/}}
+{{- define "observability-stack.validate.selfAlerts" -}}
+{{- $sa := .Values.selfAlerts -}}
+{{- if and $sa.cardinality.hourlyCurrentSeriesMetric (not $sa.cardinality.hourlyMaxSeriesMetric) -}}
+{{- fail "observability-stack: `selfAlerts.cardinality.hourlyCurrentSeriesMetric` is set but `hourlyMaxSeriesMetric` is not. StoreCardinalityNearLimit (hourly) would compare a gauge against nothing; set both, or neither." -}}
+{{- end -}}
+{{- if and $sa.cardinality.hourlyMaxSeriesMetric (not $sa.cardinality.hourlyCurrentSeriesMetric) -}}
+{{- fail "observability-stack: `selfAlerts.cardinality.hourlyMaxSeriesMetric` is set but `hourlyCurrentSeriesMetric` is not. StoreCardinalityNearLimit (hourly) would compare a gauge against nothing; set both, or neither." -}}
+{{- end -}}
+{{- if and $sa.cardinality.dailyCurrentSeriesMetric (not $sa.cardinality.dailyMaxSeriesMetric) -}}
+{{- fail "observability-stack: `selfAlerts.cardinality.dailyCurrentSeriesMetric` is set but `dailyMaxSeriesMetric` is not. StoreCardinalityNearLimit (daily) would compare a gauge against nothing; set both, or neither." -}}
+{{- end -}}
+{{- if and $sa.cardinality.dailyMaxSeriesMetric (not $sa.cardinality.dailyCurrentSeriesMetric) -}}
+{{- fail "observability-stack: `selfAlerts.cardinality.dailyMaxSeriesMetric` is set but `dailyCurrentSeriesMetric` is not. StoreCardinalityNearLimit (daily) would compare a gauge against nothing; set both, or neither." -}}
+{{- end -}}
+{{- range $store := list "logs" "traces" -}}
+{{- $g := index $sa.diskGuard $store -}}
+{{- if and $g.freeSpaceMetric (not $g.freeSpaceLimitMetric) -}}
+{{- fail (printf "observability-stack: `selfAlerts.diskGuard.%s.freeSpaceMetric` is set but `freeSpaceLimitMetric` is not. StoreDiskNearGuard for that store would compare a gauge against nothing; set both, or neither." $store) -}}
+{{- end -}}
+{{- if and $g.freeSpaceLimitMetric (not $g.freeSpaceMetric) -}}
+{{- fail (printf "observability-stack: `selfAlerts.diskGuard.%s.freeSpaceLimitMetric` is set but `freeSpaceMetric` is not. StoreDiskNearGuard for that store would compare a gauge against nothing; set both, or neither." $store) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $sa.logStreamChurn.streamsCreatedMetric (not (gt ($sa.logStreamChurn.maxCreatedPerWindow | int) 0)) -}}
+{{- fail "observability-stack: `selfAlerts.logStreamChurn.streamsCreatedMetric` is set but `maxCreatedPerWindow` is not above zero, so LogStreamsChurning would fire on the first stream ever created. State the rate your own estate's normal field cardinality produces." -}}
+{{- end -}}
+{{- if and $sa.writer.bufferMetric (not (gt ($sa.writer.maxBufferBytes | int) 0)) -}}
+{{- fail "observability-stack: `selfAlerts.writer.bufferMetric` is set but `maxBufferBytes` is not above zero, so WriterBufferGrowing would fire on any buffered byte at all. State the size a healthy buffer holds between flushes." -}}
 {{- end -}}
 {{- end -}}
 

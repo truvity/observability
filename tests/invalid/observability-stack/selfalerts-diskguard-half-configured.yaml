@@ -1,0 +1,6 @@
+# The log store's free-space metric without its limit: StoreDiskNearGuard
+# for that store would compare a gauge against nothing.
+selfAlerts:
+  diskGuard:
+    logs:
+      freeSpaceMetric: example_vl_free_disk_space_bytes

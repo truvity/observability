@@ -1,0 +1,356 @@
+{{- /*
+Store self-alerts: twelve rules over this chart's own components, none of
+them optional. See values.yaml's own comment on `selfAlerts` for which
+metric names this session could confirm and which it could not — a rule
+whose name could not be confirmed renders ONLY once the consumer supplies
+it, never before.
+
+All twelve are MetricsQL, evaluated by the metrics vmalert
+(templates/vmalert.yaml): every counter here lives on a component's own
+/metrics endpoint, so none carries `observability.rule-type: vlogs`, and
+none needs a special ruleSelector entry — the metrics alerter already
+takes everything that is not marked as LogsQL.
+*/ -}}
+{{- if .Values.selfAlerts.enabled -}}
+{{- $root := . -}}
+{{- $fullname := include "observability-stack.fullname" . -}}
+{{- $sa := .Values.selfAlerts -}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ printf "%s-selfalerts" $fullname | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+spec:
+  groups:
+    - name: observability-stack.selfalerts
+      interval: {{ .Values.interval }}
+      rules:
+        # StoreIgnoringRows.
+        #
+        # THE INCIDENT: a series past the metrics store's per-day label
+        # limit is discarded WHILE THE WRITE STILL ANSWERS 200 — a
+        # collector reported 888k rows written with zero errors while the
+        # store held none of them, and vm_rows_ignored_total sat at
+        # 9,748,387 with nothing else showing it. This is the rule that
+        # would have caught it.
+        #
+        # Healthy range: 0. The counter only advances when a sample is
+        # refused for exceeding a configured limit, so a write path that
+        # is not hitting one never touches it.
+        - alert: StoreIgnoringRows
+          expr: >-
+            sum(rate(vm_rows_ignored_total[{{ $sa.ingest.window }}])) by (reason) > 0
+          for: {{ $sa.ingest.for }}
+          labels:
+            severity: {{ $sa.ingest.severity }}
+          annotations:
+            summary: "The metrics store is silently discarding rows"
+            description: >-
+              vm_rows_ignored_total is rising. Rows past a configured limit
+              (label count, cardinality) are dropped while the write still
+              answers 200: a sender can report a clean write with zero
+              errors while the store holds none of it. Measured on a live
+              install: 888k rows reported written, the store held none,
+              and this counter sat at 9,748,387.
+
+        {{- if and $sa.cardinality.hourlyCurrentSeriesMetric $sa.cardinality.hourlyMaxSeriesMetric }}
+        # StoreCardinalityNearLimit (hourly).
+        #
+        # docs/notifications.md: "hourly or daily series at 90% of the
+        # limit". {{ $sa.cardinality.ratio }} is that headroom: comfortably
+        # under the cap at which new series stop being accepted for the
+        # rest of the window.
+        - alert: StoreCardinalityNearLimit
+          expr: >-
+            ({{ $sa.cardinality.hourlyMaxSeriesMetric }} > 0)
+            and
+            ({{ $sa.cardinality.hourlyCurrentSeriesMetric }} / {{ $sa.cardinality.hourlyMaxSeriesMetric }}) > {{ $sa.cardinality.ratio }}
+          labels:
+            severity: {{ $sa.cardinality.severity }}
+            window: hourly
+          annotations:
+            summary: "The metrics store is close to its hourly series limit"
+            description: >-
+              Hourly active series are above {{ mulf $sa.cardinality.ratio 100 }}% of
+              storage.maxHourlySeries. Above the limit, new series stop
+              being accepted for the rest of the hour — the exact shape of
+              an exporter that appears to have stopped exporting.
+        {{- end }}
+        {{- if and $sa.cardinality.dailyCurrentSeriesMetric $sa.cardinality.dailyMaxSeriesMetric }}
+        # StoreCardinalityNearLimit (daily). Same reasoning, the daily cap.
+        - alert: StoreCardinalityNearLimit
+          expr: >-
+            ({{ $sa.cardinality.dailyMaxSeriesMetric }} > 0)
+            and
+            ({{ $sa.cardinality.dailyCurrentSeriesMetric }} / {{ $sa.cardinality.dailyMaxSeriesMetric }}) > {{ $sa.cardinality.ratio }}
+          labels:
+            severity: {{ $sa.cardinality.severity }}
+            window: daily
+          annotations:
+            summary: "The metrics store is close to its daily series limit"
+            description: >-
+              Daily active series are above {{ mulf $sa.cardinality.ratio 100 }}% of
+              storage.maxDailySeries. Above the limit, new series stop
+              being accepted for the rest of the day.
+        {{- end }}
+
+        # LogStoreDroppingRows.
+        #
+        # Healthy range: 0, the same as StoreIgnoringRows above. Safe with
+        # the log store disabled or run elsewhere: rate() of a counter no
+        # series carries returns no data, not zero, so an absent store
+        # never fires this.
+        - alert: LogStoreDroppingRows
+          expr: >-
+            sum(rate(vl_rows_dropped_total[{{ $sa.logStore.window }}])) > 0
+          for: {{ $sa.logStore.for }}
+          labels:
+            severity: {{ $sa.logStore.severity }}
+          annotations:
+            summary: "The log store is dropping rows"
+            description: >-
+              vl_rows_dropped_total is rising. Rows are being discarded on
+              write; the ingesting collector sees a successful response
+              regardless.
+
+        # TraceStoreDroppingRows. Same reasoning, the trace store.
+        - alert: TraceStoreDroppingRows
+          expr: >-
+            sum(rate(vt_rows_dropped_total[{{ $sa.traceStore.window }}])) > 0
+          for: {{ $sa.traceStore.for }}
+          labels:
+            severity: {{ $sa.traceStore.severity }}
+          annotations:
+            summary: "The trace store is dropping rows"
+            description: >-
+              vt_rows_dropped_total is rising. Spans are being discarded on
+              write; the ingesting collector sees a successful response
+              regardless.
+
+        # GatewayQueueFilling.
+        #
+        # THE INCIDENT (this week): a network policy change cut
+        # charts/observability-emitters' OpenTelemetry gateway off from
+        # its own proxy, and "sending queue is full" ran for hours with
+        # every pod Running and nothing reporting it. The gateway is a
+        # component of the sibling chart, not this one, but its metrics
+        # land in THIS store the same way any other component's do, and
+        # vmalert here reads them directly — never through the proxy, the
+        # same as every other rule in this file.
+        #
+        # Healthy range: comfortably under 1; a queue that is never
+        # exercised sits near 0. {{ $sa.gateway.queueRatio }} is the "queue
+        # above 80%" the incident report gives — headroom before the
+        # queue is full and the collector starts blocking or dropping.
+        - alert: GatewayQueueFilling
+          expr: >-
+            otelcol_exporter_queue_size / otelcol_exporter_queue_capacity > {{ $sa.gateway.queueRatio }}
+          for: {{ $sa.gateway.queueFor }}
+          labels:
+            severity: {{ $sa.gateway.queueSeverity }}
+          annotations:
+            summary: "The OpenTelemetry gateway's export queue is filling"
+            description: >-
+              otelcol_exporter_queue_size is above {{ mulf $sa.gateway.queueRatio 100 }}% of
+              otelcol_exporter_queue_capacity. Once it is full the
+              collector blocks or drops, and "sending queue is full" is
+              exactly the failure that ran for hours unreported.
+
+        # GatewayExportFailing.
+        #
+        # otelcol_exporter_send_failed_* and _enqueue_failed_* both carry
+        # a per-signal suffix (spans, metric_points, log_records) this
+        # session did not enumerate with confidence, so this matches on
+        # the METRIC NAME PREFIX rather than a listed suffix — every
+        # signal the gateway exports for, without guessing which exist.
+        #
+        # Healthy range: 0. A send or enqueue failure is not something a
+        # healthy exporter path produces at any rate.
+        - alert: GatewayExportFailing
+          expr: >-
+            sum(rate({__name__=~"otelcol_exporter_(send|enqueue)_failed_.*"}[{{ $sa.gateway.exportFailWindow }}])) by (exporter) > 0
+          for: {{ $sa.gateway.exportFailFor }}
+          labels:
+            severity: {{ $sa.gateway.exportFailSeverity }}
+          annotations:
+            summary: "The OpenTelemetry gateway is failing to export"
+            description: >-
+              otelcol_exporter_send_failed_* or _enqueue_failed_* is
+              advancing for exporter {{`{{ $labels.exporter }}`}}. Data the
+              gateway accepted is not reaching its destination.
+
+        # StoreDiskNearGuard (metrics store).
+        #
+        # vm_free_disk_space_bytes / vm_free_disk_space_limit_bytes:
+        # the exact pair charts/platform-alerts' own `stores` example
+        # already documents for this store family, reused rather than
+        # re-guessed. headroomFactor mirrors platform-alerts'
+        # storeLimits.headroomFactor and its default (2): comfortably
+        # above the 1x at which the store already stopped accepting
+        # writes.
+        - alert: StoreDiskNearGuard
+          expr: >-
+            {{ $sa.diskGuard.metrics.freeSpaceMetric }} / {{ $sa.diskGuard.metrics.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
+          labels:
+            severity: {{ $sa.diskGuard.severity }}
+            store: metrics
+          annotations:
+            summary: "The metrics store is approaching its disk guard"
+            description: >-
+              Free space is under {{ $sa.diskGuard.headroomFactor }}x the
+              storage.minFreeDiskSpaceBytes guard. It is still serving
+              reads and will keep doing so after it stops writing.
+
+        {{- if and $sa.diskGuard.logs.freeSpaceMetric $sa.diskGuard.logs.freeSpaceLimitMetric }}
+        # StoreDiskNearGuard (log store). Confirmed for this install by
+        # whoever set selfAlerts.diskGuard.logs — see values.yaml.
+        - alert: StoreDiskNearGuard
+          expr: >-
+            {{ $sa.diskGuard.logs.freeSpaceMetric }} / {{ $sa.diskGuard.logs.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
+          labels:
+            severity: {{ $sa.diskGuard.severity }}
+            store: logs
+          annotations:
+            summary: "The log store is approaching its disk guard"
+            description: >-
+              Free space is under {{ $sa.diskGuard.headroomFactor }}x the
+              store's own minFreeDiskSpaceBytes guard.
+        {{- end }}
+        {{- if and $sa.diskGuard.traces.freeSpaceMetric $sa.diskGuard.traces.freeSpaceLimitMetric }}
+        # StoreDiskNearGuard (trace store). Confirmed for this install by
+        # whoever set selfAlerts.diskGuard.traces — see values.yaml.
+        - alert: StoreDiskNearGuard
+          expr: >-
+            {{ $sa.diskGuard.traces.freeSpaceMetric }} / {{ $sa.diskGuard.traces.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
+          labels:
+            severity: {{ $sa.diskGuard.severity }}
+            store: traces
+          annotations:
+            summary: "The trace store is approaching its disk guard"
+            description: >-
+              Free space is under {{ $sa.diskGuard.headroomFactor }}x the
+              store's own minFreeDiskSpaceBytes guard.
+        {{- end }}
+
+        {{- /*
+        SnapshotOlderThanWindow.
+
+        Not a store-exported counter: the newest-snapshot age this watches
+        is the age of the last SUCCESSFUL run of the backup CronJobs
+        templates/backup.yaml itself renders, read from
+        kube_cronjob_status_last_successful_time — the exact metric
+        platform-alerts' own CronJobNotSucceeding rule already relies on.
+        Scoped to this release's own CronJob names and namespace, so it
+        holds whether or not a consumer also installs platform-alerts
+        against this namespace.
+        */}}
+        {{- if and $root.Values.backup.enabled $root.Values.backup.metrics.enabled }}
+        - alert: SnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-metrics-incremental" $fullname | trunc 52 | quote }}}
+            ) > {{ $sa.snapshotAge.metrics.maxAge }}
+          labels:
+            severity: {{ $sa.snapshotAge.severity }}
+            store: metrics
+          annotations:
+            summary: "The metrics store's newest backup snapshot is stale"
+            description: >-
+              No successful run of {{ printf "%s-backup-metrics-incremental" $fullname | trunc 52 }}
+              within {{ $sa.snapshotAge.metrics.maxAge }}. A CronJob that has stopped
+              being scheduled produces no failures at all, which is the
+              same reasoning platform-alerts' CronJobNotSucceeding rule
+              uses for any other CronJob.
+        {{- end }}
+        {{- if and $root.Values.backup.enabled $root.Values.backup.logs.enabled }}
+        - alert: SnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-logs" $fullname | trunc 52 | quote }}}
+            ) > {{ $sa.snapshotAge.logs.maxAge }}
+          labels:
+            severity: {{ $sa.snapshotAge.severity }}
+            store: logs
+          annotations:
+            summary: "The log store's newest backup snapshot is stale"
+            description: >-
+              No successful run of {{ printf "%s-backup-logs" $fullname | trunc 52 }}
+              within {{ $sa.snapshotAge.logs.maxAge }}.
+        {{- end }}
+        {{- if and $root.Values.backup.enabled $root.Values.backup.traces.enabled }}
+        - alert: SnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-traces" $fullname | trunc 52 | quote }}}
+            ) > {{ $sa.snapshotAge.traces.maxAge }}
+          labels:
+            severity: {{ $sa.snapshotAge.severity }}
+            store: traces
+          annotations:
+            summary: "The trace store's newest backup snapshot is stale"
+            description: >-
+              No successful run of {{ printf "%s-backup-traces" $fullname | trunc 52 }}
+              within {{ $sa.snapshotAge.traces.maxAge }}.
+        {{- end }}
+
+        {{- /*
+        LogStreamsChurning, WriterBufferGrowing, WriterDroppingPackets,
+        ProxyAtConcurrencyLimit: the four with no confirmed metric name at
+        all. Each renders only once its name is supplied — see values.yaml.
+        */}}
+        {{- if $sa.logStreamChurn.streamsCreatedMetric }}
+        - alert: LogStreamsChurning
+          expr: >-
+            increase({{ $sa.logStreamChurn.streamsCreatedMetric }}[{{ $sa.logStreamChurn.window }}]) > {{ $sa.logStreamChurn.maxCreatedPerWindow }}
+          labels:
+            severity: {{ $sa.logStreamChurn.severity }}
+          annotations:
+            summary: "Log streams are being created faster than a partition explains"
+            description: >-
+              {{ $sa.logStreamChurn.streamsCreatedMetric }} rose by more than
+              {{ $sa.logStreamChurn.maxCreatedPerWindow }} in {{ $sa.logStreamChurn.window }} —
+              the shape a non-constant stream field produces.
+        {{- end }}
+        {{- if $sa.writer.bufferMetric }}
+        - alert: WriterBufferGrowing
+          expr: >-
+            {{ $sa.writer.bufferMetric }} > {{ $sa.writer.maxBufferBytes }}
+          for: {{ $sa.writer.for }}
+          labels:
+            severity: {{ $sa.writer.severity }}
+          annotations:
+            summary: "A writer's remote-write buffer is growing"
+            description: >-
+              {{ $sa.writer.bufferMetric }} has stayed above
+              {{ $sa.writer.maxBufferBytes }} bytes for {{ $sa.writer.for }}. The write
+              path is blocked, and the loss is proportional to how long it
+              takes to look.
+        {{- end }}
+        {{- if $sa.writer.droppedPacketsMetric }}
+        - alert: WriterDroppingPackets
+          expr: >-
+            sum(rate({{ $sa.writer.droppedPacketsMetric }}[5m])) > 0
+          for: {{ $sa.writer.for }}
+          labels:
+            severity: {{ $sa.writer.severity }}
+          annotations:
+            summary: "A writer is dropping packets on its remote-write path"
+            description: >-
+              {{ $sa.writer.droppedPacketsMetric }} is rising.
+        {{- end }}
+        {{- if $sa.proxyConcurrency.limitedRequestsMetric }}
+        - alert: ProxyAtConcurrencyLimit
+          expr: >-
+            sum(rate({{ $sa.proxyConcurrency.limitedRequestsMetric }}[{{ $sa.proxyConcurrency.window }}])) > 0
+          for: {{ $sa.proxyConcurrency.for }}
+          labels:
+            severity: {{ $sa.proxyConcurrency.severity }}
+          annotations:
+            summary: "The proxy is refusing requests at its concurrency limit"
+            description: >-
+              {{ $sa.proxyConcurrency.limitedRequestsMetric }} is rising. A caller
+              within its grant is being refused for a reason that has
+              nothing to do with the grant.
+        {{- end }}
+{{- end }}

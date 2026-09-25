@@ -2186,6 +2186,157 @@ spec:
     logInvalidAuthTokens: "true"
 
 ---
+# Source: observability-stack/templates/selfalerts.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-selfalerts
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    - name: observability-stack.selfalerts
+      interval: 30s
+      rules:
+        # StoreIgnoringRows.
+        #
+        # THE INCIDENT: a series past the metrics store's per-day label
+        # limit is discarded WHILE THE WRITE STILL ANSWERS 200 — a
+        # collector reported 888k rows written with zero errors while the
+        # store held none of them, and vm_rows_ignored_total sat at
+        # 9,748,387 with nothing else showing it. This is the rule that
+        # would have caught it.
+        #
+        # Healthy range: 0. The counter only advances when a sample is
+        # refused for exceeding a configured limit, so a write path that
+        # is not hitting one never touches it.
+        - alert: StoreIgnoringRows
+          expr: >-
+            sum(rate(vm_rows_ignored_total[5m])) by (reason) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The metrics store is silently discarding rows"
+            description: >-
+              vm_rows_ignored_total is rising. Rows past a configured limit
+              (label count, cardinality) are dropped while the write still
+              answers 200: a sender can report a clean write with zero
+              errors while the store holds none of it. Measured on a live
+              install: 888k rows reported written, the store held none,
+              and this counter sat at 9,748,387.
+
+        # LogStoreDroppingRows.
+        #
+        # Healthy range: 0, the same as StoreIgnoringRows above. Safe with
+        # the log store disabled or run elsewhere: rate() of a counter no
+        # series carries returns no data, not zero, so an absent store
+        # never fires this.
+        - alert: LogStoreDroppingRows
+          expr: >-
+            sum(rate(vl_rows_dropped_total[5m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The log store is dropping rows"
+            description: >-
+              vl_rows_dropped_total is rising. Rows are being discarded on
+              write; the ingesting collector sees a successful response
+              regardless.
+
+        # TraceStoreDroppingRows. Same reasoning, the trace store.
+        - alert: TraceStoreDroppingRows
+          expr: >-
+            sum(rate(vt_rows_dropped_total[5m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The trace store is dropping rows"
+            description: >-
+              vt_rows_dropped_total is rising. Spans are being discarded on
+              write; the ingesting collector sees a successful response
+              regardless.
+
+        # GatewayQueueFilling.
+        #
+        # THE INCIDENT (this week): a network policy change cut
+        # charts/observability-emitters' OpenTelemetry gateway off from
+        # its own proxy, and "sending queue is full" ran for hours with
+        # every pod Running and nothing reporting it. The gateway is a
+        # component of the sibling chart, not this one, but its metrics
+        # land in THIS store the same way any other component's do, and
+        # vmalert here reads them directly — never through the proxy, the
+        # same as every other rule in this file.
+        #
+        # Healthy range: comfortably under 1; a queue that is never
+        # exercised sits near 0. 0.8 is the "queue
+        # above 80%" the incident report gives — headroom before the
+        # queue is full and the collector starts blocking or dropping.
+        - alert: GatewayQueueFilling
+          expr: >-
+            otelcol_exporter_queue_size / otelcol_exporter_queue_capacity > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The OpenTelemetry gateway's export queue is filling"
+            description: >-
+              otelcol_exporter_queue_size is above 80% of
+              otelcol_exporter_queue_capacity. Once it is full the
+              collector blocks or drops, and "sending queue is full" is
+              exactly the failure that ran for hours unreported.
+
+        # GatewayExportFailing.
+        #
+        # otelcol_exporter_send_failed_* and _enqueue_failed_* both carry
+        # a per-signal suffix (spans, metric_points, log_records) this
+        # session did not enumerate with confidence, so this matches on
+        # the METRIC NAME PREFIX rather than a listed suffix — every
+        # signal the gateway exports for, without guessing which exist.
+        #
+        # Healthy range: 0. A send or enqueue failure is not something a
+        # healthy exporter path produces at any rate.
+        - alert: GatewayExportFailing
+          expr: >-
+            sum(rate({__name__=~"otelcol_exporter_(send|enqueue)_failed_.*"}[5m])) by (exporter) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The OpenTelemetry gateway is failing to export"
+            description: >-
+              otelcol_exporter_send_failed_* or _enqueue_failed_* is
+              advancing for exporter {{ $labels.exporter }}. Data the
+              gateway accepted is not reaching its destination.
+
+        # StoreDiskNearGuard (metrics store).
+        #
+        # vm_free_disk_space_bytes / vm_free_disk_space_limit_bytes:
+        # the exact pair charts/platform-alerts' own `stores` example
+        # already documents for this store family, reused rather than
+        # re-guessed. headroomFactor mirrors platform-alerts'
+        # storeLimits.headroomFactor and its default (2): comfortably
+        # above the 1x at which the store already stopped accepting
+        # writes.
+        - alert: StoreDiskNearGuard
+          expr: >-
+            vm_free_disk_space_bytes / vm_free_disk_space_limit_bytes < 2
+          labels:
+            severity: warning
+            store: metrics
+          annotations:
+            summary: "The metrics store is approaching its disk guard"
+            description: >-
+              Free space is under 2x the
+              storage.minFreeDiskSpaceBytes guard. It is still serving
+              reads and will keep doing so after it stops writing.
+
+---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/monitor.yaml
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMServiceScrape

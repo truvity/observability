@@ -1,0 +1,5 @@
+# One cardinality metric without its pair: StoreCardinalityNearLimit
+# would compare a gauge against nothing rather than never rendering.
+selfAlerts:
+  cardinality:
+    hourlyCurrentSeriesMetric: example_hourly_series_limit_current_series
