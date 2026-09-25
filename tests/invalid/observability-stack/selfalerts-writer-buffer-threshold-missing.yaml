@@ -1,0 +1,5 @@
+# A metric name with no threshold: WriterBufferGrowing would fire on any
+# buffered byte at all.
+selfAlerts:
+  writer:
+    bufferMetric: example_vmalert_remotewrite_pending_data_bytes

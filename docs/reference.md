@@ -347,6 +347,45 @@ Every job mounts its store's volume read-only, and carries a pod affinity
 onto the store's node: a ReadWriteOnce volume can only be mounted from one
 node. Every job refuses an empty source before it copies anything.
 
+### `selfAlerts`
+
+The twelve store self-alerts. See docs/notifications.md, "Store
+self-alerts", for the design and docs/safety.md for the two incidents
+behind them; this is the value list. Rendered as one more `VMRule`
+(`templates/selfalerts.yaml`), evaluated by the metrics vmalert like any
+other rule — none of it is LogsQL.
+
+Unlike `charts/platform-alerts`, which is generic across an estate's own
+stores and refuses to guess a metric name because it cannot know one,
+this chart vendors the components these rules watch and states the
+metric name **only where this session could confirm it** — against
+docs/notifications.md, the incident that produced it, or an already
+shipped part of this repository. Where it could not, the value has **no
+default**: the vendored chart archives under `charts/*.tgz` carry no
+bundled default alerting rules to read a name back out of, and there was
+no cluster to ask. Such a rule renders nothing until the metric name is
+supplied.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `selfAlerts.enabled` | bool | `true` | Renders the `VMRule`. |
+| `selfAlerts.ingest.window` / `.for` / `.severity` | duration / duration / severity | `5m` / `5m` / `critical` | **StoreIgnoringRows**: `vm_rows_ignored_total` rising. Confirmed — named in the incident that produced this rule (below). |
+| `selfAlerts.cardinality.hourlyCurrentSeriesMetric` / `.hourlyMaxSeriesMetric` / `.dailyCurrentSeriesMetric` / `.dailyMaxSeriesMetric` | string | `""` | **StoreCardinalityNearLimit**: **NOT DEFAULTED.** Renders the hourly comparison only with both hourly names set, the daily one only with both daily names set; each is independent. Setting one of a pair without the other is refused. |
+| `selfAlerts.cardinality.ratio` / `.severity` | number / severity | `0.9` / `warning` | The fraction of the limit at which it fires — docs/notifications.md's own "90% of the limit". Refused at or above 1. |
+| `selfAlerts.logStore.window` / `.for` / `.severity` | duration / duration / severity | `5m` / `5m` / `critical` | **LogStoreDroppingRows**: `vl_rows_dropped_total`. Confirmed — named in docs/notifications.md. |
+| `selfAlerts.traceStore.window` / `.for` / `.severity` | duration / duration / severity | `5m` / `5m` / `critical` | **TraceStoreDroppingRows**: `vt_rows_dropped_total`. Confirmed — named in docs/notifications.md. |
+| `selfAlerts.gateway.queueRatio` / `.queueFor` / `.queueSeverity` | number / duration / severity | `0.8` / `10m` / `warning` | **GatewayQueueFilling**: `otelcol_exporter_queue_size` / `otelcol_exporter_queue_capacity`, from `charts/observability-emitters`' OpenTelemetry gateway. Confirmed — named in the incident that produced this rule and in this repository's own `otlp.podMonitor` entry above. The gateway is a component of the SIBLING chart; its metrics reach this store the same way any other component's do, and this chart's vmalert reads them directly. |
+| `selfAlerts.gateway.exportFailWindow` / `.exportFailFor` / `.exportFailSeverity` | duration / duration / severity | `5m` / `5m` / `critical` | **GatewayExportFailing**: `otelcol_exporter_send_failed_*` / `_enqueue_failed_*`, matched by metric-name PREFIX rather than an enumerated per-signal suffix, since this session did not confirm which signal suffixes (spans, metric_points, log_records) this gateway exports. |
+| `selfAlerts.diskGuard.headroomFactor` / `.severity` | number / severity | `2` / `warning` | Shared by all three stores' StoreDiskNearGuard rules. Mirrors `platform-alerts`' `storeLimits.headroomFactor`; refused at or below 1. |
+| `selfAlerts.diskGuard.metrics.freeSpaceMetric` / `.freeSpaceLimitMetric` | string | `vm_free_disk_space_bytes` / `vm_free_disk_space_limit_bytes` | **StoreDiskNearGuard** (metrics store). Confirmed — the exact pair `charts/platform-alerts`' own `stores` example already documents for this store family. |
+| `selfAlerts.diskGuard.logs` / `.traces` (same shape) | `{freeSpaceMetric, freeSpaceLimitMetric}` | `""` / `""` | **NOT DEFAULTED.** VictoriaLogs and VictoriaTraces are separate binaries from VictoriaMetrics; whether either exports the guard under the SAME metric name was not confirmed. Renders per store only once its pair is set; one name without the other is refused. |
+| `selfAlerts.snapshotAge.severity` | severity | `critical` | **SnapshotOlderThanWindow**, one per enabled `backup.<store>`. Not a store-exported counter: reads `kube_cronjob_status_last_successful_time` — the metric `platform-alerts`' own CronJobNotSucceeding rule already relies on — scoped to the exact CronJob names `templates/backup.yaml` renders in this release. Holds whether or not a consumer also installs `platform-alerts` against this namespace. |
+| `selfAlerts.snapshotAge.metrics.maxAge` / `.logs.maxAge` / `.traces.maxAge` | duration | `150m` / `2h` / `2h` | The matching `backup.<store>.schedule` plus slack — stated here rather than derived from the cron expression, the same doctrine as `platform-alerts`' `groups.backups.maxSuccessAge`. Update it if you change the schedule; the two are not derived from one another. |
+| `selfAlerts.logStreamChurn.streamsCreatedMetric` / `.window` / `.maxCreatedPerWindow` / `.severity` | string / duration / int / severity | `""` / `5m` / `0` / `warning` | **LogStreamsChurning**: **NOT DEFAULTED**, name and threshold both — docs/notifications.md gives no number, and "faster than a partition explains" is a fact about an estate's own field cardinality. A metric name with no threshold above zero is refused. |
+| `selfAlerts.writer.bufferMetric` / `.maxBufferBytes` / `.for` / `.severity` | string / int / duration / severity | `""` / `0` / `10m` / `critical` | **WriterBufferGrowing**: read as vmalert's own `remoteWrite` path (`templates/vmalert.yaml` sets one on both alerters). **NOT DEFAULTED.** A metric name with no threshold above zero is refused. |
+| `selfAlerts.writer.droppedPacketsMetric` | string | `""` | **WriterDroppingPackets**, same `writer` block. **NOT DEFAULTED.** |
+| `selfAlerts.proxyConcurrency.limitedRequestsMetric` / `.window` / `.for` / `.severity` | string / duration / duration / severity | `""` / `5m` / `5m` / `warning` | **ProxyAtConcurrencyLimit**: vmauth refusing requests over its own concurrency cap. **NOT DEFAULTED.** |
+
 ### The upstream charts
 
 Their own values, pinned in `Chart.yaml` and vendored under the chart's

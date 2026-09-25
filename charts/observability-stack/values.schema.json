@@ -98,6 +98,20 @@
       "type": "object",
       "description": "An upstream chart's own values. Left open on purpose: the vendor owns this surface."
     },
+    "selfAlertSeverity": {
+      "type": "string",
+      "enum": ["critical", "warning"],
+      "description": "This chart's own rules carry only `critical` and `warning`, the same convention docs/notifications.md documents for the routing tree: `critical` means look now, `warning` means look today. There is no `info` tier here: an alert that pages nobody belongs in Grafana, not in a VMRule this chart renders."
+    },
+    "optionalMetricPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A gauge and its limit, from the SAME component. Neither is defaulted; setting one without the other is refused, and leaving both empty renders no rule for it, which is the honest outcome for a name this chart could not confirm.",
+      "properties": {
+        "freeSpaceMetric": { "type": "string" },
+        "freeSpaceLimitMetric": { "type": "string" }
+      }
+    },
     "storeAddress": {
       "type": "object",
       "additionalProperties": false,
@@ -670,6 +684,143 @@
         },
         "traces": {
           "$ref": "#/definitions/backupJob"
+        }
+      }
+    },
+    "selfAlerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The twelve store self-alerts. See docs/notifications.md, \"Store self-alerts\", and values.yaml's own comments for which of the twelve metric names this chart could confirm and which it could not.",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ingest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "cardinality": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hourlyCurrentSeriesMetric": { "type": "string" },
+            "hourlyMaxSeriesMetric": { "type": "string" },
+            "dailyCurrentSeriesMetric": { "type": "string" },
+            "dailyMaxSeriesMetric": { "type": "string" },
+            "ratio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1,
+              "description": "Above 0 and below 1: at or above 1 the alert arrives at the moment the limit has already bitten."
+            },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "logStore": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "traceStore": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "queueRatio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "queueFor": { "$ref": "#/definitions/duration" },
+            "queueSeverity": { "$ref": "#/definitions/selfAlertSeverity" },
+            "exportFailWindow": { "$ref": "#/definitions/duration" },
+            "exportFailFor": { "$ref": "#/definitions/duration" },
+            "exportFailSeverity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "diskGuard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "headroomFactor": {
+              "type": "number",
+              "exclusiveMinimum": 1,
+              "description": "Above 1, or the alert arrives at the moment the store already stopped accepting writes. Mirrors platform-alerts' storeLimits.headroomFactor."
+            },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" },
+            "metrics": { "$ref": "#/definitions/optionalMetricPair" },
+            "logs": { "$ref": "#/definitions/optionalMetricPair" },
+            "traces": { "$ref": "#/definitions/optionalMetricPair" }
+          }
+        },
+        "snapshotAge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" },
+            "metrics": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "maxAge": { "$ref": "#/definitions/duration" } }
+            },
+            "logs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "maxAge": { "$ref": "#/definitions/duration" } }
+            },
+            "traces": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "maxAge": { "$ref": "#/definitions/duration" } }
+            }
+          }
+        },
+        "logStreamChurn": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streamsCreatedMetric": { "type": "string" },
+            "window": { "$ref": "#/definitions/duration" },
+            "maxCreatedPerWindow": { "type": "integer", "minimum": 0 },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "writer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bufferMetric": { "type": "string" },
+            "maxBufferBytes": { "type": "integer", "minimum": 0 },
+            "for": { "$ref": "#/definitions/duration" },
+            "droppedPacketsMetric": { "type": "string" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "proxyConcurrency": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "limitedRequestsMetric": { "type": "string" },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
         }
       }
     },

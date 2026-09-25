@@ -6,6 +6,41 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.5.0
+
+The twelve store self-alerts, INF-986.
+
+- **New value: `charts/observability-stack`** — `selfAlerts`, one more
+  `VMRule` alongside this chart's other own objects, watching the stack's
+  own components rather than a consumer's telemetry: `StoreIgnoringRows`,
+  `StoreCardinalityNearLimit`, `LogStoreDroppingRows`,
+  `TraceStoreDroppingRows`, `LogStreamsChurning`, `WriterBufferGrowing`,
+  `WriterDroppingPackets`, `GatewayQueueFilling`, `GatewayExportFailing`,
+  `ProxyAtConcurrencyLimit`, `StoreDiskNearGuard`, `SnapshotOlderThanWindow`
+  — see docs/notifications.md, "Store self-alerts", for what each one
+  catches. On by default (`selfAlerts.enabled: true`).
+
+  Two of the twelve close incidents from this week: `StoreIgnoringRows`
+  watches `vm_rows_ignored_total`, the counter that sat at 9,748,387 while
+  a collector reported 888k rows written with zero errors and the store
+  held none of them; `GatewayQueueFilling` / `GatewayExportFailing` watch
+  the OpenTelemetry gateway's queue and its send/enqueue failures, after a
+  network policy change cut it off from its own proxy and "sending queue
+  is full" ran for hours with every pod Running and nothing reporting it.
+
+  **Five of the twelve ship with no default metric name.** This session
+  could not confirm `vm_hourly_series_limit_*` / `vm_daily_series_limit_*`
+  (StoreCardinalityNearLimit beyond the metrics store), a log-stream
+  creation counter (LogStreamsChurning), vmalert's own remote-write buffer
+  and packet-drop counters (WriterBufferGrowing, WriterDroppingPackets),
+  or vmauth's concurrency-limit counter (ProxyAtConcurrencyLimit) against
+  the exact versions this chart pins — no bundled default-rules file
+  ships inside `charts/*.tgz`, and there was no cluster to read `/metrics`
+  from. Each renders only once its name is supplied under `selfAlerts.*`;
+  a guessed name renders cleanly and never fires, which is the one
+  failure this whole repository exists to prevent. See docs/safety.md,
+  "The self-alerts, and the two incidents behind them".
+
 ## 0.4.1
 
 One background task, off, and the empty panel it explains.
