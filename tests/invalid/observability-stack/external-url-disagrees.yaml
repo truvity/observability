@@ -1,0 +1,24 @@
+# `notifications.externalUrl` and `vmalert.externalUrl` are the same
+# fact — the base URL a link leaving the cluster should point at — and
+# here they disagree. A difference between them is a difference nobody
+# notices until an alert fires and one link works while the other does
+# not.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+vmalert:
+  externalUrl: https://alerts.example.com
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

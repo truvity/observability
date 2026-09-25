@@ -2619,7 +2619,7 @@ spec:
               {{ range .Alerts }}{{ .Annotations.summary }}
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: slack-alerts-critical
@@ -2632,7 +2632,7 @@ spec:
               {{ range .Alerts }}{{ .Annotations.summary }}
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: slack-alerts-example-cluster
@@ -2645,7 +2645,7 @@ spec:
               {{ range .Alerts }}{{ .Annotations.summary }}
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: slack-example-app
@@ -2658,7 +2658,7 @@ spec:
               {{ range .Alerts }}{{ .Annotations.summary }}
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: status-page

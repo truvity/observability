@@ -54,8 +54,11 @@ alertmanager:
     secretName: example-watchdog-receiver
     key: url
 
+# `notifications.externalUrl` is deliberately left unset here: it
+# defaults to `vmalert.externalUrl` above, and this case is where the
+# golden proves that default renders a working Grafana link without a
+# consumer having to set the same fact twice.
 notifications:
-  externalUrl: https://grafana.example
   slack:
     webhookSecret: {name: example-slack-webhook, key: url}
   severities:
