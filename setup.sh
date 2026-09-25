@@ -180,6 +180,8 @@ write_compose() {
       - "127.0.0.1:${port}:8080"
     environment:
       GATUS_CONFIG_PATH: /config/config.yaml
+    env_file:
+      - .env
     volumes:
       - ${instances_dir}/${name}/config.yaml:/config/config.yaml:ro
       - ${data_root}/${name}:/data
@@ -192,12 +194,17 @@ COMPOSE
 # containers' own environment, so a Config can reference
 # ${ALERT_URL_<KEY>} using Gatus's own environment-variable substitution
 # without that value ever being typed into the Config itself — see
-# statusbox.Secrets.AlertURLs's doc comment. docker compose reads a .env
-# file beside docker-compose.yml on its own; nothing here has to name
-# each variable in the compose file for it to be visible to `${...}`
-# substitution within it, but each service still needs its OWN
-# environment entries to see it inside the CONTAINER, which is what this
-# writes.
+# statusbox.Secrets.AlertURLs's doc comment.
+#
+# It writes a .env file rather than exporting these into the compose
+# file's own text: docker compose loads a .env file beside
+# docker-compose.yml for `${...}` substitution WITHIN that file, which is
+# a different thing from a container's own environment and does nothing
+# on its own — every service's `env_file: [.env]` (see write_compose) is
+# what actually puts each variable into gatus's process, and it loads
+# every ALERT_URL_* key this writes without write_compose having to name
+# any of them, since AlertURLs's keys are the estate's own and unknown
+# here.
 write_env() {
   local env_file="$root/.env"
   : > "$env_file"
