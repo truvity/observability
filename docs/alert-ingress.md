@@ -124,9 +124,19 @@ way to know the path itself died.
   domain and confirms only allow-listed topics. An attacker who can
   reach the public route can make it count `rejected`.
 - It holds no credential to the cloud. Confirmation is a GET to a URL
-  the provider supplied inside a signed message.
-- It can reach one thing: Alertmanager. The chart renders a
-  NetworkPolicy that says so.
+  the provider supplied inside a signed message — the only outbound
+  request that changes anything in the cloud. Verifying a signature makes
+  a second kind of outbound request, fetching the (public) certificate
+  from the provider's signing domain; that one carries no credential
+  either, and is pinned to the same domain by pattern in the binary.
+- Inside the cluster it can reach one thing: Alertmanager. The chart
+  renders a NetworkPolicy that says so, plus what verifying a signature
+  and confirming a subscription both also need — cluster DNS, and HTTPS
+  to the cloud provider. Vanilla Kubernetes NetworkPolicy cannot pin
+  egress to a hostname, only to a podSelector, a namespaceSelector or a
+  CIDR block, so that last rule is honest about being "HTTPS, to
+  anywhere" rather than a hostname pin this layer cannot express; the
+  actual pin is the one in the binary, above.
 - It runs as a non-root static binary from `scratch`.
 
 ## Proof, before release

@@ -1,0 +1,76 @@
+# Every value set away from its default, so a change to any one of them
+# shows up in the golden diff. The three mapping rules are copied from
+# docs/alert-ingress.md's own example verbatim.
+nameOverride: cloud-events
+replicaCount: 3
+
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.4.2"
+  pullPolicy: Always
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+service:
+  port: 9090
+
+selfMonitor: false
+
+alertmanager:
+  url: https://vmalertmanager.example.internal:9093
+
+topics:
+  - "<the security-alerts topic ARN>"
+  - "<the budgets topic ARN>"
+
+mappings:
+  - name: guardduty
+    match: {"detail-type": "GuardDuty Finding"}
+    alert:
+      alertname: CloudSecurityFinding
+      severity: '{{ if ge .detail.severity 7.0 }}critical{{ else }}warning{{ end }}'
+      labels:
+        source: guardduty
+        k8s_cluster_name: cloud
+      annotations:
+        summary: '{{ .detail.title }}'
+        runbook: cloud-security-finding
+  - name: root-login
+    match: {"detail-type": "AWS Console Sign In via CloudTrail", "detail.userIdentity.type": "Root"}
+    alert:
+      alertname: RootConsoleLogin
+      severity: critical
+      labels:
+        source: cloudtrail
+        k8s_cluster_name: cloud
+  - name: budget
+    match: {"Message.budgetName": "*"}
+    alert:
+      alertname: BudgetThresholdCrossed
+      severity: warning
+      labels:
+        source: budgets
+        k8s_cluster_name: cloud
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 10m
+
+resolveAfter: 2h
+
+networkPolicy:
+  enabled: true
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
+      namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: observability
+  allowCloudHTTPS: true

@@ -1,0 +1,17 @@
+# alertmanager.url is required by the schema: empty, there is nowhere to
+# POST an alert at all.
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.0.0"
+alertmanager:
+  url: ""
+topics:
+  - "<the security-alerts topic ARN>"
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

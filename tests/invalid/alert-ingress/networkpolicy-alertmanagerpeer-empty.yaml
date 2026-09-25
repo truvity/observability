@@ -1,0 +1,17 @@
+# An enabled NetworkPolicy with no alertmanagerPeer allows egress to
+# Alertmanager from nowhere: every alert this service tries to post fails
+# silently, which looks from outside exactly like a quiet estate. See
+# templates/_validate.tpl#validate.networkPolicy.
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.0.0"
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics:
+  - "<the security-alerts topic ARN>"
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  enabled: true
+  alertmanagerPeer: []

@@ -1,0 +1,51 @@
+{{- include "alert-ingress.validate" . -}}
+{{- /*
+This service's own deadman, rendered by the CHART rather than written by
+the estate — the one place docs/alert-ingress.md and docs/doctrine.md
+both insist on it. A notification service retries and then gives up
+quietly; nothing on the estate's side is otherwise told that a topic
+stopped delivering, or that this Deployment itself is gone. The
+heartbeat is the one message this service is guaranteed to see on a
+schedule, so its own counter's silence is the signal — an estate that
+forgot to wire up the scheduled ping gets a firing rule from day one
+rather than a false sense that the path works.
+*/}}
+{{- $window := include "alert-ingress.doubleDuration" .Values.heartbeat.interval -}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ include "alert-ingress.fullname" . }}
+  labels:
+    {{- include "alert-ingress.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: alert-ingress.heartbeat
+      # Evaluated far more often than the heartbeat interval itself: the
+      # window this rule watches is what makes it tolerant of a single
+      # missed or delayed ping, not a slow evaluation cadence.
+      interval: 1m
+      rules:
+        # `absent_over_time` catches the counter (and the series
+        # entirely) disappearing — this Deployment gone, or scraping
+        # broken. `increase(...) == 0` catches the series still existing
+        # but not advancing — the heartbeat recognised once, long ago,
+        # and never again. Either half firing alone is the same failure
+        # from this rule's point of view: nothing has proven the path is
+        # alive in two heartbeat intervals.
+        - alert: AlertIngressHeartbeatMissing
+          expr: >-
+            absent_over_time(alert_ingress_messages_total{mapping="heartbeat"}[{{ $window }}])
+            or
+            increase(alert_ingress_messages_total{mapping="heartbeat"}[{{ $window }}]) == 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "alert-ingress has not counted its own heartbeat in {{ $window }}"
+            description: >-
+              No message matching `heartbeat.match` has been recognised in
+              {{ $window }} ({{ .Values.heartbeat.interval }} x 2). Either the
+              estate's scheduled heartbeat event stopped publishing, the
+              cloud provider's own topic stopped delivering, or this
+              Deployment is not running at all — from outside, every one
+              of those looks like an estate that is simply quiet, which is
+              the entire reason this rule exists.

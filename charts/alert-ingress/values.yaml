@@ -1,0 +1,141 @@
+# alert-ingress — events born in the cloud provider, not in a cluster,
+# reduced to "POST JSON at us" so the estate keeps one router.
+#
+# A threat-detection finding, a root sign-in, a signing operation on a key
+# that should never sign, a budget crossing its line: the provider publishes
+# each to a notification topic, and the alternative to this chart is
+# always a SECOND router — the provider's own chat integration, a
+# function per event, or email. A second router is a second place a
+# silence has to be kept, and it is the one nobody remembers during the
+# incident. See docs/alert-ingress.md and docs/doctrine.md#one-router.
+#
+# The service knows two things: the envelope a cloud notification service
+# wraps a message in, and Alertmanager's own POST /api/v2/alerts. It knows
+# nothing about the estate — every particular below is a value this chart
+# was handed, and every refusal in templates/_validate.tpl exists because
+# the wrong shape here is SILENT, never loud: a topic that was never
+# allow-listed, a mapping with no severity, a heartbeat nobody wired up.
+
+# -- Name overrides for the objects this chart renders.
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # -- No default, on purpose. This repository publishes charts only
+  # (see .github/workflows/release.yaml); it ships no workflow that
+  # builds and pushes a cmd/alert-ingress image anywhere. Point this at
+  # wherever your estate builds and hosts the binary from this repository
+  # at the tag you are installing — an empty default here would render
+  # cleanly and pull nothing.
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# -- The one port: the webhook, `/healthz` and `/metrics` together. One
+# container, one thing to reach it on — a second port would be a second
+# thing the NetworkPolicy and the estate's edge route both have to agree
+# about.
+service:
+  port: 8080
+
+# -- Render a PodMonitor for the port above. Refused false only as an
+# explicit, loud choice: the counters this service exports are its own
+# deadman (see `heartbeat` below), and a PodMonitor nobody scrapes means
+# alert_ingress_messages_total exists and nothing ever reads it — the
+# counters exist and nobody scrapes them.
+selfMonitor: true
+
+# -- Alertmanager's own alert API. This chart renders a NetworkPolicy that
+# allows egress to it and, within the limit vanilla Kubernetes
+# NetworkPolicy can express, to nowhere else in the cluster — see
+# `networkPolicy` below.
+alertmanager:
+  url: ""
+
+# -- Topics this receiver will confirm a subscription from and accept a
+# notification for. Required and refused empty: an endpoint that confirms
+# any topic can be subscribed to ANYONE's topic and fed alerts.
+#
+#   topics:
+#     - "<the security-alerts topic ARN>"
+#     - "<the budgets topic ARN>"
+topics: []
+
+# -- Mapping rules, tried in the order they are written; the first whose
+# `match` holds is applied. `match` is a set of JSON-path equalities
+# against the message's own body (the provider's envelope, one level
+# unwrapped) — a value of "*" tests presence only. `alert` fields are Go
+# templates over that same body. A message no rule matches is NOT
+# dropped: it becomes CloudEventUnmapped, severity warning, with its body
+# in an annotation — a drop is the failure mode this repository exists to
+# close.
+#
+#   mappings:
+#     - name: guardduty
+#       match: {"detail-type": "GuardDuty Finding"}
+#       alert:
+#         alertname: CloudSecurityFinding
+#         severity: '{{ if ge .detail.severity 7.0 }}critical{{ else }}warning{{ end }}'
+#         labels:
+#           source: guardduty
+#           k8s_cluster_name: cloud   # the routing key, not a real cluster
+#         annotations:
+#           summary: '{{ .detail.title }}'
+#           runbook: cloud-security-finding
+mappings: []
+
+# -- The estate's own scheduled proof-of-life message, published through
+# the SAME topic and path every `interval`. It carries no `alert:` field
+# and is never itself posted to Alertmanager: recognising it and keeping
+# its counter moving IS the point, for the VMRule below to watch.
+# `match` is required and refused empty — without it the path this
+# service sits on could die with nothing on the estate's side reporting
+# it, which is the one failure this whole chart cannot recover from by
+# itself.
+heartbeat:
+  match: {}
+  interval: 15m
+
+# -- How long after `startsAt` an alert's `endsAt` is set. Cloud events do
+# not resolve themselves — nothing tells this service a GuardDuty finding
+# stopped being true — so every alert this service posts expires on a
+# timer rather than lingering in Alertmanager forever.
+resolveAfter: 1h
+
+networkPolicy:
+  enabled: true
+  # -- NetworkPolicy peers selecting Alertmanager — the one in-cluster
+  # address this service is allowed to reach. Required while `enabled`:
+  # an empty list here is not "reach nothing", it is "this NetworkPolicy
+  # was never actually wired to the Alertmanager it names in `alertmanager.url`",
+  # and the render would look identical to a correctly-scoped one.
+  #
+  #   alertmanagerPeer:
+  #     - podSelector:
+  #         matchLabels:
+  #           app.kubernetes.io/name: vmalertmanager
+  alertmanagerPeer: []
+  # -- Egress on 443 to anywhere, needed for the two outbound calls this
+  # service makes to the cloud provider itself: fetching the signing
+  # certificate that Verify checks every message against, and the one GET
+  # a SubscriptionConfirmation performs. Both are pinned, IN THE BINARY,
+  # to the provider's own signing domain (see cmd/alert-ingress/sns.go) —
+  # but that pin is a property of the CODE, not of this NetworkPolicy:
+  # vanilla Kubernetes NetworkPolicy has no way to select egress by
+  # hostname, only by podSelector, namespaceSelector or a CIDR block, and
+  # no CIDR here would stay correct as the provider's own address ranges
+  # change. So this rule is honest about what it is — HTTPS, to anywhere
+  # — rather than pretending a hostname pin exists at this layer. Disable
+  # it only if your CNI enforces FQDN-scoped egress and the real signing
+  # domain is pinned there instead.
+  allowCloudHTTPS: true

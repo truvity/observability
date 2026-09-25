@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "alert-ingress",
+  "description": "Turns a cloud notification into an Alertmanager alert. Strict: an unknown key fails the render rather than being silently ignored, because a typo in an alerting path is a rule that never fires.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["image", "alertmanager", "topics", "heartbeat", "networkPolicy"],
+  "definitions": {
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h|d|w|y)$",
+      "description": "A MetricsQL duration, e.g. 30s, 15m, 1h."
+    },
+    "matchRule": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "JSON-path equalities against the message's own body. A value of \"*\" tests presence only."
+    },
+    "alertSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Whether `alertname` and `severity` may be blank is a render-time refusal in templates/_validate.tpl, with a message that says what an accidental default tier costs — not a bare schema requirement.",
+      "properties": {
+        "alertname": {
+          "type": "string",
+          "description": "A Go template over the message body."
+        },
+        "severity": {
+          "type": "string",
+          "description": "A Go template over the message body."
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "networkPolicyPeer": {
+      "type": "object",
+      "description": "One entry of a NetworkPolicy `to`/`from` list — a podSelector, namespaceSelector and/or ipBlock, exactly as the NetworkPolicy API shapes it.",
+      "additionalProperties": true
+    }
+  },
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "No default: this repository ships no image-build workflow. Required so a missing value refuses the render rather than pulling nothing."
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "resources": {
+      "type": "object"
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port"],
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "selfMonitor": {
+      "type": "boolean",
+      "description": "Render a PodMonitor. Refused false only loudly: the counters exist and nobody scrapes them is exactly the shape a deadman cannot see its own death in."
+    },
+    "alertmanager": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "topics": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Refused empty at render time (templates/_validate.tpl): an endpoint that confirms any topic can be subscribed to anyone's topic and fed alerts."
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "match", "alert"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+            "description": "Labels the `mapping` dimension of alert_ingress_messages_total."
+          },
+          "match": { "$ref": "#/definitions/matchRule" },
+          "alert": { "$ref": "#/definitions/alertSpec" }
+        }
+      }
+    },
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["match", "interval"],
+      "properties": {
+        "match": {
+          "allOf": [{ "$ref": "#/definitions/matchRule" }],
+          "description": "Refused empty at render time (templates/_validate.tpl): without it the path this service sits on could die unnoticed."
+        },
+        "interval": { "$ref": "#/definitions/duration" }
+      }
+    },
+    "resolveAfter": { "$ref": "#/definitions/duration" },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "alertmanagerPeer": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/networkPolicyPeer" },
+          "description": "Refused empty while `enabled` (templates/_validate.tpl): otherwise this NetworkPolicy would allow egress to nothing at all, indistinguishable at a glance from one that was actually wired up."
+        },
+        "allowCloudHTTPS": { "type": "boolean" }
+      }
+    }
+  }
+}

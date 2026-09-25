@@ -1,0 +1,23 @@
+# The smallest values file that renders. No default `image.repository`
+# exists (this repository ships no image-build workflow — see
+# .github/workflows/release.yaml), so it is set here the way any consumer
+# must set it: to wherever they built and pushed cmd/alert-ingress.
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.0.0"
+
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+topics:
+  - "<the security-alerts topic ARN>"
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
