@@ -363,6 +363,23 @@ forever, the same silent failure as a writer reading the wrong Secret.
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- /*
+The metrics store's self-scrape, MIRROR of `disableSelfServiceScrape`.
+
+`templates/selfscrape.yaml` is this chart's REPLACEMENT for the
+operator's own self-scrape, on the same terms
+`charts/observability-emitters` replaces its agent's: the operator's
+version is a `VMServiceScrape` regardless of what is written into it —
+"Scrape objects are always the Prometheus Operator kinds" (docs/
+safety.md) — and it has no `basicAuth`, so a scrape that reaches this
+store 401s forever. Flipping `disableSelfServiceScrape` back to false
+does not just resurrect a doctrine violation, it resurrects the exact
+401 this release closes: the operator's object still carries no
+credential, whatever this chart's own ServiceMonitor does beside it.
+*/ -}}
+{{- if and $metricsOn .Values.metricsSelfScrape.enabled (ne ((($vmks.vmsingle).spec).disableSelfServiceScrape) true) -}}
+{{- fail "observability-stack: `metricsSelfScrape.enabled` is true but `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape` is not `true`. The operator then reconciles ITS OWN VMServiceScrape for this VMSingle alongside this chart's ServiceMonitor — a kind docs/safety.md rules out on its own, and one with no `basicAuth` either way: every scrape it drives still 401s against a store running `-httpAuth.*`. Leave `disableSelfServiceScrape: true`." -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

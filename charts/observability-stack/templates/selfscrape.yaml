@@ -1,0 +1,64 @@
+{{- /*
+The metrics store's own scrape object.
+
+The vendored `victoria-metrics-k8s-stack` has no
+`victoria-logs-single.server.serviceMonitor` equivalent for its
+`vmsingle`: the only self-scrape it offers is the operator's own,
+enabled by default, which the operator creates directly rather than
+templating — always a `VMServiceScrape`, never a `ServiceMonitor`, and
+with no `basicAuth` at all. values.yaml's `victoria-metrics-k8s-stack.
+vmsingle.spec.disableSelfServiceScrape` turns that off, the same reason
+`charts/observability-emitters`' vmagent turns its own off: "Scrape
+objects are always the Prometheus Operator kinds" (docs/safety.md)
+rules out the operator's kind even with credentials added to it.
+
+Measured on a live install after `networkPolicy.scrapeFrom` (below,
+templates/networkpolicy.yaml) started letting the metrics agent reach
+this store at all: `up=0` for the operator's own scrape job, 401 on
+every attempt, and the store's own `vm_*` series never landing — the
+store runs with `-httpAuth.*` from `storeCredentials`, and the
+operator's auto-created object does not know about it.
+
+This `ServiceMonitor` replaces it. `basicAuth` reads `storeCredentials`
+directly (`observability-stack.targetAuth`, the same helper the proxy
+itself authenticates with in templates/vmauth.yaml and
+templates/vmalert.yaml) rather than a values.yaml literal, so unlike
+the log and trace stores' own `serviceMonitor.basicAuth` there is
+nothing here that could drift out of a MIRROR and disagree with it.
+
+The selector is the same `app.kubernetes.io/name: vmsingle` /
+`app.kubernetes.io/instance` pair templates/networkpolicy.yaml already
+uses to open this store's port to begin with — the labels the operator
+puts on the VMSingle it reconciles and on the Service in front of it.
+
+`targetPort`, not a named `port`: the operator's Service naming for
+VMSingle's own port is not part of this chart's contract the way
+`vmsingle.spec.port` itself is, and the container port number is.
+*/ -}}
+{{- $root := . -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" | default dict -}}
+{{- $metricsOn := and $vmks.enabled (($vmks.vmsingle).enabled) -}}
+{{- if and $metricsOn .Values.metricsSelfScrape.enabled }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- $port := (($vmks.vmsingle).spec).port | default "8428" }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ printf "%s-metrics-selfscrape" $fullname | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ $root.Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmsingle
+      app.kubernetes.io/instance: {{ include "observability-stack.vmks.fullname" $root }}
+  endpoints:
+    - targetPort: {{ $port | int }}
+      path: /metrics
+      interval: {{ $root.Values.interval }}
+      basicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+{{- end }}
