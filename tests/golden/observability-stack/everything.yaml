@@ -107,6 +107,13 @@ spec:
       ports:
         - protocol: TCP
           port: 8427
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 8435
 
 ---
 # Source: observability-stack/charts/grafana/templates/serviceaccount.yaml

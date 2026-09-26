@@ -95,4 +95,26 @@ spec:
       ports:
         - protocol: TCP
           port: 8427
+    {{- /*
+    The operator's own config-reloader sidecar, injected into this same
+    pod to watch the Secret it generates for VMAuth and signal a reload —
+    a second container, a second endpoint, `reloader-http`, on the
+    VMServiceScrape the operator renders alongside this chart's own
+    objects. This policy selected the pod and admitted only 8427, so the
+    reload endpoint scraped fine at the socket and lost every sample at
+    admission: `up=0` for the job, `TargetDown`/`ServiceDown` firing
+    forever, on a pod that is otherwise perfectly healthy — the same
+    shape docs/safety.md, "A store whose own policy hides it from the
+    scraper" describes for the stores, one port later.
+
+    The peers are `networkPolicy.scrapeFrom` (defaulting to the same
+    metrics agent as the three store policies above), not `proxyFrom`:
+    this is a scrape, not a read through the proxy, and the two lists
+    answer different questions.
+    */}}
+    - from:
+        {{- toYaml ($root.Values.networkPolicy.scrapeFrom | default $scrapeDefault) | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 8435
 {{- end }}
