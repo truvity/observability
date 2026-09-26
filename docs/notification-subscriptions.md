@@ -302,31 +302,41 @@ cited; the one thing left unconfirmed is called out plainly.
    Slack workspace" needs to mean for the values file to have one entry
    per workspace rather than one per channel.
 
-3. **This feature is recent upstream, and NOT the version this chart's
-   dependency currently renders by default.** Bot-token / `app_token`
-   support landed in Alertmanager **v0.32.0** (2026-04-08, changelog:
-   "`[FEATURE] Slack app support. #4211`"). The VictoriaMetrics operator
+3. **This chart's default Alertmanager already carries this feature —
+   no image-tag bump needed.** Bot-token / `app_token` support landed
+   in Alertmanager **v0.30.0** (changelog: "`[FEATURE] Slack app
+   support. #4211`"; verified from upstream's own release notes,
+   `gh api repos/prometheus/alertmanager/releases/tags/v0.30.0`).
+   **v0.31.0** made no functional change to it, only a documentation
+   fix ("`[ENHANCEMENT] docs(slack): Document missing app configs.
+   #4871`", same source, tag `v0.31.0`) — which is consistent with
+   `app_token`/`app_token_file` only reliably appearing in the rendered
+   `configuration.md` from v0.31.0 onward. The VictoriaMetrics operator
    this chart depends on (`victoria-metrics-k8s-stack` 0.93.0, vendoring
    `victoria-metrics-operator` appVersion `v0.74.1`) compiles in a
-   **default** `VMAlertmanager` image of `prom/alertmanager:v0.31.0`
-   (VictoriaMetrics/operator issue #2647, which is an open request to
-   bump that default to `v0.34.1` and is unrelated to Slack — it is
-   about an inhibition bug — but confirms the current default). **v0.31.0
-   predates v0.32.0**, so bot-token mode is not available with this
-   chart's current, unconfigured Alertmanager image. Today, nothing in
+   **default** `VMAlertmanager` image of exactly `prom/alertmanager:v0.31.0`
+   — confirmed directly from that pinned tag's source,
+   `internal/config/config.go` in
+   <https://github.com/VictoriaMetrics/operator/blob/v0.74.1/internal/config/config.go>,
+   lines 472–475:
+   ```go
+   // Default container image for Alertmanager.
+   Image string `default:"prom/alertmanager" env:"ALERTMANAGERDEFAULTBASEIMAGE"`
+   // Default Alertmanager version.
+   Version string `default:"v0.31.0" env:"ALERTMANAGERVERSION"`
+   ```
+   **v0.31.0 is past the v0.30.0 floor**, so bot-token mode works
+   against the image this chart already deploys, with nothing new to
+   pin, override, or refuse on that account. Today, nothing in
    `notifications:` or anywhere else in this chart's schema lets a
    consumer set `alertmanager.image.tag` at all — the `alertmanager:`
    values block has no `image` key
-   (`charts/observability-stack/values.schema.json`). **This proposal
-   therefore needs a new value, `alertmanager.image.tag` (or
-   equivalent), refused below a floor this chart would pin at v0.32.0**,
-   the same shape as the existing `vmauth.image.tag` floor refusal in
-   `_validate.tpl` ("The Enterprise boundary, as a refusal" /
-   the v1.152.0 vmauth floor). Without that value, `workspaces[]` with
-   `botTokenSecret` renders a configuration the deployed Alertmanager
-   binary cannot parse, and the failure is Alertmanager refusing to
-   start on an unknown field — loud, but only after `helm install`
-   reports success.
+   (`charts/observability-stack/values.schema.json`) — and that absence
+   is what makes the floor moot rather than a gap: there is no lever in
+   this chart a consumer could use to pin an OLDER, unsupported
+   Alertmanager even if they wanted to. See Open Question 6 for whether
+   an `alertmanager.image.tag` value belongs in this proposal anyway,
+   for a different reason.
 
 4. **Matcher and fan-out mechanics used above are current, general
    Alertmanager behaviour, not new**: matcher operators `=`, `!=`, `=~`,
@@ -342,8 +352,8 @@ CR just runs unmodified) has any opinion on `app_token_file` — the CR's
 `configRawYaml` is passed to the Alertmanager binary as-is in every
 release this chart has ever rendered, so there is no operator-specific
 translation layer to check, but this was not tested end to end against
-a live v0.32.0+ image as part of writing this proposal. That is one
-thing golden + `apply` proof would need to cover before release (see
+a live pod as part of writing this proposal. That is one thing golden +
+`apply` proof would need to cover before release (see
 docs/notifications.md, "Proof, before release").
 
 ## Refusals this chart would add
@@ -360,8 +370,14 @@ the shape is wrong:
 | a subscription's `match` naming a key other than `cluster`/`namespace` | the collectors stamp exactly two dimensions on an alert, `k8s_cluster_name` and `k8s_namespace_name` (docs/doctrine.md); anything else matches nothing any rule carries |
 | two subscriptions with identical `workspace` + `channel` + `match` + `minSeverity` | an exact duplicate is one notification twice, or — more likely — a copy meant to change a field that was left unchanged |
 | `workspaces[]` with two entries of the same `name` | the second is unreachable; every `subscriptions[].workspace` naming it resolves to whichever the renderer happened to pick |
-| a `botTokenSecret` present anywhere and `alertmanager.image.tag` unset, or set below `v0.32.0` | renders a configuration the deployed Alertmanager cannot parse — see Slack fact 3 above; refused at render time rather than left to fail at Alertmanager startup, the same reasoning as the existing vmauth version floor |
 | `notifications.mode: evaluate-only` together with any `workspaces`/`subscriptions`/`slack`/`webhook` entry | says two things at once: "notify nobody yet" and "notify these people" — see below |
+
+There is deliberately no refusal here for an Alertmanager image too old
+for bot tokens: see Slack fact 3 above — the default this chart already
+deploys is past the feature's floor, and the chart has no value that
+lets a consumer pin an older one instead. If that ever changes (see
+Open Question 6), a version-floor refusal in the existing
+`vmauth.image.tag` style would need to be added at the same time.
 
 Each would get a fixture under `tests/invalid/observability-stack/`,
 following the existing `notifications-*.yaml` naming.
@@ -450,14 +466,16 @@ different question from whether any individual rule pages a human.
 1. **Bot token vs. webhook-per-channel, as the DEFAULT credential kind
    for a new workspace.** This proposal recommends bot token, because
    it is the only shape that gives "several channels per workspace" a
-   single credential — but it requires bumping the rendered
-   Alertmanager past v0.31.0 (fact 3 above), which is a new moving
-   part (an image tag this chart has never let a consumer set). The
-   alternative is: `workspaces[]` entries hold a LIST of
-   `{channel, webhookSecret}` pairs instead of one bot token, staying
-   on the default Alertmanager image, at the cost of one Secret per
-   channel rather than one per workspace. **Recommendation: bot token**
-   — the whole point of the request was "several channels in each
+   single credential — and, per the corrected fact 3 above, this needs
+   no new moving part: the Alertmanager this chart already deploys by
+   default (`v0.31.0`) supports bot tokens today, with no image-tag
+   bump, no new value, and no version floor to add. The alternative is:
+   `workspaces[]` entries hold a LIST of `{channel, webhookSecret}`
+   pairs instead of one bot token, at the cost of one Secret per
+   channel rather than one per workspace, for no upside now that the
+   bot-token path costs nothing extra. **Recommendation: bot token,
+   with more confidence than the first draft of this proposal had** —
+   the whole point of the request was "several channels in each
    workspace" as one coherent unit, and N webhook Secrets per workspace
    re-creates today's one-credential-per-destination shape with extra
    values-file ceremony, not less.
@@ -504,15 +522,18 @@ different question from whether any individual rule pages a human.
    real values file shows the duplication getting painful (four or more
    workspaces).**
 
-6. **Is the refusal for `botTokenSecret` + a too-old `alertmanager.image.tag`
-   the right place to enforce the version floor, or should the chart
-   instead just always set the image tag to a value ≥ v0.32.0 the
-   moment ANY bot-token workspace exists** (removing the separate value
-   entirely, the way `notifications.externalUrl` collapses into
-   `vmalert.externalUrl` rather than being asserted equal)?
-   **Recommendation: keep it a separate, explicit value** — silently
-   overriding an image tag the consumer did not set is the kind of
-   "helpful default" docs/doctrine.md's "Refusals over defaults"
-   argues against; a consumer who pins images deliberately (for a
-   vulnerability scan gate, say) should see the requirement stated,
-   not have it applied around them.
+6. **Does this proposal need `alertmanager.image.tag` at all?** The
+   first draft of this doc added the value to enforce a version floor
+   for bot-token support; that floor turned out to already be cleared
+   by the chart's default (fact 3), so nothing here requires it.
+   Separately, though: this chart has *no* way today for a consumer to
+   pin or bump the Alertmanager image at all (no `alertmanager.image`
+   key anywhere in the schema), which is a gap independent of Slack —
+   a CVE in the Alertmanager binary, or a later feature such as
+   v0.32.0's "allow receiver to edit existing messages", has no lever.
+   **Recommendation: leave `alertmanager.image.tag` out of this
+   proposal.** It solves a real but separate problem (image
+   pinning/patching for a component this chart currently gives no
+   control over at all), and bundling it into the notifications
+   proposal would make an unrelated capability look like a prerequisite
+   for subscriptions, when it is not one.
