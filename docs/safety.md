@@ -170,7 +170,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Fifty, each with a fixture under
+Fifty-one, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -226,6 +226,7 @@ for its one reason and no other.
 | `victoria-logs-single.server.serviceMonitor.basicAuth` or `victoria-traces-single...`'s naming a Secret other than `storeCredentials.secretName` | The store answers 401 to every scrape forever, and a target that always 401s is indistinguishable, from the outside, from one that was never there. |
 | `networkPolicy.scrapeFrom[]` naming an `ipBlock` with neither `podSelector` nor `namespaceSelector` | A pod IP is reassigned on every reschedule, eviction and rollout. The rule installs and scrapes fine today, and stops silently the first time the scraper pod moves — the same failure this value exists to fix, reintroduced by the value meant to fix it. |
 | `metricsSelfScrape.enabled` with `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape` not `true` | The operator reconciles its own `VMServiceScrape` for the VMSingle alongside this chart's `ServiceMonitor` — a kind this file rules out on its own, and one with no `basicAuth` either way, so every scrape it drives 401s against a store running `-httpAuth.*`. |
+| A `ServiceMonitor` this chart renders (`metricsSelfScrape`, or the log/trace stores' own `serviceMonitor`) with the operator's ServiceMonitor converter off — `disable_prometheus_converter: true`, or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE: "false"` in the operator's `env` | Nothing ever converts the object to the native `VMServiceScrape` vmagent watches, so nothing ever scrapes it — a render that looks like coverage and is not. Measured on a live install; see "The doctrine's own promise was broken from this chart's first commit", above. |
 
 ### The self-alerts: nineteen rules, and what a live install did to eleven of the original twelve
 
@@ -1015,6 +1016,63 @@ refused true, and the metrics agent runs with
 `disableSelfServiceScrape: true` so the operator does not quietly create a
 `VMServiceScrape` for the agent itself — the chart writes a `PodMonitor`
 instead.
+
+### The doctrine's own promise was broken from this chart's first commit
+
+"The VictoriaMetrics operator converts the Prometheus kinds today", above,
+was not true for THIS chart, from `values.yaml`'s very first version:
+`victoria-metrics-k8s-stack.victoria-metrics-operator.operator.
+disable_prometheus_converter` was `true`, which turns every one of the
+operator's six per-kind converters off at once —
+`VM_ENABLEDPROMETHEUSCONVERTER_{PODMONITOR,SERVICESCRAPE,PROBE,
+SCRAPECONFIG,PROMETHEUSRULE,ALERTMANAGERCONFIG}` all `false` — and the
+operator has no per-owner or per-namespace filter for it: the switch is
+cluster-wide or nothing.
+
+Measured on a live install: every `ServiceMonitor` and `PodMonitor` this
+repository's charts render was exactly as inert as one authored in the
+wrong kind outright. `count by (job) (up)` in the metrics store showed
+only the operator's own native `VMServiceScrape` objects (the operator
+itself, both vmalerts, vmauth) plus kubelet/cadvisor — never the log
+store's `ServiceMonitor`, the trace store's, or the metrics store's own
+`*-metrics-selfscrape` this release's predecessor added, and never
+`charts/observability-emitters`' `PodMonitor` objects for vmagent, vlagent
+or the OpenTelemetry gateway. `vm_` stayed at 63 metric names — the same
+63 as before `metricsSelfScrape` existed — and `vl_`/`vt_`/`vmagent_`/
+`otelcol_`/`vlagent_` stayed at zero. Two releases (0.5.0, 0.5.1) added a
+`ServiceMonitor` believing this section's own promise; neither closed
+anything, because the promise was never kept on this install to begin
+with.
+
+The comment the value carried was a real concern, not a mistake: turning
+on a converter is watching every `ServiceMonitor`/`PodMonitor` cluster-wide
+and reconciling a native object for each, and on an estate that also runs
+its own Prometheus Operator, or a second VictoriaMetrics operator
+instance, converting an object a different team's chart owns is exactly
+how two controllers end up fighting over one scrape. The mistake was the
+instrument: `disable_prometheus_converter` has no scope narrower than
+"every kind, cluster-wide", so protecting against a collision on kinds
+this stack never touches also disabled the two kinds every chart in this
+repository actually authors.
+
+The fix leaves `disable_prometheus_converter: false` — the vendored
+chart's own default — and restates the four converters this stack has no
+stake in back to `false` explicitly, as `env` entries on the operator
+(`VM_ENABLEDPROMETHEUSCONVERTER_PROBE`, `_SCRAPECONFIG`,
+`_PROMETHEUSRULE`, `_ALERTMANAGERCONFIG`): nothing this repository renders
+is a `Probe`, `ScrapeConfig`, `PrometheusRule` or `AlertmanagerConfig`, so
+the original protection stands for exactly the kinds it was ever needed
+for. `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE` and `_PODMONITOR` are
+left unset, which is the operator's own default of `true` — the two kinds
+this repository's own `ServiceMonitor`/`PodMonitor` objects need converted
+for vmagent to ever see them.
+
+`pkg/scrapeconversion`'s Go test reads the checked-in golden renders and
+asserts these six values directly, rather than only their agreement with
+their own regeneration: `just golden` will happily rewrite a golden file
+to match a `values.yaml` that turns a converter back off, and a diff that
+matches itself is not evidence anything scrapes anything — the exact
+shape "renders cleanly, does nothing" this repository exists to refuse.
 
 ## Two writers per signal, and which one yields
 

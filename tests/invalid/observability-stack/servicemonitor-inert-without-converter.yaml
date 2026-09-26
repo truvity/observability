@@ -1,0 +1,15 @@
+# expect: nothing converts this object and nothing scrapes it
+#
+# `disable_prometheus_converter: true` while this chart still renders a
+# ServiceMonitor of its own (`metricsSelfScrape` and the log/trace
+# stores' `serviceMonitor`, both on by default): the operator's
+# converter turns every ServiceMonitor into the native VMServiceScrape
+# vmagent watches, and this switch turns every one of the operator's six
+# converters off at once — measured on a live install, exactly the shape
+# docs/safety.md, "The doctrine's own promise was broken from this
+# chart's first commit", describes. A chart that renders a ServiceMonitor
+# while this is true is a chart that renders cleanly and scrapes nothing.
+victoria-metrics-k8s-stack:
+  victoria-metrics-operator:
+    operator:
+      disable_prometheus_converter: true

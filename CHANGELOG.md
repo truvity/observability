@@ -6,6 +6,53 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.5.2
+
+Every `ServiceMonitor` this chart has ever rendered was inert, from the
+first release: `disable_prometheus_converter: true` turned off the
+VictoriaMetrics operator's conversion of Prometheus-Operator objects
+entirely, so nothing ever turned this chart's own `ServiceMonitor`
+objects into the native `VMServiceScrape` vmagent watches. `up=0` and
+`vm_*` metric names stuck at the count from before any of it existed —
+0.5.0 and 0.5.1 each believed docs/safety.md's own promise ("the
+VictoriaMetrics operator converts the Prometheus kinds today") and
+neither closed anything on a real install. See docs/safety.md, "The
+doctrine's own promise was broken from this chart's first commit".
+
+- **Fix: `charts/observability-stack`** —
+  `victoria-metrics-k8s-stack.victoria-metrics-operator.operator.
+  disable_prometheus_converter` is now `false`, matching the vendored
+  chart's own default, and four `env` entries on the operator restate
+  `VM_ENABLEDPROMETHEUSCONVERTER_PROBE`, `_SCRAPECONFIG`,
+  `_PROMETHEUSRULE` and `_ALERTMANAGERCONFIG` back to `false` explicitly
+  — this stack renders none of those four kinds, and converting one that
+  belongs to an unrelated chart or team, on an estate that runs its own
+  Prometheus Operator or a second VictoriaMetrics operator instance, is
+  the two-controllers-fighting-over-one-scrape failure the original
+  switch existed to prevent. Only `VM_ENABLEDPROMETHEUSCONVERTER_
+  SERVICESCRAPE` and `_PODMONITOR` are left at the operator's own
+  default of enabled.
+
+  **What starts being scraped on upgrade, with no values change
+  required:** the metrics store's own selfscrape ServiceMonitor
+  (`metricsSelfScrape`, 0.5.1), and the log and trace stores' own
+  `serviceMonitor` (0.5.0) — all three converted to a `VMServiceScrape`
+  for the first time, so `vm_*`, `vl_*` and `vt_*` metric names start
+  appearing in the metrics store where none of the three existed before,
+  and every `selfAlerts` rule that names one of those metrics (still
+  `""` by default, docs/notifications.md) has a real series to
+  evaluate against once a name is confirmed and set.
+  `charts/observability-emitters`' `PodMonitor` objects (vmagent, vlagent,
+  the OpenTelemetry gateway) start being converted too, and scraped, the
+  same way — that chart's own release notes have not needed a change,
+  because the fix lives entirely in the operator this chart installs.
+
+  A new refusal (`templates/_validate.tpl`) catches the same regression
+  in either form: `disable_prometheus_converter` flipped back to `true`,
+  or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE` restated to `"false"`
+  in the operator's `env`, while this chart still renders a
+  `ServiceMonitor` of its own.
+
 ## 0.5.1
 
 A follow-up to 0.5.0's own NetworkPolicy fix: opening the metrics agent's

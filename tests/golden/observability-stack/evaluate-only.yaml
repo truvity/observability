@@ -934,24 +934,20 @@ spec:
               value: "v0.10.0"
             - name: VM_VMALERTMANAGER_ALERTMANAGERVERSION
               value: "v0.34.0"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_PROBE
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_SCRAPECONFIG
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_PROMETHEUSRULE
+              value: "false"
+            - name: VM_ENABLEDPROMETHEUSCONVERTER_ALERTMANAGERCONFIG
+              value: "false"
             - name: POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
             - name: OPERATOR_NAME
               value: victoria-metrics-operator
-            - name: VM_ENABLEDPROMETHEUSCONVERTER_PODMONITOR
-              value: "false"
-            - name: VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE
-              value: "false"
-            - name: VM_ENABLEDPROMETHEUSCONVERTER_PROMETHEUSRULE
-              value: "false"
-            - name: VM_ENABLEDPROMETHEUSCONVERTER_PROBE
-              value: "false"
-            - name: VM_ENABLEDPROMETHEUSCONVERTER_ALERTMANAGERCONFIG
-              value: "false"
-            - name: VM_ENABLEDPROMETHEUSCONVERTER_SCRAPECONFIG
-              value: "false"
             - name: VM_ENABLEDPROMETHEUSCONVERTEROWNERREFERENCES
               value: "false"
           args:

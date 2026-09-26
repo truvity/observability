@@ -1031,11 +1031,55 @@ victoria-metrics-k8s-stack:
       certManager:
         enabled: true
     operator:
-      # -- The prometheus-operator converter watches ServiceMonitors and
-      # turns them into VMServiceScrapes. Off: this stack is not the
-      # estate's Prometheus, and converting objects somebody else owns is
-      # how two controllers end up fighting over one scrape.
-      disable_prometheus_converter: true
+      # -- Measured on a live install: `disable_prometheus_converter: true`
+      # (this key, until this release) does not scope down which
+      # Prometheus-Operator objects get converted — the operator has no
+      # per-owner or per-namespace filter for it — it turns EVERY
+      # converter off at once, `VM_ENABLEDPROMETHEUSCONVERTER_{PODMONITOR,
+      # SERVICESCRAPE,PROBE,SCRAPECONFIG,PROMETHEUSRULE,
+      # ALERTMANAGERCONFIG}` all `false`. That includes the `ServiceMonitor`
+      # `victoria-logs-single.server.serviceMonitor`,
+      # `victoria-traces-single.server.serviceMonitor` and
+      # `metricsSelfScrape` below render, and the `PodMonitor`
+      # `charts/observability-emitters` renders for its own agents: none of
+      # them were ever converted to a `VMServiceScrape` / `VMPodScrape`, so
+      # vmagent — which only watches the native VictoriaMetrics kinds —
+      # never saw a target for any of them. "Scrape objects are always the
+      # Prometheus Operator kinds" (docs/safety.md) promises a working
+      # collection layer underneath; this value silently broke that
+      # promise for every `ServiceMonitor`/`PodMonitor` this repository
+      # itself renders, from the first commit that set it.
+      #
+      # `false` now, matching upstream's own default, turns
+      # `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE` and `_PODMONITOR`
+      # back on — the two kinds every chart in this repository actually
+      # authors. `env` below re-states the other four back to `false`
+      # explicitly: this stack renders no `Probe`, `ScrapeConfig`,
+      # `PrometheusRule` or `AlertmanagerConfig`, and the comment this
+      # replaces was right that converting objects another team's chart
+      # owns — on a cluster that runs its own Prometheus Operator, or a
+      # second VictoriaMetrics operator instance — is how two controllers
+      # end up fighting over one scrape. The four explicit overrides keep
+      # exactly that protection for the four kinds this stack has no
+      # stake in, without also disabling the two kinds it depends on.
+      disable_prometheus_converter: false
+    # -- MIRROR, in effect, of the four converters `operator` above leaves
+    # off: the vendored chart's `disable_prometheus_converter` is a single
+    # switch for all six `VM_ENABLEDPROMETHEUSCONVERTER_*` env vars
+    # (`templates/server.yaml` in the vendored `victoria-metrics-operator`
+    # subchart), so reaching "on for ServiceMonitor/PodMonitor, off for
+    # the rest" needs these four stated as `env` instead — rendered ahead
+    # of the `disable_prometheus_converter` block in the vendored
+    # template, so an unrelated name here never collides with it.
+    env:
+      - name: VM_ENABLEDPROMETHEUSCONVERTER_PROBE
+        value: "false"
+      - name: VM_ENABLEDPROMETHEUSCONVERTER_SCRAPECONFIG
+        value: "false"
+      - name: VM_ENABLEDPROMETHEUSCONVERTER_PROMETHEUSRULE
+        value: "false"
+      - name: VM_ENABLEDPROMETHEUSCONVERTER_ALERTMANAGERCONFIG
+        value: "false"
     resources:
       requests:
         cpu: "1"
