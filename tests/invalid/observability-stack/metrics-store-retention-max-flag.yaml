@@ -1,0 +1,11 @@
+# expect: single-node VictoriaMetrics does not have
+#
+# `-retention.maxDiskUsagePercent` and `-retention.maxDiskSpaceUsageBytes`
+# exist only on VictoriaLogs and VictoriaTraces. Single-node
+# VictoriaMetrics refuses to start on an unknown flag; its own disk guard
+# is `storage.minFreeDiskSpaceBytes`, already set by this chart.
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      extraArgs:
+        retention.maxDiskUsagePercent: 80
