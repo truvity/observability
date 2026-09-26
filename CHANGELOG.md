@@ -6,6 +6,20 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.5.3
+
+- **Fix: `charts/observability-stack`** — the proxy's own `NetworkPolicy`
+  now admits `networkPolicy.scrapeFrom` (the metrics agent, by default)
+  on port 8435, the vm-operator's config-reloader sidecar for the VMAuth
+  pod. That port was scraped and dropped at admission, not the socket:
+  `up=0` for the job and `TargetDown`/`ServiceDown` firing permanently
+  on a proxy that was otherwise perfectly healthy.
+
+  **What starts working on upgrade, no action needed:** the reload
+  endpoint's own scrape job reports `up=1`, and the `TargetDown`/
+  `ServiceDown` pair that had been firing on it clears once its `for:`
+  window passes.
+
 ## 0.5.2
 
 Every `ServiceMonitor` this chart has ever rendered was inert, from the

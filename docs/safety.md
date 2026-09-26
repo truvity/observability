@@ -1403,6 +1403,19 @@ agent's selector is now one of the ingress peers by default, so a bare
 stops the value from being reopened by an override that names a pod's
 address instead of its identity.
 
+The proxy's own policy shipped the identical gap one port over. The
+vm-operator injects a config-reloader sidecar into the VMAuth pod to
+watch the Secret it generates and signal a reload, and renders a second
+endpoint for it — `reloader-http`, port 8435 — on the VMServiceScrape it
+manages alongside this chart's objects. The proxy's NetworkPolicy
+selected that pod and admitted only 8427, so 8435 answered at the socket
+and lost every sample at admission: `up=0` for the job,
+`TargetDown`/`ServiceDown` firing forever on a pod that was otherwise
+perfectly healthy. Fixed the same way: the proxy policy's ingress now
+admits `networkPolicy.scrapeFrom` on 8435 too, and
+`TestProxyPolicyAdmitsReloaderScrape` (tests/networkpolicy_test.go)
+proves it against every golden the proxy's NetworkPolicy renders into.
+
 ## A convention a chart could not enforce, until it could
 
 **A backup job must refuse an empty source.** `rclone sync` against an
