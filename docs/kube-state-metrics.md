@@ -117,46 +117,93 @@ argument. In short —
 
 Every scrape object on the cluster is stamped by the metrics agent's
 default scrape class with `k8s_namespace_name` taken from the namespace
-of the pod being **scraped**. For kube-state-metrics that target is one
-pod in this release's own namespace, but the series it exports describe
-objects across every namespace on the cluster (or none, for a `Node`).
-Left uncorrected, every `kube_pod_*`, `kube_deployment_*` and
-`kube_cronjob_*` series on the whole cluster would carry this release's
-own namespace — invisible to the namespace-scoped grants that should
-see them.
+of the pod being **scraped**. That much is the same story as the
+kubelet's and cAdvisor's own node-level series. What is NOT the same,
+and what an earlier version of this fix got wrong by assuming it was: by
+the time metric relabeling runs, `namespace` itself is no longer the
+object's namespace either.
 
-The fix ships as this chart's own default `metricRelabelings` on the
-`ServiceMonitor`:
+The VictoriaMetrics operator's own ServiceMonitor conversion stamps
+`namespace`, `pod`, `container` and `service` as TARGET labels —
+unconditionally, for every `endpoints`-role scrape — from the
+kube-state-metrics POD's own identity, never from the object a series
+describes. This chart forces `honor_labels: false` on every scrape
+(`overrideHonorLabels: true`), and under that setting a collision
+between a target label and a same-named label the SERIES itself exposes
+is resolved in the target's favour: the target's value wins under the
+bare name, and the series' own value survives only as `exported_<name>`.
+kube-state-metrics' own series carry exactly those names —
+`kube_pod_container_status_restarts_total{namespace,pod,container,...}`
+— so they collide, and `namespace` ends up holding the kube-state-metrics
+pod's namespace, with the object's real one sitting under
+`exported_namespace`.
+
+The fix, shipped as this chart's own default `metricRelabelings` on the
+`ServiceMonitor`, restores each of the four from its `exported_` twin
+where the object had one, and drops the bare name outright where it did
+not (a bare name with nothing to restore it is only ever the target's
+own identity):
 
 ```yaml
 metricRelabelings:
   - action: labeldrop
     regex: k8s_namespace_name
+  - action: labeldrop
+    regex: (namespace|pod|container|service)
+  - sourceLabels: [exported_namespace]
+    regex: (.+)
+    targetLabel: namespace
+  - sourceLabels: [exported_pod]
+    regex: (.+)
+    targetLabel: pod
+  - sourceLabels: [exported_container]
+    regex: (.+)
+    targetLabel: container
+  - sourceLabels: [exported_service]
+    regex: (.+)
+    targetLabel: service
+  - action: labeldrop
+    regex: exported_(namespace|pod|container|service)
   - sourceLabels: [namespace]
     regex: (.+)
     targetLabel: k8s_namespace_name
 ```
 
-The drop has to come first: a series with no `namespace` label at all —
-`kube_node_*`, and any other cluster-scoped kind in `collectors` — has
-to come out of this with no `k8s_namespace_name` either, the same shape
-the kubelet's and cAdvisor's own node-level series already carry, and
+Order is load-bearing at every step: the bare-name drop before the
+restore (so the restore writes into a label already cleared of the
+target's stamp, not layered on top of it), the restore before the
+`exported_` cleanup, and the final `k8s_namespace_name` derivation last
+of all, reading the now-corrected `namespace`. A series with no
+`namespace` label at all — `kube_node_*`, and any other cluster-scoped
+kind in `collectors` — has nothing to restore and comes out of this
+with no `namespace` and no `k8s_namespace_name` either, the same shape
+the kubelet's and cAdvisor's own node-level series already carry:
 visible only to a grant with `allNamespaces: true` on this cluster (see
-`pkg/tenancy.metricsFilter`). Upstream's own `namespace` label is never
-removed — `docs/dashboards.md`'s rule that it stays is what lets the
-second step read it back.
+`pkg/tenancy.metricsFilter`). Upstream's own `namespace` label is
+restored rather than left dropped — `docs/dashboards.md`'s rule that it
+stays is why the chain puts it back under its own name rather than only
+deriving `k8s_namespace_name` from it and moving on.
+
+See docs/safety.md, "The namespace stamp kube-state-metrics needs and no
+other scrape object does", for the full argument, including the exact
+VictoriaMetrics operator source this reasons from.
 
 ## Refusals
 
-Nine, each with a fixture under `tests/invalid/observability-emitters/`
-prefixed `kube-state-metrics-`. See docs/safety.md's own table for the
-full list and the failure each one prevents; in one line each:
-`kubeStateMetrics.enabled` with the metrics agent off; no `ServiceMonitor`
-rendered for it; a `namespaces` filter; a non-cluster Role; RBAC not
-created with no existing role named; more than one unsharded replica; a
-`[*]` label or annotation allow-list entry; and the two halves of the
-namespace-stamp fix above, checked separately because each fails a
-different way.
+Loads more than a values toggle: `_validate.tpl` checks the merged
+`kube-state-metrics.prometheus.monitor.http.metricRelabelings` for every
+step of the chain above — each of the four bare-name drops, each of the
+four restores, the `exported_` cleanup, the final derive, and its own
+leading drop — AND for the relative ORDER between the steps that depend
+on one another, failing a chain that has every step present but two of
+them swapped exactly as it fails one with a step missing outright. Each
+distinct check has a fixture under `tests/invalid/observability-emitters/`
+prefixed `kube-state-metrics-`; see docs/safety.md's own table for the
+non-namespace-stamp refusals in one line each: `kubeStateMetrics.enabled`
+with the metrics agent off; no `ServiceMonitor` rendered for it; a
+`namespaces` filter; a non-cluster Role; RBAC not created with no
+existing role named; more than one unsharded replica; a `[*]` label or
+annotation allow-list entry.
 
 ## Proof, before release
 
@@ -165,6 +212,16 @@ different way.
 - `just test` renders the `everything` case with `kubeStateMetrics`
   enabled and a non-default `resources` and `metricLabelsAllowlist`,
   proving the passthrough is plumbed rather than ignored.
+- `tests/kubestatemetrics_relabel_test.go` reads the RENDERED
+  `metricRelabelings` back out of that same golden and replays them
+  through `github.com/prometheus/prometheus/model/relabel` — a real
+  relabel engine, not this repository's own reasoning about one — against
+  hand-built label sets shaped exactly as vmagent would present them
+  after the operator's target stamp and the `honor_labels: false`
+  collision rename described above, for three representative
+  kube-state-metrics series. This is what caught the first version of
+  this fix reading the wrong label outright: reasoning about the YAML
+  said it was correct, and a real relabel engine said otherwise.
 - Measured on a real install, the same way every claim in this
   repository about a metric name is expected to be: read the store's
   own `kube_*` series count before and after, and confirm a namespace

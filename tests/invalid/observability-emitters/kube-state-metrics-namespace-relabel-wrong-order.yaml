@@ -1,0 +1,72 @@
+# expect: derives `k8s_namespace_name` from `namespace` before the rule that restores `namespace`
+# Every step of the correct chain is here, but the final derive
+# (`namespace` -> `k8s_namespace_name`) has been moved to run FIRST
+# instead of last. At that point `namespace` still carries the scrape
+# TARGET's stamp -- the kube-state-metrics pod's own namespace -- because
+# the restore that corrects it to the OBJECT's namespace has not run
+# yet. Order is load-bearing, not merely tidy: the same eight rules in
+# the wrong order derive the wrong value.
+
+metrics:
+  destinations:
+  - name: primary
+    url: https://metrics.example/api/v1/write
+otlp:
+  destinations:
+    logs:
+    - name: primary
+      url: https://logs.example
+    metrics:
+    - name: primary
+      url: https://metrics.example
+    traces:
+    - name: primary
+      url: https://traces.example
+tenancy:
+  cluster: example-cluster
+  environment: development
+victoria-logs-collector:
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+  extraVolumeMounts:
+  - mountPath: /etc/observability-write-token
+    name: write-token
+    readOnly: true
+  extraVolumes:
+  - name: write-token
+    secret:
+      secretName: example-write-token
+  remoteWrite:
+  - bearerTokenFile: /etc/observability-write-token/token
+    maxDiskUsagePerURL: 5GB
+    url: https://logs.example
+writeCredentials:
+  secretName: example-write-token
+kubeStateMetrics:
+  enabled: true
+kube-state-metrics:
+  prometheus:
+    monitor:
+      http:
+        metricRelabelings:
+        - sourceLabels: [namespace]
+          regex: (.+)
+          targetLabel: k8s_namespace_name
+        - action: labeldrop
+          regex: k8s_namespace_name
+        - action: labeldrop
+          regex: (namespace|pod|container|service)
+        - sourceLabels: [exported_namespace]
+          regex: (.+)
+          targetLabel: namespace
+        - sourceLabels: [exported_pod]
+          regex: (.+)
+          targetLabel: pod
+        - sourceLabels: [exported_container]
+          regex: (.+)
+          targetLabel: container
+        - sourceLabels: [exported_service]
+          regex: (.+)
+          targetLabel: service
+        - action: labeldrop
+          regex: exported_(namespace|pod|container|service)

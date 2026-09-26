@@ -916,6 +916,26 @@ spec:
       metricRelabelings:
         - action: labeldrop
           regex: k8s_namespace_name
+        - action: labeldrop
+          regex: (namespace|pod|container|service)
+        - regex: (.+)
+          sourceLabels:
+          - exported_namespace
+          targetLabel: namespace
+        - regex: (.+)
+          sourceLabels:
+          - exported_pod
+          targetLabel: pod
+        - regex: (.+)
+          sourceLabels:
+          - exported_container
+          targetLabel: container
+        - regex: (.+)
+          sourceLabels:
+          - exported_service
+          targetLabel: service
+        - action: labeldrop
+          regex: exported_(namespace|pod|container|service)
         - regex: (.+)
           sourceLabels:
           - namespace

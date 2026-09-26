@@ -407,27 +407,107 @@ its own per-series label limit.
 {{- /*
 The namespace stamp, the reason this block exists.
 
-See `values.yaml`'s own comment on this key for the mechanism; this only
-checks that whatever ended up in the merged values still carries the
-fix, the same "checked against the merged result" reasoning
-`metrics.spec` above is held to.
+See `values.yaml`'s own comment on this key for the full mechanism. In
+short: the VictoriaMetrics operator's ServiceMonitor conversion stamps
+`namespace`, `pod`, `container` and `service` as TARGET labels — the
+kube-state-metrics POD's own identity — and `overrideHonorLabels: true`
+means a same-named label the SERIES itself carries (kube-state-metrics'
+own `namespace`, `pod`, `container`, sometimes `service`) survives the
+scrape only as `exported_<name>`, because the target's value always
+wins under `honor_labels: false`. A rule that reads `namespace` directly
+— this chart's own first attempt at this fix — reads the WRONG one.
+
+So this checks the whole chain, against the MERGED values, the same
+"checked against the merged result" reasoning `metrics.spec` above is
+held to: for each of the four names, a `labeldrop` of the bare,
+target-stamped name; a `replace` restoring it from `exported_<name>`;
+and a `labeldrop` cleaning up `exported_<name>` afterwards; then,
+reading only from the now-corrected `namespace`, the `k8s_namespace_name`
+derivation and its own leading `labeldrop`. And because each step
+depends on the one before it, the ORDER is checked too, not just that
+every step exists somewhere in the list.
 */}}
 {{- $rules := ((($ksm.prometheus).monitor).http).metricRelabelings | default list -}}
-{{- $hasReplace := false -}}
-{{- $hasDrop := false -}}
-{{- range $r := $rules -}}
-{{- if and (has "namespace" ($r.sourceLabels | default list)) (eq (toString $r.targetLabel) "k8s_namespace_name") -}}
-{{- $hasReplace = true -}}
+{{- $names := list "namespace" "pod" "container" "service" -}}
+{{- $bareDropIdx := dict -}}
+{{- $exportedDropIdx := dict -}}
+{{- $restoreIdx := dict -}}
+{{- range $n := $names -}}
+{{- $_ := set $bareDropIdx $n -1 -}}
+{{- $_ := set $exportedDropIdx $n -1 -}}
+{{- $_ := set $restoreIdx $n -1 -}}
 {{- end -}}
-{{- if and (eq (toString $r.action) "labeldrop") (regexMatch "k8s_namespace_name" (toString $r.regex)) -}}
-{{- $hasDrop = true -}}
+{{- $k8sNsDropIdx := -1 -}}
+{{- $finalDeriveIdx := -1 -}}
+{{- range $i, $r := $rules -}}
+{{- $action := toString ($r.action | default "replace") -}}
+{{- if eq $action "labeldrop" -}}
+{{- $anchored := printf "^(?:%s)$" (toString $r.regex) -}}
+{{- if regexMatch $anchored "k8s_namespace_name" -}}
+{{- $k8sNsDropIdx = $i -}}
+{{- end -}}
+{{- range $n := $names -}}
+{{- if regexMatch $anchored $n -}}
+{{- $_ := set $bareDropIdx $n $i -}}
+{{- end -}}
+{{- if regexMatch $anchored (printf "exported_%s" $n) -}}
+{{- $_ := set $exportedDropIdx $n $i -}}
 {{- end -}}
 {{- end -}}
-{{- if not $hasReplace -}}
-{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` carries no rule mapping `namespace` to `k8s_namespace_name`. Without it, every kube_* series is left with the CLUSTER-WIDE default scrape class's stamp — this release's own namespace, the namespace the kube-state-metrics POD runs in, not the namespace of the object each series describes. Every kube_pod_*, kube_deployment_* and kube_cronjob_* series on the whole cluster would read as belonging to this one namespace: invisible to the namespace-scoped grants that should see them, visible instead to whoever can read this release's own namespace. Add: `- sourceLabels: [namespace]` / `  regex: (.+)` / `  targetLabel: k8s_namespace_name`." -}}
+{{- else if eq $action "replace" -}}
+{{- $src := $r.sourceLabels | default list -}}
+{{- $tgt := toString $r.targetLabel -}}
+{{- if eq (len $src) 1 -}}
+{{- $from := toString (index $src 0) -}}
+{{- range $n := $names -}}
+{{- if and (eq $from (printf "exported_%s" $n)) (eq $tgt $n) -}}
+{{- $_ := set $restoreIdx $n $i -}}
 {{- end -}}
-{{- if not $hasDrop -}}
-{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` maps `namespace` to `k8s_namespace_name` but carries no `labeldrop` of `k8s_namespace_name` before it. Without the drop, a series with NO `namespace` label — every cluster-scoped kind in `collectors`, `nodes` among them — keeps the scrape class's target-level stamp instead of ending up with no namespace at all: every node's series would read as belonging to this release's own namespace, which is not what a cluster-scoped object's namespace is (it has none) and not what a grant on this namespace should mean either. Add, BEFORE the replace: `- action: labeldrop` / `  regex: k8s_namespace_name`." -}}
+{{- end -}}
+{{- if and (eq $from "namespace") (eq $tgt "k8s_namespace_name") -}}
+{{- $finalDeriveIdx = $i -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if lt $k8sNsDropIdx 0 -}}
+{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` carries no `labeldrop` of `k8s_namespace_name`. Without it, the k8s_namespace_name derivation below would be layered on top of whatever this release's default scrape class already stamped rather than replacing it." -}}
+{{- end -}}
+{{- range $n := $names -}}
+{{- if lt (get $bareDropIdx $n) 0 -}}
+{{- fail (printf "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` carries no `labeldrop` of %q. That label is stamped by the VictoriaMetrics operator's ServiceMonitor conversion from the kube-state-metrics POD's own identity, not from the object a series describes, and `overrideHonorLabels: true` means it always wins over the series' own same-named field. Left undropped, a series with no exported_%s (a genuinely cluster-scoped kind) would keep it as if it were real data." $n $n) -}}
+{{- end -}}
+{{- if lt (get $restoreIdx $n) 0 -}}
+{{- fail (printf "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` carries no rule restoring %q from `exported_%s`. Under `overrideHonorLabels: true`, a kube-state-metrics series that carries its own %q collides with the target's stamp of the same name and survives ONLY as `exported_%s` — without this rule the object's own value is lost outright, not merely mislabelled. Add: `- sourceLabels: [exported_%s]` / `  regex: (.+)` / `  targetLabel: %s`." $n $n $n $n $n $n) -}}
+{{- end -}}
+{{- if lt (get $exportedDropIdx $n) 0 -}}
+{{- fail (printf "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` carries no `labeldrop` of %q. Without it every kube-state-metrics series keeps a redundant `exported_%s` label alongside the restored %q, doubling the same value under two names on every series this component produces." (printf "exported_%s" $n) $n $n) -}}
+{{- end -}}
+{{- if ge (get $bareDropIdx $n) 0 -}}
+{{- if ge (get $restoreIdx $n) 0 -}}
+{{- if not (lt (get $bareDropIdx $n) (get $restoreIdx $n)) -}}
+{{- fail (printf "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` restores %q before dropping the target's own stamp of it, not after. The restore has to read `exported_%s` into a %q that has ALREADY been cleared of the target-stamped value, or the restore is immediately shadowed by the drop that follows it — reorder so the `labeldrop` of %q comes first." $n $n $n $n) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if ge (get $restoreIdx $n) 0 -}}
+{{- if ge (get $exportedDropIdx $n) 0 -}}
+{{- if not (lt (get $restoreIdx $n) (get $exportedDropIdx $n)) -}}
+{{- fail (printf "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` drops %q before the rule that reads it to restore %q. Reorder so the restore runs first." (printf "exported_%s" $n) $n) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if lt $finalDeriveIdx 0 -}}
+{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` carries no rule mapping `namespace` to `k8s_namespace_name`. Without it, `k8s_namespace_name` is never derived from the (corrected) object namespace at all, and every kube_* series is left with whatever this release's default scrape class stamped instead — this release's own namespace, not the namespace of the object each series describes." -}}
+{{- end -}}
+{{- if ge (get $restoreIdx "namespace") 0 -}}
+{{- if not (lt (get $restoreIdx "namespace") $finalDeriveIdx) -}}
+{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` derives `k8s_namespace_name` from `namespace` before the rule that restores `namespace` from `exported_namespace`. Reordered this way, `k8s_namespace_name` is derived from the target's own (wrong) namespace, not the object's — move the `namespace`-to-`k8s_namespace_name` rule after the restore." -}}
+{{- end -}}
+{{- end -}}
+{{- if not (lt $k8sNsDropIdx $finalDeriveIdx) -}}
+{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` derives `k8s_namespace_name` before its own leading `labeldrop`. The derive has to write into a label that has already been cleared, or the old stamp and the new derivation could both apply depending on relabel-engine specifics that should not matter here — reorder so the `labeldrop` of `k8s_namespace_name` comes first." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
