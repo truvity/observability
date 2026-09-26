@@ -36,30 +36,40 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
   at upstream's own empty default.
 
   **The namespace stamp is the part worth reading before turning this
-  on.** Every scrape object on a cluster is stamped by the metrics
-  agent's default scrape class, which sets `k8s_namespace_name` from the
-  namespace of the pod being SCRAPED — correct for almost everything,
-  and backwards for kube-state-metrics, whose series describe objects in
-  every namespace but are scraped from one pod in this release's own.
-  Left uncorrected, every `kube_*` series on the whole cluster would
-  read as belonging to this release's own namespace: invisible to the
-  grants that should see them. This release adds the fix as the
-  chart's own default `metricRelabelings` on kube-state-metrics'
-  `ServiceMonitor` — a `labeldrop` of the wrong stamp followed by a
-  replace from the series' own `namespace` label — and refuses to
-  render if either half of it is missing from the merged values. See
-  docs/safety.md, "The namespace stamp kube-state-metrics needs and no
-  other scrape object does".
+  on, and it is more involved than one relabel rule.** The VictoriaMetrics
+  operator's own ServiceMonitor conversion stamps `namespace`, `pod`,
+  `container` and `service` as TARGET labels — the kube-state-metrics
+  pod's own identity, unconditionally, on every scrape — and this
+  chart's `overrideHonorLabels: true` means a same-named label
+  kube-state-metrics' OWN series carries (`kube_pod_container_status_
+  restarts_total` carries all four; `kube_deployment_status_replicas`
+  carries only `namespace`; `kube_node_status_condition` carries none)
+  collides and survives only as `exported_<name>` — the target's value
+  wins under the bare name. Left uncorrected, every `kube_*` series on
+  the whole cluster would read as belonging to this release's own
+  namespace (the kube-state-metrics pod's), not the namespace of the
+  object it describes. This release ships an eight-step
+  `metricRelabelings` chain on kube-state-metrics' `ServiceMonitor`:
+  drop the four target-stamped names and `k8s_namespace_name`, restore
+  each of the four from its `exported_` twin where the object had one,
+  clean up the `exported_` twins, then derive `k8s_namespace_name` from
+  the now-corrected `namespace` — and refuses to render if any step, or
+  the ORDER between the steps that depend on one another, is wrong.
+  Proved against a real relabel engine
+  (`tests/kubestatemetrics_relabel_test.go`,
+  `github.com/prometheus/prometheus/model/relabel`), not only read.
+  See docs/safety.md, "The namespace stamp kube-state-metrics needs and
+  no other scrape object does".
 
-  Nine new refusals in all (docs/safety.md has the table): enabling this
-  without the metrics agent; no `ServiceMonitor` rendered for it; a
-  `namespaces` filter or a non-cluster Role, either of which makes it
-  silently under-read; RBAC not created with no existing role named;
-  more than one replica without upstream's own `autosharding.enabled`,
-  which would double every series; a `[*]` label or annotation
-  allow-list entry, the same cardinality trap this chart's node-label
-  lesson already documents; and the two halves of the namespace-stamp
-  fix above.
+  A number of new refusals in all (docs/safety.md has the table):
+  enabling this without the metrics agent; no `ServiceMonitor` rendered
+  for it; a `namespaces` filter or a non-cluster Role, either of which
+  makes it silently under-read; RBAC not created with no existing role
+  named; more than one replica without upstream's own
+  `autosharding.enabled`, which would double every series; a `[*]`
+  label or annotation allow-list entry, the same cardinality trap this
+  chart's node-label lesson already documents; and every step, and the
+  relative order, of the namespace-stamp chain above.
 
 ## 0.5.3
 

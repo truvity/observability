@@ -1004,8 +1004,8 @@ object of every kind in `kube-state-metrics.collectors`, cluster-wide.
 | `kube-state-metrics.rbac.create` false with no `useExistingRole` | With no ClusterRole bound, every List call is 403 — and kube-state-metrics does not crash or go NotReady on that. It exports zero series for the kinds it could not list, and answers `/metrics` successfully for the rest. |
 | `kube-state-metrics.replicas` above 1 without `autosharding.enabled` | Unsharded replicas each list the WHOLE cluster and export the same series independently, so every scrape sees every series twice (three times at 3) — every `rate()` and `sum()` over them silently that many times too high, with every pod Ready. |
 | `metricLabelsAllowlist` / `metricAnnotationsAllowList` holding a `[*]` entry for any resource | kube-state-metrics keys a series' labels off the workload's own values, so a wildcard multiplies series by every distinct combination a workload happens to use — the identical cardinality trap `metrics.scrape.nodeLabels` documents for the kubelet and cAdvisor scrapes, measured there as a store silently IGNORING every series past its own per-series label limit. |
-| No `metricRelabelings` rule mapping `namespace` to `k8s_namespace_name` | See "The namespace stamp kube-state-metrics needs and no other scrape object does" below — this is the one most series would silently get filed under the wrong tenant for. |
-| A `namespace`-to-`k8s_namespace_name` rule with no preceding `action: labeldrop` of `k8s_namespace_name` | A cluster-scoped series with no `namespace` label (`nodes`, among the enabled collectors) keeps the scrape class's target-level stamp — this release's own namespace — instead of ending up with no namespace at all, which is what a genuinely cluster-scoped object's namespace is. |
+| Any of the eight namespace-stamp `metricRelabelings` steps missing — the four bare-name `labeldrop`s, the four `exported_<name>` restores, the `exported_` cleanup `labeldrop`, or the final `namespace`-to-`k8s_namespace_name` derivation and its own leading drop | See "The namespace stamp kube-state-metrics needs and no other scrape object does" below — this is the one most series would silently get filed under the wrong tenant for. |
+| The same eight steps present but in the WRONG ORDER — a bare-name drop after its restore, a restore after its `exported_` cleanup, or the final derivation before the restore of `namespace` it depends on | Each dependency checked separately: the same rules, reordered, derive the wrong value rather than failing to render — this is the shape the first version of this fix shipped with, caught only by replaying the rendered rules through a real relabel engine (`tests/kubestatemetrics_relabel_test.go`), not by reading them. |
 
 ### And the rest
 
@@ -1107,58 +1107,127 @@ almost every scrape object that is correct, because it is also the
 namespace whose objects the scraped pod's own metrics describe — a
 service's `PodMonitor` describes that service.
 
-kube-state-metrics breaks the assumption the same way the kubelet and
-cAdvisor already do, and for the identical reason: the target is one pod,
-in this release's own namespace, but the series it exports describe
-objects that live in every namespace on the cluster (or none — a `Node`
-belongs to no namespace at all). Left at the scrape class's stamp,
-every `kube_pod_*`, `kube_deployment_*` and `kube_cronjob_*` series on
-the WHOLE CLUSTER would read `k8s_namespace_name=<this release's own
-namespace>` — every namespace's objects filed under one, invisible to
-the namespace-scoped grants that should see them and visible instead to
-whoever can read this release's own namespace. `pkg/tenancy.metricsFilter`
-states the general form of this directly, in the comment beside the line
-that omits the namespace matcher for an `allNamespaces` grant: such a
-grant is "exactly the data they came for" for "the node-level series
-from the kubelet, and anything from a cluster-scoped scrape" — the same
-sentence describes every series `kube-state-metrics.collectors` above
-produces for a cluster-scoped kind.
+kube-state-metrics breaks the assumption in a sharper way than the
+kubelet and cAdvisor do, and the first version of this fix (still visible
+in this file's own history) got it wrong by assuming it was the SAME way.
+It is not: it is worse, because `namespace` itself is not the object's
+namespace by the time metric relabeling runs.
 
-The fix is a `metricRelabelings` pair on the `ServiceMonitor`, evaluated
-**after** the scrape rather than before it, so it can read the series'
-own fields instead of the target's:
+**The VictoriaMetrics operator's own ServiceMonitor-to-VMServiceScrape
+conversion stamps four target labels, unconditionally, on every
+`endpoints`-role scrape** — which this one is
+(`internal/controller/operator/factory/vmscrapes/servicescrape.go` in
+`github.com/VictoriaMetrics/operator`, the relabel rules appended after
+the port-filter and before the `TargetLabels`/`PodTargetLabels` loops):
+`pod` and `container` from `__meta_kubernetes_pod_name` /
+`__meta_kubernetes_pod_container_name`, `namespace` from
+`__meta_kubernetes_namespace`, `service` from
+`__meta_kubernetes_service_name`. All four are the SCRAPE TARGET's own
+identity — the kube-state-metrics pod's, and its Service's — never the
+object a given series describes.
+
+kube-state-metrics' own series carry `namespace`, and often `pod` and
+`container`, describing the OBJECT: `kube_pod_container_status_
+restarts_total{namespace="team-a",pod="web-0",container="app",...}`.
+That collides with the four target-stamped labels by NAME. This chart
+forces `overrideHonorLabels: true`, which is `honor_labels: false` on
+every scrape agent-wide — and `honor_labels: false` does not mean "the
+target's stamp is layered on top of the series' own fields, harmlessly
+coexisting". Prometheus's (and vmagent's) own scrape semantics for a
+name collision under `honor_labels: false` are: the TARGET's value wins
+under the bare name, and the SERIES' OWN value is kept only by being
+renamed to `exported_<name>`. So the series above does not arrive at
+metric relabeling as both value coexisting — it arrives as:
+
+```
+kube_pod_container_status_restarts_total{
+  namespace="<this release's own namespace>",
+  pod="<the kube-state-metrics pod's own name>",
+  container="kube-state-metrics",
+  exported_namespace="team-a",
+  exported_pod="web-0",
+  exported_container="app",
+  ...
+}
+```
+
+Reading `namespace` directly — this chart's own first attempt at this
+fix — reads the WRONG one: the kube-state-metrics pod's namespace, not
+`team-a`. The object's real values are there, but under the `exported_`
+names, and have to be read from there. A cluster-scoped kind such as
+`kube_node_status_condition` carries none of `namespace`/`pod`/
+`container`/`service` itself, so for it there is no collision and no
+`exported_` twin — the target's four labels simply pass through
+unchanged, which is equally wrong in the other direction: a `Node`
+belongs to no namespace, and letting it inherit the kube-state-metrics
+pod's namespace files it under a namespace it has nothing to do with.
+
+The fix restores each of the four from its `exported_` twin where one
+exists, and drops the bare name outright where none does — because a
+bare name with nothing to restore it is only ever the target's own
+identity, never the object's:
 
 ```yaml
 metricRelabelings:
   - action: labeldrop
     regex: k8s_namespace_name
+  - action: labeldrop
+    regex: (namespace|pod|container|service)
+  - sourceLabels: [exported_namespace]
+    regex: (.+)
+    targetLabel: namespace
+  - sourceLabels: [exported_pod]
+    regex: (.+)
+    targetLabel: pod
+  - sourceLabels: [exported_container]
+    regex: (.+)
+    targetLabel: container
+  - sourceLabels: [exported_service]
+    regex: (.+)
+    targetLabel: service
+  - action: labeldrop
+    regex: exported_(namespace|pod|container|service)
   - sourceLabels: [namespace]
     regex: (.+)
     targetLabel: k8s_namespace_name
 ```
 
-The `labeldrop` has to come first, and it is not defensive: without it, a
-series with no `namespace` label at all — `kube_node_*`, and any other
-cluster-scoped kind in `collectors` — keeps the scrape class's
-target-level stamp, and ends up carrying this release's own namespace
-instead of no namespace. With the drop first, such a series comes out
-with `k8s_namespace_name` absent entirely, the same shape
+Order is load-bearing at every step, not merely tidy: the bare-name drop
+has to run before the restore (the restore writes into a label that must
+already be clear of the target's stamp, not layered on top of it); the
+restore has to run before the `exported_` cleanup (which reads nothing —
+it only deletes — so it has to come after, or there is nothing left to
+have read); and the final `k8s_namespace_name` derivation has to run
+last, reading the now-CORRECTED `namespace` — present for a
+namespace-scoped object, absent for a genuinely cluster-scoped one. That
+absence is the point: a `kube_node_*` series ends up with no
+`k8s_namespace_name` at all, the same shape
 `observability-emitters.tenancy.nodeMetricRelabelConfigs` already gives
 the kubelet's and cAdvisor's own node-level series — visible only to a
-grant with `allNamespaces: true` on this cluster, which is what a
-cluster-scoped object's data means. `docs/dashboards.md`'s own rule
-("Upstream's `namespace` label stays") is why the second step can read
-`namespace` at all: the metrics agent's `overrideHonorLabels: true`
-overrides the TARGET's stamp, not a series' own exposed labels, and
-upstream's `namespace` label is never touched by any relabeling this
-chart adds — it survives to be read back by the fix above, and stays on
-the series afterward for the dashboards that already expect it.
+grant with `allNamespaces: true` on this cluster.
+`pkg/tenancy.metricsFilter` states the general form of this directly, in
+the comment beside the line that omits the namespace matcher for an
+`allNamespaces` grant: such a grant is "exactly the data they came for"
+for "the node-level series from the kubelet, and anything from a
+cluster-scoped scrape" — the same sentence describes every series
+`kube-state-metrics.collectors` above produces for a cluster-scoped kind.
 
-Both `_validate.tpl` refusals check the MERGED
+`docs/dashboards.md`'s own rule ("Upstream's `namespace` label stays") is
+why the chain restores `namespace` itself rather than leaving it dropped
+once `k8s_namespace_name` is derived: the upstream Kubernetes dashboards
+this repository's doctrine means to keep working expect the bare
+`namespace` label kube-state-metrics has always carried, and this fix
+puts the object's own value back under that name, not the target's.
+
+`_validate.tpl`'s refusals check the MERGED
 `kube-state-metrics.prometheus.monitor.http.metricRelabelings`, not the
-chart's own default: an escape hatch that can turn off a security
+chart's own default — an escape hatch that can turn off a security
 property by omission is not an escape hatch, the same reasoning
-`metrics.spec` above is held to.
+`metrics.spec` above is held to — and they check the ORDER of the steps
+above, not merely that each one exists somewhere in the list: a chain
+with every step present but two of them swapped fails exactly as it
+should, because a swap here is not a style choice, it is the same class
+of defect a missing step is.
 
 ## Two writers per signal, and which one yields
 

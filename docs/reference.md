@@ -595,7 +595,7 @@ row below is read back and refused by this chart rather than duplicated.
 | `…replicas` | `1` | **Refused above 1 without `…autosharding.enabled`** — unsharded replicas each list the whole cluster and double every series. |
 | `…metricLabelsAllowlist` / `…metricAnnotationsAllowList` | `[]`, upstream's own default | **Refused a `[*]` entry for any resource** — see docs/kube-state-metrics.md, the same cardinality trap as `metrics.scrape.nodeLabels` above. |
 | `…prometheus.monitor.enabled` | `true` | Renders the `ServiceMonitor`. **Refused false** — a component with no scrape object looks exactly like a component with nothing wrong. |
-| `…prometheus.monitor.http.metricRelabelings` | a `labeldrop` of `k8s_namespace_name`, then a replace from `namespace` | **The fix for the one thing this component gets backwards** — see docs/kube-state-metrics.md, "The namespace stamp". Both halves are refused missing, checked against the merged value. |
+| `…prometheus.monitor.http.metricRelabelings` | an eight-step chain: drop `k8s_namespace_name`, drop the target-stamped `namespace`/`pod`/`container`/`service`, restore each from its `exported_<name>` twin, drop the `exported_` twins, derive `k8s_namespace_name` from the (now-corrected) `namespace` | **The fix for the one thing this component gets backwards** — see docs/kube-state-metrics.md, "The namespace stamp". Every step, and the ORDER between the steps that depend on one another, is refused missing or swapped, checked against the merged value. |
 
 ### `victoria-logs-collector` — the upstream chart
 

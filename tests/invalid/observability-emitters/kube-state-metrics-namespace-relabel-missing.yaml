@@ -1,7 +1,8 @@
-# expect: carries no rule mapping `namespace` to `k8s_namespace_name`
-# With the fix removed, every kube_* series on the whole cluster is
-# stamped with THIS RELEASE's own namespace rather than the namespace of
-# the object each series describes.
+# expect: carries no `labeldrop` of `k8s_namespace_name`
+# With the whole chain removed, every kube_* series on the whole cluster
+# is stamped with THIS RELEASE's own namespace (the kube-state-metrics
+# pod's own) rather than the namespace of the object each series
+# describes.
 
 metrics:
   destinations:
