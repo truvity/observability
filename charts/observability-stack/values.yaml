@@ -959,6 +959,26 @@ selfAlerts:
     for: 5m
     severity: warning
 
+# -- The metrics store's own scrape object, this chart's — the vendored
+# `victoria-metrics-k8s-stack` has no equivalent to
+# `victoria-logs-single.server.serviceMonitor` for its `vmsingle`; the
+# only thing it offers is the operator's own self-scrape, which
+# `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape`
+# (above) turns off, for the same reason `charts/observability-emitters`'
+# vmagent turns it off: the operator's version is always a
+# `VMServiceScrape`, and "Scrape objects are always the Prometheus
+# Operator kinds" (docs/safety.md) rules that out even with credentials
+# added. This `ServiceMonitor` — `templates/selfscrape.yaml` — is what
+# scrapes the metrics store instead.
+#
+# Unlike `victoria-logs-single.server.serviceMonitor.basicAuth` and
+# `victoria-traces-single.server.serviceMonitor.basicAuth`, there is no
+# `basicAuth` value here to keep a MIRROR of `storeCredentials`: the
+# template reads `storeCredentials` directly, so there is nothing here
+# that could disagree with it.
+metricsSelfScrape:
+  enabled: true
+
 ###############################################################################
 # Upstream charts.
 #
@@ -1074,6 +1094,25 @@ victoria-metrics-k8s-stack:
             secretKeyRef:
               name: observability-store-credentials
               key: password
+      # -- Left false, the operator reconciles a companion VMServiceScrape
+      # for this VMSingle by itself — no template here renders it, so it
+      # never appears in a golden, only on a live install — and that
+      # object carries no `basicAuth` at all. Measured on a live install
+      # after `networkPolicy.scrapeFrom` (below) started letting the
+      # metrics agent reach this store: `up=0` for that job, 401 on every
+      # attempt, and the store's own `vm_*` series never landing, because
+      # the store runs with `-httpAuth.*` from `storeCredentials` and the
+      # operator's auto-created scrape does not know about it.
+      #
+      # `disableSelfServiceScrape: true` turns that off, the same reason
+      # `charts/observability-emitters`' vmagent sets it: "Scrape objects
+      # are always the Prometheus Operator kinds" (docs/safety.md) rules
+      # out the `VMServiceScrape` the operator would create here even
+      # with credentials added to it. `metricsSelfScrape` below is this
+      # chart's own `ServiceMonitor` in its place — MIRROR:
+      # `storeCredentials`, wired directly from it rather than
+      # duplicated, so there is nothing here that could disagree.
+      disableSelfServiceScrape: true
       # -- Requests EQUAL limits, and the CPU is an INTEGER.
       #
       # Both halves matter. VictoriaMetrics sizes its thread pool from the

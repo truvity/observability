@@ -1,0 +1,12 @@
+# expect: The operator then reconciles ITS OWN VMServiceScrape for this VMSingle
+#
+# `disableSelfServiceScrape` flipped back to false: the operator then
+# creates its own `VMServiceScrape` for this VMSingle alongside this
+# chart's ServiceMonitor (templates/selfscrape.yaml) — a kind
+# docs/safety.md rules out on its own, and one with no `basicAuth`
+# either way, so every scrape it drives still 401s against a store
+# running `-httpAuth.*`.
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      disableSelfServiceScrape: false

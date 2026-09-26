@@ -225,6 +225,7 @@ for its one reason and no other.
 | `selfAlerts.enabled` true with no metric name set anywhere and no `backup.<store>.enabled` | The rendered `VMRule` would have an empty rule list — coverage that looks like coverage and evaluates nothing. |
 | `victoria-logs-single.server.serviceMonitor.basicAuth` or `victoria-traces-single...`'s naming a Secret other than `storeCredentials.secretName` | The store answers 401 to every scrape forever, and a target that always 401s is indistinguishable, from the outside, from one that was never there. |
 | `networkPolicy.scrapeFrom[]` naming an `ipBlock` with neither `podSelector` nor `namespaceSelector` | A pod IP is reassigned on every reschedule, eviction and rollout. The rule installs and scrapes fine today, and stops silently the first time the scraper pod moves — the same failure this value exists to fix, reintroduced by the value meant to fix it. |
+| `metricsSelfScrape.enabled` with `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape` not `true` | The operator reconciles its own `VMServiceScrape` for the VMSingle alongside this chart's `ServiceMonitor` — a kind this file rules out on its own, and one with no `basicAuth` either way, so every scrape it drives 401s against a store running `-httpAuth.*`. |
 
 ### The self-alerts: nineteen rules, and what a live install did to eleven of the original twelve
 
@@ -325,6 +326,27 @@ Target Allocator ends up doing the scraping. It does NOT close the gap
 for `charts/observability-emitters`' vmagent, vlagent or OpenTelemetry
 gateway; that chart's own scrape coverage is its own chart's decision,
 not this one's.
+
+**A follow-up release closed the third.** The metrics store's own
+`vmsingle` had no equivalent value to turn on: the vendored
+`victoria-metrics-k8s-stack` offers no
+`victoria-logs-single.server.serviceMonitor`-shaped toggle for it, only
+the operator's own self-scrape, ON by default and impossible to add
+`basicAuth` to without also making it the one kind this repository rules
+out. `networkPolicy.scrapeFrom`'s default (below) makes this visible
+rather than academic: once the metrics agent can reach this store's port
+at all, the operator's un-authed self-scrape is a live 401, forever,
+indistinguishable from no scrape object existing — the exact failure
+this table's "A store whose credentials come from another Secret" row
+already names, just for the one store that had never had a
+`ServiceMonitor` to disagree with `storeCredentials` to begin with.
+`victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape: true`
+turns the operator's version off — the same value
+`charts/observability-emitters` already sets for its own vmagent, and
+for the same reason — and `templates/selfscrape.yaml` renders a
+`ServiceMonitor` in its place, reading `storeCredentials` the same way
+`templates/vmauth.yaml` and `templates/vmalert.yaml` already do, rather
+than as a values.yaml literal that could drift from it.
 
 **A doctrine refinement, while on the subject of what can and cannot be
 observed.** docs/doctrine.md, "Rules are proven, not asserted", says: "A

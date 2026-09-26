@@ -875,6 +875,15 @@
         }
       }
     },
+    "metricsSelfScrape": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The metrics store's own ServiceMonitor (templates/selfscrape.yaml). basicAuth is wired directly from storeCredentials, not a value here, so there is nothing to mirror.",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
     "victoria-metrics-k8s-stack": {
       "$ref": "#/definitions/subchart"
     },
