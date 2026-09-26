@@ -170,7 +170,7 @@ honest outcome rather than a rule built on a guess.
 
 ## The refusals: `observability-stack`
 
-Forty-six, each with a fixture under
+Fifty, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
