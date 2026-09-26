@@ -6,6 +6,48 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.5.1
+
+A follow-up to 0.5.0's own NetworkPolicy fix: opening the metrics agent's
+path to the metrics store's port was necessary and not sufficient, and a
+live install after upgrading to 0.5.0 found the rest of it.
+
+- **Fix: `charts/observability-stack`** — the metrics store's own
+  `/metrics` answered every scrape with 401. `networkPolicy.scrapeFrom`'s
+  new default (0.5.0) let the metrics agent reach the store's port for
+  the first time, and once it could, the scrape it found there was the
+  operator's own — auto-created for every `VMSingle`, on by default, and
+  carrying no `basicAuth` at all, while the store itself runs with
+  `-httpAuth.*` from `storeCredentials`. `up=0` for that job, and the
+  store's own `vm_*` series never landed, the same shape 0.5.0 already
+  closed for the log and trace stores.
+
+  `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape` is
+  now `true`, turning the operator's version off — it is always a
+  `VMServiceScrape`, the one kind docs/safety.md rules out regardless of
+  what credential is added to it — and a new `ServiceMonitor`
+  (`templates/selfscrape.yaml`, gated on the new `metricsSelfScrape.
+  enabled`, default `true`) reads `storeCredentials` directly in its
+  place. Nothing for a consumer to change: both default on, and the
+  render already carries the same credential the store itself demands.
+  A new refusal keeps `disableSelfServiceScrape` from being flipped back
+  without the new `ServiceMonitor` also being turned off, since the
+  operator's object recreates the same 401 alongside it either way.
+
+- **Fix: docs/safety.md** — the `observability-stack` refusal-count
+  sentence said "Forty-six" against a table that already had
+  forty-nine rows before this release, and one of those forty-nine — "A
+  `-retention.max*` flag on the metrics store" — had never had a fixture
+  under `tests/invalid/observability-stack/` proving it actually fires.
+  Both are fixed: the fixture now exists, and the sentence says "Fifty",
+  counting the new metrics-store refusal above alongside it.
+
+- **CI**: `dashboard-lint` was in the local `just check` but missing from
+  `.github/workflows/ci.yaml`'s recipe list, so a dashboard that failed
+  the six-rule contract in docs/dashboards.md passed review as long as
+  nobody ran `just check` themselves. It is a required CI job now, the
+  same as every other `check` recipe.
+
 ## 0.5.0
 
 The nineteen store self-alerts, and the NetworkPolicy gap that
