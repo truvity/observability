@@ -10,6 +10,7 @@
     "writeCredentials",
     "metrics",
     "logs",
+    "kubeStateMetrics",
     "otlp",
     "selfMonitor"
   ],
@@ -214,6 +215,19 @@
         }
       }
     },
+    "kubeStateMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "description": "Off by default. Its RBAC, its collector allow-list and the metric-relabel that corrects its namespace stamp are `kube-state-metrics`'s own keys below, read back and refused by this chart, rather than a second set that would have to be kept in step with them.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
     "otlp": {
       "type": "object",
       "additionalProperties": false,
@@ -357,6 +371,10 @@
     "victoria-logs-collector": {
       "type": "object",
       "description": "Passed through to the vendored upstream chart, and read back by this chart's refusals. Upstream's surface, not this chart's, so it is not constrained here \u2014 a key this chart does not know about is still upstream's to interpret."
+    },
+    "kube-state-metrics": {
+      "type": "object",
+      "description": "Passed through to the vendored upstream chart, and read back by this chart's refusals \u2014 the RBAC scope, the collector allow-list and the metric-relabel that corrects the namespace stamp among them. Upstream's surface, not this chart's, so it is not constrained here."
     },
     "global": {
       "type": "object",

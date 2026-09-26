@@ -166,7 +166,7 @@ narrowed a field is visible there and nowhere else.
 | The VictoriaMetrics operator | It owns the `VMRule` CRD and hands the rules to vmalert. Without it the chart installs objects nothing reads. |
 | vmalert, with a rule selector that matches | A `VMRule` nobody selects is a file on the cluster, not an alert. Put the selector's labels in `ruleLabels`. |
 | Alertmanager, with a route for each `severity` | An alert whose severity has no branch fires into nowhere. |
-| kube-state-metrics | `CronJobNotSucceeding`, `BackupJobFailed` and `VolumeSmallerThanClaimed` read its series. |
+| kube-state-metrics | `CronJobNotSucceeding`, `BackupJobFailed` and `VolumeSmallerThanClaimed` read its series. `charts/observability-emitters`' `kubeStateMetrics` (off by default) can BE that source — see docs/kube-state-metrics.md — or an estate's own shared install may already provide it; either way, not both on one cluster. |
 | kubelet volume stats | `VolumeSmallerThanClaimed` compares them against the claim. |
 
 The expressions are MetricsQL. They use duration literals in arithmetic

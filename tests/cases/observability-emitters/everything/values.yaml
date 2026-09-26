@@ -63,6 +63,9 @@ metrics:
 logs:
   enabled: true
 
+kubeStateMetrics:
+  enabled: true
+
 otlp:
   # Placed, rather than left to the scheduler: on a cluster where every
   # node a workload should use is tainted, the gateway otherwise lands on
@@ -160,3 +163,22 @@ victoria-logs-collector:
   podMonitor:
     enabled: true
     vm: false
+
+kube-state-metrics:
+  # Non-default resources, to prove this passthrough is plumbed the same
+  # way `victoria-logs-collector` above is; RBAC, `collectors` and the
+  # namespace-fixing `metricRelabelings` are left at this chart's own
+  # defaults, which is the render every fixture under
+  # tests/invalid/observability-emitters/kubestatemetrics-*.yaml exists to
+  # prove is refused if REMOVED, not something this case exercises.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+  # A named label, not a wildcard: proves the allow-list itself is
+  # plumbed through without tripping the `[*]` refusal.
+  metricLabelsAllowlist:
+    - namespaces=[team]

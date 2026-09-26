@@ -23,6 +23,7 @@ instead.
 {{- include "observability-emitters.validate.destinations" . -}}
 {{- include "observability-emitters.validate.metrics" . -}}
 {{- include "observability-emitters.validate.logs" . -}}
+{{- include "observability-emitters.validate.kubeStateMetrics" . -}}
 {{- include "observability-emitters.validate.otlp" . -}}
 {{- include "observability-emitters.validate.licence" . -}}
 {{- end -}}
@@ -322,6 +323,111 @@ cluster that does not exist, or under another one.
 {{- if ne $have $want -}}
 {{- fail (printf "observability-emitters: `victoria-logs-collector.collector.extraFields` carries %q as %q but `tenancy` says %q. The two are written twice because Helm evaluates a subchart's values before any template runs, which is why they are checked rather than trusted: a disagreement here files every container log on this cluster under the wrong cluster, where no grant for this one reaches it. Write exactly: %s" $field $have $want $wantExtra) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+kube-state-metrics.
+
+Off by default, and every refusal below fires only while it is on. The
+common thread: this is a cluster-wide reader, so a mistake here does not
+fail loudly the way a wrong credential does — it under-reads silently
+(a Role instead of a ClusterRole, a `namespaces` filter) or over-reports
+silently (a second unsharded replica, an allow-list of `*`), and the
+worst of the four is a series that IS collected but is filed under the
+wrong namespace forever, which is the one this block spends the most
+words on.
+*/}}
+{{- define "observability-emitters.validate.kubeStateMetrics" -}}
+{{- if .Values.kubeStateMetrics.enabled -}}
+{{- $ksm := index .Values "kube-state-metrics" -}}
+{{- /*
+Nothing scrapes it.
+*/}}
+{{- if not .Values.metrics.enabled -}}
+{{- fail "observability-emitters: `kubeStateMetrics.enabled` is true but `metrics.enabled` is false. kube-state-metrics is scraped by this chart's OWN metrics agent, through the default scrape class every ServiceMonitor on the cluster picks up — with the agent off, nothing scrapes it at all. The pod runs, stays Ready, and answers every /metrics request; nothing ever reads one. Enable `metrics`, or leave `kubeStateMetrics` off." -}}
+{{- end -}}
+{{- if not (($ksm.prometheus).monitor).enabled -}}
+{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.enabled` is false, so no ServiceMonitor is rendered for it. The same failure this chart's own `selectAllByDefault` refusal guards against for the metrics agent applies here from the other side: a component with no scrape object looks exactly like a component with nothing wrong." -}}
+{{- end -}}
+{{- /*
+Namespace scope.
+
+kube-state-metrics is the cluster's own object state, not one release's:
+a Role scoped to this namespace, or a `namespaces` filter, makes it
+under-read silently — the pod stays Ready, every configured collector
+still exports SOMETHING (its own namespace's objects, or whichever ones
+`namespaces` names), and the gap is every OTHER namespace's, discovered
+only when somebody goes looking for data that was never collected in
+the first place.
+*/}}
+{{- if $ksm.namespaces -}}
+{{- fail (printf "observability-emitters: `kube-state-metrics.namespaces` is %q. kube-state-metrics is the cluster's own object state; a namespace filter makes it silently under-read everything outside that list — Ready throughout, and no series absent, only every OTHER namespace's data that was never collected. Leave it empty." (toString $ksm.namespaces)) -}}
+{{- end -}}
+{{- if not (($ksm.rbac).useClusterRole) -}}
+{{- fail "observability-emitters: `kube-state-metrics.rbac.useClusterRole` is false. This chart installs one kube-state-metrics for the whole cluster, and a Role reads only its own namespace — silently: the pod stays Ready and reports the namespaces it CAN see as though they were the whole cluster. Leave `useClusterRole: true`." -}}
+{{- end -}}
+{{- if not (($ksm.rbac).create) -}}
+{{- if not (($ksm.rbac).useExistingRole) -}}
+{{- fail "observability-emitters: `kube-state-metrics.rbac.create` is false and no `useExistingRole` is named. With no ClusterRole bound, every List call this pod makes is 403 — and kube-state-metrics does not crash or go NotReady on that, it exports zero series for the kinds it could not list and answers /metrics successfully for the rest. Name an existing ClusterRole, or leave `rbac.create: true`." -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+Replicating without sharding.
+
+The exact failure charts/observability-stack's own disabled copy exists
+to avoid (see its values.yaml, "Two installs of kube-state-metrics
+export the same series twice and every rate() over them is wrong"), now
+possible a second way: two replicas of the same collector, neither
+sharded, both listing the whole cluster and both scraped by the same
+default scrape class.
+*/}}
+{{- if and (gt (int ($ksm.replicas | default 1)) 1) (not (($ksm.autosharding).enabled)) -}}
+{{- fail (printf "observability-emitters: `kube-state-metrics.replicas` is %d with `autosharding.enabled` false. Unsharded replicas each list the WHOLE cluster and export the same series independently, so every scrape sees every series twice (three times at 3, and so on) — every rate() and sum() over them is silently that many times too high, with two Ready pods and no error anywhere. Either turn on `autosharding.enabled`, which splits the cluster between replicas, or leave `replicas: 1`." (int ($ksm.replicas | default 1))) -}}
+{{- end -}}
+{{- /*
+The label and annotation allow-lists.
+
+Both default empty, upstream's own safe default, and the refusal is only
+for `*`: kube-state-metrics keys a series' labels off a workload's OWN
+label values, so a wildcard multiplies series by every distinct value
+combination a workload happens to use — the identical cardinality trap
+`metrics.scrape.nodeLabels` above documents for the kubelet and cAdvisor
+scrapes, measured there as a store silently IGNORING every series past
+its own per-series label limit.
+*/}}
+{{- range $listName := list "metricLabelsAllowlist" "metricAnnotationsAllowList" -}}
+{{- range $entry := (index $ksm $listName | default list) -}}
+{{- if contains "[*]" (toString $entry) -}}
+{{- fail (printf "observability-emitters: `kube-state-metrics.%s` contains %q, which allows EVERY label or annotation a workload carries onto its series, for that resource. kube-state-metrics keys a series' labels off the workload's own values, so a wildcard multiplies series by every distinct combination a workload happens to use — measured elsewhere in this chart as a store silently IGNORING every series past its own per-series label limit. Name the labels a dashboard or a rule actually needs, e.g. `namespaces=[team]`." $listName (toString $entry)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+The namespace stamp, the reason this block exists.
+
+See `values.yaml`'s own comment on this key for the mechanism; this only
+checks that whatever ended up in the merged values still carries the
+fix, the same "checked against the merged result" reasoning
+`metrics.spec` above is held to.
+*/}}
+{{- $rules := ((($ksm.prometheus).monitor).http).metricRelabelings | default list -}}
+{{- $hasReplace := false -}}
+{{- $hasDrop := false -}}
+{{- range $r := $rules -}}
+{{- if and (has "namespace" ($r.sourceLabels | default list)) (eq (toString $r.targetLabel) "k8s_namespace_name") -}}
+{{- $hasReplace = true -}}
+{{- end -}}
+{{- if and (eq (toString $r.action) "labeldrop") (regexMatch "k8s_namespace_name" (toString $r.regex)) -}}
+{{- $hasDrop = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $hasReplace -}}
+{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` carries no rule mapping `namespace` to `k8s_namespace_name`. Without it, every kube_* series is left with the CLUSTER-WIDE default scrape class's stamp — this release's own namespace, the namespace the kube-state-metrics POD runs in, not the namespace of the object each series describes. Every kube_pod_*, kube_deployment_* and kube_cronjob_* series on the whole cluster would read as belonging to this one namespace: invisible to the namespace-scoped grants that should see them, visible instead to whoever can read this release's own namespace. Add: `- sourceLabels: [namespace]` / `  regex: (.+)` / `  targetLabel: k8s_namespace_name`." -}}
+{{- end -}}
+{{- if not $hasDrop -}}
+{{- fail "observability-emitters: `kube-state-metrics.prometheus.monitor.http.metricRelabelings` maps `namespace` to `k8s_namespace_name` but carries no `labeldrop` of `k8s_namespace_name` before it. Without the drop, a series with NO `namespace` label — every cluster-scoped kind in `collectors`, `nodes` among them — keeps the scrape class's target-level stamp instead of ending up with no namespace at all: every node's series would read as belonging to this release's own namespace, which is not what a cluster-scoped object's namespace is (it has none) and not what a grant on this namespace should mean either. Add, BEFORE the replace: `- action: labeldrop` / `  regex: k8s_namespace_name`." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

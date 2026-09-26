@@ -929,11 +929,11 @@ stop working in a patch release.
 
 ## The refusals: `observability-emitters`
 
-Thirty, each with a fixture under
+Thirty-nine, each with a fixture under
 `tests/invalid/observability-emitters/` that is otherwise valid, so it
 fails for its one reason and no other.
 
-They divide into four kinds, and the first kind is the reason the chart
+They divide into five kinds, and the first kind is the reason the chart
 exists.
 
 ### The scoping key, which is a security property and not a convenience
@@ -984,6 +984,28 @@ grants.
 | `k8s.cluster.name` or `kubernetes.pod_namespace` missing from either writer's stream fields | A stream filter, which is what the proxy injects, only selects on stream fields. A key that is an ordinary field is a key every scoped log query misses — for that writer's half of the store, while the other writer's half still answers, which is the more confusing shape. |
 | The Helm release label as a stream field | It is constant per pod, but a stream field is a cardinality decision, and the release is navigation. The allow-list is the chart's and does not include it. |
 | A log write path other than `/insert/native` | The only path that accepts that protocol. A wrong one answers 404, and vlagent treats 404 as a permanent rejection and DROPS the block rather than retrying it. The loss is silent, unrecoverable, and proportional to how long it takes somebody to look. |
+
+### kube-state-metrics, a cluster-wide reader that is off by default
+
+Off by default: an estate that already runs a shared kube-state-metrics
+would otherwise get a second install of the same series, and every
+`rate()` or `sum()` over the doubled series would be silently twice what
+it should be — the exact failure `charts/observability-stack`'s own
+vendored copy is left permanently disabled to avoid (see its
+`values.yaml`). Turning it on grants a ClusterRole that reads every
+object of every kind in `kube-state-metrics.collectors`, cluster-wide.
+
+| Refusal | The failure it prevents |
+|---|---|
+| `kubeStateMetrics.enabled` true with `metrics.enabled` false | Nothing scrapes it: the pod runs, stays Ready and answers every `/metrics` request, and nothing ever reads one. |
+| `kube-state-metrics.prometheus.monitor.enabled` false | No `ServiceMonitor` is rendered for it. The same "a component with no scrape object looks exactly like a component with nothing wrong" this chart already guards against for its own metrics agent, from the other side. |
+| `kube-state-metrics.namespaces` non-empty | kube-state-metrics is the cluster's own object state, not one release's. A namespace filter makes it silently under-read everything outside that list — Ready throughout, and no series absent, only every OTHER namespace's data that was never collected. |
+| `kube-state-metrics.rbac.useClusterRole` false | A Role reads only its own namespace, silently: the pod stays Ready and reports the namespaces it CAN see as though they were the whole cluster. |
+| `kube-state-metrics.rbac.create` false with no `useExistingRole` | With no ClusterRole bound, every List call is 403 — and kube-state-metrics does not crash or go NotReady on that. It exports zero series for the kinds it could not list, and answers `/metrics` successfully for the rest. |
+| `kube-state-metrics.replicas` above 1 without `autosharding.enabled` | Unsharded replicas each list the WHOLE cluster and export the same series independently, so every scrape sees every series twice (three times at 3) — every `rate()` and `sum()` over them silently that many times too high, with every pod Ready. |
+| `metricLabelsAllowlist` / `metricAnnotationsAllowList` holding a `[*]` entry for any resource | kube-state-metrics keys a series' labels off the workload's own values, so a wildcard multiplies series by every distinct combination a workload happens to use — the identical cardinality trap `metrics.scrape.nodeLabels` documents for the kubelet and cAdvisor scrapes, measured there as a store silently IGNORING every series past its own per-series label limit. |
+| No `metricRelabelings` rule mapping `namespace` to `k8s_namespace_name` | See "The namespace stamp kube-state-metrics needs and no other scrape object does" below — this is the one most series would silently get filed under the wrong tenant for. |
+| A `namespace`-to-`k8s_namespace_name` rule with no preceding `action: labeldrop` of `k8s_namespace_name` | A cluster-scoped series with no `namespace` label (`nodes`, among the enabled collectors) keeps the scrape class's target-level stamp — this release's own namespace — instead of ending up with no namespace at all, which is what a genuinely cluster-scoped object's namespace is. |
 
 ### And the rest
 
@@ -1073,6 +1095,70 @@ their own regeneration: `just golden` will happily rewrite a golden file
 to match a `values.yaml` that turns a converter back off, and a diff that
 matches itself is not evidence anything scrapes anything — the exact
 shape "renders cleanly, does nothing" this repository exists to refuse.
+
+## The namespace stamp kube-state-metrics needs and no other scrape object does
+
+Every scrape object on a cluster this chart collects from gets the same
+target-level stamp, from the metrics agent's default scrape class
+(`observability-emitters.tenancy.relabelConfigs`, `templates/_helpers.tpl`):
+`k8s_namespace_name` set from `__meta_kubernetes_namespace`, which service
+discovery carries as the namespace of the **target being scraped**. For
+almost every scrape object that is correct, because it is also the
+namespace whose objects the scraped pod's own metrics describe — a
+service's `PodMonitor` describes that service.
+
+kube-state-metrics breaks the assumption the same way the kubelet and
+cAdvisor already do, and for the identical reason: the target is one pod,
+in this release's own namespace, but the series it exports describe
+objects that live in every namespace on the cluster (or none — a `Node`
+belongs to no namespace at all). Left at the scrape class's stamp,
+every `kube_pod_*`, `kube_deployment_*` and `kube_cronjob_*` series on
+the WHOLE CLUSTER would read `k8s_namespace_name=<this release's own
+namespace>` — every namespace's objects filed under one, invisible to
+the namespace-scoped grants that should see them and visible instead to
+whoever can read this release's own namespace. `pkg/tenancy.metricsFilter`
+states the general form of this directly, in the comment beside the line
+that omits the namespace matcher for an `allNamespaces` grant: such a
+grant is "exactly the data they came for" for "the node-level series
+from the kubelet, and anything from a cluster-scoped scrape" — the same
+sentence describes every series `kube-state-metrics.collectors` above
+produces for a cluster-scoped kind.
+
+The fix is a `metricRelabelings` pair on the `ServiceMonitor`, evaluated
+**after** the scrape rather than before it, so it can read the series'
+own fields instead of the target's:
+
+```yaml
+metricRelabelings:
+  - action: labeldrop
+    regex: k8s_namespace_name
+  - sourceLabels: [namespace]
+    regex: (.+)
+    targetLabel: k8s_namespace_name
+```
+
+The `labeldrop` has to come first, and it is not defensive: without it, a
+series with no `namespace` label at all — `kube_node_*`, and any other
+cluster-scoped kind in `collectors` — keeps the scrape class's
+target-level stamp, and ends up carrying this release's own namespace
+instead of no namespace. With the drop first, such a series comes out
+with `k8s_namespace_name` absent entirely, the same shape
+`observability-emitters.tenancy.nodeMetricRelabelConfigs` already gives
+the kubelet's and cAdvisor's own node-level series — visible only to a
+grant with `allNamespaces: true` on this cluster, which is what a
+cluster-scoped object's data means. `docs/dashboards.md`'s own rule
+("Upstream's `namespace` label stays") is why the second step can read
+`namespace` at all: the metrics agent's `overrideHonorLabels: true`
+overrides the TARGET's stamp, not a series' own exposed labels, and
+upstream's `namespace` label is never touched by any relabeling this
+chart adds — it survives to be read back by the fix above, and stays on
+the series afterward for the dashboards that already expect it.
+
+Both `_validate.tpl` refusals check the MERGED
+`kube-state-metrics.prometheus.monitor.http.metricRelabelings`, not the
+chart's own default: an escape hatch that can turn off a security
+property by omission is not an escape hatch, the same reasoning
+`metrics.spec` above is held to.
 
 ## Two writers per signal, and which one yields
 

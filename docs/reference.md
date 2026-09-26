@@ -449,7 +449,7 @@ through.
 
 ## `charts/observability-emitters`
 
-Per-cluster collection: three optional emitters, each replicating to every
+Per-cluster collection: four optional emitters, each replicating to every
 destination it is given and each stamping the same three dimensions.
 
 **The names are not values.** What every writer stamps and every filter
@@ -571,6 +571,31 @@ with underscores, which is how they match the agent's labels.
 |---|---|---|---|
 | `selfMonitor.enabled` | bool | `true` | A `PodMonitor` for the metrics agent. |
 | `selfMonitor.extraLabels` | map | `{}` | |
+
+### `kubeStateMetrics`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `kubeStateMetrics.enabled` | bool | `false` | Renders upstream's `kube-state-metrics` chart. **Off by default** — see docs/kube-state-metrics.md. |
+
+### `kube-state-metrics` — the upstream chart
+
+Its own values, pinned in `Chart.yaml` at the same version
+`charts/observability-stack`'s vendored `victoria-metrics-k8s-stack`
+carries (and leaves disabled), and vendored under this chart's `charts/`
+directory. Rendered only while `kubeStateMetrics.enabled` is true; every
+row below is read back and refused by this chart rather than duplicated.
+
+| Value | Default | What it does |
+|---|---|---|
+| `…collectors[]` | a trimmed eleven, not upstream's 28 | Which object kinds it reads and exports — see docs/kube-state-metrics.md for the list and why each one is in or out. Each kind is both an RBAC read grant and a cardinality line item. |
+| `…namespaces` | `""` | **Refused non-empty.** This is one kube-state-metrics for the whole cluster; a namespace filter makes it silently under-read everything else. |
+| `…rbac.useClusterRole` | `true` | **Refused false.** A Role reads only its own namespace, silently. |
+| `…rbac.create` | `true` | **Refused false with no `useExistingRole` named** — every List call 403s, silently, per kind. |
+| `…replicas` | `1` | **Refused above 1 without `…autosharding.enabled`** — unsharded replicas each list the whole cluster and double every series. |
+| `…metricLabelsAllowlist` / `…metricAnnotationsAllowList` | `[]`, upstream's own default | **Refused a `[*]` entry for any resource** — see docs/kube-state-metrics.md, the same cardinality trap as `metrics.scrape.nodeLabels` above. |
+| `…prometheus.monitor.enabled` | `true` | Renders the `ServiceMonitor`. **Refused false** — a component with no scrape object looks exactly like a component with nothing wrong. |
+| `…prometheus.monitor.http.metricRelabelings` | a `labeldrop` of `k8s_namespace_name`, then a replace from `namespace` | **The fix for the one thing this component gets backwards** — see docs/kube-state-metrics.md, "The namespace stamp". Both halves are refused missing, checked against the merged value. |
 
 ### `victoria-logs-collector` — the upstream chart
 

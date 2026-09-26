@@ -1,9 +1,10 @@
 apiVersion: v2
 name: observability-emitters
 description: >-
-  Per-cluster collection: a metrics agent, a log agent and an OpenTelemetry
-  gateway, each stamping tenancy the application cannot choose and each
-  replicating to every destination with its own on-disk buffer.
+  Per-cluster collection: a metrics agent, a log agent, an OpenTelemetry
+  gateway and an optional kube-state-metrics, each stamping tenancy the
+  application cannot choose and each replicating to every destination with
+  its own on-disk buffer.
 type: application
 # Stamped from the tag by the release workflow; never moved by hand.
 version: 0.0.0
@@ -17,10 +18,10 @@ keywords:
 home: https://github.com/truvity/observability
 sources:
   - https://github.com/truvity/observability
-# One dependency, pinned exactly and vendored under charts/ so a render
-# reaches no registry. A range would resolve to whatever exists on the day
-# of the install, and the zero-diff gate in docs/adoption.md would stop
-# meaning anything.
+# Two dependencies, each pinned exactly and vendored under charts/ so a
+# render reaches no registry. A range would resolve to whatever exists on
+# the day of the install, and the zero-diff gate in docs/adoption.md would
+# stop meaning anything.
 #
 # The log agent comes from upstream because its checkpoint and buffer
 # semantics are the reason to use it rather than a collector; the metrics
@@ -28,8 +29,21 @@ sources:
 # VictoriaMetrics operator the stack chart installs. The OpenTelemetry
 # gateway is this chart's own workload — see docs/doctrine.md for why it is
 # neither an operator's CustomResource nor upstream's chart.
+#
+# kube-state-metrics is pinned to the SAME version
+# charts/observability-stack's own vendored victoria-metrics-k8s-stack
+# carries (and leaves permanently disabled — see its values.yaml), so the
+# estate never runs two different renders of the same upstream chart under
+# one release. It lives here rather than there because it is scraped
+# cluster-wide with its own ClusterRole, the same "one per cluster" shape
+# every other emitter in this chart already has, and a cluster can run
+# this chart without running charts/observability-stack at all.
 dependencies:
   - name: victoria-logs-collector
     version: 0.3.7
     repository: oci://ghcr.io/victoriametrics/helm-charts
     condition: logs.enabled
+  - name: kube-state-metrics
+    version: 7.5.3
+    repository: oci://ghcr.io/prometheus-community/charts
+    condition: kubeStateMetrics.enabled
