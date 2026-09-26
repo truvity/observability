@@ -21,6 +21,7 @@ second debugging session.
 {{- include "observability-stack.validate.resources" . -}}
 {{- include "observability-stack.validate.licence" . -}}
 {{- include "observability-stack.validate.selfAlerts" . -}}
+{{- include "observability-stack.validate.evaluateOnly" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
 {{- include "observability-stack.validate.scrapeFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
@@ -407,8 +408,40 @@ would override its `-httpAuth.*`.
 */}}
 {{- define "observability-stack.validate.notifier" -}}
 {{- if .Values.vmalert.enabled -}}
-{{- if and (not .Values.alertmanager.enabled) (not .Values.alertmanager.notifierUrl) -}}
-{{- fail "observability-stack: vmalert is enabled, Alertmanager is not, and `alertmanager.notifierUrl` is empty. vmalert would evaluate every rule and send the result nowhere — which looks exactly like an estate with no problems, for as long as nobody checks. Enable Alertmanager, or name the one the estate already runs." -}}
+{{- $mode := ((.Values.notifications | default dict).mode) | default "route" -}}
+{{- if and (eq $mode "route") (not .Values.alertmanager.enabled) (not .Values.alertmanager.notifierUrl) -}}
+{{- fail "observability-stack: vmalert is enabled, Alertmanager is not, and `alertmanager.notifierUrl` is empty. vmalert would evaluate every rule and send the result nowhere — which looks exactly like an estate with no problems, for as long as nobody checks. Enable Alertmanager, name the one the estate already runs, or set `notifications.mode: evaluate-only` for the explicit \"evaluate every rule, notify nobody yet\" shape." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`notifications.mode: evaluate-only` — the explicit, named opt-out for a
+consumer with no Slack or webhook credential YET, docs/notifications.md,
+"Evaluate, notify nobody yet". `route` (the default) changes nothing
+here; every check below applies only once the mode is evaluate-only, and
+each one refuses a combination that would otherwise render a receiver,
+or an Alertmanager, that the mode makes pointless: vmalert never notifies
+anybody while it is set, so anything configured to be notified is
+configured to be unreachable.
+
+This runs BEFORE `validate.notifications`, so a fixture testing one of
+these refusals is never preempted by a later check that also happens to
+trip over an unconfigured severity or receiver.
+*/ -}}
+{{- define "observability-stack.validate.evaluateOnly" -}}
+{{- $n := .Values.notifications | default dict -}}
+{{- if eq ($n.mode | default "route") "evaluate-only" -}}
+{{- if .Values.alertmanager.enabled -}}
+{{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `alertmanager.enabled` is true (or left at its default). Evaluate-only means vmalert evaluates every rule and sends the result to nobody — on purpose, visible in vmalert's own UI and API, not silently — so there is nothing for Alertmanager to route and this chart does not render it in this mode. Set `alertmanager.enabled: false`, or drop `notifications.mode` back to `route` and configure a receiver." -}}
+{{- end -}}
+{{- if .Values.alertmanager.notifierUrl -}}
+{{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `alertmanager.notifierUrl` is set. Evaluate-only renders vmalert's `-notifier.blackhole`, which vmalert itself refuses to combine with any notifier URL: `-notifier.url`, `-notifier.config` and `-notifier.blackhole` are mutually exclusive. Unset `alertmanager.notifierUrl`, or drop `notifications.mode` back to `route` and point vmalert at the Alertmanager it names." -}}
+{{- end -}}
+{{- $slack := $n.slack | default dict -}}
+{{- $receiverConfigured := or ($slack.webhookSecret).name (gt (len ($n.webhook | default list)) 0) (gt (len ($n.severities | default dict)) 0) (gt (len ($n.routes | default list)) 0) (gt (len ($n.also | default list)) 0) -}}
+{{- if $receiverConfigured -}}
+{{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `notifications` also configures a receiver, a severity, a route or an `also` bridge. Evaluate-only means nobody is notified yet: a receiver configured beside it looks wired up and is never reached, because vmalert never sends the notification it would carry. Remove the receiver configuration, or drop `notifications.mode` back to `route`." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -419,6 +452,7 @@ free-form passthrough. See docs/notifications.md and docs/safety.md.
 */}}
 {{- define "observability-stack.validate.notifications" -}}
 {{- $n := .Values.notifications | default dict -}}
+{{- $mode := ($n.mode) | default "route" -}}
 {{- $slack := $n.slack | default dict -}}
 {{- $webhooks := $n.webhook | default list -}}
 {{- $severities := $n.severities | default dict -}}
@@ -427,8 +461,8 @@ free-form passthrough. See docs/notifications.md and docs/safety.md.
 {{- $webhookNames := dict -}}
 {{- range $w := $webhooks -}}{{- $_ := set $webhookNames $w.name true -}}{{- end -}}
 {{- $configured := or ($slack.webhookSecret).name (gt (len $webhooks) 0) -}}
-{{- if and .Values.alertmanager.enabled (not $configured) -}}
-{{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.webhookSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, or set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs." -}}
+{{- if and .Values.alertmanager.enabled (not $configured) (ne $mode "evaluate-only") -}}
+{{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.webhookSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs, or set `notifications.mode: evaluate-only` for the explicit \"evaluate every rule, notify nobody yet\" shape if there is no channel yet." -}}
 {{- end -}}
 {{- /*
 `notifications.externalUrl` and `vmalert.externalUrl` are one fact — the

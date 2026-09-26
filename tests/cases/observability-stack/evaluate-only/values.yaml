@@ -1,0 +1,42 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+# It also proves the chart renders on a cluster that does not use the
+# default — an estate on the default sees exactly this one difference.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The explicit, named "evaluate, notify nobody yet" shape:
+# docs/notifications.md, "Evaluate, notify nobody yet". A consumer with
+# no Slack or webhook credential yet, who wants every rule evaluated and
+# visible in vmalert rather than turning the whole alerting path off.
+#
+# Alertmanager is off — this mode does not render it — and vmalert keeps
+# running with `-notifier.blackhole` on both alerters instead of a
+# notifier URL. This is the golden that proves that render.
+alertmanager:
+  enabled: false
+
+vmalert:
+  externalUrl: https://grafana.example
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  # The trace store is on by default, and this proxy cannot scope trace
+  # reads: vmauth applies a grant by substituting it into the route, and
+  # VictoriaTraces' Jaeger and Tempo select APIs accept no query
+  # argument to substitute it into. So every principal below reads every
+  # namespace's spans on every cluster, and the chart refuses to render until that is
+  # written down. docs/safety.md has the mechanism; the alternative is
+  # `victoria-traces-single.enabled: false`.
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  mode: evaluate-only

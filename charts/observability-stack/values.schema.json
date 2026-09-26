@@ -482,6 +482,11 @@
       "additionalProperties": false,
       "description": "The one router: renders the Alertmanager configuration `alertmanager.enabled` needs so it never falls back to the `blackhole` shape. See docs/notifications.md.",
       "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["route", "evaluate-only"],
+          "description": "`route` (default): today's behaviour, refused until a receiver is configured. `evaluate-only`: the explicit, named opt-out — vmalert keeps evaluating every rule and renders `-notifier.blackhole`; refused together with `alertmanager.enabled`, `alertmanager.notifierUrl`, or any receiver kind, route or severity below."
+        },
         "externalUrl": {
           "type": "string",
           "description": "The base of the Grafana link this chart puts in every Slack message. Required the moment a receiver kind is configured; without it every link in a notification points at nothing a person can open."
