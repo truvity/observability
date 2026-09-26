@@ -34,7 +34,7 @@ jobs:
   recipes:
     uses: truvity/ci-workflows/.github/workflows/check.yaml@98939fa99a6ac03994253fd00a7b336fac9fe0a9 # v3.2.0
     with:
-      recipes: '["lint", "test", "leak-canary", "apply", "reconcile", "statusbox"]'
+      recipes: '["lint", "test", "leak-canary", "dashboard-lint", "apply", "reconcile", "statusbox"]'
 
   # Stable name for branch protection: the matrix reports as
   # "recipes / lint" and so on, so a required context naming them would
