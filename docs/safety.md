@@ -1258,7 +1258,7 @@ NetworkPolicy did exactly what it was written to do, which is the
 failure: a policy that is present and correct for the peers it names,
 and simply never named the one peer that would have caught this. Every
 rule in `charts/platform-alerts` that names a store's own counter, and
-every one of this chart's own `selfAlerts` (INF-986), depends on a
+every one of this chart's own `selfAlerts`, depends on a
 sample that never arrived; each evaluates against no data, which is not
 the same as evaluating to healthy, and none of them can tell the
 difference. A `TargetDown`-shaped rule watching the scrape job itself
