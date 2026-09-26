@@ -4,6 +4,11 @@ Design for the `notifications:` block of `charts/observability-stack`.
 Not yet released; this page is the contract the implementation is held
 to.
 
+> A proposal for more than one Slack workspace, more than one channel
+> per workspace, and an explicit "evaluate, notify nobody yet" mode is
+> sketched in [notification-subscriptions.md](notification-subscriptions.md)
+> — not implemented, and not yet part of the contract this page states.
+
 ## The problem it closes
 
 The chart ships with Alertmanager routing to a receiver named
