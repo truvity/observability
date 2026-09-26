@@ -1,0 +1,22 @@
+# expect: vmalert itself refuses to combine with any notifier URL
+# `notifications.mode: evaluate-only` together with
+# `alertmanager.notifierUrl`. vmalert's own `-notifier.blackhole` flag is
+# mutually exclusive with `-notifier.url`, so rendering both would be an
+# extraArgs combination vmalert itself refuses to start with — the same
+# failure `templates/_validate.tpl` refuses here instead, before it ever
+# reaches the pod.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+alertmanager:
+  enabled: false
+  notifierUrl: "http://alertmanager.example:9093"
+
+notifications:
+  mode: evaluate-only

@@ -419,6 +419,21 @@ alertmanager:
 # the consumer's: the channel names, the webhook, the route list, the
 # external URL, and the policy of what severity a rule carries.
 notifications:
+  # -- `route` (the default, today's behaviour) or `evaluate-only`: the
+  # explicit, named opt-out for a consumer with no Slack or webhook
+  # credential YET. `route` requires a working receiver the moment
+  # `alertmanager.enabled` is true, same as always. `evaluate-only` keeps
+  # vmalert evaluating every rule — visible in its own UI and API — and
+  # renders `-notifier.blackhole` instead of pointing it at an
+  # Alertmanager; Alertmanager itself is not rendered in this mode, and
+  # is refused if `alertmanager.enabled` is left or set to `true`, so the
+  # opt-out stays visible in the values file rather than a state two
+  # unrelated toggles happen to reach together. Never combine with a
+  # receiver kind, a route, a severity, or `alertmanager.notifierUrl` —
+  # each is refused: a channel configured beside a mode that mutes
+  # vmalert looks wired up and is never reached. See docs/notifications.md,
+  # "Evaluate, notify nobody yet".
+  mode: route
   # -- The base of the Grafana link this chart puts in every Slack
   # message. Without it, every link a person clicks from an alert lands
   # nowhere — the same failure `vmalert.externalUrl` exists to prevent

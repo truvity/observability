@@ -92,8 +92,73 @@ webhook is a webhook in git.
 | a route matching on a label the collectors do not stamp (`tenant`, `env`, …) | matches nothing, pages nobody; the vocabulary is cluster × namespace |
 | `externalUrl` unset | every link dead |
 | `repeat_interval` on the deadman route longer than the far end's heartbeat | the far end alerts on healthy silence |
+| `notifications.mode` outside `route` or `evaluate-only` | an unknown mode, refused by the schema rather than falling back to a guess |
+| `notifications.mode: evaluate-only` with `alertmanager.enabled` true, or a receiver, severity, route or `also` bridge configured, or `alertmanager.notifierUrl` set | a channel or an Alertmanager configured beside a mode that mutes vmalert, which looks wired up and is never reached |
 
 Each has a fixture under `tests/invalid/observability-stack/`.
+
+## Evaluate, notify nobody yet
+
+`notifications.mode: evaluate-only` is the other accepted shape, for a
+consumer who does not yet have a Slack webhook or a status-page
+credential and wants every rule evaluated anyway rather than turning the
+whole alerting path off. It exists because the two components this
+value touches used to leave exactly one way to avoid the refusals above
+without a receiver: `alertmanager.enabled: false` **and**
+`vmalert.enabled: false` — which stops every rule from being evaluated
+at all, the least useful shape a monitoring stack can be in, silently
+reached by disabling two unrelated-looking toggles together.
+
+Use it when: a receiver is coming but is not wired up yet, or an install
+genuinely has nowhere to page (a personal cluster, a demo) but the rules
+should still run so their state is visible somewhere.
+
+What it renders:
+
+- both vmalerts (`metrics` and `logs`, if `vmalert.logs.enabled`) keep
+  running, with no change to `evaluationInterval`, `datasource`,
+  `remoteWrite` or `remoteRead` — every rule is evaluated on schedule,
+  exactly as in `route` mode;
+- neither renders a `notifiers:` block; both instead carry
+  `-notifier.blackhole` in `extraArgs`, the flag vmalert has shipped
+  since v1.93.0 for evaluating alerting rules "without sending any
+  notifications to external receivers" (VictoriaMetrics
+  `CHANGELOG_2023.md`; the flag's own help text, unchanged through the
+  v1.152.0 this chart's operator defaults to, adds that `-notifier.url`,
+  `-notifier.config` and `-notifier.blackhole` are mutually exclusive —
+  `app/vmalert/notifier/init.go`). The VictoriaMetrics operator refuses
+  the same combination at the CustomResource level
+  (`api/operator/v1beta1/vmalert_types.go`, `validateNotifierConfigs`):
+  `spec.notifier`, `spec.notifiers` and `spec.notifier.notifierConfigRef`
+  must all be absent when `notifier.blackhole` is one of `extraArgs`;
+  this chart simply never renders them in this mode, so that CRD-level
+  refusal is never reached;
+- Alertmanager (the `VMAlertmanager` object) is **not rendered** in this
+  mode, refused if `alertmanager.enabled` is left at its default `true`
+  or set explicitly: with nothing to route — vmalert sends its result
+  nowhere on purpose — an Alertmanager beside it would be a component
+  with no job, which is its own way to look more configured than it is.
+
+What stays visible: every alert vmalert evaluates shows up in that
+vmalert's own `/vmalert/` UI and `/api/v1/alerts` API, state included,
+the same as in `route` mode. And because both vmalerts here already
+carry `-remoteWrite.url` unconditionally (see below), the `ALERTS` and
+`ALERTS_FOR_STATE` time series vmalert writes for every active alert
+(`app/vmalert/rule/alerting.go`, `toTimeSeries`) land in the metrics
+store regardless of the notifier — that write does not go through the
+notifier at all, blackholed or not — so `ALERTS{alertname="..."}` is a
+query away in this mode exactly as it would be in `route` mode.
+
+Why this is not the blackhole `alertmanager.enabled` with nothing
+configured used to render: that shape was never a decision — the
+default rendered it whether anyone meant to or not, and looked exactly
+like a working install because Alertmanager itself was healthy and
+routing, just to a receiver with no configuration. `evaluate-only` is a
+value nobody reaches by omission: it is refused the moment it disagrees
+with `alertmanager.enabled`'s own default, so setting it is the only way
+to get it, and the render it produces has no Alertmanager to look
+healthy in the first place — the absence is the whole visible fact,
+not a receiver quietly doing nothing behind a passing health check.
 
 ## What stays the consumer's
 

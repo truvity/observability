@@ -4,6 +4,19 @@
 {{- $metrics := include "observability-stack.metrics.url" . }}
 {{- $notifier := .Values.alertmanager.notifierUrl | default (printf "http://vmalertmanager-%s.%s.svc:9093" $fullname .Release.Namespace) }}
 {{- /*
+`notifications.mode: evaluate-only` — docs/notifications.md, "Evaluate,
+notify nobody yet" — renders neither alerter's `notifiers:` block, and
+instead sets `-notifier.blackhole` on both: the flag vmalert has carried
+since v1.93.0 for evaluating alerting rules without sending any
+notifications, and the one setting `templates/_validate.tpl` (see
+`observability-stack.validate.evaluateOnly`) refuses to combine with
+`spec.notifier`, `spec.notifiers` or `spec.notifier.notifierConfigRef` —
+the VictoriaMetrics operator refuses the same combination itself
+(api/operator/v1beta1/vmalert_types.go, `validateNotifierConfigs`), so
+this mirrors what the CRD would refuse if it did not.
+*/ -}}
+{{- $evaluateOnly := eq ((.Values.notifications | default dict).mode | default "route") "evaluate-only" }}
+{{- /*
 Two vmalerts, because one process has one default rule type.
 
 Rules over metrics and rules over logs are evaluated by the same binary
@@ -94,8 +107,10 @@ spec:
     url: {{ $metrics | quote }}
     basicAuth:
       {{- include "observability-stack.targetAuth" $root | nindent 6 }}
+  {{- if not $evaluateOnly }}
   notifiers:
     - url: {{ $notifier | quote }}
+  {{- end }}
   {{- with $root.Values.vmalert.externalLabels }}
   externalLabels:
     {{- toYaml . | nindent 4 }}
@@ -111,6 +126,9 @@ spec:
     unconditional.
   */}}
   {{- $extraArgs := dict }}
+  {{- if $evaluateOnly }}
+  {{- $_ := set $extraArgs "notifier.blackhole" "true" }}
+  {{- end }}
   {{- if $isLogs }}
   {{- $_ := set $extraArgs "rule.defaultRuleType" "vlogs" }}
   {{- /*

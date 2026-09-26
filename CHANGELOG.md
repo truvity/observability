@@ -31,6 +31,24 @@ checked against them, mostly a value list waiting for names.
   `ProxyAtConcurrencyLimit`) only where it genuinely is not about any one
   store.
 
+  - **A separate value in the same release, unrelated to the rules
+    above: `notifications.mode`**, `route` (default, today's behaviour)
+    or `evaluate-only`. An install with no Slack or webhook credential
+    yet used to have exactly one accepted shape — `alertmanager.enabled:
+    false` **and** `vmalert.enabled: false`, so no rule was even
+    evaluated. `evaluate-only` keeps vmalert evaluating every rule —
+    visible in its own UI, its API, and (since vmalert already carries
+    `-remoteWrite.url` unconditionally) the `ALERTS` / `ALERTS_FOR_STATE`
+    series in the metrics store — and renders `-notifier.blackhole`
+    instead of a notifier URL, the flag vmalert has carried since
+    v1.93.0 for evaluating rules "without sending any notifications to
+    external receivers". Alertmanager is not rendered in this mode, and
+    is refused if `alertmanager.enabled` is left at its default or set
+    explicitly, the same as a receiver, a route, a severity or
+    `alertmanager.notifierUrl` configured beside it — each looks wired
+    up and is never reached, because nothing this mode renders notifies
+    anybody. See docs/notifications.md, "Evaluate, notify nobody yet".
+
   Two rules close incidents from this week: `MetricStoreIgnoringRows`
   watches for the counter that sat at 9,748,387 while a collector reported
   888k rows written with zero errors and the store held none of them;

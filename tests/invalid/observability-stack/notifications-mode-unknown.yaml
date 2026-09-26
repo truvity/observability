@@ -1,0 +1,17 @@
+# expect: value must be one of 'route', 'evaluate-only'
+# `notifications.mode` outside the two the schema allows. Refused by the
+# schema itself, the same shape every other enum-like value in this
+# chart is refused by, rather than a render-time `fail` — an unknown
+# mode is a typo, and a typo that silently fell back to `route` would
+# render a receiver requirement the values file never meant to ask for.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  mode: bogus
