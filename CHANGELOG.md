@@ -8,7 +8,7 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## 0.5.0
 
-The nineteen store self-alerts, INF-986, and the NetworkPolicy gap that
+The nineteen store self-alerts, and the NetworkPolicy gap that
 had kept every store from ever being scraped in the first place — once a
 live install was checked against both, mostly a value list waiting for
 names, and one more peer a policy had never admitted.
