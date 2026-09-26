@@ -1,0 +1,45 @@
+# expect: no ServiceMonitor is rendered for it
+# prometheus.monitor.enabled: false is a component with no scrape
+# object: it looks exactly like a component with nothing wrong.
+
+metrics:
+  destinations:
+  - name: primary
+    url: https://metrics.example/api/v1/write
+otlp:
+  destinations:
+    logs:
+    - name: primary
+      url: https://logs.example
+    metrics:
+    - name: primary
+      url: https://metrics.example
+    traces:
+    - name: primary
+      url: https://traces.example
+tenancy:
+  cluster: example-cluster
+  environment: development
+victoria-logs-collector:
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+  extraVolumeMounts:
+  - mountPath: /etc/observability-write-token
+    name: write-token
+    readOnly: true
+  extraVolumes:
+  - name: write-token
+    secret:
+      secretName: example-write-token
+  remoteWrite:
+  - bearerTokenFile: /etc/observability-write-token/token
+    maxDiskUsagePerURL: 5GB
+    url: https://logs.example
+writeCredentials:
+  secretName: example-write-token
+kubeStateMetrics:
+  enabled: true
+kube-state-metrics:
+  prometheus:
+    monitor:
+      enabled: false

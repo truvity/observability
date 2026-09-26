@@ -185,6 +185,32 @@ logs:
   enabled: true
 
 ###############################################################################
+# kube-state-metrics: the cluster's own object state, as upstream's chart.
+#
+# OFF BY DEFAULT, unlike the other three. Every one of them is something
+# only this chart can do; this one is something a cluster may already have
+# — an estate that already runs a shared kube-state-metrics for its whole
+# fleet would get a SECOND install of the same series, and every rate() or
+# sum() over the doubled series is silently twice what it should be. That
+# is the exact failure charts/observability-stack's own vendored copy is
+# left disabled to avoid (see its values.yaml); the same reasoning is why
+# this one asks rather than assumes.
+#
+# ONE PER CLUSTER, here rather than in charts/observability-stack: it
+# needs cluster-wide read RBAC the same way the metrics agent's kubelet
+# and cAdvisor scrapes do, it has to exist on every cluster this chart is
+# installed on regardless of whether that cluster hosts a store, and
+# charts/observability-stack does not — a central cluster may host the
+# STORES for many clusters, each of which still runs only its own
+# emitters.
+kubeStateMetrics:
+  # -- Off by default; see above. Turning this on grants a ClusterRole
+  # that reads every object of every kind in `kube-state-metrics.collectors`
+  # below, cluster-wide — every namespace, not only this release's own.
+  # That is what kube-state-metrics IS, and it is not defaulted on.
+  enabled: false
+
+###############################################################################
 # The OpenTelemetry gateway.
 #
 # Everything our own software emits arrives here over OTLP — traces, and
@@ -418,3 +444,148 @@ victoria-logs-collector:
     # rewriting every chart that authors one; one object in the other
     # spelling is the first of the ones that follow it.
     vm: false
+
+# -- kube-state-metrics: upstream's own values shape, read back by this
+# chart's refusals the same way `victoria-logs-collector` above is. Only
+# rendered while `kubeStateMetrics.enabled` is true.
+kube-state-metrics:
+  # -- One replica. Sharding (`autosharding.enabled`, upstream's own
+  # feature) is not turned on by this chart and `replicas` above 1
+  # without it is refused: unsharded replicas each list the whole
+  # cluster and export the same series twice, and every rate() or sum()
+  # over them silently doubles — the exact failure
+  # charts/observability-stack's disabled copy exists to avoid, now
+  # possible a second way inside one release.
+  replicas: 1
+  rbac:
+    create: true
+    # -- Cluster-wide read, not a Role scoped to this release's own
+    # namespace. This IS what kube-state-metrics is for — the cluster's
+    # own object state, not this namespace's — and `namespaces` below is
+    # refused non-empty for the same reason: a namespace-scoped install
+    # answers every query, reports healthy, and simply never held most
+    # of the cluster's objects.
+    useClusterRole: true
+  # -- Refused non-empty; see `rbac.useClusterRole` above.
+  namespaces: ""
+  # -- A DELIBERATE TRIM of upstream's own default (28 resource kinds:
+  # every one of `collectors:` in upstream's values.yaml except the four
+  # RBAC-ish kinds already commented out there). Every kind enabled is a
+  # ClusterRole read grant AND a cardinality line item, so the default
+  # here is only what something in this repository or its estate is
+  # already documented to read:
+  #
+  #   cronjobs, jobs        - docs/safety.md's CronJobNotSucceeding /
+  #                           BackupJobFailed / the self-alerts snapshot-age
+  #                           rules read kube_cronjob_status_last_successful_time
+  #                           and kube_job_status_failed.
+  #   persistentvolumeclaims - VolumeSmallerThanClaimed reads
+  #                           kube_persistentvolumeclaim_resource_requests_storage_bytes.
+  #   pods, nodes           - a fleet's own crashloop and node-pressure
+  #                           rules read kube_pod_container_status_restarts_total
+  #                           and kube_node_status_condition; neither ships
+  #                           in this repository, both are the documented
+  #                           reason a fleet installs this at all.
+  #   deployments, replicasets, statefulsets, daemonsets, namespaces,
+  #   horizontalpodautoscalers - the standard "is a rollout stuck"
+  #                           surface (desired vs. ready/updated replicas,
+  #                           a namespace stuck Terminating), one series
+  #                           family per object, cheap relative to `pods`.
+  #
+  # Left OUT relative to upstream's default, and each one is a real
+  # object read denied, not a metric dropped after collection:
+  # certificatesigningrequests, configmaps, endpointslices, ingresses,
+  # leases, limitranges, mutatingwebhookconfigurations, networkpolicies,
+  # poddisruptionbudgets, replicationcontrollers, resourcequotas, secrets,
+  # services, storageclasses, validatingwebhookconfigurations,
+  # volumeattachments. Nothing in this repository reads their series
+  # today; add one deliberately, with the name of the rule or dashboard
+  # that will read it, rather than restoring the upstream default
+  # wholesale.
+  #
+  # Upstream's own estimate (see its README) is on the order of ten to
+  # twenty series per pod for the `pods` collector alone, single digits
+  # per object for the others — but it is an upstream estimate, not a
+  # measurement of this list against a real cluster's object count, and
+  # this repository's own doctrine is to ask the store rather than trust
+  # a sender's number.
+  collectors:
+    - cronjobs
+    - jobs
+    - pods
+    - nodes
+    - deployments
+    - replicasets
+    - statefulsets
+    - daemonsets
+    - namespaces
+    - persistentvolumeclaims
+    - horizontalpodautoscalers
+  # -- Both empty, upstream's own default, and REFUSED to hold `*` for
+  # any resource: kube-state-metrics' per-label-set series shape means an
+  # allow-list of every label multiplies series by every distinct value
+  # combination a workload's own labels take, which is the identical
+  # cardinality trap `metrics.scrape.nodeLabels` above documents for the
+  # kubelet and cAdvisor scrapes — measured there as a store silently
+  # IGNORING every series past `-maxLabelsPerTimeseries`. Ask for a label
+  # by name once a dashboard or a rule needs it.
+  metricLabelsAllowlist: []
+  metricAnnotationsAllowList: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
+  prometheus:
+    monitor:
+      # -- A ServiceMonitor, the Prometheus Operator kind every other
+      # scrape object in this chart uses, converted the same way. With
+      # this false nothing scrapes kube-state-metrics at all: the pod
+      # stays Ready, exports its metrics, and nothing ever reads them —
+      # the same "component whose PodMonitor is ignored looks exactly
+      # like a component with nothing wrong" this chart's own scrape
+      # refusals already guard against for the metrics agent itself.
+      enabled: true
+      http:
+        # -- THE MOST IMPORTANT LINE IN THIS BLOCK. Every scrape object on
+        # the cluster is stamped by the metrics agent's default scrape
+        # class (`observability-emitters.tenancy.relabelConfigs`), which
+        # sets `k8s_namespace_name` from `__meta_kubernetes_namespace` —
+        # the NAMESPACE THE TARGET POD RUNS IN. For every other scrape
+        # object that is correct: a pod's own metrics belong to the
+        # namespace it runs in. For kube-state-metrics it is exactly
+        # backwards — the target is one pod, in this release's own
+        # namespace, but every `kube_*` series it exports describes an
+        # object that can be in ANY namespace (or none), carried on the
+        # series itself as an ordinary `namespace` label. Left as the
+        # scrape class stamped it, every kube_pod_*, kube_deployment_* and
+        # kube_cronjob_* series on the WHOLE CLUSTER would read
+        # `k8s_namespace_name=<this release's own namespace>` — every
+        # namespace's objects filed under one, invisible to the
+        # namespace-scoped grants they belong to and visible instead to
+        # whoever can read this release's own namespace. This is the
+        # identical fix `observability-emitters.tenancy.nodeMetricRelabelConfigs`
+        # already applies to the kubelet and cAdvisor scrapes, for the
+        # same reason: a metric-relabel step, evaluated AFTER the scrape
+        # rewrites the target-level stamp from the series' own field.
+        # Resources with no `namespace` label at all — `nodes`, and any
+        # other cluster-scoped kind in `collectors` above — need the
+        # FIRST step too: without it they would keep the target-level
+        # stamp (this release's own namespace) instead of ending up with
+        # no namespace at all, which is what a genuinely cluster-scoped
+        # series should carry — the same shape the kubelet and cAdvisor
+        # scrapes already carry for their own node-level series, visible
+        # only to a grant with `allNamespaces: true` on this cluster
+        # (see `pkg/tenancy.metricsFilter`'s own comment on exactly this
+        # case). Order matters: the drop has to run before the replace,
+        # not because the replace reads the old value, but because a
+        # series with no `namespace` label must come out of this with NO
+        # `k8s_namespace_name` either, and only dropping first gives that.
+        metricRelabelings:
+          - action: labeldrop
+            regex: k8s_namespace_name
+          - sourceLabels: [namespace]
+            regex: (.+)
+            targetLabel: k8s_namespace_name

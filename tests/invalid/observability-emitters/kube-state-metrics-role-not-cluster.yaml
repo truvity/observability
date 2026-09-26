@@ -1,0 +1,45 @@
+# expect: a Role reads only its own namespace
+# useClusterRole: false renders a namespace-scoped Role instead of a
+# ClusterRole, so this one release sees only its own namespace's objects
+# and reports it as though it were the whole cluster.
+
+metrics:
+  destinations:
+  - name: primary
+    url: https://metrics.example/api/v1/write
+otlp:
+  destinations:
+    logs:
+    - name: primary
+      url: https://logs.example
+    metrics:
+    - name: primary
+      url: https://metrics.example
+    traces:
+    - name: primary
+      url: https://traces.example
+tenancy:
+  cluster: example-cluster
+  environment: development
+victoria-logs-collector:
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+  extraVolumeMounts:
+  - mountPath: /etc/observability-write-token
+    name: write-token
+    readOnly: true
+  extraVolumes:
+  - name: write-token
+    secret:
+      secretName: example-write-token
+  remoteWrite:
+  - bearerTokenFile: /etc/observability-write-token/token
+    maxDiskUsagePerURL: 5GB
+    url: https://logs.example
+writeCredentials:
+  secretName: example-write-token
+kubeStateMetrics:
+  enabled: true
+kube-state-metrics:
+  rbac:
+    useClusterRole: false

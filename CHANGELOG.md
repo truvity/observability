@@ -6,6 +6,61 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.6.0
+
+- **New value: `charts/observability-emitters`** — `kubeStateMetrics`,
+  an optional fourth emitter wrapping upstream's own `kube-state-metrics`
+  chart. **Off by default.** The gap it closes: nothing in this
+  repository has ever collected `kube_*` metrics, so `platform-alerts`'
+  `CronJobNotSucceeding` and `BackupJobFailed` rules, and
+  `charts/observability-stack`'s own self-alert
+  `*StoreSnapshotOlderThanWindow` (which reads
+  `kube_cronjob_status_last_successful_time`), have always depended on
+  an estate collecting it some other way — undocumented until now beyond
+  a line in docs/adoption.md's "what must already exist" table.
+
+  Lives in `charts/observability-emitters` rather than
+  `charts/observability-stack`, because it needs cluster-wide read RBAC
+  the same way the metrics agent's kubelet and cAdvisor scrapes already
+  do, and because it has to exist on every cluster this chart is
+  installed on — including one that runs no store of its own.
+
+  A deliberately trimmed `kube-state-metrics.collectors` allow-list ships
+  by default: eleven kinds (`cronjobs`, `jobs`, `pods`, `nodes`,
+  `deployments`, `replicasets`, `statefulsets`, `daemonsets`,
+  `namespaces`, `persistentvolumeclaims`, `horizontalpodautoscalers`)
+  against upstream's own default of twenty-eight — every RBAC grant and
+  every cardinality line item is one this repository, or a documented
+  fleet rule, actually reads today; nothing else is collected by
+  default. `metricLabelsAllowlist` and `metricAnnotationsAllowList` stay
+  at upstream's own empty default.
+
+  **The namespace stamp is the part worth reading before turning this
+  on.** Every scrape object on a cluster is stamped by the metrics
+  agent's default scrape class, which sets `k8s_namespace_name` from the
+  namespace of the pod being SCRAPED — correct for almost everything,
+  and backwards for kube-state-metrics, whose series describe objects in
+  every namespace but are scraped from one pod in this release's own.
+  Left uncorrected, every `kube_*` series on the whole cluster would
+  read as belonging to this release's own namespace: invisible to the
+  grants that should see them. This release adds the fix as the
+  chart's own default `metricRelabelings` on kube-state-metrics'
+  `ServiceMonitor` — a `labeldrop` of the wrong stamp followed by a
+  replace from the series' own `namespace` label — and refuses to
+  render if either half of it is missing from the merged values. See
+  docs/safety.md, "The namespace stamp kube-state-metrics needs and no
+  other scrape object does".
+
+  Nine new refusals in all (docs/safety.md has the table): enabling this
+  without the metrics agent; no `ServiceMonitor` rendered for it; a
+  `namespaces` filter or a non-cluster Role, either of which makes it
+  silently under-read; RBAC not created with no existing role named;
+  more than one replica without upstream's own `autosharding.enabled`,
+  which would double every series; a `[*]` label or annotation
+  allow-list entry, the same cardinality trap this chart's node-label
+  lesson already documents; and the two halves of the namespace-stamp
+  fix above.
+
 ## 0.5.3
 
 - **Fix: `charts/observability-stack`** — the proxy's own `NetworkPolicy`

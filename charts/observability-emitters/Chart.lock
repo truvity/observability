@@ -2,5 +2,8 @@ dependencies:
 - name: victoria-logs-collector
   repository: oci://ghcr.io/victoriametrics/helm-charts
   version: 0.3.7
-digest: sha256:69d330cfb6e8eb8ac673f90e008a8fe3f874564f7cf37c6922ed5db21fb3f6dd
-generated: "2026-09-23T16:41:58.669736532+02:00"
+- name: kube-state-metrics
+  repository: oci://ghcr.io/prometheus-community/charts
+  version: 7.5.3
+digest: sha256:94174e7af30ca2d1207d61bb42590e1299ad80603bd339eaacdd0afd7cbd82ae
+generated: "2026-09-26T23:56:44.99749565+02:00"
