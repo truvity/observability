@@ -918,25 +918,30 @@ spec:
           regex: k8s_namespace_name
         - action: labeldrop
           regex: (namespace|pod|container|service)
-        - regex: (.+)
+        - action: replace
+          regex: (.+)
           sourceLabels:
           - exported_namespace
           targetLabel: namespace
-        - regex: (.+)
+        - action: replace
+          regex: (.+)
           sourceLabels:
           - exported_pod
           targetLabel: pod
-        - regex: (.+)
+        - action: replace
+          regex: (.+)
           sourceLabels:
           - exported_container
           targetLabel: container
-        - regex: (.+)
+        - action: replace
+          regex: (.+)
           sourceLabels:
           - exported_service
           targetLabel: service
         - action: labeldrop
           regex: exported_(namespace|pod|container|service)
-        - regex: (.+)
+        - action: replace
+          regex: (.+)
           sourceLabels:
           - namespace
           targetLabel: k8s_namespace_name
