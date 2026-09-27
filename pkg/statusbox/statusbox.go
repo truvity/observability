@@ -70,13 +70,16 @@ type Instance struct {
 	Name string
 
 	// Port is the loopback port this instance's Gatus is published on:
-	// what a Public instance's tunnel ingress rule points at, and what a
-	// private one is reached over the tailnet on. Two instances cannot
-	// share a Port — see the refusal in Args.validate — because
-	// setup.sh publishes each container at 127.0.0.1:<Port>, and a
-	// second instance on the same port would either fail to start or
-	// silently replace the first one in the compose file, neither of
-	// which is a startup a boot log makes obvious.
+	// what a Public instance's tunnel ingress rule points at. A private
+	// instance is reached over the tailnet on port 80 instead, always —
+	// never this Port — so an operator loads it at plain `http://
+	// <Hostname>/`, no port to remember; see setup.sh's
+	// serve_private_instances. Two instances cannot share a Port — see
+	// the refusal in Args.validate — because setup.sh publishes each
+	// container at 127.0.0.1:<Port>, and a second instance on the same
+	// port would either fail to start or silently replace the first one
+	// in the compose file, neither of which is a startup a boot log
+	// makes obvious.
 	Port int
 
 	// Public says whether this instance's page belongs in the tunnel's
@@ -86,6 +89,16 @@ type Instance struct {
 	// deadman is received somewhere the estate's own failure cannot
 	// reach, and a public ingress rule is one more thing that can be
 	// down when the estate is.
+	//
+	// At most one Instance may set this false. The box serves one
+	// combined private page by design (see "The shape" in
+	// docs/statusbox.md: every company's own component and every piece
+	// of cluster infrastructure belong on the SAME private page, not one
+	// each) and setup.sh's serve_private_instances forwards it to the
+	// tailnet on the one port that needs no port in the URL, 80 — a
+	// second private instance would need that same port 80 on the same
+	// box and cannot have it. Args.validate refuses a second one rather
+	// than let setup.sh silently pick a winner.
 	Public bool
 
 	// Config is the Gatus YAML for this instance, already rendered by
@@ -292,6 +305,7 @@ func (a Args) validate() error {
 	names := map[string]bool{}
 	ports := map[int]string{}
 	anyPublic := false
+	var privateNames []string
 
 	for i, inst := range a.Instances {
 		where := fmt.Sprintf("statusbox: instance[%d]", i)
@@ -327,7 +341,13 @@ func (a Args) validate() error {
 			if strings.TrimSpace(a.Hostnames[inst.Name]) == "" {
 				errs = append(errs, fmt.Errorf("%s: Public is true but Hostnames[%q] is empty. A public instance with no hostname is a page this box is about to serve with no tunnel ingress rule pointed at it — add the hostname to Args.Hostnames (setup.sh itself never sees it; the tunnel ingress is the estate's own edge configuration to own)", where, inst.Name))
 			}
+		} else if inst.Name != "" {
+			privateNames = append(privateNames, inst.Name)
 		}
+	}
+
+	if len(privateNames) > 1 {
+		errs = append(errs, fmt.Errorf("statusbox: %d instances are not Public (%s): this box serves at most one private instance. setup.sh forwards it to the tailnet on port 80 — the one port that needs no port in the URL an operator loads, http://<Hostname>/ — and a second private instance would need that same port 80 on the same box and cannot have it. Make every instance but one Public, or run the extra private instance on a second box", len(privateNames), strings.Join(privateNames, ", ")))
 	}
 
 	for name := range a.Hostnames {

@@ -82,6 +82,17 @@ func TestRefusals(t *testing.T) {
 			wantErr: `Public is true but Hostnames["example-co"] is empty`,
 		},
 		{
+			name: "two private instances",
+			mutate: func(a *statusbox.Args) {
+				// example-co was the Public one; making it private too
+				// means both instances are now Public: false, and the
+				// box can forward only one of them to the tailnet on
+				// port 80.
+				a.Instances[0].Public = false
+			},
+			wantErr: "this box serves at most one private instance",
+		},
+		{
 			name: "no version",
 			mutate: func(a *statusbox.Args) {
 				a.Version = ""

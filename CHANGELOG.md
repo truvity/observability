@@ -6,6 +6,29 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.1
+
+- **`setup.sh` now serves the status box's one private page on tailnet
+  port 80, not the instance's own `Port`** — an operator reaches it at
+  plain `http://<Hostname>/`, no port to remember or paste, the same
+  way MagicDNS already lets them reach the box by name alone. Plain
+  HTTP is intentional: the tailnet is WireGuard-encrypted end to end,
+  so a second TLS termination in front of a page nothing outside the
+  tailnet can even address buys nothing. Consumer-visible only if a
+  bookmark or a runbook still names the old `:<Port>` URL — update it
+  to drop the port.
+- **`pkg/statusbox.Args.validate` now refuses more than one non-`Public`
+  instance** — the box has always served one combined private page by
+  design (see docs/statusbox.md, "The shape"), and port 80 above makes
+  that a hard requirement rather than a preference: two private
+  instances cannot both claim it on the same box. A caller with two
+  today gets a refusal, not a box that silently forwards only one of
+  them; run the extra private page on a second box.
+- Bumping to this version replaces the box on next deploy, by design —
+  see docs/statusbox.md, "Immutable, by construction": a `setup.sh`
+  change is a `Version` change, and a `Version` change always replaces
+  the instance rather than re-running the new script on the old one.
+
 ## 0.7.0
 
 Two additions to `tenancy`, both opt-in on their OWN terms — a
