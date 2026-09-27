@@ -58,11 +58,15 @@ func validArgs() *statusboxlightsail.LightsailArgs {
 	}
 }
 
-// TestPublicPortsAreEmpty is the one property docs/statusbox.md asks a
-// unit test to prove directly: the firewall this package creates has an
-// empty port list, so an estate reviewing a plan sees "no port" rather
-// than the absence of a resource that might mean anything.
-func TestPublicPortsAreEmpty(t *testing.T) {
+// TestPublicPortsIsExactlyTailscale is the one property docs/statusbox.md
+// asks a unit test to prove directly: the firewall this package creates
+// admits exactly one public port — tailscaled's own WireGuard port,
+// 41641/udp — and nothing else, so an estate reviewing a plan sees that
+// one named port rather than the absence of a resource that might mean
+// anything. In particular, no TCP port is open: not SSH, not the status
+// page itself, both of which answer only over the tailnet (see
+// setup.sh).
+func TestPublicPortsIsExactlyTailscale(t *testing.T) {
 	stubChecksums(t)
 
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
@@ -73,7 +77,15 @@ func TestPublicPortsAreEmpty(t *testing.T) {
 
 		done := make(chan struct{})
 		box.PublicPorts.PortInfos.ApplyT(func(infos []lightsail.InstancePublicPortsPortInfo) []lightsail.InstancePublicPortsPortInfo {
-			require.Empty(t, infos, "the firewall must be declared with an empty port list, not omitted")
+			require.Len(t, infos, 1, "the firewall must declare exactly one public port")
+			port := infos[0]
+			require.Equal(t, 41641, port.FromPort, "the one public port must be tailscaled's own WireGuard port")
+			require.Equal(t, 41641, port.ToPort)
+			require.Equal(t, "udp", port.Protocol, "the one public port must be UDP only — no TCP port, including SSH or the status page, may be reachable through this firewall")
+			for _, other := range infos {
+				require.NotEqual(t, "tcp", other.Protocol, "no TCP port may be open")
+				require.NotEqual(t, "all", other.Protocol, "no all-protocol port may be open")
+			}
 			close(done)
 			return infos
 		})
