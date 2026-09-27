@@ -119,6 +119,52 @@ setup_tailscale() {
   tailscale up --authkey="$TS_AUTHKEY" --ssh --accept-dns=false
 }
 
+# serve_private_instances is how a PRIVATE instance (Public: false in the
+# manifest — gatus-ops, and any other instance meant to be reached only
+# over the private network) actually becomes reachable from the tailnet,
+# not just joined to it. Before this function existed, `setup_tailscale`
+# put the box on the tailnet but every Gatus container still only listened
+# on 127.0.0.1 (see write_compose) — nothing forwarded a tailnet peer's
+# connection to that loopback port, so the install's Alertmanager had no
+# path to gatus-ops's external-endpoint API for the deadman push described
+# in docs/statusbox.md ("internal → status"), despite the box appearing
+# joined and healthy.
+#
+# `tailscale serve --tcp` registers a forward inside tailscaled's own
+# userspace networking: it does not open a second host socket and so
+# never competes with write_compose's `127.0.0.1:<port>` bind, which is
+# why the instance's own Port is reused unchanged as the tailnet-side
+# port below. Plain TCP (not `--https`) is used deliberately: `--https`
+# ties the tailnet listener to one of a small fixed set of ports on some
+# tailscale releases, while `--tcp` accepts the instance's own port
+# as-is, and the tailnet already encrypts every byte in transit — a
+# second TLS termination in front of a machine-to-machine push buys
+# nothing here that WireGuard has not already provided.
+#
+# A Public instance (a company's status page) is reached through
+# cloudflared alone and is never registered here — the smallest tailnet
+# surface this box can have is none of the public pages on it at all.
+#
+# WHO on the tailnet may then reach a forwarded port is an ACL decision,
+# not one this script makes: see the estate's own tailnet policy (outside
+# this repository) for the grant that lets only the install's egress
+# identity reach `tag:statusbox` on these ports, and nothing else.
+serve_private_instances() {
+  if [ -z "${TS_AUTHKEY:-}" ]; then
+    log "TS_AUTHKEY is not set, skipping tailscale serve (expected in a test fixture; a real box always joins the tailnet)"
+    return
+  fi
+  local inst name port public
+  while IFS= read -r inst; do
+    name="$(jq -r '.name' <<<"$inst")"
+    port="$(jq -r '.port' <<<"$inst")"
+    public="$(jq -r '.public' <<<"$inst")"
+    [ "$public" = "true" ] && continue
+    log "serving ${name} to the tailnet on :${port} (tcp forward to 127.0.0.1:${port})"
+    tailscale serve --bg --tcp="${port}" "tcp://127.0.0.1:${port}"
+  done < <(jq -c '.instances[]' "$staged/manifest.json")
+}
+
 # cloudflared carries every Public instance's ingress rule through one
 # tunnel. TUNNEL_TOKEN is only set when at least one instance is Public —
 # see statusbox.Args.validate — so a box with nothing public simply never
@@ -241,6 +287,7 @@ main() {
   install_container_runtime
   install_jq
   setup_tailscale
+  serve_private_instances
   setup_cloudflared
   unpack_instances
   write_compose
