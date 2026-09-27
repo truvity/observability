@@ -120,9 +120,20 @@ func NewLightsail(ctx *pulumi.Context, name string, a *LightsailArgs, opts ...pu
 ```
 
 `NewLightsail` creates the instance with the rendered user-data, an
-`InstancePublicPorts` with an **empty** port list (the firewall closed
-by declaration), and a `Disk` + `DiskAttachment` for `/data` that
-survives the instance being replaced.
+`InstancePublicPorts` that admits **exactly one** port — tailscaled's
+own WireGuard port, 41641/udp, from and to `0.0.0.0/0` and `::/0` (the
+firewall closed by declaration to everything else: not SSH, not the
+status page itself, both of which answer only over the tailnet — see
+setup.sh) — and a `Disk` + `DiskAttachment` for `/data` that survives
+the instance being replaced.
+
+That one port is not a relaxation of "closed": Lightsail's API refuses
+an empty `port_info` outright (the AWS provider: "Not enough list
+items. Attribute port_info requires 1 item minimum"), so "nothing
+public" has to be one narrow, named port rather than zero. 41641/udp
+is authenticated WireGuard only — a peer still has to hold a key
+tailscaled will accept — and it is what lets the box take a direct
+tailnet connection instead of always relaying through DERP.
 
 Lightsail's user-data field accepts a single physical line — nothing
 else. It is not a cloud-init multi-part document and not a shebang
@@ -302,7 +313,8 @@ door); Gatus replicas with a shared database (coordinates nothing).
 ## Proof, before release
 
 - golden render of the cloud-init for a two-instance fixture;
-- a unit test that the public ports list is empty;
+- a unit test that the firewall admits exactly one public port —
+  41641/udp, tailscaled's own — and no TCP port at all;
 - `setup.sh` in CI, as above;
 - fixtures for the refusals: an instance with no config, two instances
   on one port, a public instance with no hostname, two instances that

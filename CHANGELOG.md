@@ -6,6 +6,27 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.2
+
+- **Fix: the status box's Lightsail firewall now declares exactly one
+  public port — 41641/udp, tailscaled's own WireGuard port — instead of
+  an empty port list.** An empty list was always meant to read as "no
+  port is public," but the AWS provider refuses that shape outright
+  (Lightsail's `port_info` requires at least one entry), so a real
+  `pulumi preview` against this package failed before it ever reached
+  the cloud. "Nothing public" is now the narrowest port that still
+  says that: 41641/udp only, open to both IPv4 and IPv6, so the box can
+  take a direct, authenticated tailnet connection instead of always
+  relaying through DERP. Nothing else changes — SSH and the status page
+  itself were never reachable through this firewall and still are not;
+  they answer only over the tailnet.
+- A consumer pins `statusbox.Args.Version` to a release of this
+  repository, so moving to this one to pick up the fix is itself a
+  `Version` change — see docs/statusbox.md, "Immutable, by
+  construction": the box is replaced on next deploy rather than
+  updated in place, by design; about two minutes of status-page blip,
+  the disk reattached, no history lost.
+
 ## 0.7.1
 
 - **`setup.sh` now serves the status box's one private page on tailnet

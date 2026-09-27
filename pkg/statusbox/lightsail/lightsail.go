@@ -38,6 +38,17 @@ const (
 	// exactly this path (see setup.sh), so a caller-chosen path would be
 	// a second place that has to agree with the first.
 	diskPath = "/dev/xvdf"
+
+	// tailscalePort is the one port this firewall admits: tailscaled's
+	// own WireGuard port, so the box can take a direct, authenticated
+	// connection from a peer instead of relaying through DERP. It is
+	// tailscaled's default (setup.sh never passes tailscaled or
+	// `tailscale up` a `--port`, so nothing on the box overrides it),
+	// not a value this package invented, and it is declared as UDP
+	// only — SSH and HTTP, including the status page itself, stay
+	// reachable over the tailnet alone (see setup.sh), never through
+	// this firewall.
+	tailscalePort = 41641
 )
 
 // LightsailArgs is statusbox.Args plus the little this one provider
@@ -80,9 +91,9 @@ type Box struct {
 	// DiskAttachment are reattached to the new one, no history lost.
 	Instance *awslightsail.Instance
 
-	// PublicPorts is the instance's firewall, and it is created with an
-	// EMPTY port list — see NewLightsail's doc comment for why that is
-	// the point rather than an oversight.
+	// PublicPorts is the instance's firewall, and it admits exactly one
+	// port — tailscalePort, UDP only — see NewLightsail's doc comment
+	// for why that is the point rather than an oversight.
 	PublicPorts *awslightsail.InstancePublicPorts
 
 	// Disk and DiskAttachment are the /data volume every Gatus
@@ -97,16 +108,28 @@ type Box struct {
 	DiskAttachment *awslightsail.Disk_attachment
 }
 
-// NewLightsail creates the box: the instance, its closed firewall, and
-// the disk that outlives it.
+// NewLightsail creates the box: the instance, its firewall, and the disk
+// that outlives it.
 //
-// The firewall is closed BY DECLARATION. aws.lightsail.InstancePublicPorts
-// is not omitted — omitting it would leave whatever the provider or a
-// prior apply left open, silently, as a default nobody chose — it is
-// created with PortInfos set to an empty list, which Lightsail's API
-// reads as "close everything." A later change to this package that adds
-// a port therefore shows up as a diff on THIS resource, in review, rather
-// than as a port that was simply never declared shut.
+// The firewall is declared, not omitted — omitting it would leave
+// whatever the provider or a prior apply left open, silently, as a
+// default nobody chose — and it admits exactly one port:
+// tailscalePort/udp, from and to 0.0.0.0/0 and ::/0 (the instance is
+// dualstack). That is authenticated WireGuard only — a peer still has
+// to hold a key tailscaled will accept — and it is what lets this box
+// take a direct connection from another tailnet peer instead of always
+// relaying through Tailscale's DERP servers. Nothing else is open:
+// aws.lightsail.InstancePublicPorts previously declared this same
+// resource with an EMPTY PortInfos list, which Lightsail's API read as
+// "close everything," but the AWS provider refuses that shape outright
+// ("Not enough list items. Attribute port_info requires 1 item
+// minimum") — port_info always needs at least one entry, so "nothing
+// public" has to be one narrow, named port rather than zero. SSH and
+// HTTP — including the status page itself — are not reachable through
+// this firewall at all; they answer only over the tailnet (see
+// setup.sh). A later change to this package that widens the port list
+// therefore shows up as a diff on THIS resource, in review, rather than
+// as a port that was simply never declared shut.
 func NewLightsail(ctx *pulumi.Context, name string, a *LightsailArgs, opts ...pulumi.ResourceOption) (*Box, error) {
 	if a == nil {
 		return nil, fmt.Errorf("statusbox/lightsail: NewLightsail(%q, ...): args is nil", name)
@@ -152,7 +175,15 @@ func NewLightsail(ctx *pulumi.Context, name string, a *LightsailArgs, opts ...pu
 
 	publicPorts, err := awslightsail.NewInstancePublicPorts(ctx, name, &awslightsail.InstancePublicPortsArgs{
 		InstanceName: instance.Name,
-		PortInfos:    awslightsail.InstancePublicPortsPortInfoArray{},
+		PortInfos: awslightsail.InstancePublicPortsPortInfoArray{
+			awslightsail.InstancePublicPortsPortInfoArgs{
+				FromPort:  pulumi.Int(tailscalePort),
+				ToPort:    pulumi.Int(tailscalePort),
+				Protocol:  pulumi.String("udp"),
+				Cidrs:     pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				Ipv6Cidrs: pulumi.StringArray{pulumi.String("::/0")},
+			},
+		},
 	}, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("statusbox/lightsail: NewLightsail(%q, ...): public ports: %w", name, err)
