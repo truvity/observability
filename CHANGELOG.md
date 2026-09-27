@@ -6,6 +6,26 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.6.1
+
+- **Fix: `charts/observability-emitters`'s `kube-state-metrics`
+  `ServiceMonitor` latches `OutOfSync` forever** — the five `replace`
+  steps in the default `kube-state-metrics.prometheus.monitor.http.
+  metricRelabelings` chain (the four `exported_<name>` restores plus the
+  final `namespace`-to-`k8s_namespace_name` derivation) left `action`
+  unset. That is also `replace`'s default, but only for whoever reads
+  the YAML: the `monitoring.coreos.com` `ServiceMonitor` CRD's
+  structural schema fills the field in on admission, so the object
+  actually stored in the cluster always carries it, and a rendered
+  manifest that omits it never matches that stored object byte-for-byte
+  — the same class of latch as the earlier `record: ""` `VMRule` issue.
+  `action: replace` is now written out on all five steps; no relabel
+  behavior changes, and `metricRelabelings` overridden by a consumer is
+  unaffected either way. A new test
+  (`tests/relabel_action_defaults_test.go`) fails the build if any
+  future `ServiceMonitor`/`PodMonitor` relabeling in any golden omits
+  `action` again.
+
 ## 0.6.0
 
 - **New value: `charts/observability-emitters`** — `kubeStateMetrics`,

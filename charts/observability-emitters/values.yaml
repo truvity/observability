@@ -618,16 +618,30 @@ kube-state-metrics:
           #    object had one — `(.+)` requires a non-empty match, so a
           #    series with no `exported_<name>` (nothing collided; the
           #    object never had that field) sets nothing here.
-          - sourceLabels: [exported_namespace]
+          #
+          #    `action` is written out as `replace` on every one of
+          #    these, even though it is the monitoring.coreos.com
+          #    ServiceMonitor CRD's own structural-schema default: an
+          #    omitted field is a field the API server fills in on
+          #    admission, not one that stays absent in the stored
+          #    object, so the LIVE ServiceMonitor always carries it —
+          #    and a rendered manifest that leaves it out diffs against
+          #    that stored object forever, the exact same class of
+          #    latch as this chart's own `record: ""` VMRule issue.
+          - action: replace
+            sourceLabels: [exported_namespace]
             regex: (.+)
             targetLabel: namespace
-          - sourceLabels: [exported_pod]
+          - action: replace
+            sourceLabels: [exported_pod]
             regex: (.+)
             targetLabel: pod
-          - sourceLabels: [exported_container]
+          - action: replace
+            sourceLabels: [exported_container]
             regex: (.+)
             targetLabel: container
-          - sourceLabels: [exported_service]
+          - action: replace
+            sourceLabels: [exported_service]
             regex: (.+)
             targetLabel: service
           # 3. The `exported_` twins have done their job.
@@ -637,6 +651,7 @@ kube-state-metrics:
           #    one, and absent where it does not (a cluster-scoped
           #    kind) — derive the scoping key from THIS, not from the
           #    target's stamp step 1 removed.
-          - sourceLabels: [namespace]
+          - action: replace
+            sourceLabels: [namespace]
             regex: (.+)
             targetLabel: k8s_namespace_name

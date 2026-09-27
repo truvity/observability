@@ -150,24 +150,41 @@ metricRelabelings:
     regex: k8s_namespace_name
   - action: labeldrop
     regex: (namespace|pod|container|service)
-  - sourceLabels: [exported_namespace]
+  - action: replace
+    sourceLabels: [exported_namespace]
     regex: (.+)
     targetLabel: namespace
-  - sourceLabels: [exported_pod]
+  - action: replace
+    sourceLabels: [exported_pod]
     regex: (.+)
     targetLabel: pod
-  - sourceLabels: [exported_container]
+  - action: replace
+    sourceLabels: [exported_container]
     regex: (.+)
     targetLabel: container
-  - sourceLabels: [exported_service]
+  - action: replace
+    sourceLabels: [exported_service]
     regex: (.+)
     targetLabel: service
   - action: labeldrop
     regex: exported_(namespace|pod|container|service)
-  - sourceLabels: [namespace]
+  - action: replace
+    sourceLabels: [namespace]
     regex: (.+)
     targetLabel: k8s_namespace_name
 ```
+
+Every `replace` step above spells out `action: replace` even though it
+is also the default. It has to: the monitoring.coreos.com
+`ServiceMonitor` CRD's structural schema defaults an omitted `action`
+to `replace` on ADMISSION, not merely for whoever reads the YAML, so
+the object actually stored in the cluster (and reported back by
+`kubectl get -o yaml`) always carries it. A rendered manifest that
+leaves `action` out matches that stored object in every way that runs,
+but not byte-for-byte — and ArgoCD's diff is byte-for-byte, so it stays
+`OutOfSync` forever on a field nothing ever changed. Same class of
+problem as this chart's earlier `record: ""` `VMRule` issue: write out
+what the server would otherwise fill in for you.
 
 Order is load-bearing at every step: the bare-name drop before the
 restore (so the restore writes into a label already cleared of the

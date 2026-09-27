@@ -1173,24 +1173,36 @@ metricRelabelings:
     regex: k8s_namespace_name
   - action: labeldrop
     regex: (namespace|pod|container|service)
-  - sourceLabels: [exported_namespace]
+  - action: replace
+    sourceLabels: [exported_namespace]
     regex: (.+)
     targetLabel: namespace
-  - sourceLabels: [exported_pod]
+  - action: replace
+    sourceLabels: [exported_pod]
     regex: (.+)
     targetLabel: pod
-  - sourceLabels: [exported_container]
+  - action: replace
+    sourceLabels: [exported_container]
     regex: (.+)
     targetLabel: container
-  - sourceLabels: [exported_service]
+  - action: replace
+    sourceLabels: [exported_service]
     regex: (.+)
     targetLabel: service
   - action: labeldrop
     regex: exported_(namespace|pod|container|service)
-  - sourceLabels: [namespace]
+  - action: replace
+    sourceLabels: [namespace]
     regex: (.+)
     targetLabel: k8s_namespace_name
 ```
+
+`action: replace` is written out on every restore step above although
+it is also the CRD's own default: `monitoring.coreos.com`'s structural
+schema fills it in on admission, so the object the server stores always
+carries it, and leaving it out of the rendered manifest would diff
+against that stored object forever — see docs/kube-state-metrics.md for
+the full argument.
 
 Order is load-bearing at every step, not merely tidy: the bare-name drop
 has to run before the restore (the restore writes into a label that must
