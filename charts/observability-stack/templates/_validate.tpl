@@ -23,7 +23,7 @@ second debugging session.
 {{- include "observability-stack.validate.selfAlerts" . -}}
 {{- include "observability-stack.validate.evaluateOnly" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
-{{- include "observability-stack.validate.vendoredRules" . -}}
+{{- include "observability-stack.validate.watchdogSource" . -}}
 {{- include "observability-stack.validate.scrapeFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
@@ -418,29 +418,25 @@ override leaves the ServiceMonitor converter off.
 {{- end -}}
 
 {{/*
-The vendored default alerting rules, off.
+A Watchdog from somewhere, always.
 
-`victoria-metrics-k8s-stack`'s own sync job fetches rule sources over
-the network and applies them to the cluster DIRECTLY — invisible to
-`helm template`, and to every golden render this repository has, which
-is exactly how this went unnoticed for as long as it did:
-`defaultRules.create: false` reads like the off switch and is not one.
-The sync job's own gate is `defaultRules.enabled` OR
-`defaultRules.create`, and `enabled` defaults to `true` upstream — so
-with only `create` set, every rule source with no per-source `enabled`
-override is still fetched and applied live. One of them, measured
-directly against this chart's own golden renders, is kube-prometheus's
-own combined rule manifest, carrying no such override — and its
-`general.rules` group carries a `Watchdog` alert of its own, duplicating
-the one this chart renders itself (`templates/watchdog.yaml`) the
-moment both exist. `defaultRules.enabled: false` is the key that
-actually stops the sync job populating any rule source at all; this
-chart ships it that way, and this refusal is what keeps it that way.
+Two sources, and the chart picks whichever one is not already covering
+it (see `observability-stack.vendoredWatchdogPresent` in _helpers.tpl):
+`victoria-metrics-k8s-stack`'s own vendored default rule set — ON here
+by default, and the reason it stays on, because it is also where
+several rules with no `charts/platform-alerts` equivalent come from —
+or, when that is turned off, this chart's own `templates/watchdog.yaml`.
+Turning BOTH off at once is the one combination that leaves the status
+box's deadman (docs/statusbox.md, "internal → status, pulled") with
+nothing to read: not a rule this chart carries, and not one the
+vendored set carries either.
 */}}
-{{- define "observability-stack.validate.vendoredRules" -}}
+{{- define "observability-stack.validate.watchdogSource" -}}
 {{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
-{{- if and $vmks.enabled (($vmks.defaultRules).enabled) -}}
-{{- fail "observability-stack: victoria-metrics-k8s-stack.defaultRules.enabled is true. Its sync job fetches rule sources over the network and applies them directly to the cluster — invisible to `helm template` — and at least one of them (kube-prometheus's own combined rule manifest) carries a `general.rules` group with its own `Watchdog` alert, duplicating this chart's own the moment it exists, plus every other rule that manifest and its siblings carry, none of which this chart tests or reviews. The rules are `charts/platform-alerts` and this chart's own Watchdog (`templates/watchdog.yaml`). Set `victoria-metrics-k8s-stack.defaultRules.enabled: false`." -}}
+{{- if and $vmks.enabled .Values.vmalert.enabled -}}
+{{- if and (not (include "observability-stack.vendoredWatchdogPresent" .)) (not .Values.vmalert.watchdog.enabled) -}}
+{{- fail "observability-stack: victoria-metrics-k8s-stack's vendored default rule set is off (`defaultRules.enabled: false`, or its `general.rules` group specifically disabled) AND `vmalert.watchdog.enabled` is false. Between them, this install renders no Watchdog alert at all — not the vendored one, not this chart's own — and the status box's deadman (docs/statusbox.md) depends on one existing to read. Turn one of the two back on." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

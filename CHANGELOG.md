@@ -41,20 +41,24 @@ before this release — no `alertReaders`, no per-principal `audience` or
   chose rather than whatever the provider's image happened to boot with.
   Every existing caller sets one: this is a required field, not a
   default that moved.
-- **Fix: a second, vendored `Watchdog` alert, invisible to every render
-  in this repository** — `victoria-metrics-k8s-stack.defaultRules.create:
-  false` looked like the off switch for the vendored default rule set and
-  was not one: the sync job that fetches and applies those rules gates on
-  `defaultRules.enabled` OR `defaultRules.create`, and `enabled` defaults
-  to `true` upstream, so a rule source with no override of its own —
-  kube-prometheus's own combined rule manifest among them — was still
-  fetched and applied directly to the cluster, live, on every install.
-  That manifest's own `general.rules` group carries a `Watchdog` alert,
-  duplicating this chart's own the moment both exist — invisible to `helm
-  template` because the sync job is a controller, not a Helm template.
-  `victoria-metrics-k8s-stack.defaultRules.enabled` is now `false` (the
-  key that actually stops it), and a new refusal
-  (`observability-stack.validate.vendoredRules`) keeps it that way.
+- **Fix: this chart's own `Watchdog` could duplicate the vendored one** —
+  `victoria-metrics-k8s-stack` carries its own vendored default rule set
+  (ON here, deliberately: it is where several rules with no
+  `charts/platform-alerts` equivalent come from), applied directly to
+  the cluster by a sync job — invisible to `helm template` — and its
+  `general.rules` group is also where this install's `Watchdog` alert
+  comes from by default. `templates/watchdog.yaml`, this chart's own
+  Watchdog, now renders only when that vendored one is NOT presumed
+  present (`defaultRules` turned off, or its `general.rules` group
+  specifically) — never both. Turning both off at once is refused
+  (`observability-stack.validate.watchdogSource`): the status box's
+  deadman depends on exactly one existing to read, from either source.
+  One thing this render-time check cannot confirm: the vendored rule
+  set's own CONTENT is fetched over the network at apply time, so that
+  its `general.rules` group carries `Watchdog` is this design leaning on
+  an unchanged, years-old convention across this rule family rather than
+  something checked against the fetched file itself — see docs/safety.md,
+  "One Watchdog, from whichever source is not already there".
 - **New per-principal `tenancy.principals[].audience` and
   `tenancy.principals[].routes` / `metricsQueryOnly`** — a machine reader
   in the shape a verification gate needs: its own token audience (the
