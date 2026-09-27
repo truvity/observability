@@ -41,6 +41,7 @@ func validArgs() statusbox.Args {
 			{Name: "example-co", Port: 8081, Public: true, Config: "endpoints: []\n"},
 			{Name: "ops", Port: 8084, Public: false, Config: "external-endpoints: []\n"},
 		},
+		Hostname:  "statusbox",
 		Hostnames: map[string]string{"example-co": "status.example.test"},
 		Secrets: statusbox.Secrets{
 			TailscaleAuthKey: pulumi.String("test-tailscale-authkey"),
@@ -86,6 +87,20 @@ func TestRefusals(t *testing.T) {
 				a.Version = ""
 			},
 			wantErr: "Version is empty",
+		},
+		{
+			name: "no hostname",
+			mutate: func(a *statusbox.Args) {
+				a.Hostname = ""
+			},
+			wantErr: "Hostname is empty",
+		},
+		{
+			name: "hostname is not a valid shape",
+			mutate: func(a *statusbox.Args) {
+				a.Hostname = "Status.Box"
+			},
+			wantErr: "is not a valid name",
 		},
 		{
 			name: "no instances",

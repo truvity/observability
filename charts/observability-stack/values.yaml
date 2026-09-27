@@ -278,6 +278,39 @@ tenancy:
   # never a value. A writer may not read — its paths are the write paths
   # of the destinations it names, and nothing else.
   writers: []
+  # -- Admit the alerts-reader route although nothing can scope it.
+  #
+  # vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster
+  # concept to filter on — it lists every active alert this install's
+  # METRICS vmalert is evaluating, cluster-wide, the same "nothing
+  # scopes this route" shape `allowUnfilteredTraceReads` already exists
+  # for. So with a metrics vmalert enabled and `alertReaders` both set,
+  # the chart refuses to render until this is `true`: **every reader
+  # named below reads every active alert on this install.** It admits
+  # the alerts route and nothing else — the stores' own read routes are
+  # unaffected.
+  allowUnfilteredAlertReads: false
+  # -- Bearer-token readers of vmalert's own `/api/v1/alerts` — a
+  # different shape from `principals` (a person's OIDC identity, scoped
+  # per namespace) and from `writers` (a bearer token, write-only): this
+  # is a bearer token that may READ one route with nothing to scope it
+  # by, for a caller outside the estate's own issuer entirely — the
+  # status box pulling the deadman and the per-company signal off this
+  # install's own alerting state (docs/statusbox.md "internal → status,
+  # pulled").
+  #
+  #   alertReaders:
+  #     - name: statusbox
+  #       tokenSecret:
+  #         name: example-alerts-read-token
+  #         key: token
+  #
+  # Only the METRICS vmalert is routed to (see vmalert.watchdog's own
+  # doc comment: the Watchdog rule is always evaluated there). A rule
+  # that needs the LOGS alerter's own active-alert state is not reachable
+  # through this route yet — nothing in this repository writes one today
+  # (docs/statusbox.md, "internal → status, pulled").
+  alertReaders: []
 
 # -- The credentials the stores themselves demand.
 #
@@ -354,6 +387,23 @@ vmalert:
   externalUrl: ""
   # -- Labels on every alert and recording rule these vmalerts produce.
   externalLabels: {}
+  # -- The heartbeat: templates/watchdog.yaml's `Watchdog` VMRule, always
+  # firing while the metrics alerter is evaluating rules at all.
+  #
+  # Independent of `alertmanager.*`, on purpose (docs/statusbox.md
+  # "internal → status, pulled"): the rule is read two ways — pushed,
+  # through `alertmanager.watchdog.secretName`'s route, or pulled
+  # directly off vmalert's own `/api/v1/alerts` (`tenancy.alertReaders`)
+  # — and only the first needs Alertmanager at all. An install with
+  # `notifications.mode: evaluate-only` renders no VMAlertmanager (that
+  # mode refuses `alertmanager.enabled: true`), so trapping this rule
+  # inside `alertmanager.enabled` — where it used to live — would leave
+  # such an install with no Watchdog for anything to read, pushed or
+  # pulled. Default true: an estate already pushing this alert through
+  # Alertmanager is not asked to also opt in to evaluating it: only
+  # turning it OFF is a decision to make on purpose.
+  watchdog:
+    enabled: true
   resources:
     requests:
       cpu: "1"

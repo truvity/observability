@@ -69,6 +69,7 @@ func twoInstanceArgs() Args {
 					"        webhook-url: \"${ALERT_URL_SLACK}\"\n",
 			},
 		},
+		Hostname: "statusbox",
 		Hostnames: map[string]string{
 			"example-co": "status.example.test",
 		},

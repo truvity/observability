@@ -74,6 +74,14 @@ tenancy:
         name: example-writer-token
         key: token
       destinations: [metrics, logs, traces]
+  # The alerts-reader route: nothing scopes it, so this case also proves
+  # the refusal is satisfied rather than tripped (allowUnfilteredAlertReads).
+  allowUnfilteredAlertReads: true
+  alertReaders:
+    - name: statusbox
+      tokenSecret:
+        name: example-alerts-read-token
+        key: token
 
 storeCredentials:
   secretName: example-store-credentials

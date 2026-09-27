@@ -6,6 +6,38 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.0
+
+- **New: `tenancy.alertReaders` / `tenancy.allowUnfilteredAlertReads`** —
+  a bearer-token reader of vmalert's own `/api/v1/alerts`, the mechanism
+  the status box's PULLED deadman and per-company signal are built on
+  (docs/statusbox.md, "internal → status, pulled"): a caller outside the
+  estate's own issuer reads the metrics alerter's active alerts —
+  whether `Watchdog` is present, whether an alert with `customer_facing`
+  and `company` labels is firing — with one bearer token, on one route
+  this proxy did not forward anywhere before. Unscoped, the same way
+  trace reads are: refused until `allowUnfilteredAlertReads: true` says
+  every reader below sees every alert. `networkPolicy` now also selects
+  vmalert's own pods, admitting only the proxy and the metrics-scrape
+  peer — the same belt-and-braces the three stores already had, closed
+  now that something outside this namespace reads from it directly.
+- **Fix: the `Watchdog` VMRule was trapped inside `alertmanager.enabled`**
+  — an install with `notifications.mode: evaluate-only` (which refuses
+  `alertmanager.enabled: true`) rendered no VMAlertmanager and, because
+  the rule lived in that same template, no `Watchdog` alert either: the
+  one thing an outside watcher waits for did not exist to wait for. The
+  rule is now its own template (`templates/watchdog.yaml`), gated on the
+  new `vmalert.watchdog.enabled` (default `true`) and nothing else — read
+  PUSHED, through `alertmanager.watchdog`'s route, same as before, or
+  PULLED, through `tenancy.alertReaders`, with no Alertmanager at all.
+- **`pkg/statusbox`: `Args.Hostname`, required** — the box's own tailnet
+  device name (`setup.sh` now runs `tailscale up --hostname=`), so an
+  estate that wants a DNS record pointing at the box across a
+  replacement (MagicDNS: `<Hostname>.<tailnet>.ts.net`) has a name it
+  chose rather than whatever the provider's image happened to boot with.
+  Every existing caller sets one: this is a required field, not a
+  default that moved.
+
 ## 0.6.2
 
 - **Fix: `setup.sh` never made a private instance (`Public: false` —

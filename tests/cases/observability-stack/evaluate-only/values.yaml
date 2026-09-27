@@ -37,6 +37,16 @@ tenancy:
       grants:
         - cluster: example-cluster
           allNamespaces: true
+  # The realistic evaluate-only shape (docs/statusbox.md "internal →
+  # status, pulled"): no Alertmanager at all, and the Watchdog VMRule
+  # (templates/watchdog.yaml) is still there for this to read — proving
+  # the rule is no longer trapped inside `alertmanager.enabled`.
+  allowUnfilteredAlertReads: true
+  alertReaders:
+    - name: statusbox
+      tokenSecret:
+        name: example-alerts-read-token
+        key: token
 
 notifications:
   mode: evaluate-only

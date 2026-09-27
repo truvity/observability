@@ -205,4 +205,37 @@ spec:
     {{- end }}
     {{- end }}
 {{- end }}
+{{- /*
+The alert readers: a bearer token that may READ vmalert's own
+`/api/v1/alerts` and nothing else — see `tenancy.alertReaders`'s own doc
+comment in values.yaml for why this is neither a `principal` (a person's
+OIDC identity) nor a `writer` (write-only).
+
+Gated the same way the trace route is (`allowUnfilteredTraceReads`):
+_validate.tpl refuses `alertReaders` without `allowUnfilteredAlertReads`
+set, because nothing here scopes the route by cluster or namespace.
+*/}}
+{{- range $r := .Values.tenancy.alertReaders }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-alerts-%s" $fullname $r.name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.role: alert-reader
+spec:
+  name: {{ $r.name | quote }}
+  disable_secret_creation: true
+  tokenRef:
+    name: {{ $r.tokenSecret.name | quote }}
+    key: {{ $r.tokenSecret.key | quote }}
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    - static:
+        url: {{ include "observability-stack.vmalert.metrics.url" $root | quote }}
+      paths:
+        {{- include "observability-stack.readPaths.alerts" $root | nindent 8 }}
+{{- end }}
 {{- end }}

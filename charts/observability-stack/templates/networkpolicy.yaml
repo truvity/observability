@@ -68,6 +68,54 @@ spec:
 {{- end }}
 ---
 {{- /*
+vmalert's own ingress, the same belt-and-braces the stores get: nothing
+selected vmalert's pods before `tenancy.alertReaders` existed, because
+nothing outside this namespace read from it directly -- every consumer
+either fed it rules or was fed BY it (`remoteWrite`/`remoteRead` against
+the metrics store, which the store's own policy already gates). Now that
+the proxy forwards a bearer-token reader straight to it
+(`tenancy.alertReaders`, vmusers.yaml), it is exactly the kind of "a rule
+engine nobody else can reach" gap docs/safety.md's store section warns
+about, one port later -- so it gets the same default-deny-then-admit
+shape as a store, unconditionally, the moment vmalert is enabled: an
+install that never sets `tenancy.alertReaders` pays nothing for it, and
+one that does is not the first to discover the gap by tripping over it.
+
+Selector is name-only, matching every vmalert pod this namespace runs
+(both alerters), the same way `$peers` above already admits vmalert
+into the STORES by name alone rather than by the operator's own
+per-CR instance label.
+*/}}
+{{- if $root.Values.vmalert.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-vmalert
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vmalert
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmauth
+              app.kubernetes.io/instance: {{ $fullname }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        {{- toYaml ($root.Values.networkPolicy.scrapeFrom | default $scrapeDefault) | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 8080
+{{- end }}
+---
+{{- /*
 The proxy's own ingress. Empty `proxyFrom` means the release's namespace
 and nothing else — the smallest rule that leaves a working install, and
 the one an estate whose Grafana lives elsewhere has to widen on purpose.

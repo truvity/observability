@@ -147,6 +147,22 @@ type Args struct {
 
 	Secrets Secrets
 
+	// Hostname is the box's OWN tailnet device name — the OS hostname
+	// `setup.sh` passes to `tailscale up --hostname=`, distinct from
+	// (and not to be confused with) Hostnames below, which is about a
+	// PUBLIC instance's page, not the box itself.
+	//
+	// Required, and shaped like an Instance.Name for the same reason:
+	// without it the box joins under whatever hostname the provider's
+	// own image happens to boot with, which is not a fact CloudInit
+	// controls or a caller can predict — and an estate that wants to
+	// reach the box by a stable tailnet name (MagicDNS: `<Hostname>.
+	// <tailnet>.ts.net`), including from a DNS record that follows the
+	// box across a replacement, needs that name to be a fact it chose
+	// rather than one it has to go and read off a running instance
+	// after the fact.
+	Hostname string
+
 	// Hostnames maps an Instance.Name to the public hostname its tunnel
 	// ingress rule is expected to carry. It is never rendered into the
 	// script — setup.sh "knows no hostname" by design, see
@@ -262,6 +278,13 @@ func (a Args) validate() error {
 		errs = append(errs, errors.New("statusbox: Version is empty: setup.sh and checksums.txt are fetched from a release of this repository named by Version, and there is no release named \"\""))
 	}
 
+	switch {
+	case a.Hostname == "":
+		errs = append(errs, errors.New("statusbox: Hostname is empty: the box needs a stable tailnet device name, and an unset one leaves it whatever the provider's image happens to boot with"))
+	case !instanceNameRE.MatchString(a.Hostname):
+		errs = append(errs, fmt.Errorf("statusbox: Hostname %q is not a valid name (%s): it is passed to `tailscale up --hostname=`, so a name outside this shape is refused rather than escaped", a.Hostname, instanceNameRE))
+	}
+
 	if len(a.Instances) == 0 {
 		errs = append(errs, errors.New("statusbox: no instances: a box with nothing to run is not a box worth provisioning"))
 	}
@@ -354,6 +377,7 @@ func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals map
 
 	fmt.Fprintf(&b, "export STATUSBOX_VERSION=%s\n", shellQuote(a.Version))
 	fmt.Fprintf(&b, "export STATUSBOX_SETUP_SHA256=%s\n", shellQuote(setupSHA256))
+	fmt.Fprintf(&b, "export TS_HOSTNAME=%s\n", shellQuote(a.Hostname))
 	fmt.Fprintf(&b, "export TS_AUTHKEY=%s\n", shellQuote(tailscaleKey))
 	fmt.Fprintf(&b, "export TUNNEL_TOKEN=%s\n", shellQuote(tunnelToken))
 	for _, k := range sortedStringKeys(alertVals) {

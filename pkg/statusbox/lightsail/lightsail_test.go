@@ -48,7 +48,8 @@ func validArgs() *statusboxlightsail.LightsailArgs {
 				{Name: "example-co", Port: 8081, Public: true, Config: "endpoints: []\n"},
 				{Name: "ops", Port: 8084, Public: false, Config: "external-endpoints: []\n"},
 			},
-			Hostnames: map[string]string{"example-co": "status.example.test"},
+			Hostname:  "statusbox",
+		Hostnames: map[string]string{"example-co": "status.example.test"},
 			Secrets: statusbox.Secrets{
 				TailscaleAuthKey: pulumi.String("test-tailscale-authkey"),
 				TunnelToken:      pulumi.String("test-tunnel-token"),

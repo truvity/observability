@@ -27,6 +27,7 @@ second debugging session.
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
+{{- include "observability-stack.validate.alertReaders" . -}}
 {{- include "observability-stack.validate.grafana" . -}}
 {{- include "observability-stack.validate.routeOverlap" . -}}
 {{- end -}}
@@ -750,6 +751,7 @@ is refused rather than trusted.
     (fromYamlArray (include "observability-stack.readPaths.metrics" .))
     (fromYamlArray (include "observability-stack.readPaths.logs" .))
     (fromYamlArray (include "observability-stack.readPaths.traces" .))
+    (fromYamlArray (include "observability-stack.readPaths.alerts" .))
     (fromYamlArray (include "observability-stack.writePaths.metrics" .))
     (fromYamlArray (include "observability-stack.writePaths.logs" .))
     (fromYamlArray (include "observability-stack.writePaths.traces" .))
@@ -763,6 +765,28 @@ is refused rather than trusted.
 {{- fail (printf "observability-stack: the route %q matches the denied path %q. `/internal/*` carries the partition and snapshot APIs, and those endpoints have their own query-string auth keys which OVERRIDE `-httpAuth.*` — so a route to them through this proxy is a route around the stores' own authentication." $path $denied) -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`tenancy.alertReaders`: the same "nothing scopes this route" refusal
+`allowUnfilteredTraceReads` already exists for, one route earlier.
+
+vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster
+concept at all — there is no filter to substitute into it the way a
+principal's grant substitutes into the metrics and logs routes. A
+reader given this route reads every active alert this install's METRICS
+vmalert is evaluating, cluster-wide, whatever else is configured beside
+it. Rendering it anyway, because it looks like an ordinary read route,
+is the same failure the trace refusal exists to prevent.
+*/}}
+{{- define "observability-stack.validate.alertReaders" -}}
+{{- $t := .Values.tenancy -}}
+{{- if and $t.alertReaders (not $t.allowUnfilteredAlertReads) -}}
+{{- fail "observability-stack: `tenancy.alertReaders` is set but `tenancy.allowUnfilteredAlertReads` is not. vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster concept to filter on, so a reader given this route reads every active alert this install's metrics vmalert is evaluating, cluster-wide. Set `tenancy.allowUnfilteredAlertReads: true` and record that every reader below sees every alert, or remove `tenancy.alertReaders`." -}}
+{{- end -}}
+{{- if and $t.alertReaders (not .Values.vmalert.enabled) -}}
+{{- fail "observability-stack: `tenancy.alertReaders` is set but `vmalert.enabled` is false. There is no vmalert for this route to read." -}}
 {{- end -}}
 {{- end -}}
 
