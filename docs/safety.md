@@ -1622,6 +1622,30 @@ admits `networkPolicy.scrapeFrom` on 8435 too, and
 `TestProxyPolicyAdmitsReloaderScrape` (tests/networkpolicy_test.go)
 proves it against every golden the proxy's NetworkPolicy renders into.
 
+vmalert's own policy (added for `tenancy.alertReaders`) shipped the
+identical gap on its FIRST render, not a later regression: the operator
+injects the same config-reloader sidecar into vmalert pods, on the same
+`reloader-http` port, and the policy that selects them admitted vmauth
+and the scrape peer on 8080 (vmalert's own API and `/metrics`) and
+stopped there — 8435 answered at the socket and dropped every sample at
+admission, the identical `up=0` and permanently firing
+`TargetDown`/`ServiceDown` on a pod that is otherwise perfectly healthy.
+Every rule in `charts/platform-alerts` and this chart's own `selfAlerts`
+that watches this job's own scrape health depends on the sample that
+never arrived. Fixed the same way, reusing the SAME peer expression
+(`networkPolicy.scrapeFrom`, falling back to the same default the store
+and proxy policies do — never a second, separately hard-coded one):
+vmalert's policy now admits the scrape peer on 8435 too, and
+`TestVmalertPolicyAdmitsReloaderScrape` (tests/networkpolicy_test.go)
+proves it against every golden the vmalert NetworkPolicy renders into.
+
+This policy — like the three store policies above — renders
+unconditionally the moment `vmalert.enabled` and `networkPolicy.enabled`
+are both true (the defaults), whether or not `tenancy.alertReaders` is
+ever set: the same "pay nothing until you need it, and are not the
+first to find the gap by tripping over it" choice this file argues for
+throughout. Consumer-visible on upgrade regardless — see CHANGELOG.
+
 ## A convention a chart could not enforce, until it could
 
 **A backup job must refuse an empty source.** `rclone sync` against an

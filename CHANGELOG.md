@@ -8,9 +8,14 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## 0.7.0
 
-Two additions to `tenancy`, both opt-in: a values file that used neither
-before this release — no `alertReaders`, no per-principal `audience` or
-`routes` — renders byte-identically to 0.6.2.
+Two additions to `tenancy`, both opt-in on their OWN terms — a
+`principals` entry that sets neither `audience` nor `routes` renders
+byte-identically to 0.6.2, and an install that sets no `alertReaders`
+gets no reader — but one consumer-visible change reaches every install
+regardless, described in its own bullet below: a new default-deny
+`NetworkPolicy` now selects vmalert's own pods whenever `vmalert.enabled`
+and `networkPolicy.enabled` are both true (both defaults), whether or
+not `alertReaders` is ever set.
 
 - **New: `tenancy.alertReaders` / `tenancy.allowUnfilteredAlertReads`** —
   a bearer-token reader of vmalert's own `/api/v1/alerts`, the mechanism
@@ -21,10 +26,21 @@ before this release — no `alertReaders`, no per-principal `audience` or
   and `company` labels is firing — with one bearer token, on one route
   this proxy did not forward anywhere before. Unscoped, the same way
   trace reads are: refused until `allowUnfilteredAlertReads: true` says
-  every reader below sees every alert. `networkPolicy` now also selects
-  vmalert's own pods, admitting only the proxy and the metrics-scrape
-  peer — the same belt-and-braces the three stores already had, closed
-  now that something outside this namespace reads from it directly.
+  every reader below sees every alert.
+- **`networkPolicy` now also selects vmalert's own pods** — a new,
+  default-deny `NetworkPolicy` renders whenever `vmalert.enabled` and
+  `networkPolicy.enabled` are both true (both defaults), the same
+  "pay nothing until you need it" choice the three store policies
+  already made: admitting only the proxy (for `tenancy.alertReaders`)
+  and the scrape peer (`networkPolicy.scrapeFrom`, for vmalert's own
+  `/metrics` and its config-reloader sidecar's `reloader-http`, 8435) —
+  closed now that something outside this namespace can read from it
+  directly, and consumer-visible on upgrade whether or not
+  `alertReaders` is ever set. The 8435 admission (**fix**, before this
+  reached anyone): the first render of this policy admitted 8080 only,
+  which drops every reloader-sidecar sample at the policy rather than
+  the socket — the identical `up=0`/`TargetDown` shape the proxy's own
+  policy was fixed for in 0.5.3, one object over. See docs/safety.md.
 - **Fix: the `Watchdog` VMRule was trapped inside `alertmanager.enabled`**
   — an install with `notifications.mode: evaluate-only` (which refuses
   `alertmanager.enabled: true`) rendered no VMAlertmanager and, because

@@ -85,6 +85,34 @@ Selector is name-only, matching every vmalert pod this namespace runs
 (both alerters), the same way `$peers` above already admits vmalert
 into the STORES by name alone rather than by the operator's own
 per-CR instance label.
+
+Unconditional the moment `vmalert.enabled` is true — not gated on
+`tenancy.alertReaders` being non-empty — the same choice the three
+store policies already make: an estate that never configures an
+external reader pays nothing for a rule that admits vmauth and the
+scrape peer and nothing else, and one that adds `alertReaders` later
+is not the first to find the gap by tripping over it. Consumer-visible
+either way: this policy is new on any install with `vmalert.enabled`
+(the default) and `networkPolicy.enabled` (also the default) — see
+CHANGELOG.
+
+Three ports, not two: vmalert's own API and `/metrics` on 8080 (to
+vmauth, for `tenancy.alertReaders`, and to the scrape peer, for
+`selfAlerts` and everything in `charts/platform-alerts` that watches
+this job's own health) — and the operator's config-reloader sidecar,
+injected into this pod the same way it is into the proxy's, on
+`reloader-http` (8435), to the scrape peer only. Getting this one
+wrong is the exact failure `templates/networkpolicy.yaml`'s own proxy
+policy was fixed for one port over (see docs/safety.md, "A store whose
+own policy hides it from the scraper"): a policy that selects the pod
+and admits only 8080 still lets 8435 answer at the socket and drops
+every sample at admission, `up=0` and TargetDown/ServiceDown firing
+forever on a pod that is otherwise perfectly healthy. The peer here is
+`networkPolicy.scrapeFrom` (falling back to `$scrapeDefault`, the same
+Go-template variable the store and proxy policies above already read),
+never a second, separately-hardcoded default: an estate that overrides
+`scrapeFrom` must not lose the reloader scrape the way it would not
+lose the store or proxy one.
 */}}
 {{- if $root.Values.vmalert.enabled }}
 apiVersion: networking.k8s.io/v1
@@ -113,6 +141,11 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    - from:
+        {{- toYaml ($root.Values.networkPolicy.scrapeFrom | default $scrapeDefault) | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 8435
 {{- end }}
 ---
 {{- /*
