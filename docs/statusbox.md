@@ -180,10 +180,16 @@ Joining the tailnet is not the same as being reachable on it: every
 instance is published at `127.0.0.1:<Port>` only (see `write_compose`),
 so a peer elsewhere on the tailnet still has nothing to connect to until
 something on the box forwards a connection to that loopback port. For
-every instance that is not Public, `setup.sh` also registers a
-`tailscale serve --tcp=<Port>` forward to `127.0.0.1:<Port>` — this is
+the one instance that is not Public, `setup.sh` also registers a
+`tailscale serve --tcp=80` forward to `127.0.0.1:<Port>` — this is
 the path a person on the tailnet uses to load `gatus-ops`'s private
-page. (It is not the path "internal → status, pulled" rides: that
+page, and it always forwards to tailnet port **80** rather than the
+instance's own `Port`, so the page is `http://<Hostname>/` — no port
+to remember or paste, the same way MagicDNS already lets an operator
+reach the box by name alone. Plain HTTP, not `--https`: the tailnet
+is WireGuard-encrypted end to end, so a second TLS termination in
+front of a page nothing outside the tailnet can even address buys
+nothing. (It is not the path "internal → status, pulled" rides: that
 traffic runs the other way, `gatus-ops` DIALING OUT to the install's own
 alerting read API — an outbound connection this box's Tailscale client
 makes on its own, needing no forward and no listener on the box at all.
@@ -191,12 +197,20 @@ makes on its own, needing no forward and no listener on the box at all.
 instance is never registered this way: it is reached through
 cloudflared alone, and the smallest tailnet surface this box can have is
 none of its public pages on it at all. Restricting *who* on the tailnet
-may reach a forwarded port is the estate's own tailnet ACL to grant (a
+may reach the forwarded port is the estate's own tailnet ACL to grant (a
 `tag:statusbox` the box's identity carries, and a grant naming whichever
 peer needs it) — `setup.sh` forwards the port; it does not decide who
 may dial it. The OUTBOUND direction is a second, separate ACL grant —
 `tag:statusbox` reaching whatever the estate's alerting read API answers
 on — and it is the estate's own ACL to write for the identical reason.
+
+Serving on port 80 is only safe because `Args.validate` refuses a
+manifest with more than one non-Public instance: the box serves one
+combined private page by design (every company's own component and
+every piece of cluster infrastructure belong on the SAME page — see
+"The shape" above), and two private instances could not both claim
+port 80 on one box regardless. An estate that wants a second private
+page runs a second box.
 
 CI runs it on a plain Ubuntu runner with a fixture config and asserts
 every instance answers `/health`. The first run of the script must not
@@ -291,8 +305,8 @@ door); Gatus replicas with a shared database (coordinates nothing).
 - a unit test that the public ports list is empty;
 - `setup.sh` in CI, as above;
 - fixtures for the refusals: an instance with no config, two instances
-  on one port, a public instance with no hostname, user-data over the
-  limit.
+  on one port, a public instance with no hostname, two instances that
+  are both not Public, user-data over the limit.
 
 After release, in a consumer: the public pages render behind the edge;
 the private page answers only over the private network; stopping the box

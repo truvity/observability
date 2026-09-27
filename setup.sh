@@ -122,36 +122,48 @@ setup_tailscale() {
   tailscale up --authkey="$TS_AUTHKEY" --hostname="${TS_HOSTNAME:-statusbox}" --ssh --accept-dns=false
 }
 
-# serve_private_instances is how a PRIVATE instance (Public: false in the
-# manifest — gatus-ops, and any other instance meant to be reached only
-# over the private network) actually becomes reachable from the tailnet,
-# not just joined to it. Before this function existed, `setup_tailscale`
-# put the box on the tailnet but every Gatus container still only listened
-# on 127.0.0.1 (see write_compose) — nothing forwarded a tailnet peer's
-# connection to that loopback port, so the install's Alertmanager had no
-# path to gatus-ops's external-endpoint API for the deadman push described
-# in docs/statusbox.md ("internal → status"), despite the box appearing
-# joined and healthy.
+# serve_private_instances is how the ONE private instance (Public: false
+# in the manifest — gatus-ops, and any other instance meant to be reached
+# only over the private network) actually becomes reachable from the
+# tailnet, not just joined to it. Before this function existed,
+# `setup_tailscale` put the box on the tailnet but every Gatus container
+# still only listened on 127.0.0.1 (see write_compose) — nothing
+# forwarded a tailnet peer's connection to that loopback port, so the
+# install's Alertmanager had no path to gatus-ops's external-endpoint API
+# for the deadman push described in docs/statusbox.md ("internal →
+# status"), despite the box appearing joined and healthy.
+#
+# The tailnet-side port is always 80, not the instance's own Port: an
+# operator then loads the private page at plain `http://<Hostname>/` —
+# no port to remember or paste — the same way MagicDNS already lets them
+# reach the box by name alone. Plain HTTP, not `--https`, is deliberate
+# here too: the tailnet is WireGuard-encrypted end to end, so a second TLS
+# termination in front of a page nothing outside the tailnet can even
+# address buys nothing.
+#
+# Serving on 80 is only safe because AT MOST ONE instance is ever
+# Public: false — pkg/statusbox.Args.validate refuses a manifest with two
+# or more private instances precisely because they cannot both claim
+# port 80 on this box. This loop still walks every instance rather than
+# assuming which one is private, so it keeps working unchanged if that
+# refusal is ever loosened to name the private instance explicitly
+# instead of counting it.
 #
 # `tailscale serve --tcp` registers a forward inside tailscaled's own
 # userspace networking: it does not open a second host socket and so
 # never competes with write_compose's `127.0.0.1:<port>` bind, which is
-# why the instance's own Port is reused unchanged as the tailnet-side
-# port below. Plain TCP (not `--https`) is used deliberately: `--https`
-# ties the tailnet listener to one of a small fixed set of ports on some
-# tailscale releases, while `--tcp` accepts the instance's own port
-# as-is, and the tailnet already encrypts every byte in transit — a
-# second TLS termination in front of a machine-to-machine push buys
-# nothing here that WireGuard has not already provided.
+# why binding tailnet-side 80 here never collides with any instance's own
+# loopback Port, whatever that Port is.
 #
 # A Public instance (a company's status page) is reached through
 # cloudflared alone and is never registered here — the smallest tailnet
 # surface this box can have is none of the public pages on it at all.
 #
-# WHO on the tailnet may then reach a forwarded port is an ACL decision,
-# not one this script makes: see the estate's own tailnet policy (outside
-# this repository) for the grant that lets only the install's egress
-# identity reach `tag:statusbox` on these ports, and nothing else.
+# WHO on the tailnet may then reach the forwarded port is an ACL
+# decision, not one this script makes: see the estate's own tailnet
+# policy (outside this repository) for the grant that lets only the
+# install's egress identity reach `tag:statusbox` on port 80, and nothing
+# else.
 serve_private_instances() {
   if [ -z "${TS_AUTHKEY:-}" ]; then
     log "TS_AUTHKEY is not set, skipping tailscale serve (expected in a test fixture; a real box always joins the tailnet)"
@@ -163,8 +175,8 @@ serve_private_instances() {
     port="$(jq -r '.port' <<<"$inst")"
     public="$(jq -r '.public' <<<"$inst")"
     [ "$public" = "true" ] && continue
-    log "serving ${name} to the tailnet on :${port} (tcp forward to 127.0.0.1:${port})"
-    tailscale serve --bg --tcp="${port}" "tcp://127.0.0.1:${port}"
+    log "serving ${name} to the tailnet on :80 (tcp forward to 127.0.0.1:${port})"
+    tailscale serve --bg --tcp=80 "tcp://127.0.0.1:${port}"
   done < <(jq -c '.instances[]' "$staged/manifest.json")
 }
 
