@@ -143,6 +143,22 @@ writes a compose file and one systemd unit, and starts it. It knows no
 hostname; the hostnames are in the tunnel ingress the estate's edge
 configuration owns.
 
+Joining the tailnet is not the same as being reachable on it: every
+instance is published at `127.0.0.1:<Port>` only (see `write_compose`),
+so a peer elsewhere on the tailnet still has nothing to connect to until
+something on the box forwards a connection to that loopback port. For
+every instance that is not Public, `setup.sh` also registers a
+`tailscale serve --tcp=<Port>` forward to `127.0.0.1:<Port>` — this is
+the path the install's Alertmanager actually uses to reach gatus-ops's
+external-endpoint API for the deadman push (see "internal → status"
+below). A Public instance is never registered this way: it is reached
+through cloudflared alone, and the smallest tailnet surface this box can
+have is none of its public pages on it at all. Restricting *who* on the
+tailnet may reach a forwarded port is the estate's own tailnet ACL to
+grant (a `tag:statusbox` the box's identity carries, and a grant naming
+whichever peer needs it) — `setup.sh` forwards the port; it does not
+decide who may dial it.
+
 CI runs it on a plain Ubuntu runner with a fixture config and asserts
 every instance answers `/health`. The first run of the script must not
 be on the box, on a bad day.

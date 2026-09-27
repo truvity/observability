@@ -17,8 +17,9 @@
 # GitHub-hosted runner offers.
 #
 # What this does NOT exercise, named so nobody assumes it was covered:
-# tailscale and cloudflared are skipped when TS_AUTHKEY / TUNNEL_TOKEN are
-# unset (see setup.sh's own setup_tailscale/setup_cloudflared), because a
+# tailscale, `tailscale serve` and cloudflared are all skipped when
+# TS_AUTHKEY / TUNNEL_TOKEN are unset (see setup.sh's own
+# setup_tailscale/serve_private_instances/setup_cloudflared), because a
 # CI job has no tailnet to join and no tunnel to authenticate to — a real
 # key or token would either fail outside the estate's tailnet/account or
 # require one to be minted for CI to burn. What IS exercised is

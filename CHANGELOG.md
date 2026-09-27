@@ -6,6 +6,22 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.6.2
+
+- **Fix: `setup.sh` never made a private instance (`Public: false` —
+  gatus-ops) reachable from the tailnet** — it joined the box to the
+  tailnet and published every instance at `127.0.0.1:<Port>`, but nothing
+  forwarded a tailnet peer's connection to that loopback port, so an
+  estate wiring an internal Alertmanager's deadman push to gatus-ops's
+  external-endpoint API (see docs/statusbox.md, "internal → status") had
+  no path to it despite the box appearing joined and healthy. `setup.sh`
+  now also runs `tailscale serve --tcp=<Port>` for every non-Public
+  instance, forwarding the tailnet to its own loopback port; a Public
+  instance is never registered this way — it stays reachable through
+  cloudflared alone. Restricting who on the tailnet may dial a forwarded
+  port is unchanged: it is the estate's own tailnet ACL to grant, not
+  something this repository or this script decides.
+
 ## 0.6.1
 
 - **Fix: `charts/observability-emitters`'s `kube-state-metrics`
