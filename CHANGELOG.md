@@ -8,6 +8,10 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
 
 ## 0.7.0
 
+Two additions to `tenancy`, both opt-in: a values file that used neither
+before this release — no `alertReaders`, no per-principal `audience` or
+`routes` — renders byte-identically to 0.6.2.
+
 - **New: `tenancy.alertReaders` / `tenancy.allowUnfilteredAlertReads`** —
   a bearer-token reader of vmalert's own `/api/v1/alerts`, the mechanism
   the status box's PULLED deadman and per-company signal are built on
@@ -37,6 +41,30 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
   chose rather than whatever the provider's image happened to boot with.
   Every existing caller sets one: this is a required field, not a
   default that moved.
+- **Fix: a second, vendored `Watchdog` alert, invisible to every render
+  in this repository** — `victoria-metrics-k8s-stack.defaultRules.create:
+  false` looked like the off switch for the vendored default rule set and
+  was not one: the sync job that fetches and applies those rules gates on
+  `defaultRules.enabled` OR `defaultRules.create`, and `enabled` defaults
+  to `true` upstream, so a rule source with no override of its own —
+  kube-prometheus's own combined rule manifest among them — was still
+  fetched and applied directly to the cluster, live, on every install.
+  That manifest's own `general.rules` group carries a `Watchdog` alert,
+  duplicating this chart's own the moment both exist — invisible to `helm
+  template` because the sync job is a controller, not a Helm template.
+  `victoria-metrics-k8s-stack.defaultRules.enabled` is now `false` (the
+  key that actually stops it), and a new refusal
+  (`observability-stack.validate.vendoredRules`) keeps it that way.
+- **New per-principal `tenancy.principals[].audience` and
+  `tenancy.principals[].routes` / `metricsQueryOnly`** — a machine reader
+  in the shape a verification gate needs: its own token audience (the
+  same escaping and anchoring `tenancy.audience` already gets, which
+  stays required as the install-wide default), and a route restriction —
+  `routes: [metrics]` with `metricsQueryOnly: true` renders exactly
+  `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range`, no
+  series, labels, label values, tsdb status, vmui, logs or traces. Both
+  fields are optional and additive: a `principals` entry that sets
+  neither renders byte-identically to before this release.
 
 ## 0.6.2
 
