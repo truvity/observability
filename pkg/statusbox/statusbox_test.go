@@ -164,6 +164,36 @@ func TestRefusals(t *testing.T) {
 			},
 			wantErr: "is not a valid name",
 		},
+		{
+			name: "env key is not a valid environment-variable name",
+			mutate: func(a *statusbox.Args) {
+				a.Secrets.Env = map[string]pulumi.StringInput{
+					"push-service": pulumi.String("test-env-value"),
+				}
+			},
+			wantErr: "is not a valid environment-variable name",
+		},
+		{
+			name: "env key collides with a reserved name",
+			mutate: func(a *statusbox.Args) {
+				a.Secrets.Env = map[string]pulumi.StringInput{
+					"TUNNEL_TOKEN": pulumi.String("test-env-value"),
+				}
+			},
+			wantErr: "is reserved by statusbox itself",
+		},
+		{
+			name: "env key collides with an AlertURLs entry",
+			mutate: func(a *statusbox.Args) {
+				a.Secrets.AlertURLs = map[string]pulumi.StringInput{
+					"slack": pulumi.String("test-alert-url"),
+				}
+				a.Secrets.Env = map[string]pulumi.StringInput{
+					"ALERT_URL_SLACK": pulumi.String("test-env-value"),
+				}
+			},
+			wantErr: "collides with Secrets.AlertURLs",
+		},
 	}
 
 	for _, c := range cases {

@@ -6,6 +6,26 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.3
+
+- **New: `pkg/statusbox.Secrets.Env`, a second, more general way to hand
+  a secret to a Gatus `Config`.** `Secrets.AlertURLs` already let a
+  Config reference `${ALERT_URL_<NAME>}` for a push-alert credential
+  without carrying it as a literal; `Env` is the same mechanism for
+  everything else a Config's own `${...}` substitution might need a
+  secret for — Gatus's `security.oidc.client-secret`, most immediately.
+  A key becomes the WHOLE variable name a Config writes (`${<NAME>}`, no
+  added prefix), staged internally as `STATUSBOX_ENV_<NAME>` and
+  collected by `setup.sh`'s `write_env` into the same `.env` file
+  `AlertURLs` entries already land in. `Args.validate` refuses a name
+  that is not a valid environment-variable identifier, that collides
+  with `TS_AUTHKEY`/`TUNNEL_TOKEN`, or that collides with the
+  `ALERT_URL_<NAME>` an `AlertURLs` entry already produces — two secrets
+  under one `${...}` reference is a mistake worth refusing at deploy
+  time rather than discovering in a container's environment. No default
+  changes and no existing consumer is affected: an `Args` with no `Env`
+  entries renders exactly as before.
+
 ## 0.7.2
 
 - **Fix: the status box's Lightsail firewall now declares exactly one

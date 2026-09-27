@@ -107,7 +107,19 @@ mkdir -p /opt/statusbox/staged
 cp "$work/staged/"* /opt/statusbox/staged/
 
 echo "running setup.sh (unmodified, from this checkout)"
-"$root/setup.sh"
+# A STATUSBOX_ENV_ variable exercises write_env's OTHER branch (see
+# statusbox.Secrets.Env): the same .env file ALERT_URL_* lands in, under
+# the name a Config would reference verbatim (no prefix), proving the
+# prefix strip actually happens rather than assumed from the Go-level
+# unit tests alone.
+STATUSBOX_ENV_STATUSBOX_CI_ENV_TEST="ci-env-test-value" "$root/setup.sh"
+
+if ! grep -qx 'STATUSBOX_CI_ENV_TEST=ci-env-test-value' /opt/statusbox/.env; then
+  echo "setup.sh's write_env did not carry STATUSBOX_ENV_STATUSBOX_CI_ENV_TEST into /opt/statusbox/.env as STATUSBOX_CI_ENV_TEST" >&2
+  cat /opt/statusbox/.env >&2 || true
+  exit 1
+fi
+echo "write_env: STATUSBOX_ENV_* carried into .env under its stripped name, OK"
 
 echo "waiting for every instance to answer /health"
 ports=(18081 18084)
