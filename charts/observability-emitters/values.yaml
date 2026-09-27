@@ -429,6 +429,19 @@ victoria-logs-collector:
   # `emptyDir` here is refused.
   persistence:
     volume: {}
+  # -- `system-node-critical`, the same class this cluster's own CNI
+  # DaemonSet carries: a node-level log agent is infrastructure a node's
+  # other tenants depend on staying scraped and shipped, not a workload
+  # that should be the first thing evicted under memory or CPU pressure.
+  #
+  # It also lets the agent PREEMPT a lower-priority pod when a node has no
+  # room left. On a small, tightly-packed node that can mean displacing
+  # whatever else is running there — size `resources.requests` to what the
+  # agent actually uses (see the fixture instrumented alongside this
+  # value) so preemption stays a rare fallback, not the normal path to
+  # getting scheduled. An install with no headroom to spare for that can
+  # override this back to `""`, upstream's own default.
+  priorityClassName: system-node-critical
   resources:
     requests:
       cpu: "1"

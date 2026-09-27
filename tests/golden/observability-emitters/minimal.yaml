@@ -433,6 +433,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: victoria-logs-collector
     spec:
+      priorityClassName: system-node-critical
       serviceAccountName: observability-emitters-victoria-logs-collector
       securityContext: 
         {}

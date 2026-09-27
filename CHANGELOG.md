@@ -6,6 +6,26 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.6.2
+
+- **New default: `charts/observability-emitters`'s `victoria-logs-collector.priorityClassName`
+  is now `system-node-critical`**, matching the class this chart's own
+  cluster's node-level CNI DaemonSet already carries. A log agent with no
+  priority class sits at the same priority as every ordinary workload on
+  its node, so under memory or CPU pressure it is exactly as likely to be
+  evicted as anything else it is meant to be shipping logs FOR — and on
+  install, a node already near its allocatable limit can leave the agent
+  `Pending` indefinitely rather than scheduled with the rest.
+
+  `system-node-critical` also lets the agent preempt a lower-priority pod
+  to make room for itself. On a node with little headroom that preemption
+  is real: size `victoria-logs-collector.resources.requests` to what the
+  agent actually uses on your cluster (this chart's own upstream default
+  request, `1` CPU / `512Mi`, is far above typical usage) so preemption
+  stays the rare fallback and not the ordinary path to getting scheduled.
+  An install that cannot accept either the eviction protection or the
+  preemption can set the value back to `""`, upstream's own default.
+
 ## 0.6.1
 
 - **Fix: `charts/observability-emitters`'s `kube-state-metrics`
