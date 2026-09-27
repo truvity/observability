@@ -1,0 +1,15 @@
+# expect: this install renders no Watchdog alert at all
+# Both Watchdog sources turned off at once.
+#
+# `victoria-metrics-k8s-stack.defaultRules.enabled: false` turns off the
+# vendored default rule set entirely — including its `general.rules`
+# group, which is where this install's Watchdog comes from by default —
+# and `vmalert.watchdog.enabled: false` turns off this chart's own
+# fallback (templates/watchdog.yaml) beside it. Neither renders one, and
+# the status box's deadman depends on exactly one existing to read.
+victoria-metrics-k8s-stack:
+  defaultRules:
+    enabled: false
+vmalert:
+  watchdog:
+    enabled: false

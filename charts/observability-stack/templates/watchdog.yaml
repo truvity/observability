@@ -34,8 +34,18 @@ with a real webhook receiver already asked for Alertmanager to push this
 same alert, so rendering the rule it pushes is not a new fact — only
 NOT rendering it (set this to false) is a decision an estate has to make
 on purpose.
+
+ONE Watchdog, not two: `victoria-metrics-k8s-stack`'s own vendored
+default rule set — ON by default (see `defaultRules.create`'s own doc
+comment in values.yaml) — already carries one, in its `general.rules`
+group, upstream's own naming. This renders ONLY when that is not the
+case (`observability-stack.vendoredWatchdogPresent` in _helpers.tpl):
+`defaultRules` turned off entirely, or its `general.rules` group
+specifically. Turning both this AND the vendored one off at once is
+refused (`observability-stack.validate.watchdogSource`): the status
+box's deadman needs exactly one, from somewhere.
 */}}
-{{- if and .Values.vmalert.enabled .Values.vmalert.watchdog.enabled }}
+{{- if and .Values.vmalert.enabled .Values.vmalert.watchdog.enabled (not (include "observability-stack.vendoredWatchdogPresent" .)) }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:

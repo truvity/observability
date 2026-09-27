@@ -1283,27 +1283,33 @@ victoria-metrics-k8s-stack:
   # is not the estate's metrics pipeline and quietly becomes one.
   vmagent:
     enabled: false
-  # -- The rules are `charts/platform-alerts`, where each one carries the
-  # incident that earned it and a fixture that must fail, plus this
-  # chart's own Watchdog (`templates/watchdog.yaml`).
+  # -- This chart's OWN rules are `charts/platform-alerts`. This is not
+  # that: it is the switch for the UPSTREAM chart's own vendored default
+  # rule set, fetched over the network and applied directly to the
+  # cluster by its sync job — invisible to `helm template`, and to every
+  # golden render here — and it stays ON.
   #
-  # `create: false` alone does not turn the vendored default rule set
-  # off: the sync job that fetches and applies rule sources gates on
-  # `defaultRules.enabled` OR `defaultRules.create`, and `enabled`
-  # defaults to `true` upstream. Measured against this chart's own
-  # golden render: with only `create: false` set, the sync job's
-  # rendered config still carries
-  # `.../kube-prometheus/main/manifests/kubePrometheus-prometheusRule.yaml`
-  # with no per-source `enabled: false` beside it — meaning that file,
-  # among others, is fetched and its rules created directly in the
-  # cluster, live, invisible to `helm template` and to every golden
-  # render here. That manifest's own `general.rules` group carries a
-  # `Watchdog` alert, so an install ended up with two: the vendored one
-  # nobody asked for, and this chart's own. `enabled: false` is the key
-  # that actually stops the sync job populating any rule source at all;
-  # `create: false` stays too, belt-and-braces.
+  # `create: false` does not turn that set off by itself: the sync
+  # job's real gate is `defaultRules.enabled` OR `defaultRules.create`,
+  # and `enabled` defaults to `true` upstream, so a source with no
+  # per-source override — kube-prometheus's own combined rule manifest
+  # among them — is still fetched and applied. That is deliberate here,
+  # not a leftover: measured on live installs, that vendored set is
+  # where several rules with no equivalent in `charts/platform-alerts`
+  # come from — target- and pod-health, job failures, log and API-error
+  # volume — and its `general.rules` group is also where this install's
+  # `Watchdog` alert comes from BY DEFAULT. `templates/watchdog.yaml`
+  # renders this chart's own Watchdog only when this is turned off (see
+  # its own doc comment); leave this alone and the vendored one is the
+  # only one there ever is.
+  #
+  # Turning it off is still supported, for an estate that wants
+  # `charts/platform-alerts` to be the only rule source: set
+  # `enabled: false` here (not `create: false` alone), and this chart's
+  # own Watchdog takes over automatically. Turning it off with this
+  # chart's own Watchdog ALSO off (`vmalert.watchdog.enabled: false`)
+  # is refused: see `observability-stack.validate.watchdogSource`.
   defaultRules:
-    enabled: false
     create: false
   defaultDashboards:
     enabled: false

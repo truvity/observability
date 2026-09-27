@@ -113,6 +113,32 @@ hardcoded one is wrong on every cluster that does not use the default.
 {{- end -}}
 
 {{- /*
+Whether `victoria-metrics-k8s-stack`'s own vendored default rule set is
+providing a `Watchdog` alert already — the reason
+`templates/watchdog.yaml` renders this chart's OWN one only when this is
+false. Two things have to hold: the metrics subchart's sync job has to
+be populating rule sources AT ALL (`defaultRules.enabled` OR
+`defaultRules.create`, defaulting `true` upstream — see
+`defaultRules.create`'s own doc comment in values.yaml for why `create`
+alone is not the switch it looks like), and its `general.rules` group —
+upstream's own name, the one kube-prometheus's combined rule manifest
+carries a `Watchdog` alert under — must not have been disabled on its
+own via `defaultRules.groups`.
+
+This cannot see the fetched rule CONTENT (the sync job fetches it over
+the network, at apply time, not at render time), only whether this
+install's own configuration would ask for it. See docs/safety.md for
+what that leaves unverified.
+*/}}
+{{- define "observability-stack.vendoredWatchdogPresent" -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- $dr := $vmks.defaultRules | default dict -}}
+{{- $rulesOn := and $vmks.enabled (or $dr.enabled $dr.create) -}}
+{{- $generalGroup := index ($dr.groups | default dict) "general.rules" | default dict -}}
+{{- if and $rulesOn (ne $generalGroup.enabled false) -}}true{{- end -}}
+{{- end -}}
+
+{{- /*
 The METRICS vmalert's own Service — not a store, so it carries no
 `stores.*.url` override the way the three above do: nothing outside this
 chart runs its own vmalert for this chart's tenancy to point at.

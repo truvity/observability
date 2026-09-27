@@ -256,76 +256,8 @@ data:
           spec:
             annotations: {}
             labels: {}
-      groups: 
-        alertmanager.rules:
-          labelRewrites:
-            job:
-              match: alertmanager-main
-              value: vmalertmanager-.*
-            namespace:
-              match: alertmanager-main
-              value: observability
-        kube-apiserver-burnrate.rules:
-          enabled: false
-        kube-apiserver-histogram.rules:
-          enabled: false
-        kube-apiserver-slos:
-          enabled: false
-        kube-scheduler.rules:
-          enabled: false
-        kubelet.rules:
-          enabled: false
-        kubernetes-apps:
-          labelRewrites:
-            namespace:
-              match: kube-state-metrics
-              value: .*
-        kubernetes-storage:
-          labelRewrites:
-            namespace:
-              match: kubelet
-              value: .*
-        kubernetes-system-apiserver:
-          enabled: false
-        kubernetes-system-controller-manager:
-          enabled: false
-        kubernetes-system-kubelet:
-          enabled: false
-        kubernetes-system-scheduler:
-          enabled: false
       sources: 
-        - enabled: false
-          url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/alertmanager-prometheusRule.yaml
-        - enabled: false
-          url: https://raw.githubusercontent.com/monitoring-mixins/website/master/assets/etcd/alerts.yaml
-        - enabled: false
-          url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/kubeStateMetrics-prometheusRule.yaml
-        - url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/kubePrometheus-prometheusRule.yaml
-        - url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/kubernetesControlPlane-prometheusRule.yaml
-        - enabled: false
-          url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/nodeExporter-prometheusRule.yaml
-        - enabled: false
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/master/deployment/docker/rules/alerts-vlogs.yml
-        - enabled: false
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaTraces/master/deployment/docker/rules/alerts-vtraces.yml
-        - enabled: false
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/master/deployment/docker/rules/alerts-vlagent.yml
-        - enabled: false
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/master/deployment/docker/rules/alerts-health.yml
-        - enabled: false
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-vmagent.yml
-        - enabled: false
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-vmalert.yml
-        - enabled: false
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-cluster.yml
-        - enabled: true
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-health.yml
-        - enabled: true
-          url: https://raw.githubusercontent.com/VictoriaMetrics/operator/master/config/alerting/vmoperator-rules.yaml
-        - enabled: true
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-single-node.yml
-        - enabled: false
-          url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaTraces/master/deployment/docker/rules/alerts-health.yml
+        []
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/role.yaml
@@ -794,9 +726,6 @@ rules:
   - apiGroups: [""]
     resources: ["serviceaccounts"]
     verbs: ["get"]
-  - apiGroups: ["operator.victoriametrics.com"]
-    resources: ["vmrules"]
-    verbs: ["get", "list", "create", "update", "delete"]
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/rb.yaml
@@ -2328,6 +2257,35 @@ spec:
   userNamespaceSelector: {}
   extraArgs:
     logInvalidAuthTokens: "true"
+
+---
+# Source: observability-stack/templates/watchdog.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-watchdog
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    - name: observability-stack.watchdog
+      interval: 30s
+      rules:
+        - alert: Watchdog
+          expr: vector(1)
+          labels:
+            severity: none
+          annotations:
+            summary: "This alert is always firing; its absence is the signal"
+            description: >-
+              The heartbeat of this observability stack. Something outside the
+              cluster watches for it — pushed through Alertmanager, or pulled
+              directly off vmalert's own read API — and pages when it stops
+              arriving: an alerting path that has died cannot report that it
+              has died.
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/monitor.yaml

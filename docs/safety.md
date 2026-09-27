@@ -232,7 +232,40 @@ for its one reason and no other.
 | `networkPolicy.scrapeFrom[]` naming an `ipBlock` with neither `podSelector` nor `namespaceSelector` | A pod IP is reassigned on every reschedule, eviction and rollout. The rule installs and scrapes fine today, and stops silently the first time the scraper pod moves — the same failure this value exists to fix, reintroduced by the value meant to fix it. |
 | `metricsSelfScrape.enabled` with `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape` not `true` | The operator reconciles its own `VMServiceScrape` for the VMSingle alongside this chart's `ServiceMonitor` — a kind this file rules out on its own, and one with no `basicAuth` either way, so every scrape it drives 401s against a store running `-httpAuth.*`. |
 | A `ServiceMonitor` this chart renders (`metricsSelfScrape`, or the log/trace stores' own `serviceMonitor`) with the operator's ServiceMonitor converter off — `disable_prometheus_converter: true`, or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE: "false"` in the operator's `env` | Nothing ever converts the object to the native `VMServiceScrape` vmagent watches, so nothing ever scrapes it — a render that looks like coverage and is not. Measured on a live install; see "The doctrine's own promise was broken from this chart's first commit", above. |
-| `victoria-metrics-k8s-stack.defaultRules.enabled: true` | Its sync job fetches rule sources over the network and applies them directly to the cluster — invisible to `helm template`, and to every golden render in this repository. At least one of them (kube-prometheus's own combined rule manifest) carries a `general.rules` group with its own `Watchdog` alert, duplicating this chart's own (`templates/watchdog.yaml`) the moment both exist. `defaultRules.create: false` alone does not stop it: the sync job's own gate is `enabled` OR `create`, and `enabled` defaults to `true` upstream. |
+| `victoria-metrics-k8s-stack`'s vendored default rules turned off (`defaultRules.enabled: false`, or its `general.rules` group specifically) with `vmalert.watchdog.enabled` also `false` | The vendored rule set is ON by default and is where this install's `Watchdog` comes from (its `general.rules` group); `templates/watchdog.yaml` renders this chart's own only when that is off. Refuse the one combination that leaves neither: nothing for the status box's deadman to read. |
+
+### One Watchdog, from whichever source is not already there
+
+`victoria-metrics-k8s-stack`'s own sync job fetches rule sources over
+the network and applies them to the cluster DIRECTLY, at apply time —
+not at render time, and not from anything this repository vendors or
+tests. That set is ON by default (`defaultRules.create: false` alone
+does not turn it off — see its own doc comment in values.yaml), and
+several rules with no `charts/platform-alerts` equivalent — target- and
+pod-health, stuck rollouts, job failures, log and API-error volume —
+come from exactly there, seen firing on live installs. So does this
+install's `Watchdog`, in that set's `general.rules` group, which is the
+reason `templates/watchdog.yaml` renders this chart's OWN Watchdog only
+when the vendored set is turned off
+(`observability-stack.vendoredWatchdogPresent`, `_helpers.tpl`) — one
+Watchdog, from whichever source is not already there, never both.
+
+**What this render-time check cannot see, and what it checks instead.**
+The vendored set's rule CONTENT — which alerts a fetched manifest
+actually contains — is fetched over the network by a controller,
+outside this chart's render entirely; no test in this repository reads
+it. That `general.rules` carries `Watchdog` is the same, unchanged
+convention this whole rule family (kube-prometheus, and the charts
+built on it) has carried for years, and is why this design leans on it
+— but it is inferred from that convention, not confirmed against the
+fetched file itself. What IS checked, in
+`tests/watchdog_dedup_test.go`, is this chart's own side of the
+decision: whether its configuration ASKS the sync job to populate any
+rule source at all, and that this chart's own template renders a
+Watchdog if and only if it does not. After this release ships, the one
+live check that closes the remaining gap is counting
+`ALERTS{alertname="Watchdog"}` on an install with the vendored set on —
+it should be exactly one.
 
 ### The self-alerts: nineteen rules, and what a live install did to eleven of the original twelve
 
