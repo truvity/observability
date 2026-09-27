@@ -357,6 +357,29 @@
               }
             }
           }
+        },
+        "allowUnfilteredAlertReads": {
+          "type": "boolean",
+          "description": "Admit the alerts-reader route although nothing can scope it. vmalert's own /api/v1/alerts has no per-namespace or per-cluster concept to filter on, so every reader named in alertReaders reads every active alert this install's metrics vmalert is evaluating, cluster-wide. Off by default, and required whenever alertReaders is non-empty."
+        },
+        "alertReaders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "tokenSecret"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/name"
+              },
+              "tokenSecret": {
+                "$ref": "#/definitions/secretRef"
+              }
+            }
+          }
         }
       }
     },
@@ -428,6 +451,16 @@
           "type": "object",
           "additionalProperties": {
             "type": "string"
+          }
+        },
+        "watchdog": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the Watchdog VMRule (templates/watchdog.yaml), always firing while the metrics alerter evaluates rules at all. Independent of alertmanager.* - read pushed (through alertmanager.watchdog's route) or pulled (tenancy.alertReaders), and only the former needs Alertmanager. Default true."
+            }
           }
         },
         "resources": {

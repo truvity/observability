@@ -164,6 +164,9 @@ values.yaml, listed here, and enforced rather than remembered.
 | `tenancy.writers[].name` | name | — | A collector that writes. Its routes are the write paths and nothing else. |
 | `tenancy.writers[].tokenSecret` | `{name, key}` | — | The Secret holding its bearer token. The chart never creates one. |
 | `tenancy.writers[].destinations` | list | — | `metrics`, `logs`, `traces`. |
+| `tenancy.allowUnfilteredAlertReads` | bool | `false` | Admit the alerts-reader route although nothing can scope it. **Required whenever `alertReaders` is non-empty**: vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster concept to filter on, so every reader below sees every active alert this install's metrics vmalert is evaluating, cluster-wide. |
+| `tenancy.alertReaders[].name` | name | — | A bearer-token reader of vmalert's own `/api/v1/alerts` — a person's OIDC identity (`principals`) and a write-only bearer (`writers`) do not fit this: it is a bearer token that may READ one unscoped route. One `VMUser` per entry. |
+| `tenancy.alertReaders[].tokenSecret` | `{name, key}` | — | The Secret holding its bearer token. The chart never creates one. |
 
 A grant is namespaces on a cluster. A project or a team is a derivation
 from a name to a namespace list, held wherever this file is written, and
@@ -225,6 +228,7 @@ mechanism.
 | `vmalert.logs.evalDelay` | duration | `5s` | `-rule.evalDelay` for the logs alerter only. The upstream default (30s) exists to match VictoriaMetrics' `-search.latencyOffset`; VictoriaLogs has no such offset, so inheriting it delays every log-based alert by 30 seconds for a latency the log store does not have. |
 | `vmalert.externalUrl` | string | `""` | `-external.url`. Empty leaves vmalert's own default, which is the pod hostname — every alert's source link dead outside the cluster. |
 | `vmalert.externalLabels` | map | `{}` | Labels on every alert and recording rule. |
+| `vmalert.watchdog.enabled` | bool | `true` | Renders `templates/watchdog.yaml`'s `Watchdog` VMRule (`vector(1)`, always firing, on the metrics alerter). Independent of `alertmanager.*` — read PUSHED, through `alertmanager.watchdog`'s route, or PULLED, through `tenancy.alertReaders`; only the former needs Alertmanager at all. |
 | `vmalert.resources` | object | 1 CPU / 512Mi | |
 
 Both carry `remoteWrite` **and** `remoteRead` against the metrics store;
@@ -277,7 +281,7 @@ rule with it. An install with no rules yet shows none of this.
 | `alertmanager.enabled` | bool | `true` | Renders the `VMAlertmanager`. |
 | `alertmanager.replicaCount` | int | `1` | |
 | `alertmanager.notifierUrl` | string | `""` | An Alertmanager the estate already runs, for when `enabled` is false. **One of the two is required**: a vmalert with no notifier sends every alert nowhere. |
-| `alertmanager.watchdog.secretName` | string | `""` | The Secret holding the deadman receiver's URL. Empty renders no Watchdog route and no Watchdog rule. |
+| `alertmanager.watchdog.secretName` | string | `""` | The Secret holding the deadman receiver's URL. Empty renders no Watchdog PUSH route — the `Watchdog` VMRule itself is `vmalert.watchdog.enabled`'s to gate, independent of this, and renders regardless (it is also readable PULLED, through `tenancy.alertReaders`). |
 | `alertmanager.watchdog.key` | string | `url` | The key inside it. Read with `url_file` from a mounted volume, never interpolated into the rendered config. |
 | `alertmanager.watchdog.repeatInterval` | duration | `5m` | How often the heartbeat repeats. The outside watcher's timeout must be comfortably longer. |
 | `alertmanager.watchdog.timeout` | duration | unset | The far end's OWN timeout for a missing heartbeat, stated here rather than read from it. Set, the chart refuses a `repeatInterval` that would not land comfortably inside it. |
@@ -315,7 +319,7 @@ design is built on, not a value.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
-| `networkPolicy.enabled` | bool | `true` | One policy per store plus one for the proxy. A policy that selects a pod is a default-deny for it. |
+| `networkPolicy.enabled` | bool | `true` | One policy per store, one for vmalert's own pods, plus one for the proxy. A policy that selects a pod is a default-deny for it. |
 | `networkPolicy.proxyFrom` | list | `[]` | Who may reach the proxy, as `NetworkPolicyPeer` objects. Empty means the release's own namespace. |
 | `networkPolicy.writersFrom` | list | `[]` | Who may write to a store directly. The collectors need this; nothing else does. |
 | `networkPolicy.scrapeFrom` | list | `[]` | Who may scrape a store's metrics port directly, as `NetworkPolicyPeer` objects. Empty means the metrics agent `charts/observability-emitters` renders (`app.kubernetes.io/name: vmagent`) in the release's own namespace. Non-empty REPLACES that default, the same way `proxyFrom` replaces its own. |

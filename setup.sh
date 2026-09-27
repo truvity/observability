@@ -11,12 +11,15 @@
 # script re-derives or re-checks that hash: verifying its OWN checksum is
 # the caller's job, once, before the first line here ever runs.
 #
-# It knows no hostname. A Public instance's hostname lives in the
+# It knows no PUBLIC hostname. A Public instance's hostname lives in the
 # tunnel's ingress rules, which are the consuming estate's own edge
 # configuration to own — see statusbox.Args.Hostnames's doc comment. All
 # this script promises is that every instance listens on
 # 127.0.0.1:<port>, which is the address any ingress rule (owned
 # elsewhere, changed independently, never rendered here) can point at.
+# It DOES carry the box's own tailnet device name, TS_HOSTNAME — a
+# different fact (statusbox.Args.Hostname's own doc comment): a stable
+# name for the box itself, not a page it serves.
 #
 # It knows no secret it did not receive as an already-exported
 # environment variable: TS_AUTHKEY, TUNNEL_TOKEN, and any ALERT_URL_*
@@ -116,7 +119,7 @@ setup_tailscale() {
     return
   fi
   log "joining the tailnet"
-  tailscale up --authkey="$TS_AUTHKEY" --ssh --accept-dns=false
+  tailscale up --authkey="$TS_AUTHKEY" --hostname="${TS_HOSTNAME:-statusbox}" --ssh --accept-dns=false
 }
 
 # serve_private_instances is how a PRIVATE instance (Public: false in the

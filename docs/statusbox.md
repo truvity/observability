@@ -12,13 +12,31 @@ answer "can a customer reach us"; a public status page; and a way for an
 internal alert to turn a status component red. Each needs to run
 somewhere the estate's own failure cannot reach, and each is small.
 
-Gatus does all four from one static binary and one YAML file:
-it probes, it renders a page, it alerts, and — the feature that makes it
-the deadman receiver and the status bridge with no adapter — it accepts
-pushed results on an *external endpoint* and alerts when the pushes stop
-(`heartbeat.interval`). This repository turns "run several Gatus
-instances behind a tunnel and a private network on a small box" into a
-package an estate calls.
+Gatus does all four from one static binary and one YAML file: it
+probes, it renders a page, and it alerts. Two different mechanisms carry
+the first two jobs into it, and the difference between them is worth
+being precise about, because an earlier design here picked the wrong one
+for the second job:
+
+- Gatus accepts pushed results on an *external endpoint* and alerts when
+  the pushes stop (`heartbeat.interval`) — a bare heartbeat, no payload
+  shape to agree on, which is genuinely "no adapter": whatever the
+  install's alerting pipeline is, "a request landed" or "a request did
+  not land" is the entire vocabulary.
+- Turning an *internal* alert into a status component's colour is not
+  that shape. The alert exists in the alerting pipeline's own vocabulary
+  (labels, a name, a state) and the page wants a colour; something has
+  to translate one into the other, and a push-based design puts that
+  translator on the alerting side, reshaping its own webhook payload
+  into whatever the receiving endpoint expects. That translator is an
+  adapter, and an earlier revision of this page did not count it as
+  one. The design below counts it, and picks PULL instead for exactly
+  this job: Gatus's own `[BODY]` conditions read the alerting pipeline's
+  read API directly, in its own vocabulary, so there is nothing to
+  translate. See "internal → status, pulled" below.
+
+This repository turns "run several Gatus instances behind a tunnel and a
+private network on a small box" into a package an estate calls.
 
 ## The shape
 
@@ -26,10 +44,10 @@ One virtual machine, provisioned by Pulumi from a package here, with no
 inbound port open. On it:
 
 ```
-tailscaled            joins the estate's private network: SSH, the ops page, the alerting pipeline's pushes
+tailscaled            joins the estate's private network: SSH, the ops page, gatus-ops's read of the alerting pipeline
 cloudflared           one tunnel to the edge provider; one ingress rule per public page
-gatus-<company> ×N    one public status page per legal entity; components per product, never per cluster
-gatus-ops             private: the deadman endpoints, every hostname, every certificate's expiry, the alert bridge
+gatus-<company> ×N    one public status page per legal entity, once its hostname is delegated; components per product, never per cluster
+gatus-ops             private: every hostname, every certificate's expiry, the deadman and the internal-to-status signal (both read, not received — see "internal → status, pulled")
 ```
 
 Each Gatus is the same image, its own YAML, its own SQLite file on an
@@ -76,6 +94,7 @@ type Args struct {
     Version    string          // a release of this repository; setup.sh is fetched from it
     Instances  []Instance
     Secrets    Secrets
+    Hostname   string            // the box's OWN tailnet device name (`tailscale up --hostname=`)
     Hostnames  map[string]string // instance name → public hostname, for the tunnel ingress
 }
 
@@ -149,15 +168,21 @@ so a peer elsewhere on the tailnet still has nothing to connect to until
 something on the box forwards a connection to that loopback port. For
 every instance that is not Public, `setup.sh` also registers a
 `tailscale serve --tcp=<Port>` forward to `127.0.0.1:<Port>` — this is
-the path the install's Alertmanager actually uses to reach gatus-ops's
-external-endpoint API for the deadman push (see "internal → status"
-below). A Public instance is never registered this way: it is reached
-through cloudflared alone, and the smallest tailnet surface this box can
-have is none of its public pages on it at all. Restricting *who* on the
-tailnet may reach a forwarded port is the estate's own tailnet ACL to
-grant (a `tag:statusbox` the box's identity carries, and a grant naming
-whichever peer needs it) — `setup.sh` forwards the port; it does not
-decide who may dial it.
+the path a person on the tailnet uses to load `gatus-ops`'s private
+page. (It is not the path "internal → status, pulled" rides: that
+traffic runs the other way, `gatus-ops` DIALING OUT to the install's own
+alerting read API — an outbound connection this box's Tailscale client
+makes on its own, needing no forward and no listener on the box at all.
+`serve` matters here only for the person, not the pull.) A Public
+instance is never registered this way: it is reached through
+cloudflared alone, and the smallest tailnet surface this box can have is
+none of its public pages on it at all. Restricting *who* on the tailnet
+may reach a forwarded port is the estate's own tailnet ACL to grant (a
+`tag:statusbox` the box's identity carries, and a grant naming whichever
+peer needs it) — `setup.sh` forwards the port; it does not decide who
+may dial it. The OUTBOUND direction is a second, separate ACL grant —
+`tag:statusbox` reaching whatever the estate's alerting read API answers
+on — and it is the estate's own ACL to write for the identical reason.
 
 CI runs it on a plain Ubuntu runner with a fixture config and asserts
 every instance answers `/health`. The first run of the script must not
@@ -186,12 +211,49 @@ Two consequences, documented so nobody rediscovers them:
 
 | Job | How |
 |---|---|
-| deadman | the install's Alertmanager routes `Watchdog` to a webhook that pushes `gatus-ops`'s external endpoint, over the private network, every minute; the endpoint's `heartbeat.interval` is 5m; silence alerts |
-| the deadman's alert | leaves Gatus on **two** providers — the chat channel, and a push service that does not depend on it |
-| external probes | `gatus-<company>` endpoints: HTTP status, body conditions, `[CERTIFICATE_EXPIRATION]`, DNS, from outside the estate's accounts |
+| deadman, internal → status | **pulled**, both — see "internal → status, pulled" below. Gatus on the box reads the install's own alerting state directly; nothing pushes into the box at all today. |
+| the deadman's alert | leaves Gatus on **two** providers — the chat channel, and the box's own read of the alerting pipeline, which does not depend on it |
+| external probes | ordinary Gatus `endpoints:`: HTTP status, body conditions, `[CERTIFICATE_EXPIRATION]`, DNS, from outside the estate's accounts |
 | the second vantage and the watcher's watcher | the edge provider's health checks: multi-region against the same hostnames, and one against the box's own `/health` |
-| internal → status | Alertmanager's `also:` route sends `severity=critical, customer_facing=true` to a webhook that pushes the matching company page's external endpoint with `success=false`; resolution pushes `success=true` |
 | a new hostname | a line in the estate's catalogue; the estate's renderer emits a probe and a component; the box is replaced |
+| a new company page | later, once a `status.<company domain>` hostname is delegated: a new Public `Instance`, its own tunnel ingress rule — the mechanism above already carries it |
+
+### internal → status, pulled
+
+The deadman and the internal-to-status bridge are the same mechanism now,
+read rather than received: an ordinary Gatus `endpoints:` entry whose URL
+is the install's OWN alerting read API — `tenancy.alertReaders` in
+`charts/observability-stack` mints exactly this bearer token, scoped to
+one route (vmalert's `/api/v1/alerts`) and nothing else — with an
+`Authorization: Bearer ${ALERT_URL_<KEY>}` header (the same
+`Secrets.AlertURLs` mechanism a Config already uses for a credential it
+must not carry as a literal, repurposed: the value staged there is a
+bearer token here, not a push URL).
+
+Two conditions on that one response body carry both jobs:
+
+- **deadman**: the response's `data.alerts` array is non-empty when
+  filtered (server-side, via the read API's own `match[]` parameter) to
+  `alertname="Watchdog"` — which this install's own `Watchdog` VMRule
+  (`vmalert.watchdog.enabled`, default on) is always evaluating, whether
+  or not the install runs Alertmanager at all. Gatus's own condition is
+  `len([BODY].data.alerts) > 0`.
+- **a company's colour**: the same shape, `match[]` filtered instead to
+  `customer_facing="true", company="<code>"` — a rule an estate writes
+  in its own alerting rules, not something this repository ships.
+  `len([BODY].data.alerts) == 0` is green; anything else is red.
+
+Neither condition needs a translator: the read API's own JSON is what
+the condition reads, in the alerting pipeline's own vocabulary, and
+`match[]` does the narrowing before the response ever reaches Gatus —
+Gatus never has to filter an array of alerts itself, which its own
+`[BODY]` condition language has no way to do (dot-notation and `len()`
+only; no query that selects one element of an array by a field it
+carries). What `match[]` cannot narrow by is an alert's `state`
+(pending vs firing) — VictoriaMetrics' vmalert applies it to an alert's
+own LABELS only — so a `for:` rule that is merely PENDING also counts
+as present here. That is the conservative direction for a status page to
+be wrong in, and it is written down rather than glossed over.
 
 ## What the estate accepts, and what it does not
 
@@ -220,6 +282,7 @@ door); Gatus replicas with a shared database (coordinates nothing).
 
 After release, in a consumer: the public pages render behind the edge;
 the private page answers only over the private network; stopping the box
-fires the edge health check; scaling the install's Alertmanager to zero
-fires the deadman on both providers within five minutes; a config change
-replaces the instance and the disk comes back with its history.
+fires the edge health check; scaling the install's metrics vmalert to
+zero (or blocking the box's read of it) fires the deadman on both
+providers within its own probe interval; a config change replaces the
+instance and the disk comes back with its history.

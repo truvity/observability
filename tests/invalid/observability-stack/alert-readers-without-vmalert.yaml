@@ -1,0 +1,18 @@
+# expect: There is no vmalert for this route to read
+# alertReaders reads vmalert's own /api/v1/alerts — with vmalert.enabled
+# false there is no vmalert running to answer it, and the reader would
+# be installed and able to read nothing, silently.
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredAlertReads: true
+  alertReaders:
+    - name: statusbox
+      tokenSecret:
+        name: example-alerts-read-token
+        key: token

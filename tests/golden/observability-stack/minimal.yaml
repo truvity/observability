@@ -119,6 +119,40 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: observability-stack-vmalert
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vmalert
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmauth
+              app.kubernetes.io/instance: observability-stack
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: observability-stack-proxy
   labels:
     app.kubernetes.io/name: observability-stack
@@ -2294,6 +2328,35 @@ spec:
   userNamespaceSelector: {}
   extraArgs:
     logInvalidAuthTokens: "true"
+
+---
+# Source: observability-stack/templates/watchdog.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-watchdog
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    - name: observability-stack.watchdog
+      interval: 30s
+      rules:
+        - alert: Watchdog
+          expr: vector(1)
+          labels:
+            severity: none
+          annotations:
+            summary: "This alert is always firing; its absence is the signal"
+            description: >-
+              The heartbeat of this observability stack. Something outside the
+              cluster watches for it — pushed through Alertmanager, or pulled
+              directly off vmalert's own read API — and pages when it stops
+              arriving: an alerting path that has died cannot report that it
+              has died.
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/monitor.yaml

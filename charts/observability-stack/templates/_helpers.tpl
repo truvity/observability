@@ -112,6 +112,20 @@ hardcoded one is wrong on every cluster that does not use the default.
 {{- if or $v.enabled .Values.stores.traces.url -}}true{{- end -}}
 {{- end -}}
 
+{{- /*
+The METRICS vmalert's own Service — not a store, so it carries no
+`stores.*.url` override the way the three above do: nothing outside this
+chart runs its own vmalert for this chart's tenancy to point at.
+
+The VictoriaMetrics operator names a VMAlert's generated Service
+"vmalert-<CR name>" (its `PrefixedName()`, `UseLegacyNaming` unset), on
+its default port 8080 — templates/vmalert.yaml names the metrics CR
+"<fullname>-metrics" and sets no `spec.port` override.
+*/}}
+{{- define "observability-stack.vmalert.metrics.url" -}}
+{{- printf "http://vmalert-%s-metrics.%s.svc:8080" (include "observability-stack.fullname" .) .Release.Namespace -}}
+{{- end -}}
+
 {{/*
 The read routes, per store.
 
@@ -226,6 +240,18 @@ which is what stops a subquery escaping the grant.
 {{- define "observability-stack.readPaths.traces" -}}
 - /select/jaeger/.*
 - /select/tempo/.*
+{{- end -}}
+
+{{- /*
+The one route `tenancy.alertReaders` is admitted to: vmalert's own
+active-alerts listing. Exact path, not a prefix — vmalert's write-ish
+surface (`/-/reload`, its own `/api/v1/rules`) is a different concern
+already excluded by not being in this list at all, but an exact path is
+the same belt-and-braces this chart uses everywhere else a route cannot
+be scoped by a filter.
+*/}}
+{{- define "observability-stack.readPaths.alerts" -}}
+- /api/v1/alerts
 {{- end -}}
 
 {{- define "observability-stack.writePaths.metrics" -}}

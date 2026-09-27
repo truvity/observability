@@ -13,8 +13,8 @@ other tooling — stores for metrics, logs and traces scoped to the caller
 at the door; collectors on every cluster; one router for every alert and
 one address every alert reaches a human through; rules that notice a
 failure nobody else would report; a watcher outside the estate that
-notices when the router itself is dead; public status pages per company;
-and dashboards to read it all with.
+notices when the alerting pipeline itself is dead; public status pages
+per company; and dashboards to read it all with.
 
 ## The boundary, stated once
 
@@ -55,31 +55,35 @@ Pulumi that calls a package here.
                      every cluster                                 the install
   ┌──────────────────────────────────────────┐        ┌──────────────────────────────────────┐
   │ applications ──OTLP──► gateway ──┐       │        │  vmauth ◄── Grafana (user's token)   │
-  │ scrape targets ──► metrics agent ─┼──────┼─write──►  ├─ metrics store ◄── vmalert (metrics)│
-  │ container stdout ─► log agent ────┘      │        │  ├─ log store     ◄── vmalert (logs)   │
-  └──────────────────────────────────────────┘        │  └─ trace store                        │
-                                                      │        vmalert ──► Alertmanager ───────┼──► Slack (by cluster × namespace × severity)
-  ┌──────────────────────────────────────────┐        │                      ▲       │        │
-  │ the cloud: findings, sign-ins,           │        │                      │       │Watchdog│
-  │ budgets, key use ──SNS──► alert-ingress ─┼────────┼──────────────────────┘       │        │
-  └──────────────────────────────────────────┘        └──────────────────────────────┼────────┘
-                                                                                     ▼  (over a private network)
-                                                      ┌──────────────────────────────────────┐
-                                                      │ the status box (outside every cluster)│
-                                                      │  gatus-<company> ×N   public pages    │
-                                                      │  gatus-ops            deadman, probes │
-                                                      └──────────────▲───────────────────────┘
+  │ scrape targets ──► metrics agent ─┼──────┼─write──►  ├─ metrics store ◄── vmalert (metrics)│──┐
+  │ container stdout ─► log agent ────┘      │        │  ├─ log store     ◄── vmalert (logs)   │  │
+  └──────────────────────────────────────────┘        │  └─ trace store                        │  │
+                                                      │        vmalert ──► Alertmanager(optional)┼──► Slack (by cluster × namespace × severity)
+  ┌──────────────────────────────────────────┐        │                                        │  │
+  │ the cloud: findings, sign-ins,           │        │                                        │  │ vmauth, one bearer
+  │ budgets, key use ──SNS──► alert-ingress ─┼────────┼────────────────────────────────────────┘  │ token, one route:
+  └──────────────────────────────────────────┘        └───────────────────────────────────────────┘ /api/v1/alerts
+                                                                                                      ▲  (over a private network)
+                                                      ┌───────────────────────────────────────────┐  │
+                                                      │ the status box (outside every cluster)     │  │
+                                                      │  gatus-<company> ×N (later)  public pages  │  │
+                                                      │  gatus-ops         PULLS the alerting state┼──┘
+                                                      └──────────────▲──────────────────────────────┘
                                                                      │ health check
                                                               the edge provider
 ```
 
 Three parties watch each other, and none of them is inside the thing it
-watches: the install's Alertmanager heartbeats into the status box; the
-status box probes the estate from outside and alerts on the heartbeat's
-silence; the edge provider's health check watches the status box. A dead
-router, a dead box or a dead estate is each noticed by one of the other
-two. [doctrine.md](doctrine.md#the-watcher-lives-outside) has why the
-third party is not optional.
+watches: the status box reads the install's own alerting state directly
+(one bearer token, one route — `tenancy.alertReaders` — nothing pushed
+into the box, no Alertmanager required on the install's side at all);
+the status box probes the estate from outside and alerts when that read
+goes quiet or the alert it is watching for disappears; the edge
+provider's health check watches the status box. A dead alerting path, a
+dead box or a dead estate is each noticed by one of the other two.
+[doctrine.md](doctrine.md#the-watcher-lives-outside) has why the third
+party is not optional, and [statusbox.md](statusbox.md#internal--status-pulled)
+has why this is a read and not a push.
 
 ## What a consumer writes, in full
 
@@ -135,10 +139,15 @@ estate renders from wherever it keeps its hostnames.
 statusbox.NewLightsail(ctx, "status", &statusbox.LightsailArgs{
     AvailabilityZone: "us-east-1a",
     Args: statusbox.Args{
-        Version: "v1.0.0",
+        Version:  "v1.0.0",
+        Hostname: "statusbox",
         Secrets: statusbox.Secrets{
             TailscaleAuthKey: tailnetKey,
             TunnelToken:      tunnelToken,
+            // opsYAML references ${ALERT_URL_ALERTS_READ}: the bearer
+            // token tenancy.alertReaders minted, not a push URL — see
+            // statusbox.md, "internal → status, pulled".
+            AlertURLs: map[string]pulumi.StringInput{"alerts_read": alertsReadToken},
         },
         Instances: []statusbox.Instance{
             {Name: "example-co", Port: 8081, Public: true, Config: exampleCoYAML},

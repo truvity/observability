@@ -1,0 +1,27 @@
+# expect: tenancy.allowUnfilteredAlertReads
+# vmalert's own /api/v1/alerts has no per-namespace or per-cluster
+# concept to filter on, so a reader named in alertReaders reads every
+# active alert this install's metrics vmalert is evaluating, cluster-wide
+# — the same "nothing scopes this route" shape allowUnfilteredTraceReads
+# already exists for, one route earlier. Rendering it anyway is the
+# defect this refusal exists to prevent.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  alertReaders:
+    - name: statusbox
+      tokenSecret:
+        name: example-alerts-read-token
+        key: token
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
