@@ -38,6 +38,24 @@ anyone notices until it matters.
 {{- $sortedGrants = append $sortedGrants (index $byCluster $cluster) }}
 {{- end }}
 {{- $logsFilter := include "observability-stack.logsFilter" (dict "grants" $sortedGrants "fields" $logFields) }}
+{{- /*
+This principal's OWN audience, when it set one, else the install-wide
+pin. Escaped and anchored exactly like `tenancy.audience` itself — an
+override is still a client id the issuer assigned, not this chart's to
+leave unescaped.
+*/}}
+{{- $effectiveAudience := $p.audience | default $root.Values.tenancy.audience }}
+{{- /*
+Which of the three read routes this principal gets. Unset renders all
+three, which is the render this chart has always produced — a trace
+route among them still needs `$tracesEnabled` below, exactly as before.
+Set, it narrows: `routes: [metrics]` is a reader with no logs or traces
+targetRef at all, not merely an empty filter on those routes.
+*/}}
+{{- $routes := $p.routes | default (list "metrics" "logs" "traces") }}
+{{- $hasMetrics := has "metrics" $routes }}
+{{- $hasLogs := has "logs" $routes }}
+{{- $hasTraces := has "traces" $routes }}
 ---
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMUser
@@ -82,7 +100,7 @@ spec:
     */}}
     matchClaims:
       {{ $root.Values.tenancy.claimName }}: {{ printf "^(%s)$" (regexQuoteMeta $p.group) | quote }}
-      aud: {{ printf "^(%s)$" (regexQuoteMeta $root.Values.tenancy.audience) | quote }}
+      aud: {{ printf "^(%s)$" (regexQuoteMeta $effectiveAudience) | quote }}
     {{- /*
     The filters this group is entitled to, used when the token itself
     carries no `vm_access` claim — which is every token, in the shape
@@ -113,14 +131,21 @@ spec:
   `observability-stack.readQueryArgs.*` in _helpers.tpl.
   */}}
   targetRefs:
+    {{- if $hasMetrics }}
     - static:
         url: {{ $metrics | quote }}
       paths:
+        {{- if $p.metricsQueryOnly }}
+        {{- include "observability-stack.readPaths.metrics.queryOnly" $root | nindent 8 }}
+        {{- else }}
         {{- include "observability-stack.readPaths.metrics" $root | nindent 8 }}
+        {{- end }}
       query_args:
         {{- include "observability-stack.readQueryArgs.metrics" $root | nindent 8 }}
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- end }}
+    {{- if $hasLogs }}
     - static:
         url: {{ $logs | quote }}
       paths:
@@ -129,7 +154,8 @@ spec:
         {{- include "observability-stack.readQueryArgs.logs" $root | nindent 8 }}
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
-    {{- if $tracesEnabled }}
+    {{- end }}
+    {{- if and $tracesEnabled $hasTraces }}
     {{- /*
     The trace route, and the one with no `query_args`, because there is
     no argument to put them in: VictoriaTraces' Jaeger and Tempo select

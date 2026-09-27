@@ -1,0 +1,58 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# Two principals, and the two per-principal fields tenancy.principals[]
+# gained beside the ones the `tenancy` case already covers:
+#
+#   - the first keeps `tenancy.audience`, like every principal before
+#     this release, and gets all three read routes (traces excluded
+#     here only because this case turns the trace store off, same as
+#     `tenancy`'s own case);
+#   - the second is a machine reader in the shape a verification gate
+#     needs: its OWN audience — deliberately full of the regex
+#     metacharacters `matchClaims` would compile if this chart did not
+#     escape them (`.`, `|`, `(`, `)`) — a single route (`metrics`), and
+#     `metricsQueryOnly` narrowing that route to the two query paths.
+#     Its grant is one cluster, one namespace: the smallest reach this
+#     mechanism can express.
+#
+# A Go test in tests/ renders both `aud` claims back out of this golden
+# file and asserts the second is escaped and anchored rather than merely
+# present — an unescaped `.` or `|` in a client id would let a token
+# meant for a DIFFERENT client through, or split the pin into two
+# alternatives, either of which is the exact defect `tenancy.audience`
+# already carries a refusal against.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+    - group: example:example-app:metrics-gate
+      audience: "metrics-gate.example|other(prod)"
+      routes: [metrics]
+      metricsQueryOnly: true
+      grants:
+        - cluster: example-cluster
+          namespaces: [example-app]
+
+# Off, so the render is the tenancy and nothing else.
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+networkPolicy:
+  enabled: false
+victoria-metrics-k8s-stack:
+  enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

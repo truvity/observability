@@ -263,6 +263,41 @@ tenancy:
   # they are interpolated into a filter expression, so a name carrying
   # `|` or `.*` would widen the grant it appears in, and such a name is
   # refused rather than escaped.
+  #
+  # Two more fields, both optional, both per-principal:
+  #
+  #   principals:
+  #     - group: example:url-shortener:metrics-gate
+  #       audience: metrics-gate
+  #       routes: [metrics]
+  #       metricsQueryOnly: true
+  #       grants:
+  #         - cluster: example-cluster
+  #           namespaces: [example-app]
+  #
+  # `audience` overrides `tenancy.audience` for THIS principal's own
+  # `matchClaims.aud` — a machine reader minted under its own client id
+  # rather than the one people's Grafana tokens carry, for instance. Unset
+  # falls back to `tenancy.audience`, which stays required regardless.
+  # Escaped and anchored exactly the same way, and refused under the same
+  # terms: whitespace, a newline, or being present and empty.
+  #
+  # `routes` narrows which of the three read routes this principal gets
+  # at all — unset renders all three, exactly as before (a trace route
+  # among them still needs a trace store and
+  # `tenancy.allowUnfilteredTraceReads`, unaffected by this). `[metrics]`
+  # is a reader with no logs or traces `targetRef` in its `VMUser` at all,
+  # not merely an unused filter on those routes. A restriction that would
+  # render no route — an empty list, or `traces` alone with no trace
+  # store enabled — is refused rather than installed as a reader who can
+  # read nothing.
+  #
+  # `metricsQueryOnly` narrows the metrics route itself, when this
+  # principal has one, to exactly `/prometheus/api/v1/query` and
+  # `/prometheus/api/v1/query_range` — no series, labels, label values,
+  # tsdb status or vmui. The shape a verification gate needs and nothing
+  # past it. Refused if `routes` excludes `metrics`: there would be
+  # nothing left to narrow.
   principals: []
   # -- The writers: collectors and agents that push, authenticated by a
   # bearer token rather than by a person's identity.
@@ -1249,8 +1284,26 @@ victoria-metrics-k8s-stack:
   vmagent:
     enabled: false
   # -- The rules are `charts/platform-alerts`, where each one carries the
-  # incident that earned it and a fixture that must fail.
+  # incident that earned it and a fixture that must fail, plus this
+  # chart's own Watchdog (`templates/watchdog.yaml`).
+  #
+  # `create: false` alone does not turn the vendored default rule set
+  # off: the sync job that fetches and applies rule sources gates on
+  # `defaultRules.enabled` OR `defaultRules.create`, and `enabled`
+  # defaults to `true` upstream. Measured against this chart's own
+  # golden render: with only `create: false` set, the sync job's
+  # rendered config still carries
+  # `.../kube-prometheus/main/manifests/kubePrometheus-prometheusRule.yaml`
+  # with no per-source `enabled: false` beside it — meaning that file,
+  # among others, is fetched and its rules created directly in the
+  # cluster, live, invisible to `helm template` and to every golden
+  # render here. That manifest's own `general.rules` group carries a
+  # `Watchdog` alert, so an install ended up with two: the vendored one
+  # nobody asked for, and this chart's own. `enabled: false` is the key
+  # that actually stops the sync job populating any rule source at all;
+  # `create: false` stays too, belt-and-braces.
   defaultRules:
+    enabled: false
     create: false
   defaultDashboards:
     enabled: false

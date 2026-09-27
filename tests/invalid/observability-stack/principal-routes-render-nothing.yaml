@@ -1,0 +1,32 @@
+# expect: renders no route at all
+# A principal restricted to `traces` alone, on an install with no trace
+# store enabled. The other two routes render whenever named; `traces`
+# renders only when a trace store exists at all — so this principal's
+# `routes` is well-formed and still produces a VMUser with no `targetRef`
+# on it, a reader who can read nothing. That is written by leaving the
+# principal out of `tenancy.principals`, not by restricting it to a
+# store that is not there.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:example-app:trace-gate
+      routes: [traces]
+      grants:
+        - cluster: example-cluster
+          namespaces: [example-app]
+
+victoria-traces-single:
+  enabled: false
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

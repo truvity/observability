@@ -23,6 +23,7 @@ second debugging session.
 {{- include "observability-stack.validate.selfAlerts" . -}}
 {{- include "observability-stack.validate.evaluateOnly" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
+{{- include "observability-stack.validate.vendoredRules" . -}}
 {{- include "observability-stack.validate.scrapeFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
@@ -417,6 +418,33 @@ override leaves the ServiceMonitor converter off.
 {{- end -}}
 
 {{/*
+The vendored default alerting rules, off.
+
+`victoria-metrics-k8s-stack`'s own sync job fetches rule sources over
+the network and applies them to the cluster DIRECTLY — invisible to
+`helm template`, and to every golden render this repository has, which
+is exactly how this went unnoticed for as long as it did:
+`defaultRules.create: false` reads like the off switch and is not one.
+The sync job's own gate is `defaultRules.enabled` OR
+`defaultRules.create`, and `enabled` defaults to `true` upstream — so
+with only `create` set, every rule source with no per-source `enabled`
+override is still fetched and applied live. One of them, measured
+directly against this chart's own golden renders, is kube-prometheus's
+own combined rule manifest, carrying no such override — and its
+`general.rules` group carries a `Watchdog` alert of its own, duplicating
+the one this chart renders itself (`templates/watchdog.yaml`) the
+moment both exist. `defaultRules.enabled: false` is the key that
+actually stops the sync job populating any rule source at all; this
+chart ships it that way, and this refusal is what keeps it that way.
+*/}}
+{{- define "observability-stack.validate.vendoredRules" -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- if and $vmks.enabled (($vmks.defaultRules).enabled) -}}
+{{- fail "observability-stack: victoria-metrics-k8s-stack.defaultRules.enabled is true. Its sync job fetches rule sources over the network and applies them directly to the cluster — invisible to `helm template` — and at least one of them (kube-prometheus's own combined rule manifest) carries a `general.rules` group with its own `Watchdog` alert, duplicating this chart's own the moment it exists, plus every other rule that manifest and its siblings carry, none of which this chart tests or reviews. The rules are `charts/platform-alerts` and this chart's own Watchdog (`templates/watchdog.yaml`). Set `victoria-metrics-k8s-stack.defaultRules.enabled: false`." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 A store's scraper, named by address rather than by identity.
 
 `networkPolicy.scrapeFrom` admits whatever it is given at face value —
@@ -673,6 +701,25 @@ that selects on one of them and ignores the other.
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- /*
+This principal's OWN audience, and its OWN route restriction — both
+optional, both checked here rather than left to the schema, because
+what can go wrong with either is a value the schema cannot see is
+wrong: an audience that is present but says nothing, or a restriction
+that, combined with what else this principal set or what this install
+has enabled, renders no route at all.
+*/}}
+{{- if and (hasKey $p "audience") (not (regexMatch $audienceShape (toString $p.audience))) -}}
+{{- fail (printf "observability-stack: principal %q sets `audience` to %q, which is not an identifier (%s). Like `tenancy.audience`, a client id may otherwise carry a dot, a `|` or an `@` — the issuer assigns it, this chart does not — and is escaped and anchored where it is rendered, so it pins itself and nothing else. What is refused is a value no issuer mints: empty, or carrying whitespace or a newline, which is how a value that arrived from the wrong place looks. Leave `audience` out entirely to fall back to `tenancy.audience`, rather than setting it to nothing." $p.group (toString $p.audience) $audienceShape) -}}
+{{- end -}}
+{{- $routes := $p.routes | default (list "metrics" "logs" "traces") -}}
+{{- $rendersTraces := and (has "traces" $routes) (include "observability-stack.tracesEnabled" $) -}}
+{{- if not (or (has "metrics" $routes) (has "logs" $routes) $rendersTraces) -}}
+{{- fail (printf "observability-stack: principal %q's `routes` (%s) renders no route at all. Metrics and logs render whenever named; `traces` renders only when a trace store is enabled (independent of `tenancy.allowUnfilteredTraceReads`, checked next). A principal that may read nothing is written by leaving it out of `tenancy.principals` entirely, not by restricting it to nothing." $p.group (join ", " $routes)) -}}
+{{- end -}}
+{{- if and $p.metricsQueryOnly (not (has "metrics" $routes)) -}}
+{{- fail (printf "observability-stack: principal %q sets `metricsQueryOnly: true` but its `routes` (%s) does not include `metrics`. metricsQueryOnly narrows the metrics route to its two query paths; with no metrics route requested there is nothing for it to narrow, and the flag would mean nothing." $p.group (join ", " $routes)) -}}
+{{- end -}}
 {{- end -}}
 {{- /*
 The trace route cannot be scoped, so it is not rendered until somebody
@@ -689,8 +736,22 @@ paths reads every namespace's spans on every cluster, whatever
 Rendering it anyway, because it looks like the metrics and logs routes,
 is exactly the failure this chart was fixed to remove. So it is a
 refusal with a value whose name says what accepting it means.
+
+Gated on whether a principal actually WANTS the trace route rather than
+on `principals` being non-empty: a principal whose own `routes` excludes
+`traces` (see above) never gets this targetRef, so an install with
+traces enabled for other reasons and every principal scoped to metrics
+or logs alone has nothing here to accept unscoped. Every principal's
+default is unchanged — all three routes — so an install that sets no
+`routes` anywhere is refused exactly as before.
 */}}
-{{- if and $t.principals (include "observability-stack.tracesEnabled" .) -}}
+{{- $anyPrincipalWantsTraces := false -}}
+{{- range $p := $t.principals -}}
+{{- if has "traces" ($p.routes | default (list "metrics" "logs" "traces")) -}}
+{{- $anyPrincipalWantsTraces = true -}}
+{{- end -}}
+{{- end -}}
+{{- if and $anyPrincipalWantsTraces (include "observability-stack.tracesEnabled" .) -}}
 {{- if not $t.allowUnfilteredTraceReads -}}
 {{- fail "observability-stack: a trace store is enabled and `tenancy.principals` is set, but `tenancy.allowUnfilteredTraceReads` is not. The proxy enforces a grant by substituting the principal's filter into the route it forwards on, and VictoriaTraces' Jaeger and Tempo select APIs accept NO query argument to substitute it into: their handlers take a tenant id from headers, `hidden_fields_filters` (which hides fields from a result, not rows) and `allow_partial_response`, and nothing else. There is no way through this proxy to give one principal a narrower view of traces than another, so the trace read route would be an unscoped route sitting beside two scoped ones and looking identical to them. Either turn the trace store off, or set `tenancy.allowUnfilteredTraceReads: true` and record that every principal who can reach the proxy reads every namespace's spans on every cluster. Metrics and logs are unaffected either way." -}}
 {{- end -}}

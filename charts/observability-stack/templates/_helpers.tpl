@@ -232,6 +232,19 @@ which is what stops a subquery escaping the grant.
     - {{ include "observability-stack.filterPlaceholder.logs" . | quote }}
 {{- end -}}
 
+{{- /*
+The subset of `readPaths.metrics` a `tenancy.principals[].metricsQueryOnly`
+reader gets: the two query endpoints and nothing else this store's own
+full reader list also carries — no series, no labels, no label values,
+no tsdb status, no vmui, and (gated the same way as the full list)
+`/api/v1/metadata` never at all, because a query-only reader has less
+reason for it than a full one does, not more.
+*/}}
+{{- define "observability-stack.readPaths.metrics.queryOnly" -}}
+- /prometheus/api/v1/query
+- /prometheus/api/v1/query_range
+{{- end -}}
+
 {{- define "observability-stack.readPaths.logs" -}}
 - /select/logsql/.*
 - /select/vmui.*

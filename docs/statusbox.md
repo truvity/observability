@@ -24,31 +24,45 @@ for the second job:
   install's alerting pipeline is, "a request landed" or "a request did
   not land" is the entire vocabulary.
 - Turning an *internal* alert into a status component's colour is not
-  that shape. The alert exists in the alerting pipeline's own vocabulary
-  (labels, a name, a state) and the page wants a colour; something has
-  to translate one into the other, and a push-based design puts that
-  translator on the alerting side, reshaping its own webhook payload
-  into whatever the receiving endpoint expects. That translator is an
-  adapter, and an earlier revision of this page did not count it as
-  one. The design below counts it, and picks PULL instead for exactly
-  this job: Gatus's own `[BODY]` conditions read the alerting pipeline's
-  read API directly, in its own vocabulary, so there is nothing to
-  translate. See "internal → status, pulled" below.
+  that shape. Alertmanager's own webhook receiver POSTs a fixed JSON
+  body — the same shape whether an alert is firing or resolved — to ONE
+  URL it is configured with; Gatus's external-endpoint mechanism reads
+  success from a QUERY PARAMETER on the request it receives instead
+  (`success=true` / `success=false` on the URL Alertmanager would POST
+  to). Neither side speaks the other's shape: something would have had
+  to sit between them, translating a POST body's alert state into that
+  query parameter. That translator is an adapter, and an earlier
+  revision of this page did not count it as one — it read "no adapter"
+  for the deadman above and assumed the same held here. It does not.
+  The design below counts it, and picks PULL instead for exactly this
+  job: Gatus's own `[BODY]` conditions read the alerting pipeline's read
+  API directly, in its own vocabulary, so there is nothing to translate.
+  See "internal → status, pulled" below.
 
-This repository turns "run several Gatus instances behind a tunnel and a
-private network on a small box" into a package an estate calls.
+This repository turns "run one or more Gatus instances, joined to a
+private network, on a small box" into a package an estate calls.
 
 ## The shape
 
 One virtual machine, provisioned by Pulumi from a package here, with no
-inbound port open. On it:
+inbound port open. Today, on it:
 
 ```
-tailscaled            joins the estate's private network: SSH, the ops page, gatus-ops's read of the alerting pipeline
-cloudflared           one tunnel to the edge provider; one ingress rule per public page
-gatus-<company> ×N    one public status page per legal entity, once its hostname is delegated; components per product, never per cluster
-gatus-ops             private: every hostname, every certificate's expiry, the deadman and the internal-to-status signal (both read, not received — see "internal → status, pulled")
+tailscaled   joins the estate's private network: SSH, the one page below, and its read of the install's alerting state
+gatus-ops    ONE page, PRIVATE, reachable only over the tailnet: every company's own component (red/green) alongside cluster infrastructure (every hostname, every certificate's expiry) and the deadman — both read, not received, see "internal → status, pulled"
 ```
+
+No `cloudflared` and no public page yet: nothing on the box is reachable
+from outside the private network. A public, per-company status page —
+`gatus-<company>`, on that company's own domain — is a SEPARATE instance
+an estate adds LATER, once that hostname is delegated; see "a new
+company page" in the table below. `pkg/statusbox`'s own shape
+(`Instance.Public`, `Args.Hostnames`, one `cloudflared` ingress rule per
+`Public` instance) already carries that step — taking it is a consumer
+decision, not a mechanism this package gains later. Nothing about
+taking it changes the private page: it keeps every company's own
+component and every piece of cluster infrastructure, in one page, for
+whoever is watching from inside the estate's own network.
 
 Each Gatus is the same image, its own YAML, its own SQLite file on an
 attached disk. There is no shared database and there are no replicas:

@@ -131,9 +131,13 @@ mappings:
       annotations: {summary: "{{ .detail.title }}"}
 ```
 
-**The status box**: one Pulumi call with the release version, three
+**The status box**: one Pulumi call with the release version, two
 secrets, and the instance list — each instance a Gatus configuration the
-estate renders from wherever it keeps its hostnames.
+estate renders from wherever it keeps its hostnames. Today that list is
+ONE instance: a single private page carrying every company's own
+component alongside cluster infrastructure, reachable only over the
+tailnet — no tunnel token, no public ingress, because nothing here is
+public yet (statusbox.md, "The shape").
 
 ```go
 statusbox.NewLightsail(ctx, "status", &statusbox.LightsailArgs{
@@ -143,20 +147,25 @@ statusbox.NewLightsail(ctx, "status", &statusbox.LightsailArgs{
         Hostname: "statusbox",
         Secrets: statusbox.Secrets{
             TailscaleAuthKey: tailnetKey,
-            TunnelToken:      tunnelToken,
             // opsYAML references ${ALERT_URL_ALERTS_READ}: the bearer
             // token tenancy.alertReaders minted, not a push URL — see
             // statusbox.md, "internal → status, pulled".
             AlertURLs: map[string]pulumi.StringInput{"alerts_read": alertsReadToken},
         },
         Instances: []statusbox.Instance{
-            {Name: "example-co", Port: 8081, Public: true, Config: exampleCoYAML},
-            {Name: "ops",        Port: 8084, Public: false, Config: opsYAML},
+            {Name: "ops", Port: 8084, Public: false, Config: opsYAML},
         },
-        Hostnames: map[string]string{"example-co": "status.example.com"},
     },
 })
 ```
+
+Later, once a company's own `status.<company domain>` hostname is
+delegated, that company's public page is a SECOND instance added to the
+same call — `TunnelToken` joins `Secrets`, a `{Name: "example-co", Port:
+8081, Public: true, Config: exampleCoYAML}` entry joins `Instances`, and
+its hostname joins `Hostnames: map[string]string{"example-co":
+"status.example.com"}`. Nothing about the private instance above
+changes when that happens.
 
 **Dashboards**: `observability-dashboards` with the datasource UIDs;
 the estate's own dashboards beside it, passing the same lint.

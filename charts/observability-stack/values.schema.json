@@ -296,6 +296,27 @@
                 "type": "string",
                 "minLength": 1
               },
+              "audience": {
+                "$ref": "#/definitions/audience",
+                "description": "This principal's OWN audience, overriding `tenancy.audience` for its `matchClaims.aud` alone. Optional: unset, this principal is pinned to `tenancy.audience` like any other, which stays REQUIRED whenever `principals` is set — this is a per-reader override, not a replacement. Escaped and anchored exactly as `tenancy.audience` is; the same refusal applies to a value no issuer mints (empty, whitespace, a newline). The reader `tenancy.alertReaders` cannot use this: it has no OIDC identity to pin an audience on in the first place."
+              },
+              "routes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "metrics",
+                    "logs",
+                    "traces"
+                  ]
+                },
+                "description": "Which of this proxy's three read routes this principal gets. Optional: unset renders all three (subject to the same gates as always — a trace route still needs a trace store enabled and `tenancy.allowUnfilteredTraceReads`). Set to narrow a principal to fewer signals, for example `[metrics]` for a machine reader with no business reading logs or traces. An empty list is refused by the schema rather than read as \"nothing\", the same as `writers[].destinations`."
+              },
+              "metricsQueryOnly": {
+                "type": "boolean",
+                "description": "Narrow the metrics route (when this principal has one) to exactly `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range` — no series, labels, label values, tsdb status or vmui. Off by default, which keeps the full metrics read route. Refused when `routes` is set and excludes `metrics`: there would be nothing left for it to narrow."
+              },
               "grants": {
                 "type": "array",
                 "minItems": 1,
