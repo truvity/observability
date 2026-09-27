@@ -56,6 +56,29 @@ var instanceNameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 // substitution, so it has to be one.
 var alertKeyRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
+// envNameRE is what a Secrets.Env key may look like: unlike an
+// AlertURLs key, it becomes the WHOLE environment variable name a
+// Config references (no ALERT_URL_ prefix added), so the shape has to
+// be a valid one on its own.
+var envNameRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// reservedEnvNames are the environment variable names CloudInit and
+// setup.sh already give a fixed meaning to. A Secrets.Env entry using
+// one of these would either silently overwrite that meaning (TS_AUTHKEY,
+// TUNNEL_TOKEN — see render) or collide with the ALERT_URL_ namespace
+// AlertURLs owns (see the alertURLName collision check in validate).
+var reservedEnvNames = map[string]bool{
+	"TS_AUTHKEY":   true,
+	"TUNNEL_TOKEN": true,
+}
+
+// alertURLName is the environment variable name AlertURLs key k becomes:
+// ALERT_URL_<K>, upper-cased. Shared between validate (to refuse a
+// Secrets.Env entry that would collide with it) and render.
+func alertURLName(k string) string {
+	return "ALERT_URL_" + strings.ToUpper(k)
+}
+
 // Instance is one Gatus process on the box: its own image, its own
 // configuration, its own SQLite file on the attached disk. There is no
 // shared database and no clustering between instances — see
@@ -143,6 +166,25 @@ type Secrets struct {
 	// Config literally. Optional: an instance whose Config references no
 	// such variable needs no entry here.
 	AlertURLs map[string]pulumi.StringInput
+
+	// Env carries any OTHER secret a Config needs to reference by its
+	// own environment-variable substitution — Gatus's `security.oidc`
+	// block asking for `client-secret: ${OIDC_CLIENT_SECRET}`, for
+	// instance. It differs from AlertURLs in exactly one way: a key
+	// here becomes the WHOLE variable name a Config writes as ${<KEY>}
+	// — no ALERT_URL_ prefix is added — because unlike an alert push
+	// URL, which is always "the credential for THIS instance's own
+	// alerting", the shape of what a Config needs a secret for here is
+	// not this package's to guess or namespace.
+	//
+	// A key colliding with TS_AUTHKEY, TUNNEL_TOKEN, or the
+	// ALERT_URL_<NAME> an AlertURLs entry already produces is refused in
+	// Args.validate — both are this package's own reserved names, and a
+	// Config silently getting the wrong one of two values written under
+	// the same variable is worse than a refusal at deploy time. Optional:
+	// an instance whose Config references no such variable needs no
+	// entry here.
+	Env map[string]pulumi.StringInput
 }
 
 // Args is CloudInit's whole input: a version of this repository, the
@@ -246,6 +288,7 @@ func CloudInit(_ *pulumi.Context, a Args) (pulumi.StringOutput, error) {
 	}
 
 	alertKeys := sortedKeys(a.Secrets.AlertURLs)
+	envKeys := sortedKeys(a.Secrets.Env)
 
 	type slot struct {
 		key string
@@ -264,6 +307,9 @@ func CloudInit(_ *pulumi.Context, a Args) (pulumi.StringOutput, error) {
 	for _, k := range alertKeys {
 		add("alert:"+k, a.Secrets.AlertURLs[k])
 	}
+	for _, k := range envKeys {
+		add("env:"+k, a.Secrets.Env[k])
+	}
 
 	out := pulumi.All(inputs...).ApplyT(func(vals []interface{}) (string, error) {
 		values := make(map[string]string, len(slots))
@@ -274,7 +320,11 @@ func CloudInit(_ *pulumi.Context, a Args) (pulumi.StringOutput, error) {
 		for _, k := range alertKeys {
 			alertVals[k] = values["alert:"+k]
 		}
-		return render(a, sha, values["tailscale"], values["tunnel"], alertVals)
+		envVals := make(map[string]string, len(envKeys))
+		for _, k := range envKeys {
+			envVals[k] = values["env:"+k]
+		}
+		return render(a, sha, values["tailscale"], values["tunnel"], alertVals, envVals)
 	})
 
 	return out.(pulumi.StringOutput), nil
@@ -362,6 +412,22 @@ func (a Args) validate() error {
 		}
 	}
 
+	alertURLNames := map[string]string{}
+	for k := range a.Secrets.AlertURLs {
+		alertURLNames[alertURLName(k)] = k
+	}
+	for k := range a.Secrets.Env {
+		where := fmt.Sprintf("statusbox: Secrets.Env key %q", k)
+		switch {
+		case !envNameRE.MatchString(k):
+			errs = append(errs, fmt.Errorf("%s is not a valid environment-variable name (%s)", where, envNameRE))
+		case reservedEnvNames[k]:
+			errs = append(errs, fmt.Errorf("%s is reserved by statusbox itself (see Secrets.TailscaleAuthKey / Secrets.TunnelToken)", where))
+		case alertURLNames[k] != "":
+			errs = append(errs, fmt.Errorf("%s collides with Secrets.AlertURLs[%q], which already becomes the environment variable %s: a Config referencing ${%s} would get whichever of the two happened to be written last", where, alertURLNames[k], k, k))
+		}
+	}
+
 	if a.Secrets.TailscaleAuthKey == nil {
 		errs = append(errs, errors.New("statusbox: Secrets.TailscaleAuthKey is nil: the tailnet is how the install's Alertmanager reaches gatus-ops and how an operator reaches the box at all, so it is required on every box"))
 	}
@@ -389,7 +455,7 @@ type manifestInstance struct {
 // provider's user-data field requires, and refuses to return a result
 // over userDataLimit. Kept separate from CloudInit so it can be tested
 // without a Pulumi context or the network call CloudInit itself makes.
-func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals map[string]string) (string, error) {
+func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals, envVals map[string]string) (string, error) {
 	var b strings.Builder
 
 	b.WriteString("#!/bin/bash\n")
@@ -401,7 +467,18 @@ func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals map
 	fmt.Fprintf(&b, "export TS_AUTHKEY=%s\n", shellQuote(tailscaleKey))
 	fmt.Fprintf(&b, "export TUNNEL_TOKEN=%s\n", shellQuote(tunnelToken))
 	for _, k := range sortedStringKeys(alertVals) {
-		fmt.Fprintf(&b, "export ALERT_URL_%s=%s\n", strings.ToUpper(k), shellQuote(alertVals[k]))
+		fmt.Fprintf(&b, "export %s=%s\n", alertURLName(k), shellQuote(alertVals[k]))
+	}
+	// Secrets.Env is staged under a STATUSBOX_ENV_ prefix rather than
+	// exported under its own name directly: setup.sh's write_env has to
+	// tell "a secret CloudInit staged for a container" apart from every
+	// OTHER environment variable already present in the boot script's own
+	// shell (PATH, HOME, STATUSBOX_VERSION above, ...), and `grep
+	// '^STATUSBOX_ENV_'` is how — setup.sh strips the prefix back off
+	// before writing the real name (see write_env), so a Config still
+	// only ever writes ${<KEY>}, never ${STATUSBOX_ENV_<KEY>}.
+	for _, k := range sortedStringKeys(envVals) {
+		fmt.Fprintf(&b, "export STATUSBOX_ENV_%s=%s\n", k, shellQuote(envVals[k]))
 	}
 
 	b.WriteString("\nmkdir -p /opt/statusbox/staged\n\n")

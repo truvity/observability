@@ -78,7 +78,8 @@ func twoInstanceArgs() Args {
 
 func TestRenderGoldenTwoInstances(t *testing.T) {
 	got, err := render(twoInstanceArgs(), fixedSHA256, "test-tailscale-authkey", "test-tunnel-token",
-		map[string]string{"slack": "test-alert-slack-url"})
+		map[string]string{"slack": "test-alert-slack-url"},
+		map[string]string{"OIDC_CLIENT_SECRET": "test-oidc-client-secret"})
 	require.NoError(t, err)
 
 	golden := filepath.Join("testdata", "golden", "two-instance.txt")
@@ -117,7 +118,7 @@ func TestRenderRefusesUserDataOverTheLimit(t *testing.T) {
 	args := twoInstanceArgs()
 	args.Instances[0].Config = oversized
 
-	_, err := render(args, fixedSHA256, "test-tailscale-authkey", "test-tunnel-token", nil)
+	_, err := render(args, fixedSHA256, "test-tailscale-authkey", "test-tunnel-token", nil, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "byte limit")
 }
@@ -187,6 +188,9 @@ func TestCloudInitEndToEnd(t *testing.T) {
 		AlertURLs: map[string]pulumi.StringInput{
 			"slack": pulumi.String("test-alert-slack-url"),
 		},
+		Env: map[string]pulumi.StringInput{
+			"OIDC_CLIENT_SECRET": pulumi.String("test-oidc-client-secret"),
+		},
 	}
 
 	var got string
@@ -207,7 +211,8 @@ func TestCloudInitEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	want, err := render(twoInstanceArgs(), fixedSHA256, "test-tailscale-authkey", "test-tunnel-token",
-		map[string]string{"slack": "test-alert-slack-url"})
+		map[string]string{"slack": "test-alert-slack-url"},
+		map[string]string{"OIDC_CLIENT_SECRET": "test-oidc-client-secret"})
 	require.NoError(t, err)
 	require.Equal(t, want, got, "CloudInit must render the same thing render() does once its Pulumi inputs resolve to the same values")
 }

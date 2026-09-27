@@ -22,12 +22,13 @@
 # name for the box itself, not a page it serves.
 #
 # It knows no secret it did not receive as an already-exported
-# environment variable: TS_AUTHKEY, TUNNEL_TOKEN, and any ALERT_URL_*
-# CloudInit staged. It reads no SSM parameter, no credential store, no
-# instance-role — that would be a second credential the box holds beyond
-# the one-shot tailnet key, and docs/doctrine.md is explicit about why a
-# watcher should not hold one: it is one more way for the thing it
-# watches to take the watcher down. The only inputs this script reads
+# environment variable: TS_AUTHKEY, TUNNEL_TOKEN, any ALERT_URL_*, and
+# any STATUSBOX_ENV_* CloudInit staged. It reads no SSM parameter, no
+# credential store, no instance-role — that would be a second credential
+# the box holds beyond the one-shot tailnet key, and docs/doctrine.md is
+# explicit about why a watcher should not hold one: it is one more way
+# for the thing it watches to take the watcher down. The only inputs
+# this script reads
 # from disk are /opt/statusbox/staged/manifest.json and this script's own
 # sibling *.yaml.gz.b64 files, all written by cloud-init before this
 # script is ever invoked.
@@ -251,11 +252,12 @@ COMPOSE
   } > "$root/docker-compose.yml"
 }
 
-# write_env carries every ALERT_URL_* variable CloudInit staged into the
-# containers' own environment, so a Config can reference
-# ${ALERT_URL_<KEY>} using Gatus's own environment-variable substitution
-# without that value ever being typed into the Config itself — see
-# statusbox.Secrets.AlertURLs's doc comment.
+# write_env carries every ALERT_URL_* variable, and every STATUSBOX_ENV_*
+# variable, CloudInit staged into the containers' own environment, so a
+# Config can reference ${ALERT_URL_<KEY>} or ${<NAME>} using Gatus's own
+# environment-variable substitution without that value ever being typed
+# into the Config itself — see statusbox.Secrets.AlertURLs's and
+# statusbox.Secrets.Env's doc comments.
 #
 # It writes a .env file rather than exporting these into the compose
 # file's own text: docker compose loads a .env file beside
@@ -263,9 +265,17 @@ COMPOSE
 # a different thing from a container's own environment and does nothing
 # on its own — every service's `env_file: [.env]` (see write_compose) is
 # what actually puts each variable into gatus's process, and it loads
-# every ALERT_URL_* key this writes without write_compose having to name
-# any of them, since AlertURLs's keys are the estate's own and unknown
-# here.
+# every key this writes without write_compose having to name any of
+# them, since both AlertURLs's and Env's keys are the estate's own and
+# unknown here.
+#
+# A STATUSBOX_ENV_<NAME> variable is staged, not <NAME> itself (see
+# statusbox.render): this loop tells "a Secrets.Env entry CloudInit
+# staged for a container" apart from every OTHER environment variable
+# already present in THIS script's own shell (PATH, HOME,
+# STATUSBOX_VERSION, ...) by that prefix alone, so it has to strip the
+# prefix back off before writing the real name — the one a Config
+# actually references — into .env.
 write_env() {
   local env_file="$root/.env"
   : > "$env_file"
@@ -273,6 +283,9 @@ write_env() {
   while IFS='=' read -r key value; do
     printf '%s=%s\n' "$key" "$value" >> "$env_file"
   done < <(env | grep '^ALERT_URL_' || true)
+  while IFS='=' read -r key value; do
+    printf '%s=%s\n' "${key#STATUSBOX_ENV_}" "$value" >> "$env_file"
+  done < <(env | grep '^STATUSBOX_ENV_' || true)
 }
 
 write_systemd_unit() {

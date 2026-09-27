@@ -102,6 +102,7 @@ type Secrets struct {
     TailscaleAuthKey pulumi.StringInput            // one-shot pre-authorised key; required
     TunnelToken      pulumi.StringInput            // required only if any Instance is Public
     AlertURLs        map[string]pulumi.StringInput // keyed name → ${ALERT_URL_<NAME>} in a Config
+    Env              map[string]pulumi.StringInput // keyed name → ${<NAME>} in a Config, verbatim
 }
 
 type Args struct {
@@ -169,6 +170,24 @@ here, since `AlertURLs`'s keys are the estate's own and unknown to
 user-data in plain text — see "readable from the instance metadata
 service" below — but a Config already written down (in the estate's own
 repository, in its catalogue) never has to carry it.
+
+`Secrets.Env` is the same mechanism, generalised, for a secret that is
+NOT a push-alert credential — Gatus's own `security.oidc.client-secret`,
+for instance, which a signed-in ops page needs and an alert page never
+did. It differs from `AlertURLs` in exactly one place: a key becomes the
+WHOLE variable name a Config writes as `${<NAME>}` — no `ALERT_URL_`
+prefix — because there is no one shape ("a push URL for THIS instance's
+alerting") to namespace it under. `CloudInit` stages each entry under an
+internal `STATUSBOX_ENV_<NAME>` name in the boot script — the prefix a
+`write_env` grep tells it apart from every other shell variable already
+in scope (`PATH`, `STATUSBOX_VERSION`, ...) by, a problem `ALERT_URL_`
+never has because that prefix already IS the variable a Config
+references; `setup.sh` strips the prefix back off before writing
+the real name into the same `.env` file `AlertURLs` entries land in. A
+name colliding with `TS_AUTHKEY`, `TUNNEL_TOKEN`, or the `ALERT_URL_`
+namespace is refused in `Args.validate` — two secrets landing in a
+Config under the same `${...}` reference is worse discovered at deploy
+time than in a container's environment after the fact.
 
 ### Checksum at deploy, verify at boot
 
