@@ -172,6 +172,25 @@ statusbox-debian:
 statusbox-ca-proof:
     hack/statusbox-ca-proof.sh
 
+# REAL proof, against a real victoria-metrics binary, that
+# `charts/platform-alerts`' BackupJobFailed rule now fires on only the
+# NEWEST Job of each CronJob — the fix for a CronJob's
+# failedJobsHistoryLimit keeping a failed Job around long after a later
+# run succeeded, so the old expression fired on it forever.
+# tests/backupjobfailed_test.go pins the rendered MetricsQL string
+# against edits; it cannot evaluate the JOIN that string performs — no
+# vendored MetricsQL engine in this repository can, see
+# tests/kargo_alerts_test.go's own header — so this is the other half:
+# synthetic kube-state-metrics series for four CronJobs imported into a
+# real victoria-metrics, queried with both the OLD and the NEW
+# expression. See hack/platform-alerts-newest-job-proof.sh's own header.
+#
+# Needs Docker, curl and python3 (with PyYAML); deliberately NOT part of
+# `check` or CI, the same reason `statusbox-ca-proof` above is not: a
+# one-off, run-by-hand proof for this fix, not a regression gate.
+platform-alerts-newest-job-proof:
+    hack/platform-alerts-newest-job-proof.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

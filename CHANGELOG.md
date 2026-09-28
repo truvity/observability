@@ -6,6 +6,39 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.8.1
+
+- **Fix: `charts/platform-alerts`' `BackupJobFailed` now reads only the
+  newest Job of each CronJob, and behaviour CHANGES for a standalone
+  Job.** A CronJob's `failedJobsHistoryLimit` keeps a failed Job object
+  around long after a later run succeeded, and the old expression —
+  `max by (namespace, job_name) (kube_job_status_failed{...}) > 0`, with
+  no `for:` — read every retained Job equally, so that old failure fired
+  forever, even once every later run had succeeded. Live example: three
+  week-old failed Jobs from two different CronJobs, whose newer runs had
+  all succeeded, kept the alert firing.
+
+  The rule now joins `kube_job_created` onto `kube_job_owner` to find
+  the newest Job per `(namespace, CronJob)`, and fires only when THAT
+  Job has failed — clearing the instant a later run of the same CronJob
+  succeeds, or is merely running. This is a behaviour change: the rule
+  is now scoped to `kube_job_owner{owner_kind="CronJob"}`-owned Jobs, so
+  a standalone Job (no CronJob owner) no longer raises `BackupJobFailed`
+  at all — "newest" presupposes a schedule a standalone Job does not
+  have, and the rule's own name says its intent is backup CronJobs. See
+  charts/platform-alerts/templates/vmrule.yaml's comment on the alert,
+  and docs/safety.md, for the reasoning. `CronJobNotSucceeding`, the
+  companion rule in the same group, was checked for the same class of
+  bug and does not have it: it reads `kube_cronjob_status_last_successful_time`,
+  a single gauge the CronJob controller itself keeps current on every
+  run, not a per-Job value retained by history limits.
+
+  No values surface change: `namespaceSelector` and `groups.backups.*`
+  keep their existing meaning. Proved against a real victoria-metrics —
+  not this repository's own hold-window model, which cannot evaluate a
+  join — with `hack/platform-alerts-newest-job-proof.sh` (`just
+  platform-alerts-newest-job-proof`).
+
 ## 0.8.0
 
 - **Feature: `charts/observability-stack` accepts REMOTE writers, pinned

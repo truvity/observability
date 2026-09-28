@@ -70,7 +70,7 @@ kinds. This chart ships eleven:
 
 | Kind | Why it is in |
 |---|---|
-| `cronjobs`, `jobs` | `kube_cronjob_status_last_successful_time` and `kube_job_status_failed` — `platform-alerts`' `CronJobNotSucceeding` / `BackupJobFailed`, and this stack's own `selfAlerts.snapshotAge`. |
+| `cronjobs`, `jobs` | `kube_cronjob_status_last_successful_time` and `kube_job_status_failed` — `platform-alerts`' `CronJobNotSucceeding` / `BackupJobFailed`, and this stack's own `selfAlerts.snapshotAge`. `BackupJobFailed` also reads `kube_job_created` and `kube_job_owner`, both part of the same `jobs` collector, to find the newest Job of each CronJob — see docs/safety.md, "A failed backup Job that never clears". |
 | `persistentvolumeclaims` | `kube_persistentvolumeclaim_resource_requests_storage_bytes` — `platform-alerts`' `VolumeSmallerThanClaimed`. |
 | `pods` | `kube_pod_container_status_restarts_total` — a fleet's crashloop rule, the documented reason a fleet installs this chart at all. |
 | `nodes` | `kube_node_status_condition` — a fleet's node-pressure rule. |
