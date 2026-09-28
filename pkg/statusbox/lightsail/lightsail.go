@@ -104,6 +104,11 @@ type Box struct {
 	// whatever Instance now exists, so a box's history of what it
 	// probed survives a replacement that a Config change or a Version
 	// bump would otherwise cause.
+	//
+	// DiskAttachment carries pulumi.DeleteBeforeReplace(true) — see
+	// diskAttachmentOptions's doc comment below for why a repoint has
+	// to delete the old attachment before creating the new one, and
+	// what that means for when the new box actually gets the disk.
 	Disk           *awslightsail.Disk
 	DiskAttachment *awslightsail.Disk_attachment
 }
@@ -203,7 +208,7 @@ func NewLightsail(ctx *pulumi.Context, name string, a *LightsailArgs, opts ...pu
 		DiskName:     disk.Name,
 		InstanceName: instance.Name,
 		DiskPath:     pulumi.String(diskPath),
-	}, childOpts...)
+	}, diskAttachmentOptions(childOpts)...)
 	if err != nil {
 		return nil, fmt.Errorf("statusbox/lightsail: NewLightsail(%q, ...): disk attachment: %w", name, err)
 	}
@@ -213,4 +218,61 @@ func NewLightsail(ctx *pulumi.Context, name string, a *LightsailArgs, opts ...pu
 		return nil, err
 	}
 	return box, nil
+}
+
+// diskAttachmentOptions appends pulumi.DeleteBeforeReplace(true) to the
+// options every other resource in this file gets unchanged. It is split
+// out from NewLightsail so a test can prove, by inspecting the returned
+// options directly (see lightsail_internal_test.go), that
+// DiskAttachment carries it — without standing up a Pulumi program,
+// since Pulumi's own test mocks do not surface an option that never
+// reaches a resource's inputs.
+//
+// The reason it is needed at all: Disk and DiskAttachment are addressed
+// independently of Instance precisely so a Config or Version change that
+// replaces Instance leaves the disk's own identity untouched (see Box's
+// doc comment) — but DiskAttachment's inputs still change, because
+// InstanceName now points at the new instance, so DiskAttachment itself
+// is replaced too. Pulumi's default for a replacement is
+// create-before-delete: create the new DiskAttachment, then delete the
+// old one. The two DiskAttachments name the SAME disk, and Lightsail
+// will only let one instance hold a disk at a time — attaching the new
+// one while the old one is still attached fails outright:
+//
+//	AttachDisk ... OperationFailureException: You can't attach this
+//	disk right now. The state of this disk is: in-use.
+//
+// pulumi.DeleteBeforeReplace(true) reverses that order: the old
+// DiskAttachment is deleted first. terraform-provider-aws's delete for
+// this resource (internal/service/lightsail/disk_attachment.go,
+// resourceDiskAttachmentDelete) stops the instance still holding the
+// disk, detaches it, then restarts that instance — so the disk is free
+// by the time the new DiskAttachment is created, and the sequence for a
+// replacement becomes: new instance created (booted) -> old attachment
+// deleted (old box briefly stopped, disk detached, old box restarted)
+// -> new attachment created (disk now attaches to the new, already-
+// booted box) -> old instance deleted. The new box only ever gets the
+// disk once it exists and has finished booting, never before.
+//
+// PublicPorts gets no such option, and does not need one. Unlike Disk,
+// it is not addressed independently of Instance — it shares Instance's
+// own logical name (see NewInstancePublicPorts above) precisely because
+// a firewall ruleset belongs to one instance, not to a general
+// abstraction that outlives it (there is no "PublicPorts survives a
+// replacement" promise anywhere in this package, unlike Disk). AWS's
+// own instance_public_ports resource marks its instance_name argument
+// ForceNew with no in-place Update, so a replaced Instance always
+// replaces PublicPorts too — but the old and new PublicPorts are two
+// independent firewall rule sets, each scoped to its own instance_name,
+// never the same underlying resource the way both DiskAttachments name
+// the same disk. Opening the new instance's ports does not require the
+// old instance's ports to be closed first, and closing the old
+// instance's ports (moments before that instance is deleted anyway)
+// does not require the new ones to exist yet. Neither order can ever
+// see Lightsail's "in-use" conflict, so Pulumi's create-before-delete
+// default is fine left alone.
+func diskAttachmentOptions(childOpts []pulumi.ResourceOption) []pulumi.ResourceOption {
+	opts := make([]pulumi.ResourceOption, 0, len(childOpts)+1)
+	opts = append(opts, childOpts...)
+	return append(opts, pulumi.DeleteBeforeReplace(true))
 }

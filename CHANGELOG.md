@@ -6,6 +6,43 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.5
+
+- **Fix: replacing the status box no longer fails attaching its disk.**
+  A Config, Version or hostname change replaces the Lightsail instance
+  (see docs/statusbox.md, "Immutable, by construction"), and Pulumi's
+  default create-before-delete order tried to attach the disk to the new
+  instance while the old `DiskAttachment` still held it — Lightsail
+  refused with `AttachDisk ... the state of this disk is: in-use`, and
+  the whole replacement failed. `pkg/statusbox/lightsail`'s
+  `DiskAttachment` now carries `pulumi.DeleteBeforeReplace(true)`: the
+  old attachment is deleted first (which itself briefly stops the old
+  instance to detach the disk, then restarts it — the upstream
+  provider's own delete behaviour, not something this package adds), so
+  the disk is free by the time the new attachment is created. The new
+  box only ever gets the disk after it has already booted.
+  `InstancePublicPorts` needed no equivalent change: it shares its
+  logical name with `Instance` rather than being addressed
+  independently the way `Disk` is, so a replacement replaces it too, and
+  the old and new firewalls are two independent rule sets scoped to
+  their own instance — never the same underlying resource the two
+  `DiskAttachment`s contend over.
+- **Fix: the status box's data disk was never actually used.** `setup.sh`
+  never formatted or mounted the disk `pkg/statusbox/lightsail` attaches
+  — every instance's Gatus data went to `/data` on the ROOT filesystem
+  instead, so history was lost on every replacement despite the docs'
+  promise that the disk survives one. `setup.sh` now waits (up to 15
+  minutes, then fails loudly — a box silently running on the root disk
+  is exactly the failure nobody would otherwise notice) for the disk to
+  appear, identifies it by shape rather than by device name (a
+  current-generation Lightsail bundle surfaces the same disk as an NVMe
+  device, not the configured `/dev/xvdf`), formats it ext4 with the
+  label `statusbox-data` only if it carries no filesystem yet, adds an
+  fstab entry keyed on that label, and mounts it before any instance
+  directory is created under `/data`. The systemd unit now also carries
+  `RequiresMountsFor=/data`, so a start or restart can never race ahead
+  of the mount either.
+
 ## 0.7.4
 
 - **Fix: the status box's user-data now actually boots on Lightsail.**

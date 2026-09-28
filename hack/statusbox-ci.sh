@@ -25,7 +25,18 @@
 # require one to be minted for CI to burn. What IS exercised is
 # everything else: the container runtime, unpacking the staged instance
 # configs, the compose file, the systemd unit, and every instance
-# actually answering its own HTTP endpoint once started that way.
+# actually answering its own HTTP endpoint once started that way — and,
+# since this host is real (unlike hack/statusbox-debian-ci.sh's
+# container), the real /data pipeline too: setup.sh's own
+# STATUSBOX_DATA_DISK_OVERRIDE test seam (see wait_for_data_disk's doc
+# comment) points it at a loop device backed by a plain file below,
+# standing in for the disk pkg/statusbox/lightsail attaches on a real
+# box, so mount_data_disk's actual mkfs/fstab/mount runs for real here.
+# Device SELECTION — telling that disk apart from the root one by shape
+# alone — is exercised separately, against fixture lsblk JSON, by
+# hack/statusbox-debian-ci.sh; this script's job is everything selection
+# is not: format-if-empty, the fstab entry, the mount, and the systemd
+# unit's RequiresMountsFor.
 #
 #   hack/statusbox-ci.sh        run the fixture, tear down
 #   KEEP=1 hack/statusbox-ci.sh leave the containers and unit running
@@ -45,19 +56,31 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 keep="${KEEP:-0}"
 work="$(mktemp -d -t statusbox-ci.XXXXXX)"
 
+# The stand-in for the attached data disk: a 128MB file, loop-attached,
+# never formatted here — setup.sh's own mount_data_disk has to be the
+# one that finds it empty (via blkid) and runs mkfs.ext4, or this would
+# not be testing that check at all.
+loop_backing="$work/data-disk.img"
+truncate -s 128M "$loop_backing"
+loop_device="$(losetup -f --show "$loop_backing")"
+echo "hack/statusbox-ci.sh: standing in for the attached disk with $loop_device ($loop_backing)"
+
 cleanup() {
   if [ "$keep" != 1 ]; then
     systemctl stop statusbox >/dev/null 2>&1 || true
     systemctl disable statusbox >/dev/null 2>&1 || true
     rm -f /etc/systemd/system/statusbox.service
     systemctl daemon-reload >/dev/null 2>&1 || true
+    umount /data >/dev/null 2>&1 || true
+    sed -i '/^LABEL=statusbox-data /d' /etc/fstab 2>/dev/null || true
+    losetup -d "$loop_device" >/dev/null 2>&1 || true
     rm -rf /opt/statusbox /data
   fi
   rm -rf "$work"
 }
 trap cleanup EXIT
 
-for tool in docker gzip base64; do
+for tool in docker gzip base64 losetup mkfs.ext4 blkid findmnt; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "hack/statusbox-ci.sh needs $tool, which is not on PATH" >&2
     exit 1
@@ -112,7 +135,9 @@ echo "running setup.sh (unmodified, from this checkout)"
 # the name a Config would reference verbatim (no prefix), proving the
 # prefix strip actually happens rather than assumed from the Go-level
 # unit tests alone.
-STATUSBOX_ENV_STATUSBOX_CI_ENV_TEST="ci-env-test-value" "$root/setup.sh"
+STATUSBOX_ENV_STATUSBOX_CI_ENV_TEST="ci-env-test-value" \
+  STATUSBOX_DATA_DISK_OVERRIDE="$loop_device" \
+  "$root/setup.sh"
 
 if ! grep -qx 'STATUSBOX_CI_ENV_TEST=ci-env-test-value' /opt/statusbox/.env; then
   echo "setup.sh's write_env did not carry STATUSBOX_ENV_STATUSBOX_CI_ENV_TEST into /opt/statusbox/.env as STATUSBOX_CI_ENV_TEST" >&2
@@ -120,6 +145,59 @@ if ! grep -qx 'STATUSBOX_CI_ENV_TEST=ci-env-test-value' /opt/statusbox/.env; the
   exit 1
 fi
 echo "write_env: STATUSBOX_ENV_* carried into .env under its stripped name, OK"
+
+echo "checking setup_data_disk actually formatted, fstab'd and mounted $loop_device onto /data"
+if ! mountpoint -q /data; then
+  echo "/data is not a mountpoint after setup.sh ran" >&2
+  exit 1
+fi
+if [ "$(findmnt -no SOURCE /data)" != "$loop_device" ]; then
+  echo "/data is mounted, but not from $loop_device: $(findmnt -no SOURCE /data)" >&2
+  exit 1
+fi
+if [ "$(blkid -o value -s LABEL "$loop_device")" != "statusbox-data" ]; then
+  echo "$loop_device was not formatted with label statusbox-data" >&2
+  blkid "$loop_device" >&2 || true
+  exit 1
+fi
+if ! grep -qx 'LABEL=statusbox-data /data ext4 defaults,nofail 0 2' /etc/fstab; then
+  echo "no matching LABEL=statusbox-data fstab entry" >&2
+  grep statusbox-data /etc/fstab >&2 || true
+  exit 1
+fi
+if ! grep -qx 'RequiresMountsFor=/data' /etc/systemd/system/statusbox.service; then
+  echo "statusbox.service does not carry RequiresMountsFor=/data" >&2
+  cat /etc/systemd/system/statusbox.service >&2
+  exit 1
+fi
+echo "setup_data_disk: formatted, fstab'd, mounted; statusbox.service requires it, OK"
+
+echo "checking mount_data_disk never reformats a disk that already has a filesystem"
+marker_file=/data/example-co/ci-marker
+if [ ! -d /data/example-co ]; then
+  echo "expected unpack_instances to have created /data/example-co on the mounted disk" >&2
+  exit 1
+fi
+echo "pre-existing-data marker" > "$marker_file"
+"$root/setup.sh" mount_data_disk "$loop_device"
+if [ "$(cat "$marker_file")" != "pre-existing-data marker" ]; then
+  echo "mount_data_disk re-ran against an already-formatted disk and lost data that was on it" >&2
+  exit 1
+fi
+echo "mount_data_disk: re-run against an already-formatted, already-mounted disk is a no-op, OK"
+
+echo "checking mount_data_disk on the reboot path: unmounted, but already labelled"
+umount /data
+"$root/setup.sh" mount_data_disk "$loop_device"
+if ! mountpoint -q /data; then
+  echo "mount_data_disk did not remount an already-formatted, already-fstab'd disk" >&2
+  exit 1
+fi
+if [ "$(cat "$marker_file")" != "pre-existing-data marker" ]; then
+  echo "mount_data_disk reformatted a disk that already carried a filesystem, on the reboot path" >&2
+  exit 1
+fi
+echo "mount_data_disk: an unmounted-but-already-labelled disk is just remounted, never reformatted, OK"
 
 echo "waiting for every instance to answer /health"
 ports=(18081 18084)

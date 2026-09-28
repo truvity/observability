@@ -57,7 +57,27 @@ staged="$root/staged"
 instances_dir="$root/instances"
 data_root=/data
 
-log() { printf '[setup.sh] %s\n' "$1"; }
+# data_disk_label is what fstab and every later boot find the attached
+# disk BY, instead of a device path: see mount_data_disk's doc comment
+# for why a path (/dev/xvdf, /dev/nvme1n1, whatever udev names it next
+# time) is exactly the wrong thing to key persistence on.
+data_disk_label="statusbox-data"
+
+# data_disk_wait_seconds is "wait up to 15 minutes, then FAIL loudly" —
+# see wait_for_data_disk's doc comment for why 0 patience is the wrong
+# amount here (Bug A's own ordering hot-attaches the disk a few minutes
+# into a real box's life) and infinite patience is also the wrong amount
+# (a box quietly running Gatus against the root disk, forever, loses its
+# history on the next replacement with nobody the wiser).
+data_disk_wait_seconds=900
+data_disk_poll_seconds=10
+
+# log always writes to stderr, never stdout: wait_for_data_disk (see
+# below) returns its chosen device path ON stdout, in a `$(...)`
+# capture — the same convention select_data_disk_device uses, and the
+# reason nothing in this script ever prints a log line without >&2 is
+# that stdout has to stay reservable for a value like that one.
+log() { printf '[setup.sh] %s\n' "$1" >&2; }
 
 require_staged() {
   [ -f "$staged/manifest.json" ] || {
@@ -227,6 +247,197 @@ setup_cloudflared() {
   cloudflared service install "$TUNNEL_TOKEN"
 }
 
+# select_data_disk_device is the pure decision at the heart of finding
+# the attached /data disk WITHOUT depending on its device name.
+# pkg/statusbox/lightsail fixes the Lightsail-side path at /dev/xvdf
+# (see diskPath there), but current-generation bundles surface that same
+# disk to the kernel as an NVMe device instead — /dev/nvme1n1, not
+# /dev/xvdf — so matching the configured path literally is not reliable,
+# and there is no udev symlink Lightsail promises either name through.
+#
+# What IS true regardless of naming, on a box this package ever builds
+# (pkg/statusbox/lightsail attaches exactly one extra disk): among the
+# whole-disk block devices, exactly one is not the disk carrying `/`,
+# has no partitions of its own, and is not itself mounted anywhere. That
+# is the attached data disk. This function reads lsblk's OWN tree —
+# `lsblk -J -b -o NAME,TYPE,MOUNTPOINT`, its full nested output, name
+# and type and mountpoint down to every partition and holder — from
+# stdin, walks it, and prints the chosen device's path.
+#
+# It is a pure function of that JSON alone (no other input, nothing
+# else read from the system) for exactly one reason: so
+# hack/statusbox-debian-ci.sh can exercise it, unmodified, against fixed
+# fixture JSON — an xvdf-shaped tree and an nvme-shaped tree, see that
+# script — with no real or fake block device anywhere in sight. Called
+# for real, it is always `lsblk -J -b -o NAME,TYPE,MOUNTPOINT |
+# select_data_disk_device` (see wait_for_data_disk).
+#
+# Exit status distinguishes two failures a caller must treat
+# differently: 1 means "no candidate yet", which more waiting can fix
+# (see wait_for_data_disk) — the ordinary case for the first several
+# minutes of a box's life, since Bug A's own fix means the disk attaches
+# to a NEW box only after the old attachment is torn down, well after
+# this box has already booted. 2 means "more than one candidate", which
+# no amount of waiting resolves — this package never attaches more than
+# one extra disk, so more than one candidate means something this
+# function does not understand is attached, and guessing which one is
+# /data's risks formatting the wrong disk; it refuses instead.
+select_data_disk_device() {
+  local json root candidates count name
+
+  json="$(cat)"
+
+  root="$(jq -r '
+    .blockdevices[] | select(any(.. | objects; .mountpoint? == "/")) | .name
+  ' <<<"$json")"
+
+  candidates="$(jq -c --arg root "$root" '
+    [ .blockdevices[]
+      | select(.type == "disk")
+      | select(.name != $root)
+      | select((.children // []) | length == 0)
+      | select((.mountpoint // "") == "")
+      | .name
+    ]
+  ' <<<"$json")"
+
+  count="$(jq 'length' <<<"$candidates")"
+
+  case "$count" in
+  0)
+    echo "select_data_disk_device: no candidate data disk found yet (root disk: ${root:-unknown})" >&2
+    return 1
+    ;;
+  1)
+    name="$(jq -r '.[0]' <<<"$candidates")"
+    printf '/dev/%s\n' "$name"
+    return 0
+    ;;
+  *)
+    echo "select_data_disk_device: ambiguous — more than one candidate data disk (${candidates}), root disk ${root:-unknown}. Refusing to guess which one is $data_root's." >&2
+    return 2
+    ;;
+  esac
+}
+
+# wait_for_data_disk polls select_data_disk_device until it finds the
+# attached disk or gives up. It has to poll at all because of how Bug A
+# was fixed: pkg/statusbox/lightsail's DiskAttachment is registered
+# DeleteBeforeReplace so a box replacement never fails attaching a disk
+# that is still attached elsewhere (see docs/statusbox.md, "Immutable,
+# by construction") — but the consequence is that the NEW box's own
+# attachment is created only after the OLD box's is torn down, which is
+# after the new box has already booted and started running this very
+# script. The disk is expected to show up hot, typically within a few
+# minutes, not at boot.
+#
+# STATUSBOX_DATA_DISK_OVERRIDE is a test-only seam: if set, this returns
+# it directly and never calls lsblk at all. Cloud-init never sets it —
+# it is not part of pkg/statusbox.Args or Secrets, so no real box's
+# user-data can reach it — but hack/statusbox-ci.sh does, pointed at a
+# loop device it creates itself, because a hosted CI runner has no
+# second disk to hot-attach and this is the seam that lets that script
+# still exercise mount_data_disk's real mkfs/fstab/mount pipeline end to
+# end. Device SELECTION is exercised separately, against fixture lsblk
+# JSON, by `setup.sh select_data_disk_device` (see
+# hack/statusbox-debian-ci.sh) — this override exists so the two halves
+# can be tested apart without either one being faked.
+#
+# The 15-minute ceiling (data_disk_wait_seconds) is deliberate, not
+# arbitrary patience: past it, this FAILS LOUDLY — a non-zero exit and a
+# clear log line — rather than letting main() fall through to
+# unpack_instances, which would create every instance's data directory
+# on the ROOT filesystem instead, silently, and lose it on the very next
+# replacement this package's whole disk-survives-replacement promise
+# exists to prevent.
+wait_for_data_disk() {
+  if [ -n "${STATUSBOX_DATA_DISK_OVERRIDE:-}" ]; then
+    log "STATUSBOX_DATA_DISK_OVERRIDE set, using $STATUSBOX_DATA_DISK_OVERRIDE instead of scanning lsblk (test-only; a real box never sets this)"
+    printf '%s\n' "$STATUSBOX_DATA_DISK_OVERRIDE"
+    return 0
+  fi
+
+  local waited=0 device rc
+  while :; do
+    if device="$(lsblk -J -b -o NAME,TYPE,MOUNTPOINT | select_data_disk_device)"; then
+      log "data disk found: $device"
+      printf '%s\n' "$device"
+      return 0
+    fi
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+      echo "setup.sh: wait_for_data_disk: giving up after ${waited}s — more than one candidate disk, which waiting longer will not resolve" >&2
+      return 1
+    fi
+    if [ "$waited" -ge "$data_disk_wait_seconds" ]; then
+      echo "setup.sh: wait_for_data_disk: no data disk appeared after ${data_disk_wait_seconds}s. Refusing to start Gatus against $data_root on the root filesystem, where its history would not survive the next replacement — see docs/statusbox.md (\"Immutable, by construction\")." >&2
+      return 1
+    fi
+    sleep "$data_disk_poll_seconds"
+    waited=$((waited + data_disk_poll_seconds))
+  done
+}
+
+# mount_data_disk formats DEVICE ext4, labelled $data_disk_label, only if
+# it carries no filesystem yet (blkid finds none) — NEVER if it already
+# has one, because the one thing worth remembering about this disk is
+# that it already held a previous box's history (see
+# docs/statusbox.md), and mkfs would erase exactly that. It then adds an
+# fstab entry keyed on the LABEL, not the device path: the path is
+# exactly what changes between an xvdf-shaped and an nvme-shaped bundle
+# (see select_data_disk_device) and what udev is free to rename across a
+# reboot regardless; the label is this script's own, chosen once, and
+# neither of those things can move it. `nofail` keeps a boot that somehow
+# lost its disk from refusing to come up at all — this function is what
+# makes losing it loud, not fstab.
+#
+# Idempotent by construction: a mounted $data_root short-circuits before
+# either the mkfs check or the fstab write, which is exactly what a
+# reboot needs — the label and the fstab line are already there from the
+# first run, so all a reboot has to do is what /etc/fstab plus `nofail`
+# already makes systemd do on its own; this function does not have to
+# run again for that to work, but running it again (a manual re-run
+# while debugging, see setup.sh's own header) is still safe.
+mount_data_disk() {
+  local device="$1"
+
+  mkdir -p "$data_root"
+
+  if mountpoint -q "$data_root"; then
+    log "$data_root already mounted, skipping"
+    return
+  fi
+
+  if blkid -o value -s TYPE "$device" >/dev/null 2>&1; then
+    log "$device already carries a filesystem, not formatting"
+  else
+    log "formatting $device ext4, label $data_disk_label (blkid found no filesystem)"
+    mkfs.ext4 -L "$data_disk_label" "$device"
+  fi
+
+  if ! grep -q "^LABEL=$data_disk_label[[:space:]]" /etc/fstab 2>/dev/null; then
+    echo "LABEL=$data_disk_label $data_root ext4 defaults,nofail 0 2" >> /etc/fstab
+  fi
+
+  mount "$data_root"
+}
+
+# setup_data_disk is Bug B's fix point: unpack_instances writes real
+# files under $data_root immediately after this returns, so this is the
+# one place that decides whether that happens on the disk meant to
+# survive a replacement, or — if it is skipped or made to fail open —
+# silently on the root filesystem instead. wait_for_data_disk's own
+# 15-minute ceiling means this can block for a while on a real box; that
+# is the point, not a bug in it.
+setup_data_disk() {
+  local device
+  if ! device="$(wait_for_data_disk)"; then
+    echo "setup.sh: setup_data_disk: no usable data disk — refusing to start Gatus against $data_root on the root filesystem" >&2
+    exit 1
+  fi
+  mount_data_disk "$device"
+}
+
 # unpack_instances turns the staged manifest and *.yaml.gz.b64 blobs
 # CloudInit produced into real files: one config.yaml per instance under
 # $instances_dir, and one directory per instance under $data_root for its
@@ -310,6 +521,14 @@ write_env() {
   done < <(env | grep '^STATUSBOX_ENV_' || true)
 }
 
+# write_systemd_unit's RequiresMountsFor=$data_root is what makes a
+# start or restart wait on the disk, not just this script's own first
+# run: every Gatus container's SQLite file is a bind mount under
+# $data_root (see write_compose), and a docker-compose start before that
+# filesystem is mounted would create the container's data directory ON
+# the root filesystem instead — the exact silent loss setup_data_disk
+# exists to prevent (see its own doc comment), just triggered by a
+# reboot or a daemon restart instead of a fresh box.
 write_systemd_unit() {
   cat > /etc/systemd/system/statusbox.service <<UNIT
 [Unit]
@@ -317,6 +536,7 @@ Description=statusbox: the watcher outside (Gatus instances)
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target
+RequiresMountsFor=${data_root}
 
 [Service]
 WorkingDirectory=${root}
@@ -339,6 +559,7 @@ main() {
   setup_tailscale
   serve_private_instances
   setup_cloudflared
+  setup_data_disk
   unpack_instances
   write_compose
   write_env

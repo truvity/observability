@@ -46,3 +46,110 @@ docker run --rm \
   '
 
 echo "hack/statusbox-debian-ci.sh: docker + the compose plugin install cleanly on debian:12, OK"
+
+# select_data_disk_device (setup.sh, Bug B's device-identification half)
+# is a pure function of `lsblk -J -b -o NAME,TYPE,MOUNTPOINT` piped on
+# stdin — see its own doc comment — precisely so it can be exercised
+# here against fixed fixture trees instead of a real disk, which this
+# container (like the one above) does not have and cannot easily fake. A
+# real box's disk shows up as either an xvdf-shaped device (older
+# bundles) or an nvme-shaped one (current-generation bundles) — see
+# pkg/statusbox/lightsail's diskPath doc comment — so both are fixtured
+# here, alongside the "not yet attached" and "more than one candidate"
+# cases wait_for_data_disk has to tell apart (see that function's own
+# doc comment for why they are handled differently: one is retried, the
+# other fails immediately).
+echo "hack/statusbox-debian-ci.sh: running select_data_disk_device fixtures inside debian:12"
+docker run --rm \
+  --pull=always \
+  -v "$root/setup.sh:/setup.sh:ro" \
+  debian:12 \
+  bash -c '
+    set -euo pipefail
+    apt-get update -y >/dev/null
+    apt-get install -y --no-install-recommends jq >/dev/null
+
+    check_device() {
+      local desc="$1" want="$2" got
+      shift 2
+      got="$("$@")"
+      if [ "$got" != "$want" ]; then
+        echo "FAIL: $desc: expected \"$want\", got \"$got\"" >&2
+        exit 1
+      fi
+      echo "OK: $desc -> $got"
+    }
+
+    check_exit_code() {
+      local desc="$1" want="$2" rc=0
+      shift 2
+      "$@" >/dev/null 2>&1 || rc=$?
+      if [ "$rc" != "$want" ]; then
+        echo "FAIL: $desc: expected exit $want, got $rc" >&2
+        exit 1
+      fi
+      echo "OK: $desc -> exit $want"
+    }
+
+    # An older-generation bundle: root on a partitioned /dev/xvda, the
+    # attached data disk surfaced as the whole, unpartitioned /dev/xvdf,
+    # exactly the shape pkg/statusbox/lightsail diskPath names.
+    xvdf_json="$(cat <<JSON
+{"blockdevices":[
+  {"name":"xvda","type":"disk","mountpoint":null,"children":[
+    {"name":"xvda1","type":"part","mountpoint":"/boot"},
+    {"name":"xvda2","type":"part","mountpoint":"/"}
+  ]},
+  {"name":"xvdf","type":"disk","mountpoint":null}
+]}
+JSON
+)"
+    echo "$xvdf_json" | check_device "xvdf case" "/dev/xvdf" /setup.sh select_data_disk_device
+
+    # A current-generation bundle: the diskPath Lightsail was configured
+    # with (/dev/xvdf) never appears at all — the kernel names both
+    # disks as NVMe devices instead, the exact substitution this
+    # function exists to see past.
+    nvme_json="$(cat <<JSON
+{"blockdevices":[
+  {"name":"nvme0n1","type":"disk","mountpoint":null,"children":[
+    {"name":"nvme0n1p1","type":"part","mountpoint":"/boot/efi"},
+    {"name":"nvme0n1p2","type":"part","mountpoint":"/"}
+  ]},
+  {"name":"nvme1n1","type":"disk","mountpoint":null}
+]}
+JSON
+)"
+    echo "$nvme_json" | check_device "nvme case" "/dev/nvme1n1" /setup.sh select_data_disk_device
+
+    # Freshly booted, before Bug A own ordering hot-attaches the disk a
+    # few minutes in: no candidate yet. Retryable, see wait_for_data_disk,
+    # so exit 1, not a hard failure.
+    not_yet_json="$(cat <<JSON
+{"blockdevices":[
+  {"name":"nvme0n1","type":"disk","mountpoint":null,"children":[
+    {"name":"nvme0n1p1","type":"part","mountpoint":"/"}
+  ]}
+]}
+JSON
+)"
+    echo "$not_yet_json" | check_exit_code "not-yet-attached case" 1 /setup.sh select_data_disk_device
+
+    # More than one candidate: this package never attaches more than one
+    # extra disk, so this means something wait_for_data_disk cannot
+    # understand is attached. Not retryable, exit 2, because guessing
+    # wrong means mkfs on the wrong disk.
+    ambiguous_json="$(cat <<JSON
+{"blockdevices":[
+  {"name":"nvme0n1","type":"disk","mountpoint":null,"children":[
+    {"name":"nvme0n1p1","type":"part","mountpoint":"/"}
+  ]},
+  {"name":"nvme1n1","type":"disk","mountpoint":null},
+  {"name":"nvme2n1","type":"disk","mountpoint":null}
+]}
+JSON
+)"
+    echo "$ambiguous_json" | check_exit_code "ambiguous case" 2 /setup.sh select_data_disk_device
+  '
+
+echo "hack/statusbox-debian-ci.sh: select_data_disk_device identifies the right disk on both bundle shapes, OK"
