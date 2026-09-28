@@ -1,17 +1,21 @@
 # CI calls the shared workflow (truvity/ci-workflows), which fans the
 # Justfile recipes out into PARALLEL jobs — one per recipe, each reporting
 # under its own name. The recipe list is this repository's own `check`
-# recipe plus `apply`, `reconcile` and `statusbox`, so CI and a laptop run
-# the same thing except for the jobs that need a container runtime or
-# root: `apply` stands up a kind cluster and requires a real API server to
-# accept every golden, `reconcile` requires the operator to accept the
-# release, and `statusbox` runs setup.sh — the release asset a box's
-# cloud-init fetches, verifies by checksum and executes, see
+# recipe plus `apply`, `reconcile`, `statusbox` and `statusbox-debian`, so
+# CI and a laptop run the same thing except for the jobs that need a
+# container runtime or root: `apply` stands up a kind cluster and requires
+# a real API server to accept every golden, `reconcile` requires the
+# operator to accept the release, `statusbox` runs setup.sh — the release
+# asset a box's cloud-init fetches, verifies by checksum and executes, see
 # pkg/statusbox — against a fixture and requires every instance to answer
-# /health. Each is a CI job rather than part of `check` because `check`
-# must stay runnable in seconds on a laptop with nothing destructive in
-# it, and a job rather than nothing because each one catches a class of
-# defect that reached further than anything upstream of it noticed.
+# /health, and `statusbox-debian` runs setup.sh's install_container_runtime
+# function alone inside a plain debian:12 container: `statusbox` runs the
+# whole script on an Ubuntu runner, which cannot catch an apt package that
+# exists only on Ubuntu (see hack/statusbox-debian-ci.sh). Each is a CI job
+# rather than part of `check` because `check` must stay runnable in
+# seconds on a laptop with nothing destructive in it, and a job rather
+# than nothing because each one catches a class of defect that reached
+# further than anything upstream of it noticed.
 #
 # Pinned by COMMIT SHA, never by tag or branch: tags move, and every
 # repository in both organizations runs that code.
@@ -34,7 +38,7 @@ jobs:
   recipes:
     uses: truvity/ci-workflows/.github/workflows/check.yaml@36c39b754e9a3ab7e6594d19fe9222b66da1586f # v3.12.2
     with:
-      recipes: '["lint", "test", "leak-canary", "dashboard-lint", "apply", "reconcile", "statusbox"]'
+      recipes: '["lint", "test", "leak-canary", "dashboard-lint", "apply", "reconcile", "statusbox", "statusbox-debian"]'
 
   # Stable name for branch protection: the matrix reports as
   # "recipes / lint" and so on, so a required context naming them would

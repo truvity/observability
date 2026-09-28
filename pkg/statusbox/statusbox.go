@@ -242,23 +242,22 @@ type Args struct {
 // function fetches that release's checksums.txt over the network at
 // CALL time and bakes the sha256 it finds for setup.sh into the
 // rendered script. The box downloads setup.sh from the same release at
-// boot and runs `sha256sum -c` on it before executing a single line of
-// it. That is the whole difference between `curl | sh` as a moving
-// target and `curl | sh` as something content-addressed: the hash is not
+// boot and runs `sha256sum -c` on it before executing it. That is the
+// whole difference between `curl | sh` as a moving target and
+// `curl | sh` as something content-addressed: the hash is not
 // hand-copied by anyone, and a release whose setup.sh does not match its
 // own checksums.txt produces a box that refuses to finish booting
 // instead of one that ran whatever it was handed.
 //
-// The rendered script is a single line, because the first provider's
-// user-data field is documented to accept nothing else: the whole
-// bootstrap is gzipped and base64-encoded once, and the returned string
-// is a short wrapper that decodes and runs it. CloudInit refuses to
-// return a string over 16 KB (Lightsail's ceiling) rather than let a
-// provider silently accept and then never boot a user-data payload it
-// truncated — see the size-limit refusal below. Every instance's Config
-// is inside that same gzip, which is where headroom for the limit
-// actually comes from; the wrapper and the staged secrets are tiny by
-// comparison.
+// The rendered bootstrap is gzipped and base64-encoded once, and the
+// returned user-data is a short `#!/bin/bash` wrapper that decodes and
+// runs it — see wrapUserData for why the leading shebang line is load
+// bearing rather than cosmetic. CloudInit refuses to return a string
+// over 16 KB (Lightsail's ceiling) rather than let a provider silently
+// accept and then never boot a user-data payload it truncated — see the
+// size-limit refusal below. Every instance's Config is inside that same
+// gzip, which is where headroom for the limit actually comes from; the
+// wrapper and the staged secrets are tiny by comparison.
 //
 // user-data is readable, in plaintext, from the instance metadata
 // service by any process running on the box — this is true of every
@@ -451,9 +450,9 @@ type manifestInstance struct {
 
 // render is CloudInit's pure core: given the secret VALUES (already
 // resolved out of their pulumi.StringInput) and the checksum, it builds
-// the bootstrap script, wraps it into the single line the first
-// provider's user-data field requires, and refuses to return a result
-// over userDataLimit. Kept separate from CloudInit so it can be tested
+// the bootstrap script, wraps it into the user-data cloud-init will
+// actually boot from, and refuses to return a result over
+// userDataLimit. Kept separate from CloudInit so it can be tested
 // without a Pulumi context or the network call CloudInit itself makes.
 func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals, envVals map[string]string) (string, error) {
 	var b strings.Builder
@@ -509,7 +508,7 @@ func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals, en
 	b.WriteString("chmod +x /opt/statusbox/setup.sh\n")
 	b.WriteString("exec /opt/statusbox/setup.sh\n")
 
-	wrapped, err := wrapSingleLine(b.String())
+	wrapped, err := wrapUserData(b.String())
 	if err != nil {
 		return "", err
 	}
@@ -519,12 +518,22 @@ func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals, en
 	return wrapped, nil
 }
 
-// wrapSingleLine gzips and base64-encodes a multi-line script and
-// returns a single physical line that decodes and runs it: `bash -c
-// "$(...)"` substitutes the decoded (and, at that point, multi-line)
-// script as bash's own argument, so nothing about the OUTER string ever
-// contains a newline even though what runs at boot does.
-func wrapSingleLine(script string) (string, error) {
+// wrapUserData gzips and base64-encodes a multi-line script and returns
+// the user-data cloud-init actually boots from it: a leading
+// `#!/bin/bash` line followed by a `bash -c "$(...)"` line that
+// substitutes the decoded (and, at that point, multi-line) script as
+// bash's own argument.
+//
+// The shebang line is not decoration. cloud-init classifies user-data by
+// its FIRST line alone: `#!` is what makes it treat the payload as
+// text/x-shellscript and execute it; anything else — including a bare
+// `bash -c "..."` line, which is what this function used to return on
+// its own — becomes text/plain, which cloud-init stores on the box and
+// never runs. See docs/statusbox.md for the full story and why this
+// used to be believed to need a single physical line: it does not — the
+// only real constraint Lightsail's user-data has is the size cap this
+// package already enforces as userDataLimit, not a line count.
+func wrapUserData(script string) (string, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	if _, err := gz.Write([]byte(script)); err != nil {
@@ -534,7 +543,7 @@ func wrapSingleLine(script string) (string, error) {
 		return "", fmt.Errorf("statusbox: gzip bootstrap script: %w", err)
 	}
 	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
-	return fmt.Sprintf(`bash -c "$(echo %s | base64 -d | gunzip)"`, shellQuote(b64)), nil
+	return fmt.Sprintf("#!/bin/bash\n"+`bash -c "$(echo %s | base64 -d | gunzip)"`+"\n", shellQuote(b64)), nil
 }
 
 // gzipBase64 compresses and base64-encodes a Config so it can travel as

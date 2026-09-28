@@ -67,30 +67,52 @@ require_staged() {
 }
 
 install_container_runtime() {
-  local need_apt_update=1
-
-  if command -v docker >/dev/null 2>&1; then
-    log "docker already installed, skipping"
-  else
-    log "installing docker"
-    apt-get update -y
-    need_apt_update=0
-    apt-get install -y --no-install-recommends docker.io
-    systemctl enable --now docker
-  fi
-
-  # A base image can carry the docker ENGINE without the compose plugin —
-  # checked separately, because `command -v docker` above says nothing
-  # about it: a docker that cannot run `docker compose` is a docker this
-  # script cannot start anything with, and the two packages come from
-  # different apt sources on Debian and Ubuntu alike.
-  if docker compose version >/dev/null 2>&1; then
-    log "docker compose already installed, skipping"
+  # Both docker itself and the compose plugin, in one check: a docker
+  # that cannot run `docker compose` is a docker this script cannot start
+  # anything with, so there is nothing worth doing with docker alone.
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    log "docker and the compose plugin already installed, skipping"
     return
   fi
-  log "installing the docker compose plugin"
-  [ "$need_apt_update" = 1 ] && apt-get update -y
-  apt-get install -y --no-install-recommends docker-compose-v2
+
+  # Docker's OWN apt repository, not the distribution's docker.io: the
+  # package that actually ships a compose plugin on Debian is
+  # docker-compose-plugin, from this repository — docker-compose-v2 (what
+  # used to be installed here) is not a Debian package at all, only an
+  # Ubuntu one, so this used to fail with exit 100 on every real box (see
+  # CHANGELOG 0.7.4). The blueprint this repository targets is Debian
+  # only (see docs/statusbox.md), so there is deliberately no
+  # distribution branch here — `$VERSION_CODENAME` from /etc/os-release
+  # is Debian's own codename (`bookworm` for 12), which is all the
+  # repository line below needs to be correct on whichever Debian release
+  # the box actually boots.
+  log "installing docker from Docker's own apt repository"
+  apt-get update -y
+  # A minimal image (this script's own debian:12 CI check included, see
+  # hack/statusbox-debian-ci.sh) carries none of these: curl to fetch the
+  # signing key, gnupg for the keyring tooling underneath it, and
+  # ca-certificates so that fetch itself is verified.
+  apt-get install -y --no-install-recommends ca-certificates curl gnupg
+
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${VERSION_CODENAME} stable" \
+    > /etc/apt/sources.list.d/docker.list
+
+  apt-get update -y
+  apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+  # Best-effort: a minimal container this function is exercised against
+  # (see hack/statusbox-debian-ci.sh) has no systemd and no `docker`
+  # daemon to start at all — proving the packages installed and that
+  # `docker compose version` works as a CLI is that check's whole job,
+  # and it does not need the daemon running to do it. A real box always
+  # has systemd, and this is where the daemon actually starts on one.
+  systemctl enable --now docker >/dev/null 2>&1 || true
 }
 
 install_jq() {
@@ -323,5 +345,20 @@ main() {
   write_systemd_unit
   log "done: $(jq -r '.instances | length' "$staged/manifest.json") instance(s) started"
 }
+
+# Called with one argument naming a function defined above, that
+# function runs ALONE and setup.sh exits — nothing else here runs, no
+# manifest is required. This is how hack/statusbox-debian-ci.sh proves
+# install_container_runtime against a plain debian:12 container by
+# itself, without staging a fixture or joining anything: the same gap
+# that let `docker-compose-v2` (Ubuntu-only) reach this function
+# unnoticed was hack/statusbox-ci.sh only ever running the WHOLE script
+# on an Ubuntu runner (see CHANGELOG 0.7.4). Cloud-init always invokes
+# this script with no arguments (see pkg/statusbox.render), so this
+# branch never fires on a real box.
+if [ $# -gt 0 ] && declare -F "$1" >/dev/null 2>&1; then
+  "$@"
+  exit 0
+fi
 
 main "$@"
