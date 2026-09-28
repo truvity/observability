@@ -258,6 +258,20 @@ status-page blip, the disk reattached, no history lost. The alternative
 with, and the provider chosen first offers no instance role to hold one.
 Immutability is the honest design; config changes here are rare.
 
+The reattachment itself is not simultaneous with the new box coming up:
+Lightsail only lets one instance hold a disk at a time, so `DiskAttachment`
+is registered `DeleteBeforeReplace` and the new instance's attachment is
+created only after the old one is torn down. In order: the new instance
+is created and boots; the OLD box is then briefly **stopped** so the
+provider can detach the disk from it (this is the provider's own
+delete-time behaviour for a disk attachment, not something this package
+asks for separately); the disk then attaches to the new box, which has
+already finished booting; only then is the old instance deleted.
+`setup.sh` waits for the disk to appear before it does anything with
+`/data`, so the gap between the new box's own boot and the disk's
+arrival is silent from the outside: no history is lost, and nothing on
+the new box runs against `/data` before the disk it belongs to is there.
+
 Two consequences, documented so nobody rediscovers them:
 
 - user-data has a size limit (16 KB on the first provider); the renderer
@@ -348,4 +362,6 @@ the private page answers only over the private network; stopping the box
 fires the edge health check; scaling the install's metrics vmalert to
 zero (or blocking the box's read of it) fires the deadman on both
 providers within its own probe interval; a config change replaces the
-instance and the disk comes back with its history.
+instance — the old box stopped briefly to free the disk, the new box
+already booted before the disk reaches it — and the disk comes back
+with its history.
