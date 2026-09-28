@@ -71,7 +71,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo"],
       "properties": {
         "backups": {
           "type": "object",
@@ -122,6 +122,18 @@
               "description": "Above 1, or the alert arrives at the moment writes already fail."
             },
             "severity": { "$ref": "#/definitions/severity" }
+          }
+        },
+        "kargo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/severity" },
+            "absentFor": { "$ref": "#/definitions/duration" },
+            "absentSeverity": { "$ref": "#/definitions/severity" }
           }
         }
       }

@@ -168,6 +168,58 @@ fires (the limit is lower than you assumed) or always fires (it is
 higher). A store that exports no such limit gets no rule, which is the
 honest outcome rather than a rule built on a guess.
 
+### A Kargo promotion stuck
+
+An estate that runs Kargo pages when a promotion is stuck, not only when
+one is loud about failing — a Promotion that errors and is never retried
+looks, from every other signal in this chart, like a quiet cluster.
+
+`kargo_stage_condition` and `kargo_promotion_phase` are not this chart's
+own metrics: kube-state-metrics' own `customResourceState` feature reads
+them straight off the Stage's and Promotion's `.status`, and the estate
+configures which fields it exports (docs/kube-state-metrics.md has a
+worked config). `groups.kargo` reads those series exactly as `stores`
+reads a store's own counters: a name this chart cannot verify, so it
+asks rather than guesses, and stays off by default because not every
+estate runs Kargo at all.
+
+Two rules watch the same failure from two objects. `KargoStagePromotionErrored`
+reads the Stage's own Ready condition — `type="Ready",
+reason="LastPromotionErrored"` reading False or Unknown — which is the
+Stage's own summary of "the last thing that happened to me was an
+error." `KargoPromotionErrored` corroborates it from the Promotion side:
+`kargo_promotion_phase{phase="Errored"} == 1` joined `and on (namespace,
+stage)` against the same Stage condition. The join is load-bearing, not
+decorative — a Promotion that errored and was superseded by a
+LATER, successful retry still reads `phase="Errored"` forever (Kargo
+never rewrites a Promotion's own history), and without the join that
+stale object would fire beside a Stage that has long since recovered.
+Joining on the Stage's own current condition is what tells "still stuck"
+apart from "errored once, and moved on."
+
+A default `for` of 15m gives a promotion mid-retry room to succeed on
+its own before either rule pages.
+
+### Kargo's own metrics going dark
+
+The same shape as the write-path deadman, one layer up: a rule that
+reads `kargo_stage_condition` or `kargo_promotion_phase` cannot notice
+those series disappearing, because it evaluates to nothing rather than
+to a value it could compare against. The `customResourceState` config
+that produces them is edited by hand on the estate's side of the
+boundary this chart draws around `stores` and this group alike — a
+config that is removed, or a kube-state-metrics upgrade that changes the
+field path it reads, leaves the two rules above silent exactly when a
+promotion could be stuck at the same time. `KargoStateMetricsAbsent`
+(`absent(kargo_stage_condition{type="Ready"}) or
+absent(kargo_promotion_phase)`) is the rule that can see that, the same
+role `WritePathDead`'s `or vector(0)` plays for a store that vanishes
+outright. Its default window is twice `groups.kargo.for` (30m against
+15m) and its default severity one tier below it (`warning` against
+`critical`): a blind spot in the estate's own KSM config, not
+necessarily a stuck promotion — Kargo itself may be perfectly healthy
+underneath it.
+
 ## The refusals: `observability-stack`
 
 Fifty-seven, each with a fixture under

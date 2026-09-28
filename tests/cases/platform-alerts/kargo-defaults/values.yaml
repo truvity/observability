@@ -1,0 +1,18 @@
+# The kargo group alone, at its own defaults. `everything` moves every
+# value away from its default, `for` and `absentFor` included, so it can
+# never show what actually ships when a consumer only sets `enabled: true`
+# — which is the whole point of the group defaulting off rather than
+# asking for four values before it renders anything. This case, and
+# tests/kargo_alerts_test.go which reads its golden back, are what pin the
+# literal 15m/30m windows down.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  kargo:
+    enabled: true

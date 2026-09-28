@@ -157,3 +157,80 @@ spec:
               accepting writes. It is still serving reads and will keep doing so
               after it stops writing, so nothing else will report this.
             runbook_url: "https://runbooks.example.com/StoreApproachingReadOnly"
+    - name: platform-alerts.kargo
+      interval: 30s
+      rules:
+        # A Kargo Stage stuck on a promotion error.
+        #
+        # `kargo_stage_condition` is a gauge kube-state-metrics' own
+        # customResourceState feature exports from the Stage's own
+        # `.status.conditions`: 1 while the condition named by `type` and
+        # `reason` is True, 0 while it is False or Unknown. This chart
+        # does not configure that feature — see docs/kube-state-metrics.md
+        # for the config that produces it.
+        - alert: KargoStagePromotionErrored
+          expr: >-
+            kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
+          for: 20m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "Kargo Stage {{ $labels.namespace }}/{{ $labels.stage }} has not recovered from a promotion error"
+            description: >-
+              The Stage's Ready condition has read LastPromotionErrored for 20m.
+              Re-promote the Freight from the Kargo UI or CLI once the underlying
+              failure is fixed; the Stage will not retry itself.
+            runbook_url: "https://runbooks.example.com/KargoStagePromotionErrored"
+        # The same failure, corroborated by the Promotion object itself.
+        #
+        # `kargo_promotion_phase` is a StateSet over Pending, Running,
+        # Succeeded, Failed, Errored and Aborted: 1 on the Promotion's
+        # current phase, 0 on every other. Joining on (namespace, stage)
+        # against the Stage condition above is what tells an Errored
+        # promotion whose Stage has already recovered (a retry that
+        # succeeded since) apart from one still stuck.
+        - alert: KargoPromotionErrored
+          expr: >-
+            kargo_promotion_phase{phase="Errored"} == 1
+            and on (namespace, stage) kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
+          for: 20m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "Kargo Promotion {{ $labels.namespace }}/{{ $labels.promotion }} errored and its Stage has not recovered"
+            description: >-
+              The Promotion has sat in the Errored phase for 20m and its
+              Stage still reads LastPromotionErrored. Re-promote the Freight from
+              the Kargo UI or CLI once the underlying failure is fixed.
+            runbook_url: "https://runbooks.example.com/KargoPromotionErrored"
+        # The deadman for the two rules above.
+        #
+        # Same shape as the write-path deadman: a rule that reads
+        # `kargo_stage_condition` or `kargo_promotion_phase` cannot itself
+        # notice those series going away, because it evaluates to nothing
+        # rather than to a value it could compare. Either kube-state-metrics'
+        # `customResourceState` config for Kargo's CRDs was never applied,
+        # was edited away, or the whole scrape went dark — every case the
+        # two rules above go silent right along with it.
+        - alert: KargoStateMetricsAbsent
+          expr: >-
+            absent(kargo_stage_condition{type="Ready"}) or absent(kargo_promotion_phase)
+          for: 45m
+          labels:
+            env: example
+            severity: info
+            tenant: example
+          annotations:
+            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for 45m"
+            description: >-
+              Neither kargo_stage_condition{type="Ready"} nor
+              kargo_promotion_phase has been seen in 45m, so
+              KargoStagePromotionErrored and KargoPromotionErrored cannot fire
+              even if a promotion is stuck. Check kube-state-metrics'
+              customResourceState config against docs/kube-state-metrics.md, and
+              that the scrape itself is still up.
+            runbook_url: "https://runbooks.example.com/KargoStateMetricsAbsent"

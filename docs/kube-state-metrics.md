@@ -205,6 +205,80 @@ See docs/safety.md, "The namespace stamp kube-state-metrics needs and no
 other scrape object does", for the full argument, including the exact
 VictoriaMetrics operator source this reasons from.
 
+## `customResourceState`: the config `platform-alerts`' `kargo` group reads
+
+`charts/platform-alerts`' optional `groups.kargo` (see docs/safety.md, "A
+Kargo promotion stuck") reads two series this chart does not, and
+cannot, produce on its own: `kargo_stage_condition` and
+`kargo_promotion_phase`. Every collector this chart ships reads an
+object kind Kubernetes itself defines; Kargo's `Stage` and `Promotion`
+are a THIRD party's CRDs, on a cluster that may or may not have Kargo
+installed at all, so there is no allow-list entry for them the way there
+is for `cronjobs` or `pods` above. What produces the two series instead
+is kube-state-metrics' own `customResourceState` feature — a config an
+estate that runs Kargo supplies itself, passed straight through this
+chart's `kube-state-metrics.customResourceState.config` (upstream's own
+value; this chart does not wrap or validate it, for the identical reason
+`platform-alerts`' own `stores` asks rather than guesses: a field path
+this chart cannot see into a CRD it does not own).
+
+A config that produces the two series `groups.kargo` expects, in the
+shape kube-state-metrics' own `CustomResourceStateMetrics` spec
+documents:
+
+```yaml
+kind: CustomResourceStateMetrics
+spec:
+  resources:
+    - groupVersionKind:
+        group: kargo.akuity.io
+        version: v1alpha1
+        kind: Stage
+      labelsFromPath:
+        namespace: [metadata, namespace]
+        stage: [metadata, name]
+      metrics:
+        - name: kargo_stage_condition
+          help: "1 while the Stage condition named by type/reason is True, 0 while False or Unknown."
+          each:
+            type: Gauge
+            gauge:
+              path: [status, conditions]
+              labelsFromPath:
+                type: [type]
+                reason: [reason]
+              valueFrom: [status]
+    - groupVersionKind:
+        group: kargo.akuity.io
+        version: v1alpha1
+        kind: Promotion
+      labelsFromPath:
+        namespace: [metadata, namespace]
+        promotion: [metadata, name]
+        stage: [spec, stage]
+      metrics:
+        - name: kargo_promotion_phase
+          help: "1 on the Promotion's current phase, 0 on every other."
+          each:
+            type: StateSet
+            stateSet:
+              path: [status, phase]
+              list: [Pending, Running, Succeeded, Failed, Errored, Aborted]
+              labelName: phase
+```
+
+Read this against the Kargo CRD version actually installed, the same
+caution `platform-alerts`' own `stores` worked example carries: a field
+path is a guess until it is checked against the cluster's own `kubectl
+get stage -o yaml`, and a wrong one is how `KargoStateMetricsAbsent`
+(the deadman `groups.kargo` ships for exactly this) ends up being the
+only rule in the group that ever fires. The `stage` label on
+`kargo_promotion_phase`, read from the Promotion's own `spec.stage`
+rather than its `metadata`, is what `KargoPromotionErrored`'s `and on
+(namespace, stage)` join against `kargo_stage_condition` depends on —
+name it something else and the join matches nothing, silently, on every
+evaluation.
+
 ## Refusals
 
 Loads more than a values toggle: `_validate.tpl` checks the merged

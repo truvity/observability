@@ -37,3 +37,9 @@ groups:
     enabled: true
     headroomFactor: 3
     severity: critical
+  kargo:
+    enabled: true
+    for: 20m
+    severity: warning
+    absentFor: 45m
+    absentSeverity: info
