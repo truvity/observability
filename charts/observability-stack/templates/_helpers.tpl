@@ -336,6 +336,63 @@ deliberately -- which is the point.
 {{- end -}}
 
 {{/*
+A writer's cluster pin, per signal — the write-side counterpart of
+`readQueryArgs.*` above, and the reason a bearer token cannot simply
+claim to be a cluster it is not once `tenancy.writers[].cluster` is set.
+
+Each renders the query arg that FORCES the label or field, not merely
+requests it: unlike `extra_filters`/`extra_stream_filters`, which vmauth
+substitutes a Go-template placeholder into and the reader's OWN grant
+fills in, these three are literal values this chart writes directly, no
+placeholder involved, because the value is fixed at render time by
+`writers[].cluster` rather than computed per request from a token's
+claims.
+
+Each takes a dict with `cluster` (the writer's pin, possibly empty) and
+either `label` (metrics) or `field` (logs, traces) — the name to force —
+and renders nothing at all when `cluster` is empty, which is how the
+unscoped, local writer keeps rendering with no `query_args` on its
+`targetRefs`, exactly as it did before this mechanism existed.
+
+Confirmed against the pinned vmsingle and against a live VictoriaLogs and
+VictoriaTraces (see values.yaml's own comment on `tenancy.writers` for
+the detail): all three OVERRIDE a same-named value the writer's own
+config already sent, they do not add a second, ignored one beside it.
+*/}}
+{{- define "observability-stack.writeQueryArgs.metrics" -}}
+{{- if .cluster -}}
+- name: extra_label
+  values:
+    - {{ printf "%s=%s" .label .cluster | quote }}
+{{- end -}}
+{{- end -}}
+
+{{- define "observability-stack.writeQueryArgs.logs" -}}
+{{- if .cluster -}}
+- name: extra_fields
+  values:
+    - {{ printf "%s=%s" .field .cluster | quote }}
+{{- end -}}
+{{- end -}}
+
+{{- /*
+Traces alone need a prefix on the field name: VictoriaTraces stores every
+OTLP resource attribute — which is where an OTel collector puts cluster
+identity, the same as it does for logs — as a field named
+`resource_attr:<name>`, not the bare attribute name. This is not
+documented anywhere public with the prefix spelled out; it was read back
+off a live ingest. Forcing the bare name instead would add a second,
+inert field beside the real one: confirmed live that it enforces nothing.
+*/ -}}
+{{- define "observability-stack.writeQueryArgs.traces" -}}
+{{- if .cluster -}}
+- name: extra_fields
+  values:
+    - {{ printf "resource_attr:%s=%s" .field .cluster | quote }}
+{{- end -}}
+{{- end -}}
+
+{{/*
 One grant, as a MetricsQL series selector. vmselect OR-s the
 `extra_filters` it is given, so one entry per grant is the principal's
 whole reach.

@@ -1,0 +1,25 @@
+# expect: is the argument a writer's `cluster` pin is enforced with
+# `mergeQueryArgs` naming `extra_label` exempts a writer's own copy of it
+# from the clash rule that is the only thing stopping the writer sending
+# its own value and claiming to be any cluster it likes.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  ownCluster: example-central
+  writers:
+    - name: remote-cluster
+      tokenSecret: {name: example-writer-token, key: token}
+      destinations: [metrics]
+      cluster: example-remote
+vmauth:
+  enabled: true
+  extraArgs:
+    mergeQueryArgs: extra_label
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

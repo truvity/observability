@@ -1,0 +1,21 @@
+# expect: at '/tenancy/writers/0/cluster'
+# `cluster` is interpolated into the write-side query argument the same
+# way a reader's grant is interpolated into a read-side filter, so it is
+# held to the same plain-name shape at the schema, before any template
+# ever runs.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  writers:
+    - name: hostile
+      tokenSecret: {name: example-writer-token, key: token}
+      destinations: [metrics]
+      cluster: "stage|prod"
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

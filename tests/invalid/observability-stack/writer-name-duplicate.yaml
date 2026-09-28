@@ -1,0 +1,26 @@
+# expect: appears twice in `tenancy.writers`
+# Two writers with the same `name` would render two VMUsers with the
+# same object name, and the operator drops all but one from vmauth's
+# config with no error outside `status.currentSyncError`.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  writers:
+    - name: dup
+      tokenSecret: {name: example-writer-token, key: token}
+      destinations: [metrics]
+    - name: dup
+      tokenSecret: {name: example-writer-token-2, key: token}
+      destinations: [logs]
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

@@ -117,6 +117,20 @@ metrics:
   # An empty list is refused rather than rendering an agent that scrapes
   # the cluster and writes nowhere — which is a healthy pod, a full buffer
   # and no data.
+  #
+  # One more field, optional, for a `url` whose certificate is not
+  # publicly trusted — a REMOTE store behind a private-CA gateway, for
+  # instance:
+  #
+  #   destinations:
+  #     - name: central
+  #       url: https://observability-write.example.private/api/v1/write
+  #       caSecret: {name: example-private-ca, key: ca.crt}
+  #
+  # `caSecret` names a Secret holding a PEM bundle; this chart takes the
+  # NAME and never a value. The operator mounts it directly onto this
+  # destination's own `remoteWrite[].tlsConfig.ca.secret` — no volume for
+  # this chart to wire, unlike the OTLP gateway's own destinations below.
   destinations: []
   image:
     repository: victoriametrics/vmagent
@@ -279,6 +293,14 @@ otlp:
   # A base URL, not an endpoint: each exporter appends the path its store
   # documents, so a typo in a path cannot become a silent 404 — and a 404
   # is permanent loss, not a retry.
+  #
+  # Each entry also takes the same optional `caSecret: {name, key}` as
+  # `metrics.destinations` above, for a `url` whose certificate is not
+  # publicly trusted. Unlike the metrics agent, the gateway is an
+  # OpenTelemetry Collector with no Secret access of its own: this chart
+  # mounts the named key as a file (one volume per destination that sets
+  # it) and points that destination's own exporter at it — a `caSecret`
+  # on one destination cannot end up read by another's.
   destinations:
     metrics: []
     logs: []
@@ -370,6 +392,34 @@ victoria-logs-collector:
   # only path that accepts this protocol — the chart refuses any other,
   # because vlagent DROPS a block the store answers 404 to rather than
   # retrying it.
+  #
+  # A REMOTE `url` — one whose certificate is not publicly trusted, and
+  # one this chart's own `writeCredentials` bearer must reach — is
+  # already this upstream chart's own surface, unlike the metrics agent's
+  # and the OTLP gateway's destinations above: vlagent reads its CA and
+  # its bearer from FILES, not from fields this chart writes for you.
+  # `_validate.tpl` refuses a destination with neither. The recipe:
+  #
+  #   victoria-logs-collector:
+  #     remoteWrite:
+  #       - url: https://logs.example.private
+  #         maxDiskUsagePerURL: 5GB
+  #         tlsCAFile: /etc/observability-emitters/tls/ca.crt
+  #         bearerTokenFile: /etc/observability-emitters/tls/token
+  #     extraVolumes:
+  #       - name: remote-write-tls
+  #         projected:
+  #           sources:
+  #             - secret: {name: example-private-ca, items: [{key: ca.crt, path: ca.crt}]}
+  #             - secret: {name: example-writer-token, items: [{key: token, path: token}]}
+  #     extraVolumeMounts:
+  #       - name: remote-write-tls
+  #         mountPath: /etc/observability-emitters/tls
+  #         readOnly: true
+  #
+  # `bearerTokenFile` (rather than a header this chart would have to
+  # template a Secret's VALUE into) is why: vlagent re-reads the file
+  # when it changes, so a token rotation needs no restart.
   remoteWrite: []
   collector:
     # -- The stream fields, and THE PLACE THE LOG PATH'S SCOPING KEY IS

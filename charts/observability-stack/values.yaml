@@ -29,6 +29,45 @@
 nameOverride: ""
 fullnameOverride: ""
 
+# -- "full" (the default) or "operator-only".
+#
+# "operator-only" runs NOTHING but the vendored VictoriaMetrics operator
+# and its own CRD prerequisites (never this chart's CRDs — those are
+# charts/observability-crds' job, applied first; see docs/adoption.md) —
+# no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for
+# a cluster that holds no store of its own but still runs
+# charts/observability-emitters: that chart's VMAgent custom resource
+# needs an operator to reconcile it into a real vmagent, and this is one
+# chart, so the operator version this cluster gets is identical to every
+# cluster that runs the full stack — never a second pin to keep in sync
+# by hand.
+#
+# It is a CONTRACT, not an override. Setting `mode: operator-only` does
+# not turn anything else off for you: `vmauth.enabled`, `vmalert.enabled`,
+# `alertmanager.enabled`, `grafana.enabled`, `backup.enabled`,
+# `selfAlerts.enabled`, `metricsSelfScrape.enabled`, the three stores
+# (`victoria-metrics-k8s-stack.vmsingle.enabled`,
+# `victoria-logs-single.enabled`, `victoria-traces-single.enabled`) all
+# still default to their "full" shape and must be turned off explicitly,
+# and `tenancy.principals`, `tenancy.writers` and `tenancy.alertReaders`
+# must be empty. The render refuses every one it finds still on, the same
+# way every other combination in this chart is checked rather than
+# silently resolved — see docs/doctrine.md's note on mirrors: a value this
+# chart could compute for you is a value it validates instead, because two
+# things that are supposed to agree stop agreeing the first time only one
+# of them changes.
+#
+# One more, and this chart cannot even validate it (a parent chart
+# renders before it can see a subchart's OWN defaults, the same mirror
+# limitation docs/doctrine.md describes elsewhere): the vendored chart's
+# `victoria-metrics-k8s-stack.syncJob.enabled` fetches rules and
+# dashboards from the network and applies them directly, upstream default
+# `true`, and it is not shaped by `defaultRules`/`defaultDashboards` —
+# only what it fetches is. Set `victoria-metrics-k8s-stack.syncJob.enabled:
+# false` too, or an operator-only install runs a Job every upgrade with
+# nothing to apply what it fetched TO.
+mode: full
+
 # -- Zone-redundant mode.
 #
 # No store here replicates across a zone in a way that survives one, so
@@ -192,6 +231,16 @@ tenancy:
   namespaceLabel: k8s_namespace_name
   logsClusterField: k8s.cluster.name
   logsNamespaceField: kubernetes.pod_namespace
+  # -- The name THIS install's own cluster is known by. Optional, and
+  # unrelated to whether this install runs a store at all.
+  #
+  # It exists only so `tenancy.writers[].cluster` has something to be
+  # refused against: a writer pinned to THIS value would be pinning
+  # itself to the same identity the unscoped, local writer already has —
+  # not a remote cluster's identity, which is the only thing
+  # `writers[].cluster` is for. Left unset (the default), that one
+  # refusal does nothing; every other writer check still applies.
+  ownCluster: ""
   # -- Admit the trace read route although nothing can scope it.
   #
   # The proxy enforces a grant by substituting the principal's filter
@@ -312,6 +361,63 @@ tenancy:
   # The token is the caller's: this chart takes the NAME of a Secret and
   # never a value. A writer may not read — its paths are the write paths
   # of the destinations it names, and nothing else.
+  #
+  # One more field, optional:
+  #
+  #   writers:
+  #     - name: stage-remote
+  #       tokenSecret: {name: stage-writer-token, key: token}
+  #       destinations: [metrics, logs, traces]
+  #       cluster: stage
+  #
+  # `cluster` FORCES every series, log record and span this writer sends
+  # to belong to that cluster, overriding whatever `k8s_cluster_name` (or
+  # the log/trace equivalent) the writer's own collector config claims —
+  # a bearer token alone proves nothing about which cluster it actually
+  # ran on, so without this a writer could claim to be any cluster at
+  # all. It does this per destination, by forcing a query argument onto
+  # the write route:
+  #
+  #   - metrics: `extra_label=<tenancy.clusterLabel>=<cluster>` on
+  #     `/api/v1/write` and `/opentelemetry/v1/metrics`. VictoriaMetrics
+  #     appends this label to a series AFTER the ones the client sent and
+  #     then keeps only the LAST value for a duplicate label name when it
+  #     indexes the series — so it overrides, it does not sit beside a
+  #     spoofed one as a second, ignored label. Verified against the
+  #     pinned vmsingle version's own source and confirmed live: a
+  #     series sent with `k8s_cluster_name=prod` through a writer pinned
+  #     to `stage` is stored, and queries back, as `k8s_cluster_name=stage`.
+  #   - logs: `extra_fields=<tenancy.logsClusterField>=<cluster>` on
+  #     every log write path. VictoriaLogs documents this as an
+  #     override: "if the log entry contains fields from extra_fields,
+  #     then they are overwritten by the values specified in
+  #     extra_fields." Confirmed live the same way.
+  #   - traces: `extra_fields=resource_attr:<tenancy.logsClusterField>=<cluster>`
+  #     on the OTLP trace write path. VictoriaTraces stores every OTLP
+  #     resource attribute as a field named `resource_attr:<name>` —
+  #     confirmed by reading a live ingest back, since neither this nor
+  #     the override behaviour (same "overwritten by extra_fields"
+  #     contract as logs) is documented with the prefix spelled out
+  #     anywhere public. Forcing the bare attribute name instead of the
+  #     prefixed one would add a second, inert field beside the real one
+  #     and enforce nothing — confirmed live that leaving the prefix off
+  #     does exactly that.
+  #
+  # Unset (the default) is the unscoped, LOCAL writer's shape: a
+  # collector writing to the store beside it, exactly as
+  # charts/observability-emitters has always done, and it renders
+  # identically to how it always has — no `query_args` on its
+  # `targetRefs` at all. `cluster` is for a REMOTE writer, one whose
+  # collector runs on a different cluster than this install.
+  #
+  # Refused: a `cluster` that is not a plain name (the same shape a
+  # grant's `cluster` is held to, since it is interpolated the same way);
+  # a `cluster` equal to `tenancy.ownCluster` — that identity belongs to
+  # the unscoped, local writer, not to a second, pinned one; two writers
+  # naming the same `cluster`; and two writers sharing one `name` (the
+  # second `VMUser` this chart would render collides with the first's
+  # object name, and the operator drops all but one with no error outside
+  # `status.currentSyncError`).
   writers: []
   # -- Admit the alerts-reader route although nothing can scope it.
   #

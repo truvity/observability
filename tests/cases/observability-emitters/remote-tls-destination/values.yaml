@@ -1,0 +1,65 @@
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# A remote destination whose certificate is not publicly trusted — the
+# shape a cluster with no store of its own writes across the network to
+# a central install through (docs/target-state.md, "Central install,
+# remote writers"). One `caSecret` per signal, proving each becomes the
+# mount and the TLS config its own exporter reads: `tlsConfig.ca.secret`
+# on the metrics agent's `remoteWrite` entry (the operator mounts it),
+# and a dedicated volume per OTLP destination for the gateway, which has
+# no Secret access of its own.
+tenancy:
+  cluster: example-remote
+  environment: production
+
+writeCredentials:
+  secretName: example-write-token
+
+metrics:
+  destinations:
+    - name: central
+      url: https://observability-write.example.private/api/v1/write
+      caSecret: {name: example-private-ca, key: ca.crt}
+
+otlp:
+  destinations:
+    metrics:
+      - name: central
+        url: https://observability-write.example.private
+        caSecret: {name: example-private-ca, key: ca.crt}
+    logs:
+      - name: central
+        url: https://observability-write.example.private
+        caSecret: {name: example-private-ca, key: ca.crt}
+    traces:
+      - name: central
+        url: https://observability-write.example.private
+        caSecret: {name: example-private-ca, key: ca.crt}
+
+# The log agent's OWN recipe for the same thing — already upstream's own
+# surface, documented in values.yaml's own comment on
+# `victoria-logs-collector.remoteWrite`.
+victoria-logs-collector:
+  extraVolumes:
+    - name: remote-write-tls
+      projected:
+        sources:
+          - secret:
+              name: example-private-ca
+              items: [{key: ca.crt, path: ca.crt}]
+          - secret:
+              name: example-write-token
+              items: [{key: token, path: token}]
+  extraVolumeMounts:
+    - name: remote-write-tls
+      mountPath: /etc/observability-emitters/tls
+      readOnly: true
+  remoteWrite:
+    - url: https://observability-write.example.private
+      tlsCAFile: /etc/observability-emitters/tls/ca.crt
+      bearerTokenFile: /etc/observability-emitters/tls/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-remote","deployment.environment.name":"production"}'

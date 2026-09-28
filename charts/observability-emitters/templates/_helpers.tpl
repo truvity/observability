@@ -106,6 +106,14 @@ exactly where a security property gets turned off by accident.
 {{- if $creds.secretName -}}
 {{- $_ := set $entry "bearerTokenSecret" (dict "name" $creds.secretName "key" $creds.key) -}}
 {{- end -}}
+{{- /*
+A destination's own CA, for a `url` whose certificate is not publicly
+trusted. The operator mounts a `SecretOrConfigMap` itself — unlike the
+OTLP gateway below, this chart writes no volume for it.
+*/ -}}
+{{- if $d.caSecret -}}
+{{- $_ := set $entry "tlsConfig" (dict "ca" (dict "secret" (dict "name" $d.caSecret.name "key" $d.caSecret.key))) -}}
+{{- end -}}
 {{- $rw = append $rw $entry -}}
 {{- end -}}
 {{- $scrapeConfigs := list -}}
@@ -398,6 +406,10 @@ exporters:
       directory: /var/lib/otelcol/wal/{{ $d.name }}
     headers:
       Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+    {{- if $d.caSecret }}
+    tls:
+      ca_file: {{ include "observability-emitters.otlp.caFile" (dict "signal" "metrics" "name" $d.name) | quote }}
+    {{- end }}
     # A resource attribute does not become a label on its own: this
     # exporter puts the resource on a `target_info` series and nothing
     # else, so a series would reach the store carrying no cluster and no
@@ -422,6 +434,10 @@ exporters:
       # field, and an SDK's resource carries the pod's UID and start time —
       # so every restart mints a stream the store never reuses.
       VL-Stream-Fields: {{ join "," $v.streamFields | quote }}
+    {{- if $d.caSecret }}
+    tls:
+      ca_file: {{ include "observability-emitters.otlp.caFile" (dict "signal" "logs" "name" $d.name) | quote }}
+    {{- end }}
     sending_queue:
       enabled: true
       storage: file_storage
@@ -433,6 +449,10 @@ exporters:
     traces_endpoint: {{ printf "%s/insert/opentelemetry/v1/traces" (trimSuffix "/" $d.url) | quote }}
     headers:
       Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+    {{- if $d.caSecret }}
+    tls:
+      ca_file: {{ include "observability-emitters.otlp.caFile" (dict "signal" "traces" "name" $d.name) | quote }}
+    {{- end }}
     sending_queue:
       enabled: true
       storage: file_storage
@@ -478,6 +498,61 @@ service:
       receivers: [otlp]
       processors: [transform/disown, k8sattributes, transform/tenancy, batch]
       exporters: [{{ join ", " $traceExporters }}]
+{{- end }}
+{{- end -}}
+
+{{/*
+A destination's own CA, for the OTLP gateway.
+
+The gateway is an OpenTelemetry Collector, which has no Kubernetes API
+access and no concept of a Secret: an exporter's `tls.ca_file` is a path
+on disk, so a CA this chart is handed as a Secret name has to become a
+mounted file before an exporter can point at it. These three agree on
+one path per destination — the file (`caFile`), the volume that provides
+it (`caVolumes`), and the mount that puts it there (`caVolumeMounts`) —
+so a `caSecret` on one destination cannot drift from where its own
+exporter looks for it.
+
+Each destination with `caSecret` set gets its OWN volume, named for the
+signal and the destination together: two destinations naming the same
+Secret still each get their own mount, which costs one more Secret
+projection and buys not needing to reason about whether two destinations
+sharing a volume could ever disagree about what THAT volume holds.
+*/}}
+{{- define "observability-emitters.otlp.caFile" -}}
+{{- printf "/etc/observability-emitters/ca/%s-%s/ca.crt" .signal (.name | trunc 40 | trimSuffix "-") -}}
+{{- end -}}
+
+{{- define "observability-emitters.otlp.caVolumeName" -}}
+{{- printf "ca-%s-%s" .signal .name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "observability-emitters.otlp.caVolumes" -}}
+{{- $v := .Values.otlp -}}
+{{- range $signal := (list "metrics" "logs" "traces") }}
+{{- range $d := (index $v.destinations $signal) }}
+{{- if $d.caSecret }}
+- name: {{ include "observability-emitters.otlp.caVolumeName" (dict "signal" $signal "name" $d.name) }}
+  secret:
+    secretName: {{ $d.caSecret.name | quote }}
+    items:
+      - key: {{ $d.caSecret.key | quote }}
+        path: ca.crt
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{- define "observability-emitters.otlp.caVolumeMounts" -}}
+{{- $v := .Values.otlp -}}
+{{- range $signal := (list "metrics" "logs" "traces") }}
+{{- range $d := (index $v.destinations $signal) }}
+{{- if $d.caSecret }}
+- name: {{ include "observability-emitters.otlp.caVolumeName" (dict "signal" $signal "name" $d.name) }}
+  mountPath: {{ printf "/etc/observability-emitters/ca/%s-%s" $signal ($d.name | trunc 40 | trimSuffix "-") }}
+  readOnly: true
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end -}}
 

@@ -244,10 +244,16 @@ spec:
               readOnly: true
             - name: queue
               mountPath: /var/lib/otelcol
+            {{- with (include "observability-emitters.otlp.caVolumeMounts" .) }}
+            {{- . | nindent 12 }}
+            {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ $full }}
+        {{- with (include "observability-emitters.otlp.caVolumes" .) }}
+        {{- . | nindent 8 }}
+        {{- end }}
   volumeClaimTemplates:
     {{- /*
       apiVersion and kind are spelled out although a volumeClaimTemplate

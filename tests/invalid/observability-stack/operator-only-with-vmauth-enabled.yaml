@@ -1,0 +1,25 @@
+# expect: but `vmauth.enabled` is true
+# `mode: operator-only` is a CONTRACT: every component the mode does not
+# run must be turned off explicitly, and this fixture leaves the proxy on.
+mode: operator-only
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false
+metricsSelfScrape:
+  enabled: false
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  syncJob:
+    enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

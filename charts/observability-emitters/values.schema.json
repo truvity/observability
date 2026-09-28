@@ -58,6 +58,24 @@
         }
       }
     },
+    "secretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "key"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "namedDestinations": {
       "type": "array",
       "description": "Every entry receives every sample: replication is the writer's job. An empty list is refused at render.",
@@ -75,6 +93,10 @@
           "url": {
             "type": "string",
             "minLength": 1
+          },
+          "caSecret": {
+            "$ref": "#/definitions/secretRef",
+            "description": "OPTIONAL. A Secret holding a PEM CA bundle to trust for THIS destination's TLS, for a `url` whose certificate is not publicly trusted (a private/estate root). The chart takes the NAME of a Secret and never a value; it mounts the named key as a file and points the destination's own TLS config at it — `tlsConfig.ca.secret` on a VMAgent `remoteWrite` entry (the operator mounts it), or a volume this chart mounts itself for the OTLP gateway's exporters, whichever list this entry is in. Unset: the destination's certificate must already chain to a publicly-trusted root, or to one already trusted by the pod's own OS trust store."
           }
         }
       }
