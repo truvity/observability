@@ -6,6 +6,37 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.4
+
+- **Fix: the status box's user-data now actually boots on Lightsail.**
+  `pkg/statusbox.CloudInit` rendered the whole bootstrap as
+  `bash -c "$(echo <blob> | base64 -d | gunzip)"` with no leading `#!`
+  line. cloud-init classifies a user-data payload by its first line
+  alone — `#!` is what makes it run the payload as a shellscript at all,
+  and anything else is stored as `text/plain` and never executed. Every
+  box built from a version before this one silently never ran its
+  bootstrap; nothing about the failure was visible anywhere. The
+  rendered user-data now starts with `#!/bin/bash\n` followed by the
+  same gzip+base64 wrapper as before. Lightsail's user-data field turns
+  out to have no line-count constraint at all — only the existing 16 KB
+  size cap — so this needed no change to that limit or to how the inner
+  bootstrap is built, only to the one line cloud-init actually reads.
+- **Fix: `setup.sh` no longer fails on Debian while installing the
+  container runtime.** It asked apt for `docker-compose-v2`, a package
+  that exists only on Ubuntu; on a real Debian 12 box (the blueprint
+  this project targets) that failed with exit 100 under
+  `set -euo pipefail`, before tailscale, cloudflared or any instance was
+  ever set up. `install_container_runtime` now installs Docker from
+  Docker's own apt repository for Debian — `docker-ce`, `docker-ce-cli`,
+  `containerd.io` and `docker-compose-plugin`, following Docker's
+  documented Debian install steps — instead of the Ubuntu-only package.
+  A CI job now runs this function alone, unmodified, inside a plain
+  `debian:12` container on every pull request (see
+  `hack/statusbox-debian-ci.sh` and the `statusbox-debian` recipe): the
+  existing `statusbox` job only ever ran the whole script on an Ubuntu
+  runner, which could not have caught a package that installs on Ubuntu
+  and nowhere else.
+
 ## 0.7.3
 
 - **New: `pkg/statusbox.Secrets.Env`, a second, more general way to hand

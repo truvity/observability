@@ -93,13 +93,25 @@ func TestRenderGoldenTwoInstances(t *testing.T) {
 	require.NoError(t, err, "run 'go test ./pkg/statusbox/... -run TestRenderGoldenTwoInstances -update' and review the diff")
 	require.Equal(t, string(want), got, "the rendered cloud-init moved: run 'go test ./pkg/statusbox/... -run TestRenderGoldenTwoInstances -update' and review the diff")
 
-	// The one line requirement is Lightsail's own, not an accident of
-	// this test's fixture: a rendering that regresses to multiple
-	// physical lines is a box that never boots, and every character of
-	// the fixture below except its own newline is inside a base64
-	// blob that cannot contain one.
-	require.NotContains(t, strings.TrimRight(got, "\n"), "\n",
-		"rendered user-data must be a single physical line: the first provider's UserData field accepts nothing else")
+	// The leading shebang line is Lightsail's own requirement, not an
+	// accident of this test's fixture: cloud-init classifies user-data by
+	// its FIRST LINE alone, and anything but `#!` there is stored as
+	// text/plain and never runs at boot — a box that silently never
+	// finishes booting, with no error anywhere to catch it. A rendering
+	// that regresses to something else on its first line is exactly that
+	// box.
+	require.True(t, strings.HasPrefix(got, "#!/bin/bash\n"),
+		"rendered user-data must start with \"#!/bin/bash\\n\": cloud-init classifies user-data by its first line, and anything but a shebang there becomes text/plain and is never executed")
+
+	// Beyond that first line, Lightsail imposes no line-count constraint
+	// at all — only the 16 KB size cap TestRenderRefusesUserDataOverTheLimit
+	// guards below — so the wrapper is exactly two physical lines: the
+	// shebang, then the one `bash -c "$(...)"` line that decodes and runs
+	// the gzipped, base64-encoded bootstrap. Every character of the
+	// fixture past that point, except its own trailing newlines, is
+	// inside a base64 blob that cannot contain one.
+	require.Equal(t, 2, strings.Count(got, "\n"),
+		"rendered user-data must be exactly the shebang line plus one further line: a third physical line would mean wrapUserData's shape changed without this test being updated alongside it")
 }
 
 func TestRenderRefusesUserDataOverTheLimit(t *testing.T) {

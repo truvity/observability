@@ -144,6 +144,18 @@ reconcile:
 statusbox:
     hack/statusbox-ci.sh
 
+# Run setup.sh's install_container_runtime function ALONE, inside a
+# plain debian:12 container — the actual OS the box boots, which
+# `statusbox` above cannot exercise: its own job runs the whole,
+# unmodified script on an Ubuntu runner, so an apt package that exists
+# only on Ubuntu (docker-compose-v2, until 0.7.4) passed there while
+# failing on every real box. See hack/statusbox-debian-ci.sh.
+#
+# Needs Docker, the same as `apply`/`reconcile`/`statusbox`; deliberately
+# NOT part of `check` for the same reason.
+statusbox-debian:
+    hack/statusbox-debian-ci.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

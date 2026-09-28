@@ -136,20 +136,23 @@ is authenticated WireGuard only — a peer still has to hold a key
 tailscaled will accept — and it is what lets the box take a direct
 tailnet connection instead of always relaying through DERP.
 
-Lightsail's user-data field accepts a single physical line — nothing
-else. It is not a cloud-init multi-part document and not a shebang
-script the way EC2's user-data is: the provider's own worked example
-chains every step with `&&` on one line rather than using a shebang at
-all, because that is the shape its user-data actually supports, and a
-script with real newlines in it is a box that never boots on this
-provider. So `CloudInit` never hands the provider plain text: it renders
-the whole bootstrap as an ordinary multi-line script, gzips it,
-base64-encodes the result, and returns one line that decodes and runs
-it — `bash -c "$(echo <blob> | base64 -d | gunzip)"` — whose own text
-contains no newline even though what it runs, once decoded on the box,
-is the multi-line script an operator can read. Gzip is not just headroom
-against the 16 KB limit below; it is also what makes a script with real
-structure fit inside a field that admits none.
+Lightsail's launch scripts go through cloud-init like any other
+provider's, and cloud-init classifies a user-data payload by its FIRST
+LINE alone: `#!` makes it treat the rest as a shellscript and run it at
+boot, and anything else — plain text, a bare command, a line that only
+happens to decode to a script once it runs — is stored as text/plain
+and never executed at all. The one real constraint Lightsail's user-data
+field adds on top of that is size, not line count: the 16 KB ceiling
+`CloudInit` enforces as `userDataLimit` below. So `CloudInit` renders the
+whole bootstrap as an ordinary multi-line script, gzips it,
+base64-encodes the result, and returns `#!/bin/bash` followed by a
+`bash -c "$(echo <blob> | base64 -d | gunzip)"` line that decodes and
+runs it — the shebang line is what makes cloud-init execute the rest in
+the first place, not an artefact of a line-count limit that never
+existed. Gzip is not about fitting into a single line; it is headroom
+against the 16 KB limit below, so a script with real structure — several
+instances' worth of Config, every secret staged as an environment
+variable — still fits comfortably inside it.
 
 `Secrets.AlertURLs` is how a Config asks for a push-alert credential
 without carrying it as a literal — the mechanism, not one option among
@@ -259,7 +262,8 @@ Two consequences, documented so nobody rediscovers them:
 
 - user-data has a size limit (16 KB on the first provider); the renderer
   gzips the whole rendered script — instance configs and all, see the
-  single-line requirement above — and refuses to render past the limit;
+  shebang-plus-wrapper shape above — and refuses to render past the
+  limit;
 - user-data is readable from the instance metadata service by any
   process on the box. The box is single-purpose, the tailnet key is
   one-shot, and an alert URL is rotated if the box is ever anything
