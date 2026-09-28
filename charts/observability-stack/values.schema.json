@@ -26,6 +26,11 @@
       "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
       "description": "A plain name. This is a security boundary rather than a style rule: cluster and namespace names are interpolated into a filter expression, so one carrying | or .* would widen the grant it appears in."
     },
+    "optionalName": {
+      "type": "string",
+      "pattern": "^([a-z0-9]([a-z0-9-]*[a-z0-9])?)?$",
+      "description": "A plain name (see `name`), or empty. Empty is allowed by the schema and refused at render time only where leaving it empty actually costs something, the same way `audience` is — so the refusal can say what leaving it unset costs there, rather than the schema rejecting a legitimate default of \"unset\"."
+    },
     "labelName": {
       "type": "string",
       "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
@@ -161,6 +166,14 @@
     "fullnameOverride": {
       "type": "string"
     },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "full",
+        "operator-only"
+      ],
+      "description": "\"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs — see charts/observability-crds) — no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, the three stores, and tenancy.principals/writers/alertReaders left empty) — the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
+    },
     "ha": {
       "type": "boolean",
       "description": "Zone-redundant mode. Refused with fewer than two zones."
@@ -274,6 +287,10 @@
           "$ref": "#/definitions/logFieldName",
           "description": "The log STREAM FIELD carrying the namespace. Default kubernetes.pod_namespace: the container-log agent's native spelling, because it cannot rename a field and the gateway is configured to write the same one."
         },
+        "ownCluster": {
+          "$ref": "#/definitions/optionalName",
+          "description": "The name THIS install's own cluster is known by. Optional, and unrelated to whether this install runs a store at all: it exists only so `tenancy.writers[].cluster` has something to be refused against. A writer pinned to this value would duplicate the unscoped, local writer's job rather than identify a remote one, so it is refused. Leave unset and that one refusal does nothing; every other writer check still applies."
+        },
         "allowUnfilteredTraceReads": {
           "type": "boolean",
           "description": "Admit the trace read route although nothing can scope it. vmauth applies a principal's filters by substituting them into the route, and VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to substitute them into - so every principal who can read traces reads EVERY tenant's spans. Off by default, and required whenever a trace store is enabled alongside principals."
@@ -375,6 +392,10 @@
                     "traces"
                   ]
                 }
+              },
+              "cluster": {
+                "$ref": "#/definitions/name",
+                "description": "OPTIONAL. The cluster this writer's series, log records and spans are FORCED to belong to, overriding whatever k8s_cluster_name (or the log/trace equivalent) the writer's own collector config claims. Unset is the unscoped, local writer's shape — a collector writing to the store beside it, exactly as charts/observability-emitters has always done — and is unaffected by this field existing. Set it for a REMOTE writer: one whose collector runs on a different cluster than this install and pushes here across the network, where a bearer token alone proves nothing about which cluster it actually ran on. Refused when it equals `tenancy.ownCluster` (that is the unscoped writer's job), and refused as a duplicate if two writers name the same cluster."
               }
             }
           }

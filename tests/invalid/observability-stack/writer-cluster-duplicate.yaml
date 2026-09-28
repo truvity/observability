@@ -1,0 +1,23 @@
+# expect: both set `cluster: example-remote`
+# Two DIFFERENT writers pinned to the same cluster is almost always a
+# `name` that was meant to be different and was not.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  writers:
+    - name: remote-a
+      tokenSecret: {name: example-writer-token, key: token}
+      destinations: [metrics]
+      cluster: example-remote
+    - name: remote-b
+      tokenSecret: {name: example-writer-token-2, key: token}
+      destinations: [logs]
+      cluster: example-remote
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

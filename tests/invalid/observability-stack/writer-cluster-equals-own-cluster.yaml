@@ -1,0 +1,21 @@
+# expect: this install's own cluster (`tenancy.ownCluster`)
+# A writer pinned to this install's OWN cluster is pinning itself to the
+# unscoped, local writer's identity, not a remote one — the local
+# writer's job is to have no `cluster` at all.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  ownCluster: example-central
+  writers:
+    - name: not-actually-remote
+      tokenSecret: {name: example-writer-token, key: token}
+      destinations: [metrics]
+      cluster: example-central
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

@@ -1,0 +1,54 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# A cluster that holds no store of its own: only the vendored
+# VictoriaMetrics operator and its own webhook/CRD prerequisites render,
+# so charts/observability-emitters' VMAgent custom resource has a
+# controller to reconcile it here, writing on to a store elsewhere.
+#
+# `mode: operator-only` is a CONTRACT (see values.yaml's own comment on
+# `mode`), not an override: every component it does not run is turned off
+# below explicitly, and the render refuses if any is left on.
+mode: operator-only
+
+vmauth:
+  enabled: false
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false
+metricsSelfScrape:
+  enabled: false
+networkPolicy:
+  enabled: false
+
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  # The vendored chart's sync Job fetches rules and dashboards from the
+  # network and applies them directly, on its OWN switch — independent
+  # of `defaultRules`/`defaultDashboards`, which only shape what it would
+  # fetch, not whether it runs. Off here: there is no vmalert for a
+  # fetched rule, or Grafana for a fetched dashboard, to reach.
+  syncJob:
+    enabled: false
+
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false
+
+tenancy:
+  principals: []
+  writers: []
+  alertReaders: []

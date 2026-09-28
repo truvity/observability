@@ -15,6 +15,7 @@ second debugging session.
 */}}
 
 {{- define "observability-stack.validate" -}}
+{{- include "observability-stack.validate.mode" . -}}
 {{- include "observability-stack.validate.ha" . -}}
 {{- include "observability-stack.validate.retention" . -}}
 {{- include "observability-stack.validate.disk" . -}}
@@ -28,9 +29,91 @@ second debugging session.
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
+{{- include "observability-stack.validate.writers" . -}}
 {{- include "observability-stack.validate.alertReaders" . -}}
 {{- include "observability-stack.validate.grafana" . -}}
 {{- include "observability-stack.validate.routeOverlap" . -}}
+{{- end -}}
+
+{{/*
+`mode: operator-only` — a CONTRACT, not an override.
+
+Setting it does not turn anything else off: every component the mode
+does not run — vmauth, both vmalerts, Alertmanager, Grafana, backups,
+the self-alerts, the metrics self-scrape, all three stores, and
+`tenancy.principals`/`writers`/`alertReaders` — must ALSO be turned off
+(or left empty) explicitly, or this refuses. The alternative — the mode
+silently forcing each of those off — is the shape this chart refuses
+everywhere else a value could be computed instead of checked (see
+docs/doctrine.md's note on mirrors): a caller who read `vmauth.enabled:
+true` in their own values file and got no vmauth would be debugging a
+proxy that was never going to exist, with nothing in this file saying so.
+*/}}
+{{- define "observability-stack.validate.mode" -}}
+{{- $mode := .Values.mode | default "full" -}}
+{{- if not (has $mode (list "full" "operator-only")) -}}
+{{- fail (printf "observability-stack: `mode` is %q, which is neither \"full\" nor \"operator-only\"." (toString $mode)) -}}
+{{- end -}}
+{{- if eq $mode "operator-only" -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- if not $vmks.enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `victoria-metrics-k8s-stack.enabled` is false. Operator-only mode is FOR the operator: leave the subchart itself on, with its own `vmsingle` and the rest off underneath it — this chart's own defaults already shape it that way." -}}
+{{- end -}}
+{{- if not (index $vmks "victoria-metrics-operator").enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `victoria-metrics-k8s-stack.victoria-metrics-operator.enabled` is false. There would be nothing left for this install to run at all — not the operator, and, by the refusals beside this one, none of the stores, the proxy or Grafana either." -}}
+{{- end -}}
+{{- if ($vmks.vmsingle).enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `victoria-metrics-k8s-stack.vmsingle.enabled` is true. Operator-only means no store: a cluster with no store of its own runs the operator so charts/observability-emitters' VMAgent custom resource has a controller to reconcile it, and writes on to a store elsewhere. Set `victoria-metrics-k8s-stack.vmsingle.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- /*
+The vendored chart's sync Job fetches rules and dashboards from upstream
+sources over the network at deploy time and applies them directly —
+gated on its OWN `syncJob.enabled`, upstream default `true`, independent
+of `defaultRules`/`defaultDashboards` (which only shape what it fetches,
+not whether it runs). Left at that default, operator-only mode would run
+a Job every upgrade that has nothing to apply anything TO: no vmalert for
+a fetched VMRule, no Grafana for a fetched dashboard.
+*/ -}}
+{{- if ($vmks.syncJob).enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `victoria-metrics-k8s-stack.syncJob.enabled` is true. That Job fetches rules and dashboards from upstream sources and applies them directly, on its own switch — independent of `defaultRules`/`defaultDashboards` — and in this mode there is no vmalert for a fetched rule or Grafana for a fetched dashboard to reach. Set `victoria-metrics-k8s-stack.syncJob.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if (index .Values "victoria-logs-single").enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `victoria-logs-single.enabled` is true. Operator-only ships no log store either — set it to `false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if (index .Values "victoria-traces-single").enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `victoria-traces-single.enabled` is true. Operator-only ships no trace store either — set it to `false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.vmauth.enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `vmauth.enabled` is true. There is no store here for the proxy to authorise reads or writes against — set `vmauth.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.vmalert.enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `vmalert.enabled` is true. There is no store here for either vmalert to evaluate rules against — set `vmalert.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.alertmanager.enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `alertmanager.enabled` is true. With vmalert refused above, nothing here would ever call it — set `alertmanager.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if (.Values.grafana).enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `grafana.enabled` is true. There is no datasource here for it to read — set `grafana.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.backup.enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `backup.enabled` is true. There is no store here to back up — set `backup.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.selfAlerts.enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `selfAlerts.enabled` is true. Every one of its rules watches a component this mode does not run — set `selfAlerts.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.metricsSelfScrape.enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `metricsSelfScrape.enabled` is true. There is no metrics store here for it to scrape into — set `metricsSelfScrape.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.tenancy.principals -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.principals` is set. With `vmauth.enabled` refused above, no VMUser this chart renders would ever exist for a reader's grant to reach — configured and unreachable is the exact trap this chart refuses everywhere else. Clear `tenancy.principals`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.tenancy.writers -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.writers` is set. There is no proxy here for a writer's bearer token to authenticate against. Clear `tenancy.writers`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.tenancy.alertReaders -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.alertReaders` is set. There is no vmalert here for it to read. Clear `tenancy.alertReaders`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -321,7 +404,13 @@ scrape interval silently discards good samples rather than failing.
 {{- fail (printf "observability-stack: `interval` is %q but victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval'] is %q. They are one value: deduplication keeps one sample per window, so a window wider than the scrape interval silently drops good samples, and a narrower one deduplicates nothing. Set both to %q." (toString .Values.interval) (toString $dedup) (toString .Values.interval)) -}}
 {{- end -}}
 {{- $want := .Values.storeCredentials.secretName -}}
-{{- if not $want -}}
+{{- /*
+Required only when there is a store to authenticate at all: `mode:
+operator-only` refuses every store back on before this runs, so an
+operator-only install that leaves `storeCredentials.secretName` at its
+own default has no store reading a Secret that does not exist either.
+*/ -}}
+{{- if and (not $want) (or $metricsOn $logsOn $tracesOn) -}}
 {{- fail "observability-stack: `storeCredentials.secretName` is empty, so the stores would run with no `-httpAuth.*` at all and anything that can reach a Service could read every namespace's data around the proxy. Name the Secret the estate created; this chart never creates one." -}}
 {{- end -}}
 {{- $envSites := list -}}
@@ -820,6 +909,69 @@ is refused rather than trusted.
 {{- range $denied := $.Values.vmauth.deniedPaths -}}
 {{- if regexMatch $denied $path -}}
 {{- fail (printf "observability-stack: the route %q matches the denied path %q. `/internal/*` carries the partition and snapshot APIs, and those endpoints have their own query-string auth keys which OVERRIDE `-httpAuth.*` — so a route to them through this proxy is a route around the stores' own authentication." $path $denied) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Writer cluster pins.
+
+A writer authenticates with a bearer token, not a person's identity, and
+until `cluster` existed nothing stopped it from claiming to be a cluster
+it is not: the collector's own config says `k8s_cluster_name=whatever`,
+and vmauth forwarded it unchecked. `cluster`, when a writer sets it,
+closes that — see values.yaml's own comment on `tenancy.writers` for the
+per-signal mechanism and how each was confirmed to override rather than
+duplicate.
+
+`cluster` stays OPTIONAL, unlike `destinations`: the unscoped, local
+writer — the shape charts/observability-emitters has always used, one
+collector writing to the store beside it — needs no pin at all, and
+leaving it unset is how that writer keeps rendering exactly as it did
+before this value existed. It is a REMOTE writer, one whose collector
+runs on a different cluster than this install, that leaving it unset
+would be the silent failure this exists to close.
+*/}}
+{{- define "observability-stack.validate.writers" -}}
+{{- $t := .Values.tenancy -}}
+{{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
+{{- $names := dict -}}
+{{- $clusters := dict -}}
+{{- range $w := $t.writers -}}
+{{- if hasKey $names $w.name -}}
+{{- fail (printf "observability-stack: writer %q appears twice in `tenancy.writers`. The second `VMUser` this chart renders would collide with the first's object name, and the operator drops all but one from vmauth's config with no error outside `status.currentSyncError` — a writer that silently stops being able to write." $w.name) -}}
+{{- end -}}
+{{- $_ := set $names $w.name true -}}
+{{- if hasKey $w "cluster" -}}
+{{- if not (regexMatch $shape (toString $w.cluster)) -}}
+{{- fail (printf "observability-stack: writer %q sets `cluster` to %q, which is not a plain name (%s). It is forced onto every series, log record and span this writer sends — interpolated into the query argument the same way a reader's grant is — so a value carrying `|` or `.*` would not pin the writer to one cluster, it would widen what it can claim to be." $w.name (toString $w.cluster) $shape) -}}
+{{- end -}}
+{{- if and $t.ownCluster (eq (toString $w.cluster) (toString $t.ownCluster)) -}}
+{{- fail (printf "observability-stack: writer %q sets `cluster: %s`, which is this install's own cluster (`tenancy.ownCluster`). Pinning a writer to the install's own cluster is the UNSCOPED writer's job — one with no `cluster` at all, writing to the store beside it exactly as charts/observability-emitters has always done. Leave `cluster` unset for a local writer, or name the remote cluster this writer actually runs on." $w.name (toString $w.cluster)) -}}
+{{- end -}}
+{{- if hasKey $clusters $w.cluster -}}
+{{- fail (printf "observability-stack: writers %q and %q both set `cluster: %s`. Two bearer tokens pinned to the same cluster identity is almost always a `name` that was meant to be different and was not; if two collectors genuinely write for the same cluster, this chart has no objection to it happening under two names — it only refuses the name collision above from going unnoticed as a cluster collision instead." (index $clusters $w.cluster) $w.name (toString $w.cluster)) -}}
+{{- end -}}
+{{- $_ := set $clusters $w.cluster $w.name -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+The one flag that would hand a writer's own claimed cluster back to it,
+the write-side counterpart of the `mergeQueryArgs` refusal in
+`validate.tenancy`. vmauth drops a client query argument that clashes
+with one the route already set, and that drop is the only reason a
+writer cannot simply send its own `extra_label`/`extra_fields` and claim
+to be any cluster it likes; `mergeQueryArgs` exempts an argument from
+that rule entirely, and BOTH stores keep the LAST value for a duplicate
+name — the writer's own, sent after this chart's forced one, would win.
+*/ -}}
+{{- range $arg, $value := ($.Values.vmauth.extraArgs | default dict) -}}
+{{- if eq (toString $arg) "mergeQueryArgs" -}}
+{{- range $merged := (splitList "," (toString $value)) -}}
+{{- if has (trim $merged) (list "extra_label" "extra_label[]" "extra_fields" "extra_fields[]") -}}
+{{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q. That is the argument a writer's `cluster` pin is enforced with: vmauth drops a client query argument that clashes with one the route already set, and that drop is the only reason a writer cannot simply send its own %s and claim to be any cluster it likes. `mergeQueryArgs` exempts it from that rule entirely, and both VictoriaLogs/VictoriaTraces' `extra_fields` and VictoriaMetrics' `extra_label` keep the LAST value for a duplicate name — the writer's own, sent after this chart's, would win. Remove it, or stop pinning writers by cluster." (trim $merged) (trim $merged)) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

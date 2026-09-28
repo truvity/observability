@@ -1,0 +1,28 @@
+# expect: That Job fetches rules and dashboards from upstream sources
+# The sync Job is gated on its OWN switch, independent of
+# `defaultRules`/`defaultDashboards`, and left on it runs every upgrade
+# with no vmalert or Grafana here to hand what it fetched to.
+mode: operator-only
+vmauth:
+  enabled: false
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false
+metricsSelfScrape:
+  enabled: false
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  syncJob:
+    enabled: true
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

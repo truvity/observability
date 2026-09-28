@@ -210,6 +210,10 @@ spec:
         url: {{ $metrics | quote }}
       paths:
         {{- include "observability-stack.writePaths.metrics" $root | nindent 8 }}
+      {{- with (include "observability-stack.writeQueryArgs.metrics" (dict "cluster" $w.cluster "label" $root.Values.tenancy.clusterLabel)) }}
+      query_args:
+        {{- . | nindent 8 }}
+      {{- end }}
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
     {{- else if eq $dest "logs" }}
@@ -217,6 +221,10 @@ spec:
         url: {{ $logs | quote }}
       paths:
         {{- include "observability-stack.writePaths.logs" $root | nindent 8 }}
+      {{- with (include "observability-stack.writeQueryArgs.logs" (dict "cluster" $w.cluster "field" $root.Values.tenancy.logsClusterField)) }}
+      query_args:
+        {{- . | nindent 8 }}
+      {{- end }}
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
     {{- else if eq $dest "traces" }}
@@ -224,6 +232,10 @@ spec:
         url: {{ $traces | quote }}
       paths:
         {{- include "observability-stack.writePaths.traces" $root | nindent 8 }}
+      {{- with (include "observability-stack.writeQueryArgs.traces" (dict "cluster" $w.cluster "field" $root.Values.tenancy.logsClusterField)) }}
+      query_args:
+        {{- . | nindent 8 }}
+      {{- end }}
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
     {{- else }}

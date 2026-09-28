@@ -6,6 +6,46 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.8.0
+
+- **Feature: `charts/observability-stack` accepts REMOTE writers, pinned
+  by cluster.** `tenancy.writers[]` gains an optional `cluster` field.
+  Set, it FORCES every series, log record and span that writer sends to
+  belong to that cluster — overriding whatever `k8s_cluster_name` (or the
+  log/trace equivalent) the writer's own collector config claims, not
+  merely adding a second, ignored value beside it. This closes a real
+  gap for a central install serving more than one remote cluster: a
+  bearer token alone proves nothing about which cluster it actually ran
+  on, so before this a writer could claim to be any cluster its own
+  config stated, unchecked. Verified, per signal, against the pinned
+  vmsingle and a live VictoriaLogs and VictoriaTraces:
+  - metrics: `extra_label=<tenancy.clusterLabel>=<cluster>` on
+    `/api/v1/write` and `/opentelemetry/v1/metrics`.
+  - logs: `extra_fields=<tenancy.logsClusterField>=<cluster>` on every
+    log write path.
+  - traces: `extra_fields=resource_attr:<tenancy.logsClusterField>=<cluster>`
+    on the OTLP trace write path — VictoriaTraces stores every OTLP
+    resource attribute under a `resource_attr:` prefix, confirmed by
+    reading a live ingest back rather than from any public doc.
+
+  Unset (the default) renders exactly as before: the unscoped, local
+  writer's `VMUser` carries no `query_args` at all. New refusals: a
+  `cluster` that is not a plain name, one equal to the new
+  `tenancy.ownCluster` (the unscoped writer's own job), and two writers
+  sharing a `name` or a `cluster`.
+- **Feature: `mode: operator-only`.** A new top-level switch for a
+  cluster that holds no store of its own but still runs
+  `charts/observability-emitters`: only the vendored VictoriaMetrics
+  operator and its own webhook/CRD prerequisites render — no stores, no
+  proxy, no vmalert, no Grafana, no backups, no dashboards or rules sync
+  — one chart, so the operator version stays identical to every cluster
+  running the full stack. It is a CONTRACT, not a silent override: every
+  component the mode does not run must also be turned off explicitly, or
+  the render refuses and says which one is still on.
+- `tenancy.ownCluster`: the name this install's own cluster is known by.
+  Optional; it exists only so a remote writer's `cluster` has something
+  to be refused against, and does nothing left unset.
+
 ## 0.7.8
 
 - **Feature: `charts/platform-alerts` gains an optional `kargo` rule

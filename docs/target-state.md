@@ -85,6 +85,55 @@ dead box or a dead estate is each noticed by one of the other two.
 party is not optional, and [statusbox.md](statusbox.md#internal--status-pulled)
 has why this is a read and not a push.
 
+## Central install, remote writers
+
+The diagram above draws one cluster running the install and its own
+collectors. An estate with more than one cluster does not have to run a
+second install for each: one cluster's `observability-stack` can be the
+STORE for several others, each of which runs only
+`charts/observability-emitters` and writes across the network to the
+one that holds the data.
+
+```
+  ┌───────────────────────┐   write, bearer token,   ┌────────────────────────┐
+  │ remote cluster         │   over the network       │ central cluster         │
+  │  observability-emitters│──────────────────────────►  observability-stack   │
+  │  (mode: operator-only) │   pinned to `cluster`    │  (mode: full)           │
+  └───────────────────────┘                           └────────────────────────┘
+```
+
+Two values carry the whole shape, both on `charts/observability-stack`
+alone — the remote cluster's own `charts/observability-emitters` needs no
+chart change to take part, only a values-level destination:
+
+- **The writer's identity is minted where it runs, never handed to the
+  install.** Each remote cluster mints its OWN write token locally — the
+  same credential machinery every writer has always used, nothing new —
+  and the install is handed the token's value (a Secret name it reads,
+  never a value it generates) through whatever secret-distribution
+  mechanism the estate already uses to get a value from one cluster's
+  namespace into another's. This repository does not prescribe that
+  mechanism; it is data-plane, not mechanism, per the boundary above.
+- **The install pins each remote writer to the cluster it is FOR.**
+  `tenancy.writers[].cluster`, set, forces every series, log record and
+  span that writer sends to belong to that cluster, overriding whatever
+  the writer's own collector config claims — a bearer token alone proves
+  nothing about which cluster it actually ran on. See docs/reference.md
+  and values.yaml's own comment on `tenancy.writers` for the mechanism
+  per signal, and `tenancy.ownCluster` for the companion refusal that
+  keeps a writer from being pinned to the install's own identity instead
+  of a remote one.
+
+A cluster that holds no store of its own still needs somewhere for
+`charts/observability-emitters`' `VMAgent` custom resource to be
+reconciled — that needs the VictoriaMetrics operator's CONTROLLER, not
+just its CRDs (`charts/observability-crds` is CRDs-only, applied first,
+same as everywhere else). `charts/observability-stack`'s `mode:
+operator-only` is that: one chart, so a cluster running only the operator
+gets the exact same operator version as the cluster running the full
+stack, never a second pin to track. See docs/reference.md's `mode` row
+for the full contract.
+
 ## What a consumer writes, in full
 
 For an estate with one install, one company and one edge provider — the

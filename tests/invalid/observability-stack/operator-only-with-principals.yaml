@@ -1,0 +1,35 @@
+# expect: but `tenancy.principals` is set
+# With `vmauth.enabled` refused to true in this mode, no VMUser this
+# chart renders would ever exist for a reader's grant to reach.
+mode: operator-only
+vmauth:
+  enabled: false
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false
+metricsSelfScrape:
+  enabled: false
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  syncJob:
+    enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

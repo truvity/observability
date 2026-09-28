@@ -1,0 +1,42 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# A central install's writers: one local, unscoped writer — the shape
+# every install has always had — plus one REMOTE writer, pinned to a
+# cluster that is not this install's own, sending all three signals.
+#
+# `tenancy.ownCluster` names this install's own cluster, so the remote
+# writer's pin can be checked against it: `example-central` here is this
+# install's own identity, and the writer below is pinned to
+# `example-remote`, a different one.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  ownCluster: example-central
+  # The trace store is on by default and this proxy cannot scope trace
+  # READS (see the `tenancy` golden case for why); this case carries no
+  # `principals` at all, so that refusal does not apply here, and
+  # `allowUnfilteredTraceReads` stays unset.
+  writers:
+    - name: local-emitters
+      tokenSecret: {name: local-writer-token, key: token}
+      destinations: [metrics, logs, traces]
+    - name: remote-cluster
+      tokenSecret: {name: remote-writer-token, key: token}
+      destinations: [metrics, logs, traces]
+      cluster: example-remote
+
+# The smallest shape that keeps `alertmanager.enabled`'s default from
+# rendering the `blackhole` route: one receiver, one default per
+# severity, nothing project-specific. See docs/notifications.md.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
