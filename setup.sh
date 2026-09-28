@@ -143,11 +143,35 @@ install_jq() {
 }
 
 # Tailscale joins the estate's private network: SSH, the ops page, and
-# the install's push into gatus-ops all travel over it. TS_AUTHKEY is
-# one-shot — CloudInit stages it once, and this function is written to
-# use it at most once per box for exactly that reason: `tailscale
-# status` is checked FIRST, and `tailscale up` never runs a second time
-# on a box already joined.
+# gatus-ops's own read of whatever it probes all travel over it.
+# TS_AUTHKEY is one-shot — CloudInit stages it once, and this function is
+# written to use it at most once per box for exactly that reason:
+# `tailscale status` is checked FIRST, and `tailscale up` never runs a
+# second time on a box already joined.
+#
+# This box is a CLIENT of the tailnet, not a router for it: every
+# instance's Config reads private services by name — a service behind
+# the estate's own subnet router, never addressed by a literal IP this
+# repository would have to know. Two flags make that resolvable and
+# reachable at all, and dropping either one reintroduces the same
+# failure, just at a different layer:
+#
+#   --accept-routes   without it, a subnet router elsewhere on the
+#                     tailnet can advertise all it wants — this box
+#                     never installs the resulting route, so a private
+#                     IP has no path off the box at all.
+#   --accept-dns=true accepts the tailnet's own DNS config: MagicDNS for
+#                     every peer's own name, plus whatever split-DNS
+#                     routes the tailnet admin has delegated to a
+#                     resolver behind that same subnet router. Without
+#                     it, a private name never resolves in the first
+#                     place — the box would have no route to try even if
+#                     it somehow already knew an IP.
+#
+# Neither flag makes this box a router FOR anyone else: no
+# --advertise-routes, no exit node. Accepting routes is entirely
+# client-side — it changes what THIS box installs into its own routing
+# table, and grants nothing to any other peer.
 setup_tailscale() {
   if [ -z "${TS_AUTHKEY:-}" ]; then
     log "TS_AUTHKEY is not set, skipping tailscale (expected in a test fixture; a real box always carries one)"
@@ -162,7 +186,7 @@ setup_tailscale() {
     return
   fi
   log "joining the tailnet"
-  tailscale up --authkey="$TS_AUTHKEY" --hostname="${TS_HOSTNAME:-statusbox}" --ssh --accept-dns=false
+  tailscale up --authkey="$TS_AUTHKEY" --hostname="${TS_HOSTNAME:-statusbox}" --ssh --accept-routes --accept-dns=true
 }
 
 # serve_private_instances is how the ONE private instance (Public: false
@@ -460,6 +484,56 @@ unpack_instances() {
 # aws.lightsail.InstancePublicPorts firewall is declared with an empty
 # port list regardless (see pkg/statusbox/lightsail), so a loopback bind
 # here is defence that does not depend on that firewall being correct.
+#
+# Each service also carries an explicit `dns:` pointing at
+# 100.100.100.100 — tailscaled's own resolver, reachable from anywhere on
+# the box because it is intercepted locally off the tailscale0 interface,
+# not actually dialled over the wire. Docker compose gives each project
+# its own bridge network by default (there is no top-level `networks:`
+# here to say otherwise), and on THAT kind of network — a user-defined
+# one, as opposed to the legacy single `docker0` bridge — Docker always
+# hands a container its own embedded resolver at 127.0.0.11 regardless of
+# what the host's /etc/resolv.conf says, and that embedded resolver's own
+# upstream is whatever the container runtime's DNS config names, which on
+# a box whose host-level DNS is reassigned by a systemd-resolved (or
+# NetworkManager) integration rather than a direct rewrite of
+# /etc/resolv.conf is not guaranteed to be 100.100.100.100 at all — see
+# the tailnet's own FAQ on why it sometimes rewrites /etc/resolv.conf
+# directly and sometimes only registers itself with whatever DNS manager
+# already owns that file (https://tailscale.com/kb/1054/dns), and
+# https://github.com/tailscale/tailscale/issues/14467, which is this
+# exact failure: a container that cannot reach 100.100.100.100 because
+# nothing told it to. Naming the resolver explicitly, once, here, does
+# not depend on which of those two modes tailscaled picked on the box's
+# distribution, or on whichever kind of bridge network compose happens to
+# create — it is also the fix the tailnet project itself points at for a
+# containerised client. `network_mode: host` was the other way to make
+# this deterministic, and was rejected: it would also have to carry
+# `GATUS_CONFIG_PATH` splitting into estate-authored Config plus a
+# setup.sh-owned bind-address override to keep every instance on
+# 127.0.0.1 and its own port instead of each colliding on Gatus's default
+# 0.0.0.0:8080 — more moving parts for the same outcome `dns:` gets in
+# one line.
+#
+# Reaching a subnet-routed private IP itself needs no compose-level
+# change: the routing half of this bug is fixed once, in
+# setup_tailscale's own `--accept-routes`, and nothing here has to widen
+# a container's own network beyond the default bridge to make use of it.
+# A container's packet leaves via docker0, Docker's own POSTROUTING
+# MASQUERADE rewrites its source to the box's address on whichever
+# interface the kernel's routing table sends it out on next (the whole
+# reason a reply can find its way back to a container that owns no
+# routable address of its own), and tailscaled's own ts-forward chain in
+# the kernel's FORWARD table — inserted ahead of Docker's own chains the
+# moment `tailscale up` runs, since setup_tailscale always runs before
+# any compose service exists — ends in an unconditional
+# `-o tailscale0 -j ACCEPT` for exactly this direction, the same rule
+# that lets a subnet router or exit node forward traffic at all: see
+# addBase4 in tailscale's own util/linuxfw/iptables_runner.go. None of
+# that rule depends on this box itself advertising any route, which it
+# never does (no --advertise-routes, no exit node): accepting a route is
+# client-side, and forwarding a locally-originated container's packet out
+# through it is not the same thing as relaying someone else's.
 write_compose() {
   {
     echo "services:"
@@ -473,6 +547,8 @@ write_compose() {
     restart: unless-stopped
     ports:
       - "127.0.0.1:${port}:8080"
+    dns:
+      - 100.100.100.100
     environment:
       GATUS_CONFIG_PATH: /config/config.yaml
     env_file:
