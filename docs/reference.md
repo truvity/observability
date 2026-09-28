@@ -72,7 +72,10 @@ differ between versions, and a wrong name is a rule that never fires.
 | `severity` | enum | `critical` | Severity of `CronJobNotSucceeding`. |
 | `failedSeverity` | enum | `warning` | Severity of `BackupJobFailed`. |
 
-Alerts: `CronJobNotSucceeding`, `BackupJobFailed`.
+Alerts: `CronJobNotSucceeding`, `BackupJobFailed` (fires on the NEWEST Job
+of each CronJob only — see docs/safety.md, "A failed backup Job that
+never clears" — and only for CronJob-owned Jobs; a standalone Job never
+raises it).
 
 ### `groups.writePath`
 

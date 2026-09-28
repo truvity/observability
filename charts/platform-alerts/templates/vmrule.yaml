@@ -65,13 +65,38 @@ spec:
               can see it. Check that the CronJob exists, is not suspended, and that
               its last Job completed.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "CronJobNotSucceeding")) }}{{ . | nindent 12 }}{{- end }}
-        # A Job that failed outright. Separate from the age rule because a
-        # job that fails loudly and one that vanishes quietly are different
-        # failures, often with different owners.
+        # A Job that failed outright — but only the NEWEST Job of each
+        # CronJob. `failedJobsHistoryLimit` keeps failed Job objects
+        # around long after a later run of the same CronJob has
+        # succeeded, and `kube_job_status_failed` never expires that
+        # memory on its own: reading it directly fires forever on a
+        # failure a later run already fixed. "Newest" is decided by
+        # `kube_job_created` — every Job object carries it from the
+        # instant it exists, unlike `kube_job_status_start_time`, which
+        # stays unset until a pod actually runs and so cannot outrank an
+        # older failure while the new run is merely pending. See
+        # docs/safety.md.
+        #
+        # Scoped to Jobs owned by a CronJob
+        # (`kube_job_owner{owner_kind="CronJob"}`): a standalone Job has
+        # no schedule and so no later run to supersede it, and this
+        # rule's whole intent — see its name — is backup CronJobs. A
+        # standalone Job that fails no longer raises THIS alert.
         - alert: BackupJobFailed
           expr: >-
+            WITH (
+              cronjob_jobs = (
+                kube_job_created{namespace=~"{{ $ns }}"}
+                * on (namespace, job_name) group_left(owner_name)
+                kube_job_owner{namespace=~"{{ $ns }}", owner_kind="CronJob"}
+              ),
+              newest_per_cronjob = max by (namespace, owner_name) (cronjob_jobs)
+            )
             max by (namespace, job_name) (
               kube_job_status_failed{namespace=~"{{ $ns }}"}
+              and on (namespace, job_name) (
+                cronjob_jobs == on (namespace, owner_name) group_left() newest_per_cronjob
+              )
             ) > 0
           labels:
             {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.failedSeverity) | nindent 12 }}

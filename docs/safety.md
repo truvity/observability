@@ -147,6 +147,46 @@ Measured healthy range for a daily job: the age resets below 24h on every
 run. The default threshold of 26h is that plus enough slack for a slow run
 or a retry.
 
+### A failed backup Job that never clears
+
+`BackupJobFailed` fired forever on a failure a later run had already
+fixed. `failedJobsHistoryLimit` keeps a failed Job object around well
+past its own run — that is the whole point of the limit, so the failure
+is still there to inspect — but the old expression, `max by (namespace,
+job_name) (kube_job_status_failed{...}) > 0`, read every retained Job
+equally, with no `for:` to age it out either. Live example: three
+week-old failed Jobs from two different CronJobs, whose every later run
+had succeeded, kept the alert firing continuously.
+
+`CronJobNotSucceeding` above does not have this flaw, and is why it
+still says "the rule that matters": `kube_cronjob_status_last_successful_time`
+is a single gauge the CronJob controller itself keeps current on every
+run, not a value kept per retained Job. `BackupJobFailed` exists as the
+loud, fast-to-notice companion — see its own name — and losing that
+speed to the same bug it is meant to catch defeats the rule.
+
+The fix joins `kube_job_created` (the timestamp every Job object carries
+from the instant it exists — `kube_job_status_start_time` stays unset
+until a pod actually runs, so it cannot outrank an older failure while
+the new run is merely pending) onto `kube_job_owner` to find the newest
+Job per `(namespace, CronJob)`, and reads `kube_job_status_failed` only
+for that one. A failure clears the moment a later run of the same
+CronJob succeeds, or is even still running — nothing about "newest" is
+about success, only about which Job's failure state still matters.
+
+This also SCOPES the rule to `kube_job_owner{owner_kind="CronJob"}`-owned
+Jobs — a real, intentional behaviour change, not a side effect: a
+standalone Job (created by hand, or owned by something other than a
+CronJob) has no schedule and so no later run to supersede it, "newest"
+has nothing to mean for it, and the rule's own name says its intent was
+always backup CronJobs. A standalone Job that fails no longer raises
+THIS alert. Proved against a real victoria-metrics, not this
+repository's own hold-window model (which drives a single boolean
+series through vmalert's pending/firing state machine and has no
+concept of a join across metrics) — see
+hack/platform-alerts-newest-job-proof.sh, run with `just
+platform-alerts-newest-job-proof`.
+
 ### A volume that was never mounted
 
 A pod reported `1/1 Running` while writing to the node's root filesystem,
