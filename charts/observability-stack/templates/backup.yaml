@@ -1,11 +1,29 @@
 {{- if .Values.backup.enabled }}
 {{- $root := . }}
 {{- $fullname := include "observability-stack.fullname" . }}
+{{- $authMode := .Values.backup.auth.mode | default "secret" }}
+{{- $saName := .Values.backup.auth.serviceAccount.name | default (printf "%s-backup" $fullname | trunc 63) }}
+{{- $ambientOrProcess := ne $authMode "secret" }}
 {{- if not .Values.backup.destination }}
 {{- fail "observability-stack: `backup.enabled` is true but `backup.destination` is empty. A backup job with no destination runs, finds nothing to do and exits zero — the exact shape of failure this repository exists to catch." }}
 {{- end }}
+{{- if eq $authMode "secret" }}
 {{- if not .Values.backup.credentialsSecret }}
-{{- fail "observability-stack: `backup.enabled` is true but `backup.credentialsSecret` is empty. The object store's credentials are the estate's; this chart takes the NAME of a Secret and never a value." }}
+{{- fail "observability-stack: `backup.enabled` is true but `backup.credentialsSecret` is empty. The object store's credentials are the estate's; this chart takes the NAME of a Secret and never a value. Set `backup.auth.mode: ambient` or `credentialProcess` for a backup with no static key at all." }}
+{{- end }}
+{{- else if .Values.backup.credentialsSecret }}
+{{- fail (printf "observability-stack: `backup.auth.mode` is %q but `backup.credentialsSecret` is also set. `ambient` and `credentialProcess` exist so no long-lived object-store key is ever mounted into a backup job; leave `credentialsSecret` empty, or set `backup.auth.mode: secret` to use it." $authMode) }}
+{{- end }}
+{{- if eq $authMode "credentialProcess" }}
+{{- if not .Values.backup.auth.credentialProcess.command }}
+{{- fail "observability-stack: `backup.auth.mode` is `credentialProcess` but `backup.auth.credentialProcess.command` is empty. This is the command vmbackup's AWS SDK runs to obtain temporary credentials — a credential-broker CLI, typically — and with nothing to run there is nothing to authenticate with." }}
+{{- end }}
+{{- if or (not .Values.backup.auth.credentialProcess.toolsImage.repository) (not .Values.backup.auth.credentialProcess.toolsImage.tag) }}
+{{- fail "observability-stack: `backup.auth.mode` is `credentialProcess` but `backup.auth.credentialProcess.toolsImage.repository`/`.tag` is empty. vmbackup's own image is minimal and may have no shell or package manager, so `command`'s binary has to come from somewhere else — this is the image an initContainer copies it out of." }}
+{{- end }}
+{{- if or .Values.backup.logs.enabled .Values.backup.traces.enabled }}
+{{- fail "observability-stack: `backup.auth.mode` is `credentialProcess` but `backup.logs.enabled` or `backup.traces.enabled` is also true. The AWS config file and the tools volume this mode renders are wired into the metrics job's vmbackup container only — the log and trace jobs run rclone against `backup.credentialsSecret`/ambient credentials instead, and `credentialProcess` gives them neither. Turn both off explicitly, or pick `secret`/`ambient` instead." }}
+{{- end }}
 {{- end }}
 {{- /*
 Backups. Three stores, three mechanisms, and they are not
@@ -24,7 +42,49 @@ and a snapshot of a log or trace partition is a directory of hardlinks
 inside the data directory. A ReadWriteOnce volume can only be mounted by
 pods on ONE node, so each job carries a pod affinity onto its store's
 node. Without it the job stays Pending, which the same alert sees.
+
+Authentication (`backup.auth.mode`) is the fourth axis, orthogonal to
+which store: `secret` (default) envFrom's `backup.credentialsSecret`
+into every job unconditionally, same as always. `ambient` and
+`credentialProcess` both suppress that envFrom and instead run every
+job's pod as a ServiceAccount (`$saName`) — `ambient` stops there, and
+leaves the object store's own AWS SDK to resolve ambient credentials
+(EKS Pod Identity or IRSA); `credentialProcess` (metrics only — see the
+refusal above) additionally renders an AWS config file, a tools
+emptyDir and an initContainer to populate it, and an optional projected
+ServiceAccount token, all wired into the vmbackup container specifically.
 */}}
+{{- if $ambientOrProcess }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $saName | quote }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+  {{- with .Values.backup.auth.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if eq $authMode "credentialProcess" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-backup-aws-config" $fullname | trunc 63 }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+data:
+  # vmbackup's AWS SDK loads this via `AWS_CONFIG_FILE` (set on the
+  # container below) whether or not a profile is named, the same as the
+  # AWS CLI's own config file — no `-configFilePath` flag needed. See
+  # docs/reference.md, "`backup.auth`", for the SDK source this is
+  # confirmed against.
+  config: |
+    [default]
+    credential_process = {{ .Values.backup.auth.credentialProcess.command }}
+{{- end }}
 {{- $affinity := dict }}
 {{- if .Values.backup.metrics.enabled }}
 {{- range $variant := list "incremental" "full" }}
@@ -53,6 +113,13 @@ spec:
             observability.backup: metrics
         spec:
           restartPolicy: Never
+          {{- if $ambientOrProcess }}
+          serviceAccountName: {{ $saName | quote }}
+          {{- end }}
+          {{- if $root.Values.backup.affinity }}
+          affinity:
+            {{- merge (dict "podAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (list (dict "topologyKey" "kubernetes.io/hostname" "labelSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmsingle" "app.kubernetes.io/instance" (include "observability-stack.vmks.fullname" $root))))))) $root.Values.backup.affinity | toYaml | nindent 12 }}
+          {{- else }}
           affinity:
             podAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
@@ -61,6 +128,29 @@ spec:
                     matchLabels:
                       app.kubernetes.io/name: vmsingle
                       app.kubernetes.io/instance: {{ include "observability-stack.vmks.fullname" $root }}
+          {{- end }}
+          {{- with $root.Values.backup.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $root.Values.backup.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if eq $authMode "credentialProcess" }}
+          initContainers:
+            - name: backup-tools
+              image: {{ printf "%s:%s" $root.Values.backup.auth.credentialProcess.toolsImage.repository $root.Values.backup.auth.credentialProcess.toolsImage.tag | quote }}
+              command:
+                - /bin/sh
+                - -euc
+                - |
+                  mkdir -p /var/run/backup-tools
+                  cp -a {{ $root.Values.backup.auth.credentialProcess.toolsImage.sourcePath }}/. /var/run/backup-tools/
+              volumeMounts:
+                - name: backup-tools
+                  mountPath: /var/run/backup-tools
+          {{- end }}
           containers:
             - name: vmbackup
               image: {{ printf "%s:%s" $root.Values.backup.metrics.image.repository $root.Values.backup.metrics.image.tag | quote }}
@@ -71,6 +161,12 @@ spec:
                 # gets only what changed, and there is no flag for it.
                 - -storageDataPath=/vm-data
                 - -snapshot.createURL=$(SNAPSHOT_CREATE_URL)
+                {{- if $root.Values.backup.metrics.s3CustomEndpoint }}
+                - -customS3Endpoint={{ $root.Values.backup.metrics.s3CustomEndpoint }}
+                {{- end }}
+                {{- if ne $root.Values.backup.metrics.s3ForcePathStyle "" }}
+                - -s3ForcePathStyle={{ $root.Values.backup.metrics.s3ForcePathStyle }}
+                {{- end }}
                 {{- if $full }}
                 # The weekly full names the existing backup as `-origin`,
                 # so everything unchanged is copied INSIDE the object
@@ -99,18 +195,62 @@ spec:
                 # in the query string.
                 - name: SNAPSHOT_CREATE_URL
                   value: {{ printf "http://$(VM_USERNAME):$(VM_PASSWORD)@%s/snapshot/create" (trimPrefix "http://" (include "observability-stack.metrics.url" $root)) | quote }}
+                {{- if eq $authMode "credentialProcess" }}
+                - name: AWS_CONFIG_FILE
+                  value: /etc/aws/config
+                - name: AWS_SDK_LOAD_CONFIG
+                  value: "true"
+                {{- end }}
+              {{- if eq $authMode "secret" }}
               envFrom:
                 - secretRef:
                     name: {{ $root.Values.backup.credentialsSecret | quote }}
+              {{- end }}
+              {{- with $root.Values.backup.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
               volumeMounts:
                 - name: store
                   mountPath: /vm-data
                   readOnly: true
+                {{- if eq $authMode "credentialProcess" }}
+                - name: backup-tools
+                  mountPath: /var/run/backup-tools
+                  readOnly: true
+                - name: aws-config
+                  mountPath: /etc/aws
+                  readOnly: true
+                {{- with $root.Values.backup.auth.credentialProcess.serviceAccountToken }}
+                {{- if .audience }}
+                - name: backup-token
+                  mountPath: /var/run/backup-token
+                  readOnly: true
+                {{- end }}
+                {{- end }}
+                {{- end }}
           volumes:
             - name: store
               persistentVolumeClaim:
                 claimName: {{ $root.Values.backup.metrics.claimName | default (printf "vmsingle-%s" (include "observability-stack.vmks.fullname" $root)) | quote }}
                 readOnly: true
+            {{- if eq $authMode "credentialProcess" }}
+            - name: backup-tools
+              emptyDir: {}
+            - name: aws-config
+              configMap:
+                name: {{ printf "%s-backup-aws-config" $fullname | trunc 63 }}
+            {{- with $root.Values.backup.auth.credentialProcess.serviceAccountToken }}
+            {{- if .audience }}
+            - name: backup-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      audience: {{ .audience | quote }}
+                      path: {{ .path | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
 {{- end }}
 {{- end }}
 {{- range $store := list "logs" "traces" }}
@@ -144,6 +284,13 @@ spec:
             observability.backup: {{ $store }}
         spec:
           restartPolicy: Never
+          {{- if $ambientOrProcess }}
+          serviceAccountName: {{ $saName | quote }}
+          {{- end }}
+          {{- if $root.Values.backup.affinity }}
+          affinity:
+            {{- merge (dict "podAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (list (dict "topologyKey" "kubernetes.io/hostname" "labelSelector" (dict "matchLabels" (dict "app" "server" "app.kubernetes.io/name" $name "app.kubernetes.io/instance" $root.Release.Name)))))) $root.Values.backup.affinity | toYaml | nindent 12 }}
+          {{- else }}
           affinity:
             podAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
@@ -153,6 +300,15 @@ spec:
                       app: server
                       app.kubernetes.io/name: {{ $name }}
                       app.kubernetes.io/instance: {{ $root.Release.Name }}
+          {{- end }}
+          {{- with $root.Values.backup.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $root.Values.backup.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           containers:
             - name: backup
               image: {{ printf "%s:%s" $root.Values.backup.image.repository $root.Values.backup.image.tag | quote }}
@@ -171,9 +327,15 @@ spec:
                     secretKeyRef:
                       name: {{ $root.Values.storeCredentials.secretName | quote }}
                       key: {{ $root.Values.storeCredentials.passwordKey | quote }}
+              {{- if eq $authMode "secret" }}
               envFrom:
                 - secretRef:
                     name: {{ $root.Values.backup.credentialsSecret | quote }}
+              {{- end }}
+              {{- with $root.Values.backup.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
               volumeMounts:
                 - name: store
                   mountPath: /storage

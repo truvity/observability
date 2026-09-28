@@ -1,0 +1,55 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# `credentialProcess`: metrics only — `logs`/`traces` are turned off
+# below on purpose, the refusal this case does NOT trigger. vmbackup's
+# AWS SDK execs `auth.credentialProcess.command`, a worked example of a
+# credential-broker CLI presenting the projected token at its fixed
+# path in exchange for temporary S3-compatible credentials — here,
+# against an S3-compatible endpoint that is not AWS (Cloudflare R2 is
+# the worked example `s3CustomEndpoint`/`s3ForcePathStyle` below name,
+# generically, without naming any particular broker or bucket).
+backup:
+  enabled: true
+  destination: s3://example-bucket/observability
+  auth:
+    mode: credentialProcess
+    credentialProcess:
+      command: "/var/run/backup-tools/r2-broker exchange --subject-token-file /var/run/backup-token/token"
+      toolsImage:
+        repository: example.com/mirror/r2-broker
+        tag: "1.0.0"
+        sourcePath: /usr/local/bin
+      serviceAccountToken:
+        audience: https://example.com/r2-broker
+        path: token
+  metrics:
+    enabled: true
+    s3CustomEndpoint: https://example-account.r2.cloudflarestorage.com
+    s3ForcePathStyle: "true"
+  logs:
+    enabled: false
+  traces:
+    enabled: false

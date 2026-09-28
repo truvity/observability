@@ -191,6 +191,21 @@ statusbox-ca-proof:
 platform-alerts-newest-job-proof:
     hack/platform-alerts-newest-job-proof.sh
 
+# REAL proof, in Docker, of `backup.auth.mode: credentialProcess` end to
+# end: MinIO stands in for an S3-compatible store that is not AWS, the
+# RENDERED vmbackup command/env/AWS-config this chart produces for that
+# mode runs against it for real, a backup lands in MinIO, and vmrestore
+# then rebuilds a second, empty VictoriaMetrics from it — queried
+# afterward for the series the first one was seeded with. See
+# hack/backup-restore-proof.sh's own header, and docs/reference.md's
+# "Restore" section, which this script is the proof for.
+#
+# Needs Docker, curl and python3 (PyYAML); deliberately NOT part of
+# `check`, the same reason `statusbox-ca-proof` above is not: a
+# one-off, run-by-hand proof for this feature, not a regression gate.
+backup-restore-proof:
+    hack/backup-restore-proof.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

@@ -6,6 +6,71 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.8.2
+
+- **Feature: `charts/observability-stack`'s backups authenticate WITHOUT
+  a static key.** `backup.auth.mode` (default `secret`, unchanged
+  behaviour) gains two new values:
+  - `ambient`: no `credentialsSecret` anywhere. Every backup job's pod
+    runs as a rendered ServiceAccount (`backup.auth.serviceAccount.name`/
+    `.annotations`) instead, and each store's own AWS SDK resolves
+    credentials from whatever ambient identity that carries — EKS Pod
+    Identity (the association is made outside this chart) or IRSA (an
+    `eks.amazonaws.com/role-arn` annotation). Confirmed against the
+    pinned vmbackup v1.152.0's own source
+    (`aws-sdk-go-v2/config v1.33.4`'s `resolve_credentials.go`): the
+    default credential chain checks `AWS_WEB_IDENTITY_TOKEN_FILE` (IRSA)
+    unconditionally, then `AWS_CONTAINER_CREDENTIALS_FULL_URI` +
+    `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` (EKS Pod Identity, re-read
+    on every refresh), before IMDS.
+  - `credentialProcess`: for `backup.metrics` only (refused together
+    with `backup.logs.enabled`/`backup.traces.enabled`). Renders an AWS
+    config file (`credential_process = <auth.credentialProcess.command>`)
+    and the env vmbackup's SDK reads it from, plus an initContainer that
+    copies `auth.credentialProcess.toolsImage`'s own tools into
+    vmbackup's minimal container (a fixed path,
+    `/var/run/backup-tools`), and an optional projected ServiceAccount
+    token for a broker CLI to present. The worked example is a
+    credential-broker CLI that exchanges the pod's own token for
+    temporary S3-compatible credentials — Cloudflare R2 is the store
+    this was proven against, not something the mechanism names.
+  - `backup.metrics.s3CustomEndpoint` / `.s3ForcePathStyle` — `vmbackup
+    -customS3Endpoint`/`-s3ForcePathStyle`, for an S3-compatible store
+    that is not AWS. Both default to rendering no flag.
+
+  Both new modes are refused together with `backup.credentialsSecret`
+  set, so a static key can never coexist with either.
+
+- **Feature: `backup.nodeSelector`/`.tolerations`/`.affinity`/`.resources`,
+  applied to every backup CronJob's pod.** No chart default (`{}`/`[]`):
+  a tainted node pool where a store itself runs left every backup
+  CronJob Pending before this, with no way to fix it from values alone.
+  `affinity` MERGES with the hard pod affinity every job already
+  carries onto its store's own node — that requirement is never
+  dropped, even if this sets its own `podAffinity` key. `resources`
+  feeds the same requests-equal-limits, integer-CPU check every other
+  component's `resources` does, only when set.
+
+- **Docs: restore, and the `backup.logs.enabled` default made
+  explicit.** `docs/reference.md`'s `backup` section gains a "Restore"
+  runbook — exact `vmrestore` flags for S3 and an S3-compatible
+  endpoint, the "the target instance must be stopped" requirement, and
+  how to prove a restore on a throwaway instance — which this chart had
+  nowhere before. It also calls out, in the value table itself, that
+  `backup.logs.enabled` defaults to `true`: turning `backup.enabled` on
+  for metrics alone, with nothing else touched, silently backs up logs
+  too.
+
+  No values surface changes for a consumer who sets nothing new — every
+  new value defaults to today's exact rendered output, proved by golden
+  (`backup-ambient`, `backup-credential-process`, `backup-scheduling`
+  cases added; every existing golden is byte-identical). The
+  `credentialProcess` path (against a real MinIO-shaped S3-compatible
+  endpoint, adobe/s3mock, since it is the harder one to trust from a
+  reading of the template alone) plus a full restore is proved for real
+  in Docker by `hack/backup-restore-proof.sh` (`just
+  backup-restore-proof`).
+
 ## 0.8.1
 
 - **Fix: `charts/platform-alerts`' `BackupJobFailed` now reads only the

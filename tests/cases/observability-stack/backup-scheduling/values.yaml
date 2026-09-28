@@ -1,0 +1,59 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# Ordinary `secret` auth — the point of this case is scheduling, not
+# credentials: a tainted node pool (where a store itself runs) leaves
+# every backup CronJob Pending without a matching toleration, and
+# nothing about the hard pod-affinity every job already carries changes
+# that. `affinity` here proves the MERGE: the required podAffinity onto
+# the store's own node survives even though this sets a `nodeAffinity`
+# of its own alongside it.
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials
+  nodeSelector:
+    karpenter.sh/nodepool: durable
+  tolerations:
+    - key: durable
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+    - key: arch
+      operator: Equal
+      value: arm64
+      effect: NoSchedule
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          preference:
+            matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: [example-1a]
+  resources:
+    requests: {cpu: "1", memory: 512Mi}
+    limits: {cpu: "1", memory: 512Mi}

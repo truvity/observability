@@ -361,23 +361,140 @@ a backup that stopped.
 |---|---|---|---|
 | `backup.enabled` | bool | `false` | |
 | `backup.destination` | string | `""` | An rclone destination without credentials, e.g. `:s3,env_auth=true:bucket/path`. **Required when enabled.** |
-| `backup.credentialsSecret` | string | `""` | The Secret with the object store's credentials, loaded with `envFrom`. **Required when enabled.** |
+| `backup.credentialsSecret` | string | `""` | The Secret with the object store's credentials, loaded with `envFrom`. **Required when `auth.mode` is `secret`; refused non-empty under any other mode.** |
 | `backup.metrics.enabled` | bool | `true` | `vmbackup` against an instant snapshot. Incremental by construction: a destination that already holds a backup receives only what changed. |
 | `backup.metrics.schedule` | cron | `17 * * * *` | The incremental run. |
 | `backup.metrics.fullSchedule` | cron | `17 3 * * 0` | The weekly full, which names the existing backup as `-origin` so unchanged data is copied inside the object store. |
 | `backup.metrics.claimName` | string | `""` | The store's volume. Empty derives the operator's own name for it. |
 | `backup.metrics.image` | `{repository, tag}` | `victoriametrics/vmbackup:v1.152.0` | `vmbackupmanager` is Enterprise and is never wrapped. |
-| `backup.logs.enabled` | bool | `true` | The partition snapshot API: create, copy, delete. |
+| `backup.metrics.s3CustomEndpoint` | string | `""` | `vmbackup -customS3Endpoint`, for an S3-compatible store that is not AWS — Cloudflare R2 is the worked example. Empty renders no flag. |
+| `backup.metrics.s3ForcePathStyle` | `""`/`"true"`/`"false"` | `""` | `vmbackup -s3ForcePathStyle`. `""` renders no flag at all, so vmbackup's own default (`true`) applies. |
+| **`backup.logs.enabled` is `true` BY DEFAULT** | bool | `true` | The partition snapshot API: create, copy, delete. **Turning `backup.enabled` on with nothing else set backs up logs too** — see the warning below. |
 | `backup.logs.schedule` | cron | `37 * * * *` | |
 | `backup.traces.enabled` | bool | `false` | The vendor's documented procedure: sync, detach, sync, attach. |
 | `backup.traces.schedule` | cron | `57 * * * *` | |
 | `backup.image` | `{repository, tag}` | `rclone/rclone:1.73.0` | Needs a shell, `rclone` and busybox `wget`. |
 | `backup.activeDeadlineSeconds` | int | `3000` | Give up rather than overlap. |
 | `backup.successfulJobsHistoryLimit` / `failedJobsHistoryLimit` | int | `3` / `3` | |
+| `backup.nodeSelector` / `.tolerations` / `.affinity` / `.resources` | | `{}` / `[]` / `{}` / `{}` | Every backup CronJob's pod. No chart default: whichever node pool the store itself runs on is the pool these have to match, and only the install that sized the store's own scheduling knows that. `affinity` MERGES with the hard pod affinity every job already carries onto its store's node — that requirement is never dropped, even if this sets its own `podAffinity` key; anything else (`nodeAffinity`, `podAntiAffinity`) passes through. `resources` feeds the same requests-equal-limits, integer-CPU check `templates/_validate.tpl` applies to every other component's `resources` (docs/safety.md has the reasoning), only when set — `{}` skips it entirely, the same as leaving any other component's `resources` unset. |
+
+**`backup.logs.enabled` defaults to `true`.** `backup.enabled: true` with
+nothing else touched backs up metrics AND logs — `traces` is the only
+store that defaults off. An install that wants metrics only must write
+`backup.logs.enabled: false` explicitly; the chart does not infer it from
+which store the rest of a values file talks about, the same way no other
+value here is inferred from context. `credentialProcess` mode (below)
+enforces this itself, by refusing to render at all while `logs`/`traces`
+are on — every other mode renders exactly what is asked for, silently.
 
 Every job mounts its store's volume read-only, and carries a pod affinity
 onto the store's node: a ReadWriteOnce volume can only be mounted from one
 node. Every job refuses an empty source before it copies anything.
+
+#### `backup.auth`
+
+How every backup job's pod authenticates to the object store — one mode,
+chart-wide, not layered:
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `backup.auth.mode` | enum | `secret` | `secret`, `ambient`, or `credentialProcess`. |
+| `backup.auth.serviceAccount.name` | string | `""` | Only read under `ambient`/`credentialProcess`. Empty derives `<fullname>-backup`. Every backup job's pod (all three stores, under `ambient`; the metrics job only, under `credentialProcess`) runs as this ServiceAccount. |
+| `backup.auth.serviceAccount.annotations` | map | `{}` | E.g. `eks.amazonaws.com/role-arn` for IRSA. EKS Pod Identity needs no annotation — the association is a separate AWS-side object, made outside this chart, keyed on this SA's namespace and name. |
+| `backup.auth.credentialProcess.command` | string | `""` | The full command line vmbackup's AWS SDK execs to obtain credentials. **Required under `credentialProcess`.** A credential-broker CLI is the worked example: one that exchanges the pod's own token (see `serviceAccountToken` below) for temporary S3-compatible credentials. |
+| `backup.auth.credentialProcess.toolsImage.repository` / `.tag` | string | `""` / `""` | The image an initContainer copies `command`'s binary out of. **Required under `credentialProcess`** — vmbackup's own image is minimal, may have no shell, and cannot run `command` itself. |
+| `backup.auth.credentialProcess.toolsImage.sourcePath` | string | `/usr/local/bin` | The directory inside `toolsImage` copied, recursively, into the FIXED path `/var/run/backup-tools` in vmbackup's own container. Only the directory's contents move: a binary at `/usr/local/bin/r2-broker` in `toolsImage` lands at `/var/run/backup-tools/r2-broker`, whatever `sourcePath` is set to — `command` references it at the fixed destination, not at `sourcePath`. |
+| `backup.auth.credentialProcess.serviceAccountToken.audience` | string | `""` | Empty renders no projected token volume at all. Non-empty renders one, mounted at the fixed path `/var/run/backup-token/<path>`. |
+| `backup.auth.credentialProcess.serviceAccountToken.path` | string | `token` | The file name within that fixed mount. |
+
+`ambient` and `credentialProcess` exist for the same reason: no static,
+long-lived object-store key should have to exist as a Kubernetes Secret
+at all, so both are refused together with `backup.credentialsSecret`
+set — the render fails rather than silently mounting a key nobody
+meant to keep.
+
+**`ambient`** renders no Secret at all. `vmbackup`'s AWS SDK (confirmed
+at the pinned v1.152.0 against the VictoriaMetrics source: `go.mod` pins
+`github.com/aws/aws-sdk-go-v2/config v1.33.4`, and
+`lib/backup/s3remote/s3.go`'s `FS.Init` calls
+`config.LoadDefaultConfig` with no explicit credentials source when
+`CredsFilePath`/`ConfigFilePath`/`ProfileName` are all empty — exactly
+what this mode renders) resolves credentials from the SDK's own default
+chain, which — read directly from `aws-sdk-go-v2/config`'s
+`resolve_credentials.go` at the pinned `config v1.33.4` — includes, in
+order: environment variables; `AWS_WEB_IDENTITY_TOKEN_FILE` (IRSA) —
+checked unconditionally, before any profile; then, per-profile,
+`AWS_CONTAINER_CREDENTIALS_FULL_URI` +
+`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` (EKS Pod Identity — its
+`resolveHTTPCredProvider` re-reads the token file on every credential
+refresh, which is how Pod Identity's own rotation works); IMDS (EC2
+instance role) as the final fallback. The SDK's own retry configuration
+in `s3remote/s3.go` explicitly tolerates `ExpiredToken` "when using EKS
+Pod Identity or similar" — this codepath is Pod-Identity-aware by
+design, not by accident. So `ambient` needs nothing from this chart
+beyond the ServiceAccount it renders: EKS Pod Identity's association
+(made outside the chart, against that SA's namespace/name) or an IRSA
+role-arn annotation is all that is left to provide.
+
+**`credentialProcess`** additionally renders a ConfigMap (an AWS config
+file, `[default]\ncredential_process = <command>`), mounted into the
+vmbackup container at `/etc/aws/config` with `AWS_CONFIG_FILE` and
+`AWS_SDK_LOAD_CONFIG=true` set. `aws-sdk-go-v2/config`'s own
+`resolve_credentials.go` reads a profile's `CredentialProcess` field
+(`case len(sharedConfig.CredentialProcess) != 0:`) and hands it to
+`credentials/processcreds.NewProvider` — the SDK execs the command
+directly (not through a shell) and parses the JSON credentials it
+prints on stdout. This is metrics-only: the chart refuses to render at
+all if `backup.logs.enabled`/`backup.traces.enabled` are also on, since
+neither job's container gets this wiring.
+
+Cloudflare R2 is the worked example this design was proven against
+(`backup.metrics.s3CustomEndpoint` + `s3ForcePathStyle: "true"`,
+R2 documents path-style as the one to force if a client misbehaves) —
+the mechanism itself names nothing about R2 or any particular broker: a
+broker CLI that exchanges the pod's own token for temporary
+S3-compatible credentials is the generic shape, and R2's is one example
+of a store that needs it.
+
+#### Restore
+
+Undocumented upstream — this is this chart's own runbook. `vmrestore`
+(same image family as `vmbackup`, pinned at the same
+`backup.metrics.image.tag`) reads a backup's object-store path and
+rebuilds a VictoriaMetrics data directory from it:
+
+```
+docker run --rm -v restore-data:/storage \
+  victoriametrics/vmrestore:v1.152.0 \
+  -src=s3://<bucket>/<path>/metrics \
+  -storageDataPath=/storage
+```
+
+For an S3-compatible store that is not AWS (R2), add the same two flags
+`backup.metrics.s3CustomEndpoint`/`s3ForcePathStyle` render for
+`vmbackup`:
+
+```
+  -customS3Endpoint=https://<account>.r2.cloudflarestorage.com \
+  -s3ForcePathStyle=true
+```
+
+**The target VictoriaMetrics instance must be stopped while `vmrestore`
+runs.** `vmrestore` behaves like `rsync --delete` against
+`-storageDataPath`: it can be interrupted at any point and resumed by
+rerunning the same command, but running it against a directory
+VictoriaMetrics is actively writing corrupts the store, not just the
+restore.
+
+To prove a restore actually works, without touching a live store:
+restore into a FRESH, throwaway VictoriaMetrics instance — never the
+one the backup came from — start it, and query a series known to exist
+in the backup. `hack/backup-restore-proof.sh` (`just backup-restore-proof`)
+does exactly this end to end against MinIO, as a real proof rather than
+a documented claim: it runs a single-node VictoriaMetrics, backs it up
+with the pinned `vmbackup` image, restores into a second, empty
+instance with `vmrestore`, and queries the restored instance for the
+series the first one was seeded with.
 
 ### `selfAlerts`
 
