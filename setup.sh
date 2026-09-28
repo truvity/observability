@@ -57,6 +57,16 @@ staged="$root/staged"
 instances_dir="$root/instances"
 data_root=/data
 
+# trusted_ca_dir is where setup_trusted_cas unpacks the extra PEM bundle
+# CloudInit staged when statusbox.Args.TrustedCAs was set — see that
+# field's own doc comment for what it is for. It is a DIRECTORY, not the
+# file path itself, because write_compose bind-mounts the whole thing
+# read-only into every Gatus container and points SSL_CERT_DIR at the
+# mount point: Go's crypto/x509 reads every file under a directory named
+# by SSL_CERT_DIR, so one directory works unchanged whether an estate
+# ever stages one extra root or several.
+trusted_ca_dir="$root/ca"
+
 # data_disk_label is what fstab and every later boot find the attached
 # disk BY, instead of a device path: see mount_data_disk's doc comment
 # for why a path (/dev/xvdf, /dev/nvme1n1, whatever udev names it next
@@ -477,6 +487,35 @@ unpack_instances() {
   done < <(jq -r '.instances[].name' "$staged/manifest.json")
 }
 
+# setup_trusted_cas unpacks the extra trusted-CA bundle CloudInit staged,
+# when statusbox.Args.TrustedCAs was set, into
+# $trusted_ca_dir/extra-roots.pem — see that field's own doc comment for
+# why a private-service probe needs this at all: its certificate is
+# issued by the estate's own private root, which no public trust bundle
+# carries, and the probe also sends a bearer token, so skipping TLS
+# verification is not an acceptable way around the failure.
+#
+# manifest.json's own "trustedCAs" field, not a bare `[ -f ... ]` on the
+# staged blob, is how this tells "a bundle was staged" from "none was":
+# the same manifest-driven shape every other staged artefact here
+# already uses (see unpack_instances above), rather than one function
+# guessing from a file's mere presence what CloudInit actually meant.
+# write_compose is what actually wires $trusted_ca_dir into every
+# container — this function only has to leave the PEM file there for it
+# to find.
+setup_trusted_cas() {
+  local staged_flag
+  staged_flag="$(jq -r '.trustedCAs // false' "$staged/manifest.json")"
+  if [ "$staged_flag" != "true" ]; then
+    log "no extra trusted-CA bundle staged, skipping"
+    return
+  fi
+  mkdir -p "$trusted_ca_dir"
+  base64 -d "$staged/trusted-cas.pem.gz.b64" | gunzip > "$trusted_ca_dir/extra-roots.pem"
+  chmod 0644 "$trusted_ca_dir/extra-roots.pem"
+  log "extra trusted-CA bundle unpacked to $trusted_ca_dir/extra-roots.pem"
+}
+
 # write_compose renders one Gatus service per instance. Each is published
 # at 127.0.0.1:<port>, on loopback only — never 0.0.0.0 — because the
 # only two things ever meant to reach it are cloudflared and the tailnet,
@@ -534,7 +573,42 @@ unpack_instances() {
 # never does (no --advertise-routes, no exit node): accepting a route is
 # client-side, and forwarding a locally-originated container's packet out
 # through it is not the same thing as relaying someone else's.
+#
+# When setup_trusted_cas staged $trusted_ca_dir/extra-roots.pem (see its
+# own doc comment for what it is and why), this function also bind-mounts
+# $trusted_ca_dir read-only into the container and sets `SSL_CERT_DIR` to
+# the mount point. That single environment variable is enough, and is
+# ADDITIVE rather than a replacement of the image's own public trust
+# bundle — this is a property of Go's crypto/x509 on Linux, not an
+# assumption, and it is worth stating exactly why it holds for THIS
+# image: `SSL_CERT_FILE` and `SSL_CERT_DIR` are two independent
+# overrides in crypto/x509/root.go's loadOnDiskRoots — setting one never
+# touches the other's search. Gatus's own release image
+# (twinproduction/gatus, built `FROM scratch`) carries exactly one
+# system trust artefact, `/etc/ssl/certs/ca-certificates.crt`
+# (Alpine's `ca-certificates` package, copied in at build time — see the
+# upstream Dockerfile), which Go finds through its FILE search
+# (`certFiles`, first hit wins) regardless of `SSL_CERT_DIR`: this
+# script never sets `SSL_CERT_FILE`, so that search always runs
+# unmodified. `SSL_CERT_DIR` only replaces the DIRECTORY search
+# (`certDirectories`, default `/etc/ssl/certs`), which on this image
+# would just re-read the very same `ca-certificates.crt` a second time
+# (Go's directory loader reads every file in the directory named,
+# whatever its name) — redundant with the file search, never the only
+# way those roots reached the pool. So pointing `SSL_CERT_DIR` at
+# `/etc/ssl/extra-ca` alone, with no colon-joined system path, drops
+# nothing: the image's public roots keep loading from
+# `/etc/ssl/certs/ca-certificates.crt` exactly as before, and the extra
+# directory is purely additive. hack/statusbox-ca-proof.sh proves this
+# empirically, in Docker, against the real image — a public HTTPS probe
+# still succeeds with the mount and env present, alongside the private
+# one that needs them.
 write_compose() {
+  local extra_ca_env="" extra_ca_volume=""
+  if [ -f "$trusted_ca_dir/extra-roots.pem" ]; then
+    extra_ca_env="      SSL_CERT_DIR: /etc/ssl/extra-ca"
+    extra_ca_volume="      - ${trusted_ca_dir}:/etc/ssl/extra-ca:ro"
+  fi
   {
     echo "services:"
     jq -c '.instances[]' "$staged/manifest.json" | while IFS= read -r inst; do
@@ -551,12 +625,16 @@ write_compose() {
       - 100.100.100.100
     environment:
       GATUS_CONFIG_PATH: /config/config.yaml
+COMPOSE
+      [ -n "$extra_ca_env" ] && printf '%s\n' "$extra_ca_env"
+      cat <<COMPOSE
     env_file:
       - .env
     volumes:
       - ${instances_dir}/${name}/config.yaml:/config/config.yaml:ro
       - ${data_root}/${name}:/data
 COMPOSE
+      [ -n "$extra_ca_volume" ] && printf '%s\n' "$extra_ca_volume"
     done
   } > "$root/docker-compose.yml"
 }
@@ -637,6 +715,7 @@ main() {
   setup_cloudflared
   setup_data_disk
   unpack_instances
+  setup_trusted_cas
   write_compose
   write_env
   write_systemd_unit
