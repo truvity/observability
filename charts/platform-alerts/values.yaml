@@ -127,3 +127,40 @@ groups:
     # act rather than at the moment writes fail.
     headroomFactor: 2
     severity: warning
+
+  # Kargo promotions.
+  #
+  # Off by default: not every estate runs Kargo, and a group that watches a
+  # CRD nobody installed would just never fire, which is a different
+  # honest outcome from the one this chart insists on elsewhere — so it
+  # asks rather than assumes, same as `stores` above.
+  #
+  # The series come from kube-state-metrics' own `customResourceState`
+  # feature, configured by the ESTATE, never by this chart — the same
+  # boundary `stores` draws: a guessed metric name is how a rule silently
+  # never fires. See docs/kube-state-metrics.md for a worked config.
+  #
+  #   kargo_stage_condition{namespace, stage, type, reason}
+  #     A gauge: 1 while the Stage condition named by `type`/`reason` is
+  #     True, 0 while it is False or Unknown.
+  #   kargo_promotion_phase{namespace, promotion, stage, phase}
+  #     A StateSet over Pending, Running, Succeeded, Failed, Errored and
+  #     Aborted: 1 on the Promotion's current phase.
+  kargo:
+    enabled: false
+    # -- How long a Stage's Ready condition must read
+    # LastPromotionErrored, or a Promotion must sit in the Errored phase
+    # with its Stage still unrecovered, before firing. Long enough that a
+    # promotion mid-retry does not page.
+    for: 15m
+    severity: critical
+    # -- How long kube-state-metrics can go without exporting either
+    # series before the deadman fires. Longer than `for`: a scrape gap
+    # that would not yet have tripped the rules above must not trip this
+    # one either.
+    absentFor: 30m
+    # -- Severity of `KargoStateMetricsAbsent`. A blind spot in the
+    # `customResourceState` config, not necessarily a stuck promotion —
+    # Kargo itself may be healthy underneath it — so it defaults one tier
+    # below the rules it is the deadman for.
+    absentSeverity: warning

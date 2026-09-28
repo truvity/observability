@@ -6,6 +6,27 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.8
+
+- **Feature: `charts/platform-alerts` gains an optional `kargo` rule
+  group.** An estate that runs Kargo can now page on a stuck promotion
+  from this chart directly, instead of carrying the rule as a bare
+  `VMRule` in its own config. `groups.kargo.enabled` defaults to
+  `false` — off, the render is byte-identical to 0.7.7 — and turning it
+  on adds `KargoStagePromotionErrored` (a Stage's Ready condition
+  reading `LastPromotionErrored` for `groups.kargo.for`, 15m by
+  default), `KargoPromotionErrored` (the same failure corroborated by
+  the Promotion object, joined on `(namespace, stage)` so a Promotion
+  superseded by a later, successful retry cannot page on its own stale
+  history) and `KargoStateMetricsAbsent` (the deadman for both: neither
+  series exported for `groups.kargo.absentFor`, 30m by default). The
+  series read `kargo_stage_condition` and `kargo_promotion_phase`,
+  produced by kube-state-metrics' own `customResourceState` feature and
+  configured by the estate, never by this chart — see
+  docs/kube-state-metrics.md for a worked config, and docs/safety.md,
+  "A Kargo promotion stuck", for the incident and the reasoning behind
+  the join.
+
 ## 0.7.7
 
 - **Feature: the status box can now trust a private root for one probe,

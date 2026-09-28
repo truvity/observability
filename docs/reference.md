@@ -106,6 +106,24 @@ Alerts: `VolumeSmallerThanClaimed`.
 Alerts: `StoreApproachingReadOnly`, one per qualifying store, labelled
 `store`.
 
+### `groups.kargo`
+
+Off by default: not every estate runs Kargo. The series this group reads
+come from kube-state-metrics' own `customResourceState` feature,
+configured by the estate rather than this chart — see
+docs/kube-state-metrics.md for a worked config.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `for` | duration | `15m` | How long a Stage's Ready condition must read `LastPromotionErrored`, or a Promotion must sit in the Errored phase with its Stage still unrecovered, before firing. |
+| `severity` | enum | `critical` | Severity of `KargoStagePromotionErrored` and `KargoPromotionErrored`. |
+| `absentFor` | duration | `30m` | How long kube-state-metrics can go without exporting either series before `KargoStateMetricsAbsent` fires. |
+| `absentSeverity` | enum | `warning` | Severity of `KargoStateMetricsAbsent`. |
+
+Alerts: `KargoStagePromotionErrored`, `KargoPromotionErrored`,
+`KargoStateMetricsAbsent`.
+
 ## `charts/observability-stack`
 
 One install of the store. The chart renders the proxy, the two vmalerts,
