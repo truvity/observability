@@ -227,6 +227,7 @@ the rounding failure by default.
     (dict "key" "victoria-logs-single.server.resources" "value" (((index .Values "victoria-logs-single").server).resources))
     (dict "key" "victoria-traces-single.server.resources" "value" (((index .Values "victoria-traces-single").server).resources))
     (dict "key" "grafana.resources" "value" (.Values.grafana).resources)
+    (dict "key" "backup.resources" "value" .Values.backup.resources)
 -}}
 {{- range $site := $sites -}}
 {{- $r := $site.value | default dict -}}

@@ -743,6 +743,51 @@
         "image": {
           "$ref": "#/definitions/image"
         },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["secret", "ambient", "credentialProcess"]
+            },
+            "serviceAccount": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "annotations": {
+                  "type": "object",
+                  "additionalProperties": { "type": "string" }
+                }
+              }
+            },
+            "credentialProcess": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "command": { "type": "string" },
+                "toolsImage": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "repository": { "type": "string" },
+                    "tag": { "type": "string" },
+                    "sourcePath": { "type": "string", "minLength": 1 }
+                  }
+                },
+                "serviceAccountToken": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "audience": { "type": "string" },
+                    "path": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          }
+        },
         "metrics": {
           "type": "object",
           "additionalProperties": false,
@@ -763,6 +808,13 @@
             },
             "image": {
               "$ref": "#/definitions/image"
+            },
+            "s3CustomEndpoint": {
+              "type": "string"
+            },
+            "s3ForcePathStyle": {
+              "type": "string",
+              "enum": ["", "true", "false"]
             }
           }
         },
@@ -771,6 +823,20 @@
         },
         "traces": {
           "$ref": "#/definitions/backupJob"
+        },
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "tolerations": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "resources": {
+          "type": "object"
         }
       }
     },

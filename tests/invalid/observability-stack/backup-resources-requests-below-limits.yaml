@@ -1,0 +1,35 @@
+# expect: They must be equal, for the same reason the CPUs must
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# backup.resources feeds the same requests-equal-limits check every
+# other component's resources does (templates/_validate.tpl): a backup
+# job whose requests are below its limits is Burstable, and evicted
+# before a Guaranteed pod under the exact node pressure a backup is
+# competing against.
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

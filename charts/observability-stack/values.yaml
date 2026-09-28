@@ -760,8 +760,75 @@ backup:
   # `gs://bucket/path`, or `fs:///mnt/path`. The bucket is the estate's.
   destination: ""
   # -- The Secret holding the object-store credentials, mounted into the
-  # job as environment variables. The chart never reads it.
+  # job as environment variables. The chart never reads it. Only used
+  # when `auth.mode` is `secret`; refused set under any other mode.
   credentialsSecret: ""
+
+  # -- How every backup job's pod authenticates to the object store.
+  # Three shapes, and they are not layered — pick one:
+  auth:
+    # -- `secret` (the default): today's behaviour, unchanged.
+    # `credentialsSecret` above is `envFrom`'d into every job.
+    #
+    # `ambient`: no Secret anywhere. Every job's pod runs as
+    # `auth.serviceAccount.name` instead, and each store's own AWS SDK
+    # resolves credentials from whatever ambient identity that
+    # ServiceAccount carries — EKS Pod Identity (the association itself
+    # is made outside this chart, against the SA name/namespace below)
+    # or IRSA (an `eks.amazonaws.com/role-arn` annotation on the SA,
+    # under `auth.serviceAccount.annotations`). No static key ever
+    # exists. See docs/reference.md, "`backup.auth`", for the SDK
+    # evidence this relies on.
+    #
+    # `credentialProcess`: for `backup.metrics` only (see the refusal
+    # if `logs`/`traces` are also enabled). No Secret and no ambient
+    # identity either — vmbackup's AWS SDK runs
+    # `auth.credentialProcess.command` as a subprocess and reads the
+    # temporary credentials it prints on stdout, the shape a
+    # credential-broker CLI needs: one that exchanges the pod's own
+    # token for temporary S3-compatible credentials. Cloudflare R2 is
+    # the worked example this chart's own docs use, but the mechanism
+    # names nothing about R2 or any particular broker.
+    mode: secret
+    # -- Only read when `mode` is `ambient` or `credentialProcess`.
+    serviceAccount:
+      # -- Empty derives `<fullname>-backup`.
+      name: ""
+      # -- E.g. `eks.amazonaws.com/role-arn` for IRSA. Pod Identity needs
+      # no annotation at all — the association is a separate AWS-side
+      # object keyed on this SA's namespace and name.
+      annotations: {}
+    # -- Only read when `mode` is `credentialProcess`.
+    credentialProcess:
+      # -- The full command line vmbackup's AWS SDK execs to obtain
+      # credentials, e.g. a broker CLI presenting the projected token
+      # below: `/var/run/backup-tools/r2-broker exchange
+      # --subject-token-file /var/run/backup-token/token`. Those
+      # two paths are this chart's own fixed mount points — see
+      # `toolsImage` and `serviceAccountToken`. **Required.**
+      command: ""
+      # -- vmbackup's own image is minimal — maybe distroless, no shell,
+      # no package manager — so `command`'s binary cannot live there. An
+      # initContainer built from THIS image instead copies a directory
+      # out of it into an emptyDir vmbackup also mounts, always at the
+      # fixed path `/var/run/backup-tools`. **Required.**
+      toolsImage:
+        repository: ""
+        tag: ""
+        # -- The directory inside `toolsImage` the initContainer copies,
+        # recursively, into `/var/run/backup-tools`. Only the directory's
+        # CONTENTS move — a binary at `/usr/local/bin/r2-broker` in
+        # `toolsImage` lands at `/var/run/backup-tools/r2-broker`,
+        # whatever this path is set to.
+        sourcePath: /usr/local/bin
+      # -- A projected ServiceAccount token volume, mounted at the fixed
+      # path `/var/run/backup-token/<path>`, for a broker CLI
+      # that needs to present the pod's own identity. Empty `audience`
+      # renders no token volume at all — `command` does not have to use
+      # one.
+      serviceAccountToken:
+        audience: ""
+        path: token
   metrics:
     enabled: true
     # -- Hourly, because the incremental upload is proportional to what
@@ -777,6 +844,16 @@ backup:
     # read the snapshot it asked the store to take. Empty derives the
     # operator's own name for it.
     claimName: ""
+    # -- vmbackup `-customS3Endpoint`, for an S3-compatible store this
+    # is not AWS — Cloudflare R2 is the worked example. Empty renders no
+    # flag, and vmbackup resolves the bucket's own AWS region instead.
+    s3CustomEndpoint: ""
+    # -- vmbackup `-s3ForcePathStyle`, as a string so "unset" is its own
+    # state rather than a guessed default: `""` renders no flag at all
+    # and vmbackup's own default (`true`) applies. R2 accepts either
+    # style but documents path-style as the one to force if a client
+    # misbehaves.
+    s3ForcePathStyle: ""
   logs:
     enabled: true
     schedule: "37 * * * *"
@@ -794,6 +871,30 @@ backup:
   activeDeadlineSeconds: 3000
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
+
+  # -- Every backup CronJob's pod: node placement and (optionally)
+  # resources. Unset renders none of this — the exact CronJobs this
+  # chart shipped before these existed.
+  #
+  # There is no chart default here on purpose. Every job already carries
+  # a hard pod affinity onto its store's own node (a ReadWriteOnce
+  # volume can only be mounted from one), so whichever node pool that
+  # store itself runs on is the pool these have to tolerate and select
+  # too — this chart cannot guess that pool's name or taints, only the
+  # install that also sized the store's own `nodeSelector`/`tolerations`
+  # can.
+  nodeSelector: {}
+  tolerations: []
+  # -- Merged with the pod affinity every job already carries onto its
+  # store's node: that requirement is never dropped, even if this sets
+  # its own `podAffinity` key. Anything else here — `nodeAffinity`,
+  # `podAntiAffinity` — passes through untouched.
+  affinity: {}
+  # -- Requests equal limits, integer CPU — see `resources` on each
+  # store for why, in docs/safety.md. Unset (`{}`) skips the check
+  # entirely, the same as leaving any other component's `resources`
+  # unset; set it and both sides of the rule apply.
+  resources: {}
 
 # Store self-alerts.
 #
