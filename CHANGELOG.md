@@ -6,6 +6,30 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.6
+
+- **Fix: the status box could not reach anything behind the tailnet's
+  own subnet router.** `setup_tailscale` ran `tailscale up` with neither
+  `--accept-routes` nor a working `--accept-dns`
+  (`--accept-dns=false` was set outright) — a design left over from
+  before this box pulled its own reads from an internal service by
+  private name instead of having something pushed into it. Without
+  `--accept-routes` a subnet-routed private IP had no path off the box
+  at all; without the tailnet's own DNS a private name never resolved in
+  the first place, so every internal probe failed fast, on both counts,
+  regardless of which one an operator noticed first. `setup_tailscale`
+  now runs with `--accept-routes --accept-dns=true`. This box is still
+  never a router for anyone else — no `--advertise-routes`, no exit
+  node — accepting routes only changes what it can itself reach.
+  `write_compose` also now gives every Gatus container an explicit
+  `dns:` entry naming the tailnet's own resolver directly, rather than
+  depending on whichever way the host distribution's own DNS happens to
+  be wired: a container's default resolver is not guaranteed to inherit
+  that configuration otherwise. See docs/statusbox.md for what the
+  estate's own tailnet policy has to grant this box's tag for both of
+  these to actually resolve and route: the destination service, and the
+  DNS resolver behind the same subnet router.
+
 ## 0.7.5
 
 - **Fix: replacing the status box no longer fails attaching its disk.**

@@ -237,6 +237,29 @@ may dial it. The OUTBOUND direction is a second, separate ACL grant —
 `tag:statusbox` reaching whatever the estate's alerting read API answers
 on — and it is the estate's own ACL to write for the identical reason.
 
+That outbound direction is also why joining the tailnet alone is not
+enough on the CLIENT side either. Everything this box reads over the
+tailnet — the alerting read API above, and any other internal service a
+`Config` probes by name — sits behind the estate's own subnet router,
+addressed by a private DNS name this repository never carries a literal
+IP or hostname for. `setup.sh` runs `tailscale up` with
+`--accept-routes`, so a route that router advertises is actually
+installed on this box, and `--accept-dns=true`, so MagicDNS and whatever
+split-DNS routes the tailnet admin has delegated to a resolver behind
+that same router actually resolve here. Neither flag makes this box a
+router for anyone else — there is no `--advertise-routes` and no exit
+node; accepting routes only changes what this box itself can reach.
+The estate's tailnet policy is what has to grant `tag:statusbox` both
+halves of that: the destination service itself, and the DNS resolver it
+reads through (UDP and TCP port 53) — a route with no matching DNS grant
+still cannot resolve the name it would otherwise have a path to.
+Every Gatus instance also runs in its own Docker container, so the
+compose file `write_compose` renders carries an explicit `dns:` entry
+naming the tailnet's resolver directly, rather than relying on however
+the host's own DNS ends up wired: that keeps a private name resolving
+inside a container the same way regardless of which DNS-management mode
+the host distribution happens to use.
+
 Serving on port 80 is only safe because `Args.validate` refuses a
 manifest with more than one non-Public instance: the box serves one
 combined private page by design (every company's own component and

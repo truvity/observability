@@ -146,6 +146,22 @@ if ! grep -qx 'STATUSBOX_CI_ENV_TEST=ci-env-test-value' /opt/statusbox/.env; the
 fi
 echo "write_env: STATUSBOX_ENV_* carried into .env under its stripped name, OK"
 
+# write_compose's own explicit `dns: [100.100.100.100]` is what makes a
+# container's own DNS resolution deterministic regardless of which kind
+# of bridge network compose creates or which DNS-manager mode tailscaled
+# picked on the host (see write_compose's doc comment) — TS_AUTHKEY is
+# unset in this fixture (see the header above), so setup_tailscale itself
+# never runs here, but write_compose runs unconditionally and this is the
+# one place that can prove its OUTPUT still carries the line every real
+# box depends on.
+echo "checking write_compose carries the tailnet resolver into every instance"
+if [ "$(grep -c '^\s*- 100\.100\.100\.100$' /opt/statusbox/docker-compose.yml)" != 2 ]; then
+  echo "expected exactly two services (one per fixture instance) with dns: [100.100.100.100] in /opt/statusbox/docker-compose.yml" >&2
+  cat /opt/statusbox/docker-compose.yml >&2
+  exit 1
+fi
+echo "write_compose: every instance's dns: points at the tailnet resolver, OK"
+
 echo "checking setup_data_disk actually formatted, fstab'd and mounted $loop_device onto /data"
 if ! mountpoint -q /data; then
   echo "/data is not a mountpoint after setup.sh ran" >&2
