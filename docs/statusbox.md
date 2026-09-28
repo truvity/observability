@@ -111,6 +111,7 @@ type Args struct {
     Secrets    Secrets
     Hostname   string            // the box's OWN tailnet device name (`tailscale up --hostname=`)
     Hostnames  map[string]string // instance name → public hostname, for the tunnel ingress
+    TrustedCAs string            // optional PEM bundle of extra roots every instance should ALSO trust
 }
 
 func CloudInit(ctx *pulumi.Context, a Args) (pulumi.StringOutput, error)
@@ -191,6 +192,65 @@ name colliding with `TS_AUTHKEY`, `TUNNEL_TOKEN`, or the `ALERT_URL_`
 namespace is refused in `Args.validate` — two secrets landing in a
 Config under the same `${...}` reference is worse discovered at deploy
 time than in a container's environment after the fact.
+
+### Trusting a private root
+
+Most probes are ordinary public HTTPS: the box's Gatus containers verify
+them against whatever public trust bundle the release image ships, the
+same as any other client on the internet. One shape does not fit that:
+an `endpoints:` entry whose URL is an HTTPS service inside the estate's
+own private network, whose certificate is issued by the estate's own
+private root rather than a publicly-trusted one — "internal → status,
+pulled" above is exactly this case, and it also carries a bearer token
+in its `Authorization` header. Skipping TLS verification (`-k`,
+Gatus's own `insecure: true`) is not an acceptable answer here: it would
+send that token to whatever answered on the address, verified or not.
+
+`Args.TrustedCAs` is a PEM bundle of one or more extra CA certificates
+every instance should trust ALONGSIDE its image's own public bundle —
+never instead of it. Left empty, the ordinary case, nothing changes at
+all: no file is staged, no directory is mounted, no environment variable
+is set, and the rendered cloud-init is byte-for-byte what it always was.
+Set, `CloudInit` validates it at render time — each PEM block must
+parse as an X.509 certificate and must itself be a CA
+(`BasicConstraints.IsCA`, the same field a browser or any other TLS
+client relies on) — and stages it the same way an instance's own Config
+travels: gzipped, base64-encoded, inside a heredoc in the rendered
+script, with `manifest.json` carrying a `"trustedCAs": true` flag so
+`setup.sh` knows to unpack it. `setup.sh`'s `setup_trusted_cas` writes
+the bundle to `/opt/statusbox/ca/extra-roots.pem`, and `write_compose`
+bind-mounts that DIRECTORY read-only into every Gatus container at
+`/etc/ssl/extra-ca` and sets `SSL_CERT_DIR=/etc/ssl/extra-ca` in the
+service's own environment.
+
+That one environment variable is enough, and it is additive rather than
+a replacement — a property of Go's `crypto/x509` on Linux, not an
+assumption. `SSL_CERT_FILE` and `SSL_CERT_DIR` are two independent
+overrides in `loadOnDiskRoots` (`crypto/x509/root.go`): setting one
+never touches the other's search. The release image
+(`twinproduction/gatus`, built `FROM scratch`) carries exactly one
+system trust artefact, `/etc/ssl/certs/ca-certificates.crt` — Alpine's
+`ca-certificates` package, copied in at the upstream image's build time
+— which Go finds through its FILE search (`certFiles`, first hit wins)
+regardless of `SSL_CERT_DIR`, because this box never sets
+`SSL_CERT_FILE`. `SSL_CERT_DIR` only replaces the DIRECTORY search
+(`certDirectories`, default `/etc/ssl/certs`), which on this image would
+just re-read that very same file a second time — redundant with the
+file search, never the only path those roots reach the pool through. So
+pointing `SSL_CERT_DIR` at `/etc/ssl/extra-ca` alone, with no
+colon-joined system path, drops nothing: the image's public roots keep
+loading from `/etc/ssl/certs/ca-certificates.crt` exactly as before, and
+the mounted directory is purely additive.
+
+`hack/statusbox-ca-proof.sh` (`just statusbox-ca-proof`) is the real
+proof, in Docker: a throwaway root CA and server certificate, a tiny
+HTTPS server presenting it, and the real `twinproduction/gatus:v5.37.0`
+image probing it with and without the mount — alongside an ordinary
+public HTTPS probe in the SAME with-CA container, which still succeeds.
+`hack/statusbox-ci.sh` proves the other half — that `setup_trusted_cas`
+and `write_compose` actually wire a staged bundle the way this section
+describes — but never asks whether Gatus's own TLS stack behaves
+differently because of it; that is what the Docker proof is for.
 
 ### Checksum at deploy, verify at boot
 
@@ -378,7 +438,10 @@ door); Gatus replicas with a shared database (coordinates nothing).
 - `setup.sh` in CI, as above;
 - fixtures for the refusals: an instance with no config, two instances
   on one port, a public instance with no hostname, two instances that
-  are both not Public, user-data over the limit.
+  are both not Public, user-data over the limit, `Args.TrustedCAs` that
+  is not PEM, is not a CA, or carries trailing garbage;
+- `Args.TrustedCAs`, in Docker, against the real release image: see
+  "Trusting a private root" above and `hack/statusbox-ca-proof.sh`.
 
 After release, in a consumer: the public pages render behind the edge;
 the private page answers only over the private network; stopping the box

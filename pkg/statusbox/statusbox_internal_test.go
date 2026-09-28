@@ -12,13 +12,26 @@ package statusbox
 // example.
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	cryptorand "crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/pem"
 	"flag"
 	"fmt"
+	"io"
+	"math/big"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -74,6 +87,71 @@ func twoInstanceArgs() Args {
 			"example-co": "status.example.test",
 		},
 	}
+}
+
+// generateTestCAPEM returns a freshly generated, self-signed CA
+// certificate (BasicConstraints.IsCA true) PEM-encoded — a real
+// certificate rather than a hand-built byte blob, so a test asserting
+// parseTrustedCAs or render's handling of Args.TrustedCAs exercises the
+// actual x509.ParseCertificate path a box's own render does, not a
+// stand-in for it. ECDSA P-256 keeps generation fast; nothing here
+// signs anything else, so key strength is not the property under test.
+func generateTestCAPEM(t *testing.T, commonName string) string {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), cryptorand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: commonName},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(cryptorand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// generateTestLeafPEM is the same as generateTestCAPEM except
+// BasicConstraints.IsCA is false — a certificate parseTrustedCAs must
+// refuse, exercising the same "not a CA" branch statusbox_test.go's
+// TestRefusals proves through the exported API.
+func generateTestLeafPEM(t *testing.T, commonName string) string {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), cryptorand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: commonName},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(cryptorand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// decodeUserData reverses wrapUserData: it pulls the base64 blob out of
+// the rendered `#!/bin/bash\nbash -c "$(echo '<blob>' | base64 -d |
+// gunzip)"\n` wrapper, decodes and gunzips it, and returns the inner
+// bootstrap script — the only way a test can assert on what render
+// actually staged (a heredoc marker, a manifest field) without
+// re-implementing cloud-init.
+func decodeUserData(t *testing.T, wrapped string) string {
+	t.Helper()
+	re := regexp.MustCompile(`echo '(.+)' \| base64`)
+	m := re.FindStringSubmatch(wrapped)
+	require.Len(t, m, 2, "wrapped user-data did not match the expected echo '<b64>' | base64 -d | gunzip shape:\n%s", wrapped)
+	raw, err := base64.StdEncoding.DecodeString(m[1])
+	require.NoError(t, err)
+	gz, err := gzip.NewReader(bytes.NewReader(raw))
+	require.NoError(t, err)
+	out, err := io.ReadAll(gz)
+	require.NoError(t, err)
+	return string(out)
 }
 
 func TestRenderGoldenTwoInstances(t *testing.T) {
@@ -135,6 +213,61 @@ func TestRenderRefusesUserDataOverTheLimit(t *testing.T) {
 	require.Contains(t, err.Error(), "byte limit")
 }
 
+// TestRenderEmptyTrustedCAsOmitsStagedFileAndManifestField proves the
+// half of Args.TrustedCAs's contract TestRenderGoldenTwoInstances only
+// proves indirectly (its fixture never sets the field, so the golden
+// file matching is already evidence render is unchanged): that the
+// INNER script — not just the outer wrapper — carries neither a staged
+// trusted-cas.pem.gz.b64 heredoc nor a "trustedCAs" manifest key when
+// Args.TrustedCAs is empty.
+func TestRenderEmptyTrustedCAsOmitsStagedFileAndManifestField(t *testing.T) {
+	got, err := render(twoInstanceArgs(), fixedSHA256, "test-tailscale-authkey", "test-tunnel-token", nil, nil)
+	require.NoError(t, err)
+
+	inner := decodeUserData(t, got)
+	require.NotContains(t, inner, "trustedCAs")
+	require.NotContains(t, inner, "trusted-cas.pem.gz.b64")
+}
+
+// TestRenderWithTrustedCAsStagesFileAndManifestField is the other half:
+// a non-empty Args.TrustedCAs must show up in the inner script both as
+// a staged, gzip+base64 heredoc (the same shape every Instance.Config
+// already travels in) and as a "trustedCAs":true field in
+// manifest.json, which is how setup.sh's own setup_trusted_cas tells
+// "a bundle was staged" apart from "none was" without probing the
+// filesystem — see that function's own doc comment in setup.sh.
+func TestRenderWithTrustedCAsStagesFileAndManifestField(t *testing.T) {
+	args := twoInstanceArgs()
+	args.TrustedCAs = generateTestCAPEM(t, "test-root-ca")
+
+	got, err := render(args, fixedSHA256, "test-tailscale-authkey", "test-tunnel-token", nil, nil)
+	require.NoError(t, err)
+
+	inner := decodeUserData(t, got)
+	require.Contains(t, inner, `"trustedCAs":true`)
+	require.Contains(t, inner, "cat > /opt/statusbox/staged/trusted-cas.pem.gz.b64 <<'STATUSBOX_TRUSTED_CAS'")
+}
+
+// TestRenderWithTrustedCAsFitsWithinUserDataLimit is the size bound the
+// design calls for: a root bundle is a few KB, and CloudInit's own
+// 16 KB ceiling (userDataLimit) has to have comfortable headroom left
+// for one even alongside a real instance fixture's own Config. Two
+// certificates, not one, because an estate rotating its root or
+// carrying an intermediate alongside it is the realistic case this
+// bound has to survive, not the smallest one that could pass.
+func TestRenderWithTrustedCAsFitsWithinUserDataLimit(t *testing.T) {
+	bundle := generateTestCAPEM(t, "root-one") + generateTestCAPEM(t, "root-two")
+	require.Greater(t, len(bundle), 900, "test fixture: two PEM certificates should already be close to 1 KB, or this test proves less than it claims to")
+
+	args := twoInstanceArgs()
+	args.TrustedCAs = bundle
+
+	got, err := render(args, fixedSHA256, "test-tailscale-authkey", "test-tunnel-token", nil, nil)
+	require.NoError(t, err)
+	require.Less(t, len(got), userDataLimit,
+		"a two-certificate trusted-CA bundle (%d bytes of PEM) plus the two-instance fixture must still leave headroom under the %d-byte limit", len(bundle), userDataLimit)
+}
+
 // TestValidArgsPassesValidate is the baseline every case in
 // statusbox_test.go's TestRefusals mutates away from: it proves the
 // shared fixture is accepted as it stands, so a refusal that fired
@@ -147,6 +280,46 @@ func TestValidArgsPassesValidate(t *testing.T) {
 		TunnelToken:      pulumi.String("test-tunnel-token"),
 	}
 	require.NoError(t, a.validate())
+}
+
+// TestParseTrustedCAs exercises parseTrustedCAs directly — the pure
+// validation core Args.validate calls — so each of these shapes is
+// proven at the unit level, not only through the one representative
+// case statusbox_test.go's TestRefusals adds through the exported API.
+func TestParseTrustedCAs(t *testing.T) {
+	t.Run("a single CA certificate is accepted", func(t *testing.T) {
+		require.NoError(t, parseTrustedCAs(generateTestCAPEM(t, "root-one")))
+	})
+
+	t.Run("two concatenated CA certificates are accepted", func(t *testing.T) {
+		bundle := generateTestCAPEM(t, "root-one") + generateTestCAPEM(t, "root-two")
+		require.NoError(t, parseTrustedCAs(bundle))
+	})
+
+	t.Run("not PEM at all is refused", func(t *testing.T) {
+		err := parseTrustedCAs("not a pem bundle at all\n")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no PEM CERTIFICATE block")
+	})
+
+	t.Run("a PEM block of the wrong type is refused", func(t *testing.T) {
+		block := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: []byte("not really a key either")})
+		err := parseTrustedCAs(string(block))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `not CERTIFICATE`)
+	})
+
+	t.Run("a leaf certificate without the CA bit is refused", func(t *testing.T) {
+		err := parseTrustedCAs(generateTestLeafPEM(t, "leaf.example.test"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "is not a CA certificate")
+	})
+
+	t.Run("trailing data after the last PEM block is refused", func(t *testing.T) {
+		err := parseTrustedCAs(generateTestCAPEM(t, "root-one") + "not part of any PEM block\n")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "are not themselves a PEM block")
+	})
 }
 
 func TestSetupSHA256Parses(t *testing.T) {

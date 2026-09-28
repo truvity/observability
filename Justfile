@@ -156,6 +156,22 @@ statusbox:
 statusbox-debian:
     hack/statusbox-debian-ci.sh
 
+# REAL proof, in Docker, that statusbox.Args.TrustedCAs actually makes
+# Gatus trust a private root: a throwaway CA and server certificate, a
+# tiny HTTPS server presenting it, and the real twinproduction/gatus
+# image probing it with and without the CA mounted — plus a public HTTPS
+# probe in the SAME with-CA container, proving SSL_CERT_DIR adds to the
+# image's own trust bundle rather than replacing it. See
+# hack/statusbox-ca-proof.sh's own header for why this exists alongside
+# `statusbox` above (which proves setup.sh's OWN logic, never whether
+# Gatus's TLS stack actually behaves differently because of it).
+#
+# Needs Docker, openssl, curl and jq; deliberately NOT part of `check`
+# or CI, the same reason `statusbox`/`statusbox-debian` are not: a
+# one-off, run-by-hand proof for this feature, not a regression gate.
+statusbox-ca-proof:
+    hack/statusbox-ca-proof.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

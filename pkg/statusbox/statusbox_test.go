@@ -1,7 +1,15 @@
 package statusbox_test
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"testing"
+	"time"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -9,6 +17,26 @@ import (
 
 	"github.com/truvity/observability/pkg/statusbox"
 )
+
+// testLeafCertPEM returns a freshly generated, self-signed certificate
+// with BasicConstraints.IsCA left false — the one shape
+// Args.TrustedCAs's own validation has to refuse: a certificate that
+// could never act as a trust anchor no matter how it got there.
+func testLeafCertPEM(t *testing.T) string {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "leaf.example.test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
 
 // mocks is the smallest MockResourceMonitor CloudInit's own tests need:
 // this package registers no resource, so nothing here has to do more
@@ -193,6 +221,32 @@ func TestRefusals(t *testing.T) {
 				}
 			},
 			wantErr: "collides with Secrets.AlertURLs",
+		},
+		{
+			name: "TrustedCAs is not PEM at all",
+			mutate: func(a *statusbox.Args) {
+				a.TrustedCAs = "not a pem bundle at all\n"
+			},
+			wantErr: "no PEM CERTIFICATE block",
+		},
+		{
+			name: "TrustedCAs is a leaf certificate, not a CA",
+			mutate: func(a *statusbox.Args) {
+				a.TrustedCAs = testLeafCertPEM(t)
+			},
+			wantErr: "is not a CA certificate",
+		},
+		{
+			name: "TrustedCAs has trailing data after its last PEM block",
+			mutate: func(a *statusbox.Args) {
+				// the trailing-garbage refusal alone (with an otherwise
+				// VALID CA) is proven directly, at the unit level, by
+				// TestParseTrustedCAs in statusbox_internal_test.go — this
+				// case only has to prove Args.validate reaches
+				// parseTrustedCAs at all.
+				a.TrustedCAs = testLeafCertPEM(t) + "garbage-after-the-cert\n"
+			},
+			wantErr: "is not a CA certificate",
 		},
 	}
 

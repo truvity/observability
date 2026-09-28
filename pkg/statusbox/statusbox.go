@@ -14,8 +14,10 @@ package statusbox
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -230,6 +232,43 @@ type Args struct {
 	// it any other way — before the box has been provisioned at all,
 	// rather than after a customer finds the ingress rule missing.
 	Hostnames map[string]string
+
+	// TrustedCAs is an optional PEM bundle of one or more extra root
+	// certificates every Gatus instance's own TLS verification should
+	// trust, alongside its image's ordinary public bundle — never
+	// instead of it (see write_compose's own doc comment in setup.sh for
+	// why an addition, not a replacement, is what actually happens at
+	// runtime).
+	//
+	// It exists for exactly one shape of probe: an `endpoints:` entry
+	// whose URL is an HTTPS service inside the estate's own private
+	// network, whose certificate is issued by the estate's own private
+	// root rather than a publicly-trusted one — "internal → status,
+	// pulled" in docs/statusbox.md is the case this was built for, since
+	// that probe also carries a bearer token in its Authorization
+	// header, which is exactly the situation `-k` / `skip-tls-verify`
+	// must never be reached for as an answer: a probe that skips
+	// verification would send a token to whatever answered on that IP,
+	// verified or not. Trusting the estate's own root instead of
+	// skipping verification is what lets the handshake succeed AND the
+	// token stay protected.
+	//
+	// Left empty (the ordinary case: most probes are public HTTPS with a
+	// publicly-trusted certificate), nothing changes: no file is staged,
+	// no directory is mounted into a container, no environment variable
+	// is set, and the rendered cloud-init is byte-for-byte what it was
+	// before this field existed — see TestRenderGoldenTwoInstances, whose
+	// fixture never sets it.
+	//
+	// Validated at render time (see Args.validate and parseTrustedCAs):
+	// it must decode as one or more PEM blocks, each of type
+	// CERTIFICATE, each itself a CA per its own BasicConstraints
+	// extension (x509.Certificate.IsCA) — a bundle containing a leaf or
+	// intermediate certificate missing the CA bit would be silently
+	// useless as a trust anchor, so it is refused here rather than left
+	// for an operator to discover the day a probe's handshake still
+	// fails.
+	TrustedCAs string
 }
 
 // CloudInit renders the script a provider's user-data field carries: a
@@ -427,6 +466,12 @@ func (a Args) validate() error {
 		}
 	}
 
+	if a.TrustedCAs != "" {
+		if err := parseTrustedCAs(a.TrustedCAs); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	if a.Secrets.TailscaleAuthKey == nil {
 		errs = append(errs, errors.New("statusbox: Secrets.TailscaleAuthKey is nil: the tailnet is how the install's Alertmanager reaches gatus-ops and how an operator reaches the box at all, so it is required on every box"))
 	}
@@ -486,13 +531,34 @@ func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals, en
 	for i, inst := range a.Instances {
 		manifest[i] = manifestInstance{Name: inst.Name, Port: inst.Port, Public: inst.Public}
 	}
+	// TrustedCAs is a bool here, not the bundle itself: manifest.json is
+	// what setup.sh reads back to tell "a bundle was staged" from "none
+	// was" (see setup_trusted_cas in setup.sh) without probing the
+	// filesystem for a file that only sometimes exists, the same reason
+	// every other staged artefact here is manifest-driven. `omitempty`
+	// keeps an Args with no TrustedCAs producing the exact manifest JSON
+	// it always has — see TestRenderGoldenTwoInstances, whose fixture
+	// never sets this field, so the golden file already proves it.
 	manifestJSON, err := json.Marshal(struct {
-		Instances []manifestInstance `json:"instances"`
-	}{manifest})
+		Instances  []manifestInstance `json:"instances"`
+		TrustedCAs bool               `json:"trustedCAs,omitempty"`
+	}{Instances: manifest, TrustedCAs: a.TrustedCAs != ""})
 	if err != nil {
 		return "", fmt.Errorf("statusbox: marshal manifest: %w", err)
 	}
 	fmt.Fprintf(&b, "cat > /opt/statusbox/staged/manifest.json <<'STATUSBOX_MANIFEST'\n%s\nSTATUSBOX_MANIFEST\n\n", manifestJSON)
+
+	// Staged only when set: an Args that leaves TrustedCAs empty (the
+	// ordinary case) adds nothing here at all, which is what keeps this
+	// function's output byte-identical to a pre-TrustedCAs render for
+	// every existing caller.
+	if a.TrustedCAs != "" {
+		gz, err := gzipBase64(a.TrustedCAs)
+		if err != nil {
+			return "", fmt.Errorf("statusbox: gzip Args.TrustedCAs: %w", err)
+		}
+		fmt.Fprintf(&b, "cat > /opt/statusbox/staged/trusted-cas.pem.gz.b64 <<'STATUSBOX_TRUSTED_CAS'\n%s\nSTATUSBOX_TRUSTED_CAS\n\n", gz)
+	}
 
 	for _, inst := range a.Instances {
 		gz, err := gzipBase64(inst.Config)
@@ -544,6 +610,49 @@ func wrapUserData(script string) (string, error) {
 	}
 	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
 	return fmt.Sprintf("#!/bin/bash\n"+`bash -c "$(echo %s | base64 -d | gunzip)"`+"\n", shellQuote(b64)), nil
+}
+
+// parseTrustedCAs validates Args.TrustedCAs: it must decode as one or
+// more PEM blocks, each of type CERTIFICATE, each itself a CA per its
+// own BasicConstraints extension. It returns nothing on success —
+// render stages a.TrustedCAs's own text unchanged, byte for byte, so
+// this function's only job is to refuse a bundle that could not
+// possibly work as a trust anchor before it ever reaches a box.
+//
+// Trailing bytes after the last PEM block that do not themselves decode
+// as one are refused too, on the same reasoning pkg/tenancy applies to
+// a name that would need escaping: a bundle nobody meant to paste
+// garbage after is a bundle where that garbage is a mistake worth
+// surfacing now, not silently ignored the way pem.Decode's own "rest"
+// return would let it be.
+func parseTrustedCAs(bundle string) error {
+	rest := []byte(bundle)
+	n := 0
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		n++
+		if block.Type != "CERTIFICATE" {
+			return fmt.Errorf("statusbox: Args.TrustedCAs: PEM block %d is %q, not CERTIFICATE: only a CA certificate belongs in this bundle", n, block.Type)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("statusbox: Args.TrustedCAs: PEM block %d does not parse as an X.509 certificate: %w", n, err)
+		}
+		if !cert.IsCA {
+			return fmt.Errorf("statusbox: Args.TrustedCAs: PEM block %d (subject %q) is not a CA certificate (BasicConstraints.IsCA is not set): a leaf or intermediate missing the CA bit cannot act as a trust anchor", n, cert.Subject)
+		}
+	}
+	if n == 0 {
+		return errors.New("statusbox: Args.TrustedCAs is set but contains no PEM CERTIFICATE block")
+	}
+	if len(bytes.TrimSpace(rest)) != 0 {
+		return fmt.Errorf("statusbox: Args.TrustedCAs: %d byte(s) follow the last PEM block and are not themselves a PEM block", len(bytes.TrimSpace(rest)))
+	}
+	return nil
 }
 
 // gzipBase64 compresses and base64-encodes a Config so it can travel as

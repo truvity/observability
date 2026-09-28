@@ -24,8 +24,13 @@
 # key or token would either fail outside the estate's tailnet/account or
 # require one to be minted for CI to burn. What IS exercised is
 # everything else: the container runtime, unpacking the staged instance
-# configs, the compose file, the systemd unit, and every instance
-# actually answering its own HTTP endpoint once started that way — and,
+# configs, setup_trusted_cas unpacking a staged extra-CA bundle and
+# write_compose wiring it into every service (SSL_CERT_DIR and the
+# read-only mount — NOT whether Gatus's own TLS stack actually trusts
+# it, which needs a real HTTPS server and a real Gatus container; see
+# hack/statusbox-ca-proof.sh for that), the compose file, the systemd
+# unit, and every instance actually answering its own HTTP endpoint once
+# started that way — and,
 # since this host is real (unlike hack/statusbox-debian-ci.sh's
 # container), the real /data pipeline too: setup.sh's own
 # STATUSBOX_DATA_DISK_OVERRIDE test seam (see wait_for_data_disk's doc
@@ -80,7 +85,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in docker gzip base64 losetup mkfs.ext4 blkid findmnt; do
+for tool in docker gzip base64 losetup mkfs.ext4 blkid findmnt openssl diff; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "hack/statusbox-ci.sh needs $tool, which is not on PATH" >&2
     exit 1
@@ -121,8 +126,22 @@ EOF
   gzip -c "$work/$name.yaml" | base64 -w0 > "$work/staged/$name.yaml.gz.b64"
 done
 
+# A throwaway CA — never anything real, generated fresh for this run and
+# discarded with $work — stands in for statusbox.Args.TrustedCAs: this
+# proves setup_trusted_cas and write_compose end to end (the file lands
+# under $trusted_ca_dir, the compose file mounts it and sets
+# SSL_CERT_DIR), the same way the rest of this fixture proves setup.sh's
+# OTHER staged artefacts. It is NOT what proves Gatus's own TLS
+# verification actually trusts it or that a public probe still works —
+# that needs a real HTTPS server and a real Gatus container, which is
+# exactly what hack/statusbox-ca-proof.sh exists to run in Docker.
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -keyout "$work/ca.key" -out "$work/ca.pem" -days 1 \
+  -subj "/CN=statusbox-ci-test-root" >/dev/null 2>&1
+gzip -c "$work/ca.pem" | base64 -w0 > "$work/staged/trusted-cas.pem.gz.b64"
+
 cat > "$work/staged/manifest.json" <<'EOF'
-{"instances":[{"name":"example-co","port":18081,"public":true},{"name":"ops","port":18084,"public":false}]}
+{"instances":[{"name":"example-co","port":18081,"public":true},{"name":"ops","port":18084,"public":false}],"trustedCAs":true}
 EOF
 
 echo "staging fixture into /opt/statusbox"
@@ -161,6 +180,30 @@ if [ "$(grep -c '^\s*- 100\.100\.100\.100$' /opt/statusbox/docker-compose.yml)" 
   exit 1
 fi
 echo "write_compose: every instance's dns: points at the tailnet resolver, OK"
+
+echo "checking setup_trusted_cas unpacked the staged bundle"
+if [ ! -f /opt/statusbox/ca/extra-roots.pem ]; then
+  echo "expected setup_trusted_cas to unpack /opt/statusbox/staged/trusted-cas.pem.gz.b64 into /opt/statusbox/ca/extra-roots.pem" >&2
+  exit 1
+fi
+if ! diff -q "$work/ca.pem" /opt/statusbox/ca/extra-roots.pem >/dev/null; then
+  echo "/opt/statusbox/ca/extra-roots.pem does not match the staged fixture CA" >&2
+  exit 1
+fi
+echo "setup_trusted_cas: extra-roots.pem unpacked and matches the staged fixture, OK"
+
+echo "checking write_compose mounts the trusted-CA directory and sets SSL_CERT_DIR"
+if [ "$(grep -c '^\s*SSL_CERT_DIR: /etc/ssl/extra-ca$' /opt/statusbox/docker-compose.yml)" != 2 ]; then
+  echo "expected exactly two services (one per fixture instance) with SSL_CERT_DIR: /etc/ssl/extra-ca in /opt/statusbox/docker-compose.yml" >&2
+  cat /opt/statusbox/docker-compose.yml >&2
+  exit 1
+fi
+if [ "$(grep -c '^\s*- /opt/statusbox/ca:/etc/ssl/extra-ca:ro$' /opt/statusbox/docker-compose.yml)" != 2 ]; then
+  echo "expected exactly two services with the /opt/statusbox/ca:/etc/ssl/extra-ca:ro read-only mount in /opt/statusbox/docker-compose.yml" >&2
+  cat /opt/statusbox/docker-compose.yml >&2
+  exit 1
+fi
+echo "write_compose: every instance mounts the trusted-CA directory read-only and sets SSL_CERT_DIR, OK"
 
 echo "checking setup_data_disk actually formatted, fstab'd and mounted $loop_device onto /data"
 if ! mountpoint -q /data; then

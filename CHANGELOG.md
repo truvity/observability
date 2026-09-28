@@ -6,6 +6,33 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.7.7
+
+- **Feature: the status box can now trust a private root for one probe,
+  without skipping TLS verification.** A private-service probe whose
+  certificate is issued by the estate's own root (not a publicly-trusted
+  one) used to fail Gatus's own TLS verification outright —
+  `x509: certificate signed by unknown authority` — and that probe also
+  carries a bearer token, so skipping verification was never an
+  acceptable way around it. `statusbox.Args` gains an optional field,
+  `TrustedCAs`, a PEM bundle of one or more extra CA certificates
+  (validated at render time: each block must parse as an X.509
+  certificate and must itself be a CA). Left empty — the ordinary case —
+  nothing changes: no file is staged, no directory is mounted, no
+  environment variable is set, and the rendered cloud-init is
+  byte-for-byte what it was before this field existed. Set, `CloudInit`
+  stages it the same way an instance's own Config already travels
+  (gzipped, base64-encoded, inside the rendered script), `setup.sh`'s
+  new `setup_trusted_cas` unpacks it to
+  `/opt/statusbox/ca/extra-roots.pem`, and `write_compose` bind-mounts
+  that directory read-only into every Gatus container and sets
+  `SSL_CERT_DIR` in its environment — additive to the release image's
+  own public trust bundle, never a replacement of it (see
+  docs/statusbox.md, "Trusting a private root", for the `crypto/x509`
+  evidence this relies on). Proven in Docker against the real release
+  image, not just against `setup.sh`'s own logic: see
+  `hack/statusbox-ca-proof.sh` / `just statusbox-ca-proof`.
+
 ## 0.7.6
 
 - **Fix: the status box could not reach anything behind the tailnet's
