@@ -192,9 +192,9 @@ and the test that catches it.
 ## Neighbours
 
 **access-roster** is the issuer for vmauth tenancy tokens that scope queries
-to caller's grants. **OpenBao** is a relying party holding credentials for
-backups. Both write to **audit** for the record of every query and every
-policy change.
+to a caller's grants. **OpenBao** is a relying party: it holds the collector
+bearer, the webhook secrets and the store credentials this repository's
+charts take as Secret names, delivered through External Secrets.
 
 ## Documentation
 
@@ -214,8 +214,8 @@ policy change.
   [docs/alert-ingress.md](docs/alert-ingress.md),
   [docs/statusbox.md](docs/statusbox.md),
   [docs/dashboards.md](docs/dashboards.md) — one design page per
-  planned piece: the values it takes, what it renders, what it refuses,
-  how it is proven.
+  piece: the values it takes, what it renders, what it refuses, how it
+  is proven.
 - [docs/emitting.md](docs/emitting.md) — for whoever wires a service's
   SDK: the one address, which attributes are theirs and which are taken
   from them, and how to ask the store rather than trust a 200.
