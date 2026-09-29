@@ -26,7 +26,13 @@ jobs:
       packages: write
     uses: truvity/ci-workflows/.github/workflows/release-public.yaml@36c39b754e9a3ab7e6594d19fe9222b66da1586f # v3.12.2
     with:
-      # Chart-only for now: goreleaser runs with a builds-skip config (it
-      # cuts the GitHub release + changelog); the artifacts are the charts,
-      # pushed as oci://ghcr.io/truvity/charts/<name>.
+      # goreleaser builds cmd/alert-ingress's image (see .goreleaser.yaml)
+      # and cuts the GitHub release + changelog; every chart below is then
+      # packaged at the tag's version and pushed to
+      # oci://ghcr.io/truvity/charts/<name>.
       charts: '["observability-crds", "observability-emitters", "observability-stack", "platform-alerts", "alert-ingress", "observability-dashboards"]'
+      # ko names the image after cmd/alert-ingress's own directory
+      # (base_import_paths in .goreleaser.yaml), so this nests it as
+      # ghcr.io/truvity/observability/alert-ingress — the repository
+      # charts/alert-ingress/values.yaml's image.repository defaults to.
+      ko-docker-repo: ghcr.io/truvity/observability

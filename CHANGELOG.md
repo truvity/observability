@@ -6,6 +6,29 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.8.3
+
+- **Feature: `cmd/alert-ingress` now ships a built, published image.**
+  This repository previously shipped `charts/alert-ingress` with no image
+  behind it (`.goreleaser.yaml`'s `builds: skip: true`) — every install
+  had to build `cmd/alert-ingress` itself, and `image.repository` had no
+  default and was refused empty. The release workflow now builds it
+  multi-arch (linux/amd64, linux/arm64) and publishes it to
+  `ghcr.io/truvity/observability/alert-ingress`, tagged at the release
+  version and `latest`, following the same shape (ko, a distroless
+  `nonroot` base, no SBOM) as `truvity/cloudflare`'s r2-broker image and
+  `truvity/access-roster`'s own images.
+  - `charts/alert-ingress`'s `image.repository` now defaults to that
+    image, and `image.tag` (already optional) defaults to
+    `.Chart.AppVersion` when left unset — the same pattern those two
+    repositories' charts use. An install that sets neither now works out
+    of the box; overriding either still works exactly as before, and an
+    explicit empty `image.repository` is still refused.
+  - New `hack/check-image-refs.py` (run from `just lint`) refuses a
+    chart `image.repository` default naming an image `.goreleaser.yaml`'s
+    `kos:` does not actually build, so the two cannot drift apart
+    silently again.
+
 ## 0.8.2
 
 - **Feature: `charts/observability-stack`'s backups authenticate WITHOUT

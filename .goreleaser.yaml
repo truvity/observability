@@ -1,15 +1,54 @@
 # Tag-triggered release through truvity/ci-workflows release-public.yaml,
-# which runs goreleaser and then pushes every chart under charts/ to
-# ghcr.io/truvity/charts at the tag's version.
+# which runs goreleaser (the alert-ingress binary, archive and image) and
+# then pushes every chart under charts/ to ghcr.io/truvity/charts at the
+# tag's version.
 #
-# No binaries: this repository ships Helm charts (and, from the release
-# that adds it, a Go library, which needs no build step) — goreleaser's
-# job here is the GitHub Release with the changelog, nothing else.
-# `skip: true` is its documented shape for library projects.
+# alert-ingress is a Kubernetes-only HTTP service (see cmd/alert-ingress
+# and charts/alert-ingress) — no laptop CLI use case, so linux/amd64 and
+# linux/arm64 only, unlike a credential helper such as cloudflare's
+# r2broker or access-roster's accessctl, which also build darwin/windows
+# for a person's own machine.
 version: 2
 
 builds:
-  - skip: true
+  - id: alert-ingress
+    main: ./cmd/alert-ingress
+    binary: alert-ingress
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+
+archives:
+  # What an operator pulls to run the service outside a container —
+  # access-roster's own "binaries" archive is the same shape for its
+  # access-issuer service.
+  - id: alert-ingress
+    ids: [alert-ingress]
+    formats: [tar.gz]
+    name_template: "alert-ingress_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+kos:
+  # base_import_paths appends the cmd directory's basename, so with the
+  # release workflow's ko-docker-repo ghcr.io/truvity/observability the
+  # published slug is ghcr.io/truvity/observability/alert-ingress — see
+  # charts/alert-ingress/values.yaml's image.repository default.
+  - id: alert-ingress
+    build: alert-ingress
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .IsSnapshot }}latest{{ end }}"
+    platforms: [linux/amd64, linux/arm64]
+    bare: true
+    preserve_import_paths: false
+    base_import_paths: true
+    base_image: gcr.io/distroless/static:nonroot
+    sbom: none
+    labels:
+      org.opencontainers.image.title: alert-ingress
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: https://github.com/truvity/observability
 
 changelog:
   sort: asc
@@ -22,6 +61,14 @@ changelog:
 
 release:
   github: {}
+  header: |
+    ## truvity/observability {{ .Tag }}
+
+    | | |
+    |---|---|
+    | alert-ingress image | `ghcr.io/truvity/observability/alert-ingress:{{ .Version }}` |
+    | alert-ingress chart | `oci://ghcr.io/truvity/charts/alert-ingress:{{ .Version }}` (image.tag defaults to it) |
+    | Go | `go get github.com/truvity/observability@{{ .Tag }}` |
   # setup.sh is a release asset, not a build output: a box's cloud-init
   # (rendered by pkg/statusbox.CloudInit) downloads THIS exact file from
   # THIS release. It has to be attached here, and it has to be in
