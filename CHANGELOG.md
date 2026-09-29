@@ -4,10 +4,24 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.11.2
+
+No render changes. Two guard rails in CI, so two independent release
+sessions cannot repeat a mistake by memory alone:
+
+- The leak canary now also fails on any tracker-key-shaped token
+  (two to six capitals, a dash, digits) anywhere in the tree, CHANGELOG
+  included, with a short commented allow-list of public vocabulary. The
+  one such key that reached 0.11.1 is rewritten out of the comments that
+  carried it.
+- A pull request that changes an existing golden must add a
+  `**Behaviour change` line to CHANGELOG.md (`hack/default-change-guard.sh`,
+  `just default-change-guard`). Adding a new golden is unaffected.
+
 ## v0.11.1
 
 Two defects, both found live on an estate's first cutover to
-`observability-stack` 0.11.0 (SQU-381):
+`observability-stack` 0.11.0:
 
 - **The logs/traces backup CronJobs could not run as shipped, with store
   auth on** (mandatory since 0.11.0). `backup.image`'s only HTTP client,

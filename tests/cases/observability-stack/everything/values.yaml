@@ -283,7 +283,7 @@ victoria-metrics-k8s-stack:
   vmsingle:
     enabled: false
   # Dashboard syncing on, the way an estate that wants MAINTAINED
-  # dashboards (SQU-381's own reason to adopt this chart) turns it on —
+  # dashboards turns it on —
   # off by default (values.yaml), so this is the only golden that
   # exercises `defaultDashboards.dashboards.alertmanager-overview`/
   # `.grafana-overview` and `defaultDashboards.sources.

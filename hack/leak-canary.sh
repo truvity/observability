@@ -81,7 +81,37 @@ for p in "${patterns[@]}"; do
   fi
 done
 
+# Tracker keys. A ticket key (two to six capitals, a dash, digits) names an
+# issue in a tracker this public repository must not point at, and once
+# published it cannot be taken back. The SHAPE is banned everywhere in the
+# tree, CHANGELOG.md included -- not any particular prefix, so this script
+# names no tracker. Rewrite the prose so it stands without the key.
+#
+# Legitimate tokens of the same shape are allow-listed below, one exact
+# shape each. The judgement is per TOKEN, not per line: a line that
+# carries an allowed token AND a ticket key still fails. A token matches
+# only up to its first non-digit, which is why the entries are short.
+# Add an entry only for public vocabulary, never for a ticket.
+ticket='\b[A-Z]{2,6}-[0-9]+\b'
+allowed_tickets=(
+  'GO-[0-9]{4}'    # Go vulnerability database ids (GO-2026-1234)
+  'SHA-[0-9]+'     # hash names (SHA-1, SHA-256)
+  'AGPL-[0-9]+'    # licence ids (AGPL-3.0)
+)
+allow_re=$(IFS='|'; echo "${allowed_tickets[*]}")
+# -o prints one token per match ("file:line:TOKEN"), so the allow-list
+# judges the token itself.
+hits=$(printf '%s\0' "${tracked[@]}" \
+         | grep -zZv '^hack/leak-canary\.sh$' \
+         | xargs -0 -r grep -InoE "$ticket" 2>/dev/null \
+         | grep -vE ":($allow_re)\$" || true)
+if [ -n "$hits" ]; then
+  echo "LEAK: a tracker-key-shaped token — rewrite the prose so it stands without the key:"
+  echo "$hits" | head -5 | sed 's/^/    /'
+  fail=1
+fi
+
 if [ "$fail" = 0 ]; then
-  echo "leak canary clean — ${#patterns[@]} patterns checked, no particulars found"
+  echo "leak canary clean — ${#patterns[@]} patterns + tracker-key shape checked, no particulars found"
 fi
 exit $fail

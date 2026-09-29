@@ -40,13 +40,29 @@ jobs:
     with:
       recipes: '["lint", "test", "leak-canary", "dashboard-lint", "apply", "reconcile", "statusbox", "statusbox-debian"]'
 
+  # Pull-request only: a change to an existing golden is a default-render
+  # change and must be declared in CHANGELOG.md. See
+  # hack/default-change-guard.sh. Needs history, which the shared recipe
+  # runner does not fetch, so it is its own job.
+  default-change-guard:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - run: hack/default-change-guard.sh "origin/${{ github.base_ref }}"
+
   # Stable name for branch protection: the matrix reports as
   # "recipes / lint" and so on, so a required context naming them would
   # break the moment a recipe is added or renamed.
   check:
-    needs: recipes
+    needs: [recipes, default-change-guard]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - run: '[ "${{ needs.recipes.result }}" = "success" ]'
+      # Skipped on a push; anything but success or skipped is a failure.
+      - run: '[ "${{ needs.default-change-guard.result }}" != "failure" ] && [ "${{ needs.default-change-guard.result }}" != "cancelled" ]'
