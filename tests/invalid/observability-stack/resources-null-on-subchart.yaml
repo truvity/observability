@@ -1,0 +1,24 @@
+# expect: Helm deletes a null from this chart's own values, but passes it through unchanged to a vendored subchart's
+# `cpu: null` removes a default from one of this chart's own components,
+# but Helm hands it to a vendored subchart unchanged: the rendered
+# StatefulSet carries `cpu: null`, which the API server reads as a CPU
+# limit of 0 and refuses. Measured with `just apply`.
+resources:
+  policy: burstable
+vmauth:
+  enabled: false
+victoria-logs-single:
+  server:
+    resources:
+      requests: {cpu: 100m, memory: 2Gi}
+      limits: {cpu: null, memory: 2Gi}
+
+# The minimum receiver that keeps the "no receiver configured" refusal
+# (Alertmanager is on by default) from preempting this fixture's own.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

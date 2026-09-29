@@ -1,0 +1,25 @@
+# expect: which `resources.policy: burstable` still requires
+# No memory limit: VictoriaMetrics sizes its caches from the cgroup
+# memory limit, so with none it sizes them from the node's memory and is
+# OOM-killed by it. Only the CPU limit may be left out.
+resources:
+  policy: burstable
+# No proxy: no principals to admit, so none of the tenancy refusals
+# apply and none can preempt this fixture's own.
+vmauth:
+  enabled: false
+
+vmalert:
+  resources:
+    requests: {cpu: 10m, memory: 128Mi}
+    limits: {cpu: null, memory: null}
+
+# The minimum receiver that keeps the "no receiver configured" refusal
+# (Alertmanager is on by default) from preempting this fixture's own.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

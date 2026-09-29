@@ -1,0 +1,27 @@
+# expect: sits inside it
+# The logs prefix is the PARENT of the metrics one. `rclone sync` deletes
+# whatever at its destination the source does not have, so every log
+# backup would erase the metrics backup, and exit zero.
+# No proxy: no principals to admit, so none of the tenancy refusals
+# apply and none can preempt this fixture's own.
+vmauth:
+  enabled: false
+
+# The minimum receiver that keeps the "no receiver configured" refusal
+# (Alertmanager is on by default) from preempting this fixture's own.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+backup:
+  enabled: true
+  destination: s3://example-backups/observability
+  credentialsSecret: example-backup-credentials
+  metrics:
+    prefix: stores/metrics
+  logs:
+    prefix: stores

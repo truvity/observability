@@ -96,6 +96,49 @@ zones: []
 # refuses when a mirror disagrees.
 interval: 30s
 
+# How the `resources` of every component this chart checks are judged:
+# vmauth, both vmalerts, Alertmanager, the operator, the three stores,
+# Grafana and the backup jobs.
+resources:
+  # -- `guaranteed` (the default) or `burstable`.
+  #
+  # `guaranteed` is the rule this chart has always enforced: requests
+  # EQUAL limits for both cpu and memory, and the CPU is a whole number
+  # of cores. VictoriaMetrics sizes its thread pool from the cgroup CPU
+  # quota and rounds DOWN, so `1500m` buys one thread; and a pod whose
+  # requests are below its limits is Burstable, evicted before a
+  # Guaranteed one at the moment of node pressure. It suits an estate
+  # whose stores and alerting path carry many teams' traffic.
+  #
+  # `burstable` is for an estate that measured otherwise — a small one
+  # where vmalert and Alertmanager use a few millicores, and one that
+  # deliberately runs without CPU limits because it measured CFS
+  # throttling. Under it:
+  #   - `requests.cpu` may be fractional and below `limits.cpu`;
+  #   - `limits.cpu` may be absent; set, it must still be a whole number,
+  #     because the QUOTA is what the thread pool rounds;
+  #   - `requests.cpu` and `requests.memory` stay required (no requests
+  #     is BestEffort, evicted before anything else);
+  #   - memory stays request == limit, and a memory limit stays required:
+  #     VictoriaMetrics sizes its caches from the cgroup MEMORY limit,
+  #     so with none it sizes them from the node and is OOM-killed by it;
+  #     and a pod whose memory use cannot exceed its request is never in
+  #     the kubelet's first eviction tier under memory pressure, which
+  #     keeps most of what `guaranteed` bought.
+  #
+  # The switch changes what is ACCEPTED, not what is rendered: every
+  # component's own `resources` below keeps its guaranteed default until
+  # the estate writes its own. And Helm MERGES a values file into these
+  # defaults, so dropping a CPU limit is `limits: {cpu: null}` — leaving
+  # `cpu` out of your own `limits` keeps the default `"1"`. That works for
+  # this chart's own components (vmauth, the vmalerts, Alertmanager, the
+  # backup jobs) only: Helm passes a null through to a vendored subchart
+  # (the operator, the stores, Grafana) unchanged, the API server reads it
+  # as a limit of 0 and refuses the pod, and the chart refuses that render
+  # first. Give those a whole-number limit well above the request instead.
+  # See docs/safety.md, "Resources".
+  policy: guaranteed
+
 # The authorising proxy: vmauth, in front of every read.
 #
 # Nothing else in this namespace may reach a store, which is why the
@@ -476,6 +519,25 @@ tenancy:
 # cost is that rotating the Secret needs a restart: the password flag
 # alone would support `file://` and reload itself, but the username flag
 # does not, and one mechanism that is always true beats two that differ.
+#
+# It is mandatory, for every estate, whatever its size: there is no
+# switch that turns it off. Who needs the credential:
+#
+#   wired by this chart   both vmalerts, the proxy's VMUser targets, the
+#                         backup CronJobs, the stores' own ServiceMonitors
+#                         (`metricsSelfScrape`, `serviceMonitor.basicAuth`)
+#   the estate's to wire  every writer that reaches a store DIRECTLY rather
+#                         than through the proxy (a vmagent remote-write, an
+#                         OpenTelemetry exporter, a log shipper), Grafana
+#                         when `vmauth` is off (see `grafana.datasources`),
+#                         and any hand-made job calling a store's API
+#   needs none            `/health` and `/ping`, which every store in this
+#                         family answers before its auth check — a prober
+#                         on `/health` needs only NetworkPolicy admission
+#                         (`networkPolicy.clientsFrom`)
+#
+# `/metrics` is NOT in the last group: it answers 401 without the
+# credential. See docs/adoption.md, "Store credentials: who needs them".
 storeCredentials:
   # -- Name of the Secret. It must exist in the release's namespace before
   # the stores start; the chart neither creates it nor reads it.
@@ -661,6 +723,55 @@ notifications:
   groupWait: 30s
   groupInterval: 5m
   repeatInterval: 4h
+  # -- Alertmanager's `group_by` on the root route. The default is the
+  # scoping key the collectors stamp on every alert, plus the alert name.
+  # An estate whose alerts carry other labels names those instead — a
+  # label no alert carries does not fail, it groups every alert that
+  # lacks it together, which reads as one noisy notification for
+  # unrelated things. `["..."]` groups by every label (no grouping).
+  groupBy:
+    - alertname
+    - k8s_cluster_name
+    - k8s_namespace_name
+  # -- The one inhibit rule: a `critical` silences a `warning` that has
+  # the same value for every label in `equal`, so a project already paged
+  # for the loud version is not also sent the quiet one.
+  #
+  # THE HAZARD: Alertmanager treats a label missing on both alerts as
+  # EQUAL. An alert that carries none of the `equal` labels therefore
+  # "matches" every other alert that carries none of them — a single
+  # such critical mutes every such warning in the install, and nothing
+  # reports it. Name labels your alerts actually carry, or turn the rule
+  # off. See docs/notifications.md, "Inhibition".
+  inhibit:
+    enabled: true
+    # -- Never empty: an inhibit rule with no `equal` lets ANY critical
+    # mute EVERY warning.
+    equal:
+      - k8s_cluster_name
+      - k8s_namespace_name
+  # -- Exact-match matchers for alerts that reach NOBODY, routed to the
+  # null receiver ahead of every other route — for an alert an estate
+  # has decided it will never act on (a noisy vendored rule, say),
+  # without editing the rule set that ships it. Each entry needs at least
+  # one key: an empty one would match, and drop, everything.
+  drop: []
+  # - {alertname: InfoInhibitor}
+  # -- Where an alert lands when no severity tier claimed it: an `info`
+  # alert, an alert with no `severity` at all, or a tier `severities`
+  # does not configure. The same shape as a `severities` entry, and the
+  # same receiver kinds. Unset (the default), such an alert reaches
+  # nobody — this chart's own rules carry only `critical` and `warning`,
+  # see `severities` below.
+  #
+  # Set, it also becomes the fallback for a tier `severities` leaves out,
+  # so `severities.critical`/`.warning` are no longer required beside it.
+  # And when no deadman receiver is configured
+  # (`alertmanager.watchdog.secretName`), the always-firing `Watchdog`
+  # is routed to the null receiver first, so the heartbeat does not
+  # arrive at this receiver every `repeatInterval`. Other always-firing
+  # rules a vendored set ships (`InfoInhibitor`) belong in `drop`.
+  # catchAll: {receiver: telegram}
   # -- Receiver kinds. Each is a mechanism — how the secret is mounted,
   # what the message looks like — and none carries a value: `slack` is a
   # single webhook shared by every channel, so the channel a message
@@ -677,11 +788,16 @@ notifications:
   # with Alertmanager's `bot_token_file` — never a value here, never in
   # the rendered config. `chatId` is the default destination;
   # `severities.<tier>.chatId` / `.messageThreadId` override it per tier.
-  # Unset by default, and refused by the schema without `botTokenSecret`
-  # or `chatId`. See docs/notifications.md, "Telegram".
+  # Unset by default, and refused by the schema without `botTokenSecret`,
+  # or without exactly one of `chatId` and `chatIdSecret`. See
+  # docs/notifications.md, "Telegram".
   # telegram:
   #   botTokenSecret: {name: "", key: token}
   #   chatId: 0              # an integer; negative for a group
+  #   chatIdSecret: {name: "", key: chat_id}  # instead of chatId: read
+  #                          # from a Secret with Alertmanager's
+  #                          # `chat_id_file` (Alertmanager >= v0.31.0),
+  #                          # for an estate that keeps chat ids private
   #   messageThreadId: 0     # optional: a forum topic; 0 = none
   #   parseMode: HTML        # HTML (default) | MarkdownV2 | Markdown
   #   sendResolved: true     # default true
@@ -746,6 +862,26 @@ networkPolicy:
   # -- Who may write to the stores directly, bypassing the proxy. The
   # collectors need this; nothing else does.
   writersFrom: []
+  # -- Other in-cluster clients of the stores this chart does not know
+  # about — a synthetic prober on `/health`, a hand-made backup or export
+  # job, an OpenTelemetry collector reading back what it wrote — each
+  # admitted to the stores it names and no others. Every entry renders
+  # one more ingress rule on each named store's own port:
+  #
+  #   - stores: [metrics]          # any of metrics, logs, traces;
+  #                                # omitted means all three
+  #     from:                      # NetworkPolicyPeer objects,
+  #       - namespaceSelector:     # passed through untouched
+  #           matchLabels: {kubernetes.io/metadata.name: probes}
+  #         podSelector:
+  #           matchLabels: {app.kubernetes.io/name: prober}
+  #
+  # Refused: an empty `from` (in a NetworkPolicy an empty `from` admits
+  # EVERY source), and a peer named by `ipBlock` alone (a pod IP moves on
+  # every reschedule — the same refusal `scrapeFrom` carries). Admission
+  # is not authentication: every endpoint but `/health` and `/ping` still
+  # needs `storeCredentials`.
+  clientsFrom: []
   # -- Who may scrape a store's metrics port directly, bypassing the
   # proxy — never the proxy address; see docs/doctrine.md. Empty means
   # the metrics agent charts/observability-emitters renders,
@@ -790,6 +926,14 @@ backup:
   enabled: false
   # -- Where backups go, as a URL without credentials: `s3://bucket/path`,
   # `gs://bucket/path`, or `fs:///mnt/path`. The bucket is the estate's.
+  #
+  # Each store writes under its own prefix beneath it
+  # (`backup.<store>.prefix`, and `backup.metrics.fullPrefix`). No two of
+  # the prefixes in use may be equal, and none may sit inside another:
+  # vmbackup and `rclone sync` both DELETE whatever is at their
+  # destination that the source does not have, so a logs prefix that is
+  # the parent of the metrics one deletes the metrics backup on every
+  # run, and exits zero. The chart refuses that render.
   destination: ""
   # -- The Secret holding the object-store credentials, mounted into the
   # job as environment variables. The chart never reads it. Only used
@@ -872,6 +1016,15 @@ backup:
     # -- The weekly full. `-origin` points it at the existing backup so
     # the shared data is copied inside the object store.
     fullSchedule: "17 3 * * 0"
+    # -- Where under `backup.destination` the hourly incremental and the
+    # weekly full land: `<destination>/<prefix>` and
+    # `<destination>/<fullPrefix>`. The defaults are the paths this chart
+    # has always written; change them for an estate whose object-store
+    # policy grants only the prefixes it already uses. Relative, no
+    # leading or trailing `/`. See `backup.destination` for the refusal
+    # every prefix is held to.
+    prefix: metrics
+    fullPrefix: metrics-full
     image:
       repository: victoriametrics/vmbackup
       tag: v1.152.0
@@ -906,6 +1059,8 @@ backup:
   logs:
     enabled: true
     schedule: "37 * * * *"
+    # -- `<destination>/<prefix>`. See `backup.metrics.prefix`.
+    prefix: logs
     # -- This store's OWN backup ServiceAccount, under `auth.mode:
     # ambient` or `credentialProcess` — for an estate that gives each
     # store its own least-privilege role (IRSA annotation, or an EKS Pod
@@ -923,6 +1078,8 @@ backup:
   traces:
     enabled: false
     schedule: "57 * * * *"
+    # -- `<destination>/<prefix>`. See `backup.metrics.prefix`.
+    prefix: traces
     # -- This store's OWN backup ServiceAccount, under `auth.mode:
     # ambient` or `credentialProcess` — for an estate that gives each
     # store its own least-privilege role (IRSA annotation, or an EKS Pod
@@ -1848,6 +2005,20 @@ grafana:
   # query arrives as Grafana's own identity, and a viewer sees everything
   # Grafana can see — the chart refuses a datasource without it.
   #
+  # WITHOUT the proxy (`vmauth.enabled: false`) there is nothing to pass
+  # a person's token to, and a store running `-httpAuth.*` answers 401 to
+  # one. So the rule flips: every datasource must then point at the
+  # store directly, must NOT set `oauthPassThru`, and must authenticate
+  # with `storeCredentials` — `basicAuth: true`, with `basicAuthUser` and
+  # `secureJsonData.basicAuthPassword` as environment references
+  # (`${VAR}` or `$__env{VAR}`) to variables `envValueFrom` below reads
+  # from `storeCredentials`' Secret and keys. Grafana expands them at
+  # provisioning; the chart refuses any other source for them, the same
+  # MIRROR discipline as the stores' own `env`. This list is a subchart
+  # value, so it cannot follow `vmauth.enabled` on its own: an estate
+  # turning the proxy off re-states it. docs/reference.md, "Grafana
+  # without the proxy", has the whole shape.
+  #
   # `version` is the caller's to bump. With more than one replica Grafana
   # only updates a provisioned datasource whose version is greater than or
   # equal to the stored one, so a datasource edited without a bump is an
@@ -1924,7 +2095,11 @@ grafana:
   # -- The signing key for session cookies, identical across replicas.
   # Grafana generates one per pod when it is unset, so with two replicas
   # every other request lands on the pod that cannot read the cookie and
-  # the user is signed out at random. From the caller's Secret.
+  # the user is signed out at random. From the caller's Secret: any
+  # Secret and key — it may sit in the same Secret as `admin`, so it
+  # needs a key, not a Secret of its own. An enabled Grafana with this
+  # reference's `name` left empty is refused (the default below is empty
+  # on purpose: the Secret is the estate's to name).
   envValueFrom:
     GF_SECURITY_SECRET_KEY:
       secretKeyRef:
