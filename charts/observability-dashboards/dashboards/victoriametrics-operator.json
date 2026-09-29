@@ -33,7 +33,7 @@
       }
     ]
   },
-  "description": "Overview for operator VictoriaMetrics v0.25.0 or higher",
+  "description": "Overview for operator VictoriaMetrics v0.25.0 or higher Adapted from VictoriaMetrics (Apache-2.0, https://github.com/VictoriaMetrics/VictoriaMetrics); modified. See THIRD_PARTY_NOTICES.md.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,

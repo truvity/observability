@@ -114,6 +114,21 @@ Rules they follow, on top of the six above:
 - **The home page** is the `home` value; see `values.yaml` for the two ways
   to point Grafana at it.
 
+## Third-party dashboards
+
+Every dashboard except `fleet-overview` is an upstream project's work,
+modified to the contract above. Apache-2.0 requires the licence text, a
+modification notice and the attribution to travel with it, so
+`THIRD_PARTY_NOTICES.md` lists each one (upstream, URL, pinned ref, SPDX
+licence, copyright, modification) and `LICENSES/` holds each licence's full
+text. Both are generated from `hack/dashboards/sources.yaml` by `just
+dashboards`, copied into `charts/observability-dashboards/` so they ship in
+the packaged chart, and checked by `tests/third_party_notices_test.go`; each
+vendored dashboard's own `description` also carries a one-line "adapted from
+... modified" notice, which travels in the rendered ConfigMap. Adding a
+source means adding its `upstream` entry, and, if it is not Apache-2.0, its
+licence text.
+
 ## Layout, as a recommendation the chart defaults to
 
 Infrastructure dashboards keyed by cluster, in one folder: the same

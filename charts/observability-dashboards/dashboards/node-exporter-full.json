@@ -15599,5 +15599,6 @@
   "title": "Node Exporter Full ($cluster)",
   "uid": "truvity-obs-node-exporter-full",
   "version": 102,
-  "weekStart": ""
+  "weekStart": "",
+  "description": "Adapted from rfmoz/grafana-dashboards (Apache-2.0, https://github.com/rfmoz/grafana-dashboards); modified. See THIRD_PARTY_NOTICES.md."
 }

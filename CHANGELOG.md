@@ -50,6 +50,15 @@ can be turned off one key at a time.
   dashboard by uid `truvity-obs-fleet-overview`. New values `folders.fleet`
   and `folders.kubernetes`, and one `dashboards.<name>` key per new
   dashboard.
+- **Licence compliance for vendored dashboards.** New
+  `THIRD_PARTY_NOTICES.md` (one entry per vendored dashboard: upstream, URL,
+  pinned ref, SPDX licence, copyright, modification) and `LICENSES/`, both
+  generated from `hack/dashboards/sources.yaml`, copied into the chart
+  directory so they ship in the package, and checked by a test. Every
+  upstream is Apache-2.0 (VictoriaMetrics, VictoriaLogs, VictoriaTraces,
+  kube-prometheus, rfmoz/grafana-dashboards, dotdc); none ships a NOTICE
+  file. Each vendored dashboard's `description` now names its upstream and
+  says it was modified.
 - **Only metrics a store holds.** `hack/dashboards/available-metrics.yaml`
   lists what is scraped today; `tests/dashboard_queries_test.go` fails a
   dashboard flagged `queryCheck` that reads anything else, and parses every
