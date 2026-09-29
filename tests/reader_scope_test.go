@@ -159,7 +159,8 @@ func TestPreExistingTenancyCaseIsUnchanged(t *testing.T) {
 					}
 				}
 				assert.Greaterf(t, metricsPaths, 2,
-					"%s: %s's metrics route is the query-only pair — this case sets no metricsQueryOnly anywhere, so every principal should still carry the full readPaths.metrics list", g, u.Spec.Name)
+					"%s: %s's metrics route is the query-only pair — this case sets no metricsQueryOnly anywhere, so every principal should still carry the full "+
+						"readPaths.metrics list", g, u.Spec.Name)
 			}
 		})
 	}

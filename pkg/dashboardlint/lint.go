@@ -217,7 +217,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 			}
 			if t.Datasource == nil {
 				if !panelSet {
-					add(1, "panel %q, query %q has no datasource at all (panel or target) — it falls back to whatever Grafana calls default, which is a literal by another name", p.Title, t.Expr)
+					add(1, "panel %q, query %q has no datasource at all (panel or target) — it falls back to whatever Grafana calls default, which is a literal by another "+
+						"name", p.Title, t.Expr)
 				}
 				continue
 			}
@@ -241,14 +242,16 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 			add(2, "the `cluster` variable is type %q, not `query` — it must be populated by a label-values query, never a fixed list", clusterVar.Type)
 		}
 		if ref := clusterVar.datasourceRef(); !isDatasourceVarRef(ref) {
-			add(2, "the `cluster` variable's datasource is %q, not the `datasource` variable — it is not chained, so it lists whatever Grafana's default datasource holds instead of the chosen install's clusters", ref)
+			add(2, "the `cluster` variable's datasource is %q, not the `datasource` variable — it is not chained, so it lists whatever Grafana's default datasource "+
+				"holds instead of the chosen install's clusters", ref)
 		}
 		q := clusterVar.queryText()
 		if q == "" {
 			q = clusterVar.Definition
 		}
 		if !labelValuesCall.MatchString(q) {
-			add(2, "the `cluster` variable's query %q is not a label_values() call — the list must come from what the chosen install actually holds, never a hardcoded set", q)
+			add(2, "the `cluster` variable's query %q is not a label_values() call — the list must come from what the chosen install actually holds, never a "+
+				"hardcoded set", q)
 		}
 	}
 	if hasCluster {
@@ -290,7 +293,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 				q = nsVar.Definition
 			}
 			if !clusterRef.MatchString(q) {
-				add(3, "the `namespace` variable's query %q does not reference $cluster — it is not chained off `cluster`, so it lists every namespace on every install rather than the chosen cluster's own", q)
+				add(3, "the `namespace` variable's query %q does not reference $cluster — it is not chained off `cluster`, so it lists every namespace on every install "+
+					"rather than the chosen cluster's own", q)
 			}
 			if !labelValuesCall.MatchString(q) {
 				add(3, "the `namespace` variable's query %q is not a label_values() call", q)
@@ -306,7 +310,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 	// Rule 5: the environment tier is a display label, never a selector.
 	for _, v := range d.Templating.List {
 		if envSelectorName.MatchString(v.Name) && (v.Type == "query" || v.Type == "custom") {
-			add(5, "template variable %q (type %q) selects by environment tier — two clusters can share a tier, so filtering on it can hand a viewer both", v.Name, v.Type)
+			add(5, "template variable %q (type %q) selects by environment tier — two clusters can share a tier, so filtering on it can hand a viewer "+
+				"both", v.Name, v.Type)
 		}
 	}
 

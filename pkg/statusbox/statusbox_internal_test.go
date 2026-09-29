@@ -169,7 +169,8 @@ func TestRenderGoldenTwoInstances(t *testing.T) {
 
 	want, err := os.ReadFile(golden)
 	require.NoError(t, err, "run 'go test ./pkg/statusbox/... -run TestRenderGoldenTwoInstances -update' and review the diff")
-	require.Equal(t, string(want), got, "the rendered cloud-init moved: run 'go test ./pkg/statusbox/... -run TestRenderGoldenTwoInstances -update' and review the diff")
+	require.Equal(t, string(want), got, "the rendered cloud-init moved: run 'go test ./pkg/statusbox/... -run TestRenderGoldenTwoInstances -update' and review "+
+		"the diff")
 
 	// The leading shebang line is Lightsail's own requirement, not an
 	// accident of this test's fixture: cloud-init classifies user-data by
@@ -179,7 +180,8 @@ func TestRenderGoldenTwoInstances(t *testing.T) {
 	// that regresses to something else on its first line is exactly that
 	// box.
 	require.True(t, strings.HasPrefix(got, "#!/bin/bash\n"),
-		"rendered user-data must start with \"#!/bin/bash\\n\": cloud-init classifies user-data by its first line, and anything but a shebang there becomes text/plain and is never executed")
+		"rendered user-data must start with \"#!/bin/bash\\n\": cloud-init classifies user-data by its first line, and anything but a shebang there becomes "+
+			"text/plain and is never executed")
 
 	// Beyond that first line, Lightsail imposes no line-count constraint
 	// at all — only the 16 KB size cap TestRenderRefusesUserDataOverTheLimit
@@ -189,7 +191,8 @@ func TestRenderGoldenTwoInstances(t *testing.T) {
 	// fixture past that point, except its own trailing newlines, is
 	// inside a base64 blob that cannot contain one.
 	require.Equal(t, 2, strings.Count(got, "\n"),
-		"rendered user-data must be exactly the shebang line plus one further line: a third physical line would mean wrapUserData's shape changed without this test being updated alongside it")
+		"rendered user-data must be exactly the shebang line plus one further line: a third physical line would mean wrapUserData's shape changed without this "+
+			"test being updated alongside it")
 }
 
 func TestRenderRefusesUserDataOverTheLimit(t *testing.T) {
@@ -265,7 +268,8 @@ func TestRenderWithTrustedCAsFitsWithinUserDataLimit(t *testing.T) {
 	got, err := render(args, fixedSHA256, "test-tailscale-authkey", "test-tunnel-token", nil, nil)
 	require.NoError(t, err)
 	require.Less(t, len(got), userDataLimit,
-		"a two-certificate trusted-CA bundle (%d bytes of PEM) plus the two-instance fixture must still leave headroom under the %d-byte limit", len(bundle), userDataLimit)
+		"a two-certificate trusted-CA bundle (%d bytes of PEM) plus the two-instance fixture must still leave headroom under the %d-byte "+
+			"limit", len(bundle), userDataLimit)
 }
 
 // TestValidArgsPassesValidate is the baseline every case in

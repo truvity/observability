@@ -29,7 +29,8 @@ import (
 func TestDiskAttachmentOptionsSetsDeleteBeforeReplace(t *testing.T) {
 	opts, err := pulumi.NewResourceOptions(diskAttachmentOptions(nil)...)
 	require.NoError(t, err)
-	require.True(t, opts.DeleteBeforeReplace, "DiskAttachment must be deleted before its replacement is created, or replacing the box fails attaching the still-attached disk")
+	require.True(t, opts.DeleteBeforeReplace, "DiskAttachment must be deleted before its replacement is created, or replacing the box fails attaching the "+
+		"still-attached disk")
 }
 
 // TestDiskAttachmentOptionsKeepsCallerOptions proves

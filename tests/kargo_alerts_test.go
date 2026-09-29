@@ -38,7 +38,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // kargoRule reads one named rule's expr and for-window off the rendered
@@ -185,7 +185,7 @@ func TestKargoPromotionErroredJoinsOnStageRecovery(t *testing.T) {
 		expr)
 	require.Equal(t, 15*time.Minute, hold)
 
-	promotionErrored := allTrue(20)  // the Promotion sits in Errored for the whole window
+	promotionErrored := allTrue(20)       // the Promotion sits in Errored for the whole window
 	stageStillErrored := untilThen(20, 8) // but its Stage recovers at minute 8
 	joined := and(promotionErrored, stageStillErrored)
 

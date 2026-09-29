@@ -33,7 +33,7 @@ func (mocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
 func stubChecksums(t *testing.T) {
 	t.Helper()
 	previous := statusbox.FetchChecksums
-	statusbox.FetchChecksums = func(version string) (string, error) {
+	statusbox.FetchChecksums = func(_ string) (string, error) {
 		return "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  setup.sh\n", nil
 	}
 	t.Cleanup(func() { statusbox.FetchChecksums = previous })
@@ -49,7 +49,7 @@ func validArgs() *statusboxlightsail.LightsailArgs {
 				{Name: "ops", Port: 8084, Public: false, Config: "external-endpoints: []\n"},
 			},
 			Hostname:  "statusbox",
-		Hostnames: map[string]string{"example-co": "status.example.test"},
+			Hostnames: map[string]string{"example-co": "status.example.test"},
 			Secrets: statusbox.Secrets{
 				TailscaleAuthKey: pulumi.String("test-tailscale-authkey"),
 				TunnelToken:      pulumi.String("test-tunnel-token"),
@@ -81,7 +81,8 @@ func TestPublicPortsIsExactlyTailscale(t *testing.T) {
 			port := infos[0]
 			require.Equal(t, 41641, port.FromPort, "the one public port must be tailscaled's own WireGuard port")
 			require.Equal(t, 41641, port.ToPort)
-			require.Equal(t, "udp", port.Protocol, "the one public port must be UDP only — no TCP port, including SSH or the status page, may be reachable through this firewall")
+			require.Equal(t, "udp", port.Protocol, "the one public port must be UDP only — no TCP port, including SSH or the status page, may be reachable through "+
+				"this firewall")
 			for _, other := range infos {
 				require.NotEqual(t, "tcp", other.Protocol, "no TCP port may be open")
 				require.NotEqual(t, "all", other.Protocol, "no all-protocol port may be open")

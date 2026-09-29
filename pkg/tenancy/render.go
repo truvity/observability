@@ -104,7 +104,8 @@ func (c Config) RenderClaim(p Principal) (Claim, error) {
 	// instead. Refused here rather than checked at the far end, because
 	// at the far end it looks like a successful query.
 	if len(claim.MetricsExtraFilters) == 0 || len(claim.LogsExtraStreamFilters) == 0 {
-		return Claim{}, fmt.Errorf("rendering claim for %q: it carries no filter for one of the signals, which vmauth expands to an ABSENT query argument rather than to a deny — and an absent argument is one the caller may then supply itself", p.Group)
+		return Claim{}, fmt.Errorf("rendering claim for %q: it carries no filter for one of the signals, which vmauth expands to an ABSENT query argument rather "+
+			"than to a deny — and an absent argument is one the caller may then supply itself", p.Group)
 	}
 	return claim, nil
 }
@@ -131,7 +132,8 @@ func (c Config) metricsFilter(g Grant) string {
 // logsFilter renders a principal's WHOLE reach as one LogsQL stream
 // filter, with the grants as alternatives inside it.
 //
-//	_stream:{"k8s.cluster.name"="example-cluster","kubernetes.pod_namespace"=~"^(example-app)$" or "k8s.cluster.name"="other-cluster","kubernetes.pod_namespace"=~"^(example-app|other-app)$"}
+//	_stream:{"k8s.cluster.name"="example-cluster","kubernetes.pod_namespace"=~"^(example-app)$"
+//	  or "k8s.cluster.name"="other-cluster","kubernetes.pod_namespace"=~"^(example-app|other-app)$"}
 //
 // Three things differ from the metrics filter, and none of them is a
 // matter of taste.
@@ -206,7 +208,11 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 		return VMAuthConfig{}, fmt.Errorf("metricsBackend and logsBackend are required to render a vmauth configuration")
 	}
 	if c.Audience == "" {
-		return VMAuthConfig{}, fmt.Errorf("audience is empty: vmauth validates a token's EXPIRY and, under OIDC discovery, its ISSUER, and nothing else — it has no audience option and never inspects `aud` on its own. Without this pin each user below is selected by its group alone, so ANY unexpired token that issuer minted is admitted whatever client it was minted for: a token the same person holds for a different application of the same issuer reads their namespaces here, and nothing anywhere reports it, because the token verifies and the filters apply. Set it to the client id this proxy's tokens are minted under; it is pinned into every user's `%s` claim, which is the only place vmauth can be made to check it", AudienceClaim)
+		return VMAuthConfig{}, fmt.Errorf("audience is empty: vmauth validates a token's EXPIRY and, under OIDC discovery, its ISSUER, and nothing else — it has "+
+			"no audience option and never inspects `aud` on its own. Without this pin each user below is selected by its group alone, so ANY unexpired token that "+
+			"issuer minted is admitted whatever client it was minted for: a token the same person holds for a different application of the same issuer reads their "+
+			"namespaces here, and nothing anywhere reports it, because the token verifies and the filters apply. Set it to the client id this proxy's tokens are "+
+			"minted under; it is pinned into every user's `%s` claim, which is the only place vmauth can be made to check it", AudienceClaim)
 	}
 
 	// Rendered once, outside the principal loop: every principal gets the
