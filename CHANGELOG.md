@@ -28,6 +28,15 @@ patch cut for dependency bumps alone, and its GitHub Release lists them.
     chart `image.repository` default naming an image `.goreleaser.yaml`'s
     `kos:` does not actually build, so the two cannot drift apart
     silently again.
+- **Security: `github.com/go-git/go-git/v6` v6.0.0-alpha.4 →
+  v6.0.0-alpha.5** (GHSA-hc8v-wwc9-vgxm / GO-2026-6214, path traversal
+  via crafted reference names; GHSA-qgq7-7hm3-q39j / GO-2026-6213,
+  worktree operations may follow symlinks), with `go-billy/v6`
+  alpha.1 → alpha.2, which alpha.5 requires. It arrives only through the
+  Pulumi SDK (`pkg/statusbox` → `pulumi/sdk/v3` →
+  `go/common/workspace`), and govulncheck finds neither advisory
+  reachable from this module's code. No chart render changes and no
+  value moves; an importer of `pkg/statusbox` gets the fixed version.
 
 ## 0.8.2
 
