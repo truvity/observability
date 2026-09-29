@@ -181,6 +181,26 @@
         "schedule": {
           "type": "string",
           "minLength": 1
+        },
+        "serviceAccount": {
+          "$ref": "#/definitions/backupServiceAccount"
+        }
+      }
+    },
+    "backupServiceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "This store's own backup ServiceAccount under `backup.auth.mode` `ambient`/`credentialProcess`. In effect when `create` is true or `name` is set; otherwise the store runs as `backup.auth.serviceAccount`. `create: true` renders it (empty `name` derives `<fullname>-backup-<store>`) with `annotations`; `create: false` with a `name` runs as an existing one.",
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
         }
       }
     }
@@ -893,6 +913,9 @@
             "s3ForcePathStyle": {
               "type": "string",
               "enum": ["", "true", "false"]
+            },
+            "serviceAccount": {
+              "$ref": "#/definitions/backupServiceAccount"
             }
           }
         },

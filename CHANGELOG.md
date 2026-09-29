@@ -26,6 +26,17 @@ under 0.9.1 (every existing golden is unchanged).
   becomes a keyword once `notifications.telegram` is set, so an install
   that already routes to a webhook NAMED `telegram` renders unchanged.
   See docs/notifications.md, "Telegram".
+- **One ServiceAccount per backup store** (`backup.<store>.serviceAccount:
+  {create, name, annotations}`, for `metrics`, `logs` and `traces`),
+  under `backup.auth.mode: ambient` (and, for `metrics`,
+  `credentialProcess`), so each store's backup can assume its own
+  least-privilege role — an IRSA annotation per ServiceAccount, or an
+  EKS Pod Identity association per name. A store with nothing set keeps
+  running as the release-wide `backup.auth.serviceAccount`; once every
+  enabled store has its own, the release-wide one is no longer
+  rendered. Refused under `auth.mode: secret`, and for annotations the
+  chart would not render. See docs/reference.md, "Least-privilege
+  backups".
 
 ## v0.9.1
 

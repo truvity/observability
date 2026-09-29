@@ -822,7 +822,10 @@ backup:
     # the worked example this chart's own docs use, but the mechanism
     # names nothing about R2 or any particular broker.
     mode: secret
-    # -- Only read when `mode` is `ambient` or `credentialProcess`.
+    # -- Only read when `mode` is `ambient` or `credentialProcess`. The
+    # release-wide default: a store with its own
+    # `backup.<store>.serviceAccount` runs as that instead, and once
+    # every enabled store has one, this is not rendered at all.
     serviceAccount:
       # -- Empty derives `<fullname>-backup`.
       name: ""
@@ -886,12 +889,54 @@ backup:
     # style but documents path-style as the one to force if a client
     # misbehaves.
     s3ForcePathStyle: ""
+    # -- This store's OWN backup ServiceAccount, under `auth.mode:
+    # ambient` or `credentialProcess` — for an estate that gives each
+    # store its own least-privilege role (IRSA annotation, or an EKS Pod
+    # Identity association keyed on this SA's name). Left as is, this
+    # store runs as `auth.serviceAccount` like every other. `create:
+    # true` renders one named `name` (empty derives
+    # `<fullname>-backup-metrics`) carrying `annotations`; `create: false`
+    # with a `name` runs as an existing one the chart does not render.
+    # Refused under `auth.mode: secret`. See docs/reference.md,
+    # "Least-privilege backups".
+    serviceAccount:
+      create: false
+      name: ""
+      annotations: {}
   logs:
     enabled: true
     schedule: "37 * * * *"
+    # -- This store's OWN backup ServiceAccount, under `auth.mode:
+    # ambient` or `credentialProcess` — for an estate that gives each
+    # store its own least-privilege role (IRSA annotation, or an EKS Pod
+    # Identity association keyed on this SA's name). Left as is, this
+    # store runs as `auth.serviceAccount` like every other. `create:
+    # true` renders one named `name` (empty derives
+    # `<fullname>-backup-logs`) carrying `annotations`; `create: false`
+    # with a `name` runs as an existing one the chart does not render.
+    # Refused under `auth.mode: secret`. See docs/reference.md,
+    # "Least-privilege backups".
+    serviceAccount:
+      create: false
+      name: ""
+      annotations: {}
   traces:
     enabled: false
     schedule: "57 * * * *"
+    # -- This store's OWN backup ServiceAccount, under `auth.mode:
+    # ambient` or `credentialProcess` — for an estate that gives each
+    # store its own least-privilege role (IRSA annotation, or an EKS Pod
+    # Identity association keyed on this SA's name). Left as is, this
+    # store runs as `auth.serviceAccount` like every other. `create:
+    # true` renders one named `name` (empty derives
+    # `<fullname>-backup-traces`) carrying `annotations`; `create: false`
+    # with a `name` runs as an existing one the chart does not render.
+    # Refused under `auth.mode: secret`. See docs/reference.md,
+    # "Least-privilege backups".
+    serviceAccount:
+      create: false
+      name: ""
+      annotations: {}
   # -- The image the log and trace jobs run: it needs a shell, `curl` and
   # `rclone`. Named rather than built here, so the estate can mirror it.
   image:

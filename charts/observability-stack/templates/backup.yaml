@@ -26,6 +26,58 @@
 {{- end }}
 {{- end }}
 {{- /*
+Per-store ServiceAccounts (0.10.0): `backup.<store>.serviceAccount`,
+for an estate that gives each store's backup its own least-privilege
+role (IRSA or EKS Pod Identity, both keyed on the ServiceAccount). A
+store is on its own SA when `create` is true or `name` is set; every
+other store stays on the release-wide `$saName`, so a values file that
+sets none of this renders exactly as before.
+
+`$storeSA` maps each ENABLED store to the SA its pods run as;
+`$storeSACreate` maps the ones this chart renders to their annotations.
+The release-wide SA is still rendered while any enabled store uses it,
+or when no store overrides at all (today's render); once every enabled
+store has its own, it would carry a role nothing assumes, and is not.
+*/}}
+{{- $storeSA := dict }}
+{{- $storeSACreate := dict }}
+{{- $usesShared := false }}
+{{- $anyOverride := false }}
+{{- range $store := list "metrics" "logs" "traces" }}
+{{- $cfg := index $root.Values.backup $store }}
+{{- $sa := $cfg.serviceAccount | default dict }}
+{{- $own := or $sa.create $sa.name }}
+{{- if and $own (not $ambientOrProcess) }}
+{{- fail (printf "observability-stack: `backup.%s.serviceAccount` is set but `backup.auth.mode` is `secret`. Under `secret` no backup pod runs as a chosen ServiceAccount at all — the credentials come from `backup.credentialsSecret` — so a per-store ServiceAccount would be rendered for nothing to assume. Set `backup.auth.mode: ambient`, or remove it." $store) }}
+{{- end }}
+{{- if and (not $sa.create) (not $sa.name) $sa.annotations }}
+{{- fail (printf "observability-stack: `backup.%s.serviceAccount.annotations` is set but neither `create` nor `name` is. Annotations only reach a ServiceAccount this chart renders: set `create: true` to render `<fullname>-backup-%s` with them, or put them on `backup.auth.serviceAccount` if this store should keep sharing the release-wide one." $store $store) }}
+{{- end }}
+{{- if and (not $sa.create) $sa.name $sa.annotations }}
+{{- fail (printf "observability-stack: `backup.%s.serviceAccount` names an existing ServiceAccount (`create: false`) and also sets `annotations`. This chart does not render that ServiceAccount, so the annotations would be read by nothing; put them on the ServiceAccount itself, or set `create: true`." $store) }}
+{{- end }}
+{{- if $cfg.enabled }}
+{{- if $own }}
+{{- $anyOverride = true }}
+{{- $name := $sa.name | default (printf "%s-backup-%s" $fullname $store | trunc 63) }}
+{{- $_ := set $storeSA $store $name }}
+{{- if $sa.create }}
+{{- if hasKey $storeSACreate $name }}
+{{- fail (printf "observability-stack: two backup stores both `create` a ServiceAccount named %q. One name is one object; set `create: true` on one store and point the other at it with `name` and `create: false`, or give each its own name." $name) }}
+{{- end }}
+{{- $_ := set $storeSACreate $name ($sa.annotations | default dict) }}
+{{- end }}
+{{- else }}
+{{- $usesShared = true }}
+{{- $_ := set $storeSA $store $saName }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $renderShared := and $ambientOrProcess (or $usesShared (not $anyOverride)) }}
+{{- if and $renderShared (hasKey $storeSACreate $saName) }}
+{{- fail (printf "observability-stack: a backup store's `serviceAccount` creates %q, which is also the release-wide backup ServiceAccount (`backup.auth.serviceAccount.name`, or its derived default). One name is one object; give the store's its own name, or drop `create` and let the store share the release-wide one." $saName) }}
+{{- end }}
+{{- /*
 Backups. Three stores, three mechanisms, and they are not
 interchangeable.
 
@@ -47,14 +99,15 @@ Authentication (`backup.auth.mode`) is the fourth axis, orthogonal to
 which store: `secret` (default) envFrom's `backup.credentialsSecret`
 into every job unconditionally, same as always. `ambient` and
 `credentialProcess` both suppress that envFrom and instead run every
-job's pod as a ServiceAccount (`$saName`) — `ambient` stops there, and
+job's pod as a ServiceAccount (`$saName`, or the store's own from
+`backup.<store>.serviceAccount`, see above) — `ambient` stops there, and
 leaves the object store's own AWS SDK to resolve ambient credentials
 (EKS Pod Identity or IRSA); `credentialProcess` (metrics only — see the
 refusal above) additionally renders an AWS config file, a tools
 emptyDir and an initContainer to populate it, and an optional projected
 ServiceAccount token, all wired into the vmbackup container specifically.
 */}}
-{{- if $ambientOrProcess }}
+{{- if $renderShared }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -66,6 +119,26 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+{{- end }}
+{{- $renderedSA := dict }}
+{{- range $store := list "metrics" "logs" "traces" }}
+{{- $name := index $storeSA $store | default "" }}
+{{- $cfgSA := (index $root.Values.backup $store).serviceAccount | default dict }}
+{{- if and $name $cfgSA.create (not (hasKey $renderedSA $name)) }}
+{{- $_ := set $renderedSA $name true }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name | quote }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.backup: {{ $store }}
+  {{- with index $storeSACreate $name }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
 {{- end }}
 {{- if eq $authMode "credentialProcess" }}
 ---
@@ -124,7 +197,7 @@ spec:
               level: {{ $root.Values.backup.seLinuxLevel | quote }}
           {{- end }}
           {{- if $ambientOrProcess }}
-          serviceAccountName: {{ $saName | quote }}
+          serviceAccountName: {{ index $storeSA "metrics" | quote }}
           {{- end }}
           {{- if $root.Values.backup.affinity }}
           affinity:
@@ -303,7 +376,7 @@ spec:
               level: {{ $root.Values.backup.seLinuxLevel | quote }}
           {{- end }}
           {{- if $ambientOrProcess }}
-          serviceAccountName: {{ $saName | quote }}
+          serviceAccountName: {{ index $storeSA $store | quote }}
           {{- end }}
           {{- if $root.Values.backup.affinity }}
           affinity:
