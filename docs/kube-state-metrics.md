@@ -214,17 +214,31 @@ cannot, produce on its own: `kargo_stage_condition` and
 object kind Kubernetes itself defines; Kargo's `Stage` and `Promotion`
 are a THIRD party's CRDs, on a cluster that may or may not have Kargo
 installed at all, so there is no allow-list entry for them the way there
-is for `cronjobs` or `pods` above. What produces the two series instead
-is kube-state-metrics' own `customResourceState` feature — a config an
-estate that runs Kargo supplies itself, passed straight through this
-chart's `kube-state-metrics.customResourceState.config` (upstream's own
-value; this chart does not wrap or validate it, for the identical reason
-`platform-alerts`' own `stores` asks rather than guesses: a field path
-this chart cannot see into a CRD it does not own).
+is for `cronjobs` or `pods` above.
 
-A config that produces the two series `groups.kargo` expects, in the
-shape kube-state-metrics' own `CustomResourceStateMetrics` spec
-documents:
+**Since 0.9.0, `kubeStateMetrics.customResources.kargo.enabled: true` is
+the whole thing** — the exact config below, and the RBAC it needs
+(`get`/`list`/`watch` on `stages.kargo.akuity.io` /
+`promotions.kargo.akuity.io`, nothing else), both rendered by this
+chart. It cannot go through `kube-state-metrics.customResourceState.
+config`/`.rbac.extraRules` directly — Helm coalesces a subchart's values
+before any template runs, so a flag on THIS chart's own values cannot
+reach into a vendored subchart's config the way a value can drive one of
+this chart's own templates — so instead this chart pins `kube-state-
+metrics.customResourceState.enabled: true` / `.create: false`
+unconditionally (whenever `kubeStateMetrics.enabled` is, preset used or
+not) and renders the ConfigMap `create: false` points at itself, from
+`kubeStateMetrics.customResources` (empty `resources: []` when no preset
+is on). A hand-written `kube-state-metrics.customResourceState.config`
+is therefore refused rather than silently unused — see "Refusals" below.
+
+What follows is the config this chart's own preset renders, kept here
+because it is still the reference for reading it against a live cluster
+(the field-path caution two paragraphs down applies to the preset's
+OWN shape exactly as much as to a hand-written one) and because an
+estate whose CRD does not match this shape — a forked Kargo, a
+different version's schema — still has the hand-written path (and the
+"open an issue" `docs/adoption.md` names for that case):
 
 ```yaml
 kind: CustomResourceStateMetrics
@@ -234,6 +248,7 @@ spec:
         group: kargo.akuity.io
         version: v1alpha1
         kind: Stage
+      metricNamePrefix: ""
       labelsFromPath:
         namespace: [metadata, namespace]
         stage: [metadata, name]
@@ -252,6 +267,7 @@ spec:
         group: kargo.akuity.io
         version: v1alpha1
         kind: Promotion
+      metricNamePrefix: ""
       labelsFromPath:
         namespace: [metadata, namespace]
         promotion: [metadata, name]
@@ -266,6 +282,12 @@ spec:
               list: [Pending, Running, Succeeded, Failed, Errored, Aborted]
               labelName: phase
 ```
+
+`metricNamePrefix: ""` is required, and easy to miss copying this
+example by hand: unset, kube-state-metrics' own default prefixes every
+name with `kube_customresource_`, and `platform-alerts`' `groups.kargo`
+reads the plain names above, not the prefixed ones. This chart's own
+preset (0.9.0, above) always sets it.
 
 Read this against the Kargo CRD version actually installed, the same
 caution `platform-alerts`' own `stores` worked example carries: a field
@@ -294,7 +316,11 @@ non-namespace-stamp refusals in one line each: `kubeStateMetrics.enabled`
 with the metrics agent off; no `ServiceMonitor` rendered for it; a
 `namespaces` filter; a non-cluster Role; RBAC not created with no
 existing role named; more than one unsharded replica; a `[*]` label or
-annotation allow-list entry.
+annotation allow-list entry; a hand-written `kube-state-metrics.
+customResourceState.config` (0.9.0 — refused whenever `kubeStateMetrics.
+enabled` is true, `kubeStateMetrics.customResources.kargo` on or off,
+because this chart's own `create: false` pin means it would never be
+read).
 
 ## Proof, before release
 
