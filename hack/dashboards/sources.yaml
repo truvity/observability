@@ -13,6 +13,7 @@
 # already trusts to exist.
 dashboards:
   - name: victoriametrics-single
+    upstream: victoriametrics
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/victoriametrics.json
     ref: v1.152.0
     folder: stores
@@ -20,6 +21,7 @@ dashboards:
     seedQuery: 'vm_app_version{version=~"victoria-metrics-.*"}'
 
   - name: victoriametrics-vmagent
+    upstream: victoriametrics
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/vmagent.json
     ref: v1.152.0
     folder: stores
@@ -27,6 +29,7 @@ dashboards:
     seedQuery: 'vm_app_version{version=~"^vmagent.*"}'
 
   - name: victoriametrics-vmalert
+    upstream: victoriametrics
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/vmalert.json
     ref: v1.152.0
     folder: stores
@@ -34,6 +37,7 @@ dashboards:
     seedQuery: 'vm_app_version{version=~"^vmalert.*"}'
 
   - name: victoriametrics-operator
+    upstream: victoriametrics
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/operator.json
     ref: v1.152.0
     folder: stores
@@ -41,6 +45,7 @@ dashboards:
     seedQuery: 'operator_log_messages_total'
 
   - name: victorialogs-single
+    upstream: victorialogs
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/{ref}/dashboards/victorialogs.json
     ref: v1.121.0
     folder: stores
@@ -48,6 +53,7 @@ dashboards:
     seedQuery: 'vm_app_version{version=~"victoria-logs-.*"}'
 
   - name: victorialogs-vlagent
+    upstream: victorialogs
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/{ref}/dashboards/vlagent.json
     ref: v1.121.0
     folder: stores
@@ -55,6 +61,7 @@ dashboards:
     seedQuery: 'vm_app_version{version=~"^vlagent.*"}'
 
   - name: victoriatraces-single
+    upstream: victoriatraces
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaTraces/{ref}/dashboards/victoriatraces.json
     ref: v0.11.1
     folder: stores
@@ -67,6 +74,7 @@ dashboards:
   # upstream's own `kube-prometheus` source entry points at. Each is one
   # ConfigMap's `data` key inside that manifest's `items` list.
   - name: alertmanager
+    upstream: kube-prometheus
     bundle: kube-prometheus
     bundleKey: alertmanager-overview.json
     folder: stores
@@ -75,6 +83,7 @@ dashboards:
     namespaceScoped: true
 
   - name: kubelet
+    upstream: kube-prometheus
     bundle: kube-prometheus
     bundleKey: kubelet.json
     folder: infrastructure
@@ -92,6 +101,7 @@ dashboards:
   # rule (every panel already keys off `job`/`nodename`, no dashboard
   # here needs a second seed).
   - name: node-exporter-full
+    upstream: rfmoz
     url: https://raw.githubusercontent.com/rfmoz/grafana-dashboards/{ref}/prometheus/node-exporter-full.json
     # rfmoz/grafana-dashboards tags no releases; pinned by commit.
     ref: 99a25cc154c21c4fcbae1aa24352bf1b6764d847
@@ -108,6 +118,7 @@ dashboards:
   # fetched: nothing upstream answers "is anything wrong, and where?" for a
   # store with these sources.
   - name: fleet-overview
+    authored: true
     generator: hack/dashboards/fleet_overview.py
     folder: fleet
     tags: [observability-fleet]
@@ -120,34 +131,71 @@ dashboards:
   # install runs yet. Add it, with node-exporter's metric family in
   # available-metrics.yaml, when that source ships.
   - name: k8s-views-global
+    upstream: dotdc
     url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/{ref}/dashboards/k8s-views-global.json
     ref: v3.0.8
-    source: https://github.com/dotdc/grafana-dashboards-kubernetes
-    license: Apache-2.0
     adapt: k8s-views
     folder: kubernetes
     tags: [observability-kubernetes, kubernetes]
     queryCheck: true
 
   - name: k8s-views-namespaces
+    upstream: dotdc
     url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/{ref}/dashboards/k8s-views-namespaces.json
     ref: v3.0.8
-    source: https://github.com/dotdc/grafana-dashboards-kubernetes
-    license: Apache-2.0
     adapt: k8s-views
     folder: kubernetes
     tags: [observability-kubernetes, kubernetes]
     queryCheck: true
 
   - name: k8s-views-pods
+    upstream: dotdc
     url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/{ref}/dashboards/k8s-views-pods.json
     ref: v3.0.8
-    source: https://github.com/dotdc/grafana-dashboards-kubernetes
-    license: Apache-2.0
     adapt: k8s-views
     folder: kubernetes
     tags: [observability-kubernetes, kubernetes]
     queryCheck: true
+
+# Third-party provenance. Every fetched dashboard names its `upstream`
+# here; hack/dashboards.py renders THIRD_PARTY_NOTICES.md from this and the
+# per-dashboard `url`/`ref`, and tests/third_party_notices_test.go fails a
+# catalog entry with no notice. `copyright` is the line the upstream
+# LICENSE file states at the pinned ref, verbatim; "none stated" where the
+# file is the unfilled Apache-2.0 appendix template. None of the upstreams
+# ships a NOTICE file (checked at each pinned ref); if one does after a bump,
+# carry its text into `notice` here.
+upstreams:
+  victoriametrics:
+    project: VictoriaMetrics
+    url: https://github.com/VictoriaMetrics/VictoriaMetrics
+    license: Apache-2.0
+    copyright: Copyright 2019-2026 VictoriaMetrics, Inc.
+  victorialogs:
+    project: VictoriaLogs
+    url: https://github.com/VictoriaMetrics/VictoriaLogs
+    license: Apache-2.0
+    copyright: Copyright 2019-2025 VictoriaMetrics, Inc.
+  victoriatraces:
+    project: VictoriaTraces
+    url: https://github.com/VictoriaMetrics/VictoriaTraces
+    license: Apache-2.0
+    copyright: Copyright 2019-2025 VictoriaMetrics, Inc.
+  kube-prometheus:
+    project: kube-prometheus (bundling the kubernetes-mixin dashboards)
+    url: https://github.com/prometheus-operator/kube-prometheus
+    license: Apache-2.0
+    copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+  rfmoz:
+    project: rfmoz/grafana-dashboards
+    url: https://github.com/rfmoz/grafana-dashboards
+    license: Apache-2.0
+    copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+  dotdc:
+    project: dotdc/grafana-dashboards-kubernetes
+    url: https://github.com/dotdc/grafana-dashboards-kubernetes
+    license: Apache-2.0
+    copyright: Copyright 2020 David Calvert
 
 bundles:
   kube-prometheus:

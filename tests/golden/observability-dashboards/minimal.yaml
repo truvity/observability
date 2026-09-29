@@ -441,7 +441,8 @@ data:
           "targetBlank": false,
           "url": ""
         }
-      ]
+      ],
+      "description": "Adapted from kube-prometheus (bundling the kubernetes-mixin dashboards) (Apache-2.0, https://github.com/prometheus-operator/kube-prometheus); modified. See THIRD_PARTY_NOTICES.md."
     }
     
 
@@ -2226,7 +2227,7 @@ data:
           }
         ]
       },
-      "description": "This is a modern 'Global View' dashboard for your Kubernetes cluster(s). Made for kube-prometheus-stack and take advantage of the latest Grafana features. GitHub repository: https://github.com/dotdc/grafana-dashboards-kubernetes",
+      "description": "This is a modern 'Global View' dashboard for your Kubernetes cluster(s). Made for kube-prometheus-stack and take advantage of the latest Grafana features. GitHub repository: https://github.com/dotdc/grafana-dashboards-kubernetes Adapted from dotdc/grafana-dashboards-kubernetes (Apache-2.0, https://github.com/dotdc/grafana-dashboards-kubernetes); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": false,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -4509,7 +4510,7 @@ data:
           }
         ]
       },
-      "description": "This is a modern 'Namespaces View' dashboard for your Kubernetes cluster(s). Made for kube-prometheus-stack and take advantage of the latest Grafana features. GitHub repository: https://github.com/dotdc/grafana-dashboards-kubernetes",
+      "description": "This is a modern 'Namespaces View' dashboard for your Kubernetes cluster(s). Made for kube-prometheus-stack and take advantage of the latest Grafana features. GitHub repository: https://github.com/dotdc/grafana-dashboards-kubernetes Adapted from dotdc/grafana-dashboards-kubernetes (Apache-2.0, https://github.com/dotdc/grafana-dashboards-kubernetes); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": false,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -7516,7 +7517,7 @@ data:
           }
         ]
       },
-      "description": "This is a modern 'Pods View' dashboard for your Kubernetes cluster(s). Made for kube-prometheus-stack and take advantage of the latest Grafana features. GitHub repository: https://github.com/dotdc/grafana-dashboards-kubernetes",
+      "description": "This is a modern 'Pods View' dashboard for your Kubernetes cluster(s). Made for kube-prometheus-stack and take advantage of the latest Grafana features. GitHub repository: https://github.com/dotdc/grafana-dashboards-kubernetes Adapted from dotdc/grafana-dashboards-kubernetes (Apache-2.0, https://github.com/dotdc/grafana-dashboards-kubernetes); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": false,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -11748,7 +11749,8 @@ data:
       },
       "timezone": "UTC",
       "title": "Kubernetes / Kubelet ($cluster)",
-      "uid": "truvity-obs-kubelet"
+      "uid": "truvity-obs-kubelet",
+      "description": "Adapted from kube-prometheus (bundling the kubernetes-mixin dashboards) (Apache-2.0, https://github.com/prometheus-operator/kube-prometheus); modified. See THIRD_PARTY_NOTICES.md."
     }
     
 
@@ -27378,7 +27380,8 @@ data:
       "title": "Node Exporter Full ($cluster)",
       "uid": "truvity-obs-node-exporter-full",
       "version": 102,
-      "weekStart": ""
+      "weekStart": "",
+      "description": "Adapted from rfmoz/grafana-dashboards (Apache-2.0, https://github.com/rfmoz/grafana-dashboards); modified. See THIRD_PARTY_NOTICES.md."
     }
     
 
@@ -27455,7 +27458,7 @@ data:
           }
         ]
       },
-      "description": "Overview for single-node VictoriaLogs v1.22.0 or higher",
+      "description": "Overview for single-node VictoriaLogs v1.22.0 or higher Adapted from VictoriaLogs (Apache-2.0, https://github.com/VictoriaMetrics/VictoriaLogs); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
@@ -31510,7 +31513,7 @@ data:
           }
         ]
       },
-      "description": "Overview for VictoriaMetrics vlagent v1.117.0 or higher",
+      "description": "Overview for VictoriaMetrics vlagent v1.117.0 or higher Adapted from VictoriaLogs (Apache-2.0, https://github.com/VictoriaMetrics/VictoriaLogs); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -36732,7 +36735,7 @@ data:
           }
         ]
       },
-      "description": "Overview for operator VictoriaMetrics v0.25.0 or higher",
+      "description": "Overview for operator VictoriaMetrics v0.25.0 or higher Adapted from VictoriaMetrics (Apache-2.0, https://github.com/VictoriaMetrics/VictoriaMetrics); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
@@ -39288,7 +39291,7 @@ data:
           }
         ]
       },
-      "description": "Overview for single-node VictoriaMetrics v1.117.0 or higher",
+      "description": "Overview for single-node VictoriaMetrics v1.117.0 or higher Adapted from VictoriaMetrics (Apache-2.0, https://github.com/VictoriaMetrics/VictoriaMetrics); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -48222,7 +48225,7 @@ data:
           }
         ]
       },
-      "description": "Overview for VictoriaMetrics vmagent v1.117.0 or higher",
+      "description": "Overview for VictoriaMetrics vmagent v1.117.0 or higher Adapted from VictoriaMetrics (Apache-2.0, https://github.com/VictoriaMetrics/VictoriaMetrics); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -57514,7 +57517,7 @@ data:
           }
         ]
       },
-      "description": "Overview for VictoriaMetrics vmalert v1.117.0 or higher",
+      "description": "Overview for VictoriaMetrics vmalert v1.117.0 or higher Adapted from VictoriaMetrics (Apache-2.0, https://github.com/VictoriaMetrics/VictoriaMetrics); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
@@ -62249,7 +62252,7 @@ data:
           }
         ]
       },
-      "description": "Overview for single-node VictoriaTraces v0.3.0 or higher",
+      "description": "Overview for single-node VictoriaTraces v0.3.0 or higher Adapted from VictoriaTraces (Apache-2.0, https://github.com/VictoriaMetrics/VictoriaTraces); modified. See THIRD_PARTY_NOTICES.md.",
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,

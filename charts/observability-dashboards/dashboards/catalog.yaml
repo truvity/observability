@@ -7,63 +7,71 @@
 alertmanager:
   file: alertmanager.json
   folder: stores
+  upstream: kube-prometheus
 fleet-overview:
+  authored: true
   file: fleet-overview.json
   folder: fleet
   queryCheck: true
 k8s-views-global:
   file: k8s-views-global.json
   folder: kubernetes
-  license: Apache-2.0
   queryCheck: true
   ref: v3.0.8
-  source: https://github.com/dotdc/grafana-dashboards-kubernetes
+  upstream: dotdc
 k8s-views-namespaces:
   file: k8s-views-namespaces.json
   folder: kubernetes
-  license: Apache-2.0
   queryCheck: true
   ref: v3.0.8
-  source: https://github.com/dotdc/grafana-dashboards-kubernetes
+  upstream: dotdc
 k8s-views-pods:
   file: k8s-views-pods.json
   folder: kubernetes
-  license: Apache-2.0
   queryCheck: true
   ref: v3.0.8
-  source: https://github.com/dotdc/grafana-dashboards-kubernetes
+  upstream: dotdc
 kubelet:
   file: kubelet.json
   folder: infrastructure
+  upstream: kube-prometheus
 node-exporter-full:
   file: node-exporter-full.json
   folder: infrastructure
   ref: 99a25cc154c21c4fcbae1aa24352bf1b6764d847
+  upstream: rfmoz
 victorialogs-single:
   file: victorialogs-single.json
   folder: stores
   ref: v1.121.0
+  upstream: victorialogs
 victorialogs-vlagent:
   file: victorialogs-vlagent.json
   folder: stores
   ref: v1.121.0
+  upstream: victorialogs
 victoriametrics-operator:
   file: victoriametrics-operator.json
   folder: stores
   ref: v1.152.0
+  upstream: victoriametrics
 victoriametrics-single:
   file: victoriametrics-single.json
   folder: stores
   ref: v1.152.0
+  upstream: victoriametrics
 victoriametrics-vmagent:
   file: victoriametrics-vmagent.json
   folder: stores
   ref: v1.152.0
+  upstream: victoriametrics
 victoriametrics-vmalert:
   file: victoriametrics-vmalert.json
   folder: stores
   ref: v1.152.0
+  upstream: victoriametrics
 victoriatraces-single:
   file: victoriatraces-single.json
   folder: stores
   ref: v0.11.1
+  upstream: victoriatraces

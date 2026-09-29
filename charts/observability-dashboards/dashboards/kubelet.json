@@ -1280,5 +1280,6 @@
   },
   "timezone": "UTC",
   "title": "Kubernetes / Kubelet ($cluster)",
-  "uid": "truvity-obs-kubelet"
+  "uid": "truvity-obs-kubelet",
+  "description": "Adapted from kube-prometheus (bundling the kubernetes-mixin dashboards) (Apache-2.0, https://github.com/prometheus-operator/kube-prometheus); modified. See THIRD_PARTY_NOTICES.md."
 }
