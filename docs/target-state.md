@@ -248,8 +248,8 @@ the stack's own health, a cloud-init file or a shell script.
   the sections added for the alert route.
 - [notifications.md](notifications.md), [alert-ingress.md](alert-ingress.md),
   [statusbox.md](statusbox.md), [dashboards.md](dashboards.md) — one
-  design page per planned piece: the values it takes, what it renders,
-  what it refuses, how it is proven.
+  design page per piece: the values it takes, what it renders, what it
+  refuses, how it is proven.
 - [emitting.md](emitting.md) — the guide for whoever wires a service's
   SDK: the one address, which attributes are theirs, how to ask the
   store.
