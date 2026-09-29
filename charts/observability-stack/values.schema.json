@@ -83,10 +83,9 @@
     "severityTarget": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Where a severity tier lands when no route says otherwise. `receiver` names a configured receiver kind - `slack`, or the name of an entry in `notifications.webhook` - and `channel` is where the Slack template's channel and receiver-naming come from; a route may override it per project but never the receiver kind.",
+      "description": "Where a severity tier lands when no route says otherwise. `receiver` names a configured receiver kind - `slack`, `telegram`, or the name of an entry in `notifications.webhook` - and `channel` is where the Slack template's channel and receiver-naming come from; a route may override it per project but never the receiver kind. A `telegram` tier takes no `channel`: it lands in `notifications.telegram.chatId`, or in its own `chatId`/`messageThreadId`.",
       "required": [
-        "receiver",
-        "channel"
+        "receiver"
       ],
       "properties": {
         "receiver": {
@@ -96,8 +95,38 @@
         "channel": {
           "type": "string",
           "minLength": 1
+        },
+        "chatId": {
+          "$ref": "#/definitions/telegramChatId"
+        },
+        "messageThreadId": {
+          "$ref": "#/definitions/telegramThreadId"
         }
+      },
+      "if": {
+        "properties": {
+          "receiver": {
+            "const": "telegram"
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "channel"
+        ]
       }
+    },
+    "telegramChatId": {
+      "type": "integer",
+      "not": {
+        "const": 0
+      },
+      "description": "A Telegram chat id, as Alertmanager's own `chat_id` takes it: an integer, negative for a group or channel. Not a credential - without the bot token it sends nothing - but still an estate's particular, so it lives in the estate's values, never in this chart."
+    },
+    "telegramThreadId": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "A forum topic's `message_thread_id`. `0` means the chat's general topic, the same as leaving it unset."
     },
     "subchart": {
       "type": "object",
@@ -587,6 +616,57 @@
             "webhookSecret": {
               "$ref": "#/definitions/secretRef"
             }
+          }
+        },
+        "telegram": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Telegram as a receiver kind: one bot, whose token is read from an existing Secret and mounted as `bot_token_file`, never interpolated. `severities.<tier>.receiver: telegram` sends a tier here; `chatId`/`messageThreadId` on that tier override the defaults below.",
+          "required": [
+            "botTokenSecret",
+            "chatId"
+          ],
+          "properties": {
+            "botTokenSecret": {
+              "$ref": "#/definitions/secretRef"
+            },
+            "chatId": {
+              "$ref": "#/definitions/telegramChatId"
+            },
+            "messageThreadId": {
+              "$ref": "#/definitions/telegramThreadId"
+            },
+            "parseMode": {
+              "type": "string",
+              "enum": ["HTML", "MarkdownV2", "Markdown"],
+              "description": "Telegram's `parse_mode`. Default `HTML`: the shipped message is written for it, and Alertmanager escapes every alert value itself in HTML mode. Any other mode requires `message`."
+            },
+            "sendResolved": {
+              "type": "boolean",
+              "description": "Alertmanager's `send_resolved`. Default `true`, the same as the Slack and webhook receivers."
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "description": "An Alertmanager template replacing the shipped message, written for `parseMode`. Required when `parseMode` is not `HTML`."
+            }
+          },
+          "if": {
+            "required": [
+              "parseMode"
+            ],
+            "properties": {
+              "parseMode": {
+                "not": {
+                  "const": "HTML"
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "message"
+            ]
           }
         },
         "webhook": {
