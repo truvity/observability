@@ -1,12 +1,10 @@
 # Changelog
 
 Prose bullets, written for the consumer: what changes in the render, what
-must be done first, and whether a default moved. Newest first.
+must be done first, and whether a default moved. Newest first, one
+`## vX.Y.Z` heading per tag.
 
-A version missing from this file changed nothing for a consumer — it is a
-patch cut for dependency bumps alone, and its GitHub Release lists them.
-
-## 0.9.0
+## v0.9.0
 
 "Consumer simplification" (D42): the estate repo (e.g. `truvity/gitops`)
 becomes a plain consumer — values and estate data only. Mechanism moves
@@ -104,7 +102,7 @@ optional migration.
 
 - README gains `Consumers` and `Neighbours`; `docs/doctrine.md` points at the policy component contract; ci-workflows pins moved to v3.13.1.
 
-## 0.8.4
+## v0.8.4
 
 - **Fix: `charts/observability-stack`'s metrics backup fails with
   `permission denied` on an SELinux-enforcing node (Bottlerocket's
@@ -148,7 +146,7 @@ optional migration.
     set both sides", for the incident and why a privileged SELinux
     type is not the default instead.
 
-## 0.8.3
+## v0.8.3
 
 - **Feature: `cmd/alert-ingress` now ships a built, published image.**
   This repository previously shipped `charts/alert-ingress` with no image
@@ -180,7 +178,7 @@ optional migration.
   reachable from this module's code. No chart render changes and no
   value moves; an importer of `pkg/statusbox` gets the fixed version.
 
-## 0.8.2
+## v0.8.2
 
 - **Feature: `charts/observability-stack`'s backups authenticate WITHOUT
   a static key.** `backup.auth.mode` (default `secret`, unchanged
@@ -245,7 +243,7 @@ optional migration.
   in Docker by `hack/backup-restore-proof.sh` (`just
   backup-restore-proof`).
 
-## 0.8.1
+## v0.8.1
 
 - **Fix: `charts/platform-alerts`' `BackupJobFailed` now reads only the
   newest Job of each CronJob, and behaviour CHANGES for a standalone
@@ -278,7 +276,7 @@ optional migration.
   join — with `hack/platform-alerts-newest-job-proof.sh` (`just
   platform-alerts-newest-job-proof`).
 
-## 0.8.0
+## v0.8.0
 
 - **Feature: `charts/observability-stack` accepts REMOTE writers, pinned
   by cluster.** `tenancy.writers[]` gains an optional `cluster` field.
@@ -318,7 +316,7 @@ optional migration.
   Optional; it exists only so a remote writer's `cluster` has something
   to be refused against, and does nothing left unset.
 
-## 0.7.8
+## v0.7.8
 
 - **Feature: `charts/platform-alerts` gains an optional `kargo` rule
   group.** An estate that runs Kargo can now page on a stuck promotion
@@ -339,7 +337,7 @@ optional migration.
   "A Kargo promotion stuck", for the incident and the reasoning behind
   the join.
 
-## 0.7.7
+## v0.7.7
 
 - **Feature: the status box can now trust a private root for one probe,
   without skipping TLS verification.** A private-service probe whose
@@ -366,7 +364,7 @@ optional migration.
   image, not just against `setup.sh`'s own logic: see
   `hack/statusbox-ca-proof.sh` / `just statusbox-ca-proof`.
 
-## 0.7.6
+## v0.7.6
 
 - **Fix: the status box could not reach anything behind the tailnet's
   own subnet router.** `setup_tailscale` ran `tailscale up` with neither
@@ -390,7 +388,7 @@ optional migration.
   these to actually resolve and route: the destination service, and the
   DNS resolver behind the same subnet router.
 
-## 0.7.5
+## v0.7.5
 
 - **Fix: replacing the status box no longer fails attaching its disk.**
   A Config, Version or hostname change replaces the Lightsail instance
@@ -427,7 +425,7 @@ optional migration.
   `RequiresMountsFor=/data`, so a start or restart can never race ahead
   of the mount either.
 
-## 0.7.4
+## v0.7.4
 
 - **Fix: the status box's user-data now actually boots on Lightsail.**
   `pkg/statusbox.CloudInit` rendered the whole bootstrap as
@@ -458,7 +456,7 @@ optional migration.
   runner, which could not have caught a package that installs on Ubuntu
   and nowhere else.
 
-## 0.7.3
+## v0.7.3
 
 - **New: `pkg/statusbox.Secrets.Env`, a second, more general way to hand
   a secret to a Gatus `Config`.** `Secrets.AlertURLs` already let a
@@ -478,7 +476,7 @@ optional migration.
   changes and no existing consumer is affected: an `Args` with no `Env`
   entries renders exactly as before.
 
-## 0.7.2
+## v0.7.2
 
 - **Fix: the status box's Lightsail firewall now declares exactly one
   public port — 41641/udp, tailscaled's own WireGuard port — instead of
@@ -499,7 +497,7 @@ optional migration.
   updated in place, by design; about two minutes of status-page blip,
   the disk reattached, no history lost.
 
-## 0.7.1
+## v0.7.1
 
 - **`setup.sh` now serves the status box's one private page on tailnet
   port 80, not the instance's own `Port`** — an operator reaches it at
@@ -522,7 +520,7 @@ optional migration.
   change is a `Version` change, and a `Version` change always replaces
   the instance rather than re-running the new script on the old one.
 
-## 0.7.0
+## v0.7.0
 
 Two additions to `tenancy`, both opt-in on their OWN terms — a
 `principals` entry that sets neither `audience` nor `routes` renders
@@ -602,7 +600,7 @@ not `alertReaders` is ever set.
   fields are optional and additive: a `principals` entry that sets
   neither renders byte-identically to before this release.
 
-## 0.6.2
+## v0.6.2
 
 - **Fix: `setup.sh` never made a private instance (`Public: false` —
   gatus-ops) reachable from the tailnet** — it joined the box to the
@@ -618,7 +616,7 @@ not `alertReaders` is ever set.
   port is unchanged: it is the estate's own tailnet ACL to grant, not
   something this repository or this script decides.
 
-## 0.6.1
+## v0.6.1
 
 - **Fix: `charts/observability-emitters`'s `kube-state-metrics`
   `ServiceMonitor` latches `OutOfSync` forever** — the five `replace`
@@ -638,7 +636,7 @@ not `alertReaders` is ever set.
   future `ServiceMonitor`/`PodMonitor` relabeling in any golden omits
   `action` again.
 
-## 0.6.0
+## v0.6.0
 
 - **New value: `charts/observability-emitters`** — `kubeStateMetrics`,
   an optional fourth emitter wrapping upstream's own `kube-state-metrics`
@@ -703,7 +701,7 @@ not `alertReaders` is ever set.
   chart's node-label lesson already documents; and every step, and the
   relative order, of the namespace-stamp chain above.
 
-## 0.5.3
+## v0.5.3
 
 - **Fix: `charts/observability-stack`** — the proxy's own `NetworkPolicy`
   now admits `networkPolicy.scrapeFrom` (the metrics agent, by default)
@@ -717,7 +715,7 @@ not `alertReaders` is ever set.
   `ServiceDown` pair that had been firing on it clears once its `for:`
   window passes.
 
-## 0.5.2
+## v0.5.2
 
 Every `ServiceMonitor` this chart has ever rendered was inert, from the
 first release: `disable_prometheus_converter: true` turned off the
@@ -764,7 +762,7 @@ doctrine's own promise was broken from this chart's first commit".
   in the operator's `env`, while this chart still renders a
   `ServiceMonitor` of its own.
 
-## 0.5.1
+## v0.5.1
 
 A follow-up to 0.5.0's own NetworkPolicy fix: opening the metrics agent's
 path to the metrics store's port was necessary and not sufficient, and a
@@ -806,7 +804,7 @@ live install after upgrading to 0.5.0 found the rest of it.
   nobody ran `just check` themselves. It is a required CI job now, the
   same as every other `check` recipe.
 
-## 0.5.0
+## v0.5.0
 
 The nineteen store self-alerts, and the NetworkPolicy gap that
 had kept every store from ever being scraped in the first place — once a
@@ -975,7 +973,7 @@ names, and one more peer a policy had never admitted.
   set; every rule has its own fixture under
   `tests/dashboardlint/invalid/`.
 
-## 0.4.1
+## v0.4.1
 
 One background task, off, and the empty panel it explains.
 
@@ -1013,7 +1011,7 @@ One background task, off, and the empty panel it explains.
 
 - **`docs/reference.md`** gains the value.
 
-## 0.4.0
+## v0.4.0
 
 The one router, and the retirement of the shape it replaces.
 
@@ -1141,7 +1139,7 @@ The one router, and the retirement of the shape it replaces.
   boot, and an alert URL is rotated the day the box is ever asked to be
   anything else.
 
-## 0.3.10
+## v0.3.10
 
 Documentation and a probe, no render change.
 
@@ -1170,7 +1168,7 @@ Documentation and a probe, no render change.
 - **`docs/reference.md`** and the datasource comment in `values.yaml` say
   the same thing where somebody changing the type will read it.
 
-## 0.3.9
+## v0.3.9
 
 One metrics endpoint becomes an estate's decision instead of an
 unexplained 401.
@@ -1218,7 +1216,7 @@ unexplained 401.
 - **Docs** — `docs/safety.md` gains *Four metrics endpoints, one of them a
   decision*; `docs/reference.md` gains the value.
 
-## 0.3.8
+## v0.3.8
 
 Grafana here could be configured into two shapes that look right and are
 not: more replicas than its database can serve, and a store nobody can
@@ -1267,7 +1265,7 @@ query.
   `docs/adoption.md` gains the database prerequisite; `docs/reference.md`
   gains the three values.
 
-## 0.3.7
+## v0.3.7
 
 Every span a writer sent went to the **log** store and was rejected. The
 trace store had never held anything.
@@ -1307,7 +1305,7 @@ trace store had never held anything.
   How it was found: by sending one span and then asking the *store*
   whether it had arrived. The sender's 200 said nothing — it only means
   the collector accepted the batch for its queue.
-## 0.3.6
+## v0.3.6
 
 The gateway's release never converged. `charts/observability-emitters`
 rendered its `volumeClaimTemplates` entry without `apiVersion` or `kind`,
@@ -1332,7 +1330,7 @@ writes the same manifest and the server adds them back.
   every golden must declare both. Stated about the shape rather than this
   chart, because every claimed volume has the same trap.
 
-## 0.3.5
+## v0.3.5
 
 **Every kubelet and cadvisor series was being discarded by the store**, and
 every counter on the writing side said success. Measured on a live
@@ -1365,7 +1363,7 @@ cluster, because nothing else can see this.
 - **Check: `tests/cardinality_test.go`** — no scrape config this chart
   renders may copy labels it has not named.
 
-## 0.3.4
+## v0.3.4
 
 The OTLP gateway could not start, and could not be placed. Both were found
 by installing the chart on a real cluster for the first time, which is
@@ -1418,7 +1416,7 @@ a lint, a golden, an API server or the operator.
 
   **Nothing to do on upgrade.**
 
-## 0.3.3
+## v0.3.3
 
 Both alerters loaded every rule in the cluster. `charts/observability-stack`
 runs two vmalerts that speak different query languages, and gave each of
@@ -1459,7 +1457,7 @@ them `selectAllByDefault: true` with no selector.
   nothing, which is an install where no rule is ever evaluated and every
   pod is green.
 
-## 0.3.2
+## v0.3.2
 
 The metrics alerter was refused by the API server. `charts/observability-stack`
 wrote `extraArgs` on its VMAlert unconditionally while everything under it
@@ -1499,7 +1497,7 @@ the field as an object.
   is loud at apply, which is not a place anyone is watching. Fixtures under
   `tests/rejected/` prove it can fail.
 
-## 0.3.1
+## v0.3.1
 
 The proxy had no Deployment. `charts/observability-stack` rendered
 `unauthorizedUserAccessSpec: {disabled: true}` on its VMAuth, and that
@@ -1546,7 +1544,7 @@ for it.
   manifest and in every golden, from a field that works — is in
   docs/safety.md.
 
-## 0.3.0
+## v0.3.0
 
 The audience pin, and every `match_claims` value meaning only itself.
 vmauth checks a token's expiry and its issuer; who the token was minted
@@ -1618,7 +1616,7 @@ FOR is the caller's to state, and now has to be.
   are unaffected; readers arriving with a token for some other client of
   the same issuer stop being admitted, which is the point.
 
-## 0.2.0
+## v0.2.0
 
 The vocabulary rework. `tenant` × `env`, derived from namespace labels,
 is retired; the scoping key is the **cluster and the namespace**, under
@@ -1723,7 +1721,7 @@ descriptive dimension that is never a key.
   rewritten; it stops matching grants once the proxy is upgraded, which
   is the intended shape rather than a migration to run.
 
-## 0.1.0
+## v0.1.0
 
 The first release. Everything below is new to a consumer, so the two
 authorization fixes among these entries describe defects that **never
