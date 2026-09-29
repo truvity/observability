@@ -28,7 +28,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // syncJobFullConfig is a fuller decode of the same `data["config.yaml"]`
@@ -95,11 +95,11 @@ func TestVendoredRuleAndDashboardSourcesTrackTheStacksOwnComponents(t *testing.T
 
 	for _, g := range goldens {
 		var (
-			hasOwnAlertmanager bool // templates/vmalertmanager.yaml's own VMAlertmanager
+			hasOwnAlertmanager   bool // templates/vmalertmanager.yaml's own VMAlertmanager
 			hasOwnMetricsVMAlert bool // templates/vmalert.yaml's metrics VMAlert (not "-logs")
-			hasGrafana         bool // the `grafana` dependency's own Deployment
-			cfg                syncJobFullConfig
-			cfgFound           bool
+			hasGrafana           bool // the `grafana` dependency's own Deployment
+			cfg                  syncJobFullConfig
+			cfgFound             bool
 		)
 
 		for _, doc := range splitDocs(t, g) {
@@ -145,14 +145,18 @@ func TestVendoredRuleAndDashboardSourcesTrackTheStacksOwnComponents(t *testing.T
 		if hasOwnAlertmanager && len(cfg.Rules.Sources) > 0 {
 			checkedRules++
 			enabled, found := cfg.ruleSourceEnabled("alertmanager-prometheusRule.yaml")
-			assert.Truef(t, found, "%s: this chart's own VMAlertmanager is rendered, but the vendored sync job's rule sources have no alertmanager-prometheusRule.yaml entry at all", g)
-			assert.Truef(t, enabled, "%s: this chart's own VMAlertmanager is rendered, but the vendored `alertmanager.rules` source is disabled — it is gated on the VENDORED alertmanager.enabled (always false), not this chart's own", g)
+			assert.Truef(t, found, "%s: this chart's own VMAlertmanager is rendered, but the vendored sync job's rule sources have no "+
+				"alertmanager-prometheusRule.yaml entry at all", g)
+			assert.Truef(t, enabled, "%s: this chart's own VMAlertmanager is rendered, but the vendored `alertmanager.rules` source is disabled — it is gated "+
+				"on the VENDORED alertmanager.enabled (always false), not this chart's own", g)
 		}
 		if hasOwnMetricsVMAlert && len(cfg.Rules.Sources) > 0 {
 			checkedRules++
 			enabled, found := cfg.ruleSourceEnabled("alerts-vmalert.yml")
-			assert.Truef(t, found, "%s: this chart's own metrics VMAlert is rendered, but the vendored sync job's rule sources have no alerts-vmalert.yml entry at all", g)
-			assert.Truef(t, enabled, "%s: this chart's own metrics VMAlert is rendered, but the vendored `vmalert.rules` source is disabled — it is gated on the VENDORED vmalert.enabled (always false), not this chart's own", g)
+			assert.Truef(t, found, "%s: this chart's own metrics VMAlert is rendered, but the vendored sync job's rule sources have no alerts-vmalert.yml "+
+				"entry at all", g)
+			assert.Truef(t, enabled, "%s: this chart's own metrics VMAlert is rendered, but the vendored `vmalert.rules` source is disabled — it is gated on "+
+				"the VENDORED vmalert.enabled (always false), not this chart's own", g)
 		}
 
 		if len(cfg.Dashboards.Sources) == 0 && len(cfg.Dashboards.Dashboards) == 0 {
@@ -162,20 +166,26 @@ func TestVendoredRuleAndDashboardSourcesTrackTheStacksOwnComponents(t *testing.T
 		if hasOwnMetricsVMAlert {
 			checkedDashboards++
 			enabled, found := cfg.dashSourceEnabled("dashboards/vmalert.json")
-			assert.Truef(t, found, "%s: dashboard syncing is on and this chart's own metrics VMAlert is rendered, but the vendored sync job's dashboard sources have no vmalert.json entry at all", g)
-			assert.Truef(t, enabled, "%s: dashboard syncing is on and this chart's own metrics VMAlert is rendered, but the vendored `victoriametrics-vmalert` dashboard's source is disabled", g)
+			assert.Truef(t, found, "%s: dashboard syncing is on and this chart's own metrics VMAlert is rendered, but the vendored sync job's dashboard "+
+				"sources have no vmalert.json entry at all", g)
+			assert.Truef(t, enabled, "%s: dashboard syncing is on and this chart's own metrics VMAlert is rendered, but the vendored `victoriametrics-vmalert` "+
+				"dashboard's source is disabled", g)
 			assert.Falsef(t, cfg.dashboardDisabled("victoriametrics-vmalert"), "%s: the victoriametrics-vmalert dashboard entry is explicitly disabled", g)
 		}
 		if hasOwnAlertmanager {
 			checkedDashboards++
-			assert.Falsef(t, cfg.dashboardDisabled("alertmanager-overview"), "%s: this chart's own VMAlertmanager is rendered and dashboard syncing is on, but the alertmanager-overview dashboard is explicitly disabled — it is gated on the VENDORED alertmanager.enabled (always false), not this chart's own", g)
+			assert.Falsef(t, cfg.dashboardDisabled("alertmanager-overview"), "%s: this chart's own VMAlertmanager is rendered and dashboard syncing is on, but "+
+				"the alertmanager-overview dashboard is explicitly disabled — it is gated on the VENDORED alertmanager.enabled (always false), not this chart's own", g)
 		}
 		if hasGrafana {
 			checkedDashboards++
-			assert.Falsef(t, cfg.dashboardDisabled("grafana-overview"), "%s: Grafana is rendered and dashboard syncing is on, but the grafana-overview dashboard is explicitly disabled — it is gated on the VENDORED grafana.enabled (always false), not this chart's own", g)
+			assert.Falsef(t, cfg.dashboardDisabled("grafana-overview"), "%s: Grafana is rendered and dashboard syncing is on, but the grafana-overview "+
+				"dashboard is explicitly disabled — it is gated on the VENDORED grafana.enabled (always false), not this chart's own", g)
 		}
 	}
 
-	assert.Positivef(t, checkedRules, "no golden with this chart's own Alertmanager/vmalert and the vendored rule sync on was checked; this test went blind rather than passing")
-	assert.Positivef(t, checkedDashboards, "no golden with dashboard syncing on was checked; this test went blind rather than passing — add/keep a `defaultDashboards.enabled: true` case (tests/cases/observability-stack/everything)")
+	assert.Positivef(t, checkedRules, "no golden with this chart's own Alertmanager/vmalert and the vendored rule sync on was checked; this test went "+
+		"blind rather than passing")
+	assert.Positivef(t, checkedDashboards, "no golden with dashboard syncing on was checked; this test went blind rather than passing — add/keep a "+
+		"`defaultDashboards.enabled: true` case (tests/cases/observability-stack/everything)")
 }

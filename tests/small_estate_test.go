@@ -17,7 +17,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // amRoute is the part of an Alertmanager route these tests read.
@@ -88,7 +88,8 @@ func TestDropAndSilencedWatchdogPrecedeThePrimaryTree(t *testing.T) {
 		}
 	}
 	assert.True(t, dropped, "notifications.drop's InfoInhibitor route is not rendered")
-	assert.True(t, watchdog, "no deadman receiver and a catch-all set, but Watchdog is not routed to nobody: the heartbeat would reach the catch-all every repeat_interval")
+	assert.True(t, watchdog, "no deadman receiver and a catch-all set, but Watchdog is not routed to nobody: the heartbeat would reach the catch-all "+
+		"every repeat_interval")
 }
 
 // TestCatchAllIsTheFallbackOfEveryPrimaryNode: Alertmanager delivers to
