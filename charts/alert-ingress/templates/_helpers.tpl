@@ -31,6 +31,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
+image.tag empty resolves to .Chart.AppVersion — the house pattern
+(truvity/cloudflare's r2-broker chart, truvity/access-roster's charts):
+an install that never sets a tag tracks the chart's own version exactly,
+and the release workflow stamps both from the same git tag.
+*/}}
+{{- define "alert-ingress.image" -}}
+{{- printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) -}}
+{{- end -}}
+
+{{/*
 Doubles a MetricsQL duration of the shape values.schema.json's `duration`
 pattern requires: a bare number and a unit, nothing combined. The VMRule
 needs `2 × heartbeat.interval` as a literal duration INSIDE a range

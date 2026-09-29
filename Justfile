@@ -49,6 +49,10 @@ lint:
     # refusal from one an earlier, unrelated refusal preempted. See
     # hack/lint-fixtures.sh and docs/safety.md.
     hack/lint-fixtures.sh
+    # A chart's own image.repository default naming an image the release
+    # workflow does not build (.goreleaser.yaml's kos:) renders, installs
+    # and pulls nothing — see hack/check-image-refs.py's own header.
+    python3 hack/check-image-refs.py
 
 # Golden renders, then the Go library's own tests.
 #

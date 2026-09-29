@@ -21,13 +21,16 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  # -- No default, on purpose. This repository publishes charts only
-  # (see .github/workflows/release.yaml); it ships no workflow that
-  # builds and pushes a cmd/alert-ingress image anywhere. Point this at
-  # wherever your estate builds and hosts the binary from this repository
-  # at the tag you are installing — an empty default here would render
-  # cleanly and pull nothing.
-  repository: ""
+  # -- ko names the image after cmd/alert-ingress's own directory
+  # (base_import_paths, .goreleaser.yaml), nested under the release
+  # workflow's ko-docker-repo — the same pattern truvity/cloudflare's
+  # r2-broker chart and truvity/access-roster's charts use for their own
+  # images.
+  repository: ghcr.io/truvity/observability/alert-ingress
+  # -- Empty: defaults to .Chart.AppVersion, stamped at release, so an
+  # install that never sets this tracks the chart's own version exactly.
+  # Override only to pin a different build of this same image, or to
+  # point at an estate's own fork.
   tag: ""
   pullPolicy: IfNotPresent
 

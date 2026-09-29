@@ -4,7 +4,7 @@
   "description": "Turns a cloud notification into an Alertmanager alert. Strict: an unknown key fails the render rather than being silently ignored, because a typo in an alerting path is a rule that never fires.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["image", "alertmanager", "topics", "heartbeat", "networkPolicy"],
+  "required": ["alertmanager", "topics", "heartbeat", "networkPolicy"],
   "definitions": {
     "duration": {
       "type": "string",
@@ -51,16 +51,15 @@
     "image": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "tag"],
       "properties": {
         "repository": {
           "type": "string",
           "minLength": 1,
-          "description": "No default: this repository ships no image-build workflow. Required so a missing value refuses the render rather than pulling nothing."
+          "description": "Defaults to ghcr.io/truvity/observability/alert-ingress, the image the release workflow builds and pushes. Refused empty so an override typo renders cleanly and pulls nothing, loudly."
         },
         "tag": {
           "type": "string",
-          "minLength": 1
+          "description": "Empty (the default) resolves to .Chart.AppVersion at render time."
         },
         "pullPolicy": {
           "type": "string",

@@ -21,7 +21,10 @@ everything still looks green.
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module
-`github.com/truvity/observability`'s version.
+`github.com/truvity/observability`'s version. `cmd/alert-ingress` publishes
+alongside them, to `ghcr.io/truvity/observability/alert-ingress` at the
+same tag — `charts/alert-ingress`'s `image.tag` defaults to it, so an
+install that sets nothing pulls the matching build.
 
 ## Who it is for
 

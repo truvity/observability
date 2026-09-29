@@ -1,11 +1,7 @@
-# The smallest values file that renders. No default `image.repository`
-# exists (this repository ships no image-build workflow — see
-# .github/workflows/release.yaml), so it is set here the way any consumer
-# must set it: to wherever they built and pushed cmd/alert-ingress.
-image:
-  repository: ghcr.io/example/alert-ingress
-  tag: "1.0.0"
-
+# The smallest values file that renders. `image` is left out entirely —
+# proving the chart's own default (values.yaml: the image the release
+# workflow builds and pushes, tagged at .Chart.AppVersion) is what an
+# install with no override actually gets.
 alertmanager:
   url: http://vmalertmanager-observability-stack.observability.svc:9093
 
