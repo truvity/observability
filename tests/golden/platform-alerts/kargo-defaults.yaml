@@ -44,7 +44,7 @@ spec:
         - alert: KargoPromotionErrored
           expr: >-
             kargo_promotion_phase{phase="Errored"} == 1
-            and on (namespace, stage) kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
+            and on (k8s_cluster_name, namespace, stage) kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
           for: 15m
           labels:
             severity: critical

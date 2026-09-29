@@ -230,6 +230,18 @@ platform-alerts-newest-job-proof:
 platform-alerts-suspended-proof:
     hack/platform-alerts-suspended-proof.sh
 
+# REAL proof, against a real victoria-metrics binary, that
+# `charts/platform-alerts`' joins are cluster-aware: two clusters sharing a
+# namespace, Job and PVC name make the 0.11.2 expressions fail with a
+# duplicate-series 422 (or mask each other), and the current ones fire per
+# cluster, and still fire on a single-cluster store with no cluster label.
+# See hack/platform-alerts-cluster-proof.sh's own header.
+#
+# Needs Docker, curl, helm and python3 (with PyYAML); deliberately NOT
+# part of `check` or CI, like the proofs above.
+platform-alerts-cluster-proof:
+    hack/platform-alerts-cluster-proof.sh
+
 # REAL proof, in Docker, of `backup.auth.mode: credentialProcess` end to
 # end: MinIO stands in for an S3-compatible store that is not AWS, the
 # RENDERED vmbackup command/env/AWS-config this chart produces for that

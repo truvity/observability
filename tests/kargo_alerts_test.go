@@ -181,7 +181,8 @@ func TestKargoStagePromotionErroredDoesNotFireOnRecovery(t *testing.T) {
 func TestKargoPromotionErroredJoinsOnStageRecovery(t *testing.T) {
 	expr, hold := kargoRule(t, "KargoPromotionErrored")
 	assert.Equal(t,
-		`kargo_promotion_phase{phase="Errored"} == 1 and on (namespace, stage) kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0`,
+		`kargo_promotion_phase{phase="Errored"} == 1 and on (k8s_cluster_name, namespace, stage) `+
+			`kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0`,
 		expr)
 	require.Equal(t, 15*time.Minute, hold)
 
