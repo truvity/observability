@@ -108,6 +108,30 @@ cardinality trap `metrics.scrape.nodeLabels` documents elsewhere in this
 chart for the kubelet and cAdvisor scrapes — measured there as a store
 silently IGNORING every series past its own per-series label limit.
 
+## Reviewed for churn (0.9.1), unchanged
+
+`charts/observability-emitters`' 0.9.1 added a default series drop to
+the cadvisor scrape (`metrics.scrape.cadvisorDrop` — see
+docs/reference.md and docs/safety.md, "Metric churn: what cadvisor never
+has read") from a measurement showing cadvisor and kube-state-metrics
+together as roughly 97% of a store's daily new-series churn on a real
+install. This chart's own collector allow-list above, in place since
+this emitter shipped, is what already answers that measurement on the
+kube-state-metrics side — it is a real object read denied per kind left
+out, not a metric dropped after collection, and it is where a
+consumer's own review belongs first.
+
+No new default drop was added here. The one series the same measurement
+named specifically, `kube_pod_status_reason`, is heavily queried and is
+left alone; nothing else in the same measurement pointed at a
+kube-state-metrics series this chart ships as safe to drop without
+risking `charts/platform-alerts`' `groups.kargo` (`kargo_stage_condition`
+/ `kargo_promotion_phase`, both `customResourceState` output, not a
+`collectors` kind) or any rule reading the eleven kinds' own metrics
+listed above. A future collector or label trim on this emitter's own
+series is still open — this section records that the review happened
+and found nothing to change, not that there is nothing left to find.
+
 ## The namespace stamp
 
 The most important mechanism in this file, and the reason it needed

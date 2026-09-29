@@ -4,6 +4,61 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.9.1
+
+Metric-churn reduction: a default DROP on `charts/observability-emitters`'
+cadvisor scrape, from a measurement against a real install (see
+docs/safety.md, "Metric churn: what cadvisor never has read", and
+docs/reference.md's own `metrics.scrape.cadvisorDrop` row for the full
+argument and the override shape).
+
+- **Behaviour change: the cadvisor scrape now drops four classes of
+  series by default** — every consumer of `charts/observability-emitters`
+  will see these stop being stored on the next upgrade, with no values
+  change required:
+  - `container_tasks_state`
+  - `container_memory_failures_total`
+  - `container_blkio_device_usage_total`
+  - every `_bucket` histogram series cadvisor emits, **except**
+    `go_sched_latencies_seconds_bucket`, which stays (heavily queried on
+    the install this was measured against; the other three names and
+    every other `_bucket` series read **zero** queries ever, per the
+    store's own TSDB `requestsCount`).
+
+  cadvisor and kube-state-metrics together accounted for roughly 97% of
+  a store's daily new-series churn on that install; cadvisor alone for
+  around 114,000 series a day, almost entirely through pod-recreation
+  churn on its own identity labels (`id`, `uid`, `container`, `image`).
+  kube-state-metrics' own churn is unchanged by this release — see
+  docs/kube-state-metrics.md, "Reviewed for churn (0.9.1), unchanged":
+  its existing collector allow-list is this repository's control there,
+  and `kube_pod_status_reason` (heavily queried) is untouched.
+
+  **Also new by default: cadvisor's `id` label (the cgroup path) is
+  CLEARED from every SURVIVING series that already carries a non-empty
+  `container` label — never unconditionally.** cadvisor also exports
+  node-level cgroups that are neither a pod nor a container (the root
+  `id: "/"`, `/kubepods.slice` and its QoS children, systemd units such
+  as `/system.slice/containerd.service`), every one of them with
+  `container=""` and `pod=""`, where `id` is the ONLY label telling
+  them apart — an unconditional `labeldrop` would merge every one of
+  those, on one node, into one identical label set and let
+  vmagent/vmsingle deduplication keep an arbitrary sample. `container`
+  non-empty is what makes `id` redundant: (`namespace`, `pod`,
+  `container`) already names the series once `container` is set.
+  Verified against every dashboard `charts/observability-dashboards`
+  ships and every rule `charts/platform-alerts` ships: none of them
+  groups, filters or joins on `id`. `pod`, `namespace`, `container` and
+  `uid` are untouched; dashboards and rules use them.
+
+  Every list is overridable and the whole default has a switch:
+  `metrics.scrape.cadvisorDrop.metricNames` / `.keepBucketMetrics` are
+  each replaced wholesale by a consumer who sets that key (ordinary Helm
+  list semantics); `.extraMetricNames` / `.extraKeepBucketMetrics` add to
+  the shipped default instead of replacing it; `.enabled: false` turns
+  the whole thing off and stores cadvisor exactly as upstream sends it.
+  The kubelet job is **not** touched by any of this.
+
 ## v0.9.0
 
 "Consumer simplification" (D42): the estate repo (e.g. `truvity/gitops`)

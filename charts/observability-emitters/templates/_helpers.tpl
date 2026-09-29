@@ -277,6 +277,77 @@ agent, which is the platform's.
 {{- end -}}
 
 {{/*
+The cadvisor scrape's own default churn drop — cadvisor only, never the
+kubelet job. See `metrics.scrape.cadvisorDrop` in values.yaml for the
+measurement and the override shape (replace each list wholesale, or add
+to it through the paired `extra*` field, or turn the whole thing off).
+
+Three steps, in order:
+
+  1. Drop the exact names in `metricNames` (+ `extraMetricNames`)
+     outright.
+  2. Drop every `_bucket` series EXCEPT the names in `keepBucketMetrics`
+     (+ `extraKeepBucketMetrics`). RE2 (what Prometheus/vmagent relabel
+     regexes compile with) has no negative lookahead, so "all `_bucket`
+     series but these" is two rules rather than one: a `replace` stamps
+     a scratch label on the kept names ONLY, then a `drop` matches
+     `<name>;<scratch>` against a pattern that only a `_bucket` name
+     with an EMPTY scratch label satisfies — which is every `_bucket`
+     series except the ones just stamped — and a `labeldrop` removes
+     the scratch label from whatever survives.
+  3. Clear the cgroup-path `id` label, but ONLY on a series that
+     already carries a non-empty `container` label — NOT an
+     unconditional `labeldrop`. cadvisor also exports node-level
+     cgroups that are neither a pod nor a container — the root (`id:
+     "/"`), the pod-manager slice (`/kubepods.slice` and its QoS
+     children), systemd units (`/system.slice/containerd.service`,
+     `/system.slice/kubelet.service`), and more — and EVERY one of
+     those carries `container=""` and `pod=""`: `id` is their ONLY
+     distinguishing label. A blanket `labeldrop` merges every one of
+     them, on one node, into ONE identical label set, and
+     vmagent/vmsingle deduplication then keeps an arbitrary sample —
+     silent data corruption, not a churn saving, and the exact defect
+     this chart shipped once before a review caught it against a
+     fixture that happened to carry only a container-level series.
+     `container` non-empty is what makes `id` redundant: kubelet
+     guarantees at most one container of a given name in a given pod
+     at a time, so (`namespace`,`pod`,`container`) already uniquely
+     names the series once `container` is set, and `id` adds nothing a
+     query could not already get from the three. A pod-level rollup
+     (`pod` set, `container` empty — cadvisor's own per-pod network
+     counters, for instance) is left with `id` untouched, on the same
+     reasoning run the other way: nothing already identifies it
+     without `id`, and (`namespace`,`pod`) is not enough on its own to
+     rule out a second, unrelated cgroup this chart has not measured.
+     Verified against every dashboard this repository ships
+     (charts/observability-dashboards) and every rule
+     (charts/platform-alerts): none of them groups, filters or joins on
+     `id`. `pod`, `namespace`, `container` and `uid` are not touched.
+
+An empty `metricNames`/`keepBucketMetrics` after a consumer's own
+override is valid: an empty step 1 drops nothing by name, and an empty
+`keepBucketMetrics` drops every `_bucket` series with no exception.
+*/}}
+{{- define "observability-emitters.scrapeConfig.cadvisorChurnDropMetricRelabelConfigs" -}}
+{{- $cd := .Values.metrics.scrape.cadvisorDrop -}}
+{{- if $cd.enabled -}}
+{{- $names := concat ($cd.metricNames | default list) ($cd.extraMetricNames | default list) -}}
+{{- $keep := concat ($cd.keepBucketMetrics | default list) ($cd.extraKeepBucketMetrics | default list) -}}
+{{- $steps := list -}}
+{{- if $names -}}
+{{- $steps = append $steps (printf "- action: drop\n  source_labels: [__name__]\n  regex: ^(%s)$" (join "|" $names)) -}}
+{{- end -}}
+{{- if $keep -}}
+{{- $steps = append $steps (printf "- action: replace\n  source_labels: [__name__]\n  regex: ^(%s)$\n  target_label: __cadvisor_keep_bucket__\n  replacement: \"yes\"" (join "|" $keep)) -}}
+{{- end -}}
+{{- $steps = append $steps "- action: drop\n  source_labels: [__name__, __cadvisor_keep_bucket__]\n  separator: \";\"\n  regex: ^.*_bucket;$" -}}
+{{- $steps = append $steps "- action: labeldrop\n  regex: __cadvisor_keep_bucket__" -}}
+{{- $steps = append $steps "- action: replace\n  source_labels: [container, id]\n  regex: (.+);.+\n  target_label: id\n  replacement: \"\"" -}}
+{{- join "\n" $steps -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The node's own two endpoints.
 
 They are inline scrape configs rather than scrape objects because nothing
@@ -345,6 +416,9 @@ for by name through `metrics.scrape.nodeLabels`.
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
+{{- with (include "observability-emitters.scrapeConfig.cadvisorChurnDropMetricRelabelConfigs" .) }}
+{{ . | indent 4 }}
+{{- end }}
 {{- end -}}
 
 {{/*

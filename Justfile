@@ -224,6 +224,23 @@ platform-alerts-newest-job-proof:
 backup-restore-proof:
     hack/backup-restore-proof.sh
 
+# REAL proof, against the pinned vmagent and VictoriaMetrics single
+# binaries, that `metrics.scrape.cadvisorDrop` (0.9.1,
+# charts/observability-emitters) drops what CHANGELOG.md's `0.9.1` entry
+# says it drops and nothing else: a real vmagent scrapes a fixture
+# `/metrics` over a static file-sd target with the chart's own rendered
+# metric_relabel_configs, remote-writes to a real VictoriaMetrics single,
+# and the store is then queried for which names made it in. See
+# hack/cadvisor-churn-drop-proof.sh's own header, and
+# tests/cadvisor_churn_drop_test.go for the fast, no-Docker regression
+# gate this complements rather than replaces.
+#
+# Needs Docker, curl, python3 (with PyYAML) and helm; deliberately NOT
+# part of `check`, the same reason `statusbox-ca-proof` above is not: a
+# one-off, run-by-hand proof for this feature, not a regression gate.
+cadvisor-churn-drop-proof:
+    hack/cadvisor-churn-drop-proof.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

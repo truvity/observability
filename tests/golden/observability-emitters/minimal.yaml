@@ -710,6 +710,25 @@ spec:
         - source_labels: [namespace]
           regex: (.+)
           target_label: k8s_namespace_name
+        - action: drop
+          source_labels: [__name__]
+          regex: ^(container_tasks_state|container_memory_failures_total|container_blkio_device_usage_total)$
+        - action: replace
+          source_labels: [__name__]
+          regex: ^(go_sched_latencies_seconds_bucket)$
+          target_label: __cadvisor_keep_bucket__
+          replacement: "yes"
+        - action: drop
+          source_labels: [__name__, __cadvisor_keep_bucket__]
+          separator: ";"
+          regex: ^.*_bucket;$
+        - action: labeldrop
+          regex: __cadvisor_keep_bucket__
+        - action: replace
+          source_labels: [container, id]
+          regex: (.+);.+
+          target_label: id
+          replacement: ""
   overrideHonorLabels: true
   remoteWrite:
   - bearerTokenSecret:

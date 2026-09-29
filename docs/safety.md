@@ -1291,6 +1291,127 @@ to match a `values.yaml` that turns a converter back off, and a diff that
 matches itself is not evidence anything scrapes anything — the exact
 shape "renders cleanly, does nothing" this repository exists to refuse.
 
+## Metric churn: what cadvisor never has read
+
+`metrics.scrape.cadvisorDrop` (0.9.1) is a default DROP on the cadvisor
+job's own `metric_relabel_configs` — cadvisor only, never kubelet's — for
+series measured, against a real install, to be both a large share of a
+store's new-series churn and never once read by a query.
+
+The churn: every pod recreation mints a brand-new cadvisor series
+through cadvisor's own identity labels (`id`, the cgroup path; `uid`;
+`container`; `image`) — a new pod is a new cgroup path, a new UID, a
+scheduler tie-breaking the container's own attempt count into a new
+`container` value in some runtimes, and so on. Measured over 24 hours on
+a real install: cadvisor and kube-state-metrics together accounted for
+roughly 97% of the series the store minted fresh that day, and cadvisor
+alone for around 114,000 of them. Neither number says a series is safe
+to drop on its own — high churn from an identity label is expected of
+cadvisor by design, and most of it is exactly what a dashboard needs.
+What answers "safe to drop" is the second measurement.
+
+The never-queried: the store's own TSDB status endpoint reports
+`requestsCount` per metric name — how many times a query has ever
+touched it, going back as far as the endpoint has any record. Three of
+cadvisor's own metric names read zero there: `container_tasks_state`,
+`container_memory_failures_total`, `container_blkio_device_usage_total`.
+So does nearly every `_bucket` histogram series cadvisor emits — with
+one measured exception, `go_sched_latencies_seconds_bucket`, which is
+heavily queried and is the one name this chart's own default keeps.
+`kube_pod_status_reason`, a kube-state-metrics series and not cadvisor's,
+is likewise heavily queried; this chart makes no change to it or to any
+other kube-state-metrics series — see docs/kube-state-metrics.md, "The
+collector allow-list", which remains this repository's only churn
+control on that emitter.
+
+Before dropping a name, this repository's own doctrine (see
+docs/emitting.md, "A 200 is not storage") says ask the store, not guess from
+a metric's shape: a `_bucket` series LOOKS like the kind of thing nobody
+queries directly, and `go_sched_latencies_seconds_bucket` is the proof
+that guessing from the name alone would have been wrong. `requestsCount`
+being zero over the measurement window is not proof a query will never
+exist — an estate that adds a panel or a rule reading a dropped name
+loses it retroactively, the same way any relabel drop does — which is
+why every name is overridable and the whole default has a switch: widen
+`metricNames`/`keepBucketMetrics` (replaced wholesale by a consumer who
+sets either key) or their `extra*` twins (added to the default instead),
+or set `cadvisorDrop.enabled: false` to store cadvisor exactly as
+upstream sends it.
+
+Verified separately, against every consumer this repository itself
+ships, before any of the four names above were chosen: no dashboard
+under `charts/observability-dashboards` and no rule under
+`charts/platform-alerts` reads any of the four metric names, or any
+`_bucket` series cadvisor emits other than the one kept, or filters,
+groups or joins on cadvisor's `id` label — see the next paragraph for
+that label.
+
+**`id` is CLEARED from every SURVIVING cadvisor series that already
+carries a non-empty `container` label** (a dropped series never
+reaches this step) — never unconditionally, and this is the one place
+this default's first version got it wrong. cadvisor exports node-level
+cgroups that are neither a pod nor a container: the root (`id: "/"`),
+the pod-manager slice (`/kubepods.slice` and its per-QoS-class
+children), and systemd units (`/system.slice/containerd.service`,
+`/system.slice/kubelet.service`, and more) — every one of them with
+`container=""` and `pod=""`, so `id` is the ONLY label telling them
+apart. An earlier draft of this default cleared `id` unconditionally
+on every surviving series; against a fixture that happened to carry
+only a container-level sample it looked correct, and a review caught
+what it actually does on a real node: every one of those node-level
+cgroups, sharing the same `job`/`instance` (one scrape target, one
+node) and now the same empty `container`/`pod`/`namespace`/`uid`/`image`,
+collapses onto ONE identical label set the moment `id` is gone —
+several distinct series with nothing left to tell them apart — and
+vmagent/vmsingle deduplication then keeps an arbitrary one of them.
+That is silent data corruption, the opposite of what a churn-reduction
+default is for, not merely a missed saving.
+
+`container` non-empty is what makes `id` redundant, and is why this
+default keys on it rather than clearing `id` unconditionally: kubelet
+guarantees at most one container of a given name in a given pod at a
+time, so (`namespace`, `pod`, `container`) already names the series
+once `container` is set, and `id` (the cgroup path underneath that same
+container) adds nothing a query could not already get from the three.
+A pod-level rollup (`pod` set, `container` empty — cadvisor's own
+per-pod network counters, for instance) is left with `id` untouched on
+the same reasoning run the other way: nothing already identifies it
+without `id`, so clearing it there risks the identical collision this
+paragraph exists to describe, for a smaller, unmeasured saving. `pod`,
+`namespace`, `container` and `uid` are deliberately NOT touched by this
+default: dashboards and rules use them.
+
+Mechanism: a `replace` step, `source_labels: [container, id]`, `regex:
+(.+);.+`, `target_label: id`, `replacement: ""`. The default separator
+joins the two values as `<container>;<id>`; the regex only matches when
+`container` is non-empty (`id` is always present on a real cadvisor
+series, so the trailing `.+` is never the reason this fails to match),
+and an empty `replacement` on `target_label: id` is Prometheus's own
+idiom for removing a label conditionally — an empty-valued label is
+equivalent to absent in the data model — verified directly against
+`github.com/prometheus/prometheus/model/relabel` rather than assumed:
+see `tests/cadvisor_churn_drop_test.go`'s node-level and pod-level
+fixtures.
+
+Mechanism, for the bucket case: Prometheus/vmagent relabel regexes compile with RE2, which
+has no negative lookahead, so "every `_bucket` series except these
+names" is two rules rather than one. A `replace` step stamps a scratch
+label (`__cadvisor_keep_bucket__`) onto the KEPT names only; a `drop`
+step then matches on `__name__` ending `_bucket` joined with that
+scratch label, which only an EMPTY scratch label satisfies — every
+`_bucket` name except the ones just stamped; a final `labeldrop` removes
+the scratch label from whatever survives. An emptied `keepBucketMetrics`
+is a valid override and means "drop every `_bucket` series with no
+exception."
+
+Proof: `tests/cadvisor_churn_drop_test.go` replays the rendered
+`metric_relabel_configs` through a real
+`github.com/prometheus/prometheus/model/relabel` chain — not this
+repository's own reasoning about the YAML — for the default, the
+`extra*` additive override, the wholesale-replace override and the
+switch off, each read from its own golden under
+`tests/golden/observability-emitters/`.
+
 ## The namespace stamp kube-state-metrics needs and no other scrape object does
 
 Every scrape object on a cluster this chart collects from gets the same

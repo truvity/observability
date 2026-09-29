@@ -392,6 +392,31 @@ Each entry says what to do; none is optional reading before a bump. What
 changed and why is in CHANGELOG.md, and is not repeated here: an entry
 below is the work, in the order it has to happen.
 
+### 0.9.0 → 0.9.1
+
+Metric-churn reduction: nothing here is required before the render still
+passes, and there is nothing to adopt — the new default IS the change.
+
+**`charts/observability-emitters`'s cadvisor scrape gets a new DEFAULT
+DROP, not a new requirement**: `metrics.scrape.cadvisorDrop.enabled:
+true`, dropping `container_tasks_state`, `container_memory_failures_total`,
+`container_blkio_device_usage_total` and every `_bucket` histogram
+series cadvisor emits except `go_sched_latencies_seconds_bucket`, plus
+clearing cadvisor's own `id` (cgroup-path) label on every series that
+already carries a non-empty `container` label — never unconditionally,
+since cadvisor's node-level cgroups (`id: "/"`, `/kubepods.slice`, a
+systemd unit) have no `pod`/`container` and would otherwise collapse
+into one series — a real measurement against a live install (see
+docs/safety.md, "Metric churn:
+what cadvisor never has read"). **This changes what the cadvisor scrape
+stores for every existing install that does not already override it** —
+these series simply stop accumulating; nothing reads them today (see
+CHANGELOG.md's `0.9.1` entry for the full list and the argument). Set
+`metrics.scrape.cadvisorDrop.enabled: false` to keep the old shape, or
+narrow the change with `metricNames`/`keepBucketMetrics` (replaced
+wholesale) or `extraMetricNames`/`extraKeepBucketMetrics` (added to the
+default) — see docs/reference.md's own row on each.
+
 ### 0.8.x → 0.9.0
 
 "Consumer simplification": nothing here is required before the render

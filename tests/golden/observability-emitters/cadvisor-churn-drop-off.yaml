@@ -4,7 +4,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: observability-emitters-victoria-logs-collector
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/instance: observability-emitters
     app.kubernetes.io/managed-by: Helm
@@ -60,7 +60,7 @@ data:
       k8s_leader_elector:
         auth_type: serviceAccount
         lease_name: observability-emitters-gateway
-        lease_namespace: observability
+        lease_namespace: default
     
     receivers:
       otlp:
@@ -148,12 +148,12 @@ data:
           - context: resource
             statements:
               - set(attributes["k8s.cluster.name"], "example-cluster")
-              - set(attributes["deployment.environment.name"], "production")
+              - set(attributes["deployment.environment.name"], "development")
         log_statements:
           - context: resource
             statements:
               - set(attributes["k8s.cluster.name"], "example-cluster")
-              - set(attributes["deployment.environment.name"], "production")
+              - set(attributes["deployment.environment.name"], "development")
               # The container-log agent cannot rename a field, so its native
               # spelling is the log-path key and this writer yields to it.
               - set(attributes["kubernetes.pod_namespace"], attributes["k8s.namespace.name"]) where attributes["k8s.namespace.name"] != nil
@@ -161,7 +161,7 @@ data:
           - context: resource
             statements:
               - set(attributes["k8s.cluster.name"], "example-cluster")
-              - set(attributes["deployment.environment.name"], "production")
+              - set(attributes["deployment.environment.name"], "development")
       # Delta metrics and deduplication do not mix: the store keeps one sample
       # per interval, and dropping one sample of a delta series loses the
       # increment it carried rather than a repetition of a total. An SDK's
@@ -174,10 +174,10 @@ data:
       # No `sending_queue` here, and it is not an omission: the Prometheus
       # remote-write exporter does not have one. Its durability is a
       # write-ahead log, per exporter, on the same volume the others queue on.
-      prometheus_remote_write/zone-a:
-        endpoint: "https://metrics-a.example/api/v1/write"
+      prometheus_remote_write/primary:
+        endpoint: "https://metrics.example/api/v1/write"
         wal:
-          directory: /var/lib/otelcol/wal/zone-a
+          directory: /var/lib/otelcol/wal/primary
         headers:
           Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
         # A resource attribute does not become a label on its own: this
@@ -194,31 +194,8 @@ data:
             - k8s.cluster.name
             - k8s.namespace.name
             - deployment.environment.name
-      # No `sending_queue` here, and it is not an omission: the Prometheus
-      # remote-write exporter does not have one. Its durability is a
-      # write-ahead log, per exporter, on the same volume the others queue on.
-      prometheus_remote_write/zone-b:
-        endpoint: "https://metrics-b.example/api/v1/write"
-        wal:
-          directory: /var/lib/otelcol/wal/zone-b
-        headers:
-          Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
-        # A resource attribute does not become a label on its own: this
-        # exporter puts the resource on a `target_info` series and nothing
-        # else, so a series would reach the store carrying no cluster and no
-        # namespace, and every scoped query would miss it. These three are
-        # promoted onto every series, under the dotted names — the exporter
-        # spells them with underscores on the way out, which is how they
-        # match the metrics agent's labels and the proxy's filters. Only
-        # these three: the rest of the resource, the pod UID among it, stays
-        # on `target_info`.
-        resource_constant_labels:
-          included:
-            - k8s.cluster.name
-            - k8s.namespace.name
-            - deployment.environment.name
-      otlp_http/logs-zone-a:
-        logs_endpoint: "https://logs-a.example/insert/opentelemetry/v1/logs"
+      otlp_http/logs-primary:
+        logs_endpoint: "https://logs.example/insert/opentelemetry/v1/logs"
         headers:
           Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
           # Without this header every resource attribute becomes a stream
@@ -230,30 +207,8 @@ data:
           storage: file_storage
         retry_on_failure:
           enabled: true
-      otlp_http/logs-zone-b:
-        logs_endpoint: "https://logs-b.example/insert/opentelemetry/v1/logs"
-        headers:
-          Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
-          # Without this header every resource attribute becomes a stream
-          # field, and an SDK's resource carries the pod's UID and start time —
-          # so every restart mints a stream the store never reuses.
-          VL-Stream-Fields: "k8s.cluster.name,kubernetes.pod_namespace,service.name"
-        sending_queue:
-          enabled: true
-          storage: file_storage
-        retry_on_failure:
-          enabled: true
-      otlp_http/traces-zone-a:
-        traces_endpoint: "https://traces-a.example/insert/opentelemetry/v1/traces"
-        headers:
-          Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
-        sending_queue:
-          enabled: true
-          storage: file_storage
-        retry_on_failure:
-          enabled: true
-      otlp_http/traces-zone-b:
-        traces_endpoint: "https://traces-b.example/insert/opentelemetry/v1/traces"
+      otlp_http/traces-primary:
+        traces_endpoint: "https://traces.example/insert/opentelemetry/v1/traces"
         headers:
           Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
         sending_queue:
@@ -278,15 +233,15 @@ data:
         metrics:
           receivers: [otlp]
           processors: [transform/disown, k8sattributes, transform/tenancy, delta_to_cumulative, batch]
-          exporters: [prometheus_remote_write/zone-a, prometheus_remote_write/zone-b]
+          exporters: [prometheus_remote_write/primary]
         logs:
           receivers: [otlp, k8s_events]
           processors: [transform/disown, k8sattributes, transform/tenancy, batch]
-          exporters: [otlp_http/logs-zone-a, otlp_http/logs-zone-b]
+          exporters: [otlp_http/logs-primary]
         traces:
           receivers: [otlp]
           processors: [transform/disown, k8sattributes, transform/tenancy, batch]
-          exporters: [otlp_http/traces-zone-a, otlp_http/traces-zone-b]
+          exporters: [otlp_http/traces-primary]
 
 ---
 # Source: observability-emitters/charts/victoria-logs-collector/templates/rbac.yaml
@@ -345,7 +300,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: observability-emitters-victoria-logs-collector
-    namespace: observability
+    namespace: default
 roleRef:
   kind: ClusterRole
   name: observability-emitters-victoria-logs-collector
@@ -365,7 +320,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: observability-emitters-gateway
-    namespace: observability
+    namespace: default
 roleRef:
   kind: ClusterRole
   name: observability-emitters-gateway
@@ -401,7 +356,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: observability-emitters-gateway
-    namespace: observability
+    namespace: default
 roleRef:
   kind: Role
   name: observability-emitters-gateway
@@ -459,7 +414,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: observability-emitters-victoria-logs-collector
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/instance: observability-emitters
     app.kubernetes.io/managed-by: Helm
@@ -505,7 +460,7 @@ spec:
           - --envflag.enable
           - --envflag.prefix=VL_
           - --kubernetesCollector
-          - --kubernetesCollector.extraFields={"k8s.cluster.name":"example-cluster","deployment.environment.name":"production"}
+          - --kubernetesCollector.extraFields={"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}
           - --kubernetesCollector.includeNodeAnnotations=false
           - --kubernetesCollector.includeNodeLabels=false
           - --kubernetesCollector.includePodAnnotations=false
@@ -515,13 +470,9 @@ spec:
           - --kubernetesCollector.timeField=time,ts,timestamp
           - --loggerFormat=json
           - --remoteWrite.bearerTokenFile=/etc/observability-write-token/token
-          - --remoteWrite.bearerTokenFile=/etc/observability-write-token/token
-          - --remoteWrite.headers="AccountID:0^^ProjectID:0"
           - --remoteWrite.headers="AccountID:0^^ProjectID:0"
           - --remoteWrite.maxDiskUsagePerURL=5GB
-          - --remoteWrite.maxDiskUsagePerURL=5GB
-          - --remoteWrite.url=https://logs-a.example/insert/native
-          - --remoteWrite.url=https://logs-b.example/insert/native
+          - --remoteWrite.url=https://logs.example/insert/native
           - --tmpDataPath=/var/lib/vl-collector
           volumeMounts:
             - mountPath: /etc/observability-write-token
@@ -578,7 +529,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: observability-emitters
       annotations:
-        observability-emitters/config-checksum: e3e43935e0ac9b6283915ab7636cb47bb1cae7305f1d338294d9a79c73adf931
+        observability-emitters/config-checksum: 6c9d216d0e0b1ee9f7be61e37f55ac11a3f6c4d7fc7de18c06680ef2a07e6c39
     spec:
       serviceAccountName: observability-emitters-gateway
       securityContext:
@@ -648,7 +599,7 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - observability
+      - default
   selector:
     matchLabels: 
       app.kubernetes.io/instance: observability-emitters
@@ -733,7 +684,7 @@ spec:
         - target_label: k8s_cluster_name
           replacement: "example-cluster"
         - target_label: deployment_environment_name
-          replacement: "production"
+          replacement: "development"
       metric_relabel_configs:
         - source_labels: [namespace]
           regex: (.+)
@@ -754,40 +705,17 @@ spec:
         - target_label: k8s_cluster_name
           replacement: "example-cluster"
         - target_label: deployment_environment_name
-          replacement: "production"
+          replacement: "development"
       metric_relabel_configs:
         - source_labels: [namespace]
           regex: (.+)
           target_label: k8s_namespace_name
-        - action: drop
-          source_labels: [__name__]
-          regex: ^(container_tasks_state|container_memory_failures_total|container_blkio_device_usage_total)$
-        - action: replace
-          source_labels: [__name__]
-          regex: ^(go_sched_latencies_seconds_bucket)$
-          target_label: __cadvisor_keep_bucket__
-          replacement: "yes"
-        - action: drop
-          source_labels: [__name__, __cadvisor_keep_bucket__]
-          separator: ";"
-          regex: ^.*_bucket;$
-        - action: labeldrop
-          regex: __cadvisor_keep_bucket__
-        - action: replace
-          source_labels: [container, id]
-          regex: (.+);.+
-          target_label: id
-          replacement: ""
   overrideHonorLabels: true
   remoteWrite:
   - bearerTokenSecret:
       key: token
       name: example-write-token
-    url: https://metrics-a.example/api/v1/write
-  - bearerTokenSecret:
-      key: token
-      name: example-write-token
-    url: https://metrics-b.example/api/v1/write
+    url: https://metrics.example/api/v1/write
   replicaCount: 1
   resources:
     limits:
@@ -802,7 +730,7 @@ spec:
     relabelConfigs:
     - replacement: example-cluster
       target_label: k8s_cluster_name
-    - replacement: production
+    - replacement: development
       target_label: deployment_environment_name
     - source_labels:
       - __meta_kubernetes_namespace
@@ -821,4 +749,4 @@ spec:
         - ReadWriteOnce
         resources:
           requests:
-            storage: 1Gi
+            storage: 10Gi

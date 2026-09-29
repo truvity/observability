@@ -768,7 +768,59 @@ use or not.
 | `metrics.queue.size` | quantity | `10Gi` | The persistent queue's volume. The operator divides it by the number of destinations to derive `-remoteWrite.maxDiskUsagePerURL`, so size it in multiples of 500MB with at least 500Mi per destination. |
 | `metrics.queue.storageClassName` | string | `""` | Empty renders no class and takes the cluster's default. |
 | `metrics.scrape.kubelet` / `.cadvisor` | bool | `true` | The node's two endpoints, as inline scrape configs. Everything else arrives as a `PodMonitor` or `ServiceMonitor` authored by whoever owns the thing being watched. |
+| `metrics.scrape.cadvisorDrop.enabled` | bool | `true` (0.9.1) | A default DROP on the **cadvisor job only** — never kubelet's. Off restores every cadvisor series exactly as upstream emits it. See below. |
+| `metrics.scrape.cadvisorDrop.metricNames[]` | list | `[container_tasks_state, container_memory_failures_total, container_blkio_device_usage_total]` (0.9.1) | Exact `__name__` matches, dropped outright. **Replaced wholesale** by a consumer who sets this key; widen it with `extraMetricNames` instead. |
+| `metrics.scrape.cadvisorDrop.extraMetricNames[]` | list | `[]` (0.9.1) | Added to `metricNames` rather than replacing it. |
+| `metrics.scrape.cadvisorDrop.keepBucketMetrics[]` | list | `[go_sched_latencies_seconds_bucket]` (0.9.1) | Every cadvisor `_bucket` histogram series is dropped as well, **except** the names here. Replaced wholesale by a consumer who sets this key; widen it with `extraKeepBucketMetrics` instead. |
+| `metrics.scrape.cadvisorDrop.extraKeepBucketMetrics[]` | list | `[]` (0.9.1) | Added to `keepBucketMetrics` rather than replacing it. |
 | `metrics.spec` | object | `{}` | Merged over the rendered `VMAgent` spec. Guarded — see below. |
+
+**`cadvisorDrop` (0.9.1), the measurement behind it.** Measured against a
+real install: cadvisor and kube-state-metrics together accounted for
+roughly 97% of the series a store minted fresh in a day — cadvisor alone
+around 114k of them — because every pod recreation mints a brand-new
+cadvisor series through its own identity labels (`id`, the cgroup path;
+`uid`; `container`; `image`). The store's own TSDB status
+(`requestsCount` — how often a metric name was ever read by a query)
+showed three of cadvisor's own metrics with **zero** reads ever —
+`container_tasks_state`, `container_memory_failures_total`,
+`container_blkio_device_usage_total` — and the same for nearly every
+`_bucket` histogram series cadvisor emits, with one measured exception:
+`go_sched_latencies_seconds_bucket` is heavily queried and stays.
+`kube_pod_status_reason` (kube-state-metrics, not cadvisor) is likewise
+heavily queried and this chart makes no change to it — see
+docs/kube-state-metrics.md.
+
+The cadvisor job's own cgroup-path label, `id`, is CLEARED from every
+SURVIVING series (dropped series never reach this step) that already
+carries a non-empty `container` label — never unconditionally.
+cadvisor also exports node-level cgroups that are neither a pod nor a
+container (the root `id: "/"`, `/kubepods.slice` and its QoS children,
+systemd units such as `/system.slice/containerd.service`), every one
+of them with `container=""` and `pod=""`, where `id` is the ONLY label
+telling them apart — an unconditional `labeldrop` merges every one of
+those, on one node, into ONE identical label set, and vmagent/vmsingle
+deduplication then keeps an arbitrary sample, which is silent data
+corruption rather than a churn saving. `container` non-empty is what
+makes `id` redundant: (`namespace`, `pod`, `container`) already names
+the series once `container` is set. Nothing this repository ships —
+no dashboard under `charts/observability-dashboards`, no rule under
+`charts/platform-alerts` — groups, filters or joins on `id`. `pod`,
+`namespace`, `container` and `uid` are left alone: dashboards and rules
+use them. CHANGELOG.md's `0.9.1` entry names the exact metrics this
+default stops storing; docs/safety.md has the same argument in the
+"Metric churn" section.
+
+Mechanism, and why it takes two relabel rules rather than one for the
+bucket case: Prometheus/vmagent relabel regexes compile with RE2, which
+has no negative lookahead, so "every `_bucket` series except these
+names" cannot be one `drop` rule. This chart instead stamps a scratch
+label on the KEPT names first (`replace`, `__name__` → a scratch label
+when it matches `keepBucketMetrics`/`extraKeepBucketMetrics`), then
+`drop`s on `__name__` ending `_bucket` **and** that scratch label being
+empty, then `labeldrop`s the scratch label off whatever survives. An
+emptied `keepBucketMetrics` is valid and means "drop every `_bucket`
+series with no exception."
 
 Rendered and **not configurable away**, each with a fixture:
 `statefulMode: true` with a `volumeClaimTemplate` (the queue is on `/tmp`
