@@ -10,9 +10,10 @@ must be done first, and whether a default moved. Newest first, one
 operator. Every rule below was a hard requirement shaped for a
 multi-team install; each is now a value whose default is the old
 behaviour, so an existing values file renders byte-for-byte as it did
-under 0.10.0 (every existing golden is unchanged; new goldens
-`small-estate` and `notifications-catchall` cover the new shapes). See
-docs/reference.md, "The single-operator estate".
+under 0.10.0 — except for the two fixes at the end of this entry, whose
+golden diffs are exactly their own lines. New goldens `small-estate` and
+`notifications-catchall` cover the new shapes. See docs/reference.md,
+"The single-operator estate".
 
 - **Store credentials stay mandatory.** No switch. docs/adoption.md,
   "Store credentials: who needs them", now lists every client that needs
@@ -54,6 +55,31 @@ docs/reference.md, "The single-operator estate".
   stores (a prober, a collector, a hand-made job), each admitted to the
   stores it names. Refused: an empty `from` (admits everything) and a
   peer named by `ipBlock` alone.
+
+Two fixes change a DEFAULT render, each with an opt-out that renders the
+0.10.0 output byte for byte (proved by the goldens
+`single-inhibit-unguarded` and `platform-alerts/suspended-not-ignored`):
+
+- **Behaviour change: the inhibit rule is guarded**
+  (`notifications.inhibit.requireLabels`, default `true`). Alertmanager
+  compares a label missing on both alerts as equal, so a critical
+  without `k8s_cluster_name`/`k8s_namespace_name` muted every warning
+  without them — install-wide, silently. It hit on a default install:
+  `platform-alerts`' `CronJobNotSucceeding` (critical) and
+  `BackupJobFailed` (warning) aggregate `by (namespace, …)`, dropping
+  `k8s_namespace_name`, so one CronJob not succeeding muted every failed
+  backup Job's warning on the cluster. The rule now carries a
+  `<label> =~ ".+"` source matcher per `equal` label; warnings it muted
+  by accident start arriving. `requireLabels: false` restores it.
+- **Behaviour change: `platform-alerts`' backup rules skip suspended
+  CronJobs** (`groups.backups.ignoreSuspended`, default `true`). A
+  deliberately suspended backup fired `CronJobNotSucceeding` and
+  `BackupJobFailed` forever. Both now `unless` on
+  `kube_cronjob_spec_suspend == 1` — never `and == 0`, so a cluster
+  without that series keeps the old behaviour rather than going silent.
+  Proved against a real VictoriaMetrics by
+  `just platform-alerts-suspended-proof`. `ignoreSuspended: false`
+  restores the old expressions.
 
 ## v0.10.0
 

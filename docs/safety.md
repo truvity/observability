@@ -147,6 +147,33 @@ Measured healthy range for a daily job: the age resets below 24h on every
 run. The default threshold of 26h is that plus enough slack for a slow run
 or a retry.
 
+### A suspended CronJob that pages forever
+
+Both backup rules fired on a CronJob somebody had SUSPENDED, for as long
+as it stayed suspended: the age of its last success grows without bound,
+and its last failed Job stays its newest forever. A suspension is a
+decision written into the CronJob's spec — in a GitOps estate, one that
+went through review — so since 0.11.0 both rules skip it
+(`groups.backups.ignoreSuspended`, default true).
+
+`unless on (…) kube_cronjob_spec_suspend == 1`, never `and on (…)
+kube_cronjob_spec_suspend == 0`. The two agree while the series exists;
+they part when it does not — an older kube-state-metrics, or a collector
+list that dropped `cronjobs`. The `and` form then returns nothing and
+both rules go silent on every CronJob, which is the failure this chart
+exists to prevent. The `unless` form subtracts nothing and both rules
+behave exactly as before.
+
+The cost is honest: an ACCIDENTAL suspension — one of the causes the
+section above names — is no longer caught by `CronJobNotSucceeding`.
+It is visible in the CronJob's own spec and in
+`kube_cronjob_spec_suspend`, and `ignoreSuspended: false` restores the
+0.10.0 expressions byte for byte for an estate that would rather page on
+it. Proved against a real victoria-metrics — suspended, active, and
+suspend-series-absent, for both rules, old expression and new — by
+hack/platform-alerts-suspended-proof.sh (`just
+platform-alerts-suspended-proof`).
+
 ### A failed backup Job that never clears
 
 `BackupJobFailed` fired forever on a failure a later run had already

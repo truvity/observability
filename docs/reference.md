@@ -71,11 +71,12 @@ differ between versions, and a wrong name is a rule that never fires.
 | `maxSuccessAge` | duration | `26h` | Age of the last successful run past which `CronJobNotSucceeding` fires. A daily job's schedule plus slack. |
 | `severity` | enum | `critical` | Severity of `CronJobNotSucceeding`. |
 | `failedSeverity` | enum | `warning` | Severity of `BackupJobFailed`. |
+| `ignoreSuspended` | bool | `true` | 0.11.0. Both rules skip a CronJob whose `kube_cronjob_spec_suspend` is 1 — a suspended backup fired both forever. With that series absent, both behave as before rather than go silent. `false` renders the 0.10.0 expressions byte for byte. See docs/safety.md, "A suspended CronJob that pages forever". |
 
 Alerts: `CronJobNotSucceeding`, `BackupJobFailed` (fires on the NEWEST Job
 of each CronJob only — see docs/safety.md, "A failed backup Job that
 never clears" — and only for CronJob-owned Jobs; a standalone Job never
-raises it).
+raises it). Neither fires for a suspended CronJob (`ignoreSuspended`).
 
 ### `groups.writePath`
 
@@ -346,6 +347,7 @@ docs/safety.md for the failure it closes; this is the value list.
 | `notifications.groupBy` | list | `[alertname, k8s_cluster_name, k8s_namespace_name]` | 0.11.0. The root route's `group_by`. Name the labels your alerts actually carry; a label none of them carries groups every alert together. `["..."]` groups by every label. |
 | `notifications.inhibit.enabled` | bool | `true` | 0.11.0. The one inhibit rule: a `critical` silences a `warning` with equal values for every label in `equal`. |
 | `notifications.inhibit.equal` | list | `[k8s_cluster_name, k8s_namespace_name]` | 0.11.0. Never empty (schema): with no `equal`, any critical mutes every warning. **A label missing on both alerts compares EQUAL** — docs/notifications.md, "Inhibition". |
+| `notifications.inhibit.requireLabels` | bool | `true` | 0.11.0, and a **default change**: renders a source matcher `<label> =~ ".+"` per `equal` label, so a critical that does not carry them inhibits nothing. `false` renders the 0.10.0 rule byte for byte. |
 | `notifications.drop[]` | list of maps | `[]` | 0.11.0. Exact-match matchers routed to the null receiver ahead of every other route — an alert the estate will never act on. Each entry needs at least one key (schema): an empty one matches everything. |
 | `notifications.catchAll` | severity target | unset | 0.11.0. Where an alert lands when no tier claimed it — `info`, no `severity`, or a tier `severities` leaves out — as the fallback of every node in the primary tree. Same shape and receiver kinds as a `severities` entry. Set, `severities.critical`/`.warning` are no longer required; and with no `alertmanager.watchdog.secretName`, `Watchdog` is routed to nobody so the heartbeat does not arrive here every `repeatInterval`. Refused under `mode: evaluate-only`. |
 | `notifications.slack.webhookSecret` | `{name, key}` | unset | The one Slack webhook, mounted and read with `api_url_file` — never interpolated into the config. |
