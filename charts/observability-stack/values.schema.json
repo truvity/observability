@@ -682,6 +682,10 @@
               "items": {
                 "$ref": "#/definitions/labelName"
               }
+            },
+            "requireLabels": {
+              "type": "boolean",
+              "description": "Default true: a source matcher `<label> =~ \".+\"` for every `equal` label, so a critical without them inhibits nothing. `false` renders the 0.10.0 rule."
             }
           }
         },

@@ -1221,7 +1221,7 @@ spec:
             - --loggerFormat=json
             - --retention.maxDiskUsagePercent=80
             - --retentionPeriod=30d
-            - --servicegraph.enableTask=false
+            - --servicegraph.enableTask
             - --storage.minFreeDiskSpaceBytes=10GiB
             - --storageDataPath=/storage
           env: 
@@ -1277,6 +1277,272 @@ spec:
         resources:
           requests:
             storage: 100Gi
+
+---
+# Source: observability-stack/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: observability-stack-backup-metrics-incremental
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.backup: metrics
+spec:
+  schedule: "17 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3000
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: observability-stack
+            app.kubernetes.io/instance: observability-stack
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/part-of: observability-stack
+            observability.backup: metrics
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: vmsingle
+                      app.kubernetes.io/instance: observability-stack-victoria-metrics-k8s-stack
+          containers:
+            - name: vmbackup
+              image: "victoriametrics/vmbackup:v1.152.0"
+              args:
+                # vmbackup takes an instant snapshot through the store's
+                # own API and uploads it. It is incremental BY
+                # CONSTRUCTION: a destination that already holds a backup
+                # gets only what changed, and there is no flag for it.
+                - -storageDataPath=/vm-data
+                - -snapshot.createURL=$(SNAPSHOT_CREATE_URL)
+                - -dst=:s3,env_auth=true:example-backups/observability/metrics
+              env:
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: "observability-store-credentials"
+                      key: "username"
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: "observability-store-credentials"
+                      key: "password"
+                # The snapshot endpoint is behind the store's own
+                # `-httpAuth.*`, and deliberately not behind a
+                # `-snapshotAuthKey`: an authKey REPLACES basic auth for
+                # that endpoint rather than adding to it, and it travels
+                # in the query string.
+                - name: SNAPSHOT_CREATE_URL
+                  value: "http://$(VM_USERNAME):$(VM_PASSWORD)@vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428/snapshot/create"
+              envFrom:
+                - secretRef:
+                    name: "example-backup-credentials"
+              volumeMounts:
+                - name: store
+                  mountPath: /vm-data
+                  readOnly: true
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: "vmsingle-observability-stack-victoria-metrics-k8s-stack"
+                readOnly: true
+
+---
+# Source: observability-stack/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: observability-stack-backup-metrics-full
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.backup: metrics
+spec:
+  schedule: "17 3 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3000
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: observability-stack
+            app.kubernetes.io/instance: observability-stack
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/part-of: observability-stack
+            observability.backup: metrics
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: vmsingle
+                      app.kubernetes.io/instance: observability-stack-victoria-metrics-k8s-stack
+          containers:
+            - name: vmbackup
+              image: "victoriametrics/vmbackup:v1.152.0"
+              args:
+                # vmbackup takes an instant snapshot through the store's
+                # own API and uploads it. It is incremental BY
+                # CONSTRUCTION: a destination that already holds a backup
+                # gets only what changed, and there is no flag for it.
+                - -storageDataPath=/vm-data
+                - -snapshot.createURL=$(SNAPSHOT_CREATE_URL)
+                # The weekly full names the existing backup as `-origin`,
+                # so everything unchanged is copied INSIDE the object
+                # store rather than pulled down and pushed back up. It is
+                # the same backup either way; this is what it costs.
+                - -origin=:s3,env_auth=true:example-backups/observability/metrics
+                - -dst=:s3,env_auth=true:example-backups/observability/metrics-full
+              env:
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: "observability-store-credentials"
+                      key: "username"
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: "observability-store-credentials"
+                      key: "password"
+                # The snapshot endpoint is behind the store's own
+                # `-httpAuth.*`, and deliberately not behind a
+                # `-snapshotAuthKey`: an authKey REPLACES basic auth for
+                # that endpoint rather than adding to it, and it travels
+                # in the query string.
+                - name: SNAPSHOT_CREATE_URL
+                  value: "http://$(VM_USERNAME):$(VM_PASSWORD)@vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428/snapshot/create"
+              envFrom:
+                - secretRef:
+                    name: "example-backup-credentials"
+              volumeMounts:
+                - name: store
+                  mountPath: /vm-data
+                  readOnly: true
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: "vmsingle-observability-stack-victoria-metrics-k8s-stack"
+                readOnly: true
+
+---
+# Source: observability-stack/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: observability-stack-backup-logs
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.backup: logs
+spec:
+  schedule: "37 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3000
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: observability-stack
+            app.kubernetes.io/instance: observability-stack
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/part-of: observability-stack
+            observability.backup: logs
+        spec:
+          restartPolicy: Never
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app: server
+                      app.kubernetes.io/name: victoria-logs-single
+                      app.kubernetes.io/instance: observability-stack
+          containers:
+            - name: backup
+              image: "rclone/rclone:1.73.0"
+              env:
+                - name: STORE_URL
+                  value: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+                - name: DESTINATION
+                  value: ":s3,env_auth=true:example-backups/observability/logs"
+                - name: VM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: "observability-store-credentials"
+                      key: "username"
+                - name: VM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: "observability-store-credentials"
+                      key: "password"
+              envFrom:
+                - secretRef:
+                    name: "example-backup-credentials"
+              volumeMounts:
+                - name: store
+                  mountPath: /storage
+                  readOnly: true
+              command:
+                - /bin/sh
+                - -euc
+                - |
+                  # The log store's partitions are per-day directories.
+                  # A snapshot is a directory of HARDLINKS inside the data
+                  # directory: cheap to make, and it pins every part it
+                  # references, so one left behind grows the store's disk
+                  # usage with nothing pointing at why. The binary expires
+                  # them after -snapshotsMaxAge (3 days), which is a
+                  # backstop, not a plan — this job deletes its own.
+                  auth="--user=$VM_USERNAME --password=$VM_PASSWORD"
+                  created=$(wget -q -O- $auth --post-data='' \
+                    "$STORE_URL/internal/partition/snapshot/create")
+                  echo "snapshots: $created"
+                  # REFUSE AN EMPTY SOURCE. A store with no partitions is
+                  # a store with no data, and `rclone sync` from an empty
+                  # source DELETES the destination and exits zero.
+                  case "$created" in
+                    ''|'[]') echo "no snapshot was created: the store has no partitions, or the API refused" >&2; exit 1 ;;
+                  esac
+                  for path in $(echo "$created" | tr -d '[]"' | tr ',' ' '); do
+                    test -d "$path" || { echo "snapshot $path is not on this volume" >&2; exit 1; }
+                    test -n "$(ls -A "$path")" || { echo "snapshot $path is empty" >&2; exit 1; }
+                    rclone sync "$path" "$DESTINATION/$(basename "$path")" --checksum
+                    wget -q -O- $auth --post-data='' \
+                      "$STORE_URL/internal/partition/snapshot/delete?path=$path"
+                  done
+          volumes:
+            - name: store
+              persistentVolumeClaim:
+                claimName: "server-volume-observability-stack-victoria-logs-single-server-0"
+                readOnly: true
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/webhook.yaml
@@ -2156,6 +2422,8 @@ spec:
         key: "password"
   notifiers:
     - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
+  extraArgs:
+    external.url: https://alerts.example.com
 
 ---
 # Source: observability-stack/templates/vmalert.yaml
@@ -2213,6 +2481,7 @@ spec:
   notifiers:
     - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
   extraArgs:
+    external.url: https://alerts.example.com
     rule.defaultRuleType: vlogs
     rule.evalDelay: 5s
 
@@ -2237,11 +2506,18 @@ spec:
       cpu: "1"
       memory: 256Mi
   selectAllByDefault: false
+  externalURL: "https://alerts.example.com"
   volumes:
+    - name: watchdog
+      secret:
+        secretName: "example-watchdog-receiver"
     - name: notifications-slack
       secret:
         secretName: "example-slack-webhook"
   volumeMounts:
+    - name: watchdog
+      mountPath: /etc/alertmanager/watchdog
+      readOnly: true
     - name: notifications-slack
       mountPath: /etc/alertmanager/notifications-slack
       readOnly: true
@@ -2261,6 +2537,15 @@ spec:
       group_interval: 5m
       repeat_interval: 4h
       routes:
+        # The heartbeat, first and matched on its own: it must never be
+        # grouped with anything, never inhibited and never silenced by a
+        # rule written for a real alert.
+        - receiver: watchdog
+          matchers:
+            - alertname = "Watchdog"
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 5m
         - match: {}
           receiver: notifications-none
           continue: true
@@ -2281,7 +2566,7 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: slack-alerts-critical
@@ -2292,14 +2577,16 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
+      - name: watchdog
+        webhook_configs:
+          - url_file: /etc/alertmanager/watchdog/url
+            send_resolved: false
     inhibit_rules:
       - source_matchers:
           - severity = "critical"
-          - k8s_cluster_name =~ ".+"
-          - k8s_namespace_name =~ ".+"
         target_matchers:
           - severity = "warning"
         equal:
@@ -2490,6 +2777,87 @@ spec:
       paths:
         - /select/jaeger/.*
         - /select/tempo/.*
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-writer-metrics-agent
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: writer
+spec:
+  name: "metrics-agent"
+  disable_secret_creation: true
+  tokenRef:
+    name: "example-writer-token"
+    key: "token"
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+      paths:
+        - /prometheus/api/v1/write
+        - /api/v1/write
+        - /opentelemetry/v1/metrics
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-writer-log-agent
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: writer
+spec:
+  name: "log-agent"
+  disable_secret_creation: true
+  tokenRef:
+    name: "example-writer-token"
+    key: "token"
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+      paths:
+        - /insert/datadog/api/v2/logs
+        - /insert/elasticsearch/_bulk
+        - /insert/journald/upload
+        - /insert/jsonline
+        - /insert/loki/api/v1/push
+        - /insert/native
+        - /insert/opentelemetry/v1/logs
+        - /insert/splunk
       targetRefBasicAuth:
         username:
           name: "observability-store-credentials"

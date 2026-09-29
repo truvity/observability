@@ -28,6 +28,7 @@ in `helm get manifest`, and in whatever stores the release history.
 {{- $inhibit := $n.inhibit | default dict }}
 {{- $inhibitEnabled := ternary $inhibit.enabled true (hasKey $inhibit "enabled") }}
 {{- $inhibitEqual := $inhibit.equal | default (list "k8s_cluster_name" "k8s_namespace_name") }}
+{{- $inhibitRequireLabels := ternary $inhibit.requireLabels true (hasKey $inhibit "requireLabels") }}
 {{- /*
 `notifications.externalUrl` defaults to `vmalert.externalUrl`: they are
 one fact (see the refusal in _validate.tpl), and a consumer who already
@@ -333,11 +334,22 @@ spec:
     version does not also get grouped with the quiet one. Watchdog needs
     no rule of its own here — its own route above already keeps it out of
     grouping, inhibition and silencing meant for a real alert.
+
+    Alertmanager compares a label missing on BOTH alerts as equal, so
+    without the `=~ ".+"` guard a critical carrying none of the `equal`
+    labels muted every warning carrying none of them either — install-
+    wide, silently. The guard sits on the source only: `equal` then
+    requires the target to carry the same non-empty values.
     */}}
     {{- if $inhibitEnabled }}
     inhibit_rules:
       - source_matchers:
           - severity = "critical"
+          {{- if $inhibitRequireLabels }}
+          {{- range $l := $inhibitEqual }}
+          - {{ $l }} =~ ".+"
+          {{- end }}
+          {{- end }}
         target_matchers:
           - severity = "warning"
         equal:

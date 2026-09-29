@@ -60,7 +60,9 @@ func TestServiceGraphTaskOffByDefault(t *testing.T) {
 	// (their own render is `single`'s job — see the comment there), so
 	// the trace store's StatefulSet, and the flag on it, would not
 	// render at all.
-	optedIn := map[string]bool{"single.yaml": true}
+	// `single-inhibit-unguarded` is `single` with one notifications value
+	// changed, so it inherits the same opt-in.
+	optedIn := map[string]bool{"single.yaml": true, "single-inhibit-unguarded.yaml": true}
 
 	var seenStores, seenOptedIn int
 
