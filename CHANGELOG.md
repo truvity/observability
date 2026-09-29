@@ -15,8 +15,8 @@ sessions cannot repeat a mistake by memory alone:
   one such key that reached 0.11.1 is rewritten out of the comments that
   carried it.
 - A pull request that changes an existing golden must add a
-  `**Behaviour change` line to CHANGELOG.md (`hack/default-change-guard.sh`,
-  `just default-change-guard`). Adding a new golden is unaffected.
+  bold "Behaviour change" bullet to CHANGELOG.md
+  (`hack/default-change-guard.sh`, `just default-change-guard`). Adding a new golden is unaffected.
 
 ## v0.11.1
 

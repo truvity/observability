@@ -28,7 +28,7 @@ if [ ${#changed[@]} -eq 0 ]; then
   exit 0
 fi
 
-if git diff -U0 "$mb" HEAD -- CHANGELOG.md | grep -qE '^\+[^+].*\*\*Behaviour change'; then
+if git diff -U0 "$mb" HEAD -- CHANGELOG.md | grep -qE '^\+[-*] +\*\*Behaviour change'; then
   echo "default-change-guard: ${#changed[@]} existing golden(s) changed and CHANGELOG.md declares a **Behaviour change"
   exit 0
 fi
