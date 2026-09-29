@@ -113,6 +113,16 @@ spec:
             observability.backup: metrics
         spec:
           restartPolicy: Never
+          {{- if $root.Values.backup.seLinuxLevel }}
+          # Same MCS categories as the store this job reads a snapshot
+          # from — see `backup.seLinuxLevel`'s own doc comment in
+          # values.yaml. A mismatch here is a "permission denied" reading
+          # a snapshot that vmbackup/rclone already proved it could
+          # create.
+          securityContext:
+            seLinuxOptions:
+              level: {{ $root.Values.backup.seLinuxLevel | quote }}
+          {{- end }}
           {{- if $ambientOrProcess }}
           serviceAccountName: {{ $saName | quote }}
           {{- end }}
@@ -284,6 +294,14 @@ spec:
             observability.backup: {{ $store }}
         spec:
           restartPolicy: Never
+          {{- if $root.Values.backup.seLinuxLevel }}
+          # Same MCS categories as the store this job reads a snapshot
+          # from — see `backup.seLinuxLevel`'s own doc comment in
+          # values.yaml.
+          securityContext:
+            seLinuxOptions:
+              level: {{ $root.Values.backup.seLinuxLevel | quote }}
+          {{- end }}
           {{- if $ambientOrProcess }}
           serviceAccountName: {{ $saName | quote }}
           {{- end }}

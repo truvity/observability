@@ -1,0 +1,71 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# SELinux MCS categories, read off a real Bottlerocket node's audit log
+# after the store pod started (see docs/reference.md, `backup.seLinuxLevel`,
+# and docs/safety.md for the incident this closes) — never invented.
+#
+# Both `backup.traces.enabled` and `victoria-traces-single`'s own
+# `enabled` are turned on here (off by default), so this case proves the
+# mirror for all THREE stores at once, not just the metrics one every
+# other backup case exercises.
+#
+# Helm evaluates a subchart's values before any template in this chart
+# runs, so the SAME string is ALSO written at each enabled store's own
+# securityContext below — this chart cannot compute it there; see
+# `backup.seLinuxLevel`'s own doc comment in values.yaml for why.
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials
+  seLinuxLevel: "s0:c123,c456"
+  logs:
+    enabled: true
+  traces:
+    enabled: true
+
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      securityContext:
+        seLinuxOptions:
+          level: "s0:c123,c456"
+
+# Merges with the store's own default podSecurityContext
+# (fsGroup/runAsNonRoot/runAsUser) rather than replacing it — this
+# chart never touches this key itself, so what shows up in the render
+# is exactly Helm's ordinary value merge of this file over the vendored
+# chart's own default.
+victoria-logs-single:
+  server:
+    podSecurityContext:
+      seLinuxOptions:
+        level: "s0:c123,c456"
+
+victoria-traces-single:
+  server:
+    podSecurityContext:
+      seLinuxOptions:
+        level: "s0:c123,c456"

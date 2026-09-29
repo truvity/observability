@@ -1,0 +1,26 @@
+# expect: is not the shape of an SELinux MCS level
+tenancy:
+  allowUnfilteredTraceReads: true
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# Not the shape of an SELinux MCS level (`s0:c123,c456`) at all — this
+# has to be read off a running pod, never invented.
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials
+  seLinuxLevel: "bogus"

@@ -24,6 +24,7 @@ second debugging session.
 {{- include "observability-stack.validate.selfAlerts" . -}}
 {{- include "observability-stack.validate.evaluateOnly" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
+{{- include "observability-stack.validate.seLinux" . -}}
 {{- include "observability-stack.validate.watchdogSource" . -}}
 {{- include "observability-stack.validate.scrapeFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
@@ -503,6 +504,56 @@ override leaves the ServiceMonitor converter off.
 {{- end -}}
 {{- if or $converterOff (eq (index $envOverrides "VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE") "false") -}}
 {{- fail "observability-stack: this chart renders a ServiceMonitor of its own (`metricsSelfScrape`, or the log/trace stores' `serviceMonitor`), but `victoria-metrics-k8s-stack.victoria-metrics-operator.operator.disable_prometheus_converter` is `true` or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE` is explicitly \"false\" in its `env`. vmagent only watches the native VictoriaMetrics kinds, so nothing converts this object and nothing scrapes it — docs/safety.md, \"The doctrine's own promise was broken from this chart's first commit\"." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`backup.seLinuxLevel`, MIRROR of each enabled store's OWN
+`securityContext.seLinuxOptions.level` — see values.yaml's own doc
+comment on `backup.seLinuxLevel` for the incident this closes.
+
+Unlike every other mirror above, this chart cannot RENDER the upstream
+side even when it agrees to: the CronJobs it renders itself get the
+level straight from `templates/backup.yaml` (same chart, no computation
+needed to reach it), but the store's own securityContext is a field on
+a vendored dependency's object — a VMSingle CR for metrics, a
+StatefulSet's pod template for logs/traces — and Helm evaluates a
+subchart's own values before any template in THIS chart runs. There is
+no hook this chart's `_validate.tpl` or `templates/backup.yaml` can use
+to compute a value into `victoria-metrics-k8s-stack.vmsingle.spec...`
+after the fact; the upstream side has to be written by hand, the same
+as `interval` and `storeCredentials` above, and checked here.
+*/}}
+{{- define "observability-stack.validate.seLinux" -}}
+{{- $level := .Values.backup.seLinuxLevel | default "" -}}
+{{- if $level -}}
+{{- if not .Values.backup.enabled -}}
+{{- fail "observability-stack: `backup.seLinuxLevel` is set but `backup.enabled` is false. It only shapes the backup CronJobs' pod `securityContext` — with backups off there is nothing for it to do." -}}
+{{- end -}}
+{{- $shape := "^s[0-9]+(-s[0-9]+)?:c[0-9]+(\\.c[0-9]+)?(,c[0-9]+(\\.c[0-9]+)?)*$" -}}
+{{- if not (regexMatch $shape $level) -}}
+{{- fail (printf "observability-stack: `backup.seLinuxLevel` is %q, which is not the shape of an SELinux MCS level. It has to look like \"s0:c123,c456\" — a sensitivity (`s0`, optionally `s0-sN`) and one or more comma-separated categories (`cN`, or a range `cN.cM`) — the exact string an SELinux-enforcing node (Bottlerocket's default) assigns a pod as its `securityContext.seLinuxOptions.level`. Read it off the running store pod (or the node's own audit log); an invented value that does not match what the node actually assigned buys nothing." $level) -}}
+{{- end -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- $logsCfg := index .Values "victoria-logs-single" -}}
+{{- $tracesCfg := index .Values "victoria-traces-single" -}}
+{{- $sites := list -}}
+{{- if and .Values.backup.metrics.enabled $vmks.enabled ($vmks.vmsingle).enabled -}}
+{{- $sites = append $sites (dict "key" "victoria-metrics-k8s-stack.vmsingle.spec.securityContext.seLinuxOptions.level" "got" ((((($vmks.vmsingle).spec).securityContext).seLinuxOptions).level | default "")) -}}
+{{- end -}}
+{{- if and .Values.backup.logs.enabled $logsCfg.enabled ($logsCfg.server).enabled -}}
+{{- $sites = append $sites (dict "key" "victoria-logs-single.server.podSecurityContext.seLinuxOptions.level" "got" (((($logsCfg.server).podSecurityContext).seLinuxOptions).level | default "")) -}}
+{{- end -}}
+{{- if and .Values.backup.traces.enabled $tracesCfg.enabled ($tracesCfg.server).enabled -}}
+{{- $sites = append $sites (dict "key" "victoria-traces-single.server.podSecurityContext.seLinuxOptions.level" "got" (((($tracesCfg.server).podSecurityContext).seLinuxOptions).level | default "")) -}}
+{{- end -}}
+{{- range $site := $sites -}}
+{{- if not $site.got -}}
+{{- fail (printf "observability-stack: `backup.seLinuxLevel` is %q but %s is empty. Its backup CronJob and this store mount the SAME ReadWriteOnce volume on the SAME node; on an SELinux-enforcing node each pod gets its own random MCS categories, and a volume labelled for the store's categories is unreadable to a backup pod with different ones. This chart cannot set the store's own field for you — see `backup.seLinuxLevel`'s doc comment in values.yaml for why — so set %s to the exact same string, %q." $level $site.key $site.key $level) -}}
+{{- else if ne $site.got $level -}}
+{{- fail (printf "observability-stack: `backup.seLinuxLevel` is %q but %s is already %q — a DIFFERENT level. The backup CronJob needs the SAME MCS categories as the store's own pod to read its volume; two different levels is the exact \"permission denied\" this value exists to prevent. Make them match, or drop `backup.seLinuxLevel` if %s was set for an unrelated reason and must stay as it is." $level $site.key $site.got $site.key) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

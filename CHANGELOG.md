@@ -6,6 +6,50 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.8.4
+
+- **Fix: `charts/observability-stack`'s metrics backup fails with
+  `permission denied` on an SELinux-enforcing node (Bottlerocket's
+  default on EKS Auto Mode), reading a snapshot it had already proven
+  it could create.** The backup CronJob mounts the metrics store's
+  ReadWriteOnce volume read-only, on the same node (a required pod
+  affinity), and asks the store to snapshot itself before reading the
+  snapshot straight off that shared volume. On an SELinux-enforcing
+  node each pod gets its own random MCS categories at admission, and
+  the volume is labelled for the STORE pod's categories — a second pod
+  with different ones gets refused the read by the kernel, after auth,
+  the bucket region lookup and the snapshot itself all already
+  succeeded. `hack/backup-restore-proof.sh` cannot catch this: it runs
+  in Docker, which enforces no SELinux at all.
+  - New `backup.seLinuxLevel` (default `""`, byte-identical render):
+    an SELinux MCS level (`"s0:c123,c456"`), validated against that
+    shape and refused otherwise. Renders
+    `securityContext.seLinuxOptions.level` on every enabled backup
+    CronJob's pod — metrics, and logs/traces when their own backups
+    are on.
+  - It is a MIRROR, not a single computed value: Helm evaluates a
+    subchart's values before any template in this chart runs, so this
+    chart cannot also set the matching field on the metrics store's
+    `VMSingle` CR or the log/trace stores' StatefulSet pod templates —
+    those are vendored dependencies' objects. Write the identical
+    string yourself at
+    `victoria-metrics-k8s-stack.vmsingle.spec.securityContext.seLinuxOptions.level`
+    (always, once `backup.seLinuxLevel` is set) and at
+    `victoria-logs-single.server.podSecurityContext.seLinuxOptions.level`
+    / `victoria-traces-single.server.podSecurityContext.seLinuxOptions.level`
+    (only for a store whose own backup is enabled); the render refuses
+    if one is missing or disagrees, the same discipline as `interval`
+    and `storeCredentials` already document. Merges with whatever a
+    store's own `securityContext`/`podSecurityContext` already sets —
+    `runAsUser`, `fsGroup`, and so on — rather than replacing it.
+  - Setting this restarts the affected store(s) once: the field lives
+    on the pod template, so the CR/StatefulSet spec changes and its
+    controller rolls the pod. See docs/reference.md,
+    `backup.seLinuxLevel`, for the full symptom/cause/fix, and
+    docs/safety.md, "SELinux MCS categories, and why one value cannot
+    set both sides", for the incident and why a privileged SELinux
+    type is not the default instead.
+
 ## 0.8.3
 
 - **Feature: `cmd/alert-ingress` now ships a built, published image.**

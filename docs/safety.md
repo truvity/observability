@@ -262,7 +262,7 @@ underneath it.
 
 ## The refusals: `observability-stack`
 
-Fifty-seven, each with a fixture under
+Sixty-one, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -325,6 +325,70 @@ for its one reason and no other.
 | `metricsSelfScrape.enabled` with `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape` not `true` | The operator reconciles its own `VMServiceScrape` for the VMSingle alongside this chart's `ServiceMonitor` — a kind this file rules out on its own, and one with no `basicAuth` either way, so every scrape it drives 401s against a store running `-httpAuth.*`. |
 | A `ServiceMonitor` this chart renders (`metricsSelfScrape`, or the log/trace stores' own `serviceMonitor`) with the operator's ServiceMonitor converter off — `disable_prometheus_converter: true`, or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE: "false"` in the operator's `env` | Nothing ever converts the object to the native `VMServiceScrape` vmagent watches, so nothing ever scrapes it — a render that looks like coverage and is not. Measured on a live install; see "The doctrine's own promise was broken from this chart's first commit", above. |
 | `victoria-metrics-k8s-stack`'s vendored default rules turned off (`defaultRules.enabled: false`, or its `general.rules` group specifically) with `vmalert.watchdog.enabled` also `false` | The vendored rule set is ON by default and is where this install's `Watchdog` comes from (its `general.rules` group); `templates/watchdog.yaml` renders this chart's own only when that is off. Refuse the one combination that leaves neither: nothing for the status box's deadman to read. |
+| `backup.seLinuxLevel` not shaped like an SELinux MCS level (`s0:c123,c456`) | A value this chart renders straight into a pod's `securityContext.seLinuxOptions.level`. On an SELinux-enforcing node the kernel refuses whatever does not parse as a level at pod admission, not at render time — this catches the typo months earlier, at the one point somebody is looking at it. |
+| `backup.seLinuxLevel` set with `backup.enabled: false` | It only shapes the backup CronJobs' pods; with backups off it renders nowhere; a value that never does anything is one nobody notices has drifted the day backups are turned back on. |
+| `backup.seLinuxLevel` set but the matching store's own `securityContext.seLinuxOptions.level` (`victoria-metrics-k8s-stack.vmsingle.spec...`, `victoria-logs-single.server.podSecurityContext...`, `victoria-traces-single.server.podSecurityContext...`) left empty | See "SELinux MCS categories, and why one value cannot set both sides", below — the exact `permission denied` this pair of values exists to prevent, left to happen live instead of at render time. |
+| The same store field set, but to a DIFFERENT level than `backup.seLinuxLevel` | The backup job and the store need identical categories to read the same volume; two different ones is the same failure the row above catches, from the other direction — a value someone already set, for this or an unrelated reason, that this chart cannot silently overrule. |
+
+### SELinux MCS categories, and why one value cannot set both sides
+
+Found live, 2026-09-29, on an EKS Auto Mode cluster whose nodes run
+Bottlerocket with SELinux enforcing. The metrics backup CronJob mounts
+the store's ReadWriteOnce volume read-only, on the same node (a
+required pod affinity — see "Why the backups look the way they do"),
+and runs `vmbackup`, which asks the store over HTTP to create a
+snapshot and then reads it straight off that shared volume. Auth, the
+bucket region lookup and the snapshot creation itself all worked. Then,
+running as root with no `securityContext` at all:
+
+```
+cannot open snapshot at "/vm-data/snapshots/<id>": permission denied
+```
+
+The cause is SELinux's MCS (Multi-Category Security): Bottlerocket
+assigns each pod its own randomly chosen pair of categories at
+admission, and labels the volume it mounts with THOSE categories. A
+second pod — the backup job, scheduled onto the same node specifically
+so it CAN reach the volume — gets a different random pair, and the
+kernel refuses it the read. Everything one layer up (Kubernetes RBAC,
+the store's own HTTP auth, the object-store credentials) had already
+said yes; only the node's own SELinux policy said no, and it says so
+after the snapshot exists, not before. `hack/backup-restore-proof.sh`
+cannot catch this: it runs in Docker, which does not enforce SELinux at
+all, so its assertions only confirm the CHART renders the same level
+onto both objects — never that a real kernel would honour it.
+
+The fix (`backup.seLinuxLevel`) gives the store and the backup jobs the
+SAME level, so they read as the same security identity to the kernel
+and the categories stop mattering. It cannot be a single value in the
+ordinary sense, because Helm evaluates a subchart's own values before
+any template in this chart runs (the same limitation `interval` and
+`storeCredentials` document above) — and here the upstream side is not
+even this chart's own dependency's top-level values, but a field on a
+vendored CRD spec (`VMSingle`) or a vendored StatefulSet's pod template,
+neither of which this chart's templates ever touch. So the value is
+written twice — once here, once at each enabled store's own security
+context — and the render refuses the two disagreeing, or one being set
+without the other, the same MIRROR discipline as every other value that
+has to reach an upstream chart.
+
+**Setting it restarts the store.** `securityContext.seLinuxOptions.level`
+is a pod-template field: the VMSingle CR's spec (or the log/trace
+store's StatefulSet) changes, the operator (or the StatefulSet
+controller) rolls the pod, and a single-replica store is briefly
+unavailable while it does. Once — not on every reconcile — the same as
+any other pod-spec change this chart's own values already cause.
+
+**Why not a privileged SELinux type instead.** Bottlerocket also
+supports running a container under a less-confined type (`spc_t`,
+"super-privileged container", or similar), which bypasses MCS category
+checking entirely rather than matching it. That is a broader exemption
+than this problem needs: it drops category isolation for that container
+against EVERY OTHER pod on the node, not just against its own store,
+and it is a node-level, per-container escape hatch rather than a
+value this chart can render into a CronJob's pod spec at all. Matching
+categories is the minimum change that fixes the read: two specific pods
+agree to share an identity, and nothing else on the node is affected.
 
 ### One Watchdog, from whichever source is not already there
 

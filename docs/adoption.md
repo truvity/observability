@@ -257,7 +257,7 @@ release supports, written out, is `…/single/values.yaml`.
 ### Some values are written twice, and the chart refuses the disagreement
 
 Helm evaluates a subchart's values before any template runs, so a parent
-chart cannot compute them. Three values therefore appear both in this
+chart cannot compute them. These values therefore appear both in this
 chart's surface and in an upstream chart's own key, marked `MIRROR:` in
 values.yaml:
 
@@ -265,11 +265,16 @@ values.yaml:
 |---|---|
 | `interval` | `victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval']` |
 | `storeCredentials.secretName` | the `VM_httpAuth_*` entries in each store's `env` / `extraEnvs` |
+| `backup.seLinuxLevel` | each enabled store's own `securityContext.seLinuxOptions.level` — `victoria-metrics-k8s-stack.vmsingle.spec...`, `victoria-logs-single.server.podSecurityContext...`, `victoria-traces-single.server.podSecurityContext...` |
 
 Change one and the render fails, naming the other. That is the point: a
 deduplication window wider than the scrape interval silently discards good
-samples, and a store reading a different Secret than the proxy presents
-answers every query with 401 — neither of which announces itself.
+samples, a store reading a different Secret than the proxy presents
+answers every query with 401, and a backup job whose SELinux categories
+do not match its store's own gets `permission denied` reading a
+snapshot it already proved it could create — see docs/reference.md,
+`backup.seLinuxLevel`, and docs/safety.md for that last one — none of
+which announces itself.
 
 ### The zero-diff gate, and the one difference to expect
 

@@ -837,6 +837,9 @@
         },
         "resources": {
           "type": "object"
+        },
+        "seLinuxLevel": {
+          "type": "string"
         }
       }
     },

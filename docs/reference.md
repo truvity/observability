@@ -377,6 +377,7 @@ a backup that stopped.
 | `backup.activeDeadlineSeconds` | int | `3000` | Give up rather than overlap. |
 | `backup.successfulJobsHistoryLimit` / `failedJobsHistoryLimit` | int | `3` / `3` | |
 | `backup.nodeSelector` / `.tolerations` / `.affinity` / `.resources` | | `{}` / `[]` / `{}` / `{}` | Every backup CronJob's pod. No chart default: whichever node pool the store itself runs on is the pool these have to match, and only the install that sized the store's own scheduling knows that. `affinity` MERGES with the hard pod affinity every job already carries onto its store's node — that requirement is never dropped, even if this sets its own `podAffinity` key; anything else (`nodeAffinity`, `podAntiAffinity`) passes through. `resources` feeds the same requests-equal-limits, integer-CPU check `templates/_validate.tpl` applies to every other component's `resources` (docs/safety.md has the reasoning), only when set — `{}` skips it entirely, the same as leaving any other component's `resources` unset. |
+| `backup.seLinuxLevel` | string | `""` | An SELinux MCS level (`"s0:c123,c456"`), rendered as `securityContext.seLinuxOptions.level` on every enabled backup CronJob's pod. **MIRROR**, and see below — the matching store(s) need the identical string written at their own field, or the render refuses. |
 
 **`backup.logs.enabled` defaults to `true`.** `backup.enabled: true` with
 nothing else touched backs up metrics AND logs — `traces` is the only
@@ -455,6 +456,79 @@ the mechanism itself names nothing about R2 or any particular broker: a
 broker CLI that exchanges the pod's own token for temporary
 S3-compatible credentials is the generic shape, and R2's is one example
 of a store that needs it.
+
+#### `backup.seLinuxLevel`
+
+**Symptom.** A backup CronJob's `vmbackup`/rclone container gets past
+auth, the bucket region lookup and the snapshot itself, then fails
+reading the snapshot off the store's own volume:
+
+```
+cannot open snapshot at "/vm-data/snapshots/<id>": permission denied
+```
+
+**Cause.** SELinux MCS (Multi-Category Security), on any SELinux-
+enforcing node — Bottlerocket, EKS Auto Mode's default, is where this
+was found. Each pod is assigned its own random pair of categories at
+admission, and the volume a pod mounts is labelled with THAT pod's
+categories. The backup job's pod carries a required affinity onto its
+store's own node specifically so it CAN reach the store's ReadWriteOnce
+volume (see "Why the backups look the way they do" in docs/safety.md)
+— but a different pod, even on the same node, mounting the same
+volume, still gets its own different categories, and the kernel refuses
+it the read. Nothing above the kernel sees this: Kubernetes RBAC, the
+store's own HTTP auth and the object-store credentials all already
+said yes. `hack/backup-restore-proof.sh` cannot reproduce it — it runs
+in Docker, which has no SELinux at all — so it only asserts that the
+CHART renders the same level onto both objects, never that a kernel
+would honour it; see docs/safety.md, "SELinux MCS categories, and why
+one value cannot set both sides", for the full incident and why a
+privileged SELinux type is not the default instead.
+
+**Fix.** Give the store and its backup job(s) the SAME MCS level, read
+off a running pod (or the node's own audit log), never invented:
+
+```yaml
+backup:
+  seLinuxLevel: "s0:c123,c456"
+
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      securityContext:
+        seLinuxOptions:
+          level: "s0:c123,c456"      # MIRROR of backup.seLinuxLevel
+
+# Only needed if backup.logs.enabled / backup.traces.enabled are on:
+victoria-logs-single:
+  server:
+    podSecurityContext:
+      seLinuxOptions:
+        level: "s0:c123,c456"        # MIRROR of backup.seLinuxLevel
+
+victoria-traces-single:
+  server:
+    podSecurityContext:
+      seLinuxOptions:
+        level: "s0:c123,c456"        # MIRROR of backup.seLinuxLevel
+```
+
+`backup.seLinuxLevel` alone is enough to render the level onto this
+chart's OWN objects — the backup CronJobs. It cannot also reach the
+store's own field: that is a vendored dependency's object (a `VMSingle`
+CR for metrics, a StatefulSet's pod template for logs/traces), and Helm
+evaluates a subchart's values before any template in this chart runs,
+so there is nothing here to compute it into after the fact — the same
+limitation `interval` and `storeCredentials` document at the top of
+this chart's section. The render refuses if `backup.seLinuxLevel` is
+set and the matching store field is left empty, or set to a different
+value, naming which.
+
+**Setting this restarts the store once.** `securityContext.seLinuxOptions.level`
+is a pod-template field, so the store's CR (or StatefulSet) spec
+changes and its controller rolls the pod — a single-replica store is
+briefly unavailable while it does, the same as any other pod-spec
+change already possible through this chart's values.
 
 #### Restore
 
@@ -576,17 +650,20 @@ through.
 | `…vmsingle.spec.extraArgs['storage.maxHourlySeries' / 'maxDailySeries']` | `0` | Cardinality caps, off. A guessed cap silently drops every NEW series while the old ones keep ingesting, which looks exactly like an exporter that stopped. Set them from a measured active-series count. |
 | `…vmsingle.spec.resources` | 2 CPU / 8Gi | Requests equal limits, integer CPU. Unset is not neutral: the operator's own default is `1200m`. |
 | `…vmsingle.spec.extraEnvs` | the credential pair | MIRROR of `storeCredentials`. |
+| `…vmsingle.spec.securityContext.seLinuxOptions.level` | unset | MIRROR of `backup.seLinuxLevel`, only required while it is set. See `backup.seLinuxLevel`, above. |
 | `victoria-logs-single.server.retentionPeriod` | `90d` | With a unit; the store's own default is `7d`. |
 | `victoria-logs-single.server.retentionMaxDiskUsagePercent` | `80` | **Mutually exclusive** with `retentionDiskSpaceUsage`: with both set the binary refuses to start. |
 | `victoria-logs-single.server.extraArgs['storage.minFreeDiskSpaceBytes']` | `10GiB` | Upstream's default is 10MB. |
 | `victoria-logs-single.server.env` | the credential pair | MIRROR of `storeCredentials`. |
 | `victoria-logs-single.server.serviceMonitor.enabled` | `true` | Upstream's own toggle, turned on so something finally scrapes this store: measured against a live install it had zero metric names in the metrics store. A `ServiceMonitor` — see "Scrape objects are always the Prometheus Operator kinds" in docs/safety.md. |
 | `victoria-logs-single.server.serviceMonitor.basicAuth` | the credential pair | MIRROR of `storeCredentials`. The store runs with `-httpAuth.*`; a scrape with the wrong basic auth 401s forever, which looks identical to no scrape object at all. |
+| `victoria-logs-single.server.podSecurityContext.seLinuxOptions.level` | unset | MIRROR of `backup.seLinuxLevel`, only required while it AND `backup.logs.enabled` are both set. |
 | `victoria-traces-single.server.retentionPeriod` | `30d` | Traces are the shortest-lived and the largest per unit of value. |
 | `victoria-traces-single.server.extraArgs['retention.maxDiskUsagePercent']` | `80` | The trace chart has no value of its own for it. |
 | `victoria-traces-single.server.extraArgs['servicegraph.enableTask']` | `"false"` | Upstream-experimental background task that computes the Jaeger dependency graph. Off by default because the endpoint answers `200` with an empty list rather than an error when nothing is computing it — see docs/safety.md. |
 | `victoria-traces-single.server.serviceMonitor.enabled` | `true` | Same as the log store's, above, for the same measured reason. |
 | `victoria-traces-single.server.serviceMonitor.basicAuth` | the credential pair | MIRROR of `storeCredentials`. |
+| `victoria-traces-single.server.podSecurityContext.seLinuxOptions.level` | unset | MIRROR of `backup.seLinuxLevel`, only required while it AND `backup.traces.enabled` are both set. |
 | `grafana.enabled` | `false` | An estate that already runs one points it at this stack's proxy instead. |
 | `grafana.admin.existingSecret` | `""` | **Required when Grafana is enabled**: with none, the chart generates a random admin password on every render. |
 | `grafana.replicas` | `1` | **Above one requires a shared database.** Grafana's default is SQLite on the pod; the chart refuses more than one replica on it. |
