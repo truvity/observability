@@ -1,0 +1,101 @@
+{{- /*
+The ConfigMap `kube-state-metrics.customResourceState.name` points at
+(values.yaml pins `customResourceState.enabled: true` / `create: false`
+unconditionally whenever `kubeStateMetrics.enabled` is — see that
+value's own comment). It renders WHENEVER kube-state-metrics does,
+never only when a preset below is on: the subchart's Deployment mounts
+this ConfigMap by name regardless, so an install with every preset off
+still needs it to exist, just empty.
+
+`resources: []` is a valid, inert CustomResourceStateMetrics document —
+kube-state-metrics starts, watches nothing extra, and exports nothing
+extra. Each preset below appends its own `groupVersionKind` entry rather
+than replacing the list, so two presets on at once compose rather than
+one silently discarding the other's.
+
+The `kargo` preset below is verified against kube-state-metrics 7.5.3's
+own Go schema (pkg/customresourcestate/config.go,
+pkg/customresourcestate/registry_factory.go), not upstream's own
+documentation example, which is out of date for this shape (it shows
+`value:` where the struct field is `valueFrom`).
+
+`kargo_stage_condition`: a Gauge over status.conditions[] (a k8s
+metav1.Condition list) — one series per condition CURRENTLY on the
+object. `type`/`reason` are read per-element via `each.gauge.
+labelsFromPath`, resolved against the array element, not the whole
+object. `valueFrom: [status]` reads the condition's own `status`
+("True"/"False"/"Unknown") through kube-state-metrics' `toFloat64`,
+which special-cases exactly this shape: "true" -> 1, "false"/"unknown"
+-> 0.
+
+`kargo_promotion_phase`: a StateSet over status.phase — one of Kargo's
+own six (Pending, Running, Succeeded, Failed, Errored, Aborted) — SIX
+series per Promotion object, 1 on the current phase and 0 on the other
+five.
+
+`metricNamePrefix: ""` on both, explicit: unset, kube-state-metrics'
+own default prefixes every name with `kube_customresource_`; the empty
+string is what yields the plain names `charts/platform-alerts`'
+`groups.kargo` reads.
+*/ -}}
+{{- if .Values.kubeStateMetrics.enabled }}
+{{- $customResources := .Values.kubeStateMetrics.customResources | default dict }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "observability-emitters.kubeStateMetrics.crsConfigMapName" . }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    kind: CustomResourceStateMetrics
+    spec:
+      resources:
+{{- if ($customResources.kargo).enabled }}
+        - groupVersionKind:
+            group: kargo.akuity.io
+            version: v1alpha1
+            kind: Stage
+          metricNamePrefix: ""
+          labelsFromPath:
+            namespace: [metadata, namespace]
+            stage: [metadata, name]
+          metrics:
+            - name: kargo_stage_condition
+              help: >-
+                Kargo Stage status condition, from status.conditions: 1
+                if the condition's own status is True, 0 if False or
+                Unknown.
+              each:
+                type: Gauge
+                gauge:
+                  path: [status, conditions]
+                  labelsFromPath:
+                    type: ["type"]
+                    reason: ["reason"]
+                  valueFrom: ["status"]
+        - groupVersionKind:
+            group: kargo.akuity.io
+            version: v1alpha1
+            kind: Promotion
+          metricNamePrefix: ""
+          labelsFromPath:
+            namespace: [metadata, namespace]
+            promotion: [metadata, name]
+            stage: [spec, stage]
+          metrics:
+            - name: kargo_promotion_phase
+              help: >-
+                Kargo Promotion phase, from status.phase, as a StateSet:
+                1 for the Promotion's current phase, 0 for the other
+                five.
+              each:
+                type: StateSet
+                stateSet:
+                  path: [status, phase]
+                  labelName: phase
+                  list: [Pending, Running, Succeeded, Failed, Errored, Aborted]
+{{- else }}
+        []
+{{- end }}
+{{- end }}

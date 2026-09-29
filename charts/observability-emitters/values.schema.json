@@ -247,6 +247,24 @@
       "properties": {
         "enabled": {
           "type": "boolean"
+        },
+        "customResources": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Named presets, each turning kube-state-metrics' own `customResourceState` onto one CRD family this chart already knows how to shape.",
+          "properties": {
+            "kargo": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "description": "Off by default. `kargo_stage_condition` and `kargo_promotion_phase`, the shape `charts/platform-alerts`' `groups.kargo` reads — see this chart's own values.yaml comment on `kubeStateMetrics.customResources.kargo` for the full mechanism.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
         }
       }
     },

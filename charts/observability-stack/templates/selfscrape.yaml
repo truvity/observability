@@ -38,7 +38,8 @@ VMSingle's own port is not part of this chart's contract the way
 {{- $root := . -}}
 {{- $vmks := index .Values "victoria-metrics-k8s-stack" | default dict -}}
 {{- $metricsOn := and $vmks.enabled (($vmks.vmsingle).enabled) -}}
-{{- if and $metricsOn .Values.metricsSelfScrape.enabled }}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- if and $metricsOn $observabilityStackEffective.metricsSelfScrape }}
 {{- $fullname := include "observability-stack.fullname" . }}
 {{- $port := (($vmks.vmsingle).spec).port | default "8428" }}
 apiVersion: monitoring.coreos.com/v1

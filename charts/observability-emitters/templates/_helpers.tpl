@@ -573,3 +573,50 @@ chart's.
   target_label: {{ . | replace "." "_" | replace "/" "_" | replace "-" "_" }}
 {{- end }}
 {{- end -}}
+
+{{/*
+kube-state-metrics' own naming, replicated from its vendored
+_helpers.tpl (`kube-state-metrics.fullname` / `.serviceAccountName` /
+`.crsConfigMapName`) — a parent chart cannot `include` a subchart's own
+define by name (Helm scopes template names per chart), so this is the
+same handful of lines, read from THIS chart's namespaced view of the
+subchart's values, rather than a second helper that could drift from
+what the subchart itself computes. Needed only because
+`kubeStateMetrics.customResources` renders objects of its OWN (a
+ConfigMap the subchart's Deployment mounts by name, a ClusterRole bound
+to the subchart's own ServiceAccount) that must agree with names Helm
+computed for a chart this one does not template.
+*/}}
+{{- define "observability-emitters.kubeStateMetrics.fullname" -}}
+{{- $ksm := index .Values "kube-state-metrics" -}}
+{{- if $ksm.fullnameOverride -}}
+{{- $ksm.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := $ksm.nameOverride | default "kube-state-metrics" -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "observability-emitters.kubeStateMetrics.serviceAccountName" -}}
+{{- $ksm := index .Values "kube-state-metrics" -}}
+{{- $sa := $ksm.serviceAccount | default dict -}}
+{{- if or (not (hasKey $sa "create")) $sa.create -}}
+{{- $sa.name | default (include "observability-emitters.kubeStateMetrics.fullname" .) -}}
+{{- else -}}
+{{- $sa.name | default "default" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "observability-emitters.kubeStateMetrics.crsConfigMapName" -}}
+{{- $ksm := index .Values "kube-state-metrics" -}}
+{{- $crs := $ksm.customResourceState | default dict -}}
+{{- if and $crs.name (ne $crs.name "") -}}
+{{- $crs.name -}}
+{{- else -}}
+{{- printf "%s-customresourcestate-config" (include "observability-emitters.kubeStateMetrics.fullname" .) -}}
+{{- end -}}
+{{- end -}}

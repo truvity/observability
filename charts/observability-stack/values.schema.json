@@ -192,12 +192,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "enabled",
         "image"
       ],
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "type": ["boolean", "null"],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
         },
         "image": {
           "type": "object",
@@ -466,12 +466,11 @@
     "vmalert": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "enabled"
-      ],
+      "required": [],
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "type": ["boolean", "null"],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
         },
         "logs": {
           "type": "object",
@@ -513,12 +512,11 @@
     "alertmanager": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "enabled"
-      ],
+      "required": [],
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "type": ["boolean", "null"],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
         },
         "replicaCount": {
           "type": "integer",
@@ -1023,9 +1021,12 @@
       "type": "object",
       "additionalProperties": false,
       "description": "The metrics store's own ServiceMonitor (templates/selfscrape.yaml). basicAuth is wired directly from storeCredentials, not a value here, so there is nothing to mirror.",
-      "required": ["enabled"],
+      "required": [],
       "properties": {
-        "enabled": { "type": "boolean" }
+        "enabled": {
+          "type": ["boolean", "null"],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
+        }
       }
     },
     "victoria-metrics-k8s-stack": {

@@ -1,0 +1,45 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The SAME install as the `operator-only` case, written the SHORT way
+# (0.9.0): `mode: operator-only` now turns vmauth, vmalert, alertmanager
+# and metricsSelfScrape off ITSELF — their own `enabled` defaults to
+# `null`, which `mode` resolves — so this case leaves all four unset
+# rather than writing `enabled: false` four times. `backup.enabled`,
+# `selfAlerts.enabled` and `tenancy.principals`/`writers`/`alertReaders`
+# were always off/empty by default, on either side of 0.9.0, so they
+# were never part of the boilerplate to begin with.
+#
+# What is STILL written explicitly, and stays that way: the three
+# stores, `grafana.enabled` and `victoria-metrics-k8s-stack.syncJob.
+# enabled` are all a REAL Helm subchart's own values — Helm coalesces a
+# subchart's values before any template (this chart's own included)
+# runs, so nothing here can compute them from `mode` the way it computes
+# vmauth/vmalert/alertmanager/metricsSelfScrape. See `mode`'s own
+# comment in values.yaml.
+#
+# tests/golden/observability-stack/operator-only-implicit.yaml must be
+# BYTE-IDENTICAL to tests/golden/observability-stack/operator-only.yaml
+# (the long-hand case, which still writes all fifteen off) — proven by
+# TestOperatorOnlySelfDisableIsByteIdentical.
+mode: operator-only
+
+grafana:
+  enabled: false
+networkPolicy:
+  enabled: false
+
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  syncJob:
+    enabled: false
+
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

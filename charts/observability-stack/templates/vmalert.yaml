@@ -1,4 +1,5 @@
-{{- if .Values.vmalert.enabled }}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml }}
+{{- if $observabilityStackEffective.vmalert }}
 {{- $root := . }}
 {{- $fullname := include "observability-stack.fullname" . }}
 {{- $metrics := include "observability-stack.metrics.url" . }}

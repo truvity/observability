@@ -223,6 +223,48 @@ kubeStateMetrics:
   # below, cluster-wide — every namespace, not only this release's own.
   # That is what kube-state-metrics IS, and it is not defaulted on.
   enabled: false
+  # Named presets, each turning kube-state-metrics' own
+  # `customResourceState` feature onto one CRD family this chart already
+  # knows how to shape, without asking for the ~40-line block by hand.
+  customResources:
+    # -- Kargo's own Stage and Promotion objects, as two metrics:
+    # `kargo_stage_condition{namespace,stage,type,reason}` (a Gauge over
+    # `status.conditions[]`) and `kargo_promotion_phase{namespace,
+    # promotion,stage,phase}` (a StateSet over `status.phase`'s six
+    # values), both with `metricNamePrefix: ""` — the exact shape
+    # `charts/platform-alerts`' own `groups.kargo` (docs/reference.md)
+    # is written to read. Off by default: nothing here reads a Kargo
+    # object unless this is on, and turning it on grants ONLY
+    # `get`/`list`/`watch` on `stages.kargo.akuity.io` and
+    # `promotions.kargo.akuity.io` — no other apiGroup, no write verb.
+    #
+    # MECHANISM NOTE: this chart cannot compute
+    # `kube-state-metrics.customResourceState.config` or `kube-state-
+    # metrics.rbac.extraRules` from this flag the way it computes its
+    # own objects — Helm coalesces a subchart's values before any
+    # template runs (see docs/doctrine.md's note on mirrors), so a
+    # parent chart cannot write into either one. What this chart CAN
+    # do, and does: point `customResourceState` at a ConfigMap this
+    # chart renders itself (`create: false`, an empty `resources: []`
+    # config when this is off, the Kargo shape above when it is on —
+    # see templates/kubestatemetrics-customresourcestate.yaml), and
+    # grant the two extra verbs through a ClusterRole of this chart's
+    # OWN, bound to kube-state-metrics' ServiceAccount, rather than
+    # through `rbac.extraRules` (see templates/
+    # kubestatemetrics-kargo-rbac.yaml). Both are ordinary objects this
+    # chart owns, not a subchart value, which is what makes them
+    # computable from this flag at all.
+    #
+    # The one cost of that mechanism, paid whenever `kubeStateMetrics.
+    # enabled` is true regardless of this flag: `kube-state-metrics.
+    # customResourceState.enabled` and `.create` are pinned by this
+    # chart's own defaults (`true` / `false`), so a consumer-authored
+    # `kube-state-metrics.customResourceState.config` would silently
+    # stop being the config kube-state-metrics actually reads — refused
+    # at render instead, by `observability-emitters.validate.
+    # kubeStateMetrics` in _validate.tpl.
+    kargo:
+      enabled: false
 
 ###############################################################################
 # The OpenTelemetry gateway.
@@ -479,13 +521,46 @@ victoria-logs-collector:
   # `emptyDir` here is refused.
   persistence:
     volume: {}
+  # -- A DaemonSet pod is pinned to exactly one node and cannot go
+  # elsewhere, so when that node is full — by CPU, memory or its
+  # pod-count limit — the agent simply never runs there, and that node's
+  # logs are silently missing: a component whose DaemonSet is Pending
+  # looks exactly like a component with nothing wrong. `system-node-
+  # critical`, the same class a cluster's own node-level CNI DaemonSet
+  # typically carries, lets the scheduler PREEMPT a lower-priority pod
+  # to make room rather than leave this one Pending. An install with no
+  # headroom to spare for that preemption can override this back to
+  # upstream's own default, `""`.
+  priorityClassName: system-node-critical
+  # -- `operator: Exists` with no key tolerates every taint, which is
+  # the only setting that stays correct as node pools gain taints over
+  # time: a log agent is a NODE agent, and a DaemonSet with no
+  # tolerations collects from whichever pool happens to carry no taint
+  # today — a fraction of the cluster, with nothing saying so.
+  tolerations:
+    - operator: Exists
+  # -- Right-sized from a live fleet's own measurement (391kb of history
+  # across every node pool, including the smallest and most tightly
+  # packed): a node-level log agent typically uses a few millicores and
+  # under 30Mi of memory, nowhere near upstream's own default of a whole
+  # CPU. Requests equal limits on memory (an OOM kill is lost logs, so
+  # memory is capped where it is measured, ~8x the observed peak) while
+  # the CPU LIMIT is left with headroom above the request (~7x): only
+  # the REQUEST decides scheduling, and a tight CPU ceiling would
+  # throttle the agent on exactly the bursts it exists to collect —
+  # node start-up, a crash-looping pod, a deploy wave. On a small,
+  # tightly packed node this also matters for a second reason:
+  # `priorityClassName` above lets this pod preempt another one to fit,
+  # and a request sized to what the agent actually uses, rather than
+  # upstream's whole-CPU ask, keeps that preemption a rare fallback
+  # instead of the normal way this pod gets scheduled.
   resources:
     requests:
-      cpu: "1"
-      memory: 512Mi
+      cpu: 15m
+      memory: 192Mi
     limits:
-      cpu: "1"
-      memory: 512Mi
+      cpu: 100m
+      memory: 192Mi
   podMonitor:
     enabled: true
     # -- FALSE, and refused true. `true` renders a VMPodScrape instead of a
@@ -507,6 +582,26 @@ kube-state-metrics:
   # charts/observability-stack's disabled copy exists to avoid, now
   # possible a second way inside one release.
   replicas: 1
+  # -- Pinned by this chart, not upstream's own defaults (`enabled:
+  # false`, `create: true`) — see `kubeStateMetrics.customResources`'
+  # own comment above for the full reasoning. `enabled: true` here is
+  # unconditional, whenever `kubeStateMetrics.enabled` is: this chart
+  # always renders the ConfigMap `create: false` points at
+  # (templates/kubestatemetrics-customresourcestate.yaml), empty
+  # (`resources: []`, a valid, inert config) unless a preset under
+  # `kubeStateMetrics.customResources` asks for more. `name` is left
+  # unset so upstream's own fallback (`kube-state-metrics.
+  # crsConfigMapName`, release-scoped) names it — this chart's own
+  # template computes the identical name rather than a second literal
+  # that could drift from it.
+  #
+  # A consumer-authored `config:` here is refused at render
+  # (`observability-emitters.validate.kubeStateMetrics`): with `create:
+  # false` pinned, it would never reach kube-state-metrics — this
+  # chart's own ConfigMap is the one actually mounted.
+  customResourceState:
+    enabled: true
+    create: false
   rbac:
     create: true
     # -- Cluster-wide read, not a Role scoped to this release's own

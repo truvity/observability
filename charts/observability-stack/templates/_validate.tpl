@@ -397,6 +397,7 @@ somebody changes one of them — and a deduplication window wider than the
 scrape interval silently discards good samples rather than failing.
 */}}
 {{- define "observability-stack.validate.mirrors" -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
 {{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
 {{- $metricsOn := and $vmks.enabled ($vmks.vmsingle).enabled -}}
 {{- $logsOn := and (index .Values "victoria-logs-single").enabled (((index .Values "victoria-logs-single").server).enabled) -}}
@@ -470,7 +471,7 @@ does not just resurrect a doctrine violation, it resurrects the exact
 401 this release closes: the operator's object still carries no
 credential, whatever this chart's own ServiceMonitor does beside it.
 */ -}}
-{{- if and $metricsOn .Values.metricsSelfScrape.enabled (ne ((($vmks.vmsingle).spec).disableSelfServiceScrape) true) -}}
+{{- if and $metricsOn $observabilityStackEffective.metricsSelfScrape (ne ((($vmks.vmsingle).spec).disableSelfServiceScrape) true) -}}
 {{- fail "observability-stack: `metricsSelfScrape.enabled` is true but `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape` is not `true`. The operator then reconciles ITS OWN VMServiceScrape for this VMSingle alongside this chart's ServiceMonitor — a kind docs/safety.md rules out on its own, and one with no `basicAuth` either way: every scrape it drives still 401s against a store running `-httpAuth.*`. Leave `disableSelfServiceScrape: true`." -}}
 {{- end -}}
 {{- /*
@@ -494,7 +495,7 @@ own (`metricsSelfScrape`, or the log/trace stores' own
 `serviceMonitor`) and either the blanket switch or an explicit env
 override leaves the ServiceMonitor converter off.
 */ -}}
-{{- $anyServiceMonitor := or (and $metricsOn .Values.metricsSelfScrape.enabled) (and $logsOn (((index .Values "victoria-logs-single").server).serviceMonitor).enabled) (and $tracesOn (((index .Values "victoria-traces-single").server).serviceMonitor).enabled) -}}
+{{- $anyServiceMonitor := or (and $metricsOn $observabilityStackEffective.metricsSelfScrape) (and $logsOn (((index .Values "victoria-logs-single").server).serviceMonitor).enabled) (and $tracesOn (((index .Values "victoria-traces-single").server).serviceMonitor).enabled) -}}
 {{- if $anyServiceMonitor -}}
 {{- $vmOperator := index $vmks "victoria-metrics-operator" -}}
 {{- $converterOff := ($vmOperator.operator).disable_prometheus_converter -}}
@@ -573,8 +574,9 @@ nothing to read: not a rule this chart carries, and not one the
 vendored set carries either.
 */}}
 {{- define "observability-stack.validate.watchdogSource" -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
 {{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
-{{- if and $vmks.enabled .Values.vmalert.enabled -}}
+{{- if and $vmks.enabled $observabilityStackEffective.vmalert -}}
 {{- if and (not (include "observability-stack.vendoredWatchdogPresent" .)) (not .Values.vmalert.watchdog.enabled) -}}
 {{- fail "observability-stack: victoria-metrics-k8s-stack's vendored default rule set is off (`defaultRules.enabled: false`, or its `general.rules` group specifically disabled) AND `vmalert.watchdog.enabled` is false. Between them, this install renders no Watchdog alert at all — not the vendored one, not this chart's own — and the status box's deadman (docs/statusbox.md) depends on one existing to read. Turn one of the two back on." -}}
 {{- end -}}
@@ -623,9 +625,10 @@ written — and the operator's default for a targetRef without `paths` is
 would override its `-httpAuth.*`.
 */}}
 {{- define "observability-stack.validate.notifier" -}}
-{{- if .Values.vmalert.enabled -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- if $observabilityStackEffective.vmalert -}}
 {{- $mode := ((.Values.notifications | default dict).mode) | default "route" -}}
-{{- if and (eq $mode "route") (not .Values.alertmanager.enabled) (not .Values.alertmanager.notifierUrl) -}}
+{{- if and (eq $mode "route") (not $observabilityStackEffective.alertmanager) (not .Values.alertmanager.notifierUrl) -}}
 {{- fail "observability-stack: vmalert is enabled, Alertmanager is not, and `alertmanager.notifierUrl` is empty. vmalert would evaluate every rule and send the result nowhere — which looks exactly like an estate with no problems, for as long as nobody checks. Enable Alertmanager, name the one the estate already runs, or set `notifications.mode: evaluate-only` for the explicit \"evaluate every rule, notify nobody yet\" shape." -}}
 {{- end -}}
 {{- end -}}
@@ -646,9 +649,10 @@ these refusals is never preempted by a later check that also happens to
 trip over an unconfigured severity or receiver.
 */ -}}
 {{- define "observability-stack.validate.evaluateOnly" -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
 {{- $n := .Values.notifications | default dict -}}
 {{- if eq ($n.mode | default "route") "evaluate-only" -}}
-{{- if .Values.alertmanager.enabled -}}
+{{- if $observabilityStackEffective.alertmanager -}}
 {{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `alertmanager.enabled` is true (or left at its default). Evaluate-only means vmalert evaluates every rule and sends the result to nobody — on purpose, visible in vmalert's own UI and API, not silently — so there is nothing for Alertmanager to route and this chart does not render it in this mode. Set `alertmanager.enabled: false`, or drop `notifications.mode` back to `route` and configure a receiver." -}}
 {{- end -}}
 {{- if .Values.alertmanager.notifierUrl -}}
@@ -667,6 +671,7 @@ Notifications: the one router, refused into existence rather than left a
 free-form passthrough. See docs/notifications.md and docs/safety.md.
 */}}
 {{- define "observability-stack.validate.notifications" -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
 {{- $n := .Values.notifications | default dict -}}
 {{- $mode := ($n.mode) | default "route" -}}
 {{- $slack := $n.slack | default dict -}}
@@ -677,7 +682,7 @@ free-form passthrough. See docs/notifications.md and docs/safety.md.
 {{- $webhookNames := dict -}}
 {{- range $w := $webhooks -}}{{- $_ := set $webhookNames $w.name true -}}{{- end -}}
 {{- $configured := or ($slack.webhookSecret).name (gt (len $webhooks) 0) -}}
-{{- if and .Values.alertmanager.enabled (not $configured) (ne $mode "evaluate-only") -}}
+{{- if and $observabilityStackEffective.alertmanager (not $configured) (ne $mode "evaluate-only") -}}
 {{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.webhookSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs, or set `notifications.mode: evaluate-only` for the explicit \"evaluate every rule, notify nobody yet\" shape if there is no channel yet." -}}
 {{- end -}}
 {{- /*
@@ -1042,11 +1047,12 @@ it. Rendering it anyway, because it looks like an ordinary read route,
 is the same failure the trace refusal exists to prevent.
 */}}
 {{- define "observability-stack.validate.alertReaders" -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
 {{- $t := .Values.tenancy -}}
 {{- if and $t.alertReaders (not $t.allowUnfilteredAlertReads) -}}
 {{- fail "observability-stack: `tenancy.alertReaders` is set but `tenancy.allowUnfilteredAlertReads` is not. vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster concept to filter on, so a reader given this route reads every active alert this install's metrics vmalert is evaluating, cluster-wide. Set `tenancy.allowUnfilteredAlertReads: true` and record that every reader below sees every alert, or remove `tenancy.alertReaders`." -}}
 {{- end -}}
-{{- if and $t.alertReaders (not .Values.vmalert.enabled) -}}
+{{- if and $t.alertReaders (not $observabilityStackEffective.vmalert) -}}
 {{- fail "observability-stack: `tenancy.alertReaders` is set but `vmalert.enabled` is false. There is no vmalert for this route to read." -}}
 {{- end -}}
 {{- end -}}
