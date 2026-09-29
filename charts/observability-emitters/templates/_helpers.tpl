@@ -383,6 +383,25 @@ cluster, because nothing else can see it.
 So the node identity is one label, `node`, and anything further is asked
 for by name through `metrics.scrape.nodeLabels`.
 */}}
+{{/*
+The `metrics_path` label, the way kube-prometheus writes it.
+
+kube-prometheus copies the scrape path onto every kubelet and cadvisor
+series (`__metrics_path__` into `metrics_path`), and the kubernetes-mixin
+dashboards and rules select on it: the kubelet dashboard's own `cluster`
+variable is `up{job="kubelet", metrics_path="/metrics"}`, so without the
+label that variable is empty and every panel of the dashboard says "No
+data" while the series are in the store. Both jobs here scrape the node
+directly (no API-server proxy), so `__metrics_path__` holds exactly what
+the mixin expects: `/metrics` for the kubelet job (the default path) and
+`/metrics/cadvisor` for the cadvisor job. One constant value per job, so no
+series is added.
+*/}}
+{{- define "observability-emitters.nodeMetricsPathRelabelConfig" -}}
+- source_labels: [__metrics_path__]
+  target_label: metrics_path
+{{- end -}}
+
 {{- define "observability-emitters.scrapeConfig.kubelet" -}}
 - job_name: kubelet
   scheme: https
@@ -396,6 +415,7 @@ for by name through `metrics.scrape.nodeLabels`.
   relabel_configs:
 {{ include "observability-emitters.nodeLabelRelabelConfigs" . | indent 4 }}
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
+{{ include "observability-emitters.nodeMetricsPathRelabelConfig" . | indent 4 }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
 {{- end -}}
@@ -414,6 +434,7 @@ for by name through `metrics.scrape.nodeLabels`.
   relabel_configs:
 {{ include "observability-emitters.nodeLabelRelabelConfigs" . | indent 4 }}
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
+{{ include "observability-emitters.nodeMetricsPathRelabelConfig" . | indent 4 }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
 {{- with (include "observability-emitters.scrapeConfig.cadvisorChurnDropMetricRelabelConfigs" .) }}

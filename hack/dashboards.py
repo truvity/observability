@@ -623,7 +623,7 @@ def write_catalog(manifest: dict) -> None:
         # Provenance of a dashboard adopted from a third party, and whether
         # tests/dashboard_queries_test.go holds it to the available-metrics
         # allow-list.
-        for key in ("upstream", "authored", "ref", "queryCheck"):
+        for key in ("upstream", "authored", "ref", "queryCheck", "requires"):
             if key in spec:
                 entry[key] = spec[key]
         catalog[spec["name"]] = entry

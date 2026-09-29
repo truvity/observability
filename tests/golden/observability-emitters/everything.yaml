@@ -1024,6 +1024,8 @@ spec:
           replacement: "other-cluster"
         - target_label: deployment_environment_name
           replacement: "staging"
+        - source_labels: [__metrics_path__]
+          target_label: metrics_path
       metric_relabel_configs:
         - source_labels: [namespace]
           regex: (.+)

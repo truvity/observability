@@ -7,6 +7,8 @@
 alertmanager:
   file: alertmanager.json
   folder: stores
+  requires:
+  - alertmanager
   upstream: kube-prometheus
 fleet-overview:
   authored: true
@@ -39,6 +41,8 @@ node-exporter-full:
   file: node-exporter-full.json
   folder: infrastructure
   ref: 99a25cc154c21c4fcbae1aa24352bf1b6764d847
+  requires:
+  - node-exporter
   upstream: rfmoz
 victorialogs-single:
   file: victorialogs-single.json
