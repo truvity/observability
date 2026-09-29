@@ -1,0 +1,25 @@
+# expect: `backup.seLinuxLevel` is set but `backup.enabled` is false
+tenancy:
+  allowUnfilteredTraceReads: true
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# A value that shapes the backup CronJobs' pod spec, left set with
+# backups off: it would render nothing and the mismatch would go
+# unnoticed the day backups are turned back on.
+backup:
+  enabled: false
+  seLinuxLevel: "s0:c123,c456"

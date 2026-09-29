@@ -1,0 +1,35 @@
+# expect: a DIFFERENT level
+tenancy:
+  allowUnfilteredTraceReads: true
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# The store's own securityContext was set for some unrelated reason,
+# and disagrees with `backup.seLinuxLevel` — the exact permission-denied
+# this value exists to prevent, so the render refuses rather than
+# silently choosing one.
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials
+  seLinuxLevel: "s0:c123,c456"
+
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      securityContext:
+        seLinuxOptions:
+          level: "s0:c999,c888"

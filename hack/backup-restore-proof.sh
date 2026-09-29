@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # hack/backup-restore-proof.sh — REAL proof, in Docker, of the
 # `backup.auth.mode: credentialProcess` path end to end, plus the
-# restore docs/reference.md's "Restore" section documents.
+# restore docs/reference.md's "Restore" section documents, plus
+# (assertion only, see below) that `backup.seLinuxLevel` renders onto
+# both the backup CronJob and the VMSingle CR it mirrors against.
 #
 # adobe/s3mock stands in for an S3-compatible store that is not AWS —
 # the shape Cloudflare R2 itself is, the worked example this chart's
@@ -137,6 +139,16 @@ backup:
     enabled: false
   traces:
     enabled: false
+  # An SELinux MCS level, so this proof also covers docs/reference.md's
+  # `backup.seLinuxLevel` — see the assertion below for what it can and
+  # cannot prove without a real, SELinux-enforcing kernel.
+  seLinuxLevel: "s0:c111,c222"
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      securityContext:
+        seLinuxOptions:
+          level: "s0:c111,c222"
 EOF
 
 helm template proof "$root/charts/observability-stack" --values "$work/values.yaml" > "$work/rendered.yaml"
@@ -150,6 +162,7 @@ docs = [d for d in yaml.safe_load_all(rendered) if d]
 cronjob = next(d for d in docs if d.get("kind") == "CronJob" and d["metadata"]["name"].endswith("backup-metrics-incremental"))
 configmap = next(d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"].endswith("backup-aws-config"))
 sa = next(d for d in docs if d.get("kind") == "ServiceAccount" and "backup" in d["metadata"]["name"])
+vmsingle = next(d for d in docs if d.get("kind") == "VMSingle")
 
 pod = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
 container = next(c for c in pod["containers"] if c["name"] == "vmbackup")
@@ -163,6 +176,15 @@ out = {
     "initCommand": init["command"],
     "awsConfig": configmap["data"]["config"],
     "serviceAccount": sa["metadata"]["name"],
+    # `backup.seLinuxLevel`: rendered on the backup job's OWN pod spec
+    # (this chart's own template) and, separately — it is a MIRROR, not
+    # something this chart can compute into a vendored dependency's
+    # object, see docs/reference.md — on the VMSingle CR's pod-level
+    # securityContext. The assertion below is only that the RENDER
+    # carries the same string onto both; no SELinux enforcement runs in
+    # this Docker-based proof to confirm the kernel would honour it.
+    "backupSeLinuxLevel": (((pod.get("securityContext") or {}).get("seLinuxOptions") or {}).get("level")),
+    "vmsingleSeLinuxLevel": ((((vmsingle["spec"].get("securityContext") or {}).get("seLinuxOptions")) or {}).get("level")),
 }
 json.dump(out, sys.stdout)
 PYEOF
@@ -180,6 +202,27 @@ tools_image_rendered="$(echo "$extracted_json" | python3 -c 'import json,sys; pr
 echo "$extracted_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["awsConfig"])' > "$work/aws-config"
 aws_config_file="$(echo "$extracted_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"]["AWS_CONFIG_FILE"])')"
 sdk_load_config="$(echo "$extracted_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["env"]["AWS_SDK_LOAD_CONFIG"])')"
+
+# `backup.seLinuxLevel` (docs/reference.md): the RENDER carries the same
+# MCS level onto both the backup job's own pod spec and the VMSingle
+# CR's pod-level securityContext — the two objects this proof already
+# extracted from the chart's actual output, above. This is as far as
+# this proof (or any Docker container) can go: Docker does not enforce
+# SELinux, so nothing here exercises the kernel-level category check
+# the value exists for — see docs/safety.md, "SELinux MCS categories,
+# and why one value cannot set both sides", for the live incident and
+# why that check needs a real SELinux-enforcing node instead.
+backup_level="$(echo "$extracted_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["backupSeLinuxLevel"])')"
+vmsingle_level="$(echo "$extracted_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["vmsingleSeLinuxLevel"])')"
+[ "$backup_level" = "s0:c111,c222" ] || {
+  echo "hack/backup-restore-proof.sh: rendered backup CronJob securityContext.seLinuxOptions.level is ${backup_level:-<absent>}, expected s0:c111,c222" >&2
+  exit 1
+}
+[ "$vmsingle_level" = "s0:c111,c222" ] || {
+  echo "hack/backup-restore-proof.sh: rendered VMSingle securityContext.seLinuxOptions.level is ${vmsingle_level:-<absent>}, expected s0:c111,c222" >&2
+  exit 1
+}
+echo "hack/backup-restore-proof.sh: rendered backup.seLinuxLevel ($backup_level) matches on both the backup CronJob and the VMSingle CR — real SELinux enforcement is NOT exercised by this Docker-based proof"
 
 echo "hack/backup-restore-proof.sh: vmbackup image the chart pins: $vmbackup_image (vmrestore: $vmrestore_image)"
 

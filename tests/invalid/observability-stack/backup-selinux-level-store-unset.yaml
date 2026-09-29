@@ -1,0 +1,29 @@
+# expect: victoria-metrics-k8s-stack.vmsingle.spec.securityContext.seLinuxOptions.level is empty
+tenancy:
+  allowUnfilteredTraceReads: true
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# `backup.seLinuxLevel` set with NOTHING mirrored on the metrics store:
+# this chart cannot write that field for you (Helm evaluates a
+# subchart's values before any template here runs — see
+# `backup.seLinuxLevel`'s own doc comment in values.yaml), so the render
+# refuses rather than leaving the backup CronJob unreadable at 3am.
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials
+  seLinuxLevel: "s0:c123,c456"

@@ -896,6 +896,39 @@ backup:
   # unset; set it and both sides of the rule apply.
   resources: {}
 
+  # -- MIRROR. An SELinux MCS level (`"s0:c123,c456"`), read off a
+  # running store pod on an SELinux-enforcing node (Bottlerocket is the
+  # one this was proven against) — never invented. Empty (default)
+  # renders no `securityContext` anywhere this value reaches, byte-for-
+  # byte the CronJobs this chart shipped before it existed.
+  #
+  # Every backup job mounts its store's volume read-only, on the same
+  # node (see the pod affinity above); on an SELinux-enforcing node,
+  # each pod gets its own random MCS categories at admission, and the
+  # volume is labelled for whichever pod's categories mounted it
+  # first — the store's. A second pod with DIFFERENT categories gets
+  # `permission denied` reading it, after auth, the bucket region
+  # lookup and the snapshot itself all succeed. See docs/reference.md,
+  # `backup.seLinuxLevel`, and docs/safety.md for the incident.
+  #
+  # Setting this renders `securityContext.seLinuxOptions.level` on
+  # every ENABLED backup CronJob's pod (metrics, and logs/traces when
+  # their own backups are on) — this chart's own templates, so that
+  # much it can render for you. It CANNOT also set the matching field
+  # on the stores themselves: those are vendored dependencies'
+  # objects, and Helm evaluates a subchart's values before any
+  # template in this chart runs, so there is nothing here to compute
+  # it into. Write the SAME string, yourself, at:
+  #
+  #   victoria-metrics-k8s-stack.vmsingle.spec.securityContext.seLinuxOptions.level
+  #   victoria-logs-single.server.podSecurityContext.seLinuxOptions.level     (only if backup.logs.enabled)
+  #   victoria-traces-single.server.podSecurityContext.seLinuxOptions.level   (only if backup.traces.enabled)
+  #
+  # The chart refuses to render if one of those is missing while this
+  # is set, or if it disagrees — the same MIRROR discipline as
+  # `interval`/`storeCredentials` above.
+  seLinuxLevel: ""
+
 # Store self-alerts.
 #
 # See docs/notifications.md, "Store self-alerts". These nineteen rules
