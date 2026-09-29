@@ -42,6 +42,20 @@ spec:
   groups:
     {{- if .Values.groups.backups.enabled }}
     {{- $g := .Values.groups.backups }}
+    {{- /*
+    A SUSPENDED CronJob is skipped by both rules below
+    (`ignoreSuspended`, default true since 0.11.0): suspending one is a
+    decision someone wrote into its spec, and before this both rules
+    fired on it for as long as it stayed suspended — the age of its last
+    success grows forever, and its last failed Job is its newest forever.
+
+    `unless ... == 1`, never `and ... == 0`: if kube_cronjob_spec_suspend
+    is absent (an older kube-state-metrics, a trimmed collector list) the
+    rules behave exactly as before instead of going silent. A rule that
+    stops firing because a series is missing is the failure this chart
+    exists to prevent.
+    */}}
+    {{- $ignoreSuspended := ternary $g.ignoreSuspended true (hasKey $g "ignoreSuspended") }}
     - name: platform-alerts.backups
       interval: {{ .Values.interval }}
       rules:
@@ -55,6 +69,10 @@ spec:
             time() - max by (namespace, cronjob) (
               kube_cronjob_status_last_successful_time{namespace=~"{{ $ns }}"}
             ) > {{ $g.maxSuccessAge }}
+            {{- if $ignoreSuspended }}
+            unless on (namespace, cronjob)
+              kube_cronjob_spec_suspend{namespace=~"{{ $ns }}"} == 1
+            {{- end }}
           labels:
             {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
           annotations:
@@ -91,11 +109,20 @@ spec:
                 kube_job_owner{namespace=~"{{ $ns }}", owner_kind="CronJob"}
               ),
               newest_per_cronjob = max by (namespace, owner_name) (cronjob_jobs)
+              {{- if $ignoreSuspended }},
+              suspended_cronjobs = label_replace(
+                kube_cronjob_spec_suspend{namespace=~"{{ $ns }}"} == 1,
+                "owner_name", "$1", "cronjob", "(.+)"
+              )
+              {{- end }}
             )
             max by (namespace, job_name) (
               kube_job_status_failed{namespace=~"{{ $ns }}"}
               and on (namespace, job_name) (
                 cronjob_jobs == on (namespace, owner_name) group_left() newest_per_cronjob
+                {{- if $ignoreSuspended }}
+                unless on (namespace, owner_name) suspended_cronjobs
+                {{- end }}
               )
             ) > 0
           labels:

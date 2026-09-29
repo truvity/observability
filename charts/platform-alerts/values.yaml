@@ -78,6 +78,15 @@ groups:
     # job that fails loudly and a job that vanishes quietly are different
     # failures and often have different owners.
     failedSeverity: warning
+    # -- Skip SUSPENDED CronJobs in both rules (0.11.0). Suspending a
+    # CronJob is a decision written into its spec; before this, both
+    # rules fired on it for as long as it stayed suspended. The cost: an
+    # ACCIDENTAL suspension is no longer caught here — read
+    # `kube_cronjob_spec_suspend` in a review or a dashboard instead.
+    # Absent that series (an older kube-state-metrics, a trimmed
+    # collector list) both rules behave exactly as before, never
+    # silently. `false` renders the 0.10.0 expressions byte for byte.
+    ignoreSuspended: true
 
   # The write path.
   #
