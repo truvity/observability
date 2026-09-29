@@ -4,6 +4,57 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.11.0
+
+`charts/observability-stack` becomes adoptable by an estate run by one
+operator. Every rule below was a hard requirement shaped for a
+multi-team install; each is now a value whose default is the old
+behaviour, so an existing values file renders byte-for-byte as it did
+under 0.10.0 (every existing golden is unchanged; new goldens
+`small-estate` and `notifications-catchall` cover the new shapes). See
+docs/reference.md, "The single-operator estate".
+
+- **Store credentials stay mandatory.** No switch. docs/adoption.md,
+  "Store credentials: who needs them", now lists every client that needs
+  the credential and which of them the chart wires itself; `/health` and
+  `/ping` need none.
+- **`resources.policy: guaranteed | burstable`** (default `guaranteed`,
+  today's rule). `burstable` accepts a fractional CPU request below the
+  limit and no CPU limit at all; a CPU limit that is set stays a whole
+  number (the quota is what the thread pool rounds), and memory stays
+  request == limit with a limit required (VictoriaMetrics sizes its
+  caches from it, and it keeps the pod out of the kubelet's first
+  eviction tier). New refusal, under either policy: a `null` in a
+  vendored subchart's `resources`, which Helm passes through and the API
+  server reads as a limit of 0.
+- **Alert routing.** `notifications.groupBy` and
+  `notifications.inhibit.{enabled, equal}` (defaults: today's
+  `k8s_cluster_name`/`k8s_namespace_name` shape). `notifications.catchAll`
+  routes `info`, severity-less alerts and any tier `severities` leaves out
+  to a receiver of your choice — and routes `Watchdog` to nobody when no
+  deadman receiver is configured. `notifications.drop` sends exact
+  matches to the null receiver ahead of every route.
+  `notifications.telegram.chatIdSecret` reads the chat id from a Secret
+  with Alertmanager's `chat_id_file` (Alertmanager v0.31.0+), instead of
+  `chatId`. docs/notifications.md, "Inhibition", documents the hazard of
+  an `equal` label your alerts do not carry.
+- **Backup prefixes**: `backup.metrics.prefix` / `.fullPrefix`,
+  `backup.logs.prefix`, `backup.traces.prefix` (defaults `metrics`,
+  `metrics-full`, `logs`, `traces`). Refused: two prefixes in use that
+  are equal or nest — vmbackup and `rclone sync` delete at their
+  destination whatever the source does not have.
+- **Grafana without the proxy.** With `vmauth.enabled: false` the
+  datasource refusal flips: no `oauthPassThru`, basic auth from
+  `storeCredentials` through `grafana.envValueFrom` environment
+  references, checked as a mirror; Grafana's pods are admitted to the
+  stores' NetworkPolicies in that mode only. An enabled Grafana with
+  `GF_SECURITY_SECRET_KEY`'s Secret left unnamed is now refused at
+  render rather than by the API server.
+- **`networkPolicy.clientsFrom`**: extra in-cluster clients of the
+  stores (a prober, a collector, a hand-made job), each admitted to the
+  stores it names. Refused: an empty `from` (admits everything) and a
+  peer named by `ipBlock` alone.
+
 ## v0.10.0
 
 Two additions to `charts/observability-stack` an estate needs before it

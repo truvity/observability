@@ -63,11 +63,13 @@ notifications:
 The chart renders from this an Alertmanager configuration with:
 
 - `group_by: [alertname, k8s_cluster_name, k8s_namespace_name]`, so one
-  failing namespace on one cluster is one notification;
+  failing namespace on one cluster is one notification (a value since
+  0.11.0: `groupBy`);
 - `group_wait: 30s`, `group_interval: 5m`, `repeat_interval: 4h` as the
   defaults, each a value;
 - an inhibit rule so a `critical` on a cluster + namespace silences the
-  `warning` on the same pair, and a rule that `Watchdog` inhibits
+  `warning` on the same pair (`inhibit`, a value since 0.11.0 — see
+  "Inhibition" below), and a rule that `Watchdog` inhibits
   nothing and is routed only by `deadman` (below);
 - the Slack template: the cluster and the namespace in the title, the
   alert's `summary`, a link to the runbook from `runbookBaseUrl` +
@@ -93,7 +95,10 @@ webhook is a webhook in git.
 | `externalUrl` unset | every link dead |
 | `repeat_interval` on the deadman route longer than the far end's heartbeat | the far end alerts on healthy silence |
 | `notifications.mode` outside `route` or `evaluate-only` | an unknown mode, refused by the schema rather than falling back to a guess |
-| `notifications.mode: evaluate-only` with `alertmanager.enabled` true, or a receiver, severity, route or `also` bridge configured, or `alertmanager.notifierUrl` set | a channel or an Alertmanager configured beside a mode that mutes vmalert, which looks wired up and is never reached |
+| `notifications.mode: evaluate-only` with `alertmanager.enabled` true, or a receiver, severity, route, `also` bridge, `catchAll` or `drop` configured, or `alertmanager.notifierUrl` set | a channel or an Alertmanager configured beside a mode that mutes vmalert, which looks wired up and is never reached |
+| `inhibit.equal` empty (schema) | any critical would mute every warning |
+| a `drop` entry with no key (schema) | an empty matcher matches, and drops, every alert |
+| `catchAll` naming a receiver that is not configured | every alert no tier claimed routed to nowhere |
 
 Each has a fixture under `tests/invalid/observability-stack/`.
 
@@ -154,6 +159,22 @@ notification is lost rather than garbled. The schema therefore requires
 `telegram.message` — your own Alertmanager template, written for that
 mode — whenever `parseMode` is not `HTML`.
 
+**The chat id from a Secret (0.11.0).** A chat id is not a credential —
+without the bot token it sends nothing — but some estates keep it out
+of git anyway. `chatIdSecret: {name, key}` replaces `chatId`: the Secret
+is mounted at `/etc/alertmanager/notifications-telegram-chat` and read
+with Alertmanager's `chat_id_file`, which exists since Alertmanager
+v0.31.0 (the pinned operator deploys v0.34.0). The chart never sees the
+value, so the receiver is named `telegram-chatfile` (plus the thread),
+not after the chat. It may be the same Secret as the bot token.
+
+```yaml
+notifications:
+  telegram:
+    botTokenSecret: {name: example-telegram-bot, key: token}
+    chatIdSecret: {name: example-telegram-bot, key: chat_id}
+```
+
 What differs from Slack, on purpose:
 
 - a Telegram tier has no `channel`, and a route cannot override one: a
@@ -180,12 +201,67 @@ and a summary of `disk <90% & rising_fast` arrives as
 | Shape | Why it is refused |
 |---|---|
 | `telegram` without `botTokenSecret`, or with an empty `name`/`key` (schema) | a receiver that cannot authenticate cannot send |
-| `telegram` without `chatId` (schema) | a bot with nowhere to post |
+| `telegram` with neither or both of `chatId` and `chatIdSecret` (schema) | a bot with nowhere to post, or two defaults for one chat |
 | `parseMode` other than `HTML` without `message` (schema) | the shipped message is HTML; under Markdown it fails on the first `_` |
 | a tier with `receiver: telegram` and no `notifications.telegram` (and no webhook of that name) | a route to a receiver that is not configured |
 | `chatId`/`messageThreadId` on a tier that is not Telegram | read by nothing |
 | `channel` on a Telegram tier, or a route overriding a Telegram tier | a Slack channel where no Slack receiver reads it |
 | `notifications.telegram` beside a webhook named `telegram` | `receiver: telegram` would be ambiguous |
+
+## Inhibition
+
+One rule: a `critical` silences a `warning` whose values are equal for
+every label in `notifications.inhibit.equal` (default
+`[k8s_cluster_name, k8s_namespace_name]`).
+
+**The hazard.** Alertmanager compares a label that is missing on both
+alerts as EQUAL. An alert that carries none of the `equal` labels
+therefore matches every other alert that carries none of them, and one
+such `critical` mutes every such `warning` in the install — with
+nothing anywhere saying so. It is easy to hit: an estate whose alerts
+carry `namespace` rather than `k8s_namespace_name` hits it on every
+alert, and a rule that aggregates `by (namespace, …)` drops
+`k8s_namespace_name` from its own alerts even on an estate that stamps
+it.
+
+So name labels your alerts actually carry (`inhibit.equal`, and
+`groupBy` for the same reason), or turn the rule off
+(`inhibit.enabled: false`). `groupBy` has the milder form of the same
+trap: a label no alert carries groups every alert together into one
+notification.
+
+```yaml
+notifications:
+  groupBy: [alertname, namespace]
+  inhibit:
+    equal: [namespace]
+```
+
+## Beyond `critical` and `warning`
+
+This chart's rules carry only `critical` and `warning`, and by default
+only those two are routed: an alert that pages nobody is a dashboard.
+An estate that wants more says so:
+
+- `notifications.catchAll` — a severity target (`slack`, `telegram` or a
+  webhook, the same shape as a `severities` entry) for every alert no
+  tier claimed: `info`, no `severity`, or a tier `severities` leaves out.
+  It is the fallback of EVERY node in the primary tree, so an `info`
+  alert inside a project route lands there too. Set, the two tiers are
+  no longer required. With no deadman receiver configured, `Watchdog`
+  — which fires for as long as the install is healthy — is routed to
+  nobody first, or it would arrive every `repeatInterval`.
+- `notifications.drop` — exact matchers routed to nobody, ahead of every
+  other route: for an alert the estate has decided it will never act
+  on, without editing the rule set that ships it. Other always-firing
+  vendored rules (`InfoInhibitor`) belong here.
+
+```yaml
+notifications:
+  catchAll: {receiver: telegram}
+  drop:
+    - {alertname: InfoInhibitor}
+```
 
 ## Evaluate, notify nobody yet
 
