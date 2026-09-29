@@ -4,6 +4,36 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.12.1
+
+A fix for the shipped `kubelet` dashboard, which read "No data" on every
+install, and a check that would have caught it.
+
+- **Behaviour change: the `kubelet` and `cadvisor` scrape jobs of
+  `observability-emitters` now write a `metrics_path` label** on every
+  series they collect (`/metrics` on the kubelet job, `/metrics/cadvisor`
+  on the cadvisor job), and the `observability-emitters` goldens change to
+  match. It is the label kube-prometheus adds to the same jobs, and the
+  kubernetes-mixin dashboards and rules select on it: the `kubelet`
+  dashboard's `cluster` variable is `up{job="kubelet",
+  metrics_path="/metrics"}`, so without the label the variable was empty and
+  every panel showed "No data" although the `kubelet_*` series were in the
+  store. It adds no series (one constant value per job), and it appears on
+  the series from the next scrape; the dashboard works from then on. There
+  is no switch for it; a query of your own that selects on the absence of
+  `metrics_path` on these two jobs is the only thing it could affect.
+- **The dashboard query check now reads label matchers, not only metric
+  names.** `hack/dashboards/available-labels.yaml` says which scrape-derived
+  labels (`job`, `metrics_path`, `instance`, `node`, the tenancy labels)
+  each scrape job's series carry and which values the chart fixes; a test
+  fails any shipped dashboard whose `label="value"` selector can never
+  match, and another proves the node jobs' claims against the rendered
+  goldens. Catalog entries for dashboards that depend on an optional source
+  (`node-exporter-full`, `alertmanager`) say so with `requires:` and are
+  exempt until that source is enabled. `hack/metrics-path-proof.sh` runs the
+  rendered jobs in a real vmagent against a real VictoriaMetrics and shows
+  the dashboard variable returning the cluster.
+
 ## v0.12.0
 
 The first operational dashboards in `observability-dashboards`: a home

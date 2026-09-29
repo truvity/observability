@@ -1,0 +1,105 @@
+# The SCRAPE-DERIVED labels each scrape job's series carry, and the values
+# the chart gives the ones it fixes. The sibling of available-metrics.yaml
+# (which says which metric NAMES a store holds); this file says which label
+# MATCHERS on those names can ever match.
+#
+# Why it exists: a dashboard whose selector can never match reads "No data"
+# with every series in the store. The kubelet dashboard shipped that way:
+# every query, and its `cluster` variable, selected on
+# `metrics_path="/metrics"`, a label kube-prometheus adds and this chart's
+# kubelet and cadvisor jobs did not. A name-only check cannot see that.
+#
+# Read by tests/dashboard_queries_test.go
+# (TestDashboardLabelMatchersCanMatch), over EVERY shipped dashboard.
+#
+# How a matcher is judged. A query `m{l="v"}` is satisfiable when some job
+# below selects `m` (same names/prefixes/deny/keep rules as
+# available-metrics.yaml) and either
+#   - `l` is not in `scrapeLabels` (a label a series brings itself, in its
+#     exposition: `phase`, `condition`, `le`, ... those are not judged), or
+#   - `l` is in that job's `labels`, and if the job fixes `values` for `l`,
+#     `v` is one of them.
+# Only equality matchers (`=`) are judged, and a value that is a Grafana
+# variable is not (it is whatever the viewer picks). `!=` and regex
+# matchers never make a query unsatisfiable on their own.
+#
+# Derived from charts/observability-emitters (the two inline node jobs and
+# the `tenancy` scrape class every monitor gets) and the live survey; a
+# change to those relabel configs and a change here go in the same PR.
+
+# Labels that come from a scrape config, a relabel or the operator, not
+# from a series' own exposition. A matcher on one of these must be a label
+# the job carries.
+scrapeLabels:
+  - job
+  - instance
+  - metrics_path
+  - node
+  - endpoint
+  - service
+  - cluster
+  - prometheus
+  - k8s_cluster_name
+  - k8s_namespace_name
+  - deployment_environment_name
+  - app_kubernetes_io_instance
+
+# Sources a dashboard may depend on that a default install does not run.
+# A dashboard that names one under `requires:` in its catalog entry (see
+# hack/dashboards/sources.yaml) is EXEMPT from the label check, because it
+# is legitimately unsatisfiable until the source ships; it is not exempt
+# from being listed here, so a dashboard cannot opt out by inventing a
+# reason.
+optionalSources:
+  node-exporter: no install runs node-exporter yet, so every node_* series is absent
+  alertmanager: Alertmanager is optional; its job and metrics exist only where it is enabled
+
+# The two node jobs (metrics.scrape.kubelet, .cadvisor) are inline scrape
+# configs: `job` and `metrics_path` are fixed by the chart. `node` is
+# nodeLabelRelabelConfigs; `k8s_cluster_name` and
+# `deployment_environment_name` are tenancy.clusterScopedRelabelConfigs;
+# `k8s_namespace_name` is copied from the series' own `namespace` at
+# metric-relabel time; `metrics_path` is nodeMetricsPathRelabelConfig.
+# `cluster` (the bare label kube-prometheus dashboards default to) is
+# carried by nothing; hack/dashboards.py renames it to k8s_cluster_name.
+# No `endpoint`/`service`: these targets come from node discovery.
+jobs:
+  - name: kubelet
+    names: [up]
+    prefixes: [scrape_, kubelet_, volume_manager_, storage_operation_, rest_client_, go_, process_]
+    deny: []
+    labels: &nodeLabels [job, instance, metrics_path, node, k8s_cluster_name, k8s_namespace_name, deployment_environment_name]
+    values:
+      job: [kubelet]
+      metrics_path: [/metrics]
+
+  - name: cadvisor
+    names: [up]
+    prefixes: [scrape_, container_, machine_, go_, process_]
+    deny:
+      - container_tasks_state
+      - container_memory_failures_total
+      - container_blkio_device_usage_total
+    denySuffixes: [_bucket]
+    keep: [go_sched_latencies_seconds_bucket]
+    labels: *nodeLabels
+    values:
+      job: [cadvisor]
+      metrics_path: [/metrics/cadvisor]
+
+  # Everything else is scraped from a PodMonitor or ServiceMonitor, under
+  # the `tenancy` scrape class (tenancy.relabelConfigs): the operator sets
+  # `job`, `instance`, `namespace`, `pod`, `container`, `endpoint` and
+  # `service`; the class adds the three tenancy labels and, when the pod has
+  # it, `app_kubernetes_io_instance`. The job NAME depends on the monitor,
+  # so it is not pinned. No `node` and no `metrics_path`: nothing sets them.
+  - name: kube-state-metrics
+    prefixes: [scrape_, kube_, kube_state_metrics_, kargo_]
+    names: [up]
+    # `node` is a label kube-state-metrics' own node and pod series carry.
+    labels: [job, instance, endpoint, service, node, k8s_cluster_name, k8s_namespace_name, deployment_environment_name, app_kubernetes_io_instance]
+
+  - name: the stack's own components
+    names: [up, ALERTS, ALERTS_FOR_STATE]
+    prefixes: [scrape_, vm_, vmagent_, vmalert_, vmauth_, vl_, vt_, vlagent_, operator_, controller_runtime_, workqueue_, otelcol_, go_, process_]
+    labels: [job, instance, endpoint, service, k8s_cluster_name, k8s_namespace_name, deployment_environment_name, app_kubernetes_io_instance]

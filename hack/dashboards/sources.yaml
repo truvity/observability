@@ -81,6 +81,9 @@ dashboards:
     tags: [observability-stores]
     seedQuery: 'alertmanager_alerts'
     namespaceScoped: true
+    # Alertmanager is optional; where it is not enabled every panel is
+    # empty by construction, not by a wrong selector.
+    requires: [alertmanager]
 
   - name: kubelet
     upstream: kube-prometheus
@@ -108,6 +111,8 @@ dashboards:
     folder: infrastructure
     tags: [observability-kubernetes]
     seedQuery: 'node_uname_info'
+    # No install runs node-exporter yet.
+    requires: [node-exporter]
 
   # -- Operational views (charts/observability-dashboards 0.12.0). Held to
   # tests/dashboard_queries_test.go (`queryCheck`): every query must parse

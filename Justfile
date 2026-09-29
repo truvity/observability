@@ -301,6 +301,15 @@ backup-logs-traces-proof:
 cadvisor-churn-drop-proof:
     hack/cadvisor-churn-drop-proof.sh
 
+# REAL proof, against the pinned vmagent and VictoriaMetrics single, that the
+# kubelet and cadvisor jobs store the `metrics_path` label the kube-prometheus
+# dashboards select on, and that the shipped kubelet dashboard's `cluster`
+# variable then returns a value (and is empty without the label). See
+# hack/metrics-path-proof.sh. Needs Docker, curl, python3 (PyYAML) and helm;
+# not part of `check`, like the other proofs.
+metrics-path-proof:
+    hack/metrics-path-proof.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

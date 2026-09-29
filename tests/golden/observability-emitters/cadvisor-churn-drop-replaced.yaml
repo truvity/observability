@@ -685,6 +685,8 @@ spec:
           replacement: "example-cluster"
         - target_label: deployment_environment_name
           replacement: "development"
+        - source_labels: [__metrics_path__]
+          target_label: metrics_path
       metric_relabel_configs:
         - source_labels: [namespace]
           regex: (.+)
@@ -706,6 +708,8 @@ spec:
           replacement: "example-cluster"
         - target_label: deployment_environment_name
           replacement: "development"
+        - source_labels: [__metrics_path__]
+          target_label: metrics_path
       metric_relabel_configs:
         - source_labels: [namespace]
           regex: (.+)
