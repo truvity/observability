@@ -1,0 +1,86 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+# It also proves the chart renders on a cluster that does not use the
+# default — an estate on the default sees exactly this one difference.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The single-replica install, written out: one of each store, one proxy,
+# two vmalerts, Alertmanager with the heartbeat leaving the cluster, the
+# network policies and the backups.
+#
+# This is the shape docs/adoption.md walks through, and the one this
+# release supports. `ha` is false, which is not a lesser mode: no store
+# here replicates across a zone, so redundancy is two of these with the
+# writers sending to both.
+ha: false
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  # The trace store is on by default, and this proxy cannot scope trace
+  # reads: vmauth applies a grant by substituting it into the route, and
+  # VictoriaTraces' Jaeger and Tempo select APIs accept no query
+  # argument to substitute it into. So every principal below reads every
+  # namespace's spans on every cluster, and the chart refuses to render until that is
+  # written down. docs/safety.md has the mechanism; the alternative is
+  # `victoria-traces-single.enabled: false`.
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+  writers:
+    - name: metrics-agent
+      tokenSecret:
+        name: example-writer-token
+        key: token
+      destinations: [metrics]
+    - name: log-agent
+      tokenSecret:
+        name: example-writer-token
+        key: token
+      destinations: [logs]
+
+vmalert:
+  externalUrl: https://alerts.example.com
+
+alertmanager:
+  watchdog:
+    secretName: example-watchdog-receiver
+    key: url
+
+# `notifications.externalUrl` is deliberately left unset here: it
+# defaults to `vmalert.externalUrl` above, and this case is where the
+# golden proves that default renders a working Grafana link without a
+# consumer having to set the same fact twice.
+notifications:
+  # The one difference from `single`: the inhibit rule without its label
+  # guard, which is the rule 0.10.0 rendered. tests/inhibit_guard_test.go
+  # holds this golden to `single`'s with exactly the guard lines removed
+  # — the escape hatch is the old rule, byte for byte.
+  inhibit:
+    requireLabels: false
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+backup:
+  enabled: true
+  destination: ":s3,env_auth=true:example-backups/observability"
+  credentialsSecret: example-backup-credentials
+
+# This is the golden that exercises the trace store's own render (the
+# `everything` case turns the store subcharts off so their render stays
+# `single`'s job — see the comment there), so it is also where the
+# service-graph task's opt-in path gets exercised.
+victoria-traces-single:
+  server:
+    extraArgs:
+      servicegraph.enableTask: "true"

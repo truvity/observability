@@ -2690,6 +2690,8 @@ spec:
     inhibit_rules:
       - source_matchers:
           - severity = "critical"
+          - k8s_cluster_name =~ ".+"
+          - k8s_namespace_name =~ ".+"
         target_matchers:
           - severity = "warning"
         equal:

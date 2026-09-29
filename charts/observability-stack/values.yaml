@@ -750,6 +750,18 @@ notifications:
     equal:
       - k8s_cluster_name
       - k8s_namespace_name
+    # -- The guard against THE HAZARD above (0.11.0): a source matcher
+    # `<label> =~ ".+"` for every label in `equal`, so a critical that
+    # does not carry them inhibits nothing, rather than every warning
+    # that does not carry them either. On by default because it errs
+    # LOUD: a warning the old rule muted by accident now arrives. Before
+    # it, this chart's own `platform-alerts` hit the hazard on a default
+    # install — `CronJobNotSucceeding` (critical) and `BackupJobFailed`
+    # (warning) aggregate `by (namespace, …)`, which drops
+    # `k8s_namespace_name`, so one CronJob not succeeding muted every
+    # failed backup Job's warning on its cluster. `false` renders the
+    # 0.10.0 rule byte for byte.
+    requireLabels: true
   # -- Exact-match matchers for alerts that reach NOBODY, routed to the
   # null receiver ahead of every other route — for an alert an estate
   # has decided it will never act on (a noisy vendored rule, say),
