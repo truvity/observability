@@ -162,7 +162,7 @@ type (
 	// belongs to (naming an endpoint), and its own health-check path if
 	// it has one.
 	CompanyHost struct {
-		// Host is the hostname probed, e.g. "dms.devel.truvity.xyz".
+		// Host is the hostname probed, e.g. "dms.devel.example.xyz".
 		Host string
 		// Env names the cluster/environment this host belongs to — an
 		// endpoint is named "<Host's first DNS label> · <Env>", never
@@ -185,7 +185,7 @@ type (
 	// other's naming.
 	AlertsRead struct {
 		// Host is the bare host the alerts-read path answers on, e.g.
-		// "alerts.kernel.truvity.private" — no scheme, no path;
+		// "alerts.kernel.example.private" — no scheme, no path;
 		// alertsReadURL builds the rest.
 		Host string
 		// TokenEnvKey is the AlertURLs map key (statusbox.Secrets.
@@ -458,7 +458,7 @@ func endpointNames(hosts []CompanyHost) []string {
 }
 
 // firstDNSLabel returns host's leftmost DNS label — "dms" for
-// "dms.devel.truvity.xyz" — the product-facing part of a hostname
+// "dms.devel.example.xyz" — the product-facing part of a hostname
 // endpointNames names an endpoint after.
 func firstDNSLabel(host string) string {
 	if i := strings.IndexByte(host, '.'); i >= 0 {

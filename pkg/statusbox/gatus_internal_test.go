@@ -16,11 +16,11 @@ import (
 
 func testCatalogue() Catalogue {
 	return Catalogue{
-		PlatformHosts: []string{"truvity.xyz"},
+		PlatformHosts: []string{"example.xyz"},
 		Companies: []Company{
-			{Code: "truvity", DisplayName: "Truvity B.V."},
+			{Code: "acme", DisplayName: "Acme Corp"},
 		},
-		AlertsRead:  AlertsRead{Host: "alerts.kernel.truvity.private", TokenEnvKey: "tok"},
+		AlertsRead:  AlertsRead{Host: "alerts.kernel.example.private", TokenEnvKey: "tok"},
 		StoragePath: "/data/ops.db",
 	}
 }
@@ -42,12 +42,12 @@ func TestRenderGatusRefusesAnEmptyPlatformHostList(t *testing.T) {
 // endpoints.
 func TestRenderGatusCarriesEveryJob(t *testing.T) {
 	c := testCatalogue()
-	c.PlatformHosts = []string{"truvity.xyz", "billing.devel.truvity.xyz"}
+	c.PlatformHosts = []string{"example.xyz", "billing.devel.example.xyz"}
 	c.Companies = []Company{
 		{
-			Code:        "truvity",
-			DisplayName: "Truvity B.V.",
-			Hosts:       []CompanyHost{{Host: "billing.devel.truvity.xyz", Env: "devel"}},
+			Code:        "acme",
+			DisplayName: "Acme Corp",
+			Hosts:       []CompanyHost{{Host: "billing.devel.example.xyz", Env: "devel"}},
 		},
 	}
 	c.Providers = DeadmanProviders{SlackKey: "slack", PagerDutyKey: "pd"}
@@ -71,8 +71,8 @@ func TestRenderGatusCarriesEveryJob(t *testing.T) {
 	// the company/project name.
 	billing, ok := byName["billing · devel"]
 	require.True(t, ok, "business host must be named '<first label> · <env>'")
-	assert.Equal(t, "https://billing.devel.truvity.xyz", billing.URL)
-	assert.Equal(t, "Truvity B.V.", billing.Group)
+	assert.Equal(t, "https://billing.devel.example.xyz", billing.URL)
+	assert.Equal(t, "Acme Corp", billing.Group)
 	assert.Contains(t, billing.Conditions, "[CERTIFICATE_EXPIRATION] > 240h")
 	// No StatusPath, so the lenient fallback condition — never the
 	// strict one — and the bare host, no path appended.
@@ -80,11 +80,11 @@ func TestRenderGatusCarriesEveryJob(t *testing.T) {
 	assert.NotContains(t, billing.Conditions, statusCondition)
 	assert.Empty(t, billing.Headers, "an ordinary hostname probe carries no bearer header")
 
-	signal, ok := byName["truvity-customer-facing"]
+	signal, ok := byName["acme-customer-facing"]
 	require.True(t, ok)
-	assert.Equal(t, "Truvity B.V.", signal.Group)
+	assert.Equal(t, "Acme Corp", signal.Group)
 	assert.Equal(t,
-		"https://alerts.kernel.truvity.private/api/v1/alerts?match%5B%5D=%7Bcustomer_facing%3D%22true%22%2Ccompany%3D%22truvity%22%7D",
+		"https://alerts.kernel.example.private/api/v1/alerts?match%5B%5D=%7Bcustomer_facing%3D%22true%22%2Ccompany%3D%22acme%22%7D",
 		signal.URL)
 	assert.Equal(t, "Bearer ${ALERT_URL_TOK}", signal.Headers["Authorization"])
 	assert.Contains(t, signal.Conditions, alertsAbsentCondition)
@@ -94,7 +94,7 @@ func TestRenderGatusCarriesEveryJob(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "platform", deadman.Group)
 	assert.Equal(t,
-		"https://alerts.kernel.truvity.private/api/v1/alerts?match%5B%5D=%7Balertname%3D%22Watchdog%22%7D",
+		"https://alerts.kernel.example.private/api/v1/alerts?match%5B%5D=%7Balertname%3D%22Watchdog%22%7D",
 		deadman.URL)
 	assert.Contains(t, deadman.Conditions, alertsPresentCondition)
 
@@ -114,11 +114,11 @@ func TestRenderGatusNamesEndpointsByHostLabelAndEnv(t *testing.T) {
 	c := testCatalogue()
 	c.Companies = []Company{
 		{
-			Code:        "truvity",
-			DisplayName: "Truvity B.V.",
+			Code:        "acme",
+			DisplayName: "Acme Corp",
 			Hosts: []CompanyHost{
-				{Host: "dms.devel.truvity.xyz", Env: "devel"},
-				{Host: "dms.prod.truvity.xyz", Env: "prod"},
+				{Host: "dms.devel.example.xyz", Env: "devel"},
+				{Host: "dms.prod.example.xyz", Env: "prod"},
 			},
 		},
 	}
@@ -148,14 +148,14 @@ func TestRenderGatusNamesAreUniqueWithNoNumbering(t *testing.T) {
 	c := testCatalogue()
 	c.Companies = []Company{
 		{
-			Code:        "truvity",
-			DisplayName: "Truvity B.V.",
+			Code:        "acme",
+			DisplayName: "Acme Corp",
 			Hosts: []CompanyHost{
-				{Host: "dms.devel.truvity.xyz", Env: "devel"},
-				{Host: "ssi.devel.truvity.xyz", Env: "devel"},
-				{Host: "dms.prod.truvity.xyz", Env: "prod"},
-				{Host: "ssi.prod.truvity.xyz", Env: "prod"},
-				{Host: "keycloak.prod.truvity.xyz", Env: "prod"},
+				{Host: "dms.devel.example.xyz", Env: "devel"},
+				{Host: "ssi.devel.example.xyz", Env: "devel"},
+				{Host: "dms.prod.example.xyz", Env: "prod"},
+				{Host: "ssi.prod.example.xyz", Env: "prod"},
+				{Host: "keycloak.prod.example.xyz", Env: "prod"},
 			},
 		},
 	}
@@ -190,11 +190,11 @@ func TestRenderGatusFallsBackToFullHostnameOnCollision(t *testing.T) {
 	c := testCatalogue()
 	c.Companies = []Company{
 		{
-			Code:        "truvity",
-			DisplayName: "Truvity B.V.",
+			Code:        "acme",
+			DisplayName: "Acme Corp",
 			Hosts: []CompanyHost{
-				{Host: "a.one.devel.truvity.xyz", Env: "devel"},
-				{Host: "a.two.devel.truvity.xyz", Env: "devel"},
+				{Host: "a.one.devel.example.xyz", Env: "devel"},
+				{Host: "a.two.devel.example.xyz", Env: "devel"},
 			},
 		},
 	}
@@ -210,8 +210,8 @@ func TestRenderGatusFallsBackToFullHostnameOnCollision(t *testing.T) {
 		names = append(names, e.Name)
 	}
 
-	assert.Contains(t, names, "a.one.devel.truvity.xyz")
-	assert.Contains(t, names, "a.two.devel.truvity.xyz")
+	assert.Contains(t, names, "a.one.devel.example.xyz")
+	assert.Contains(t, names, "a.two.devel.example.xyz")
 	assert.NotContains(t, names, "a · devel")
 }
 
@@ -220,24 +220,24 @@ func TestRenderGatusFallsBackToFullHostnameOnCollision(t *testing.T) {
 func TestEndpointNames(t *testing.T) {
 	t.Run("no collision", func(t *testing.T) {
 		got := endpointNames([]CompanyHost{
-			{Host: "dms.devel.truvity.xyz", Env: "devel"},
-			{Host: "dms.prod.truvity.xyz", Env: "prod"},
+			{Host: "dms.devel.example.xyz", Env: "devel"},
+			{Host: "dms.prod.example.xyz", Env: "prod"},
 		})
 		assert.Equal(t, []string{"dms · devel", "dms · prod"}, got)
 	})
 
 	t.Run("collision falls back to the full hostname for both", func(t *testing.T) {
 		got := endpointNames([]CompanyHost{
-			{Host: "a.one.devel.truvity.xyz", Env: "devel"},
-			{Host: "a.two.devel.truvity.xyz", Env: "devel"},
+			{Host: "a.one.devel.example.xyz", Env: "devel"},
+			{Host: "a.two.devel.example.xyz", Env: "devel"},
 		})
-		assert.Equal(t, []string{"a.one.devel.truvity.xyz", "a.two.devel.truvity.xyz"}, got)
+		assert.Equal(t, []string{"a.one.devel.example.xyz", "a.two.devel.example.xyz"}, got)
 	})
 }
 
 func TestFirstDNSLabel(t *testing.T) {
-	assert.Equal(t, "dms", firstDNSLabel("dms.devel.truvity.xyz"))
-	assert.Equal(t, "truvity", firstDNSLabel("truvity.xyz"))
+	assert.Equal(t, "dms", firstDNSLabel("dms.devel.example.xyz"))
+	assert.Equal(t, "example", firstDNSLabel("example.xyz"))
 	assert.Equal(t, "bare", firstDNSLabel("bare"))
 }
 
@@ -247,17 +247,17 @@ func TestFirstDNSLabel(t *testing.T) {
 // along.
 func TestProbeURLAndConditions(t *testing.T) {
 	t.Run("no StatusPath: lenient status, bare host", func(t *testing.T) {
-		host := CompanyHost{Host: "dms.devel.truvity.xyz"}
-		assert.Equal(t, "https://dms.devel.truvity.xyz", probeURL(host))
+		host := CompanyHost{Host: "dms.devel.example.xyz"}
+		assert.Equal(t, "https://dms.devel.example.xyz", probeURL(host))
 		assert.Equal(t, []string{lenientStatusCondition, certExpiryCondition}, probeConditions(host))
 	})
 
 	t.Run("StatusPath set: strict status, path appended", func(t *testing.T) {
 		host := CompanyHost{
-			Host:       "keycloak.prod.truvity.xyz",
+			Host:       "keycloak.prod.example.xyz",
 			StatusPath: "/realms/customer/.well-known/openid-configuration",
 		}
-		assert.Equal(t, "https://keycloak.prod.truvity.xyz/realms/customer/.well-known/openid-configuration", probeURL(host))
+		assert.Equal(t, "https://keycloak.prod.example.xyz/realms/customer/.well-known/openid-configuration", probeURL(host))
 		assert.Equal(t, []string{statusCondition, certExpiryCondition}, probeConditions(host))
 	})
 }
@@ -284,7 +284,7 @@ func TestRenderGatusWithNoProvidersConfigured(t *testing.T) {
 }
 
 func TestAlertVarUppercasesTheKey(t *testing.T) {
-	assert.Equal(t, "${ALERT_URL_TRUVITY_BRIDGE_TOKEN}", alertVar("truvity_bridge_token"))
+	assert.Equal(t, "${ALERT_URL_ACME_BRIDGE_TOKEN}", alertVar("acme_bridge_token"))
 }
 
 // testPublicCatalogue is testCatalogue with the Security a Public
@@ -292,8 +292,8 @@ func TestAlertVarUppercasesTheKey(t *testing.T) {
 func testPublicCatalogue() Catalogue {
 	c := testCatalogue()
 	c.Security = &OIDCSecurity{
-		IssuerURL:      "https://access.truvity.xyz",
-		PublicHostname: "status.truvity.xyz",
+		IssuerURL:      "https://access.example.xyz",
+		PublicHostname: "status.example.xyz",
 		ClientID:       "status",
 	}
 
@@ -308,9 +308,9 @@ func TestOpsAndOpsBreakglassShareEveryEndpoint(t *testing.T) {
 	c := testPublicCatalogue()
 	c.Companies = []Company{
 		{
-			Code:        "truvity",
-			DisplayName: "Truvity B.V.",
-			Hosts:       []CompanyHost{{Host: "billing.devel.truvity.xyz", Env: "devel"}},
+			Code:        "acme",
+			DisplayName: "Acme Corp",
+			Hosts:       []CompanyHost{{Host: "billing.devel.example.xyz", Env: "devel"}},
 		},
 	}
 
@@ -348,8 +348,8 @@ func TestOIDCSecurity(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
 	require.NotNil(t, parsed.Security)
 	require.NotNil(t, parsed.Security.OIDC)
-	assert.Equal(t, "https://access.truvity.xyz", parsed.Security.OIDC.IssuerURL)
-	assert.Equal(t, "https://status.truvity.xyz/authorization-code/callback", parsed.Security.OIDC.RedirectURL)
+	assert.Equal(t, "https://access.example.xyz", parsed.Security.OIDC.IssuerURL)
+	assert.Equal(t, "https://status.example.xyz/authorization-code/callback", parsed.Security.OIDC.RedirectURL)
 	assert.True(t, strings.HasSuffix(parsed.Security.OIDC.RedirectURL, "/authorization-code/callback"),
 		"Gatus v5.37.0 requires redirect-url to end with /authorization-code/callback")
 	assert.Equal(t, "status", parsed.Security.OIDC.ClientID)
@@ -359,8 +359,8 @@ func TestOIDCSecurity(t *testing.T) {
 }
 
 func TestAlertsReadURLEscapesTheMatcher(t *testing.T) {
-	got := alertsReadURL("alerts.kernel.truvity.private", `{alertname="Watchdog"}`)
-	assert.Equal(t, "https://alerts.kernel.truvity.private/api/v1/alerts?match%5B%5D=%7Balertname%3D%22Watchdog%22%7D", got)
+	got := alertsReadURL("alerts.kernel.example.private", `{alertname="Watchdog"}`)
+	assert.Equal(t, "https://alerts.kernel.example.private/api/v1/alerts?match%5B%5D=%7Balertname%3D%22Watchdog%22%7D", got)
 }
 
 // TestRenderGatusIsDeterministic guards the golden-render property this
@@ -369,14 +369,14 @@ func TestAlertsReadURLEscapesTheMatcher(t *testing.T) {
 // catalogue renders no diff.
 func TestRenderGatusIsDeterministic(t *testing.T) {
 	c := testCatalogue()
-	c.PlatformHosts = []string{"truvity.xyz"}
+	c.PlatformHosts = []string{"example.xyz"}
 	c.Companies = []Company{
 		{
-			Code:        "truvity",
-			DisplayName: "Truvity B.V.",
+			Code:        "acme",
+			DisplayName: "Acme Corp",
 			Hosts: []CompanyHost{
-				{Host: "b.truvity.xyz", Env: "devel"},
-				{Host: "a.truvity.xyz", Env: "devel"},
+				{Host: "b.example.xyz", Env: "devel"},
+				{Host: "a.example.xyz", Env: "devel"},
 			},
 		},
 	}
