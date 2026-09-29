@@ -415,10 +415,24 @@ below is the work, in the order it has to happen.
 
 ### 0.10.0 → 0.11.0
 
-Nothing to do: every new value defaults to the behaviour 0.10.0
-rendered, and every existing golden is byte-identical. What there is to
-adopt is listed in docs/reference.md, "The single-operator estate". One
-new refusal can reach an existing install: an enabled Grafana with
+Every new switch defaults to the behaviour 0.10.0 rendered; what there
+is to adopt is listed in docs/reference.md, "The single-operator
+estate". Two defaults DO change, both fixes, and each has an opt-out
+that renders the 0.10.0 output byte for byte:
+
+- **The inhibit rule gains a label guard** (`observability-stack`,
+  `notifications.inhibit.requireLabels: true`): a critical that does not
+  carry the `equal` labels no longer mutes every warning that does not
+  carry them either. Expect warnings the old rule muted by accident —
+  on a default install, `BackupJobFailed` beside a firing
+  `CronJobNotSucceeding` — to start arriving. Opt out:
+  `requireLabels: false`.
+- **The backup rules skip suspended CronJobs** (`platform-alerts`,
+  `groups.backups.ignoreSuspended: true`): a deliberately suspended
+  backup stops paging. An accidental suspension is no longer caught by
+  `CronJobNotSucceeding`. Opt out: `ignoreSuspended: false`.
+
+One new refusal can reach an existing install: an enabled Grafana with
 `grafana.envValueFrom.GF_SECURITY_SECRET_KEY.secretKeyRef.name` left
 empty, which the API server already refused on apply.
 

@@ -224,9 +224,21 @@ alert, and a rule that aggregates `by (namespace, …)` drops
 `k8s_namespace_name` from its own alerts even on an estate that stamps
 it.
 
-So name labels your alerts actually carry (`inhibit.equal`, and
-`groupBy` for the same reason), or turn the rule off
-(`inhibit.enabled: false`). `groupBy` has the milder form of the same
+**The guard (0.11.0, on by default).** `inhibit.requireLabels: true`
+renders a source matcher `<label> =~ ".+"` for every `equal` label: a
+critical that does not carry them inhibits nothing, and `equal` then
+requires the warning to carry the same non-empty values. It errs loud —
+a warning the unguarded rule muted by accident now arrives — which is
+why it is the default rather than documentation alone: this chart's own
+`platform-alerts` hit the hazard on a default install.
+`CronJobNotSucceeding` (critical) and `BackupJobFailed` (warning)
+aggregate `by (namespace, …)`, which drops `k8s_namespace_name`, so one
+CronJob not succeeding muted every failed backup Job's warning on its
+cluster. `requireLabels: false` renders the 0.10.0 rule byte for byte.
+
+Beyond the guard, name labels your alerts actually carry
+(`inhibit.equal`, and `groupBy` for the same reason), or turn the rule
+off (`inhibit.enabled: false`). `groupBy` has the milder form of the same
 trap: a label no alert carries groups every alert together into one
 notification.
 
