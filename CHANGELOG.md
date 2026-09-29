@@ -4,6 +4,41 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.11.3
+
+One defect, seen live on an install where several clusters write into one
+metrics store (the documented shared-store topology, told apart only by
+the `k8s_cluster_name` label):
+
+- **Behaviour change: `platform-alerts` rules now match per cluster.**
+  Two clusters can share a namespace, a Job name or a PVC name. The
+  rules joined series on `(namespace, job_name)`,
+  `(namespace, persistentvolumeclaim)` and similar, without the cluster
+  label, so on a shared store the join found the same key twice and the
+  whole query failed with a duplicate-series error (HTTP 422). vmalert
+  reported the rule `health: err` and it never fired, silently.
+  `BackupJobFailed` and `VolumeSmallerThanClaimed` were dead that way.
+  Three more were wrong without failing: `CronJobNotSucceeding` took the
+  newest success across all clusters, so one cluster's fresh success hid
+  another's stale one; `KargoPromotionErrored` paired a promotion with a
+  Stage condition from a different cluster; and the newest-Job and
+  suspend clauses inside `BackupJobFailed` compared across clusters. Every
+  `on (...)` and `by (...)` list in those rules now leads with the
+  cluster label, and each alert carries the label of the cluster it is
+  about. Nothing changes on a single-cluster store: where the label is
+  absent on both sides it matches on empty, and the rules fire exactly as
+  before (proved against VictoriaMetrics in
+  `hack/platform-alerts-cluster-proof.sh`). New value `clusterLabel`
+  (default `k8s_cluster_name`, the name `observability-stack`'s
+  `tenancy.clusterLabel` defaults to; set both if you renamed it). The
+  opt-out is `clusterLabel: ""`, which renders the 0.11.2 expressions byte
+  for byte. Not changed, on purpose: `WritePathDead` (sums one store's own
+  counter) and the `KargoStateMetricsAbsent` deadman (fires only when no
+  cluster exports the series). Caveat: the label must be on both sides of
+  each join or on neither, which remote emitters guarantee by stamping it
+  on every series; a store that stamps it on some metrics only should set
+  `clusterLabel: ""`.
+
 ## v0.11.2
 
 No render changes. Two guard rails in CI, so two independent release

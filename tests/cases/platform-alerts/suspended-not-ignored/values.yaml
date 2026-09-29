@@ -1,5 +1,6 @@
 # `minimal`, with the backup rules' suspend handling switched off: the
-# expressions 0.10.0 rendered, byte for byte (tests/backupjobfailed_test.go
+# expressions 0.10.0 rendered, apart from the cluster label 0.11.3 added
+# to every join (`clusterLabel`) (tests/backupjobfailed_test.go
 # holds this golden to v0.10.0's `minimal` shape). For an estate that
 # wants a suspended CronJob to keep paging.
 stores:

@@ -27,6 +27,20 @@ time, with a fixture under tests/invalid for each.
 {{- end -}}
 
 {{- $ns := .Values.namespaceSelector -}}
+{{- /*
+The cluster label, as a prefix for every `on (...)` / `by (...)` list below.
+One metrics store can hold several clusters' series, told apart only by
+this label, and two clusters can share a namespace, a Job name or a PVC
+name. A join or aggregation that leaves it out matches series from both:
+`on (...)` with `group_left` fails the whole query (duplicate series, HTTP
+422 from vmalert, so the rule is dead and says nothing), and `and` /
+`unless` / `max by` silently pair or merge across clusters. Where the label
+is absent on both sides (a single-cluster store) it matches on empty, so
+the rules are unchanged there. Empty `clusterLabel` renders the previous
+expressions byte for byte.
+*/ -}}
+{{- $c := "" -}}
+{{- if .Values.clusterLabel -}}{{- $c = printf "%s, " .Values.clusterLabel -}}{{- end -}}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:
@@ -66,11 +80,11 @@ spec:
         # range for a daily job: age resets below 24h on every run.
         - alert: CronJobNotSucceeding
           expr: >-
-            time() - max by (namespace, cronjob) (
+            time() - max by ({{ $c }}namespace, cronjob) (
               kube_cronjob_status_last_successful_time{namespace=~"{{ $ns }}"}
             ) > {{ $g.maxSuccessAge }}
             {{- if $ignoreSuspended }}
-            unless on (namespace, cronjob)
+            unless on ({{ $c }}namespace, cronjob)
               kube_cronjob_spec_suspend{namespace=~"{{ $ns }}"} == 1
             {{- end }}
           labels:
@@ -105,10 +119,10 @@ spec:
             WITH (
               cronjob_jobs = (
                 kube_job_created{namespace=~"{{ $ns }}"}
-                * on (namespace, job_name) group_left(owner_name)
+                * on ({{ $c }}namespace, job_name) group_left(owner_name)
                 kube_job_owner{namespace=~"{{ $ns }}", owner_kind="CronJob"}
               ),
-              newest_per_cronjob = max by (namespace, owner_name) (cronjob_jobs)
+              newest_per_cronjob = max by ({{ $c }}namespace, owner_name) (cronjob_jobs)
               {{- if $ignoreSuspended }},
               suspended_cronjobs = label_replace(
                 kube_cronjob_spec_suspend{namespace=~"{{ $ns }}"} == 1,
@@ -116,12 +130,12 @@ spec:
               )
               {{- end }}
             )
-            max by (namespace, job_name) (
+            max by ({{ $c }}namespace, job_name) (
               kube_job_status_failed{namespace=~"{{ $ns }}"}
-              and on (namespace, job_name) (
-                cronjob_jobs == on (namespace, owner_name) group_left() newest_per_cronjob
+              and on ({{ $c }}namespace, job_name) (
+                cronjob_jobs == on ({{ $c }}namespace, owner_name) group_left() newest_per_cronjob
                 {{- if $ignoreSuspended }}
-                unless on (namespace, owner_name) suspended_cronjobs
+                unless on ({{ $c }}namespace, owner_name) suspended_cronjobs
                 {{- end }}
               )
             ) > 0
@@ -180,7 +194,7 @@ spec:
         - alert: VolumeSmallerThanClaimed
           expr: >-
             kubelet_volume_stats_capacity_bytes{namespace=~"{{ $ns }}"}
-            / on (namespace, persistentvolumeclaim)
+            / on ({{ $c }}namespace, persistentvolumeclaim)
             kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=~"{{ $ns }}"}
             < {{ $g.minCapacityRatio }}
           labels:
@@ -263,7 +277,7 @@ spec:
         - alert: KargoPromotionErrored
           expr: >-
             kargo_promotion_phase{phase="Errored"} == 1
-            and on (namespace, stage) kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
+            and on ({{ $c }}namespace, stage) kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
           for: {{ $g.for }}
           labels:
             {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}

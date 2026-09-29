@@ -1,0 +1,8 @@
+# `minimal`, with the cluster label switched off: the expressions 0.11.2
+# rendered, byte for byte. For a store that does not tell clusters apart
+# by a label.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+
+clusterLabel: ""

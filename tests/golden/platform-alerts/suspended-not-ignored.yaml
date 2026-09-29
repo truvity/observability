@@ -20,7 +20,7 @@ spec:
         # range for a daily job: age resets below 24h on every run.
         - alert: CronJobNotSucceeding
           expr: >-
-            time() - max by (namespace, cronjob) (
+            time() - max by (k8s_cluster_name, namespace, cronjob) (
               kube_cronjob_status_last_successful_time{namespace=~".*"}
             ) > 26h
           labels:
@@ -54,15 +54,15 @@ spec:
             WITH (
               cronjob_jobs = (
                 kube_job_created{namespace=~".*"}
-                * on (namespace, job_name) group_left(owner_name)
+                * on (k8s_cluster_name, namespace, job_name) group_left(owner_name)
                 kube_job_owner{namespace=~".*", owner_kind="CronJob"}
               ),
-              newest_per_cronjob = max by (namespace, owner_name) (cronjob_jobs)
+              newest_per_cronjob = max by (k8s_cluster_name, namespace, owner_name) (cronjob_jobs)
             )
-            max by (namespace, job_name) (
+            max by (k8s_cluster_name, namespace, job_name) (
               kube_job_status_failed{namespace=~".*"}
-              and on (namespace, job_name) (
-                cronjob_jobs == on (namespace, owner_name) group_left() newest_per_cronjob
+              and on (k8s_cluster_name, namespace, job_name) (
+                cronjob_jobs == on (k8s_cluster_name, namespace, owner_name) group_left() newest_per_cronjob
               )
             ) > 0
           labels:
@@ -110,7 +110,7 @@ spec:
         - alert: VolumeSmallerThanClaimed
           expr: >-
             kubelet_volume_stats_capacity_bytes{namespace=~".*"}
-            / on (namespace, persistentvolumeclaim)
+            / on (k8s_cluster_name, namespace, persistentvolumeclaim)
             kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=~".*"}
             < 0.5
           labels:

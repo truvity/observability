@@ -70,16 +70,16 @@ func TestBackupJobFailedExprIsTheNewestJobJoin(t *testing.T) {
 	// something introduced here). This is the exact string vmalert reads
 	// off the golden, not a hand-folded approximation of it.
 	assert.Equal(t, "WITH (\n\n  cronjob_jobs = (\n    kube_job_created{namespace=~\".*\"}\n"+
-		"    * on (namespace, job_name) group_left(owner_name)\n"+
+		"    * on (k8s_cluster_name, namespace, job_name) group_left(owner_name)\n"+
 		"    kube_job_owner{namespace=~\".*\", owner_kind=\"CronJob\"}\n  ),\n"+
-		"  newest_per_cronjob = max by (namespace, owner_name) (cronjob_jobs),\n"+
+		"  newest_per_cronjob = max by (k8s_cluster_name, namespace, owner_name) (cronjob_jobs),\n"+
 		"  suspended_cronjobs = label_replace(\n"+
 		"    kube_cronjob_spec_suspend{namespace=~\".*\"} == 1,\n"+
 		"    \"owner_name\", \"$1\", \"cronjob\", \"(.+)\"\n  )\n"+
-		") max by (namespace, job_name) (\n\n  kube_job_status_failed{namespace=~\".*\"}\n"+
-		"  and on (namespace, job_name) (\n"+
-		"    cronjob_jobs == on (namespace, owner_name) group_left() newest_per_cronjob\n"+
-		"    unless on (namespace, owner_name) suspended_cronjobs\n  )\n) > 0",
+		") max by (k8s_cluster_name, namespace, job_name) (\n\n  kube_job_status_failed{namespace=~\".*\"}\n"+
+		"  and on (k8s_cluster_name, namespace, job_name) (\n"+
+		"    cronjob_jobs == on (k8s_cluster_name, namespace, owner_name) group_left() newest_per_cronjob\n"+
+		"    unless on (k8s_cluster_name, namespace, owner_name) suspended_cronjobs\n  )\n) > 0",
 		expr)
 
 	// Unchanged by this fix, and deliberately so: the rule already fires
@@ -112,10 +112,10 @@ func TestBackupJobFailedNamespaceSelectorIsThreaded(t *testing.T) {
 func TestBackupRulesSkipOnlyASuspendedCronJob(t *testing.T) {
 	notSucceeding, hold := backupsRule(t, "golden/platform-alerts/minimal.yaml", "CronJobNotSucceeding")
 	assert.Empty(t, hold)
-	assert.Regexp(t, `unless on \(namespace, cronjob\)\s+kube_cronjob_spec_suspend\{namespace=~"\.\*"\} == 1$`, notSucceeding)
+	assert.Regexp(t, `unless on \(k8s_cluster_name, namespace, cronjob\)\s+kube_cronjob_spec_suspend\{namespace=~"\.\*"\} == 1$`, notSucceeding)
 
 	failed, _ := backupsRule(t, "golden/platform-alerts/minimal.yaml", "BackupJobFailed")
-	assert.Contains(t, failed, "unless on (namespace, owner_name) suspended_cronjobs")
+	assert.Contains(t, failed, "unless on (k8s_cluster_name, namespace, owner_name) suspended_cronjobs")
 
 	for _, expr := range []string{notSucceeding, failed} {
 		assert.NotContains(t, expr, "== 0", "a suspend clause joined on `== 0` goes silent when the series is absent")

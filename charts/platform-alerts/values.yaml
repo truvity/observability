@@ -31,6 +31,20 @@ runbookBaseUrl: ""
 # -- How often vmalert evaluates these groups.
 interval: 1m
 
+# -- The label that names the cluster a series came from, on a metrics
+# store that holds several clusters (the shared-store topology: remote
+# emitters write with the cluster identity forced, see
+# charts/observability-stack `tenancy.clusterLabel`, which this must
+# equal). Every join and per-object aggregation in the rules matches on it
+# in addition to namespace and object name, because two clusters can share
+# a namespace, a Job name or a PVC name; without it those rules fail with
+# a duplicate-series error (vmalert health `err`, HTTP 422) and never
+# fire. On a single-cluster store, where the label is absent on both sides,
+# it still matches (both empty), so the default is safe there too.
+# Empty restores the expressions of 0.11.2 byte for byte (a store that
+# names its clusters some other way and does not want the label matched).
+clusterLabel: k8s_cluster_name
+
 # -- Only consider objects in namespaces matching this regular expression.
 # `.*` is every namespace; an estate that runs these rules for the platform
 # alone narrows it here.

@@ -34,6 +34,7 @@ be a copy that goes stale at the first bump, and the render cannot.
 | `runbookBaseUrl` | string | `""` | Base for each alert's `runbook_url`; the alert name is appended. Empty renders no annotation at all rather than a blank one. |
 | `interval` | duration | `1m` | How often vmalert evaluates these groups. |
 | `namespaceSelector` | regex | `".*"` | Objects in namespaces that do not match are ignored by the Kubernetes-object rules. |
+| `clusterLabel` | string | `k8s_cluster_name` | 0.11.3. The label naming the cluster on a store that holds several; every join and per-object aggregation in the backup, volume and Kargo rules matches on it, because two clusters can share a namespace or object name and a join without it fails with a duplicate-series 422 (the rule never fires) or pairs series across clusters. Equal to `observability-stack`'s `tenancy.clusterLabel`. Absent on both sides (a single-cluster store) it still matches. `""` renders the 0.11.2 expressions byte for byte. |
 | `stores` | list | `[]` | One entry per store process. **Required** whenever a group that watches stores is enabled. |
 
 ### `stores[]`
