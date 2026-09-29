@@ -1,4 +1,5 @@
-{{- if .Values.vmauth.enabled }}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml }}
+{{- if $observabilityStackEffective.vmauth }}
 {{- $root := . }}
 {{- $fullname := include "observability-stack.fullname" . }}
 {{- $labels := dict "cluster" .Values.tenancy.clusterLabel "namespace" .Values.tenancy.namespaceLabel }}

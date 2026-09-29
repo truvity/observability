@@ -1,0 +1,25 @@
+# expect: `kube-state-metrics.customResourceState.config` is set
+global:
+  cluster:
+    dnsDomain: cluster.example.
+tenancy:
+  cluster: example-cluster
+  environment: development
+writeCredentials:
+  secretName: example-write-token
+metrics:
+  destinations:
+    - name: primary
+      url: https://metrics.example/api/v1/write
+logs:
+  enabled: false
+otlp:
+  enabled: false
+kubeStateMetrics:
+  enabled: true
+kube-state-metrics:
+  customResourceState:
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources: []

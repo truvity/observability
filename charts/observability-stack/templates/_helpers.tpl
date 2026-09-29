@@ -552,3 +552,40 @@ ever being written.
 {{- $cfg.receiver -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Operator-only's self-disable, for the four components whose own
+`enabled` defaults to `null` rather than a literal `true`/`false`:
+vmauth, vmalert, alertmanager, metricsSelfScrape.
+
+A parent chart cannot compute a SUBCHART's values (see `mode`'s own
+comment and docs/doctrine.md), but these four ARE this chart's own
+values — `.Values.vmauth.enabled` and the rest are read here, by this
+chart's own templates, not by a vendored one. That is what makes
+self-disabling them possible at all where it is not for the three
+stores, Grafana and the vendored sync Job.
+
+`null` (the values.yaml default) is the one value that means "mode
+decides": full resolves it to `true`, operator-only to `false`. Anything
+else — an explicit `true` or `false` the caller actually wrote — is
+taken exactly as written, INCLUDING a `true` beside `mode: operator-
+only`, which `observability-stack.validate.mode` refuses outright. A
+Helm value carries no memory of "the chart's own default" versus "the
+caller wrote the same value" once the two coalesce, so `null` is the
+only shape this chart can tell apart from a real answer — which is why
+the default moved off `true` for exactly these four keys and nowhere
+else.
+
+Returns the four resolved booleans as a YAML mapping; parse it with
+`fromYaml` at the call site: `{{- $eff := include
+"observability-stack.effectiveEnabled" . | fromYaml -}}`, then read
+`$eff.vmauth`, `$eff.vmalert`, `$eff.alertmanager`,
+`$eff.metricsSelfScrape` — real booleans, not strings.
+*/}}
+{{- define "observability-stack.effectiveEnabled" -}}
+{{- $full := eq (.Values.mode | default "full") "full" -}}
+vmauth: {{ if kindIs "invalid" .Values.vmauth.enabled }}{{ $full }}{{ else }}{{ .Values.vmauth.enabled }}{{ end }}
+vmalert: {{ if kindIs "invalid" .Values.vmalert.enabled }}{{ $full }}{{ else }}{{ .Values.vmalert.enabled }}{{ end }}
+alertmanager: {{ if kindIs "invalid" .Values.alertmanager.enabled }}{{ $full }}{{ else }}{{ .Values.alertmanager.enabled }}{{ end }}
+metricsSelfScrape: {{ if kindIs "invalid" .Values.metricsSelfScrape.enabled }}{{ $full }}{{ else }}{{ .Values.metricsSelfScrape.enabled }}{{ end }}
+{{- end -}}

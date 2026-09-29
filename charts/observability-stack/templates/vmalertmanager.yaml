@@ -1,4 +1,5 @@
-{{- if .Values.alertmanager.enabled }}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml }}
+{{- if $observabilityStackEffective.alertmanager }}
 {{- $fullname := include "observability-stack.fullname" . }}
 {{- $watchdog := .Values.alertmanager.watchdog }}
 {{- /*

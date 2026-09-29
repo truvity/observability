@@ -1,0 +1,28 @@
+# expect: but `alertmanager.enabled` is true
+# `mode: operator-only` turns alertmanager off ITSELF when
+# `alertmanager.enabled` is left at its `null` default (0.9.0) — so this
+# fixture pins it EXPLICITLY to `true` instead, the one shape that still
+# refuses: an explicit contradiction, not an unset value the mode already
+# resolves.
+mode: operator-only
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: true
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false
+metricsSelfScrape:
+  enabled: false
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  syncJob:
+    enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

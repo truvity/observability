@@ -439,7 +439,10 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: victoria-logs-collector
     spec:
+      priorityClassName: system-node-critical
       serviceAccountName: observability-emitters-victoria-logs-collector
+      tolerations: 
+        - operator: Exists
       securityContext: 
         {}
       containers:
@@ -450,11 +453,11 @@ spec:
             {}
           resources: 
             limits:
-              cpu: "1"
-              memory: 512Mi
+              cpu: 100m
+              memory: 192Mi
             requests:
-              cpu: "1"
-              memory: 512Mi
+              cpu: 15m
+              memory: 192Mi
           ports:
             - name: http
               containerPort: 9429

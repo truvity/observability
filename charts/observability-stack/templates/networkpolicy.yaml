@@ -114,7 +114,8 @@ never a second, separately-hardcoded default: an estate that overrides
 `scrapeFrom` must not lose the reloader scrape the way it would not
 lose the store or proxy one.
 */}}
-{{- if $root.Values.vmalert.enabled }}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" $root | fromYaml }}
+{{- if $observabilityStackEffective.vmalert }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -45,7 +45,8 @@ specifically. Turning both this AND the vendored one off at once is
 refused (`observability-stack.validate.watchdogSource`): the status
 box's deadman needs exactly one, from somewhere.
 */}}
-{{- if and .Values.vmalert.enabled .Values.vmalert.watchdog.enabled (not (include "observability-stack.vendoredWatchdogPresent" .)) }}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml }}
+{{- if and $observabilityStackEffective.vmalert .Values.vmalert.watchdog.enabled (not (include "observability-stack.vendoredWatchdogPresent" .)) }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:

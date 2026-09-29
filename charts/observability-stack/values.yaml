@@ -104,7 +104,14 @@ interval: 30s
 # against the issuer's OIDC discovery document and injects the filters
 # that token is entitled to.
 vmauth:
-  enabled: true
+  # -- Null by default (rather than `true`): `mode: operator-only` turns
+  # this OFF ITSELF when it is left unset, and `mode: full` turns it ON
+  # — the two are the same "unset" value, resolved by `mode` rather than
+  # written down twice. Set it explicitly (`true` or `false`) to pin it
+  # regardless of mode; an explicit `true` beside `mode: operator-only`
+  # is refused, the same contradiction every component in that mode
+  # refuses (see `mode`'s own comment).
+  enabled: null
   image:
     repository: victoriametrics/vmauth
     # -- The floor is v1.152.0, and the chart refuses an older tag.
@@ -501,7 +508,10 @@ stores:
 # rules over logs are different rule types, selected by
 # `-rule.defaultRuleType`, and a single process has one default.
 vmalert:
-  enabled: true
+  # -- Null by default: see `vmauth.enabled`'s own comment — `mode`
+  # resolves an unset value; an explicit `true`/`false` pins it, and an
+  # explicit `true` beside `mode: operator-only` is refused.
+  enabled: null
   # -- The rules over logs. Renders a second vmalert with
   # `-rule.defaultRuleType=vlogs` and the log store as its datasource.
   logs:
@@ -554,7 +564,10 @@ vmalert:
       memory: 512Mi
 
 alertmanager:
-  enabled: true
+  # -- Null by default: see `vmauth.enabled`'s own comment — `mode`
+  # resolves an unset value; an explicit `true`/`false` pins it, and an
+  # explicit `true` beside `mode: operator-only` is refused.
+  enabled: null
   replicaCount: 1
   # -- An Alertmanager the estate already runs, when `enabled` is false.
   # A vmalert with no notifier evaluates every rule and sends the result
@@ -1302,7 +1315,10 @@ selfAlerts:
 # template reads `storeCredentials` directly, so there is nothing here
 # that could disagree with it.
 metricsSelfScrape:
-  enabled: true
+  # -- Null by default: see `vmauth.enabled`'s own comment — `mode`
+  # resolves an unset value; an explicit `true`/`false` pins it, and an
+  # explicit `true` beside `mode: operator-only` is refused.
+  enabled: null
 
 ###############################################################################
 # Upstream charts.

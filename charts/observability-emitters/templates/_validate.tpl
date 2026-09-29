@@ -343,6 +343,20 @@ words on.
 {{- if .Values.kubeStateMetrics.enabled -}}
 {{- $ksm := index .Values "kube-state-metrics" -}}
 {{- /*
+The ConfigMap this chart's own templates/
+kubestatemetrics-customresourcestate.yaml renders. values.yaml pins
+`customResourceState.enabled: true` / `create: false` unconditionally
+whenever `kubeStateMetrics.enabled` is, so a consumer-authored `config:`
+here would never reach kube-state-metrics — `create: false` means
+upstream never renders ITS OWN ConfigMap from it, and the one this
+chart renders instead carries only the presets under
+`kubeStateMetrics.customResources`. Configured and silently ignored is
+the exact trap this chart refuses everywhere else.
+*/}}
+{{- if gt (len (($ksm.customResourceState).config | default dict)) 0 -}}
+{{- fail "observability-emitters: `kube-state-metrics.customResourceState.config` is set, but this chart pins `customResourceState.create: false` whenever `kubeStateMetrics.enabled` is true — kube-state-metrics reads its config from the ConfigMap THIS chart renders instead (templates/kubestatemetrics-customresourcestate.yaml, built from `kubeStateMetrics.customResources`), so a hand-written `config:` here is never read at all. Ask for the same resources through `kubeStateMetrics.customResources` (a named preset), or open an issue if the one you need has no preset yet." -}}
+{{- end -}}
+{{- /*
 Nothing scrapes it.
 */}}
 {{- if not .Values.metrics.enabled -}}
