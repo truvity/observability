@@ -184,6 +184,18 @@ no argument to put a filter in, so that route cannot be scoped and has to
 be admitted by name. [docs/safety.md](docs/safety.md) has the mechanism
 and the test that catches it.
 
+## Consumers
+
+- **truvity/gitops**: charts `observability-crds`, `observability-stack`,
+  `observability-emitters`
+
+## Neighbours
+
+**access-roster** is the issuer for vmauth tenancy tokens that scope queries
+to caller's grants. **OpenBao** is a relying party holding credentials for
+backups. Both write to **audit** for the record of every query and every
+policy change.
+
 ## Documentation
 
 - [docs/target-state.md](docs/target-state.md) — what this repository is
