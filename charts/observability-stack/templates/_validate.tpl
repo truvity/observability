@@ -659,7 +659,7 @@ trip over an unconfigured severity or receiver.
 {{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `alertmanager.notifierUrl` is set. Evaluate-only renders vmalert's `-notifier.blackhole`, which vmalert itself refuses to combine with any notifier URL: `-notifier.url`, `-notifier.config` and `-notifier.blackhole` are mutually exclusive. Unset `alertmanager.notifierUrl`, or drop `notifications.mode` back to `route` and point vmalert at the Alertmanager it names." -}}
 {{- end -}}
 {{- $slack := $n.slack | default dict -}}
-{{- $receiverConfigured := or ($slack.webhookSecret).name (gt (len ($n.webhook | default list)) 0) (gt (len ($n.severities | default dict)) 0) (gt (len ($n.routes | default list)) 0) (gt (len ($n.also | default list)) 0) -}}
+{{- $receiverConfigured := or ($slack.webhookSecret).name (($n.telegram | default dict).botTokenSecret).name (gt (len ($n.webhook | default list)) 0) (gt (len ($n.severities | default dict)) 0) (gt (len ($n.routes | default list)) 0) (gt (len ($n.also | default list)) 0) -}}
 {{- if $receiverConfigured -}}
 {{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `notifications` also configures a receiver, a severity, a route or an `also` bridge. Evaluate-only means nobody is notified yet: a receiver configured beside it looks wired up and is never reached, because vmalert never sends the notification it would carry. Remove the receiver configuration, or drop `notifications.mode` back to `route`." -}}
 {{- end -}}
@@ -675,15 +675,17 @@ free-form passthrough. See docs/notifications.md and docs/safety.md.
 {{- $n := .Values.notifications | default dict -}}
 {{- $mode := ($n.mode) | default "route" -}}
 {{- $slack := $n.slack | default dict -}}
+{{- $telegram := $n.telegram | default dict -}}
+{{- $telegramConfigured := ($telegram.botTokenSecret).name -}}
 {{- $webhooks := $n.webhook | default list -}}
 {{- $severities := $n.severities | default dict -}}
 {{- $routes := $n.routes | default list -}}
 {{- $also := $n.also | default list -}}
 {{- $webhookNames := dict -}}
 {{- range $w := $webhooks -}}{{- $_ := set $webhookNames $w.name true -}}{{- end -}}
-{{- $configured := or ($slack.webhookSecret).name (gt (len $webhooks) 0) -}}
+{{- $configured := or ($slack.webhookSecret).name $telegramConfigured (gt (len $webhooks) 0) -}}
 {{- if and $observabilityStackEffective.alertmanager (not $configured) (ne $mode "evaluate-only") -}}
-{{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.webhookSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs, or set `notifications.mode: evaluate-only` for the explicit \"evaluate every rule, notify nobody yet\" shape if there is no channel yet." -}}
+{{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.webhookSecret`, no `notifications.telegram.botTokenSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs, or set `notifications.mode: evaluate-only` for the explicit \"evaluate every rule, notify nobody yet\" shape if there is no channel yet." -}}
 {{- end -}}
 {{- /*
 `notifications.externalUrl` and `vmalert.externalUrl` are one fact — the
@@ -714,12 +716,29 @@ a severity `severities` does not cover reaches it silently.
 {{- end -}}
 {{- end -}}
 {{- /*
-A severity naming a receiver that does not exist. `slack` is the one
-literal keyword; anything else must be a name from `notifications.webhook`.
+`telegram` is a keyword only once `notifications.telegram` is configured.
+Before 0.10.0 it was an ordinary webhook name, and an install that
+bridges to Telegram through a webhook it NAMED `telegram` must render
+exactly as it did; the two together are ambiguous and refused.
+*/ -}}
+{{- if and $telegramConfigured (hasKey $webhookNames "telegram") -}}
+{{- fail "observability-stack: `notifications.telegram` is configured and `notifications.webhook` also has an entry named \"telegram\". A severity with `receiver: telegram` could then mean either one, and a route whose meaning depends on which the chart picked is a route nobody can read. Rename the webhook entry." -}}
+{{- end -}}
+{{- /*
+A severity naming a receiver that does not exist. `slack` and `telegram`
+are the literal keywords; anything else must be a name from
+`notifications.webhook`.
 */ -}}
 {{- range $tier, $cfg := $severities -}}
-{{- if and $cfg.receiver (ne $cfg.receiver "slack") (not (hasKey $webhookNames $cfg.receiver)) -}}
-{{- fail (printf "observability-stack: notifications.severities.%s.receiver is %q, which is neither \"slack\" nor the name of an entry in notifications.webhook. A route to a receiver that is not configured looks like a route and reaches nobody." $tier (toString $cfg.receiver)) -}}
+{{- $isTelegram := and (eq $cfg.receiver "telegram") $telegramConfigured -}}
+{{- if and $cfg.receiver (ne $cfg.receiver "slack") (not $isTelegram) (not (hasKey $webhookNames $cfg.receiver)) -}}
+{{- fail (printf "observability-stack: notifications.severities.%s.receiver is %q, which is neither \"slack\", \"telegram\" (with notifications.telegram configured) nor the name of an entry in notifications.webhook. A route to a receiver that is not configured looks like a route and reaches nobody." $tier (toString $cfg.receiver)) -}}
+{{- end -}}
+{{- if and (not $isTelegram) (or (hasKey $cfg "chatId") (hasKey $cfg "messageThreadId")) -}}
+{{- fail (printf "observability-stack: notifications.severities.%s sets `chatId` or `messageThreadId` but its receiver is %q, not a configured `telegram`. Those keys pick a Telegram chat; on any other receiver they would be read by nothing." $tier (toString $cfg.receiver)) -}}
+{{- end -}}
+{{- if and $isTelegram $cfg.channel -}}
+{{- fail (printf "observability-stack: notifications.severities.%s.receiver is \"telegram\" and it also sets `channel`. `channel` is a Slack channel; a Telegram tier lands in `notifications.telegram.chatId`, or in this tier's own `chatId`/`messageThreadId`. Remove `channel`." $tier) -}}
 {{- end -}}
 {{- if and (eq $cfg.receiver "slack") (not ($slack.webhookSecret).name) -}}
 {{- fail (printf "observability-stack: notifications.severities.%s.receiver is \"slack\" but notifications.slack.webhookSecret is not set. A route to a receiver kind that is not configured looks like a route and reaches nobody." $tier) -}}
@@ -731,6 +750,12 @@ Anything else matches nothing a rule carries and pages nobody while
 looking exactly like a route that works.
 */ -}}
 {{- range $i, $r := $routes -}}
+{{- range $tier := list "critical" "warning" -}}
+{{- $tcfg := index $severities $tier | default dict -}}
+{{- if and (index $r $tier) (eq ($tcfg.receiver | default "") "telegram") $telegramConfigured -}}
+{{- fail (printf "observability-stack: notifications.routes[%d].%s overrides a channel, but notifications.severities.%s.receiver is \"telegram\". A route's per-tier value is a Slack channel name; a Telegram tier has no channel to override, so it would be read by nothing. Remove it, or route that tier to Slack." $i $tier $tier) -}}
+{{- end -}}
+{{- end -}}
 {{- range $k, $_ := ($r.match | default dict) -}}
 {{- if not (has $k (list "k8s_cluster_name" "k8s_namespace_name")) -}}
 {{- fail (printf "observability-stack: notifications.routes[%d].match has key %q. The collectors this chart's rules run against stamp exactly two dimensions on every alert — k8s_cluster_name and k8s_namespace_name — so a route on anything else (tenant, env, team, …) matches nothing any rule actually carries." $i (toString $k)) -}}

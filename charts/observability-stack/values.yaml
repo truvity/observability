@@ -669,6 +669,23 @@ notifications:
   # refused by the schema rather than accepted and silently unreachable.
   # slack:
   #   webhookSecret: {name: "", key: url}
+  # -- Telegram: one bot, posting to a chat (and, optionally, a forum
+  # topic in it). Coexists with `slack` and `webhook` — any combination,
+  # each severity tier picking one — and counts as a receiver for the
+  # "no receiver configured" refusal. The bot token is a credential: it
+  # is taken from an EXISTING Secret by name and key, mounted, and read
+  # with Alertmanager's `bot_token_file` — never a value here, never in
+  # the rendered config. `chatId` is the default destination;
+  # `severities.<tier>.chatId` / `.messageThreadId` override it per tier.
+  # Unset by default, and refused by the schema without `botTokenSecret`
+  # or `chatId`. See docs/notifications.md, "Telegram".
+  # telegram:
+  #   botTokenSecret: {name: "", key: token}
+  #   chatId: 0              # an integer; negative for a group
+  #   messageThreadId: 0     # optional: a forum topic; 0 = none
+  #   parseMode: HTML        # HTML (default) | MarkdownV2 | Markdown
+  #   sendResolved: true     # default true
+  #   message: ""            # optional; REQUIRED unless parseMode is HTML
   # -- Named webhook receivers, for `also` below. One URL each; there is
   # no per-alert channel concept for a webhook the way there is for
   # Slack.
@@ -676,9 +693,11 @@ notifications:
   # - name: ""
   #   urlSecret: {name: "", key: url}
   # -- Severity tiers, and where each lands when no route says otherwise.
-  # `receiver` names a configured kind above (`slack`, or an entry in
-  # `webhook`); `channel` is the Slack channel — or, for a webhook
-  # receiver, an identifying label only, since one webhook has one URL.
+  # `receiver` names a configured kind above (`slack`, `telegram`, or
+  # an entry in `webhook`); `channel` is the Slack channel — or, for a
+  # webhook receiver, an identifying label only, since one webhook has
+  # one URL. A `telegram` tier takes no `channel`: it lands in
+  # `telegram.chatId`, or in the tier's own `chatId`/`messageThreadId`.
   #
   # This chart's rules carry only `critical` and `warning`: `critical`
   # means a person should look now, `warning` means a person should look
@@ -689,7 +708,7 @@ notifications:
   # ships a route for the two above.
   severities: {}
   # critical: {receiver: slack, channel: ""}
-  # warning:  {receiver: slack, channel: ""}
+  # warning:  {receiver: telegram, messageThreadId: 0}
   # -- Routes, in order. The first entry whose `match` is satisfied wins,
   # per severity; an entry naming only `critical` sends its warnings to
   # `severities.warning`. `match` keys are the vocabulary the collectors

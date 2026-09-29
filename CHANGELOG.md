@@ -4,6 +4,29 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.10.0
+
+Two additions to `charts/observability-stack` an estate needs before it
+can move a hand-made alerting and backup setup onto this chart. Both
+are additive: an existing values file renders byte-for-byte as it did
+under 0.9.1 (every existing golden is unchanged).
+
+- **Telegram as a receiver kind** (`notifications.telegram`), beside
+  `slack` and `webhook`, in any combination, and counted by the "no
+  receiver configured" refusal. The bot token comes from an EXISTING
+  Secret (`botTokenSecret: {name, key}`), mounted into the
+  VMAlertmanager pod and read with `bot_token_file` — never a value,
+  never in the rendered config. `chatId`, an optional
+  `messageThreadId` (a forum topic), `parseMode` (default `HTML`) and
+  `sendResolved` (default `true`); a tier sends to it with
+  `severities.<tier>.receiver: telegram`, and may override the chat or
+  thread for that tier. The shipped message carries the Slack
+  template's facts in Telegram HTML, which Alertmanager escapes itself;
+  any other `parseMode` requires your own `message`. `telegram` only
+  becomes a keyword once `notifications.telegram` is set, so an install
+  that already routes to a webhook NAMED `telegram` renders unchanged.
+  See docs/notifications.md, "Telegram".
+
 ## v0.9.1
 
 Metric-churn reduction: a default DROP on `charts/observability-emitters`'

@@ -1,0 +1,47 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+# It also proves the chart renders on a cluster that does not use the
+# default — an estate on the default sees exactly this one difference.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The smallest values file that renders something worth installing.
+#
+# Everything else has a default that is safe to leave alone; these two do
+# not, because a stack whose proxy has no issuer to verify against and no
+# principal to admit is a stack nobody can read.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  # The trace store is on by default, and this proxy cannot scope trace
+  # reads: vmauth applies a grant by substituting it into the route, and
+  # VictoriaTraces' Jaeger and Tempo select APIs accept no query
+  # argument to substitute it into. So every principal below reads every
+  # namespace's spans on every cluster, and the chart refuses to render until that is
+  # written down. docs/safety.md has the mechanism; the alternative is
+  # `victoria-traces-single.enabled: false`.
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# The smallest shape that keeps `alertmanager.enabled`'s default from
+
+# Telegram as the ONLY receiver kind — no Slack, no webhook — which is
+# enough on its own to satisfy "at least one receiver". Both tiers go to
+# one chat; the warning tier to a forum topic in it, so the render shows
+# one receiver per (chat, thread) pair. The chat id and the Secret are
+# placeholders: a real chat id is an estate's particular.
+notifications:
+  externalUrl: https://grafana.example
+  runbookBaseUrl: https://runbooks.example/
+  telegram:
+    botTokenSecret: {name: example-telegram-bot, key: token}
+    chatId: -1000000000001
+  severities:
+    critical: {receiver: telegram}
+    warning: {receiver: telegram, messageThreadId: 42}

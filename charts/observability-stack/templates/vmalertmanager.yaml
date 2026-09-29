@@ -17,6 +17,7 @@ in `helm get manifest`, and in whatever stores the release history.
 */}}
 {{- $n := .Values.notifications | default dict }}
 {{- $slack := $n.slack | default dict }}
+{{- $telegram := $n.telegram | default dict }}
 {{- $webhooks := $n.webhook | default list }}
 {{- $severities := $n.severities | default dict }}
 {{- $routes := $n.routes | default list }}
@@ -44,6 +45,22 @@ set the vmalert one gets a working Grafana link in Slack for free.
 {{- end }}
 {{- end }}
 {{- end }}
+{{- /*
+Telegram targets: one receiver per distinct (chat, thread) a severity
+tier resolves to, named from the pair itself for the same reason a
+Slack receiver is named from its channel — two tiers landing in one
+chat render one receiver, not two. A route never overrides a Telegram
+tier (refused in _validate.tpl), so severities are the only source.
+*/}}
+{{- $telegramTargets := dict }}
+{{- if ($telegram.botTokenSecret).name }}
+{{- range $tier, $cfg := $severities }}
+{{- if eq $cfg.receiver "telegram" }}
+{{- $target := include "observability-stack.notifications.telegramTarget" (list $telegram $cfg) | fromYaml }}
+{{- $_ := set $telegramTargets (include "observability-stack.notifications.telegramReceiver" $target) $target }}
+{{- end }}
+{{- end }}
+{{- end }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMAlertmanager
 metadata:
@@ -58,7 +75,7 @@ spec:
   {{- with .Values.vmalert.externalUrl }}
   externalURL: {{ . | quote }}
   {{- end }}
-  {{- if or $watchdog.secretName ($slack.webhookSecret).name $webhooks }}
+  {{- if or $watchdog.secretName ($slack.webhookSecret).name ($telegram.botTokenSecret).name $webhooks }}
   {{- /*
   Mounted here rather than through the CR's own `secrets` list, which
   would put it under a path this repository's leak canary bans outright —
@@ -79,6 +96,11 @@ spec:
       secret:
         secretName: {{ $slack.webhookSecret.name | quote }}
     {{- end }}
+    {{- if ($telegram.botTokenSecret).name }}
+    - name: notifications-telegram
+      secret:
+        secretName: {{ $telegram.botTokenSecret.name | quote }}
+    {{- end }}
     {{- range $w := $webhooks }}
     - name: {{ printf "notifications-webhook-%s" $w.name }}
       secret:
@@ -93,6 +115,11 @@ spec:
     {{- if ($slack.webhookSecret).name }}
     - name: notifications-slack
       mountPath: /etc/alertmanager/notifications-slack
+      readOnly: true
+    {{- end }}
+    {{- if ($telegram.botTokenSecret).name }}
+    - name: notifications-telegram
+      mountPath: /etc/alertmanager/notifications-telegram
       readOnly: true
     {{- end }}
     {{- range $w := $webhooks }}
@@ -187,6 +214,52 @@ spec:
               Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}&var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
               Silence: {{ "{{" }} .ExternalURL {{ "}}" }}/#/silences/new?filter=%7B{{ "{{" }} range .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} .Name {{ "}}" }}%3D%22{{ "{{" }} .Value {{ "}}" }}%22%2C{{ "{{" }} end {{ "}}" }}%7D
+      {{- end }}
+      {{- range $name, $target := $telegramTargets }}
+      - name: {{ $name }}
+        telegram_configs:
+          {{- /*
+          The bot token is a credential (it can post as the bot anywhere
+          the bot is a member), so it is mounted and read with
+          `bot_token_file`, never interpolated, the same as every other
+          receiver's secret here. The chat id is not a credential:
+          without the token it sends nothing.
+          */}}
+          - bot_token_file: /etc/alertmanager/notifications-telegram/{{ $telegram.botTokenSecret.key | default "token" }}
+            chat_id: {{ $target.chat }}
+            {{- if $target.thread }}
+            message_thread_id: {{ $target.thread }}
+            {{- end }}
+            parse_mode: {{ $telegram.parseMode | default "HTML" | quote }}
+            send_resolved: {{ ternary $telegram.sendResolved true (hasKey $telegram "sendResolved") }}
+            {{- if $telegram.message }}
+            message: |-
+              {{- $telegram.message | nindent 14 }}
+            {{- else }}
+            {{- /*
+            The shipped message: the Slack template's facts — status,
+            alert, cluster/namespace, summary, runbook, Grafana, silence
+            — in Telegram's HTML. Alertmanager executes a Telegram
+            message through html/template when `parse_mode` is `HTML`,
+            so every value interpolated from an alert is escaped by
+            Alertmanager itself; only the literal text below has to be
+            valid Telegram HTML, which is why the link's `&` is written
+            as `&amp;`. The schema requires `message` for any other
+            parse mode: Markdown has no escaping, and one `_` in an
+            alert name fails the whole delivery.
+            */}}
+            message: |-
+              <b>{{ "{{" }} .Status | toUpper {{ "}}" }}</b> {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}
+              {{ "{{" }} range .Alerts {{ "}}" }}
+              {{ "{{" }} .Annotations.summary {{ "}}" }}
+              {{- if $n.runbookBaseUrl }}
+              {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
+              {{ "{{" }} end {{ "}}" }}
+              {{- end }}
+              Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}
+              {{ "{{" }} end {{ "}}" }}
+              Silence: {{ "{{" }} .ExternalURL {{ "}}" }}/#/silences/new?filter=%7B{{ "{{" }} range .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} .Name {{ "}}" }}%3D%22{{ "{{" }} .Value {{ "}}" }}%22%2C{{ "{{" }} end {{ "}}" }}%7D
+            {{- end }}
       {{- end }}
       {{- range $w := $webhooks }}
       - name: {{ $w.name }}

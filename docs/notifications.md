@@ -97,6 +97,96 @@ webhook is a webhook in git.
 
 Each has a fixture under `tests/invalid/observability-stack/`.
 
+## Telegram
+
+Added in 0.10.0: Telegram as a third receiver kind, beside `slack` and
+`webhook`. Any combination is accepted, each severity tier picks one,
+and a `telegram` block on its own is enough to satisfy the "no
+receiver" refusal.
+
+```yaml
+notifications:
+  externalUrl: https://grafana.example
+  telegram:
+    # An EXISTING Secret: its name and the key holding the bot token.
+    # Never a value in these values, never in the rendered config.
+    botTokenSecret: {name: example-telegram-bot, key: token}
+    # The default destination. An integer, as Alertmanager takes it;
+    # negative for a group or channel.
+    chatId: -1000000000001
+    # Optional: a forum topic in that chat. Unset or 0 is none.
+    messageThreadId: 0
+    # Optional: HTML (default), MarkdownV2 or Markdown.
+    parseMode: HTML
+    # Optional: default true, the same as the Slack and webhook receivers.
+    sendResolved: true
+  severities:
+    critical: {receiver: telegram}
+    # A tier may land somewhere else: its own chatId and/or thread.
+    warning: {receiver: telegram, messageThreadId: 42}
+```
+
+What the chart renders from it:
+
+- a Secret volume `notifications-telegram` on the VMAlertmanager pod,
+  mounted at `/etc/alertmanager/notifications-telegram`, and every
+  Telegram receiver reading the token with `bot_token_file` from there
+  — the same mounted-file rule as `api_url_file` and `url_file`, so the
+  token is never in the release's manifest;
+- one Alertmanager receiver per distinct (chat, thread) any tier
+  resolves to, named `telegram-<chat>[-<thread>]` with a negative chat
+  id's sign spelled `n` (`telegram-n1000000000001-42`), so two tiers in
+  one chat are one receiver;
+- `telegram_configs` with `chat_id`, `message_thread_id` (only when
+  set), `parse_mode` and `send_resolved`;
+- the shipped message: the Slack template's facts — status, alert name,
+  cluster/namespace, each alert's `summary`, the runbook link when
+  `runbookBaseUrl` is set, the Grafana link, the silence link — written
+  in Telegram's HTML.
+
+Why HTML is the default and the only mode with a shipped message:
+Alertmanager executes a Telegram message through Go's `html/template`
+when `parse_mode` is `HTML`, so every value interpolated from an alert
+(a summary with a `<` or an `&` in it) is escaped by Alertmanager
+itself. Markdown and MarkdownV2 have no such escaping: one `_` or `*`
+in an alert name and Telegram refuses the whole message, so the
+notification is lost rather than garbled. The schema therefore requires
+`telegram.message` — your own Alertmanager template, written for that
+mode — whenever `parseMode` is not `HTML`.
+
+What differs from Slack, on purpose:
+
+- a Telegram tier has no `channel`, and a route cannot override one: a
+  route's per-tier value is a Slack channel name, so on a Telegram tier
+  it would be read by nothing, and it is refused. Send a project to a
+  different chat by giving it a Slack tier, or, for a whole tier, with
+  that tier's own `chatId`/`messageThreadId`;
+- `also` stays webhook-only: it is the status-page bridge.
+
+Compatibility: before 0.10.0 `telegram` was not a keyword, so an
+install could have a `notifications.webhook` entry NAMED `telegram` (a
+webhook bridge to Telegram) with tiers pointing at it. That install
+renders exactly as before: `receiver: telegram` means the Telegram kind
+only once `notifications.telegram` is configured, and configuring it
+beside a webhook of that name is refused as ambiguous.
+
+The shipped HTML message was checked end to end against the
+Alertmanager this chart's operator runs (`prom/alertmanager:v0.34.0`,
+bot API pointed at a local stand-in): the token is read from the
+mounted file, `message_thread_id` and `parse_mode` arrive as rendered,
+and a summary of `disk <90% & rising_fast` arrives as
+`disk &lt;90% &amp; rising_fast`.
+
+| Shape | Why it is refused |
+|---|---|
+| `telegram` without `botTokenSecret`, or with an empty `name`/`key` (schema) | a receiver that cannot authenticate cannot send |
+| `telegram` without `chatId` (schema) | a bot with nowhere to post |
+| `parseMode` other than `HTML` without `message` (schema) | the shipped message is HTML; under Markdown it fails on the first `_` |
+| a tier with `receiver: telegram` and no `notifications.telegram` (and no webhook of that name) | a route to a receiver that is not configured |
+| `chatId`/`messageThreadId` on a tier that is not Telegram | read by nothing |
+| `channel` on a Telegram tier, or a route overriding a Telegram tier | a Slack channel where no Slack receiver reads it |
+| `notifications.telegram` beside a webhook named `telegram` | `receiver: telegram` would be ambiguous |
+
 ## Evaluate, notify nobody yet
 
 `notifications.mode: evaluate-only` is the other accepted shape, for a
@@ -213,7 +303,8 @@ named just "Store..." does not say which one paged you.
 ## Proof, before release
 
 - golden renders for a Slack-only install and a Slack + webhook +
-  deadman install;
+  deadman install, a Telegram-only install and a Telegram + Slack +
+  webhook install;
 - one fixture per refusal;
 - a rendered configuration passes `amtool check-config`;
 - the template renders against a fixture alert with every link

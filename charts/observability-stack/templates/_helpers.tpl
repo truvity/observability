@@ -515,6 +515,39 @@ not a value this chart controls the shape of.
 {{- end -}}
 
 {{/*
+Notifications: one severity tier's Telegram destination, as YAML
+`{chat, thread}` — `notifications.telegram.chatId` /
+`.messageThreadId`, each overridable per tier by the same key on
+`notifications.severities.<tier>`. `thread` is empty for "no topic".
+
+Both are integers in Alertmanager's own config. Helm reads a values
+number as a float64, and a float64 printed as-is is `-1e+12`, so both
+go through `int64` and `%d` here rather than being rendered raw.
+*/}}
+{{- define "observability-stack.notifications.telegramTarget" -}}
+{{- $telegram := index . 0 -}}
+{{- $cfg := index . 1 -}}
+{{- $chat := ternary $cfg.chatId $telegram.chatId (hasKey $cfg "chatId") -}}
+{{- $thread := ternary $cfg.messageThreadId $telegram.messageThreadId (hasKey $cfg "messageThreadId") -}}
+chat: {{ printf "%d" ($chat | int64) | quote }}
+thread: {{ ternary (printf "%d" ($thread | int64)) "" (gt ($thread | default 0 | int64) 0) | quote }}
+{{- end -}}
+
+{{/*
+A Telegram target into an Alertmanager receiver name, derived from the
+chat and the thread so the same destination reached from two tiers is
+one receiver. A group's chat id is negative; its sign is spelled `n`
+rather than dropped, so chat `-5` and user `5` never share a name.
+*/}}
+{{- define "observability-stack.notifications.telegramReceiver" -}}
+{{- $name := printf "telegram-%s" (.chat | replace "-" "n") -}}
+{{- if .thread -}}
+{{- $name = printf "%s-%s" $name .thread -}}
+{{- end -}}
+{{- $name -}}
+{{- end -}}
+
+{{/*
 A duration string, in seconds — for comparing two of them, which Helm has
 no other way to do. Scoped to the unit suffixes `values.schema.json`
 accepts (ms, s, m, h, d, w, y); a bare number never reaches here because
@@ -545,9 +578,12 @@ ever being written.
 {{- $tier := index . 2 -}}
 {{- $override := index . 3 -}}
 {{- $cfg := index $severities $tier -}}
+{{- $telegram := ($root.Values.notifications | default dict).telegram | default dict -}}
 {{- if eq $cfg.receiver "slack" -}}
 {{- $channel := $override | default $cfg.channel -}}
 {{- include "observability-stack.notifications.slackReceiver" $channel -}}
+{{- else if and (eq $cfg.receiver "telegram") ($telegram.botTokenSecret).name -}}
+{{- include "observability-stack.notifications.telegramReceiver" (include "observability-stack.notifications.telegramTarget" (list $telegram $cfg) | fromYaml) -}}
 {{- else -}}
 {{- $cfg.receiver -}}
 {{- end -}}

@@ -332,10 +332,16 @@ docs/safety.md for the failure it closes; this is the value list.
 | `notifications.groupInterval` | duration | `5m` | |
 | `notifications.repeatInterval` | duration | `4h` | |
 | `notifications.slack.webhookSecret` | `{name, key}` | unset | The one Slack webhook, mounted and read with `api_url_file` — never interpolated into the config. |
+| `notifications.telegram.botTokenSecret` | `{name, key}` | unset | 0.10.0. The Telegram bot token, from an EXISTING Secret: mounted at `/etc/alertmanager/notifications-telegram` and read with `bot_token_file` — never a value, never interpolated. **Required when `telegram` is set** (schema). |
+| `notifications.telegram.chatId` | integer | unset | The default chat, as Alertmanager's `chat_id` takes it (negative for a group or channel). **Required when `telegram` is set** (schema). |
+| `notifications.telegram.messageThreadId` | integer | unset | A forum topic in that chat. Unset or `0` renders no `message_thread_id`. |
+| `notifications.telegram.parseMode` | `HTML`/`MarkdownV2`/`Markdown` | `HTML` | The shipped message is HTML, where Alertmanager escapes every alert value itself. Any other mode requires `message`. |
+| `notifications.telegram.sendResolved` | bool | `true` | |
+| `notifications.telegram.message` | string | unset | An Alertmanager template replacing the shipped message. Required when `parseMode` is not `HTML`. |
 | `notifications.webhook[].name` / `.urlSecret` | string / `{name, key}` | `[]` | Named webhook receivers, each one URL, mounted the same way. |
-| `notifications.severities.critical` / `.warning` | `{receiver, channel}` | unset | Where each tier lands when no route says otherwise. `receiver` is `slack` or a `webhook[].name`; `channel` is the Slack channel (or, for a webhook, an identifying label only — one webhook has one URL). Both required the moment any receiver kind is configured. |
+| `notifications.severities.critical` / `.warning` | `{receiver, channel}` or `{receiver: telegram, chatId?, messageThreadId?}` | unset | Where each tier lands when no route says otherwise. `receiver` is `slack`, `telegram` (once `notifications.telegram` is set) or a `webhook[].name`; `channel` is the Slack channel (or, for a webhook, an identifying label only — one webhook has one URL). Both tiers required the moment any receiver kind is configured; `channel` is required for every receiver but `telegram`, which takes none and instead may override `telegram.chatId`/`.messageThreadId` for that tier. |
 | `notifications.routes[].match` | map | — | Alertmanager label matchers. Only `k8s_cluster_name` and `k8s_namespace_name` — the vocabulary the collectors stamp — are accepted. |
-| `notifications.routes[].critical` / `.warning` | string | unset | Per-project channel overrides. An entry naming only one tier sends the other to `severities`' default. |
+| `notifications.routes[].critical` / `.warning` | string | unset | Per-project channel overrides. An entry naming only one tier sends the other to `severities`' default. Refused on a tier whose receiver is `telegram`, which has no channel. |
 | `notifications.also[].receiver` / `.match` | string / map | `[]` | Delivers a matching alert to a named `webhook` receiver IN ADDITION TO its normal route — the status-page bridge. Arbitrary matchers, not limited to the cluster/namespace vocabulary. |
 
 The chart renders `group_by: [alertname, k8s_cluster_name,
