@@ -1,0 +1,60 @@
+# The cluster's DNS suffix is an input, and this file sets it to a neutral
+# placeholder: a golden render is a tracked file in a public repository,
+# and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The minimal case, with `metrics.scrape.cadvisorDrop.metricNames` and
+# `.keepBucketMetrics` REPLACED wholesale rather than extended — ordinary
+# Helm list semantics for a key a consumer sets directly, as opposed to
+# `cadvisor-churn-drop-extended`'s `extra*` fields, which add to the
+# default instead of replacing it. The golden diff against `minimal.yaml`
+# is this case's own proof: none of the three shipped default names
+# survive, only the one named here does, and the kept-bucket exception is
+# a different name too.
+tenancy:
+  cluster: example-cluster
+  environment: development
+
+writeCredentials:
+  secretName: example-write-token
+
+metrics:
+  destinations:
+    - name: primary
+      url: https://metrics.example/api/v1/write
+  scrape:
+    cadvisorDrop:
+      metricNames:
+        - container_spec_memory_reservation_limit_bytes
+      keepBucketMetrics:
+        - my_own_component_latency_seconds_bucket
+
+otlp:
+  destinations:
+    metrics:
+      - name: primary
+        url: https://metrics.example
+    logs:
+      - name: primary
+        url: https://logs.example
+    traces:
+      - name: primary
+        url: https://traces.example
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://logs.example
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'

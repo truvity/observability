@@ -245,6 +245,66 @@ metrics:
     # `-maxLabelsPerTimeseries` -- where it is IGNORED and the write still
     # answers 200.
     nodeLabels: []
+    # -- A default DROP for the cadvisor scrape's OWN never-queried,
+    # high-cardinality series — cadvisor only, never the kubelet job:
+    # every pod recreation mints a fresh cadvisor series through its
+    # identity labels (`id`, the cgroup path; `uid`; `container`;
+    # `image`), and measured against a real install this is where most
+    # of a store's new-series churn comes from (cadvisor plus
+    # kube-state-metrics accounted for ~97% of series minted in a day,
+    # cadvisor alone ~114k of them). The TSDB's own `requestsCount` —
+    # how often each metric name was ever read by a query — showed
+    # these never read even once: `container_tasks_state`,
+    # `container_memory_failures_total`,
+    # `container_blkio_device_usage_total`, and nearly every `_bucket`
+    # histogram series cadvisor emits, with one exception,
+    # `go_sched_latencies_seconds_bucket`, which IS heavily queried and
+    # is kept. `id` (the cgroup path) is cleared on every SURVIVING
+    # cadvisor series that already carries a non-empty `container`
+    # label — NOT unconditionally: cadvisor also exports node-level
+    # cgroups that are neither a pod nor a container (the root `id:
+    # "/"`, `/kubepods.slice` and its QoS children,
+    # `/system.slice/containerd.service`, `/system.slice/kubelet.service`,
+    # and more), every one of them with `container=""` and `pod=""`,
+    # where `id` is the ONLY label telling them apart. Clearing `id`
+    # unconditionally merges every one of those, on one node, into ONE
+    # identical label set, and vmagent/vmsingle deduplication then
+    # keeps an arbitrary sample — silent data corruption, not a churn
+    # saving. `container` non-empty is what makes `id` redundant:
+    # (`namespace`, `pod`, `container`) already names the series once
+    # `container` is set, so `id` adds nothing. Nothing this chart
+    # ships — no dashboard in charts/observability-dashboards, no rule
+    # in charts/platform-alerts — groups, filters or joins on `id`.
+    # `pod`, `namespace`, `container` and `uid` are left alone:
+    # dashboards and rules use them.
+    #
+    # Off (`enabled: false`) restores every one of these series exactly
+    # as cadvisor emits them. `metricNames` and `keepBucketMetrics` are
+    # each REPLACED wholesale by a consumer who sets that key —
+    # ordinary Helm list semantics — so widen either default without
+    # losing it by adding to `extraMetricNames` / `extraKeepBucketMetrics`
+    # instead, which this chart concatenates onto the base list rather
+    # than replacing it.
+    #
+    # See docs/reference.md and docs/safety.md for the measurement this
+    # default is built from, and CHANGELOG.md's `0.9.1` entry for
+    # exactly which metrics stop being stored by default.
+    cadvisorDrop:
+      enabled: true
+      # -- Exact metric names, matched against `__name__` and dropped
+      # outright.
+      metricNames:
+        - container_tasks_state
+        - container_memory_failures_total
+        - container_blkio_device_usage_total
+      # -- Added to `metricNames` above rather than replacing it.
+      extraMetricNames: []
+      # -- Every cadvisor `_bucket` histogram series is dropped as
+      # well, EXCEPT the names listed here.
+      keepBucketMetrics:
+        - go_sched_latencies_seconds_bucket
+      # -- Added to `keepBucketMetrics` above rather than replacing it.
+      extraKeepBucketMetrics: []
   # -- Anything else in the VMAgent spec, merged over what this chart
   # renders.
   #

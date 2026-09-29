@@ -1,0 +1,61 @@
+# The cluster's DNS suffix is an input, and this file sets it to a neutral
+# placeholder: a golden render is a tracked file in a public repository,
+# and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The minimal case, plus `metrics.scrape.cadvisorDrop`'s two `extra*`
+# fields — proving a consumer can WIDEN the default drop list without
+# losing it, which is what distinguishes `extraMetricNames`/
+# `extraKeepBucketMetrics` from `metricNames`/`keepBucketMetrics`
+# themselves (replaced wholesale by ordinary Helm list semantics; see
+# `cadvisor-churn-drop-off` for a case that clears the base lists
+# instead). The golden diff against `minimal.yaml` is this feature's own
+# proof: the three upstream defaults stay, and one more name and one more
+# kept bucket are added to each chain.
+tenancy:
+  cluster: example-cluster
+  environment: development
+
+writeCredentials:
+  secretName: example-write-token
+
+metrics:
+  destinations:
+    - name: primary
+      url: https://metrics.example/api/v1/write
+  scrape:
+    cadvisorDrop:
+      extraMetricNames:
+        - container_spec_memory_reservation_limit_bytes
+      extraKeepBucketMetrics:
+        - container_fs_io_time_weighted_seconds_total_bucket
+
+otlp:
+  destinations:
+    metrics:
+      - name: primary
+        url: https://metrics.example
+    logs:
+      - name: primary
+        url: https://logs.example
+    traces:
+      - name: primary
+        url: https://traces.example
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://logs.example
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'

@@ -261,6 +261,45 @@
               "items": {
                 "type": "string"
               }
+            },
+            "cadvisorDrop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "description": "A default DROP, on the cadvisor scrape only, for never-queried high-cardinality series — see this chart's own values.yaml comment on `metrics.scrape.cadvisorDrop` for the measurement and the mechanism.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "metricNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraMetricNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "keepBucketMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraKeepBucketMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
             }
           }
         },
