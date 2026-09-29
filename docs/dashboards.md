@@ -71,6 +71,49 @@ shipped as a `just` recipe an estate runs on its own:
    Kubernetes dashboards work with a cluster variable added and little
    else; the lint accepts either spelling.
 
+## The operational views
+
+The first dashboards a Grafana opens on, kept apart from the stores' own:
+
+| Dashboard | Folder | Answers |
+|---|---|---|
+| `fleet-overview` (home) | `fleet` | is anything wrong, and where? Firing alerts, then one row of health tiles per cluster |
+| `k8s-views-global` | `kubernetes` | one cluster: node capacity, namespaces by CPU and memory, restarts and OOM kills |
+| `k8s-views-namespaces` | `kubernetes` | one namespace: pods, replicas, volumes, network |
+| `k8s-views-pods` | `kubernetes` | one pod: containers against requests and limits, throttling, restarts, network |
+
+Rules they follow, on top of the six above:
+
+- **Method.** USE (utilisation, saturation, errors) for resources: CPU
+  against requests and limits, throttling, memory against limits, OOM
+  kills, volumes, the store write path. Counts of failure states for
+  workloads. One purpose per dashboard; the hierarchy is the drill-down
+  cluster, namespace, pod.
+- **Navigation.** Every shipped dashboard carries a tag (`observability-fleet`,
+  `observability-kubernetes`, `observability-stores`) and the same links row,
+  which lists the dashboards under each tag and carries datasource, cluster,
+  namespace and time range across. A tile or a series that names the next
+  level down links to it.
+- **Every panel** has a description (what it shows, what to do), a unit, and
+  thresholds where a value is good or bad.
+- **Only metrics a store holds.** The sources are the node scrape (kubelet
+  and cadvisor, less the 0.9.1 churn drop), kube-state-metrics with its
+  11-collector allow-list (and the Kargo series only where that preset is
+  on), the stack's own components, `ALERTS` and OTLP. There is no
+  node-exporter. `hack/dashboards/available-metrics.yaml` is that list;
+  `tests/dashboard_queries_test.go` fails a dashboard flagged `queryCheck`
+  in `hack/dashboards/sources.yaml` that reads anything else, and parses
+  every query on the pinned VictoriaMetrics. A panel that needs a metric
+  the list lacks is dropped from an adapted dashboard, never shipped
+  empty, and a new dashboard for a missing source waits for the source.
+- **Adapted, not forked.** The Kubernetes views come from
+  `dotdc/grafana-dashboards-kubernetes` (Apache-2.0), pinned by release
+  in `hack/dashboards/sources.yaml`, with source and licence recorded in
+  `dashboards/catalog.yaml`, and rewritten by `hack/dashboards.py`.
+  `k8s-views-nodes` is deferred until node-exporter ships.
+- **The home page** is the `home` value; see `values.yaml` for the two ways
+  to point Grafana at it.
+
 ## Layout, as a recommendation the chart defaults to
 
 Infrastructure dashboards keyed by cluster, in one folder: the same

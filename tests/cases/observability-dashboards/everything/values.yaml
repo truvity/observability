@@ -9,10 +9,22 @@ datasources:
   traces: example-traces
 
 folders:
+  fleet: Home
+  kubernetes: K8s
   infrastructure: Infra
   stores: Stores
 
+home: k8s-views-global
+
 dashboards:
+  fleet-overview:
+    enabled: true
+  k8s-views-global:
+    enabled: true
+  k8s-views-namespaces:
+    enabled: true
+  k8s-views-pods:
+    enabled: true
   victoriametrics-single:
     enabled: true
   victoriametrics-vmagent:

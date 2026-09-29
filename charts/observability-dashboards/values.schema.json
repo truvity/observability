@@ -4,7 +4,7 @@
   "description": "Dashboards shipped to Grafana as their own artifact. Strict: an unknown key fails the render rather than being silently ignored, because a typo here is a dashboard that never ships and nothing says so.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["datasources", "folders", "dashboards"],
+  "required": ["datasources", "folders", "dashboards", "home"],
   "definitions": {
     "dashboardEntry": {
       "type": "object",
@@ -39,8 +39,10 @@
     "folders": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["infrastructure", "stores"],
+      "required": ["fleet", "kubernetes", "infrastructure", "stores"],
       "properties": {
+        "fleet": { "type": "string", "minLength": 1 },
+        "kubernetes": { "type": "string", "minLength": 1 },
         "infrastructure": { "type": "string", "minLength": 1 },
         "stores": { "type": "string", "minLength": 1 }
       }
@@ -49,6 +51,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "fleet-overview",
+        "k8s-views-global",
+        "k8s-views-namespaces",
+        "k8s-views-pods",
         "victoriametrics-single",
         "victoriametrics-vmagent",
         "victoriametrics-vmalert",
@@ -61,6 +67,10 @@
         "kubelet"
       ],
       "properties": {
+        "fleet-overview": { "$ref": "#/definitions/dashboardEntry" },
+        "k8s-views-global": { "$ref": "#/definitions/dashboardEntry" },
+        "k8s-views-namespaces": { "$ref": "#/definitions/dashboardEntry" },
+        "k8s-views-pods": { "$ref": "#/definitions/dashboardEntry" },
         "victoriametrics-single": { "$ref": "#/definitions/dashboardEntry" },
         "victoriametrics-vmagent": { "$ref": "#/definitions/dashboardEntry" },
         "victoriametrics-vmalert": { "$ref": "#/definitions/dashboardEntry" },
@@ -72,6 +82,10 @@
         "node-exporter-full": { "$ref": "#/definitions/dashboardEntry" },
         "kubelet": { "$ref": "#/definitions/dashboardEntry" }
       }
+    },
+    "home": {
+      "type": "string",
+      "description": "The shipped dashboard designated as the home page: the name of one enabled shipped dashboard, or empty for none. The render refuses any other name."
     },
     "extraDashboards": {
       "type": "array",

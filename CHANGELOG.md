@@ -4,6 +4,59 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.12.0
+
+The first operational dashboards in `observability-dashboards`: a home
+page that answers "is anything wrong, and where?", and the Kubernetes
+drill-down under it. Additive; every new dashboard is on by default and
+can be turned off one key at a time.
+
+- **Behaviour change: the default `observability-dashboards` render gains
+  four ConfigMaps** (`fleet-overview`, `k8s-views-global`,
+  `k8s-views-namespaces`, `k8s-views-pods`) and the two existing goldens
+  (`minimal`, `everything`) change to match. Every existing dashboard also
+  gains a navigation row (a tag-based links row, and one tag) so the whole
+  set links to itself; no query or panel of an existing dashboard changes.
+  Set `dashboards.<name>.enabled: false` to drop any of the four.
+- **Fleet overview** (folder `Fleet`, the designated home page). Firing
+  alerts by severity with a table of alert, cluster, namespace and
+  severity, then one row per selected cluster (`repeat` by `$cluster`,
+  multi-select, default All): pods not Ready, CrashLoopBackOff,
+  ImagePullBackOff, restarts in the last hour, nodes NotReady, nodes under
+  memory, disk or PID pressure, PVCs over 85% full, rows dropped or
+  ignored by the stores, and Kargo stages not healthy and promotions
+  errored (they read `n/a` where the Kargo state metrics are not enabled).
+  The write path (rows ingested, rows dropped or ignored, per store) is
+  charted beneath. Every tile links down, carrying datasource, cluster,
+  namespace and time range.
+- **Kubernetes views** (folder `Kubernetes`): cluster, namespace and pod
+  drill-down, adapted from `dotdc/grafana-dashboards-kubernetes` v3.0.8
+  (Apache-2.0; source, licence and pinned ref are recorded in
+  `dashboards/catalog.yaml`). The `cluster` label becomes
+  `k8s_cluster_name`; every panel says what it shows and what to do; a
+  series in a namespace or pod panel opens the next level down. Cluster
+  and node utilisation is answered from cadvisor's root cgroup. Left out
+  on purpose: `k8s-views-nodes` (built on node-exporter, which no install
+  runs yet), the node-exporter panels of the global view, and the resource
+  counts of kinds outside kube-state-metrics' 11-collector allow-list
+  (configmaps, secrets, services, endpoints, ingresses, network policies).
+- **New value `home`** (default `fleet-overview`): the dashboard designated
+  as the home page. It annotates that ConfigMap
+  `observability-dashboards/home: "true"`, and the render refuses a name
+  that is not an enabled shipped dashboard. Point Grafana at it with
+  `grafana.ini` `dashboards.default_home_dashboard_path:
+  <sidecar folder>/<folders.fleet>/fleet-overview.json` (default
+  `/tmp/dashboards/Fleet/fleet-overview.json`), or set it as the org's home
+  dashboard by uid `truvity-obs-fleet-overview`. New values `folders.fleet`
+  and `folders.kubernetes`, and one `dashboards.<name>` key per new
+  dashboard.
+- **Only metrics a store holds.** `hack/dashboards/available-metrics.yaml`
+  lists what is scraped today; `tests/dashboard_queries_test.go` fails a
+  dashboard flagged `queryCheck` that reads anything else, and parses every
+  query on the pinned VictoriaMetrics (`just dashboard-queries`). A
+  dashboard for node-exporter, ArgoCD, cert-manager, CNPG, NATS, Envoy
+  Gateway or Karpenter therefore fails until that source ships.
+
 ## v0.11.3
 
 One defect, seen live on an install where several clusters write into one
