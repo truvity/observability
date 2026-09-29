@@ -8,6 +8,7 @@
     "interval",
     "tenancy",
     "writeCredentials",
+    "remote",
     "metrics",
     "logs",
     "kubeStateMetrics",
@@ -160,6 +161,51 @@
         },
         "key": {
           "type": "string"
+        }
+      }
+    },
+    "remote": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The single-destination sugar. Off (empty `url`) by default; see this chart's own values.yaml comment on `remote` for the full shape and what it expands into.",
+      "required": [
+        "url",
+        "tokenSecret",
+        "caSecret",
+        "signals",
+        "name"
+      ],
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "tokenSecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "key"],
+          "properties": {
+            "name": { "type": "string" },
+            "key": { "type": "string" }
+          }
+        },
+        "caSecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional; either empty or a full {name, key} pair.",
+          "properties": {
+            "name": { "type": "string" },
+            "key": { "type": "string" }
+          }
+        },
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["metrics", "logs", "traces"]
+          }
+        },
+        "name": {
+          "$ref": "#/definitions/plainName"
         }
       }
     },

@@ -1,0 +1,22 @@
+# expect: `remote.signals` includes "traces" but `otlp.destinations.traces` is also set
+global:
+  cluster:
+    dnsDomain: cluster.example.
+tenancy:
+  cluster: example-cluster
+  environment: development
+metrics:
+  enabled: false
+logs:
+  enabled: false
+remote:
+  url: https://observability-write.example.private
+  tokenSecret: {name: example-write-token, key: token}
+  signals: [traces]
+otlp:
+  destinations:
+    metrics: []
+    logs: []
+    traces:
+      - name: extra
+        url: https://traces.example

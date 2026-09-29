@@ -176,6 +176,20 @@ statusbox-debian:
 statusbox-ca-proof:
     hack/statusbox-ca-proof.sh
 
+# REAL proof, in Docker, that pkg/statusbox's RenderGatus (0.9.0, item 5
+# of "consumer simplification") produces a Config the real
+# twinproduction/gatus:v5.37.0 image actually boots: a representative
+# multi-company Catalogue, every one of its seven endpoints confirmed
+# live in Gatus's own /api/v1/endpoints/statuses, and /health answering
+# UP. gatus_internal_test.go already proves the STRUCTURE with no
+# network and no Docker; this proves the bytes are something Gatus
+# itself accepts.
+#
+# Needs Docker, curl, jq and go; deliberately NOT part of `check` or CI,
+# the same reason `statusbox-ca-proof` above is not.
+gatus-boot-proof:
+    hack/gatus-boot-proof.sh
+
 # REAL proof, against a real victoria-metrics binary, that
 # `charts/platform-alerts`' BackupJobFailed rule now fires on only the
 # NEWEST Job of each CronJob — the fix for a CronJob's
