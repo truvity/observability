@@ -1,0 +1,31 @@
+# expect: names an existing ServiceAccount (`create: false`) and also sets `annotations`
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# An existing ServiceAccount by name, plus annotations the chart cannot
+# put on an object it does not render.
+backup:
+  enabled: true
+  destination: s3://example-backups/observability
+  auth:
+    mode: ambient
+  logs:
+    serviceAccount:
+      name: example-existing-logs-backup
+      annotations:
+        eks.amazonaws.com/role-arn: "<placeholder>"
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

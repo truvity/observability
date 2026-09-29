@@ -406,8 +406,11 @@ chart-wide, not layered:
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `backup.auth.mode` | enum | `secret` | `secret`, `ambient`, or `credentialProcess`. |
-| `backup.auth.serviceAccount.name` | string | `""` | Only read under `ambient`/`credentialProcess`. Empty derives `<fullname>-backup`. Every backup job's pod (all three stores, under `ambient`; the metrics job only, under `credentialProcess`) runs as this ServiceAccount. |
+| `backup.auth.serviceAccount.name` | string | `""` | Only read under `ambient`/`credentialProcess`. Empty derives `<fullname>-backup`. Every backup job's pod (all three stores, under `ambient`; the metrics job only, under `credentialProcess`) runs as this ServiceAccount — unless that store sets its own `backup.<store>.serviceAccount` (0.10.0, below). Not rendered once every enabled store has its own. |
 | `backup.auth.serviceAccount.annotations` | map | `{}` | E.g. `eks.amazonaws.com/role-arn` for IRSA. EKS Pod Identity needs no annotation — the association is a separate AWS-side object, made outside this chart, keyed on this SA's namespace and name. |
+| `backup.<store>.serviceAccount.create` | bool | `false` | 0.10.0; `<store>` is `metrics`, `logs` or `traces`. Render this store's OWN ServiceAccount and run its backup job(s) as it. See "Least-privilege backups" below. |
+| `backup.<store>.serviceAccount.name` | string | `""` | With `create: true`: the name to render (empty derives `<fullname>-backup-<store>`). With `create: false`: an EXISTING ServiceAccount this store runs as, which the chart does not render. Empty with `create: false` (the default): the store shares `backup.auth.serviceAccount`. |
+| `backup.<store>.serviceAccount.annotations` | map | `{}` | On the rendered per-store ServiceAccount, e.g. that store's own `eks.amazonaws.com/role-arn`. Refused without `create: true`. |
 | `backup.auth.credentialProcess.command` | string | `""` | The full command line vmbackup's AWS SDK execs to obtain credentials. **Required under `credentialProcess`.** A credential-broker CLI is the worked example: one that exchanges the pod's own token (see `serviceAccountToken` below) for temporary S3-compatible credentials. |
 | `backup.auth.credentialProcess.toolsImage.repository` / `.tag` | string | `""` / `""` | The image an initContainer copies `command`'s binary out of. **Required under `credentialProcess`** — vmbackup's own image is minimal, may have no shell, and cannot run `command` itself. |
 | `backup.auth.credentialProcess.toolsImage.sourcePath` | string | `/usr/local/bin` | The directory inside `toolsImage` copied, recursively, into the FIXED path `/var/run/backup-tools` in vmbackup's own container. Only the directory's contents move: a binary at `/usr/local/bin/r2-broker` in `toolsImage` lands at `/var/run/backup-tools/r2-broker`, whatever `sourcePath` is set to — `command` references it at the fixed destination, not at `sourcePath`. |
@@ -462,6 +465,68 @@ the mechanism itself names nothing about R2 or any particular broker: a
 broker CLI that exchanges the pod's own token for temporary
 S3-compatible credentials is the generic shape, and R2's is one example
 of a store that needs it.
+
+#### Least-privilege backups
+
+`backup.auth.mode: ambient` runs every backup job under ONE
+ServiceAccount by default, so metrics, logs and traces share one IAM
+role, and that role has to reach all three prefixes. An estate that
+gives each store its own role — the metrics backup can write only
+`<destination>/metrics*`, the log backup only `<destination>/logs` —
+sets a ServiceAccount per store (0.10.0):
+
+```yaml
+backup:
+  enabled: true
+  destination: s3://example-backups/observability
+  auth:
+    mode: ambient
+  metrics:
+    serviceAccount:
+      create: true                       # renders <fullname>-backup-metrics
+      annotations:
+        eks.amazonaws.com/role-arn: "<the metrics backup's role>"
+  logs:
+    serviceAccount:
+      create: true                       # renders <fullname>-backup-logs
+      annotations:
+        eks.amazonaws.com/role-arn: "<the logs backup's role>"
+  traces:
+    enabled: true
+    serviceAccount:
+      create: false                      # an existing ServiceAccount,
+      name: example-traces-backup        # provided by the estate
+```
+
+- **A store with nothing set shares the release-wide ServiceAccount**
+  (`backup.auth.serviceAccount`), exactly as before; a values file that
+  sets none of this renders byte-for-byte as 0.9.1 did. Overriding one
+  store and leaving the rest on the default is the usual first step
+  (`tests/cases/observability-stack/backup-ambient-mixed`).
+- **Once every enabled store has its own, the release-wide
+  ServiceAccount is not rendered**: it would carry a role nothing
+  assumes, which is the over-broad grant this exists to remove.
+  (`tests/cases/observability-stack/backup-ambient-per-store`.)
+- **EKS Pod Identity** needs no annotation: make one association per
+  store, keyed on the namespace and the store's ServiceAccount name —
+  `<fullname>-backup-<store>` unless `name` is set. **IRSA** puts each
+  store's role on its own ServiceAccount through `annotations`, and each
+  role's trust policy names only that ServiceAccount.
+- The metrics store's two CronJobs (incremental and weekly full) share
+  its ServiceAccount: the full names the incremental backup as
+  `-origin` and needs the same prefix.
+- Under `credentialProcess` only the metrics job runs (the mode refuses
+  logs and traces), so `backup.metrics.serviceAccount` is the one that
+  applies; the projected token the broker presents is then that
+  ServiceAccount's.
+
+Refused, each with a fixture under `tests/invalid/observability-stack/`
+(`backup-store-sa-*`): a per-store ServiceAccount under
+`auth.mode: secret`, where no pod runs as a chosen ServiceAccount;
+`annotations` without `create: true`, which would reach no object;
+two stores creating one name; a store creating the name the
+release-wide ServiceAccount already renders while another store still
+uses it; and any key the schema does not know.
 
 #### `backup.seLinuxLevel`
 

@@ -1,0 +1,30 @@
+# expect: which is also the release-wide backup ServiceAccount
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# A store creating the ServiceAccount the release-wide default already
+# renders, while another store still uses that default.
+backup:
+  enabled: true
+  destination: s3://example-backups/observability
+  auth:
+    mode: ambient
+    serviceAccount:
+      name: example-observability-backup
+  metrics:
+    serviceAccount: {create: true, name: example-observability-backup}
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
