@@ -255,10 +255,10 @@ spec:
                 # so everything unchanged is copied INSIDE the object
                 # store rather than pulled down and pushed back up. It is
                 # the same backup either way; this is what it costs.
-                - -origin={{ $root.Values.backup.destination }}/metrics
-                - -dst={{ $root.Values.backup.destination }}/metrics-full
+                - -origin={{ $root.Values.backup.destination }}/{{ $root.Values.backup.metrics.prefix }}
+                - -dst={{ $root.Values.backup.destination }}/{{ $root.Values.backup.metrics.fullPrefix }}
                 {{- else }}
-                - -dst={{ $root.Values.backup.destination }}/metrics
+                - -dst={{ $root.Values.backup.destination }}/{{ $root.Values.backup.metrics.prefix }}
                 {{- end }}
               env:
                 - name: VM_USERNAME
@@ -407,7 +407,7 @@ spec:
                 - name: STORE_URL
                   value: {{ $url | quote }}
                 - name: DESTINATION
-                  value: {{ printf "%s/%s" $root.Values.backup.destination $store | quote }}
+                  value: {{ printf "%s/%s" $root.Values.backup.destination (index $root.Values.backup $store).prefix | quote }}
                 - name: VM_USERNAME
                   valueFrom:
                     secretKeyRef:

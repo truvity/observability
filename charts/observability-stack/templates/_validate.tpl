@@ -25,8 +25,10 @@ second debugging session.
 {{- include "observability-stack.validate.evaluateOnly" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
 {{- include "observability-stack.validate.seLinux" . -}}
+{{- include "observability-stack.validate.backupPrefixes" . -}}
 {{- include "observability-stack.validate.watchdogSource" . -}}
 {{- include "observability-stack.validate.scrapeFrom" . -}}
+{{- include "observability-stack.validate.clientsFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
@@ -217,6 +219,25 @@ load-bearing.
 Unset is not neutral either: with `resources` empty the operator applies
 its own defaults, and its default CPU for VMSingle is 1200m, which is
 the rounding failure by default.
+
+That is `resources.policy: guaranteed`, the default. `burstable` is the
+same judgement made for an estate that measured otherwise — components
+using a few millicores, and CPU limits deliberately absent because the
+estate measured CFS throttling. It relaxes the CPU half only, and only
+where the reason above does not reach:
+
+  - `requests.cpu` may be fractional and below the limit: the request is
+    a scheduling hint, and no thread pool is sized from it;
+  - `limits.cpu` may be absent (no quota, nothing to round); set, it is
+    still a whole number, because the QUOTA is what rounds down;
+  - both requests stay required: a pod with none is BestEffort, evicted
+    before anything else;
+  - memory stays request == limit, with a limit required. VictoriaMetrics
+    sizes its caches from the cgroup MEMORY limit, so with none it sizes
+    them from the node and the node OOM-kills it; and a pod whose memory
+    use cannot exceed its request is never in the kubelet's first
+    eviction tier under memory pressure — most of what `guaranteed` buys,
+    kept.
 */}}
 {{- define "observability-stack.validate.resources" -}}
 {{- $sites := list
@@ -230,22 +251,52 @@ the rounding failure by default.
     (dict "key" "grafana.resources" "value" (.Values.grafana).resources)
     (dict "key" "backup.resources" "value" .Values.backup.resources)
 -}}
+{{- $policy := (.Values.resources).policy | default "guaranteed" -}}
 {{- range $site := $sites -}}
 {{- $r := $site.value | default dict -}}
 {{- if $r -}}
 {{- $requests := $r.requests | default dict -}}
 {{- $limits := $r.limits | default dict -}}
+{{- /*
+A `null` that SURVIVED to here. Helm deletes a null from this chart's own
+values, so for vmauth, the vmalerts, Alertmanager and the backup jobs a
+`limits: {cpu: null}` simply removes the default. For a key under a
+vendored subchart (the operator, the stores, Grafana) Helm passes the
+null through instead, and the rendered object carries `cpu: null` —
+which the API server reads as a CPU limit of 0 and refuses (measured with
+`just apply`: "must be less than or equal to cpu limit of 0"; VMSingle's
+CRD refuses the null outright). Refused here, where the fix can be named.
+*/ -}}
+{{- range $side, $m := dict "requests" $requests "limits" $limits -}}
+{{- range $res, $q := $m -}}
+{{- if kindIs "invalid" $q -}}
+{{- fail (printf "observability-stack: %s.%s.%s is null. Helm deletes a null from this chart's own values, but passes it through unchanged to a vendored subchart's, and the API server then reads it as a quantity of 0 and refuses the object. A default on this component cannot be removed through values: under `resources.policy: burstable`, give it a whole number of cores well above the request instead (the node's core count leaves it effectively unthrottled)." $site.key $side (toString $res)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $policy "burstable" -}}
+{{- if or (not $requests.cpu) (not $requests.memory) (not $limits.memory) -}}
+{{- fail (printf "observability-stack: %s does not set requests.cpu, requests.memory and limits.memory, which `resources.policy: burstable` still requires. A pod with no requests is BestEffort and is evicted before anything else; and with no memory limit VictoriaMetrics sizes its caches from the NODE's memory and is OOM-killed by it. Only the CPU limit may be left out." $site.key) -}}
+{{- end -}}
+{{- if and $limits.cpu (not (regexMatch "^[0-9]+$" (toString $limits.cpu))) -}}
+{{- fail (printf "observability-stack: %s.limits.cpu is %q under `resources.policy: burstable`. The request may be fractional, the limit may not: the VictoriaMetrics binaries size their thread pool from the cgroup CPU QUOTA — the limit — and round it DOWN, so 1500m buys exactly one thread. Write a whole number of cores, or leave the CPU limit out." $site.key (toString $limits.cpu)) -}}
+{{- end -}}
+{{- if ne (toString $requests.memory) (toString $limits.memory) -}}
+{{- fail (printf "observability-stack: %s has requests.memory %q and limits.memory %q. Under `resources.policy: burstable` too they must be equal: a pod whose memory use cannot exceed its request stays out of the kubelet's first eviction tier under memory pressure, which is what keeps a Burstable store from being evicted first." $site.key (toString $requests.memory) (toString $limits.memory)) -}}
+{{- end -}}
+{{- else -}}
 {{- if or (not $requests.cpu) (not $limits.cpu) (not $requests.memory) (not $limits.memory) -}}
 {{- fail (printf "observability-stack: %s does not set both requests and limits for cpu and memory. Leaving one side out is how a store ends up in a lower QoS class and is evicted first under node pressure, which is the moment it is most needed." $site.key) -}}
 {{- end -}}
 {{- if not (regexMatch "^[0-9]+$" (toString $requests.cpu)) -}}
-{{- fail (printf "observability-stack: %s.requests.cpu is %q. The VictoriaMetrics binaries size their thread pool from the cgroup CPU quota and round it DOWN, so a fractional value such as 1500m buys exactly one thread and pays for 1.5. Write a whole number of cores: \"1\", \"2\", \"4\"." $site.key (toString $requests.cpu)) -}}
+{{- fail (printf "observability-stack: %s.requests.cpu is %q. The VictoriaMetrics binaries size their thread pool from the cgroup CPU quota and round it DOWN, so a fractional value such as 1500m buys exactly one thread and pays for 1.5. Write a whole number of cores: \"1\", \"2\", \"4\" — or, for an estate that measured its components at a few millicores, set `resources.policy: burstable`, which allows a fractional request." $site.key (toString $requests.cpu)) -}}
 {{- end -}}
 {{- if ne (toString $requests.cpu) (toString $limits.cpu) -}}
-{{- fail (printf "observability-stack: %s has requests.cpu %q and limits.cpu %q. They must be equal: a component whose requests are below its limits is Burstable, and Burstable pods are evicted before Guaranteed ones." $site.key (toString $requests.cpu) (toString $limits.cpu)) -}}
+{{- fail (printf "observability-stack: %s has requests.cpu %q and limits.cpu %q. They must be equal: a component whose requests are below its limits is Burstable, and Burstable pods are evicted before Guaranteed ones. An estate that measured otherwise and accepts that trade sets `resources.policy: burstable`." $site.key (toString $requests.cpu) (toString $limits.cpu)) -}}
 {{- end -}}
 {{- if ne (toString $requests.memory) (toString $limits.memory) -}}
 {{- fail (printf "observability-stack: %s has requests.memory %q and limits.memory %q. They must be equal, for the same reason the CPUs must." $site.key (toString $requests.memory) (toString $limits.memory)) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -560,6 +611,60 @@ as `interval` and `storeCredentials` above, and checked here.
 {{- end -}}
 
 {{/*
+Backup prefixes: no two in use may be equal, and none may sit inside
+another.
+
+Both mechanisms DELETE at their destination: vmbackup removes whatever
+under `-dst` is not part of the backup it is writing, and `rclone sync`
+removes whatever under its destination the source does not have. So a
+logs prefix of `a` beside a metrics prefix of `a/metrics` is a log backup
+that deletes the metrics backup on every run — and both jobs exit zero,
+every time. Equal is the same failure in its simplest form. Compared on
+whole path segments: `metrics` and `metrics-full` do not nest.
+*/}}
+{{- define "observability-stack.validate.backupPrefixes" -}}
+{{- $b := .Values.backup -}}
+{{- if $b.enabled -}}
+{{- $inUse := list -}}
+{{- if $b.metrics.enabled -}}
+{{- $inUse = append $inUse (dict "key" "backup.metrics.prefix" "value" (toString $b.metrics.prefix)) -}}
+{{- $inUse = append $inUse (dict "key" "backup.metrics.fullPrefix" "value" (toString $b.metrics.fullPrefix)) -}}
+{{- end -}}
+{{- if $b.logs.enabled -}}
+{{- $inUse = append $inUse (dict "key" "backup.logs.prefix" "value" (toString $b.logs.prefix)) -}}
+{{- end -}}
+{{- if $b.traces.enabled -}}
+{{- $inUse = append $inUse (dict "key" "backup.traces.prefix" "value" (toString $b.traces.prefix)) -}}
+{{- end -}}
+{{- range $i, $a := $inUse -}}
+{{- range $j, $o := $inUse -}}
+{{- if lt $i $j -}}
+{{- if or (eq $a.value $o.value) (hasPrefix (printf "%s/" $a.value) $o.value) (hasPrefix (printf "%s/" $o.value) $a.value) -}}
+{{- fail (printf "observability-stack: %s is %q and %s is %q, and one is the other or sits inside it. vmbackup and `rclone sync` both DELETE whatever at their destination the source does not have, so one of these backups would erase the other on every run and still exit zero. Give each store a prefix of its own that is not a parent of another's." $a.key $a.value $o.key $o.value) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`networkPolicy.clientsFrom`: the same `ipBlock`-alone refusal as
+`scrapeFrom`, for the same reason. An EMPTY `from`, which in a
+NetworkPolicy admits every source, is the schema's to refuse
+(`minItems: 1`) before any template runs.
+*/}}
+{{- define "observability-stack.validate.clientsFrom" -}}
+{{- range $i, $c := (.Values.networkPolicy.clientsFrom | default list) -}}
+{{- range $j, $peer := ($c.from | default list) -}}
+{{- if and (not $peer.podSelector) (not $peer.namespaceSelector) (hasKey $peer "ipBlock") -}}
+{{- fail (printf "observability-stack: networkPolicy.clientsFrom[%d].from[%d] admits a client by `ipBlock` alone. A pod IP is reassigned on every reschedule, eviction and rollout, so this rule works today and stops working silently the first time the client pod moves. Name the client by a `podSelector`, with a `namespaceSelector` when it runs outside this release's namespace." $i $j) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 A Watchdog from somewhere, always.
 
 Two sources, and the chart picks whichever one is not already covering
@@ -659,9 +764,9 @@ trip over an unconfigured severity or receiver.
 {{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `alertmanager.notifierUrl` is set. Evaluate-only renders vmalert's `-notifier.blackhole`, which vmalert itself refuses to combine with any notifier URL: `-notifier.url`, `-notifier.config` and `-notifier.blackhole` are mutually exclusive. Unset `alertmanager.notifierUrl`, or drop `notifications.mode` back to `route` and point vmalert at the Alertmanager it names." -}}
 {{- end -}}
 {{- $slack := $n.slack | default dict -}}
-{{- $receiverConfigured := or ($slack.webhookSecret).name (($n.telegram | default dict).botTokenSecret).name (gt (len ($n.webhook | default list)) 0) (gt (len ($n.severities | default dict)) 0) (gt (len ($n.routes | default list)) 0) (gt (len ($n.also | default list)) 0) -}}
+{{- $receiverConfigured := or ($slack.webhookSecret).name (($n.telegram | default dict).botTokenSecret).name (gt (len ($n.webhook | default list)) 0) (gt (len ($n.severities | default dict)) 0) (gt (len ($n.routes | default list)) 0) (gt (len ($n.also | default list)) 0) $n.catchAll (gt (len ($n.drop | default list)) 0) -}}
 {{- if $receiverConfigured -}}
-{{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `notifications` also configures a receiver, a severity, a route or an `also` bridge. Evaluate-only means nobody is notified yet: a receiver configured beside it looks wired up and is never reached, because vmalert never sends the notification it would carry. Remove the receiver configuration, or drop `notifications.mode` back to `route`." -}}
+{{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `notifications` also configures a receiver, a severity, a route or an `also` bridge (or a `catchAll` or `drop`). Evaluate-only means nobody is notified yet: a receiver configured beside it looks wired up and is never reached, because vmalert never sends the notification it would carry. Remove the receiver configuration, or drop `notifications.mode` back to `route`." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -708,7 +813,11 @@ A receiver kind with no default route for a severity is the blackhole
 again, one layer down: the wrapping route's own receiver is a no-op, so
 a severity `severities` does not cover reaches it silently.
 */ -}}
-{{- if $configured -}}
+{{- /*
+With `catchAll` set, a tier `severities` leaves out lands there instead,
+so it is no longer the blackhole this refuses.
+*/ -}}
+{{- if and $configured (not $n.catchAll) -}}
 {{- range $tier := list "critical" "warning" -}}
 {{- if not (hasKey $severities $tier) -}}
 {{- fail (printf "observability-stack: `notifications` configures a receiver but `notifications.severities.%s` is not set. Every route this chart renders falls back to a no-op receiver when none of `severities`, `routes` or `also` match, so a %s alert with no default reaches nobody and looks routed." $tier $tier) -}}
@@ -729,19 +838,31 @@ A severity naming a receiver that does not exist. `slack` and `telegram`
 are the literal keywords; anything else must be a name from
 `notifications.webhook`.
 */ -}}
+{{- /*
+Every severity tier, and `catchAll`, which has the same shape and the
+same ways to name a receiver that is not there.
+*/ -}}
+{{- $targets := list -}}
 {{- range $tier, $cfg := $severities -}}
+{{- $targets = append $targets (dict "where" (printf "notifications.severities.%s" $tier) "cfg" $cfg) -}}
+{{- end -}}
+{{- with $n.catchAll -}}
+{{- $targets = append $targets (dict "where" "notifications.catchAll" "cfg" .) -}}
+{{- end -}}
+{{- range $t := $targets -}}
+{{- $cfg := $t.cfg -}}
 {{- $isTelegram := and (eq $cfg.receiver "telegram") $telegramConfigured -}}
 {{- if and $cfg.receiver (ne $cfg.receiver "slack") (not $isTelegram) (not (hasKey $webhookNames $cfg.receiver)) -}}
-{{- fail (printf "observability-stack: notifications.severities.%s.receiver is %q, which is neither \"slack\", \"telegram\" (with notifications.telegram configured) nor the name of an entry in notifications.webhook. A route to a receiver that is not configured looks like a route and reaches nobody." $tier (toString $cfg.receiver)) -}}
+{{- fail (printf "observability-stack: %s.receiver is %q, which is neither \"slack\", \"telegram\" (with notifications.telegram configured) nor the name of an entry in notifications.webhook. A route to a receiver that is not configured looks like a route and reaches nobody." $t.where (toString $cfg.receiver)) -}}
 {{- end -}}
 {{- if and (not $isTelegram) (or (hasKey $cfg "chatId") (hasKey $cfg "messageThreadId")) -}}
-{{- fail (printf "observability-stack: notifications.severities.%s sets `chatId` or `messageThreadId` but its receiver is %q, not a configured `telegram`. Those keys pick a Telegram chat; on any other receiver they would be read by nothing." $tier (toString $cfg.receiver)) -}}
+{{- fail (printf "observability-stack: %s sets `chatId` or `messageThreadId` but its receiver is %q, not a configured `telegram`. Those keys pick a Telegram chat; on any other receiver they would be read by nothing." $t.where (toString $cfg.receiver)) -}}
 {{- end -}}
 {{- if and $isTelegram $cfg.channel -}}
-{{- fail (printf "observability-stack: notifications.severities.%s.receiver is \"telegram\" and it also sets `channel`. `channel` is a Slack channel; a Telegram tier lands in `notifications.telegram.chatId`, or in this tier's own `chatId`/`messageThreadId`. Remove `channel`." $tier) -}}
+{{- fail (printf "observability-stack: %s.receiver is \"telegram\" and it also sets `channel`. `channel` is a Slack channel; a Telegram tier lands in `notifications.telegram.chatId`, or in this tier's own `chatId`/`messageThreadId`. Remove `channel`." $t.where) -}}
 {{- end -}}
 {{- if and (eq $cfg.receiver "slack") (not ($slack.webhookSecret).name) -}}
-{{- fail (printf "observability-stack: notifications.severities.%s.receiver is \"slack\" but notifications.slack.webhookSecret is not set. A route to a receiver kind that is not configured looks like a route and reaches nobody." $tier) -}}
+{{- fail (printf "observability-stack: %s.receiver is \"slack\" but notifications.slack.webhookSecret is not set. A route to a receiver kind that is not configured looks like a route and reaches nobody." $t.where) -}}
 {{- end -}}
 {{- end -}}
 {{- /*
@@ -1243,15 +1364,73 @@ see.
 {{- if le $interval 10 -}}
 {{- fail (printf "observability-stack: grafana.sidecar.dashboards.provider.updateIntervalSeconds is %d. At 10 or below Grafana watches the filesystem instead of polling it, and a Kubernetes ConfigMap projection is a symlink swap that fires no watch event — so a dashboard change never lands and nothing reports an error. Use a value above 10." $interval) -}}
 {{- end -}}
+{{- /*
+Which identity a datasource carries follows whether there is a proxy.
+
+With vmauth (the default), every datasource forwards the signed-in
+person's token (`oauthPassThru`) and the proxy scopes it — refused
+otherwise, below.
+
+Without it there is nothing to scope a token and nothing that accepts
+one: a store running `-httpAuth.*` answers 401 to a bearer token. So the
+rule flips. A datasource must NOT pass the person's token through, and
+must authenticate as `storeCredentials` — basic auth, whose user and
+password are environment references Grafana expands at provisioning, to
+variables `grafana.envValueFrom` reads from `storeCredentials`' own
+Secret and keys. Checked as a MIRROR, the same way the stores' own `env`
+is: a datasource reading a different Secret is a dashboard that 401s on
+every panel, and a password written into values is a credential in git.
+*/ -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" $ | fromYaml -}}
+{{- $envRefShape := "^\\$(\\{|__env\\{)([A-Za-z_][A-Za-z0-9_]*)\\}$" -}}
+{{- $sc := $.Values.storeCredentials -}}
 {{- range $file, $doc := ($g.datasources | default dict) -}}
 {{- range $ds := ($doc.datasources | default list) -}}
+{{- if $observabilityStackEffective.vmauth -}}
 {{- if not (($ds.jsonData).oauthPassThru) -}}
 {{- fail (printf "observability-stack: Grafana datasource %q (in %s) does not set `jsonData.oauthPassThru: true`. Without it every query reaches the proxy as GRAFANA's identity rather than the signed-in person's, so the proxy scopes nothing and a viewer sees every namespace on every cluster Grafana can see. That is the failure this whole chart exists to prevent, and it looks exactly like a working dashboard." (toString $ds.name) $file) -}}
+{{- end -}}
+{{- else -}}
+{{- if ($ds.jsonData).oauthPassThru -}}
+{{- fail (printf "observability-stack: Grafana datasource %q (in %s) sets `jsonData.oauthPassThru: true`, but `vmauth` is off. There is no proxy to scope the person's token, and the store it now reaches directly runs `-httpAuth.*`: it answers 401 to a bearer token on every panel. Without the proxy a datasource authenticates as `storeCredentials` instead — drop `oauthPassThru` and set `basicAuth: true`, `basicAuthUser: ${VAR}` and `secureJsonData.basicAuthPassword: ${VAR}` (docs/reference.md, \"Grafana without the proxy\")." (toString $ds.name) $file) -}}
+{{- end -}}
+{{- $user := toString ($ds.basicAuthUser | default "") -}}
+{{- $password := toString (($ds.secureJsonData).basicAuthPassword | default "") -}}
+{{- if or (not $ds.basicAuth) (not $user) (not $password) -}}
+{{- fail (printf "observability-stack: Grafana datasource %q (in %s) does not authenticate to the store, and `vmauth` is off. Every store runs `-httpAuth.*` from `storeCredentials`, so a datasource without its credential answers 401 on every panel. Set `basicAuth: true`, `basicAuthUser: ${VAR}` and `secureJsonData.basicAuthPassword: ${VAR}`, each variable read by `grafana.envValueFrom` from Secret %q (docs/reference.md, \"Grafana without the proxy\")." (toString $ds.name) $file $sc.secretName) -}}
+{{- end -}}
+{{- range $pair := list (list "basicAuthUser" $user $sc.usernameKey) (list "secureJsonData.basicAuthPassword" $password $sc.passwordKey) -}}
+{{- $field := index $pair 0 -}}
+{{- $value := index $pair 1 -}}
+{{- $wantKey := index $pair 2 -}}
+{{- if not (regexMatch $envRefShape $value) -}}
+{{- fail (printf "observability-stack: Grafana datasource %q (in %s) sets `%s` to a literal rather than an environment reference (`${VAR}` or `$__env{VAR}`). A literal store credential in values is a credential in git and in the release's manifest; read it from `storeCredentials`' Secret through `grafana.envValueFrom` instead." (toString $ds.name) $file $field) -}}
+{{- end -}}
+{{- $var := regexReplaceAll $envRefShape $value "${2}" -}}
+{{- $ref := ((index ($g.envValueFrom | default dict) $var) | default dict).secretKeyRef | default dict -}}
+{{- if or (ne (toString $ref.name) (toString $sc.secretName)) (ne (toString $ref.key) (toString $wantKey)) -}}
+{{- fail (printf "observability-stack: Grafana datasource %q (in %s) reads `%s` from $%s, but `grafana.envValueFrom.%s` reads Secret %q key %q rather than `storeCredentials`' Secret %q key %q. The store checks exactly that credential, so any other one is a datasource that 401s on every panel. MIRROR: set `grafana.envValueFrom.%s.secretKeyRef` to {name: %s, key: %s}." (toString $ds.name) $file $field $var $var (toString $ref.name) (toString $ref.key) $sc.secretName $wantKey $var $sc.secretName $wantKey) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- if not (hasKey $ds "version") -}}
 {{- fail (printf "observability-stack: Grafana datasource %q (in %s) has no `version`. With more than one replica Grafana only updates a provisioned datasource whose version is greater than or equal to the stored one, so an edit without a bump lands on a fresh install and nowhere else." (toString $ds.name) $file) -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+{{- /*
+The session-signing key's Secret. Configurable all along
+(`grafana.envValueFrom.GF_SECURITY_SECRET_KEY.secretKeyRef`), and
+deliberately left EMPTY by default because the Secret is the estate's to
+name — any Secret and key, the admin one included. Left empty on an
+enabled Grafana the pod spec names a Secret called "", which the API
+server rejects on apply; refused here instead, with the fix in the
+message. An estate that removed the variable outright (`null`) is not
+checked: that is a choice, not an oversight.
+*/ -}}
+{{- $secretKey := index ($g.envValueFrom | default dict) "GF_SECURITY_SECRET_KEY" -}}
+{{- if and $secretKey (not (($secretKey.secretKeyRef).name)) -}}
+{{- fail "observability-stack: Grafana is enabled and `grafana.envValueFrom.GF_SECURITY_SECRET_KEY.secretKeyRef.name` is empty. That is the key Grafana signs sessions and encrypts datasource secrets with; name the Secret (and `key`) that holds it — it may be the same Secret as `grafana.admin.existingSecret`, so it needs a key, not a Secret of its own." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

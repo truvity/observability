@@ -1,0 +1,25 @@
+# expect: Under `resources.policy: burstable` too they must be equal
+# `burstable` relaxes the CPU half of the rule only. Memory below its
+# limit puts the store in the kubelet's first eviction tier under memory
+# pressure, which is what `guaranteed` existed to prevent.
+resources:
+  policy: burstable
+# No proxy: no principals to admit, so none of the tenancy refusals
+# apply and none can preempt this fixture's own.
+vmauth:
+  enabled: false
+
+alertmanager:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+    limits: {cpu: null, memory: 64Mi}
+
+# The minimum receiver that keeps the "no receiver configured" refusal
+# (Alertmanager is on by default) from preempting this fixture's own.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

@@ -22,6 +22,12 @@ in `helm get manifest`, and in whatever stores the release history.
 {{- $severities := $n.severities | default dict }}
 {{- $routes := $n.routes | default list }}
 {{- $also := $n.also | default list }}
+{{- $drop := $n.drop | default list }}
+{{- $catchAll := $n.catchAll }}
+{{- $groupBy := $n.groupBy | default (list "alertname" "k8s_cluster_name" "k8s_namespace_name") }}
+{{- $inhibit := $n.inhibit | default dict }}
+{{- $inhibitEnabled := ternary $inhibit.enabled true (hasKey $inhibit "enabled") }}
+{{- $inhibitEqual := $inhibit.equal | default (list "k8s_cluster_name" "k8s_namespace_name") }}
 {{- /*
 `notifications.externalUrl` defaults to `vmalert.externalUrl`: they are
 one fact (see the refusal in _validate.tpl), and a consumer who already
@@ -33,6 +39,9 @@ set the vmalert one gets a working Grafana link in Slack for free.
 {{- if eq $cfg.receiver "slack" }}
 {{- $_ := set $slackChannels $cfg.channel true }}
 {{- end }}
+{{- end }}
+{{- if and $catchAll (eq $catchAll.receiver "slack") }}
+{{- $_ := set $slackChannels $catchAll.channel true }}
 {{- end }}
 {{- range $r := $routes }}
 {{- range $tier := list "critical" "warning" }}
@@ -60,6 +69,20 @@ tier (refused in _validate.tpl), so severities are the only source.
 {{- $_ := set $telegramTargets (include "observability-stack.notifications.telegramReceiver" $target) $target }}
 {{- end }}
 {{- end }}
+{{- if and $catchAll (eq $catchAll.receiver "telegram") }}
+{{- $target := include "observability-stack.notifications.telegramTarget" (list $telegram $catchAll) | fromYaml }}
+{{- $_ := set $telegramTargets (include "observability-stack.notifications.telegramReceiver" $target) $target }}
+{{- end }}
+{{- end }}
+{{- /*
+The fallback of every node in the primary tree: `notifications-none`
+unless `catchAll` names a receiver, in which case an alert no tier route
+claimed — `info`, no severity, a tier `severities` leaves out — lands
+there rather than nowhere.
+*/}}
+{{- $fallback := "notifications-none" }}
+{{- if $catchAll }}
+{{- $fallback = include "observability-stack.notifications.receiverFor" (list $ (dict "catchAll" $catchAll) "catchAll" "") }}
 {{- end }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMAlertmanager
@@ -100,6 +123,11 @@ spec:
     - name: notifications-telegram
       secret:
         secretName: {{ $telegram.botTokenSecret.name | quote }}
+    {{- if ($telegram.chatIdSecret).name }}
+    - name: notifications-telegram-chat
+      secret:
+        secretName: {{ $telegram.chatIdSecret.name | quote }}
+    {{- end }}
     {{- end }}
     {{- range $w := $webhooks }}
     - name: {{ printf "notifications-webhook-%s" $w.name }}
@@ -121,6 +149,11 @@ spec:
     - name: notifications-telegram
       mountPath: /etc/alertmanager/notifications-telegram
       readOnly: true
+    {{- if ($telegram.chatIdSecret).name }}
+    - name: notifications-telegram-chat
+      mountPath: /etc/alertmanager/notifications-telegram-chat
+      readOnly: true
+    {{- end }}
     {{- end }}
     {{- range $w := $webhooks }}
     - name: {{ printf "notifications-webhook-%s" $w.name }}
@@ -137,9 +170,9 @@ spec:
       # docs/notifications.md), never a route somebody forgot to write.
       receiver: notifications-none
       group_by:
-        - alertname
-        - k8s_cluster_name
-        - k8s_namespace_name
+        {{- range $l := $groupBy }}
+        - {{ ternary ($l | quote) $l (eq $l "...") }}
+        {{- end }}
       group_wait: {{ $n.groupWait | default "30s" }}
       group_interval: {{ $n.groupInterval | default "5m" }}
       repeat_interval: {{ $n.repeatInterval | default "4h" }}
@@ -154,6 +187,18 @@ spec:
           group_wait: 0s
           group_interval: 1m
           repeat_interval: {{ $watchdog.repeatInterval }}
+        {{- else if $catchAll }}
+        # No deadman receiver, and a catch-all that would otherwise take
+        # the always-firing heartbeat every repeat_interval.
+        - receiver: notifications-none
+          matchers:
+            - alertname = "Watchdog"
+        {{- end }}
+        {{- range $d := $drop }}
+        # notifications.drop: reaches nobody, by the estate's decision.
+        - match:
+            {{- toYaml $d | nindent 12 }}
+          receiver: notifications-none
         {{- end }}
         {{- /*
         The primary tree, wrapped in one node that matches everything and
@@ -163,13 +208,13 @@ spec:
         firing twice for one that only matched one of them.
         */}}
         - match: {}
-          receiver: notifications-none
+          receiver: {{ $fallback }}
           continue: true
           routes:
             {{- range $r := $routes }}
             - match:
                 {{- toYaml $r.match | nindent 16 }}
-              receiver: notifications-none
+              receiver: {{ $fallback }}
               routes:
                 {{- range $tier := list "critical" "warning" }}
                 {{- $override := index $r $tier }}
@@ -226,7 +271,16 @@ spec:
           without the token it sends nothing.
           */}}
           - bot_token_file: /etc/alertmanager/notifications-telegram/{{ $telegram.botTokenSecret.key | default "token" }}
+            {{- if $target.chatFile }}
+            {{- /*
+            `chat_id_file` (Alertmanager v0.31.0 and later), for an estate
+            that keeps its chat ids out of git: mounted from
+            `notifications.telegram.chatIdSecret` like the token beside it.
+            */}}
+            chat_id_file: {{ $target.chatFile }}
+            {{- else }}
             chat_id: {{ $target.chat }}
+            {{- end }}
             {{- if $target.thread }}
             message_thread_id: {{ $target.thread }}
             {{- end }}
@@ -280,12 +334,15 @@ spec:
     no rule of its own here — its own route above already keeps it out of
     grouping, inhibition and silencing meant for a real alert.
     */}}
+    {{- if $inhibitEnabled }}
     inhibit_rules:
       - source_matchers:
           - severity = "critical"
         target_matchers:
           - severity = "warning"
         equal:
-          - k8s_cluster_name
-          - k8s_namespace_name
+          {{- range $l := $inhibitEqual }}
+          - {{ $l }}
+          {{- end }}
+    {{- end }}
 {{- end }}

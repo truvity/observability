@@ -527,9 +527,19 @@ go through `int64` and `%d` here rather than being rendered raw.
 {{- define "observability-stack.notifications.telegramTarget" -}}
 {{- $telegram := index . 0 -}}
 {{- $cfg := index . 1 -}}
-{{- $chat := ternary $cfg.chatId $telegram.chatId (hasKey $cfg "chatId") -}}
 {{- $thread := ternary $cfg.messageThreadId $telegram.messageThreadId (hasKey $cfg "messageThreadId") -}}
+{{- if and (not (hasKey $cfg "chatId")) ($telegram.chatIdSecret).name }}
+{{- /*
+The default chat read from `notifications.telegram.chatIdSecret`: the
+chart never sees its value, so the target is the mounted file instead,
+and `chat` stays empty.
+*/}}
+chat: ""
+chatFile: {{ printf "/etc/alertmanager/notifications-telegram-chat/%s" ($telegram.chatIdSecret.key | default "chat_id") | quote }}
+{{- else }}
+{{- $chat := ternary $cfg.chatId $telegram.chatId (hasKey $cfg "chatId") -}}
 chat: {{ printf "%d" ($chat | int64) | quote }}
+{{- end }}
 thread: {{ ternary (printf "%d" ($thread | int64)) "" (gt ($thread | default 0 | int64) 0) | quote }}
 {{- end -}}
 
@@ -541,6 +551,10 @@ rather than dropped, so chat `-5` and user `5` never share a name.
 */}}
 {{- define "observability-stack.notifications.telegramReceiver" -}}
 {{- $name := printf "telegram-%s" (.chat | replace "-" "n") -}}
+{{- if .chatFile -}}
+{{- /* A chat whose id the chart never sees: named for where it is read from. */ -}}
+{{- $name = "telegram-chatfile" -}}
+{{- end -}}
 {{- if .thread -}}
 {{- $name = printf "%s-%s" $name .thread -}}
 {{- end -}}

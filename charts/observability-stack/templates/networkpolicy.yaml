@@ -31,12 +31,24 @@ is a backup that stops silently — which is the failure this repository
 exists to catch, not to cause.
 */}}
 {{- $scrapeDefault := list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmagent"))) -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" $root | fromYaml }}
+{{- /*
+Grafana reaches the stores itself only when there is no proxy for it to
+go through (`vmauth` off; its datasources then use `storeCredentials`,
+see `observability-stack.validate.grafana`) — and only then is it
+admitted here, by the labels the Grafana chart gives its own pods.
+*/}}
+{{- $grafanaDirect := list }}
+{{- if and (not $observabilityStackEffective.vmauth) ($root.Values.grafana).enabled }}
+{{- $grafanaDirect = list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" (($root.Values.grafana).nameOverride | default "grafana") "app.kubernetes.io/instance" $root.Release.Name))) }}
+{{- end }}
 {{- $peers := concat
     (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmauth" "app.kubernetes.io/instance" $fullname))))
     (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmalert"))))
     (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/part-of" "observability-stack" "app.kubernetes.io/instance" $root.Release.Name))))
     ($root.Values.networkPolicy.scrapeFrom | default $scrapeDefault)
     ($root.Values.networkPolicy.writersFrom | default list)
+    $grafanaDirect
 }}
 {{- $stores := list
     (dict "name" "metrics" "port" 8428 "selector" (dict "app.kubernetes.io/name" "vmsingle" "app.kubernetes.io/instance" (include "observability-stack.vmks.fullname" $root)))
@@ -65,6 +77,20 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $store.port }}
+    {{- /*
+    `networkPolicy.clientsFrom`: clients this chart does not know about,
+    each on the stores it names and no others — one rule per entry, so
+    `kubectl describe` shows which client a rule is for.
+    */}}
+    {{- range $c := ($root.Values.networkPolicy.clientsFrom | default list) }}
+    {{- if has $store.name ($c.stores | default (list "metrics" "logs" "traces")) }}
+    - from:
+        {{- toYaml $c.from | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ $store.port }}
+    {{- end }}
+    {{- end }}
 {{- end }}
 ---
 {{- /*
@@ -114,7 +140,6 @@ never a second, separately-hardcoded default: an estate that overrides
 `scrapeFrom` must not lose the reloader scrape the way it would not
 lose the store or proxy one.
 */}}
-{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" $root | fromYaml }}
 {{- if $observabilityStackEffective.vmalert }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

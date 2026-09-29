@@ -48,7 +48,7 @@
     },
     "resources": {
       "type": "object",
-      "description": "Kubernetes resource requirements; passed through untouched. The chart refuses requests that differ from limits and a fractional CPU.",
+      "description": "Kubernetes resource requirements; passed through untouched. Under `resources.policy: guaranteed` (the default) the chart refuses requests that differ from limits and a fractional CPU; under `burstable`, see `resources.policy`.",
       "required": [
         "requests",
         "limits"
@@ -171,6 +171,23 @@
         }
       }
     },
+    "backupPrefix": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+      "description": "A path under `backup.destination`: relative, no leading or trailing `/`, and no empty segment or one starting with a dot. No two prefixes in use may be equal or nest; see `backup.destination`."
+    },
+    "labelName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+    },
+    "matcherMap": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Alertmanager label matchers, exact-match only. At least one key: an empty matcher matches every alert."
+    },
     "backupJob": {
       "type": "object",
       "additionalProperties": false,
@@ -181,6 +198,9 @@
         "schedule": {
           "type": "string",
           "minLength": 1
+        },
+        "prefix": {
+          "$ref": "#/definitions/backupPrefix"
         },
         "serviceAccount": {
           "$ref": "#/definitions/backupServiceAccount"
@@ -236,6 +256,18 @@
     "interval": {
       "$ref": "#/definitions/duration",
       "description": "The scrape interval, the metrics store's deduplication window and both vmalerts' evaluation interval. One value."
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How every component's `resources` are judged. See values.yaml and docs/safety.md, \"Resources\".",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": ["guaranteed", "burstable"],
+          "description": "`guaranteed` (default): requests equal limits, whole-number CPU. `burstable`: requests required; CPU may be fractional and below or without a limit, a CPU limit that is set is still whole; memory stays request == limit."
+        }
+      }
     },
     "vmauth": {
       "type": "object",
@@ -626,6 +658,44 @@
         "repeatInterval": {
           "$ref": "#/definitions/duration"
         },
+        "groupBy": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Alertmanager's `group_by` on the root route. Default: alertname, k8s_cluster_name, k8s_namespace_name. `[\"...\"]` groups by every label.",
+          "items": {
+            "type": "string",
+            "pattern": "^([a-zA-Z_][a-zA-Z0-9_]*|\\.\\.\\.)$"
+          }
+        },
+        "inhibit": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The one inhibit rule: a critical silences a warning whose values are equal for every label in `equal`. Alertmanager compares a label missing on both alerts as EQUAL; see docs/notifications.md, \"Inhibition\".",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "equal": {
+              "type": "array",
+              "minItems": 1,
+              "description": "Never empty: an inhibit rule with no `equal` lets any critical mute every warning.",
+              "items": {
+                "$ref": "#/definitions/labelName"
+              }
+            }
+          }
+        },
+        "drop": {
+          "type": "array",
+          "description": "Alerts that reach nobody: routed to the null receiver ahead of every other route.",
+          "items": {
+            "$ref": "#/definitions/matcherMap"
+          }
+        },
+        "catchAll": {
+          "$ref": "#/definitions/severityTarget",
+          "description": "Where an alert lands when no severity tier claimed it: `info`, no severity at all, or a tier `severities` leaves out. Unset: nowhere."
+        },
         "slack": {
           "type": "object",
           "additionalProperties": false,
@@ -641,10 +711,21 @@
         "telegram": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Telegram as a receiver kind: one bot, whose token is read from an existing Secret and mounted as `bot_token_file`, never interpolated. `severities.<tier>.receiver: telegram` sends a tier here; `chatId`/`messageThreadId` on that tier override the defaults below.",
+          "description": "Telegram as a receiver kind: one bot, whose token is read from an existing Secret and mounted as `bot_token_file`, never interpolated. `severities.<tier>.receiver: telegram` sends a tier here; `chatId`/`messageThreadId` on that tier override the defaults below. The default chat is `chatId`, or `chatIdSecret` for an estate that keeps chat ids private: exactly one of the two.",
           "required": [
-            "botTokenSecret",
-            "chatId"
+            "botTokenSecret"
+          ],
+          "oneOf": [
+            {
+              "required": [
+                "chatId"
+              ]
+            },
+            {
+              "required": [
+                "chatIdSecret"
+              ]
+            }
           ],
           "properties": {
             "botTokenSecret": {
@@ -652,6 +733,10 @@
             },
             "chatId": {
               "$ref": "#/definitions/telegramChatId"
+            },
+            "chatIdSecret": {
+              "$ref": "#/definitions/secretRef",
+              "description": "The default chat id, read from an existing Secret with Alertmanager's `chat_id_file` (Alertmanager v0.31.0 or later) rather than written here."
             },
             "messageThreadId": {
               "$ref": "#/definitions/telegramThreadId"
@@ -807,6 +892,37 @@
             "type": "object"
           },
           "description": "Kubernetes NetworkPolicyPeer objects; passed through untouched. Empty means the metrics agent charts/observability-emitters renders."
+        },
+        "clientsFrom": {
+          "type": "array",
+          "description": "Other in-cluster clients of the stores, each admitted to the stores it names on that store's own port. `from` holds NetworkPolicyPeer objects, passed through untouched; an empty `from` would admit every source and is refused.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from"
+            ],
+            "properties": {
+              "stores": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "description": "Which stores this client reaches. Omitted: all three.",
+                "items": {
+                  "type": "string",
+                  "enum": ["metrics", "logs", "traces"]
+                }
+              },
+              "from": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "minProperties": 1
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -900,6 +1016,12 @@
             "fullSchedule": {
               "type": "string",
               "minLength": 1
+            },
+            "prefix": {
+              "$ref": "#/definitions/backupPrefix"
+            },
+            "fullPrefix": {
+              "$ref": "#/definitions/backupPrefix"
             },
             "claimName": {
               "type": "string"

@@ -1,0 +1,205 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The single-operator estate: one person, one cluster, no per-team read
+# scoping. Every switch that exists for that shape is set here, at once,
+# so this golden is the whole profile in one render. Each is off by
+# default; `single` is the same install with every default kept.
+#
+# No proxy: nobody's reads need scoping, so there is no vmauth, no
+# principal, and Grafana reads the stores directly with the store
+# credential (the stores keep `-httpAuth.*` — that part is not a switch).
+vmauth:
+  enabled: false
+
+# Measured, not guessed: vmalert and Alertmanager at a few millicores,
+# and no CPU limit on either because the estate measured CFS throttling.
+# Memory stays request == limit (see `resources.policy`). `cpu: null` is
+# how a CPU limit is REMOVED from one of this chart's OWN components:
+# Helm merges this file into the chart's defaults, so leaving `cpu` out
+# of `limits` would keep the default `"1"`.
+#
+# The operator, the three stores and Grafana are vendored subcharts, and
+# Helm passes a null through to a subchart unchanged — the API server
+# then reads it as a CPU limit of 0 and refuses the pod, so the chart
+# refuses that render. Those get a fractional request and a whole-number
+# limit well above it instead, which leaves them effectively unthrottled.
+resources:
+  policy: burstable
+
+vmalert:
+  externalUrl: https://grafana.example
+  resources:
+    requests: {cpu: 10m, memory: 128Mi}
+    limits: {cpu: null, memory: 128Mi}
+
+alertmanager:
+  resources:
+    requests: {cpu: 10m, memory: 64Mi}
+    limits: {cpu: null, memory: 64Mi}
+
+# Telegram only, with the chat id kept out of git (`chatIdSecret`), a
+# catch-all for `info` and severity-less alerts, grouping and inhibition
+# keyed on the labels this estate's alerts actually carry, and one
+# vendored always-firing rule dropped. No deadman receiver here, so the
+# chart routes `Watchdog` to nobody rather than to the catch-all.
+notifications:
+  externalUrl: https://grafana.example
+  telegram:
+    botTokenSecret: {name: example-telegram-bot, key: token}
+    chatIdSecret: {name: example-telegram-bot, key: chat_id}
+    parseMode: HTML
+  groupBy: [alertname, namespace]
+  inhibit:
+    equal: [namespace]
+  drop:
+    - {alertname: InfoInhibitor}
+  severities:
+    critical: {receiver: telegram}
+    warning: {receiver: telegram, messageThreadId: 7}
+  catchAll: {receiver: telegram}
+
+# Two clients the chart does not know about: a synthetic prober that
+# reads `/health` on the metrics store only, and a collector in its own
+# namespace writing to all three.
+networkPolicy:
+  clientsFrom:
+    - stores: [metrics]
+      from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: example-prober
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: example-collectors
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: example-collector
+
+# Backups into the prefixes the estate's object-store policy already
+# grants, each store under its own ServiceAccount. The role values are
+# placeholders — a real role is an estate's particular.
+backup:
+  enabled: true
+  destination: s3://example-backups/observability
+  auth:
+    mode: ambient
+  metrics:
+    prefix: metrics/incremental
+    fullPrefix: metrics/weekly
+    serviceAccount:
+      create: true
+      annotations:
+        eks.amazonaws.com/role-arn: "<IAM role for the metrics backup only>"
+  logs:
+    prefix: logs-snapshots
+    serviceAccount:
+      create: true
+      annotations:
+        eks.amazonaws.com/role-arn: "<IAM role for the logs backup only>"
+  traces:
+    enabled: true
+    prefix: traces-snapshots
+    serviceAccount:
+      create: true
+      annotations:
+        eks.amazonaws.com/role-arn: "<IAM role for the traces backup only>"
+
+victoria-metrics-k8s-stack:
+  victoria-metrics-operator:
+    resources:
+      requests: {cpu: 20m, memory: 256Mi}
+      limits: {cpu: "2", memory: 256Mi}
+  vmsingle:
+    spec:
+      resources:
+        requests: {cpu: 250m, memory: 4Gi}
+        limits: {cpu: "4", memory: 4Gi}
+
+victoria-logs-single:
+  server:
+    resources:
+      requests: {cpu: 100m, memory: 2Gi}
+      limits: {cpu: "4", memory: 2Gi}
+
+victoria-traces-single:
+  server:
+    resources:
+      requests: {cpu: 50m, memory: 1Gi}
+      limits: {cpu: "2", memory: 1Gi}
+
+# Grafana straight at the stores: no `oauthPassThru` (there is no proxy to
+# scope a token), basic auth from `storeCredentials` through environment
+# references Grafana expands at provisioning. The chart admits Grafana's
+# pods to the stores' NetworkPolicies in this mode.
+grafana:
+  enabled: true
+  admin:
+    existingSecret: example-grafana
+  envValueFrom:
+    GF_SECURITY_SECRET_KEY:
+      secretKeyRef:
+        name: example-grafana
+        key: secret_key
+    GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+      secretKeyRef:
+        name: example-grafana
+        key: client_id
+    GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+      secretKeyRef:
+        name: example-grafana
+        key: client_secret
+    STORE_USERNAME:
+      secretKeyRef:
+        name: observability-store-credentials
+        key: username
+    STORE_PASSWORD:
+      secretKeyRef:
+        name: observability-store-credentials
+        key: password
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: VictoriaMetrics
+          type: prometheus
+          access: proxy
+          uid: victoriametrics
+          isDefault: true
+          version: 1
+          url: http://vmsingle-observability-stack-victoria-metrics-k8s-stack:8428/prometheus
+          basicAuth: true
+          basicAuthUser: ${STORE_USERNAME}
+          secureJsonData:
+            basicAuthPassword: ${STORE_PASSWORD}
+        - name: VictoriaLogs
+          type: victoriametrics-logs-datasource
+          access: proxy
+          uid: victorialogs
+          version: 1
+          url: http://observability-stack-victoria-logs-single-server:9428
+          basicAuth: true
+          basicAuthUser: ${STORE_USERNAME}
+          secureJsonData:
+            basicAuthPassword: ${STORE_PASSWORD}
+        - name: VictoriaTraces
+          type: jaeger
+          access: proxy
+          uid: victoriatraces
+          version: 1
+          url: http://observability-stack-vt-single-server:10428/select/jaeger
+          basicAuth: true
+          basicAuthUser: $__env{STORE_USERNAME}
+          secureJsonData:
+            basicAuthPassword: $__env{STORE_PASSWORD}
+  grafana.ini:
+    auth.generic_oauth:
+      role_attribute_path: "'Viewer'"
+  resources:
+    requests: {cpu: 50m, memory: 256Mi}
+    limits: {cpu: "2", memory: 256Mi}
