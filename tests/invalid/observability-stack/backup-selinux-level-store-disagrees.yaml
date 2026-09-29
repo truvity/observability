@@ -23,7 +23,7 @@ notifications:
 # silently choosing one.
 backup:
   enabled: true
-  destination: ":s3,env_auth=true:example-backups/observability"
+  destination: "s3://example-backups/observability"
   credentialsSecret: example-backup-credentials
   seLinuxLevel: "s0:c123,c456"
 

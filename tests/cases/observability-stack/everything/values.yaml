@@ -166,7 +166,7 @@ networkPolicy:
 
 backup:
   enabled: true
-  destination: ":s3,env_auth=true:example-backups/observability"
+  destination: "s3://example-backups/observability"
   credentialsSecret: example-backup-credentials
   activeDeadlineSeconds: 1800
   successfulJobsHistoryLimit: 1
@@ -282,6 +282,23 @@ selfAlerts:
 victoria-metrics-k8s-stack:
   vmsingle:
     enabled: false
+  # Dashboard syncing on, the way an estate that wants MAINTAINED
+  # dashboards (SQU-381's own reason to adopt this chart) turns it on —
+  # off by default (values.yaml), so this is the only golden that
+  # exercises `defaultDashboards.dashboards.alertmanager-overview`/
+  # `.grafana-overview` and `defaultDashboards.sources.
+  # victoriametrics-vmalert` at all.
+  defaultDashboards:
+    enabled: true
+    # MIRROR of `grafana.enabled` below (`true` here — everything else
+    # already tracks `alertmanager.enabled`/`vmalert.enabled`
+    # automatically, values.yaml's own default; `grafana.enabled`
+    # defaults `false` chart-wide, so `grafana-overview` cannot, and
+    # `observability-stack.validate.vendoredSyncSources` refuses this
+    # render without it).
+    dashboards:
+      grafana-overview:
+        enabled: true
 victoria-logs-single:
   enabled: false
 victoria-traces-single:

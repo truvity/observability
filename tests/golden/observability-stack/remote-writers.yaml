@@ -301,7 +301,7 @@ data:
         kubernetes-system-scheduler:
           enabled: false
       sources: 
-        - enabled: false
+        - enabled: true
           url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/alertmanager-prometheusRule.yaml
         - enabled: false
           url: https://raw.githubusercontent.com/monitoring-mixins/website/master/assets/etcd/alerts.yaml
@@ -321,7 +321,7 @@ data:
           url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/master/deployment/docker/rules/alerts-health.yml
         - enabled: false
           url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-vmagent.yml
-        - enabled: false
+        - enabled: true
           url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-vmalert.yml
         - enabled: false
           url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-cluster.yml

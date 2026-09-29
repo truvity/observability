@@ -301,7 +301,7 @@ data:
         kubernetes-system-scheduler:
           enabled: false
       sources: 
-        - enabled: false
+        - enabled: true
           url: https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/alertmanager-prometheusRule.yaml
         - enabled: false
           url: https://raw.githubusercontent.com/monitoring-mixins/website/master/assets/etcd/alerts.yaml
@@ -321,7 +321,7 @@ data:
           url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/master/deployment/docker/rules/alerts-health.yml
         - enabled: false
           url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-vmagent.yml
-        - enabled: false
+        - enabled: true
           url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-vmalert.yml
         - enabled: false
           url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/master/deployment/docker/rules/alerts-cluster.yml
@@ -1347,7 +1347,7 @@ spec:
                 # gets only what changed, and there is no flag for it.
                 - -storageDataPath=/vm-data
                 - -snapshot.createURL=$(SNAPSHOT_CREATE_URL)
-                - -dst=:s3,env_auth=true:example-backups/observability/metrics
+                - -dst=s3://example-backups/observability/metrics
               env:
                 - name: VM_USERNAME
                   valueFrom:
@@ -1459,8 +1459,8 @@ spec:
                 # so everything unchanged is copied INSIDE the object
                 # store rather than pulled down and pushed back up. It is
                 # the same backup either way; this is what it costs.
-                - -origin=:s3,env_auth=true:example-backups/observability/metrics
-                - -dst=:s3,env_auth=true:example-backups/observability/metrics-full
+                - -origin=s3://example-backups/observability/metrics
+                - -dst=s3://example-backups/observability/metrics-full
               env:
                 - name: VM_USERNAME
                   valueFrom:
@@ -1602,8 +1602,24 @@ spec:
                   # usage with nothing pointing at why. The binary expires
                   # them after -snapshotsMaxAge (3 days), which is a
                   # backstop, not a plan — this job deletes its own.
-                  auth="--user=$VM_USERNAME --password=$VM_PASSWORD"
-                  created=$(wget -q -O- $auth --post-data='' \
+                  #
+                  # `backup.image` is busybox's wget (see its own doc
+                  # comment), which has no `--user`/`--password` at all —
+                  # confirmed against the pinned rclone/rclone:1.73.0,
+                  # 2026-09-29: it rejects them outright
+                  # ("unrecognized option"), so store auth being ON (it
+                  # is mandatory) failed this job before it ever reached
+                  # rclone. `--header` IS one of the handful of long
+                  # options busybox wget implements, so basic auth is
+                  # built by hand instead: RFC 7617's own construction,
+                  # base64 of `user:pass`, on the SAME header a real
+                  # client would send. `base64 -w0` (also busybox, also
+                  # confirmed against this image) disables the 76-column
+                  # line wrap coreutils' `base64` defaults to — a
+                  # wrapped value breaks the header the moment a
+                  # generated credential is longer than one line's worth.
+                  auth="Authorization: Basic $(printf '%s:%s' "$VM_USERNAME" "$VM_PASSWORD" | base64 -w0)"
+                  created=$(wget -q -O- --header="$auth" --post-data='' \
                     "$STORE_URL/internal/partition/snapshot/create")
                   echo "snapshots: $created"
                   # REFUSE AN EMPTY SOURCE. A store with no partitions is
@@ -1616,7 +1632,7 @@ spec:
                     test -d "$path" || { echo "snapshot $path is not on this volume" >&2; exit 1; }
                     test -n "$(ls -A "$path")" || { echo "snapshot $path is empty" >&2; exit 1; }
                     rclone sync "$path" "$DESTINATION/$(basename "$path")" --checksum
-                    wget -q -O- $auth --post-data='' \
+                    wget -q -O- --header="$auth" --post-data='' \
                       "$STORE_URL/internal/partition/snapshot/delete?path=$path"
                   done
           volumes:

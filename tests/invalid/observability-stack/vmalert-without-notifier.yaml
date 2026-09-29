@@ -12,3 +12,11 @@ tenancy:
 # nowhere, which is indistinguishable from an estate with no problems.
 alertmanager:
   enabled: false
+# MIRROR of alertmanager.enabled above — see
+# observability-stack.validate.vendoredSyncSources' own doc comment — so
+# this fixture keeps testing the notifier refusal, not that one.
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      alertmanager:
+        enabled: false

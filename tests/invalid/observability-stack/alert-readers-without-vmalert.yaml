@@ -6,6 +6,18 @@ vmalert:
   enabled: false
 alertmanager:
   enabled: false
+# MIRROR of alertmanager.enabled/vmalert.enabled above — see
+# observability-stack.validate.vendoredSyncSources' own doc comment —
+# so this fixture keeps testing alertReaders, not that refusal.
+# (defaultDashboards.enabled stays at its own default of false, so the
+# matching dashboard mirrors need no override here.)
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      alertmanager:
+        enabled: false
+      vmalert:
+        enabled: false
 
 tenancy:
   issuerUrl: https://issuer.example

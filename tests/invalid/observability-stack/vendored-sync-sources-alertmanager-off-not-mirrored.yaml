@@ -1,0 +1,28 @@
+# expect: is false, but `victoria-metrics-k8s-stack.defaultRules.sources.alertmanager.enabled` is true
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# alertmanager.enabled off, with NOTHING mirrored on the vendored sync
+# job's alertmanager.rules source (values.yaml's own default is `true`,
+# tracking alertmanager.enabled's own default): this chart cannot flip
+# that source for you (Helm evaluates a subchart's values before any
+# template here runs), so the render refuses rather than leaving the
+# vendored sync job asking for a rule source for an Alertmanager this
+# install does not run.
+alertmanager:
+  enabled: false
