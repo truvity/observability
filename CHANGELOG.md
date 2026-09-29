@@ -6,6 +6,9 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## v0.8.5
+
+- README gains `Consumers` and `Neighbours`; `docs/doctrine.md` points at the policy component contract; ci-workflows pins moved to v3.13.1.
 ## 0.8.4
 
 - **Fix: `charts/observability-stack`'s metrics backup fails with
