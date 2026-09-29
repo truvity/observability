@@ -111,6 +111,13 @@ vendor chart:
 leak-canary:
     hack/leak-canary.sh
 
+# A change to an EXISTING golden is a default-render change and must be
+# declared with a `**Behaviour change` line in CHANGELOG.md's newest entry
+# (adding a new golden is fine). BASE is the ref to compare against: CI
+# passes the pull request's base, locally it is origin/master.
+default-change-guard base="origin/master":
+    hack/default-change-guard.sh {{ base }}
+
 # Apply every golden to a real API server and require it to be accepted.
 #
 # Needs Docker: it runs a throwaway kind cluster. Deliberately NOT part of

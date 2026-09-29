@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hack/backup-logs-traces-proof.sh — REAL proof, in Docker, of the two
-# SQU-381 defects in the logs/traces backup CronJobs, fixed, against the
+# two defects in the logs/traces backup CronJobs, fixed, against the
 # PINNED, UNMODIFIED `backup.image` (rclone/rclone:1.73.0) and real
 # `victoria-logs`/`victoria-traces` binaries at the versions
 # `charts/observability-stack`'s own vendored subcharts pin:

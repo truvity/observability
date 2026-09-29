@@ -1,4 +1,4 @@
-// SQU-381's second defect: `victoria-metrics-k8s-stack`'s vendored sync
+// The second of the two v0.11.1 defects: `victoria-metrics-k8s-stack`'s vendored sync
 // job gates its `alertmanager.rules`/`vmalert.rules` VMRule sources, and
 // the `alertmanager-overview`/`victoriametrics-vmalert`/`grafana-overview`
 // dashboards, on `.Values.alertmanager.enabled`/`.vmalert.enabled`/
@@ -76,7 +76,7 @@ func (c syncJobFullConfig) dashboardDisabled(name string) bool {
 }
 
 // TestVendoredRuleAndDashboardSourcesTrackTheStacksOwnComponents is the
-// SQU-381 regression gate: on every golden whose OWN VMAlertmanager/
+// regression gate for that defect: on every golden whose OWN VMAlertmanager/
 // VMAlert(metrics)/Grafana Deployment is rendered — this chart's own
 // objects, `templates/vmalertmanager.yaml`/`vmalert.yaml`/the `grafana`
 // dependency, never the vendored copies, which are permanently off — the
