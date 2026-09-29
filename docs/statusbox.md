@@ -193,6 +193,54 @@ namespace is refused in `Args.validate` — two secrets landing in a
 Config under the same `${...}` reference is worse discovered at deploy
 time than in a container's environment after the fact.
 
+### Building the Config: `RenderGatus` (0.9.0)
+
+Every `Instance.Config` above is a Gatus YAML string the ESTATE renders
+and hands in — until 0.9.0, entirely: this package took the string and
+never inspected it. The combined ops page ("internal → status, pulled"
+below) is the same shape for every consumer that builds one, though, so
+0.9.0 moves that RENDERING — never the estate's own catalogue
+derivation — into this package too:
+
+```go
+// The estate-neutral input: what to probe, and how to alert. Nothing
+// here is derived by this package — every field is a plain value or a
+// slice the caller already worked out from its own configuration
+// (which hostnames are public, which company owns which, where the
+// alerts-read path answers).
+type Catalogue struct {
+    PlatformHosts []string          // infrastructure hosts, the "platform" group
+    Companies     []Company         // one group per company, in render order
+    AlertsRead    AlertsRead        // the one pull path — see "internal → status, pulled"
+    Providers     DeadmanProviders  // optional Slack/PagerDuty AlertURLs keys
+    Security      *OIDCSecurity     // nil = private/breakglass instance
+    StoragePath   string            // Gatus storage.path
+}
+
+type Company struct {
+    Code, DisplayName string
+    Hosts             []CompanyHost
+}
+
+type CompanyHost struct {
+    Host, Env, StatusPath string // StatusPath "" = the lenient fallback condition
+}
+
+func RenderGatus(c Catalogue) (string, error)
+```
+
+What stays the ESTATE's own, deliberately: deriving a `Catalogue` from
+that estate's OWN configuration (which public hostnames exist, which
+one belongs to which company, where the alerts-read private name
+resolves) — the same split `pkg/tenancy` already draws between "render
+a filter" (this repository) and "know what a person may read" (the
+estate's `cfg/access.yaml`). A consumer with its own catalogue format
+writes its own small mapping from that format to `Catalogue` and calls
+`RenderGatus` once per `Instance` it needs (typically two — a Public
+one with `Security` set, and a private/breakglass twin with `Security:
+nil`, sharing every other field so the two pages can never show two
+different answers about the SAME estate).
+
 ### Trusting a private root
 
 Most probes are ordinary public HTTPS: the box's Gatus containers verify
@@ -442,6 +490,12 @@ door); Gatus replicas with a shared database (coordinates nothing).
   is not PEM, is not a CA, or carries trailing garbage;
 - `Args.TrustedCAs`, in Docker, against the real release image: see
   "Trusting a private root" above and `hack/statusbox-ca-proof.sh`.
+- `RenderGatus`'s own golden and fixture coverage, structural, no
+  network needed (`pkg/statusbox/gatus_internal_test.go`); and, in
+  Docker against the real release image, `hack/gatus-boot-proof.sh` —
+  a representative multi-company `Catalogue` actually boots on
+  `twinproduction/gatus:v5.37.0`, `/health` answers, and every rendered
+  endpoint is live in Gatus's own API.
 
 After release, in a consumer: the public pages render behind the edge;
 the private page answers only over the private network; stopping the box

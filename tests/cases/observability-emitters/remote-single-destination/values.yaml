@@ -1,0 +1,52 @@
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The SAME install as tests/cases/observability-emitters/
+# remote-tls-destination, written the `remote` way (0.9.0): one url, one
+# token, one CA, instead of the same three facts hand-assembled into
+# `metrics.destinations`, `otlp.destinations.metrics/logs/traces` and
+# `writeCredentials` separately. `name: central` matches the low-level
+# fixture's own destination name so the two renders are directly
+# diffable — see tests/remote_equivalence_test.go, which renders both
+# and asserts they produce the SAME manifests apart from nothing at all
+# for metrics/otlp, and asserts victoria-logs-collector is untouched by
+# either.
+#
+# `victoria-logs-collector.*` is IDENTICAL to the low-level fixture,
+# unabridged: `remote` does not reach it (see `remote`'s own comment in
+# values.yaml for why — a real Helm subchart's own values, not this
+# chart's).
+tenancy:
+  cluster: example-remote
+  environment: production
+
+remote:
+  url: https://observability-write.example.private
+  tokenSecret: {name: example-write-token, key: token}
+  caSecret: {name: example-private-ca, key: ca.crt}
+  signals: [metrics, logs, traces]
+  name: central
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: remote-write-tls
+      projected:
+        sources:
+          - secret:
+              name: example-private-ca
+              items: [{key: ca.crt, path: ca.crt}]
+          - secret:
+              name: example-write-token
+              items: [{key: token, path: token}]
+  extraVolumeMounts:
+    - name: remote-write-tls
+      mountPath: /etc/observability-emitters/tls
+      readOnly: true
+  remoteWrite:
+    - url: https://observability-write.example.private
+      tlsCAFile: /etc/observability-emitters/tls/ca.crt
+      bearerTokenFile: /etc/observability-emitters/tls/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-remote","deployment.environment.name":"production"}'

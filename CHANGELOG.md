@@ -6,9 +6,104 @@ must be done first, and whether a default moved. Newest first.
 A version missing from this file changed nothing for a consumer — it is a
 patch cut for dependency bumps alone, and its GitHub Release lists them.
 
+## 0.9.0
+
+"Consumer simplification" (D42): the estate repo (e.g. `truvity/gitops`)
+becomes a plain consumer — values and estate data only. Mechanism moves
+here. Nothing below is required before an existing values file still
+renders; see docs/adoption.md's own "0.8.x → 0.9.0" for the ordered,
+optional migration.
+
+- **Behaviour change: `charts/observability-emitters`'s
+  `victoria-logs-collector` (the container-log DaemonSet) now defaults
+  to `priorityClassName: system-node-critical`, `tolerations:
+  [{operator: Exists}]`, and `resources` of `{requests: {cpu: 15m,
+  memory: 192Mi}, limits: {cpu: 100m, memory: 192Mi}}` — the shape
+  every consumer of this chart was hand-writing already, measured
+  across a live fleet's own node pools (a log agent uses a few
+  millicores and well under 30Mi in practice; the old 250m/512Mi ask,
+  and upstream's own whole-CPU default before that, were both wildly
+  oversized for what the daemon spends, and upstream's own empty
+  `priorityClassName` and `tolerations` left the DaemonSet exactly as
+  evictable, and exactly as likely to land on only the untainted pool,
+  as any ordinary workload). **This is a default-render change**: a
+  consumer who did not already set all three will see `helm diff` move
+  on the next bump. Set any of the three explicitly to keep the old
+  shape.
+- **Feature: `remote`, the single-destination sugar for
+  `charts/observability-emitters`.** One `url`/`tokenSecret`/`caSecret`/
+  `signals`, expanded into `metrics.destinations`, `otlp.destinations.
+  metrics` and, per `signals`, `otlp.destinations.logs`/`.traces` — the
+  shape a cluster with no store of its own writes everything to ONE
+  central install through. Mutually exclusive with the low-level form
+  for whichever signals it covers (refused together); the low-level
+  form is unchanged and still fully supported for a multi-destination
+  or per-signal-different install. `victoria-logs-collector.
+  remoteWrite` (the log agent's OWN write path) is deliberately
+  untouched by `remote` either way: it is a real Helm subchart's own
+  values, and Helm coalesces a subchart's values before any template
+  runs, so this chart cannot compute it the way it computes its own
+  `metrics.destinations` / `otlp.destinations.*`. Golden-tested equal,
+  byte-for-byte, to the hand-assembled low-level render it replaces
+  (`tests/cases/observability-emitters/remote-single-destination` vs.
+  `remote-tls-destination`).
+- **Feature: `kubeStateMetrics.customResources.kargo.enabled` on
+  `charts/observability-emitters`.** Turns on kube-state-metrics'
+  `kargo_stage_condition` / `kargo_promotion_phase` — the exact shape
+  `charts/platform-alerts`' `groups.kargo` already reads — without the
+  ~40-line `customResourceState.config` block and its `rbac.
+  extraRules` written by hand. Off by default. Mechanism: this chart
+  cannot compute `kube-state-metrics.customResourceState.config` or
+  `.rbac.extraRules` from the flag directly (the same subchart-values
+  limitation `remote` works around differently above), so it instead
+  points `customResourceState` at a ConfigMap this chart renders
+  itself (`create: false`, content built from the preset — empty when
+  no preset is on) and grants the two extra verbs through a ClusterRole
+  of its own, bound to kube-state-metrics' ServiceAccount. Whenever
+  `kubeStateMetrics.enabled` is true, `kube-state-metrics.
+  customResourceState.enabled`/`.create` are now pinned by this chart
+  (`true`/`false`) regardless of whether this preset is used — refused
+  together with a consumer-authored `customResourceState.config`,
+  which would otherwise never be read.
+- **Feature: `charts/observability-stack`'s `mode: operator-only` turns
+  four of its fifteen components off ITSELF.** `vmauth.enabled`,
+  `vmalert.enabled`, `alertmanager.enabled` and `metricsSelfScrape.
+  enabled` now default to `null` rather than `true`; `mode` resolves an
+  unset value (`full` → `true`, `operator-only` → `false`) — an
+  explicit `true`/`false` still pins it regardless of mode, and an
+  explicit `true` beside `operator-only` is still refused, the same
+  contradiction the mode always refused. `backup`/`selfAlerts`/
+  `tenancy.{principals,writers,alertReaders}` needed no change: they
+  already defaulted off/empty. The three stores' own `enabled`,
+  `grafana.enabled` and `victoria-metrics-k8s-stack.syncJob.enabled`
+  still need an explicit `false` in this mode, and the render still
+  refuses if any is left on: each is a real Helm subchart's own value,
+  which this chart cannot compute from `mode` for the same reason it
+  cannot compute `victoria-logs-collector.remoteWrite` from `remote`
+  above. `tests/cases/observability-stack/operator-only-implicit`
+  proves the short-hand and long-hand shapes render byte-identical
+  (`TestOperatorOnlySelfDisableIsByteIdentical`).
+- **Feature: `pkg/statusbox.RenderGatus` and `pkg/statusbox.Catalogue`
+  — a typed, estate-neutral Gatus page builder.** Ported from the
+  first consumer's own `internal/components/status/gatus.go`: endpoint
+  naming (`<host's first DNS label> · <env>`, with the collision
+  fallback to the full hostname), per-endpoint probe URL/conditions (a
+  `StatusPath` → the strict `[STATUS] == 200`, none → the lenient
+  `[STATUS] < 500`, plus a certificate-expiry condition either way),
+  the platform group, company groups, each company's alerts-read
+  customer-facing signal and the deadman (both through the SAME pull
+  path, `AlertsRead`), the OIDC `security` block, and storage. What
+  stayed with the consumer, deliberately: deriving a `Catalogue` from
+  that estate's OWN configuration files — a cfg-specific derivation,
+  not this repository's to own. Golden-tested and fixture-tested with
+  no network needed (`pkg/statusbox/gatus_internal_test.go`), plus a
+  real `docker run twinproduction/gatus:v5.37.0` boot of a rendered
+  page (`hack/gatus-boot-proof.sh`, `just gatus-boot-proof`).
+
 ## v0.8.5
 
 - README gains `Consumers` and `Neighbours`; `docs/doctrine.md` points at the policy component contract; ci-workflows pins moved to v3.13.1.
+
 ## 0.8.4
 
 - **Fix: `charts/observability-stack`'s metrics backup fails with

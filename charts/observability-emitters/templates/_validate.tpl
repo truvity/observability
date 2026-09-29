@@ -20,6 +20,7 @@ instead.
 {{- include "observability-emitters.validate.enabled" . -}}
 {{- include "observability-emitters.validate.tenancy" . -}}
 {{- include "observability-emitters.validate.credentials" . -}}
+{{- include "observability-emitters.validate.remote" . -}}
 {{- include "observability-emitters.validate.destinations" . -}}
 {{- include "observability-emitters.validate.metrics" . -}}
 {{- include "observability-emitters.validate.logs" . -}}
@@ -84,11 +85,68 @@ buffer is full, and then drops the oldest — while the pod stays Ready and
 the agent stays green.
 */}}
 {{- define "observability-emitters.validate.credentials" -}}
-{{- if not .Values.writeCredentials.secretName -}}
+{{- $creds := include "observability-emitters.effectiveWriteCredentials" . | fromYaml -}}
+{{- if not $creds.secretName -}}
+{{- if eq (include "observability-emitters.remote.inUse" .) "true" -}}
+{{- fail "observability-emitters: `remote.tokenSecret.name` is empty, so every emitter would write unauthenticated. Name the Secret the estate created; this chart never creates one and never reads it." -}}
+{{- else -}}
 {{- fail "observability-emitters: `writeCredentials.secretName` is empty, so every emitter would write unauthenticated. The stores demand a bearer, so each write is refused, each agent buffers until its buffer is full and then drops the oldest data — with every pod Ready throughout. Name the Secret the estate created; this chart never creates one and never reads it." -}}
 {{- end -}}
-{{- if not .Values.writeCredentials.key -}}
+{{- end -}}
+{{- if not $creds.key -}}
+{{- if eq (include "observability-emitters.remote.inUse" .) "true" -}}
+{{- fail "observability-emitters: `remote.tokenSecret.key` is empty. Name the key inside the Secret that holds the token." -}}
+{{- else -}}
 {{- fail "observability-emitters: `writeCredentials.key` is empty. Name the key inside the Secret that holds the token." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`remote`: the single-destination sugar, mutually exclusive with the
+low-level form for every signal it covers.
+
+`victoria-logs-collector.remoteWrite` is deliberately NOT in this list
+— see `remote`'s own values.yaml comment for why that one stays
+low-level regardless: it is a real Helm subchart's own values, which
+this chart cannot compute from `remote` the way it computes its own.
+*/}}
+{{- define "observability-emitters.validate.remote" -}}
+{{- if eq (include "observability-emitters.remote.inUse" .) "true" -}}
+{{- $remote := .Values.remote -}}
+{{- /* An empty `remote.tokenSecret.name`/`.key` is already caught by
+observability-emitters.validate.credentials, which reads the SAME
+effective credential this block resolves `remote` into — no second
+check needed here. */ -}}
+{{- $caSecret := $remote.caSecret | default dict -}}
+{{- if and $caSecret.name (not $caSecret.key) -}}
+{{- fail "observability-emitters: `remote.caSecret.name` is set but `remote.caSecret.key` is empty." -}}
+{{- end -}}
+{{- if and $caSecret.key (not $caSecret.name) -}}
+{{- fail "observability-emitters: `remote.caSecret.key` is set but `remote.caSecret.name` is empty." -}}
+{{- end -}}
+{{- if .Values.writeCredentials.secretName -}}
+{{- fail "observability-emitters: `remote.url` and `writeCredentials.secretName` are both set. `remote.tokenSecret` IS the write credential once `remote` is in use — the two would only ever agree by writing the same Secret name twice, which is the exact mirror this chart refuses elsewhere rather than trusts. Clear `writeCredentials`, or clear `remote.url` and use the low-level destinations instead." -}}
+{{- end -}}
+{{- $signals := include "observability-emitters.remote.signals" . | fromYamlArray -}}
+{{- if has "metrics" $signals -}}
+{{- if gt (len (.Values.metrics.destinations | default list)) 0 -}}
+{{- fail "observability-emitters: `remote.signals` includes \"metrics\" but `metrics.destinations` is also set. `remote` already expands into one entry there for this signal — the two forms are refused together so a destination is never named twice from two different places. Remove `remote` from `signals`, or clear `metrics.destinations` and let `remote` provide it." -}}
+{{- end -}}
+{{- if gt (len ((.Values.otlp.destinations).metrics | default list)) 0 -}}
+{{- fail "observability-emitters: `remote.signals` includes \"metrics\" but `otlp.destinations.metrics` is also set. `remote` already expands into one entry there for this signal — the two forms are refused together. Remove `remote` from `signals`, or clear `otlp.destinations.metrics` and let `remote` provide it." -}}
+{{- end -}}
+{{- end -}}
+{{- if has "logs" $signals -}}
+{{- if gt (len ((.Values.otlp.destinations).logs | default list)) 0 -}}
+{{- fail "observability-emitters: `remote.signals` includes \"logs\" but `otlp.destinations.logs` is also set. `remote` already expands into one entry there for this signal — the two forms are refused together. Remove \"logs\" from `remote.signals`, or clear `otlp.destinations.logs` and let `remote` provide it. (`victoria-logs-collector.remoteWrite`, the container-log agent's OWN write path, is untouched by `remote` either way — see its own comment.)" -}}
+{{- end -}}
+{{- end -}}
+{{- if has "traces" $signals -}}
+{{- if gt (len ((.Values.otlp.destinations).traces | default list)) 0 -}}
+{{- fail "observability-emitters: `remote.signals` includes \"traces\" but `otlp.destinations.traces` is also set. `remote` already expands into one entry there for this signal — the two forms are refused together. Remove \"traces\" from `remote.signals`, or clear `otlp.destinations.traces` and let `remote` provide it." -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
@@ -102,16 +160,17 @@ and directory names — two destinations sharing one would share a queue
 and one of them would never be written to.
 */}}
 {{- define "observability-emitters.validate.destinations" -}}
+{{- $root := . -}}
 {{- $sites := list -}}
 {{- if .Values.metrics.enabled -}}
-{{- $sites = append $sites (dict "key" "metrics.destinations" "value" .Values.metrics.destinations "named" true) -}}
+{{- $sites = append $sites (dict "key" "metrics.destinations" "value" (include "observability-emitters.effectiveMetricsDestinations" . | fromYamlArray) "named" true) -}}
 {{- end -}}
 {{- if .Values.logs.enabled -}}
 {{- $sites = append $sites (dict "key" "victoria-logs-collector.remoteWrite" "value" ((index .Values "victoria-logs-collector").remoteWrite) "named" false) -}}
 {{- end -}}
 {{- if .Values.otlp.enabled -}}
 {{- range $signal := list "metrics" "logs" "traces" -}}
-{{- $sites = append $sites (dict "key" (printf "otlp.destinations.%s" $signal) "value" (index $.Values.otlp.destinations $signal) "named" true) -}}
+{{- $sites = append $sites (dict "key" (printf "otlp.destinations.%s" $signal) "value" (include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" $signal) | fromYamlArray) "named" true) -}}
 {{- end -}}
 {{- end -}}
 {{- range $site := $sites -}}

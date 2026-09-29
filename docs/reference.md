@@ -146,7 +146,7 @@ values.yaml, listed here, and enforced rather than remembered.
 |---|---|---|---|
 | `nameOverride` | string | `""` | Replaces the chart name in the names this chart renders. |
 | `fullnameOverride` | string | `""` | Replaces them entirely. |
-| `mode` | enum | `full` | `full` or `operator-only`. `operator-only` renders nothing but the vendored VictoriaMetrics operator and its own webhook/CRD prerequisites — no stores, no proxy, no vmalert, no Grafana, no backups, no rules/dashboards sync — for a cluster that holds no store but still runs `charts/observability-emitters`, whose `VMAgent` needs an operator to reconcile it. A CONTRACT, not a silent override: `vmauth.enabled`, `vmalert.enabled`, `alertmanager.enabled`, `grafana.enabled`, `backup.enabled`, `selfAlerts.enabled`, `metricsSelfScrape.enabled`, the three stores' own `enabled`, `victoria-metrics-k8s-stack.syncJob.enabled`, and `tenancy.principals`/`writers`/`alertReaders` must ALL be turned off/emptied explicitly, or the render refuses and says which one is still on. See docs/target-state.md. |
+| `mode` | enum | `full` | `full` or `operator-only`. `operator-only` renders nothing but the vendored VictoriaMetrics operator and its own webhook/CRD prerequisites — no stores, no proxy, no vmalert, no Grafana, no backups, no rules/dashboards sync — for a cluster that holds no store but still runs `charts/observability-emitters`, whose `VMAgent` needs an operator to reconcile it. Since 0.9.0 it turns `vmauth.enabled`, `vmalert.enabled`, `alertmanager.enabled` and `metricsSelfScrape.enabled` off ITSELF when each is left at its `null` default (an explicit `true` beside `operator-only` is still refused — see each value's own row below). `backup`/`selfAlerts`/`tenancy.{principals,writers,alertReaders}` need no change either way: they default off/empty already. What STILL needs an explicit `false`, and is still refused if left on: the three stores' own `enabled`, `grafana.enabled` and `victoria-metrics-k8s-stack.syncJob.enabled` — each is a REAL Helm subchart's own value, which this chart cannot compute from `mode` (Helm coalesces a subchart's values before any template runs). See docs/target-state.md. |
 | `ha` | bool | `false` | Zone-redundant mode. Accepted today, behaviour in a later release. **Refused with fewer than two `zones`.** |
 | `zones` | list | `[]` | Zone names, at least two when `ha` is true. Labels, not addresses. |
 | `interval` | duration | `30s` | The one interval: both vmalerts' evaluation interval, and — through its mirror — the metrics store's `-dedup.minScrapeInterval`. Mirror: `victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval']`. |
@@ -155,7 +155,7 @@ values.yaml, listed here, and enforced rather than remembered.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
-| `vmauth.enabled` | bool | `true` | Renders the `VMAuth` and its `VMUser` objects. |
+| `vmauth.enabled` | bool | `null` (0.9.0) | Renders the `VMAuth` and its `VMUser` objects. Null resolves through `mode`: `true` under `full`, `false` under `operator-only` — set explicitly to pin it either way. |
 | `vmauth.image.repository` | string | `victoriametrics/vmauth` | |
 | `vmauth.image.tag` | string | `v1.152.0` | **Refused below v1.152.0.** `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0, where claim matching was introduced, through v1.151.x matched claim values unanchored (GHSA-f99m-22fh-qw96). The operator's own default tag is older than both, so it is set here. |
 | `vmauth.replicaCount` | int | `1` | |
@@ -250,7 +250,7 @@ mechanism.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
-| `vmalert.enabled` | bool | `true` | Renders the metrics vmalert. |
+| `vmalert.enabled` | bool | `null` (0.9.0) | Renders the metrics vmalert. Null resolves through `mode` — see `vmauth.enabled`'s own row. |
 | `vmalert.logs.enabled` | bool | `true` | Renders the second one, with `-rule.defaultRuleType=vlogs`. |
 | `vmalert.logs.evalDelay` | duration | `5s` | `-rule.evalDelay` for the logs alerter only. The upstream default (30s) exists to match VictoriaMetrics' `-search.latencyOffset`; VictoriaLogs has no such offset, so inheriting it delays every log-based alert by 30 seconds for a latency the log store does not have. |
 | `vmalert.externalUrl` | string | `""` | `-external.url`. Empty leaves vmalert's own default, which is the pod hostname — every alert's source link dead outside the cluster. |
@@ -305,7 +305,7 @@ rule with it. An install with no rules yet shows none of this.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
-| `alertmanager.enabled` | bool | `true` | Renders the `VMAlertmanager`. |
+| `alertmanager.enabled` | bool | `null` (0.9.0) | Renders the `VMAlertmanager`. Null resolves through `mode` — see `vmauth.enabled`'s own row. |
 | `alertmanager.replicaCount` | int | `1` | |
 | `alertmanager.notifierUrl` | string | `""` | An Alertmanager the estate already runs, for when `enabled` is false. **One of the two is required**: a vmalert with no notifier sends every alert nowhere. |
 | `alertmanager.watchdog.secretName` | string | `""` | The Secret holding the deadman receiver's URL. Empty renders no Watchdog PUSH route — the `Watchdog` VMRule itself is `vmalert.watchdog.enabled`'s to gate, independent of this, and renders regardless (it is also readable PULLED, through `tenancy.alertReaders`). |
@@ -727,6 +727,35 @@ Read directly by the metrics agent (a Secret reference) and the gateway
 entries**, because that is upstream's shape — see `victoria-logs-collector`
 below. The chart refuses an entry with none.
 
+### `remote` (0.9.0)
+
+The single-destination sugar: one url, one token, one optional CA, for
+however many of the three signals a cluster with no store of its own is
+writing ALL of to the SAME place.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `remote.url` | string | `""` | The base URL every covered signal writes to (no path — each destination appends its own). Empty means off. |
+| `remote.tokenSecret.name` / `.key` | string | `""` / `token` | In place of `writeCredentials` — **refused set together with it.** |
+| `remote.caSecret.name` / `.key` | string | `""` / `""` | Optional; either both empty or both set. |
+| `remote.signals[]` | `metrics`\|`logs`\|`traces` | `[metrics, logs, traces]` | Which low-level forms `remote` expands into. |
+| `remote.name` | name | `remote` | The `name:` every generated destination entry carries. |
+
+Setting `url` expands into `metrics.destinations` (one entry, with
+`/api/v1/write` appended), `otlp.destinations.metrics` and, per the
+signals listed, `otlp.destinations.logs` / `.traces` (base URL, as
+those exporters already append their own path) — each mutually
+exclusive with its own low-level list (**refused together**).
+
+**What `remote` does not reach:** `victoria-logs-collector.remoteWrite`
+(the container-log DaemonSet's own write path) is a real Helm
+subchart's values — Helm coalesces a subchart's values before any
+template runs, so this chart cannot compute it the way it computes its
+own `metrics.destinations` / `otlp.destinations.*`. `signals: [logs]`
+reaches the OTLP-received-logs pipeline only; the log agent's own
+`remoteWrite` stays exactly as low-level as it always was, `remote` in
+use or not.
+
 ### `metrics` — vmagent
 
 | Value | Type | Default | What it does |
@@ -762,7 +791,14 @@ agent's own metrics come from a `PodMonitor` rather than a
 | `logs.enabled` | bool | `true` | Renders the upstream `victoria-logs-collector` DaemonSet. |
 
 Everything else about the log agent is upstream's own values, read back by
-this chart's refusals rather than duplicated — see below.
+this chart's refusals rather than duplicated — see below. **0.9.0
+changes three of upstream's own defaults** (a node-agent's shape, not
+this chart's): `victoria-logs-collector.priorityClassName:
+system-node-critical`, `.tolerations: [{operator: Exists}]`, and
+`.resources` to `{requests: {cpu: 15m, memory: 192Mi}, limits: {cpu:
+100m, memory: 192Mi}}` — measured across a live fleet's node pools,
+including the smallest and most tightly packed. A consumer can still
+override any of the three.
 
 ### `otlp` — the OpenTelemetry gateway
 
@@ -803,6 +839,7 @@ with underscores, which is how they match the agent's labels.
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `kubeStateMetrics.enabled` | bool | `false` | Renders upstream's `kube-state-metrics` chart. **Off by default** — see docs/kube-state-metrics.md. |
+| `kubeStateMetrics.customResources.kargo.enabled` | bool | `false` (0.9.0) | `kargo_stage_condition` / `kargo_promotion_phase`, the shape `charts/platform-alerts`' `groups.kargo` reads (see docs/reference.md's own section on it) — without hand-writing kube-state-metrics' `customResourceState.config` and `rbac.extraRules`. Grants only `get`/`list`/`watch` on `stages.kargo.akuity.io` / `promotions.kargo.akuity.io`. Whenever `kubeStateMetrics.enabled` is true (this preset on or off), this chart pins `kube-state-metrics.customResourceState.enabled: true` / `.create: false` and renders the ConfigMap itself (empty when no preset is on) — **refused together with a consumer-authored `kube-state-metrics.customResourceState.config`**, which would otherwise never be read. |
 
 ### `kube-state-metrics` — the upstream chart
 

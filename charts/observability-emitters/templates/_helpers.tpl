@@ -89,6 +89,96 @@ class they belong to is the default one.
 {{- end -}}
 
 {{/*
+`remote`'s effective state: whether it is in use, and the one
+destination entry it expands into for a given signal (before that
+signal's own low-level list is consulted at all).
+
+Everything downstream reads THESE helpers rather than `.Values.metrics.
+destinations` / `.Values.otlp.destinations.*` / `.Values.writeCredentials`
+directly — vmagent.spec, gateway.config, the CA-volume helpers below and
+_validate.tpl's own destination/credential checks all go through here,
+so `remote` and the low-level form can never drift into two different
+answers about what actually gets written where.
+
+Unlike `victoria-logs-collector.remoteWrite` (a real Helm subchart's own
+values — see `remote`'s own values.yaml comment for why THAT one stays
+untouched), `metrics.destinations`, `otlp.destinations.*` and
+`writeCredentials` are this chart's OWN values, computable at render
+time like anything else it renders itself.
+*/}}
+{{- define "observability-emitters.remote.inUse" -}}
+{{- $remote := .Values.remote | default dict -}}
+{{- ne (trimSuffix "" (toString ($remote.url | default ""))) "" -}}
+{{- end -}}
+
+{{- define "observability-emitters.remote.signals" -}}
+{{- $remote := .Values.remote | default dict -}}
+{{- $signals := $remote.signals -}}
+{{- if not $signals -}}
+{{- $signals = list "metrics" "logs" "traces" -}}
+{{- end -}}
+{{- toYaml $signals -}}
+{{- end -}}
+
+{{/*
+The effective write credential: `remote.tokenSecret` once `remote` is
+in use (refused together with a non-empty `writeCredentials.
+secretName` — see _validate.tpl), `writeCredentials` otherwise.
+*/}}
+{{- define "observability-emitters.effectiveWriteCredentials" -}}
+{{- if eq (include "observability-emitters.remote.inUse" .) "true" -}}
+{{- $remote := .Values.remote -}}
+{{- toYaml (dict "secretName" $remote.tokenSecret.name "key" $remote.tokenSecret.key) -}}
+{{- else -}}
+{{- toYaml .Values.writeCredentials -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`metrics.destinations`, effective: `remote`'s own one-entry list when
+`remote` is in use and "metrics" is one of its `signals` — the metrics
+agent's own `/api/v1/write` suffix appended here, the one place that
+suffix is added rather than asked of the caller — or the low-level list
+otherwise.
+*/}}
+{{- define "observability-emitters.effectiveMetricsDestinations" -}}
+{{- $signals := include "observability-emitters.remote.signals" . | fromYamlArray -}}
+{{- if and (eq (include "observability-emitters.remote.inUse" .) "true") (has "metrics" $signals) -}}
+{{- $remote := .Values.remote -}}
+{{- $entry := dict "name" $remote.name "url" (printf "%s/api/v1/write" (trimSuffix "/" $remote.url)) -}}
+{{- if ($remote.caSecret).name -}}
+{{- $_ := set $entry "caSecret" $remote.caSecret -}}
+{{- end -}}
+{{- toYaml (list $entry) -}}
+{{- else -}}
+{{- toYaml .Values.metrics.destinations -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`otlp.destinations.<signal>`, effective: `remote`'s own one-entry list
+when `remote` is in use and `signal` is one of its `signals` — the base
+URL as-is, since every OTLP exporter already appends its own path — or
+the low-level list otherwise. Called once per signal:
+`(dict "root" . "signal" "metrics"|"logs"|"traces")`.
+*/}}
+{{- define "observability-emitters.effectiveOtlpDestinations" -}}
+{{- $root := .root -}}
+{{- $signal := .signal -}}
+{{- $signals := include "observability-emitters.remote.signals" $root | fromYamlArray -}}
+{{- if and (eq (include "observability-emitters.remote.inUse" $root) "true") (has $signal $signals) -}}
+{{- $remote := $root.Values.remote -}}
+{{- $entry := dict "name" $remote.name "url" $remote.url -}}
+{{- if ($remote.caSecret).name -}}
+{{- $_ := set $entry "caSecret" $remote.caSecret -}}
+{{- end -}}
+{{- toYaml (list $entry) -}}
+{{- else -}}
+{{- toYaml (index $root.Values.otlp.destinations $signal) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The VMAgent spec this chart renders, with `metrics.spec` merged over it.
 
 It is a helper rather than template body so that the refusals in
@@ -99,9 +189,9 @@ exactly where a security property gets turned off by accident.
 {{- define "observability-emitters.vmagent.spec" -}}
 {{- $root := . -}}
 {{- $v := .Values.metrics -}}
-{{- $creds := .Values.writeCredentials -}}
+{{- $creds := include "observability-emitters.effectiveWriteCredentials" . | fromYaml -}}
 {{- $rw := list -}}
-{{- range $d := $v.destinations -}}
+{{- range $d := (include "observability-emitters.effectiveMetricsDestinations" . | fromYamlArray) -}}
 {{- $entry := dict "url" $d.url -}}
 {{- if $creds.secretName -}}
 {{- $_ := set $entry "bearerTokenSecret" (dict "name" $creds.secretName "key" $creds.key) -}}
@@ -275,6 +365,9 @@ one.
 {{- $t := .Values.tenancy -}}
 {{- $v := .Values.otlp -}}
 {{- $full := include "observability-emitters.gateway.fullname" . -}}
+{{- $effMetricsDestinations := include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" "metrics") | fromYamlArray -}}
+{{- $effLogsDestinations := include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" "logs") | fromYamlArray -}}
+{{- $effTracesDestinations := include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" "traces") | fromYamlArray -}}
 extensions:
   file_storage:
     directory: /var/lib/otelcol/queue
@@ -396,7 +489,7 @@ processors:
   batch: {}
 
 exporters:
-{{- range $d := $v.destinations.metrics }}
+{{- range $d := $effMetricsDestinations }}
   # No `sending_queue` here, and it is not an omission: the Prometheus
   # remote-write exporter does not have one. Its durability is a
   # write-ahead log, per exporter, on the same volume the others queue on.
@@ -425,7 +518,7 @@ exporters:
         - k8s.namespace.name
         - deployment.environment.name
 {{- end }}
-{{- range $d := $v.destinations.logs }}
+{{- range $d := $effLogsDestinations }}
   otlp_http/logs-{{ $d.name }}:
     logs_endpoint: {{ printf "%s/insert/opentelemetry/v1/logs" (trimSuffix "/" $d.url) | quote }}
     headers:
@@ -444,7 +537,7 @@ exporters:
     retry_on_failure:
       enabled: true
 {{- end }}
-{{- range $d := $v.destinations.traces }}
+{{- range $d := $effTracesDestinations }}
   otlp_http/traces-{{ $d.name }}:
     traces_endpoint: {{ printf "%s/insert/opentelemetry/v1/traces" (trimSuffix "/" $d.url) | quote }}
     headers:
@@ -476,7 +569,7 @@ service:
                 port: 8888
   pipelines:
 {{- $metricsExporters := list }}
-{{- range $d := $v.destinations.metrics }}{{ $metricsExporters = append $metricsExporters (printf "prometheus_remote_write/%s" $d.name) }}{{ end }}
+{{- range $d := $effMetricsDestinations }}{{ $metricsExporters = append $metricsExporters (printf "prometheus_remote_write/%s" $d.name) }}{{ end }}
 {{- if $metricsExporters }}
     metrics:
       receivers: [otlp]
@@ -484,7 +577,7 @@ service:
       exporters: [{{ join ", " $metricsExporters }}]
 {{- end }}
 {{- $logExporters := list }}
-{{- range $d := $v.destinations.logs }}{{ $logExporters = append $logExporters (printf "otlp_http/logs-%s" $d.name) }}{{ end }}
+{{- range $d := $effLogsDestinations }}{{ $logExporters = append $logExporters (printf "otlp_http/logs-%s" $d.name) }}{{ end }}
 {{- if $logExporters }}
     logs:
       receivers: [otlp{{ if $v.events.enabled }}, k8s_events{{ end }}]
@@ -492,7 +585,7 @@ service:
       exporters: [{{ join ", " $logExporters }}]
 {{- end }}
 {{- $traceExporters := list }}
-{{- range $d := $v.destinations.traces }}{{ $traceExporters = append $traceExporters (printf "otlp_http/traces-%s" $d.name) }}{{ end }}
+{{- range $d := $effTracesDestinations }}{{ $traceExporters = append $traceExporters (printf "otlp_http/traces-%s" $d.name) }}{{ end }}
 {{- if $traceExporters }}
     traces:
       receivers: [otlp]
@@ -528,9 +621,9 @@ sharing a volume could ever disagree about what THAT volume holds.
 {{- end -}}
 
 {{- define "observability-emitters.otlp.caVolumes" -}}
-{{- $v := .Values.otlp -}}
+{{- $root := . -}}
 {{- range $signal := (list "metrics" "logs" "traces") }}
-{{- range $d := (index $v.destinations $signal) }}
+{{- range $d := (include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" $signal) | fromYamlArray) }}
 {{- if $d.caSecret }}
 - name: {{ include "observability-emitters.otlp.caVolumeName" (dict "signal" $signal "name" $d.name) }}
   secret:
@@ -544,9 +637,9 @@ sharing a volume could ever disagree about what THAT volume holds.
 {{- end -}}
 
 {{- define "observability-emitters.otlp.caVolumeMounts" -}}
-{{- $v := .Values.otlp -}}
+{{- $root := . -}}
 {{- range $signal := (list "metrics" "logs" "traces") }}
-{{- range $d := (index $v.destinations $signal) }}
+{{- range $d := (include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" $signal) | fromYamlArray) }}
 {{- if $d.caSecret }}
 - name: {{ include "observability-emitters.otlp.caVolumeName" (dict "signal" $signal "name" $d.name) }}
   mountPath: {{ printf "/etc/observability-emitters/ca/%s-%s" $signal ($d.name | trunc 40 | trimSuffix "-") }}

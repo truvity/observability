@@ -392,6 +392,71 @@ Each entry says what to do; none is optional reading before a bump. What
 changed and why is in CHANGELOG.md, and is not repeated here: an entry
 below is the work, in the order it has to happen.
 
+### 0.8.x → 0.9.0
+
+"Consumer simplification": nothing here is required before the render
+still passes — every one of these is a boilerplate reduction a consumer
+can adopt at its own pace, on top of a chart that keeps rendering
+exactly as it did on 0.8.x for every value left untouched, with two
+exceptions called out below.
+
+**`charts/observability-emitters`'s `victoria-logs-collector` gets new
+DEFAULTS, not new requirements**: `priorityClassName: system-node-
+critical`, `tolerations: [{operator: Exists}]`, and `resources` of
+`{requests: {cpu: 15m, memory: 192Mi}, limits: {cpu: 100m, memory:
+192Mi}}` — a real measurement across a live fleet's node pools, replacing
+whatever this chart's own render left implicit before. **This changes
+the rendered manifest for every existing install that did not already
+set these three itself** — `helm diff` will show it on the next bump.
+Set any of the three explicitly to keep the old shape.
+
+**Collapse a hand-assembled single write destination into `remote`.** If
+your values file writes the SAME url/token/CA into `metrics.
+destinations`, `otlp.destinations.metrics/logs/traces` and
+`writeCredentials` separately (the "central install, remote writers"
+shape, docs/target-state.md), replace all four with one `remote:` block
+— see docs/reference.md's own section on it. Leave it alone if any
+signal writes to more than one destination, or writes somewhere
+DIFFERENT from the others: `remote` is for the one-destination-
+everywhere shape only, and the low-level form still works unchanged for
+everything else. `victoria-logs-collector.remoteWrite` is NOT part of
+this — see `remote`'s own doc for why (a real Helm subchart's values,
+which this chart cannot compute).
+
+**Drop the ~40-line `kube-state-metrics.customResourceState.config` +
+`rbac.extraRules` block for Kargo, if you hand-wrote it**, in favour of
+`kubeStateMetrics.customResources.kargo.enabled: true`. Same metrics
+(`kargo_stage_condition`, `kargo_promotion_phase`), same RBAC (get/list/
+watch on `stages`/`promotions` only). **Whenever `kubeStateMetrics.
+enabled` is true — this preset used or not — this chart now pins
+`kube-state-metrics.customResourceState.enabled: true` / `.create:
+false`** so it can render that ConfigMap itself; a consumer-authored
+`customResourceState.config` is refused rather than silently unused. If
+you were relying on `customResourceState` for something OTHER than
+Kargo, that combination now refuses — open an issue.
+
+**`charts/observability-stack`'s `mode: operator-only` can drop four
+explicit offs.** `vmauth.enabled`, `vmalert.enabled`, `alertmanager.
+enabled` and `metricsSelfScrape.enabled` now default to `null`, which
+`mode` resolves (`operator-only` → off, `full` → on) — leave all four
+unset instead of writing `enabled: false` under each. The three stores'
+own `enabled`, `grafana.enabled` and `victoria-metrics-k8s-stack.
+syncJob.enabled` still need an explicit `false`: real Helm subchart
+values this chart cannot compute from `mode` either. The render still
+refuses an explicit `true` on any of the fifteen beside `operator-only`
+— nothing about the CONTRACT changed, only how much of it you have to
+spell out yourself. tests/cases/observability-stack/operator-only-
+implicit is the short-hand shape's own golden fixture, proven
+byte-identical to the long-hand one.
+
+**If you built your own Gatus config for a status page, look at
+`pkg/statusbox.RenderGatus`** before maintaining that renderer further:
+it is the same combined-page shape ("internal → status, pulled",
+docs/statusbox.md) as a typed, estate-neutral function — your own
+catalogue derivation stays yours, only the YAML-building moves here.
+Adopting it is optional and has no interaction with anything a Helm
+chart renders.
+
 ### 0.2.0 → 0.3.0
 
 **Set `tenancy.audience` before you upgrade, or the render refuses.** It

@@ -231,11 +231,12 @@ spec:
             `helm get manifest` for everyone with read access to the
             release.
             */}}
+            {{- $writeCredentials := include "observability-emitters.effectiveWriteCredentials" . | fromYaml }}
             - name: OBSERVABILITY_WRITE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.writeCredentials.secretName | quote }}
-                  key: {{ .Values.writeCredentials.key | quote }}
+                  name: {{ $writeCredentials.secretName | quote }}
+                  key: {{ $writeCredentials.key | quote }}
           resources:
             {{- toYaml .Values.otlp.resources | nindent 12 }}
           volumeMounts:

@@ -96,9 +96,77 @@ tenancy:
 writeCredentials:
   # -- Name of the Secret. It must exist in the release's namespace before
   # the emitters start; the chart neither creates it nor reads it.
+  #
+  # Refused non-empty together with `remote` (below): the two are the same
+  # fact, and `remote.tokenSecret` is the one to set once `remote` is in
+  # use.
   secretName: ""
   # -- The key inside it holding the token.
   key: token
+
+# -- The single-destination sugar: one URL, one token, one optional CA,
+# for however many of the three signals a cluster with no store of its
+# own is writing ALL of to the SAME place — the common shape for a
+# cluster that runs charts/observability-emitters but not
+# charts/observability-stack (docs/target-state.md, "Central install,
+# remote writers").
+#
+# Off (empty) by default. Setting `url` turns it on, and the chart
+# expands it into the low-level destinations below FOR the signals
+# named in `signals` — never both forms for the same signal at once;
+# see each destination list's own refusal.
+#
+#   remote:
+#     url: https://observability-write.example.private
+#     tokenSecret: {name: observability-write-token, key: token}
+#     caSecret: {name: observability-write-ca, key: ca.crt}
+#
+# is exactly `metrics.destinations`, `otlp.destinations.metrics`,
+# `otlp.destinations.logs` and `otlp.destinations.traces` each holding
+# one entry at this url/caSecret (`writeCredentials` set to
+# `tokenSecret`) — compare tests/cases/observability-emitters/
+# remote-tls-destination (the low-level form of the same install) with
+# tests/cases/observability-emitters/remote-single-destination (this
+# form): the two render identically apart from the destination `name`.
+#
+# WHAT THIS DOES NOT REACH, and the one place the simplification stops:
+# `victoria-logs-collector.remoteWrite` (the container-log DaemonSet's
+# OWN write path) is a REAL Helm subchart's values — Helm coalesces a
+# subchart's values before any template runs, so this chart cannot
+# write into it the way it writes `metrics.destinations` and
+# `otlp.destinations.*` (both this chart's OWN values, computable at
+# render time; docs/doctrine.md's note on mirrors). `signals: [logs]`
+# still only reaches `otlp.destinations.logs` — the OTLP-received
+# application-log path — never the log AGENT's own remoteWrite, which
+# stays exactly as low-level as it always was, `remote` in use or not
+# (see `victoria-logs-collector.remoteWrite`'s own comment below).
+remote:
+  # -- The base URL every covered signal writes to: no path — each
+  # destination appends its own (`/api/v1/write` for the metrics agent,
+  # nothing for the OTLP gateway's own exporters, which already append
+  # theirs). Empty means off.
+  url: ""
+  # -- The one bearer, in place of `writeCredentials` (refused set
+  # together with this).
+  tokenSecret:
+    name: ""
+    key: token
+  # -- OPTIONAL. A Secret holding a PEM CA bundle to trust for `url`'s
+  # TLS, for a certificate that is not publicly trusted (a private/
+  # estate root) — the same shape and the same meaning as a low-level
+  # destination's own `caSecret`, applied to every signal this expands
+  # into.
+  caSecret: {}
+  # -- Which of the three low-level forms this expands into. Every
+  # signal listed must have its OWN low-level list empty (refused
+  # otherwise); a signal left OUT is untouched, and an enabled emitter
+  # that ends up with no destination anywhere still refuses exactly as
+  # it always has (`observability-emitters.validate.destinations`).
+  signals: [metrics, logs, traces]
+  # -- The `name:` every generated destination entry carries — an
+  # exporter id and a queue directory, the same as any low-level
+  # destination's own `name`.
+  name: remote
 
 ###############################################################################
 # The metrics agent: vmagent, as a VMAgent object the operator reconciles.
