@@ -82,7 +82,7 @@ router are the ones that must notice the router itself has died — a
 watcher on a box outside every cluster, and the edge provider watching
 the box. [docs/target-state.md](docs/target-state.md) draws it.
 
-## Install
+## Install and a worked example
 
 The stack itself installs after the CRDs and before the rules — see
 [docs/adoption.md](docs/adoption.md), which lists what must already exist

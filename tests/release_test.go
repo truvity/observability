@@ -237,7 +237,7 @@ type upgradeEntry struct {
 }
 
 var (
-	changelogHeading = regexp.MustCompile(`^## (\d+\.\d+\.\d+)\s*$`)
+	changelogHeading = regexp.MustCompile(`^## v(\d+\.\d+\.\d+)\s*$`)
 	breakingMarker   = regexp.MustCompile(`\*\*Breaking\b`)
 	adoptionHeading  = regexp.MustCompile(`^### (\d+\.\d+\.\d+) → (\d+\.\d+\.\d+)\s*$`)
 )
