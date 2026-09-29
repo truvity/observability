@@ -14,6 +14,16 @@ docs/dashboards.md's Refusals table.
 {{- fail (printf "observability-dashboards: %s are enabled, but datasources.metrics is empty — dashboards for a store nobody can point at. Set it to this Grafana's provisioned VictoriaMetrics datasource UID." (join ", " $needMetrics)) -}}
 {{- end -}}
 
+{{- if $.Values.home -}}
+{{- $homeSpec := get $catalog $.Values.home -}}
+{{- if not $homeSpec -}}
+{{- fail (printf "observability-dashboards: home %q is not a shipped dashboard (one of: %s)" $.Values.home (keys $catalog | sortAlpha | join ", ")) -}}
+{{- end -}}
+{{- if not (get $.Values.dashboards $.Values.home).enabled -}}
+{{- fail (printf "observability-dashboards: home %q is disabled — a home page nobody can open. Enable dashboards.%s or set home to \"\"." $.Values.home $.Values.home) -}}
+{{- end -}}
+{{- end -}}
+
 {{- range $name, $spec := $catalog }}
 {{- $entry := get $.Values.dashboards $name }}
 {{- if $entry.enabled }}
@@ -37,6 +47,11 @@ metadata:
     # see values.yaml's own comment on `folders`. charts/observability-stack
     # does not set either as of this chart's first release.
     k8s-sidecar-target-directory: {{ $folder | quote }}
+    {{- if eq $name $.Values.home }}
+    # The designated home page: see values.yaml's `home` for how to point
+    # Grafana's default_home_dashboard_path at it. Informational only.
+    observability-dashboards/home: "true"
+    {{- end }}
 data:
   {{ $name }}.json: |
     {{- $content | nindent 4 }}

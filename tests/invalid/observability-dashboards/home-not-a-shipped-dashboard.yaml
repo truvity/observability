@@ -1,0 +1,5 @@
+# expect: is not a shipped dashboard
+# `home` designates the estate's home page and must name a shipped
+# dashboard; a typo would annotate nothing and leave Grafana's home page
+# pointing at a file that does not exist.
+home: fleet-overveiw

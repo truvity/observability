@@ -16,42 +16,49 @@ dashboards:
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/victoriametrics.json
     ref: v1.152.0
     folder: stores
+    tags: [observability-stores]
     seedQuery: 'vm_app_version{version=~"victoria-metrics-.*"}'
 
   - name: victoriametrics-vmagent
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/vmagent.json
     ref: v1.152.0
     folder: stores
+    tags: [observability-stores]
     seedQuery: 'vm_app_version{version=~"^vmagent.*"}'
 
   - name: victoriametrics-vmalert
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/vmalert.json
     ref: v1.152.0
     folder: stores
+    tags: [observability-stores]
     seedQuery: 'vm_app_version{version=~"^vmalert.*"}'
 
   - name: victoriametrics-operator
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaMetrics/{ref}/dashboards/operator.json
     ref: v1.152.0
     folder: stores
+    tags: [observability-stores]
     seedQuery: 'operator_log_messages_total'
 
   - name: victorialogs-single
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/{ref}/dashboards/victorialogs.json
     ref: v1.121.0
     folder: stores
+    tags: [observability-stores]
     seedQuery: 'vm_app_version{version=~"victoria-logs-.*"}'
 
   - name: victorialogs-vlagent
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaLogs/{ref}/dashboards/vlagent.json
     ref: v1.121.0
     folder: stores
+    tags: [observability-stores]
     seedQuery: 'vm_app_version{version=~"^vlagent.*"}'
 
   - name: victoriatraces-single
     url: https://raw.githubusercontent.com/VictoriaMetrics/VictoriaTraces/{ref}/dashboards/victoriatraces.json
     ref: v0.11.1
     folder: stores
+    tags: [observability-stores]
     seedQuery: 'vm_app_version{version=~"victoria-traces-.*"}'
 
   # Alertmanager and kubelet are not standalone URLs in
@@ -63,6 +70,7 @@ dashboards:
     bundle: kube-prometheus
     bundleKey: alertmanager-overview.json
     folder: stores
+    tags: [observability-stores]
     seedQuery: 'alertmanager_alerts'
     namespaceScoped: true
 
@@ -70,6 +78,7 @@ dashboards:
     bundle: kube-prometheus
     bundleKey: kubelet.json
     folder: infrastructure
+    tags: [observability-kubernetes]
     # kubelet.json already ships its own cluster variable and filters
     # every query by a bare `cluster` label — upstream's own multi-cluster
     # convention. This repo's collectors stamp `k8s_cluster_name`
@@ -87,7 +96,58 @@ dashboards:
     # rfmoz/grafana-dashboards tags no releases; pinned by commit.
     ref: 99a25cc154c21c4fcbae1aa24352bf1b6764d847
     folder: infrastructure
+    tags: [observability-kubernetes]
     seedQuery: 'node_uname_info'
+
+  # -- Operational views (charts/observability-dashboards 0.12.0). Held to
+  # tests/dashboard_queries_test.go (`queryCheck`): every query must parse
+  # on the pinned VictoriaMetrics and read only metrics listed in
+  # hack/dashboards/available-metrics.yaml.
+
+  # The home page. Authored here (hack/dashboards/fleet_overview.py), not
+  # fetched: nothing upstream answers "is anything wrong, and where?" for a
+  # store with these sources.
+  - name: fleet-overview
+    generator: hack/dashboards/fleet_overview.py
+    folder: fleet
+    tags: [observability-fleet]
+    queryCheck: true
+
+  # dotdc/grafana-dashboards-kubernetes, adapted (hack/dashboards.py,
+  # adapt_k8s_views): the `cluster` label becomes `k8s_cluster_name`, and
+  # every query on a metric the store does not hold is replaced or dropped.
+  # k8s-views-nodes is NOT imported: it is built on node-exporter, which no
+  # install runs yet. Add it, with node-exporter's metric family in
+  # available-metrics.yaml, when that source ships.
+  - name: k8s-views-global
+    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/{ref}/dashboards/k8s-views-global.json
+    ref: v3.0.8
+    source: https://github.com/dotdc/grafana-dashboards-kubernetes
+    license: Apache-2.0
+    adapt: k8s-views
+    folder: kubernetes
+    tags: [observability-kubernetes, kubernetes]
+    queryCheck: true
+
+  - name: k8s-views-namespaces
+    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/{ref}/dashboards/k8s-views-namespaces.json
+    ref: v3.0.8
+    source: https://github.com/dotdc/grafana-dashboards-kubernetes
+    license: Apache-2.0
+    adapt: k8s-views
+    folder: kubernetes
+    tags: [observability-kubernetes, kubernetes]
+    queryCheck: true
+
+  - name: k8s-views-pods
+    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/{ref}/dashboards/k8s-views-pods.json
+    ref: v3.0.8
+    source: https://github.com/dotdc/grafana-dashboards-kubernetes
+    license: Apache-2.0
+    adapt: k8s-views
+    folder: kubernetes
+    tags: [observability-kubernetes, kubernetes]
+    queryCheck: true
 
 bundles:
   kube-prometheus:

@@ -1,0 +1,6 @@
+# expect: a home page nobody can open
+# `home` names a dashboard that is switched off: the designated home page
+# would be a file that is never rendered.
+home: fleet-overview
+dashboards:
+  fleet-overview: {enabled: false}

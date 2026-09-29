@@ -28,10 +28,12 @@ datasources:
   logs: victorialogs
   traces: victoriatraces
 
-# -- Display names for the two folders the shipped set files into.
-# Infrastructure dashboards are keyed by cluster, in one folder: the same
-# components run on every cluster and the question is always "which
-# one". Store dashboards are the stack's own health. A project's
+# -- Display names for the folders the shipped set files into.
+# `fleet` holds the home page (Fleet overview); `kubernetes` the cluster,
+# namespace and pod drill-down views. Infrastructure dashboards are keyed
+# by cluster, in one folder: the same components run on every cluster and
+# the question is always "which one". Store dashboards are the stack's own
+# health. A project's
 # `extraDashboards` get their own folder, named on the entry itself —
 # see below.
 #
@@ -56,13 +58,51 @@ datasources:
 # exactly why this is written down rather than left to be discovered by
 # looking for a dashboard that never showed up where it was filed.
 folders:
+  fleet: Fleet
+  kubernetes: Kubernetes
   infrastructure: Infrastructure
   stores: Observability
+
+# -- The dashboard designated as the estate's home page: the name of one
+# ENABLED shipped dashboard, or "" for none. The chart annotates that
+# dashboard's ConfigMap `observability-dashboards/home: "true"` and refuses
+# a name that is not an enabled shipped dashboard. It does not configure
+# Grafana; point Grafana at it in one of two ways:
+#
+#   1. as a file, in Grafana's own chart values
+#        grafana.ini:
+#          dashboards:
+#            default_home_dashboard_path: <sidecar folder>/<folders.fleet>/fleet-overview.json
+#      where <sidecar folder> is `sidecar.dashboards.folder` (the chart
+#      default is /tmp/dashboards) and the sub-folder is this chart's
+#      `folders.<the dashboard's folder key>` value, which the sidecar
+#      creates from the ConfigMap's k8s-sidecar-target-directory annotation
+#      (see `folders` above for the two settings that needs). The file name
+#      is the ConfigMap's data key, `<home>.json`. So with the defaults:
+#        /tmp/dashboards/Fleet/fleet-overview.json
+#   2. or through Grafana's preferences API / UI (Administration > Default
+#      preferences > Home Dashboard), by the dashboard's stable uid,
+#      truvity-obs-<home>.
+home: fleet-overview
 
 # -- One key per shipped dashboard. `enabled: false` drops it from the
 # render; nothing here is required beyond the key existing, so trimming
 # the set is a one-line diff per dashboard.
 dashboards:
+  # The operational views (this order is the hierarchy: home, then the
+  # Kubernetes drill-down, cluster -> namespace -> pod). Additive and on
+  # by default; every one reads only series a store holds today
+  # (hack/dashboards/available-metrics.yaml). The home page links into the
+  # Kubernetes views and the store dashboards, so disabling one leaves a
+  # link that opens "not found".
+  fleet-overview:
+    enabled: true
+  k8s-views-global:
+    enabled: true
+  k8s-views-namespaces:
+    enabled: true
+  k8s-views-pods:
+    enabled: true
   victoriametrics-single:
     enabled: true
   victoriametrics-vmagent:

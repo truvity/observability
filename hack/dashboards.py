@@ -23,6 +23,12 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "hack" / "dashboards"))
+
+import fleet_overview  # noqa: E402  (hack/dashboards/fleet_overview.py)
+from descriptions import DESCRIPTIONS  # noqa: E402
+
+AVAILABLE = ROOT / "hack" / "dashboards" / "available-metrics.yaml"
 SOURCES = ROOT / "hack" / "dashboards" / "sources.yaml"
 OUT_DIR = ROOT / "charts" / "observability-dashboards" / "dashboards"
 
@@ -284,9 +290,268 @@ def load_bundle_dashboard(bundle_url: str, key: str) -> dict:
     raise SystemExit("bundle %s has no dashboard key %r" % (bundle_url, key))
 
 
+# ---------------------------------------------------------------------------
+# Navigation: every shipped dashboard carries the same links row (tag-based,
+# so a dashboard added later appears in it without editing the others) and
+# the tags that feed it. `includeVars` carries datasource/cluster/namespace
+# across, which works because every dashboard names them identically.
+# ---------------------------------------------------------------------------
+NAV_LINKS = [
+    ("Fleet overview", "observability-fleet", "The home page: is anything wrong, and where?"),
+    ("Kubernetes views", "observability-kubernetes", "Cluster, namespace and pod drill-down views"),
+    ("Store dashboards", "observability-stores", "The observability stack's own health"),
+]
+
+
+def add_navigation(dashboard, spec) -> None:
+    tags = list(dashboard.get("tags") or [])
+    for t in spec.get("tags", []):
+        if t not in tags:
+            tags.append(t)
+    dashboard["tags"] = tags
+    links = list(dashboard.get("links") or [])
+    have = {l.get("title") for l in links}
+    for title, tag, tip in NAV_LINKS:
+        if title in have:
+            continue
+        links.append({
+            "type": "dashboards",
+            "title": title,
+            "tags": [tag],
+            "asDropdown": True,
+            "includeVars": True,
+            "keepTime": True,
+            "icon": "external link",
+            "tooltip": tip,
+            "targetBlank": False,
+            "url": "",
+        })
+    dashboard["links"] = links
+
+
+# ---------------------------------------------------------------------------
+# The metrics a store holds (hack/dashboards/available-metrics.yaml).
+# ---------------------------------------------------------------------------
+def _load_available():
+    doc = yaml.safe_load(AVAILABLE.read_text())
+    return doc["sources"]
+
+
+_SOURCES = None
+
+# Prefixes of the families a dashboard imported here might read. A name
+# outside this pattern (a label, a function) is never mistaken for a metric.
+_METRIC_RE = re.compile(
+    r"(?<![A-Za-z0-9_:\"$.])"
+    r"((?:kube|kubelet|container|machine|node|kargo|argocd|certmanager|cnpg|nats|envoy|karpenter)_[A-Za-z0-9_:]*)"
+)
+
+
+def metric_available(name: str) -> bool:
+    global _SOURCES
+    if _SOURCES is None:
+        _SOURCES = _load_available()
+    for src in _SOURCES:
+        if name in src.get("deny", []):
+            continue
+        if name.endswith(tuple(src.get("denySuffixes", []))) and name not in src.get("keep", []):
+            continue
+        if name in src.get("names", []) or name in src.get("keep", []):
+            return True
+        if any(name.startswith(p) for p in src.get("prefixes", [])):
+            return True
+    return False
+
+
+def metrics_in(expr: str):
+    return _METRIC_RE.findall(expr)
+
+
+def expr_available(expr: str) -> bool:
+    return all(metric_available(m) for m in metrics_in(expr))
+
+
+def _strip_absent(dashboard, name: str) -> None:
+    """Drop every target that reads a metric the store does not hold, then
+    every panel left with no target. A panel that can only ever be empty is
+    not shipped; each drop is printed so the review sees it.
+    """
+    panels = []
+    for p in dashboard.get("panels", []):
+        if p.get("type") == "row":
+            panels.append(p)
+            continue
+        kept = []
+        for t in p.get("targets") or []:
+            e = t.get("expr", "")
+            if e and not expr_available(e):
+                missing = sorted({m for m in metrics_in(e) if not metric_available(m)})
+                print("  %s: drop query of %r (absent: %s)" % (name, p.get("title"), ", ".join(missing)))
+                continue
+            kept.append(t)
+        if p.get("targets") and not kept:
+            print("  %s: drop panel %r" % (name, p.get("title")))
+            continue
+        p["targets"] = kept
+        panels.append(p)
+    dashboard["panels"] = panels
+
+
+def _relayout(dashboard) -> None:
+    """Close the holes dropped panels leave: bands (panels sharing a `y`)
+    that lost a member are re-spread across the 24 columns, and every band
+    is restacked with no gap under the one above it.
+    """
+    panels = dashboard["panels"]
+    bands = {}
+    for p in panels:
+        bands.setdefault(p["gridPos"]["y"], []).append(p)
+    cursor = 0
+    for y in sorted(bands):
+        band = sorted(bands[y], key=lambda p: p["gridPos"]["x"])
+        if band[0].get("type") == "row":
+            for p in band:
+                p["gridPos"]["y"] = cursor
+            cursor += 1
+            continue
+        total = sum(p["gridPos"]["w"] for p in band)
+        h = max(p["gridPos"]["h"] for p in band)
+        if total != 24 and len({p["gridPos"]["h"] for p in band}) == 1:
+            x = 0
+            for i, p in enumerate(band):
+                w = 24 - x if i == len(band) - 1 else round(p["gridPos"]["w"] * 24 / total)
+                p["gridPos"].update({"x": x, "w": w})
+                x += w
+        for p in band:
+            p["gridPos"]["y"] = cursor
+        cursor += h
+    panels.sort(key=lambda p: (p["gridPos"]["y"], p["gridPos"]["x"]))
+
+
+# Panels the node-exporter-based originals answered with node_* series a
+# store does not hold. cadvisor's root cgroup (`id="/"`, container empty)
+# is the node's own total, so utilisation is answered from it, against
+# machine_cpu_cores / machine_memory_bytes.
+_C = 'k8s_cluster_name="$cluster"'
+_CPU = 'sum(rate(container_cpu_usage_seconds_total{id="/", %s}[$__rate_interval]))' % _C
+_MEM = 'sum(container_memory_working_set_bytes{id="/", %s})' % _C
+_CPU_N = 'sum by (instance) (rate(container_cpu_usage_seconds_total{id="/", %s}[$__rate_interval]))' % _C
+_MEM_N = 'sum by (instance) (container_memory_working_set_bytes{id="/", %s})' % _C
+REPLACE_QUERIES = {
+    "Global CPU  Usage": (_CPU + ' / sum(machine_cpu_cores{%s})' % _C, ""),
+    "Global RAM Usage": (_MEM + ' / sum(machine_memory_bytes{%s})' % _C, ""),
+    "CPU Usage": (_CPU, ""),
+    "RAM Usage": (_MEM, ""),
+    "Cluster CPU Utilization": (_CPU + ' / sum(machine_cpu_cores{%s})' % _C, "cluster"),
+    "Cluster Memory Utilization": (_MEM + ' / sum(machine_memory_bytes{%s})' % _C, "cluster"),
+    "CPU Utilization by instance": (_CPU_N + ' / sum by (instance) (machine_cpu_cores{%s})' % _C, "{{instance}}"),
+    "Memory Utilization by instance": (_MEM_N, "{{instance}}"),
+}
+
+# Drill-down: a series click opens the next level down with its label carried.
+_KEEP = "var-datasource=${datasource:queryparam}&var-cluster=${cluster}&${__url_time_range}"
+DRILL = {
+    "CPU Utilization by namespace": ("truvity-obs-k8s-views-namespaces", "namespace"),
+    "Memory Utilization by namespace": ("truvity-obs-k8s-views-namespaces", "namespace"),
+    "CPU usage by Pod": ("truvity-obs-k8s-views-pods", "pod"),
+    "Memory usage by Pod": ("truvity-obs-k8s-views-pods", "pod"),
+}
+_DRILL_TITLE = {"namespace": "Open this namespace", "pod": "Open this pod"}
+
+
+def _sub(obj, fn):
+    if isinstance(obj, dict):
+        return {k: _sub(v, fn) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sub(v, fn) for v in obj]
+    if isinstance(obj, str):
+        return fn(obj)
+    return obj
+
+
+def _bare_cluster_to_label(s: str) -> str:
+    s = re.sub(r'(?<![A-Za-z0-9_])cluster(=~?"\$\{?cluster\}?")', CLUSTER_LABEL + r"\1", s)
+    s = s.replace("label_values(kube_node_info,cluster)", "label_values(kube_node_info, %s)" % CLUSTER_LABEL)
+    return s
+
+
+def _strip_job(s: str) -> str:
+    # `job` was upstream's node-exporter / kube-state-metrics job picker.
+    # The store has one job per scrape and the cluster variable already
+    # scopes, so the picker is dropped rather than left empty.
+    s = re.sub(r',\s*job=~?"\$job"', "", s)
+    s = re.sub(r'job=~?"\$job",\s*', "", s)
+    s = re.sub(r'job=~?"\$job"', "", s)
+    return s
+
+
+def adapt_k8s_views(dashboard, name: str) -> None:
+    """Adapt one dotdc/grafana-dashboards-kubernetes view to this store:
+    its bare `cluster` label becomes `k8s_cluster_name`; queries and
+    panels that read a metric the store does not hold are replaced (from
+    cadvisor's root cgroup) or dropped; the `job` picker goes; every panel
+    gets a description, a unit and, where a series names the next level
+    down, a data link to it.
+    """
+    for k in ("__inputs", "__elements", "__requires"):
+        dashboard.pop(k, None)
+    dashboard["annotations"]["list"] = [a for a in dashboard["annotations"]["list"] if a.get("builtIn")]
+    dashboard["editable"] = False
+
+    fixed = _sub(dashboard, lambda s: _strip_job(_bare_cluster_to_label(s)))
+    dashboard.clear()
+    dashboard.update(fixed)
+
+    dashboard["templating"]["list"] = [v for v in dashboard["templating"]["list"] if v["name"] != "job"]
+
+    for p in dashboard["panels"]:
+        title = p.get("title")
+        if title in REPLACE_QUERIES and p.get("targets"):
+            expr, legend = REPLACE_QUERIES[title]
+            p["targets"] = p["targets"][:1]
+            p["targets"][0]["expr"] = expr
+            if legend == "cluster":
+                legend = ""
+            p["targets"][0]["legendFormat"] = legend
+
+    # Upstream leaves a few panels (the pod view's two issue tables)
+    # unscoped by cluster: on a shared store they list every cluster's pods.
+    for p in dashboard["panels"]:
+        for t in p.get("targets") or []:
+            e = t.get("expr")
+            if isinstance(e, str) and e and names_a_metric(e) and not already_filtered(e):
+                t["expr"] = inject_cluster_filter(e)
+
+    _strip_absent(dashboard, name)
+    _relayout(dashboard)
+
+    for p in dashboard["panels"]:
+        if p.get("type") == "row":
+            continue
+        title = p.get("title", "")
+        if not p.get("description"):
+            if title not in DESCRIPTIONS:
+                raise SystemExit("%s: panel %r has no description and none in hack/dashboards/descriptions.py" % (name, title))
+            p["description"] = DESCRIPTIONS[title]
+        defaults = p.setdefault("fieldConfig", {}).setdefault("defaults", {})
+        if p.get("type") in ("stat", "gauge", "bargauge", "timeseries") and not defaults.get("unit"):
+            defaults["unit"] = "short"
+        if title in DRILL:
+            uid, label = DRILL[title]
+            defaults["links"] = [{
+                "title": _DRILL_TITLE[label],
+                "url": "/d/%s?%s&var-%s=${__field.labels.%s}" % (uid, _KEEP, label, label),
+                "targetBlank": False,
+            }]
+
+
+
 def build_one(spec: dict, bundles: dict) -> None:
     name = spec["name"]
-    if spec.get("bundle"):
+    if spec.get("generator"):
+        dashboard = fleet_overview.build()
+        url = spec["generator"]
+    elif spec.get("bundle"):
         bundle = bundles[spec["bundle"]]
         url = bundle["url"].format(ref=bundle["ref"])
         dashboard = load_bundle_dashboard(url, spec["bundleKey"])
@@ -296,7 +561,16 @@ def build_one(spec: dict, bundles: dict) -> None:
 
     dashboard["uid"] = stable_uid(name)
 
-    if spec.get("preRenamed"):
+    if spec.get("generator"):
+        # Authored to the contract already: only the datasource variable's
+        # default (the placeholder the chart substitutes) is stamped.
+        for v in dashboard["templating"]["list"]:
+            if v["type"] == "datasource":
+                v["current"] = {"selected": True, "text": DATASOURCE_TOKEN, "value": DATASOURCE_TOKEN}
+    elif spec.get("adapt") == "k8s-views":
+        rename_datasource_var(dashboard)
+        adapt_k8s_views(dashboard, name)
+    elif spec.get("preRenamed"):
         # kubelet: already has `datasource` and `cluster` variables in the
         # right shape; only the label under `cluster` needs to change.
         relabel_bare_cluster(dashboard)
@@ -323,6 +597,7 @@ def build_one(spec: dict, bundles: dict) -> None:
             )
 
     set_title(dashboard)
+    add_navigation(dashboard, spec)
     verify_every_query_filtered(dashboard, name)
 
     out_path = OUT_DIR / ("%s.json" % name)
@@ -335,15 +610,21 @@ def write_catalog(manifest: dict) -> None:
     templates/dashboards.yaml via .Files.Get so the template never
     hand-maintains a second copy of what this script already knows.
     """
-    catalog = {
-        spec["name"]: {"folder": spec["folder"], "file": "%s.json" % spec["name"]}
-        for spec in manifest["dashboards"]
-    }
+    catalog = {}
+    for spec in manifest["dashboards"]:
+        entry = {"folder": spec["folder"], "file": "%s.json" % spec["name"]}
+        # Provenance of a dashboard adopted from a third party, and whether
+        # tests/dashboard_queries_test.go holds it to the available-metrics
+        # allow-list.
+        for key in ("source", "license", "ref", "queryCheck"):
+            if key in spec:
+                entry[key] = spec[key]
+        catalog[spec["name"]] = entry
     path = OUT_DIR / "catalog.yaml"
     lines = [
         "# Generated by hack/dashboards.sh. Do not edit.",
         "#",
-        "# name -> {folder, file}, read by templates/dashboards.yaml. The",
+        "# name -> {folder, file, ...}, read by templates/dashboards.yaml. The",
         "# source of truth for what belongs to which folder is",
         "# hack/dashboards/sources.yaml; this is its render-time shadow.",
         "",

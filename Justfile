@@ -99,6 +99,14 @@ dashboard-lint *files:
     fi
     go run ./cmd/dashboardlint "${files[@]}"
 
+# Parse every operational dashboard's queries on a REAL VictoriaMetrics (the
+# version charts/observability-stack pins), and hold them to the metrics a
+# store actually has (hack/dashboards/available-metrics.yaml). The same
+# tests run under `just test`; here a missing Docker is a failure, not a
+# skip. Needs Docker and network for the image.
+dashboard-queries:
+    DASHBOARD_VM=require go test ./tests -run 'AvailableMetrics|OperationalDashboard|TheAllowList' -v
+
 # Re-vendor one chart's pinned dependencies into its charts/ directory,
 # after moving a version in its Chart.yaml. The archives are committed on
 # purpose: a render that needs the network is a render that differs

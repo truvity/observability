@@ -1,0 +1,111 @@
+# The metrics a store ACTUALLY holds today, by the scrape target that
+# produces them. Derived from a live survey of two real installs, then
+# checked against what charts/observability-emitters and
+# charts/observability-stack configure (their values are the source of
+# truth for the allow-lists and the drops below).
+#
+# Read by two things, and by nothing else:
+#   - hack/dashboards.py, which drops any panel query in an imported
+#     dashboard that reads a metric not listed here (a panel that can only
+#     ever be empty is not shipped);
+#   - tests/dashboard_queries_test.go, which fails any dashboard flagged
+#     `queryCheck` in hack/dashboards/sources.yaml that queries a metric not
+#     listed here.
+#
+# So a future dashboard that needs node-exporter, ArgoCD, cert-manager,
+# CNPG, NATS, Envoy Gateway or Karpenter series FAILS the test until the
+# metric source ships AND its family is added here, in the same change.
+# Do not add a family speculatively: an entry here is a claim that a store
+# holds the series.
+#
+# Every series also carries `k8s_cluster_name`; many clusters share a store.
+#
+# Matching, per source: a metric is available when it is in `names`, or
+# starts with one of `prefixes`, and is not in `deny`, and does not end in
+# one of `denySuffixes` unless it is in `keep`.
+sources:
+  - name: every scrape target
+    note: synthetic series vmagent writes for every target
+    names: [up]
+    prefixes: [scrape_]
+
+  - name: kubelet and cadvisor (charts/observability-emitters, metrics.scrape.kubelet and .cadvisor)
+    prefixes:
+      # kubelet
+      - kubelet_
+      - volume_manager_
+      - storage_operation_
+      - rest_client_
+      - go_
+      - process_
+      # cadvisor
+      - container_
+      - machine_
+    # metrics.scrape.cadvisorDrop (0.9.1): what the churn drop removes, and
+    # every cadvisor `_bucket` except the one it keeps.
+    deny:
+      - container_tasks_state
+      - container_memory_failures_total
+      - container_blkio_device_usage_total
+    denySuffixes: [_bucket]
+    keep: [go_sched_latencies_seconds_bucket]
+
+  - name: kube-state-metrics (charts/observability-emitters, kube-state-metrics.collectors)
+    note: >-
+      exactly the 11 collectors of the allow-list: cronjobs, jobs, pods,
+      nodes, deployments, replicasets, statefulsets, daemonsets, namespaces,
+      persistentvolumeclaims, horizontalpodautoscalers. Not configmaps,
+      secrets, services, endpoints, ingresses, networkpolicies or
+      persistentvolumes.
+    prefixes:
+      - kube_cronjob_
+      - kube_job_
+      - kube_pod_
+      - kube_node_
+      - kube_deployment_
+      - kube_replicaset_
+      - kube_statefulset_
+      - kube_daemonset_
+      - kube_namespace_
+      - kube_persistentvolumeclaim_
+      - kube_horizontalpodautoscaler_
+      - kube_state_metrics_
+
+  - name: kube-state-metrics Kargo preset (kubeStateMetrics.customResources.kargo)
+    note: only on installs that turn the preset on; dashboards must tolerate absence
+    optional: true
+    names:
+      - kargo_stage_condition
+      - kargo_promotion_phase
+
+  - name: the stack's own components
+    note: >-
+      vmsingle, vmagent, vmalert, vmauth, victoria-logs, victoria-traces, the
+      operator, the OTLP gateway and the log collector
+    prefixes:
+      - vm_
+      - vmagent_
+      - vmalert_
+      - vmauth_
+      - vl_
+      - vt_
+      - vlagent_
+      - operator_
+      - controller_runtime_
+      - workqueue_
+      - otelcol_
+
+  - name: vmalert write-back
+    names: [ALERTS, ALERTS_FOR_STATE]
+
+# Families that do NOT exist yet and must not be queried by a shipped
+# dashboard. Not read by the code; here so a reviewer sees the boundary.
+absent:
+  - node-exporter (node_*)
+  - ArgoCD (argocd_*)
+  - cert-manager (certmanager_*)
+  - CloudNativePG (cnpg_*)
+  - NATS (nats_*, gnatsd_*)
+  - Envoy Gateway / Envoy (envoy_*)
+  - Karpenter (karpenter_*)
+  - kube-state-metrics kinds outside the 11 collectors (kube_configmap_*, kube_secret_*, kube_service_*, kube_endpoint_*, kube_ingress_*, kube_networkpolicy_*)
