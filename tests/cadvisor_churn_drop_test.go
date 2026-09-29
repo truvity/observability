@@ -37,8 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	yamlv2 "gopkg.in/yaml.v2"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // cadvisorMetricRelabelConfigs reads the cadvisor job's own
@@ -76,7 +75,7 @@ func cadvisorMetricRelabelConfigs(t *testing.T, goldenPath string) []*relabel.Co
 		b, err := yaml.Marshal(item)
 		require.NoErrorf(t, err, "re-marshalling metric_relabel_configs[%d]", i)
 		var cfg relabel.Config
-		require.NoErrorf(t, yamlv2.Unmarshal(b, &cfg), "decoding metric_relabel_configs[%d]: %s", i, string(b))
+		require.NoErrorf(t, yaml.Unmarshal(b, &cfg), "decoding metric_relabel_configs[%d]: %s", i, string(b))
 		// See kubestatemetrics_relabel_test.go's own comment on this line:
 		// relabel.relabel() panics on an unset validation scheme rather
 		// than defaulting one.
@@ -145,7 +144,8 @@ func TestCadvisorChurnDropDefault(t *testing.T) {
 			got, keep := applyCadvisorRelabel(cfgs, base(kept))
 			require.Truef(t, keep, "%s: should survive the default drop", kept)
 			_, hasID := got["id"]
-			assert.Falsef(t, hasID, "%s: the cgroup-path `id` label should be cleared on a container-level series (container is set) — no shipped dashboard or rule filters on it", kept)
+			assert.Falsef(t, hasID, "%s: the cgroup-path `id` label should be cleared on a container-level series (container is set) — no shipped dashboard or rule "+
+				"filters on it", kept)
 			for _, must := range []string{"namespace", "pod", "container", "uid"} {
 				_, ok := got[must]
 				assert.Truef(t, ok, "%s: label %q must survive — dashboards and rules use it, and this default never touches it", kept, must)
@@ -264,7 +264,8 @@ func TestCadvisorChurnDropIDScopedToContainerLevel(t *testing.T) {
 			require.Truef(t, keep, "%s: this default must never drop the SERIES, only the id label", tc.name)
 			_, hasID := got["id"]
 			if tc.wantIDKept {
-				assert.Truef(t, hasID, "%s: id should SURVIVE — with no container label, nothing else identifies this series, and clearing id here is exactly the collision this fix exists to prevent", tc.name)
+				assert.Truef(t, hasID, "%s: id should SURVIVE — with no container label, nothing else identifies this series, and clearing id here is exactly the "+
+					"collision this fix exists to prevent", tc.name)
 			} else {
 				assert.Falsef(t, hasID, "%s: id should be CLEARED — container (with namespace and pod) already identifies this series", tc.name)
 			}
@@ -276,7 +277,8 @@ func TestCadvisorChurnDropIDScopedToContainerLevel(t *testing.T) {
 	for i, got := range results {
 		key := labelSetKey(got)
 		if prior, dup := seen[key]; dup {
-			t.Fatalf("case %q collides with case %q — both produce the identical label set %q; vmagent/vmsingle deduplication would silently keep only one of these two series", cases[i].name, prior, key)
+			t.Fatalf("case %q collides with case %q — both produce the identical label set %q; vmagent/vmsingle deduplication would silently keep only one of these "+
+				"two series", cases[i].name, prior, key)
 		}
 		seen[key] = cases[i].name
 	}
@@ -356,5 +358,6 @@ func TestCadvisorChurnDropOff(t *testing.T) {
 	}
 	got, keep := applyCadvisorRelabel(cfgs, in)
 	require.True(t, keep, "cadvisorDrop.enabled: false should store every series exactly as cadvisor emits it")
-	assert.Equal(t, "/kubepods/burstable/pod1234/5678", got["id"], "the id label should survive too — the switch turns off the whole default, not only the name drop")
+	assert.Equal(t, "/kubepods/burstable/pod1234/5678", got["id"], "the id label should survive too — the switch turns off the whole default, not only the name "+
+		"drop")
 }

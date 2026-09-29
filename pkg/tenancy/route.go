@@ -173,13 +173,16 @@ func (r ReadRoute) validate() error {
 	}
 
 	if r.filterArg == "" {
-		return fmt.Errorf("read route %q has no filter argument: the principal's vm_access claim would be computed and then discarded, and every token that verifies would read every tenant", r.name)
+		return fmt.Errorf("read route %q has no filter argument: the principal's vm_access claim would be computed and then discarded, and every token that "+
+			"verifies would read every tenant", r.name)
 	}
 	if r.placeholder == "" {
-		return fmt.Errorf("read route %q has no filter placeholder: vmauth applies a vm_access claim ONLY by substituting a placeholder into the route, so this route would forward every query unfiltered while the claim beside it says otherwise", r.name)
+		return fmt.Errorf("read route %q has no filter placeholder: vmauth applies a vm_access claim ONLY by substituting a placeholder into the route, so this "+
+			"route would forward every query unfiltered while the claim beside it says otherwise", r.name)
 	}
 	if !supportedPlaceholders[r.placeholder] {
-		return fmt.Errorf("read route %q names placeholder %q, which vmauth does not substitute; it would reach the store as that literal string. The supported ones are listed in supportedPlaceholders", r.name, r.placeholder)
+		return fmt.Errorf("read route %q names placeholder %q, which vmauth does not substitute; it would reach the store as that literal string. The supported "+
+			"ones are listed in supportedPlaceholders", r.name, r.placeholder)
 	}
 	return nil
 }
@@ -204,7 +207,8 @@ func (r ReadRoute) urlPrefix(backend string) (string, error) {
 		return "", fmt.Errorf("read route %q: backend %q needs a scheme and a host", r.name, backend)
 	}
 	if u.RawQuery != "" {
-		return "", fmt.Errorf("read route %q: backend %q already carries a query string. vmauth would keep both arguments, and which one the store applies is not something this package can promise", r.name, backend)
+		return "", fmt.Errorf("read route %q: backend %q already carries a query string. vmauth would keep both arguments, and which one the store applies is not "+
+			"something this package can promise", r.name, backend)
 	}
 
 	if r.unenforceable != "" {

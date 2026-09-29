@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Duration parses as a Go duration string ("15m", "1h") rather than as

@@ -31,7 +31,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/truvity/observability/pkg/tenancy"
 )
@@ -212,7 +212,8 @@ func TestEveryRenderedReadRouteCarriesItsFilter(t *testing.T) {
 		require.NotEmpty(t, user.Spec.TargetRefs)
 		for i, ref := range user.Spec.TargetRefs {
 			assert.True(t, carriesAFilter(ref),
-				"route %d of %q (%s) forwards with no filter argument: every query it carries reaches the store unscoped, while `defaultVMAccessClaim` on the same object still states the grant",
+				"route %d of %q (%s) forwards with no filter argument: every query it carries reaches the store unscoped, while `defaultVMAccessClaim` on the same "+
+					"object still states the grant",
 				i, user.Spec.Name, strings.Join(ref.Paths, " "))
 		}
 	}
@@ -429,7 +430,8 @@ func TestEveryWriterStampsEveryDimensionUnderTheLibrarysName(t *testing.T) {
 					}
 				}
 				assert.True(t, found,
-					"exporter %s promotes %v, none of which the remote-write exporter would spell %q — so OTLP-derived series would reach the store without it, and every scoped query would miss them", name, promoted, want.label)
+					"exporter %s promotes %v, none of which the remote-write exporter would spell %q — so OTLP-derived series would reach the store without it, and every "+
+						"scoped query would miss them", name, promoted, want.label)
 			}
 			// And nothing more: the rest of the resource carries the pod
 			// UID, and a label that changes per restart is a series that
@@ -466,7 +468,8 @@ func TestEveryWriterStampsEveryDimensionUnderTheLibrarysName(t *testing.T) {
 			fields := strings.Split(header, ",")
 			assert.Contains(t, fields, v.logsCluster, "exporter %s", name)
 			assert.Contains(t, fields, v.logsNamespace,
-				"exporter %s: the gateway's half of the log store has to be keyed the way the agent's half is, or one scoped query returns one writer's logs and silently omits the other's", name)
+				"exporter %s: the gateway's half of the log store has to be keyed the way the agent's half is, or one scoped query returns one writer's logs and "+
+					"silently omits the other's", name)
 		}
 		statements := transformStatements(t, cfg, "log")
 		assert.Contains(t, statements, `set(attributes["`+v.logsCluster+`"], "`+minimalCluster+`")`)

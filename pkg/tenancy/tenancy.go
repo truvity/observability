@@ -311,14 +311,19 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New("claimName is empty: nothing would select a principal, so every token would match none of them"))
 	}
 	if c.ClaimName == AudienceClaim {
-		errs = append(errs, fmt.Errorf("claimName is %q, which is the claim the audience is pinned under. Both are entries in one `match_claims` map, so one of them would overwrite the other — and the entry that survives decides either which principal a token is or which client it was minted for, never both. Name the groups claim something else", AudienceClaim))
+		errs = append(errs, fmt.Errorf("claimName is %q, which is the claim the audience is pinned under. Both are entries in one `match_claims` map, so one of "+
+			"them would overwrite the other — and the entry that survives decides either which principal a token is or which client it was minted for, never both. "+
+			"Name the groups claim something else", AudienceClaim))
 	}
 	// Checked when set, required when a vmauth configuration is rendered:
 	// a Config is usable for RenderClaim without it, because the
 	// `vm_access` body carries no audience and it is the proxy, not the
 	// claim, that has to do the checking. See RenderVMAuth.
 	if c.Audience != "" && !audienceRE.MatchString(c.Audience) {
-		errs = append(errs, fmt.Errorf("audience %q is not an identifier (%s): it is blank, or carries whitespace or a newline. A client id an issuer assigned may be anything else — a dot, an `@`, a colon — and is escaped where it is rendered rather than refused here, because it is the issuer's to choose and not ours. This shape refuses only what no issuer mints, which is usually a value that arrived from the wrong place: a heredoc, a file with its trailing newline, or two ids in one string", c.Audience, audienceRE))
+		errs = append(errs, fmt.Errorf("audience %q is not an identifier (%s): it is blank, or carries whitespace or a newline. A client id an issuer assigned may "+
+			"be anything else — a dot, an `@`, a colon — and is escaped where it is rendered rather than refused here, because it is the issuer's to choose and not "+
+			"ours. This shape refuses only what no issuer mints, which is usually a value that arrived from the wrong place: a heredoc, a file with its trailing "+
+			"newline, or two ids in one string", c.Audience, audienceRE))
 	}
 	if len(c.Principals) == 0 {
 		errs = append(errs, errors.New("no principals: the rendered configuration would admit nobody, which is indistinguishable from a broken derivation"))
@@ -344,7 +349,8 @@ func (c Config) Validate() error {
 			errs = append(errs, fmt.Errorf("%s: group is empty", where))
 		} else {
 			if seen[p.Group] {
-				errs = append(errs, fmt.Errorf("%s: group %q appears twice; the second entry would be unreachable, so a grant somebody wrote would silently not apply", where, p.Group))
+				errs = append(errs, fmt.Errorf("%s: group %q appears twice; the second entry would be unreachable, so a grant somebody wrote would silently not "+
+					"apply", where, p.Group))
 			}
 			seen[p.Group] = true
 			where = fmt.Sprintf("principal %q", p.Group)
@@ -360,9 +366,11 @@ func (c Config) Validate() error {
 
 			switch {
 			case g.Cluster == "":
-				errs = append(errs, fmt.Errorf("%s: cluster is empty. The cluster is half of the scoping key — a grant is namespaces ON a cluster — and a filter on cluster=\"\" selects the telemetry of no cluster at all, which is an empty result rather than an error", gw))
+				errs = append(errs, fmt.Errorf("%s: cluster is empty. The cluster is half of the scoping key — a grant is namespaces ON a cluster — and a filter on "+
+					"cluster=\"\" selects the telemetry of no cluster at all, which is an empty result rather than an error", gw))
 			case !nameRE.MatchString(g.Cluster):
-				errs = append(errs, fmt.Errorf("%s: cluster %q is not a valid name (%s). Names are interpolated into a filter expression, so one outside this shape could widen the grant", gw, g.Cluster, nameRE))
+				errs = append(errs, fmt.Errorf("%s: cluster %q is not a valid name (%s). Names are interpolated into a filter expression, so one outside this shape "+
+					"could widen the grant", gw, g.Cluster, nameRE))
 			default:
 				if clusters[g.Cluster] {
 					errs = append(errs, fmt.Errorf("%s: cluster %q is granted twice to the same principal; merge them, or one grant is silently ignored", gw, g.Cluster))
@@ -372,14 +380,17 @@ func (c Config) Validate() error {
 
 			switch {
 			case g.AllNamespaces && len(g.Namespaces) > 0:
-				errs = append(errs, fmt.Errorf("%s: allNamespaces is set and namespaces are listed. One of them is wrong, and guessing which would be how a grant quietly widens", gw))
+				errs = append(errs, fmt.Errorf("%s: allNamespaces is set and namespaces are listed. One of them is wrong, and guessing which would be how a grant "+
+					"quietly widens", gw))
 			case !g.AllNamespaces && len(g.Namespaces) == 0:
-				errs = append(errs, fmt.Errorf("%s: no namespaces and allNamespaces is not set. An empty list is refused rather than read as \"everything\": a project that expands to no namespaces is the likeliest way a derivation widens a grant by accident", gw))
+				errs = append(errs, fmt.Errorf("%s: no namespaces and allNamespaces is not set. An empty list is refused rather than read as \"everything\": a project "+
+					"that expands to no namespaces is the likeliest way a derivation widens a grant by accident", gw))
 			}
 
 			for _, ns := range g.Namespaces {
 				if !nameRE.MatchString(ns) {
-					errs = append(errs, fmt.Errorf("%s: namespace %q is not a valid name (%s). Names are interpolated into a filter expression, so one outside this shape could widen the grant", gw, ns, nameRE))
+					errs = append(errs, fmt.Errorf("%s: namespace %q is not a valid name (%s). Names are interpolated into a filter expression, so one outside this shape "+
+						"could widen the grant", gw, ns, nameRE))
 				}
 			}
 			if dup := firstDuplicate(g.Namespaces); dup != "" {
@@ -406,11 +417,14 @@ func (c Config) validateKeys() []error {
 		"namespaceLabel": c.NamespaceLabel,
 	} {
 		if value != "" && !labelRE.MatchString(value) {
-			errs = append(errs, fmt.Errorf("%s %q is not a Prometheus label name (%s). This is the key every metrics filter selects on, so it has to be one a series can carry: a Prometheus label name has no dots, no dashes and no slashes. Leave it empty for the OpenTelemetry-derived default, which is what charts/observability-emitters stamps", key, value, labelRE))
+			errs = append(errs, fmt.Errorf("%s %q is not a Prometheus label name (%s). This is the key every metrics filter selects on, so it has to be one a series "+
+				"can carry: a Prometheus label name has no dots, no dashes and no slashes. Leave it empty for the OpenTelemetry-derived default, which is what "+
+				"charts/observability-emitters stamps", key, value, labelRE))
 		}
 	}
 	if c.clusterLabel() == c.namespaceLabel() {
-		errs = append(errs, fmt.Errorf("clusterLabel and namespaceLabel are both %q. The two are the scoping key, and a filter with one name for both dimensions selects on one of them and ignores the other", c.clusterLabel()))
+		errs = append(errs, fmt.Errorf("clusterLabel and namespaceLabel are both %q. The two are the scoping key, and a filter with one name for both dimensions "+
+			"selects on one of them and ignores the other", c.clusterLabel()))
 	}
 
 	for key, value := range map[string]string{
@@ -418,11 +432,15 @@ func (c Config) validateKeys() []error {
 		"logsNamespaceField": c.LogsNamespaceField,
 	} {
 		if value != "" && !fieldRE.MatchString(value) {
-			errs = append(errs, fmt.Errorf("%s %q is not a valid log field name (%s). The name is interpolated into a stream filter, where a quote, a brace, a comma or a `|` is syntax rather than a character — so a name carrying one could end the filter early or open a second alternative beside it, and widen the grant. Such a name is refused rather than escaped. Leave it empty for the default, which is the field the container-log agent natively writes and the gateway is configured to match", key, value, fieldRE))
+			errs = append(errs, fmt.Errorf("%s %q is not a valid log field name (%s). The name is interpolated into a stream filter, where a quote, a brace, a comma "+
+				"or a `|` is syntax rather than a character — so a name carrying one could end the filter early or open a second alternative beside it, and widen the "+
+				"grant. Such a name is refused rather than escaped. Leave it empty for the default, which is the field the container-log agent natively writes and the "+
+				"gateway is configured to match", key, value, fieldRE))
 		}
 	}
 	if c.logsClusterField() == c.logsNamespaceField() {
-		errs = append(errs, fmt.Errorf("logsClusterField and logsNamespaceField are both %q; one stream filter would carry one dimension twice and the other not at all", c.logsClusterField()))
+		errs = append(errs, fmt.Errorf("logsClusterField and logsNamespaceField are both %q; one stream filter would carry one dimension twice and the other not "+
+			"at all", c.logsClusterField()))
 	}
 
 	return errs

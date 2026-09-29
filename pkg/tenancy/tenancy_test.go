@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/truvity/observability/pkg/tenancy"
 )
@@ -135,7 +135,8 @@ func TestAllNamespacesOmitsTheNamespaceMatcher(t *testing.T) {
 	require.Len(t, claim.MetricsExtraFilters, 1)
 	assert.Equal(t, `{k8s_cluster_name="example-cluster"}`, claim.MetricsExtraFilters[0])
 	assert.NotContains(t, claim.MetricsExtraFilters[0], tenancy.DefaultNamespaceLabel,
-		"a match-all namespace matcher would drop series that carry no namespace label at all — the node-level series — which for a principal allowed the whole cluster is exactly the data they came for")
+		"a match-all namespace matcher would drop series that carry no namespace label at all — the node-level series — which for a principal allowed the whole "+
+			"cluster is exactly the data they came for")
 
 	require.Len(t, claim.LogsExtraStreamFilters, 1)
 	assert.Equal(t, `_stream:{"k8s.cluster.name"="example-cluster"}`, claim.LogsExtraStreamFilters[0])

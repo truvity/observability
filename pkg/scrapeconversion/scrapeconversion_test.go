@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // The converters this stack depends on: it renders a ServiceMonitor of
@@ -80,11 +80,13 @@ func TestOperatorConvertsTheKindsThisRepositoryRenders(t *testing.T) {
 				explicitlyOff := isSet && value == "false"
 				if mustConvert {
 					assert.Falsef(t, explicitlyOff,
-						"%s: %s is explicitly \"false\" — the operator will not convert a kind this repository renders as a Prometheus-Operator object, and vmagent (which only watches the native VictoriaMetrics kinds) will never see a target for it",
+						"%s: %s is explicitly \"false\" — the operator will not convert a kind this repository renders as a Prometheus-Operator object, and vmagent (which "+
+							"only watches the native VictoriaMetrics kinds) will never see a target for it",
 						filepath.Base(g), name)
 				} else {
 					assert.Truef(t, explicitlyOff,
-						"%s: %s is not explicitly \"false\" — this stack renders no object of this kind, and leaving its converter on picks up ServiceMonitor/PodMonitor/etc. objects an unrelated chart or team owns",
+						"%s: %s is not explicitly \"false\" — this stack renders no object of this kind, and leaving its converter on picks up ServiceMonitor/PodMonitor/etc. "+
+							"objects an unrelated chart or team owns",
 						filepath.Base(g), name)
 				}
 			}

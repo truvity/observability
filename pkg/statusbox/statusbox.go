@@ -376,14 +376,17 @@ func (a Args) validate() error {
 	var errs []error
 
 	if a.Version == "" {
-		errs = append(errs, errors.New("statusbox: Version is empty: setup.sh and checksums.txt are fetched from a release of this repository named by Version, and there is no release named \"\""))
+		errs = append(errs, errors.New("statusbox: Version is empty: setup.sh and checksums.txt are fetched from a release of this repository named by Version, "+
+			"and there is no release named \"\""))
 	}
 
 	switch {
 	case a.Hostname == "":
-		errs = append(errs, errors.New("statusbox: Hostname is empty: the box needs a stable tailnet device name, and an unset one leaves it whatever the provider's image happens to boot with"))
+		errs = append(errs, errors.New("statusbox: Hostname is empty: the box needs a stable tailnet device name, and an unset one leaves it whatever the "+
+			"provider's image happens to boot with"))
 	case !instanceNameRE.MatchString(a.Hostname):
-		errs = append(errs, fmt.Errorf("statusbox: Hostname %q is not a valid name (%s): it is passed to `tailscale up --hostname=`, so a name outside this shape is refused rather than escaped", a.Hostname, instanceNameRE))
+		errs = append(errs, fmt.Errorf("statusbox: Hostname %q is not a valid name (%s): it is passed to `tailscale up --hostname=`, so a name outside this shape "+
+			"is refused rather than escaped", a.Hostname, instanceNameRE))
 	}
 
 	if len(a.Instances) == 0 {
@@ -405,7 +408,8 @@ func (a Args) validate() error {
 		case inst.Name == "":
 			errs = append(errs, fmt.Errorf("%s: Name is empty", where))
 		case !instanceNameRE.MatchString(inst.Name):
-			errs = append(errs, fmt.Errorf("%s: Name %q is not a valid name (%s): it becomes a heredoc delimiter and a file path in the rendered script, so a name outside this shape could end the heredoc early and run whatever follows as a command", where, inst.Name, instanceNameRE))
+			errs = append(errs, fmt.Errorf("%s: Name %q is not a valid name (%s): it becomes a heredoc delimiter and a file path in the rendered script, so a name "+
+				"outside this shape could end the heredoc early and run whatever follows as a command", where, inst.Name, instanceNameRE))
 		case names[inst.Name]:
 			errs = append(errs, fmt.Errorf("%s: appears twice; the second instance would silently overwrite the first one's staged files under the same name", where))
 		default:
@@ -415,19 +419,23 @@ func (a Args) validate() error {
 		if inst.Port <= 0 || inst.Port > 65535 {
 			errs = append(errs, fmt.Errorf("%s: Port %d is not a valid TCP port", where, inst.Port))
 		} else if other, ok := ports[inst.Port]; ok {
-			errs = append(errs, fmt.Errorf("%s: Port %d is also used by instance %q. Two Gatus instances cannot share a port: setup.sh publishes each one at 127.0.0.1:<Port>, and the second would either fail to bind or replace the first in the compose file", where, inst.Port, other))
+			errs = append(errs, fmt.Errorf("%s: Port %d is also used by instance %q. Two Gatus instances cannot share a port: setup.sh publishes each one at "+
+				"127.0.0.1:<Port>, and the second would either fail to bind or replace the first in the compose file", where, inst.Port, other))
 		} else {
 			ports[inst.Port] = inst.Name
 		}
 
 		if strings.TrimSpace(inst.Config) == "" {
-			errs = append(errs, fmt.Errorf("%s: Config is empty: there is no Gatus YAML to stage, which is indistinguishable from a caller that forgot to render one", where))
+			errs = append(errs, fmt.Errorf("%s: Config is empty: there is no Gatus YAML to stage, which is indistinguishable from a caller that forgot to render "+
+				"one", where))
 		}
 
 		if inst.Public {
 			anyPublic = true
 			if strings.TrimSpace(a.Hostnames[inst.Name]) == "" {
-				errs = append(errs, fmt.Errorf("%s: Public is true but Hostnames[%q] is empty. A public instance with no hostname is a page this box is about to serve with no tunnel ingress rule pointed at it — add the hostname to Args.Hostnames (setup.sh itself never sees it; the tunnel ingress is the estate's own edge configuration to own)", where, inst.Name))
+				errs = append(errs, fmt.Errorf("%s: Public is true but Hostnames[%q] is empty. A public instance with no hostname is a page this box is about to serve "+
+					"with no tunnel ingress rule pointed at it — add the hostname to Args.Hostnames (setup.sh itself never sees it; the tunnel ingress is the estate's own "+
+					"edge configuration to own)", where, inst.Name))
 			}
 		} else if inst.Name != "" {
 			privateNames = append(privateNames, inst.Name)
@@ -435,18 +443,23 @@ func (a Args) validate() error {
 	}
 
 	if len(privateNames) > 1 {
-		errs = append(errs, fmt.Errorf("statusbox: %d instances are not Public (%s): this box serves at most one private instance. setup.sh forwards it to the tailnet on port 80 — the one port that needs no port in the URL an operator loads, http://<Hostname>/ — and a second private instance would need that same port 80 on the same box and cannot have it. Make every instance but one Public, or run the extra private instance on a second box", len(privateNames), strings.Join(privateNames, ", ")))
+		errs = append(errs, fmt.Errorf("statusbox: %d instances are not Public (%s): this box serves at most one private instance. setup.sh forwards it to the "+
+			"tailnet on port 80 — the one port that needs no port in the URL an operator loads, http://<Hostname>/ — and a second private instance would need that "+
+			"same port 80 on the same box and cannot have it. Make every instance but one Public, or run the extra private instance on a second "+
+			"box", len(privateNames), strings.Join(privateNames, ", ")))
 	}
 
 	for name := range a.Hostnames {
 		if name != "" && !names[name] {
-			errs = append(errs, fmt.Errorf("statusbox: Hostnames[%q] names no instance in Args.Instances: it would never be used, which is the likeliest sign of a typo in one or the other", name))
+			errs = append(errs, fmt.Errorf("statusbox: Hostnames[%q] names no instance in Args.Instances: it would never be used, which is the likeliest sign of a "+
+				"typo in one or the other", name))
 		}
 	}
 
 	for k := range a.Secrets.AlertURLs {
 		if !alertKeyRE.MatchString(k) {
-			errs = append(errs, fmt.Errorf("statusbox: Secrets.AlertURLs key %q is not a valid name (%s): it becomes the suffix of an environment variable, ALERT_URL_%s, that a Config may reference", k, alertKeyRE, strings.ToUpper(k)))
+			errs = append(errs, fmt.Errorf("statusbox: Secrets.AlertURLs key %q is not a valid name (%s): it becomes the suffix of an environment variable, "+
+				"ALERT_URL_%s, that a Config may reference", k, alertKeyRE, strings.ToUpper(k)))
 		}
 	}
 
@@ -462,7 +475,8 @@ func (a Args) validate() error {
 		case reservedEnvNames[k]:
 			errs = append(errs, fmt.Errorf("%s is reserved by statusbox itself (see Secrets.TailscaleAuthKey / Secrets.TunnelToken)", where))
 		case alertURLNames[k] != "":
-			errs = append(errs, fmt.Errorf("%s collides with Secrets.AlertURLs[%q], which already becomes the environment variable %s: a Config referencing ${%s} would get whichever of the two happened to be written last", where, alertURLNames[k], k, k))
+			errs = append(errs, fmt.Errorf("%s collides with Secrets.AlertURLs[%q], which already becomes the environment variable %s: a Config referencing ${%s} "+
+				"would get whichever of the two happened to be written last", where, alertURLNames[k], k, k))
 		}
 	}
 
@@ -473,10 +487,12 @@ func (a Args) validate() error {
 	}
 
 	if a.Secrets.TailscaleAuthKey == nil {
-		errs = append(errs, errors.New("statusbox: Secrets.TailscaleAuthKey is nil: the tailnet is how the install's Alertmanager reaches gatus-ops and how an operator reaches the box at all, so it is required on every box"))
+		errs = append(errs, errors.New("statusbox: Secrets.TailscaleAuthKey is nil: the tailnet is how the install's Alertmanager reaches gatus-ops and how an "+
+			"operator reaches the box at all, so it is required on every box"))
 	}
 	if anyPublic && a.Secrets.TunnelToken == nil {
-		errs = append(errs, errors.New("statusbox: at least one instance is Public but Secrets.TunnelToken is nil: a public page needs the tunnel that carries its ingress rule"))
+		errs = append(errs, errors.New("statusbox: at least one instance is Public but Secrets.TunnelToken is nil: a public page needs the tunnel that carries its "+
+			"ingress rule"))
 	}
 
 	return errors.Join(errs...)
@@ -579,7 +595,8 @@ func render(a Args, setupSHA256, tailscaleKey, tunnelToken string, alertVals, en
 		return "", err
 	}
 	if len(wrapped) > userDataLimit {
-		return "", fmt.Errorf("statusbox: rendered user-data is %d bytes, over the %d-byte limit the first provider imposes: shrink an instance's Config (every one is already gzipped) or run fewer instances on this box", len(wrapped), userDataLimit)
+		return "", fmt.Errorf("statusbox: rendered user-data is %d bytes, over the %d-byte limit the first provider imposes: shrink an instance's Config (every "+
+			"one is already gzipped) or run fewer instances on this box", len(wrapped), userDataLimit)
 	}
 	return wrapped, nil
 }
@@ -643,7 +660,8 @@ func parseTrustedCAs(bundle string) error {
 			return fmt.Errorf("statusbox: Args.TrustedCAs: PEM block %d does not parse as an X.509 certificate: %w", n, err)
 		}
 		if !cert.IsCA {
-			return fmt.Errorf("statusbox: Args.TrustedCAs: PEM block %d (subject %q) is not a CA certificate (BasicConstraints.IsCA is not set): a leaf or intermediate missing the CA bit cannot act as a trust anchor", n, cert.Subject)
+			return fmt.Errorf("statusbox: Args.TrustedCAs: PEM block %d (subject %q) is not a CA certificate (BasicConstraints.IsCA is not set): a leaf or "+
+				"intermediate missing the CA bit cannot act as a trust anchor", n, cert.Subject)
 		}
 	}
 	if n == 0 {
@@ -717,13 +735,17 @@ func sortedStringKeys(m map[string]string) []string {
 // internal mirror of this repository's releases instead of GitHub.
 var FetchChecksums = func(version string) (string, error) {
 	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/checksums.txt", releaseRepo, version)
-	resp, err := http.Get(url) //nolint:gosec,noctx // the URL is built from a constant and a caller-supplied tag, over HTTPS, at deploy time; no request context is available this deep in a Pulumi ApplyT chain.
+	// The URL is built from a constant and a caller-supplied tag, over
+	// HTTPS, at deploy time; no request context is available this deep in
+	// a Pulumi ApplyT chain.
+	resp, err := http.Get(url) //nolint:gosec,noctx
 	if err != nil {
 		return "", fmt.Errorf("statusbox: fetch %s: %w", url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("statusbox: fetch %s: HTTP %d — %q is not a released version of %s, or checksums.txt was not attached to it", url, resp.StatusCode, version, releaseRepo)
+		return "", fmt.Errorf("statusbox: fetch %s: HTTP %d — %q is not a released version of %s, or checksums.txt was not attached to "+
+			"it", url, resp.StatusCode, version, releaseRepo)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -749,5 +771,6 @@ func setupSHA256(checksums, version string) (string, error) {
 			return sum, nil
 		}
 	}
-	return "", fmt.Errorf("statusbox: checksums.txt for %s carries no entry for setup.sh — it was not attached to that release, or the release predates it", version)
+	return "", fmt.Errorf("statusbox: checksums.txt for %s carries no entry for setup.sh — it was not attached to that release, or the release predates "+
+		"it", version)
 }

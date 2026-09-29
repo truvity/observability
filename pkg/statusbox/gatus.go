@@ -32,6 +32,7 @@
 //     the match[] filter", never "does one of these alerts look like
 //     X" — that question is answered before the response ever reaches
 //     Gatus.
+
 package statusbox
 
 import (

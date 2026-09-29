@@ -33,8 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	yamlv2 "gopkg.in/yaml.v2"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // kubeStateMetricsMetricRelabelings reads the RENDERED metricRelabelings
@@ -43,12 +42,13 @@ import (
 // is never regenerated into the golden cannot make this test pass on a
 // stale belief about what ships.
 //
-// Each entry is re-marshalled to YAML and decoded with gopkg.in/yaml.v2,
-// not v3: relabel.Config implements the v2-shaped `UnmarshalYAML(func(any)
-// error) error` interface, which is where Prometheus's OWN defaults live
-// (separator `;`, regex `(.*)`, replacement `$1`, action `replace`). v3
-// does not recognise that interface and would silently leave those
-// zero-valued — a nil `Regexp` that panics the moment it is matched
+// Each entry is re-marshalled to YAML and decoded through go.yaml.in/yaml/v3,
+// which still recognises the v2-shaped `UnmarshalYAML(func(any) error)
+// error` interface relabel.Config implements — that legacy interface is
+// where Prometheus's OWN defaults live (separator `;`, regex `(.*)`,
+// replacement `$1`, action `replace`). A decoder that only recognised the
+// newer `UnmarshalYAML(*yaml.Node) error` interface would silently leave
+// those zero-valued — a nil `Regexp` that panics the moment it is matched
 // against, for the very entries that omit `action` because "replace" is
 // the default. Going through the same unmarshaller Prometheus itself uses
 // is the only way this test is exercising the same defaulting real
@@ -78,7 +78,7 @@ func kubeStateMetricsMetricRelabelings(t *testing.T) []*relabel.Config {
 		b, err := yaml.Marshal(k8sRelabelFieldsToPrometheusFields(m))
 		require.NoErrorf(t, err, "re-marshalling metricRelabelings[%d]", i)
 		var cfg relabel.Config
-		require.NoErrorf(t, yamlv2.Unmarshal(b, &cfg), "decoding metricRelabelings[%d]: %s", i, string(b))
+		require.NoErrorf(t, yaml.Unmarshal(b, &cfg), "decoding metricRelabelings[%d]: %s", i, string(b))
 		// relabel.relabel() panics on an unset validation scheme rather
 		// than defaulting one; ordinarily Config.Validate sets this from
 		// the global scrape config, which nothing here renders, so it is
@@ -98,8 +98,9 @@ func kubeStateMetricsMetricRelabelings(t *testing.T) []*relabel.Config {
 // the exact rename `generateRelabelConfig` performs in the VictoriaMetrics
 // operator (vmscrapes/servicescrape.go) when it converts a ServiceMonitor's
 // `RelabelConfigs` into the scrape config vmagent actually runs. Getting
-// this wrong is not cosmetic: yaml.v2 silently ignores an unrecognised
-// key rather than erroring, so a `sourceLabels`/`targetLabel` pair fed to
+// this wrong is not cosmetic: a plain (non-strict) yaml.Unmarshal silently
+// ignores an unrecognised key rather than erroring, so a
+// `sourceLabels`/`targetLabel` pair fed to
 // relabel.Config decodes as an EMPTY source-label list and an empty
 // target — which turns a `replace` rule into a silent no-op, not a
 // decode error, and made this test misreport its own first draft.
@@ -140,7 +141,7 @@ func TestKubeStateMetricsNamespaceStampReadsTheObjectNotTheTarget(t *testing.T) 
 	cfgs := kubeStateMetricsMetricRelabelings(t)
 
 	const (
-		ksmNamespace = "observability"           // the kube-state-metrics POD's own namespace
+		ksmNamespace = "observability"            // the kube-state-metrics POD's own namespace
 		ksmPod       = "kube-state-metrics-abc12" // the kube-state-metrics pod's own name
 		ksmContainer = "kube-state-metrics"
 		ksmService   = "kube-state-metrics"

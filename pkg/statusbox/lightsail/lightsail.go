@@ -53,6 +53,8 @@ const (
 
 // LightsailArgs is statusbox.Args plus the little this one provider
 // needs beyond the provider-neutral core.
+//
+//nolint:revive // exported name; renaming to Args would break every consumer's import
 type LightsailArgs struct {
 	statusbox.Args
 
@@ -140,7 +142,8 @@ func NewLightsail(ctx *pulumi.Context, name string, a *LightsailArgs, opts ...pu
 		return nil, fmt.Errorf("statusbox/lightsail: NewLightsail(%q, ...): args is nil", name)
 	}
 	if a.AvailabilityZone == "" {
-		return nil, fmt.Errorf("statusbox/lightsail: NewLightsail(%q, ...): AvailabilityZone is empty. Lightsail is not available in every AWS Region, and this provider has no configuration-level default to fall back to — see `aws lightsail get-regions --include-availability-zones`", name)
+		return nil, fmt.Errorf("statusbox/lightsail: NewLightsail(%q, ...): AvailabilityZone is empty. Lightsail is not available in every AWS Region, and this "+
+			"provider has no configuration-level default to fall back to — see `aws lightsail get-regions --include-availability-zones`", name)
 	}
 
 	box := &Box{}
