@@ -4,6 +4,59 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.11.1
+
+Two defects, both found live on an estate's first cutover to
+`observability-stack` 0.11.0 (SQU-381):
+
+- **The logs/traces backup CronJobs could not run as shipped, with store
+  auth on** (mandatory since 0.11.0). `backup.image`'s only HTTP client,
+  busybox wget, has no `--user`/`--password` — confirmed directly against
+  the pinned `rclone/rclone:1.73.0` (`wget: unrecognized option`); both
+  jobs' snapshot-API calls now build the `Authorization: Basic` header by
+  hand (`--header`, base64 of `user:pass`, `base64 -w0` so a longer
+  generated credential is never wrapped across lines). Separately, both
+  jobs handed `rclone` an `s3://bucket/path` destination, which rclone
+  reads as a remote named `s3` that does not exist ("didn't find section
+  in config file") and does nothing, successfully; `backup.destination`
+  is now translated into rclone's own connection-string syntax
+  (`:s3,env_auth=true:bucket/path`) for these two jobs only — the metrics
+  job's `vmbackup` already understood the URL form directly, and
+  `env_auth=true` resolves credentials from the identical chain
+  `vmbackup`'s AWS SDK already does, under every `backup.auth.mode`, so
+  nothing else changes per mode. `backup.destination` and every
+  `backup.<store>.prefix` are unchanged; only the rendering for the two
+  rclone-driven jobs moved. Proved end to end against real
+  `victoria-logs`/`victoria-traces` binaries, store auth on, and a real
+  S3-compatible endpoint: `hack/backup-logs-traces-proof.sh` (`just
+  backup-logs-traces-proof`).
+- **The vendored `alertmanager.rules`/`vmalert.rules` VMRule sources, and
+  the `alertmanager-overview`/`victoriametrics-vmalert`/`grafana-overview`
+  dashboards, silently disappeared** whenever `victoria-metrics-k8s-
+  stack`'s OWN `alertmanager.enabled`/`vmalert.enabled`/`grafana.enabled`
+  are off — which they are, unconditionally, in every install of this
+  chart, because it runs its own Alertmanager/vmalert/Grafana instead.
+  Upstream gates those four sync-job sources on the VENDORED flags, so
+  they were gated on a condition that was never true, in every install,
+  with nothing saying so; an estate adopting this chart had to force all
+  four back on by hand after they vanished on cutover. `values.yaml` now
+  overrides the two rule sources tied to `alertmanager.enabled`/
+  `vmalert.enabled` to `true` (correct by default, since those two
+  default `true` themselves) and leaves the `grafana-overview` dashboard
+  at upstream's own default (`grafana.enabled` here defaults `false`,
+  unlike the other two). New refusal,
+  `observability-stack.validate.vendoredSyncSources`: a caller who turns
+  `alertmanager.enabled`/`vmalert.enabled`/`grafana.enabled` off (or
+  `grafana.enabled` + `defaultDashboards.enabled` on) must now also set
+  the matching `victoria-metrics-k8s-stack.defaultRules.sources.*`/
+  `.defaultDashboards.*` entry — Helm cannot compute a subchart's value
+  from this chart's own (docs/reference.md, "Why some values appear
+  twice"), so a caller who changes only one half now gets a render-time
+  failure naming exactly what to set, instead of the same silent gap.
+  New regression gate: `tests/vendored_sync_sources_test.go`, and
+  `tests/cases/observability-stack/everything` now also exercises
+  `defaultDashboards.enabled: true`.
+
 ## v0.11.0
 
 `charts/observability-stack` becomes adoptable by an estate run by one

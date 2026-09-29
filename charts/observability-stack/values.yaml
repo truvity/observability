@@ -939,6 +939,17 @@ backup:
   # -- Where backups go, as a URL without credentials: `s3://bucket/path`,
   # `gs://bucket/path`, or `fs:///mnt/path`. The bucket is the estate's.
   #
+  # `vmbackup` (the metrics job) takes this exact URL. The logs/traces
+  # jobs run `rclone`, which does not understand `s3://`/`gs://` URLs at
+  # all — handed one verbatim it reads a remote named `s3`/`gs` that does
+  # not exist and does nothing, successfully (found live, 2026-09-29). So
+  # for those two jobs only, `templates/_helpers.tpl`'s
+  # `observability-stack.backup.rcloneDestination` translates this SAME
+  # value into rclone's own connection-string syntax
+  # (`:s3,env_auth=true:bucket/path`) before it reaches them — nothing to
+  # configure: `env_auth=true` resolves credentials from the identical
+  # chain vmbackup's AWS SDK already does, under every `backup.auth.mode`.
+  #
   # Each store writes under its own prefix beneath it
   # (`backup.<store>.prefix`, and `backup.metrics.fullPrefix`). No two of
   # the prefixes in use may be equal, and none may sit inside another:
@@ -1800,8 +1811,53 @@ victoria-metrics-k8s-stack:
   # is refused: see `observability-stack.validate.watchdogSource`.
   defaultRules:
     create: false
+    # -- 0.11.1. MIRROR of `alertmanager.enabled`/`vmalert.enabled` (this
+    # chart's OWN, above — not the two directly above, which stay
+    # `false` always: see their own comment).
+    #
+    # Upstream's OWN default for these two sources is the template
+    # string `'{{ .Values.alertmanager.enabled }}'` /
+    # `'{{ .Values.vmalert.enabled }}'`, tpl-evaluated by the vendored
+    # sync job against ITS OWN values — `victoria-metrics-k8s-stack.
+    # alertmanager.enabled` / `.vmalert.enabled`, hard-coded `false`
+    # two lines up because THIS chart runs its own Alertmanager/vmalert
+    # instead (`templates/vmalertmanager.yaml`/`vmalert.yaml`). Left at
+    # that default, `alertmanager.rules`/`vmalert.rules` are gated on a
+    # flag that is never true in ANY install of this chart — not
+    # something an estate opted into, and the sync job's ConfigMap
+    # renders with two fewer sources with nothing saying so (found
+    # live, 2026-09-29: an estate adopting this chart had to force both
+    # back on by hand after they vanished on cutover).
+    #
+    # `true` here is the correct default: `alertmanager.enabled`/
+    # `vmalert.enabled` themselves default `true` ("mode: full"). A
+    # caller who turns either off must ALSO set the matching one of
+    # these back to `false` — Helm cannot compute a subchart's value
+    # from this chart's own (docs/reference.md, "Why some values appear
+    # twice") — and `observability-stack.validate.vendoredSyncSources`
+    # refuses the render if they disagree, the same MIRROR discipline
+    # as `interval`/`storeCredentials` above.
+    sources:
+      alertmanager:
+        enabled: true
+      vmalert:
+        enabled: true
   defaultDashboards:
     enabled: false
+    # -- Same defect, same fix, as `defaultRules.sources` above, for the
+    # dashboards upstream gates on the same two (always-`false`,
+    # vendored) flags: `alertmanager-overview` on `alertmanager.enabled`,
+    # and the `victoriametrics-vmalert` dashboard's own SOURCE (its
+    # `dashboards.victoriametrics-vmalert` entry is already unconditional)
+    # on `vmalert.enabled`. Dormant while `enabled` above is `false` (this
+    # chart's default), and correct the moment an estate turns dashboard
+    # syncing on — MIRROR, same refusal.
+    dashboards:
+      alertmanager-overview:
+        enabled: true
+    sources:
+      victoriametrics-vmalert:
+        enabled: true
   # -- Grafana is a direct dependency of this chart (see `grafana` below),
   # so the copy bundled inside this one stays dormant.
   grafana:

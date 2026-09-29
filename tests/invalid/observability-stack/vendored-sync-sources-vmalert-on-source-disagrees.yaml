@@ -1,0 +1,31 @@
+# expect: is true, but `victoria-metrics-k8s-stack.defaultRules.sources.vmalert.enabled` is false
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# vmalert.enabled stays at its own default (true, "mode: full"), but
+# something set the vendored sync job's vmalert.rules source back to
+# `false` — the SAME shape the upstream default breaks in (gated on the
+# vendored, always-off victoria-metrics-k8s-stack.vmalert.enabled) —
+# without saying so. This install DOES run a metrics vmalert, so the
+# vendored rule source disagreeing is exactly the silent gap
+# observability-stack.validate.vendoredSyncSources exists to refuse.
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      vmalert:
+        enabled: false

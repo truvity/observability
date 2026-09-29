@@ -238,6 +238,25 @@ platform-alerts-suspended-proof:
 backup-restore-proof:
     hack/backup-restore-proof.sh
 
+# REAL proof, in Docker, of the logs/traces backup CronJobs (0.11.1 fix)
+# end to end: a real victoria-logs and victoria-traces, store auth ON,
+# and the pinned, UNMODIFIED `backup.image` (rclone/rclone:1.73.0) —
+# busybox wget has no `--user`/`--password` at all, and rclone reads an
+# `s3://` destination as a missing remote, so both jobs failed as shipped
+# the moment store auth (mandatory) was on. The RENDERED command/env this
+# chart now produces runs unmodified against real store binaries and a
+# real S3-compatible endpoint (adobe/s3mock — see hack/backup-logs-
+# traces-proof.sh's own header for why not minio/minio), and both
+# snapshots land there. See hack/backup-logs-traces-proof.sh's own
+# header.
+#
+# Needs Docker and python3 (PyYAML); deliberately NOT part of `check`,
+# the same reason `backup-restore-proof` above is not: a one-off,
+# run-by-hand proof for this fix, not a regression gate — the golden
+# renders (tests/golden/observability-stack/backup-*.yaml) are that.
+backup-logs-traces-proof:
+    hack/backup-logs-traces-proof.sh
+
 # REAL proof, against the pinned vmagent and VictoriaMetrics single
 # binaries, that `metrics.scrape.cadvisorDrop` (0.9.1,
 # charts/observability-emitters) drops what CHANGELOG.md's `0.9.1` entry

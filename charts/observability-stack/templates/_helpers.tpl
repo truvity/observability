@@ -639,3 +639,42 @@ vmalert: {{ if kindIs "invalid" .Values.vmalert.enabled }}{{ $full }}{{ else }}{
 alertmanager: {{ if kindIs "invalid" .Values.alertmanager.enabled }}{{ $full }}{{ else }}{{ .Values.alertmanager.enabled }}{{ end }}
 metricsSelfScrape: {{ if kindIs "invalid" .Values.metricsSelfScrape.enabled }}{{ $full }}{{ else }}{{ .Values.metricsSelfScrape.enabled }}{{ end }}
 {{- end -}}
+
+{{/*
+`backup.destination` (an `s3://`, `gs://` or `fs://` URL — vmbackup's own
+vocabulary, and what `-dst`/`-origin` render unmodified for the metrics
+job) translated into an rclone DESTINATION for the logs/traces jobs,
+which speak rclone's connection-string syntax, never a URL: handed
+`s3://bucket/path` verbatim, rclone reads it as a remote named `s3`
+that does not exist ("didn't find section in config file") and does
+nothing — found live, 2026-09-29, against the pinned `rclone/rclone:
+1.73.0`.
+
+`env_auth=true` is the reason ONE destination form works under every
+`backup.auth.mode`: it is rclone's own instruction to resolve
+credentials from the SAME chain vmbackup's AWS SDK already does for
+`ambient` (environment, then IRSA/`AWS_WEB_IDENTITY_TOKEN_FILE`, then
+EKS Pod Identity, then IMDS — docs/reference.md, "`ambient`") — and under
+`secret`, `backup.credentialsSecret` is `envFrom`'d into the same pod, so
+the AWS SDK's OWN env-var precedence resolves it the identical way.
+Neither mode needs a branch here. `credentialProcess` never reaches this
+helper at all: `templates/backup.yaml` refuses it combined with
+`backup.logs.enabled`/`backup.traces.enabled` (see backup.yaml's own
+refusal), so only the metrics job — which calls vmbackup directly, not
+rclone — ever renders under it.
+
+Takes the raw `backup.destination` string; the caller appends
+`/<prefix>` itself, exactly as it already did with the untranslated URL.
+*/}}
+{{- define "observability-stack.backup.rcloneDestination" -}}
+{{- $url := . -}}
+{{- if hasPrefix "s3://" $url -}}
+{{- printf ":s3,env_auth=true:%s" (trimPrefix "s3://" $url) -}}
+{{- else if hasPrefix "gs://" $url -}}
+{{- printf ":gcs,env_auth=true:%s" (trimPrefix "gs://" $url) -}}
+{{- else if hasPrefix "fs://" $url -}}
+{{- trimPrefix "fs://" $url -}}
+{{- else -}}
+{{- fail (printf "observability-stack: `backup.destination` %q has no recognized scheme. rclone (the logs/traces backup jobs) and vmbackup (the metrics job) both need one of `s3://`, `gs://` or `fs://`." $url) -}}
+{{- end -}}
+{{- end -}}

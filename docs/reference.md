@@ -393,7 +393,7 @@ a backup that stopped.
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `backup.enabled` | bool | `false` | |
-| `backup.destination` | string | `""` | An rclone destination without credentials, e.g. `:s3,env_auth=true:bucket/path`. **Required when enabled.** |
+| `backup.destination` | string | `""` | A URL without credentials: `s3://bucket/path`, `gs://bucket/path`, or `fs:///mnt/path` — what `vmbackup` (the metrics job) takes directly. The logs/traces jobs run `rclone` instead, which speaks connection strings, not URLs; `observability-stack.backup.rcloneDestination` translates this SAME value for them (`s3://bucket/path` becomes `:s3,env_auth=true:bucket/path`) — nothing to set differently per job. **Required when enabled.** |
 | `backup.credentialsSecret` | string | `""` | The Secret with the object store's credentials, loaded with `envFrom`. **Required when `auth.mode` is `secret`; refused non-empty under any other mode.** |
 | `backup.metrics.enabled` | bool | `true` | `vmbackup` against an instant snapshot. Incremental by construction: a destination that already holds a backup receives only what changed. |
 | `backup.metrics.schedule` | cron | `17 * * * *` | The incremental run. |

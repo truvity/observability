@@ -24,6 +24,7 @@ second debugging session.
 {{- include "observability-stack.validate.selfAlerts" . -}}
 {{- include "observability-stack.validate.evaluateOnly" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
+{{- include "observability-stack.validate.vendoredSyncSources" . -}}
 {{- include "observability-stack.validate.seLinux" . -}}
 {{- include "observability-stack.validate.backupPrefixes" . -}}
 {{- include "observability-stack.validate.watchdogSource" . -}}
@@ -556,6 +557,90 @@ override leaves the ServiceMonitor converter off.
 {{- end -}}
 {{- if or $converterOff (eq (index $envOverrides "VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE") "false") -}}
 {{- fail "observability-stack: this chart renders a ServiceMonitor of its own (`metricsSelfScrape`, or the log/trace stores' `serviceMonitor`), but `victoria-metrics-k8s-stack.victoria-metrics-operator.operator.disable_prometheus_converter` is `true` or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE` is explicitly \"false\" in its `env`. vmagent only watches the native VictoriaMetrics kinds, so nothing converts this object and nothing scrapes it — docs/safety.md, \"The doctrine's own promise was broken from this chart's first commit\"." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`victoria-metrics-k8s-stack.defaultRules.sources.alertmanager`/`.vmalert`
+and the matching `defaultDashboards` entries, MIRROR of
+`alertmanager.enabled`/`vmalert.enabled`/`grafana.enabled` (this
+chart's OWN, top-level — not the vendored ones of the same name, which
+stay `false` always because this chart runs its own Alertmanager/
+vmalert/Grafana instead of the vendored copies).
+
+values.yaml overrides the four sources tied to `alertmanager.enabled`/
+`vmalert.enabled` to a literal `true` — correct by default, since those
+two default `true` themselves ("mode: full"). `grafana.enabled` here
+defaults `false`, so `defaultDashboards.dashboards.grafana-overview`
+is left at upstream's own (always-`false`) default rather than guessed.
+
+Either way, a caller who sets a DIFFERENT value than this chart's own
+default — `alertmanager.enabled: false`, `vmalert.enabled: false`, or
+`grafana.enabled: true` while `defaultDashboards.enabled` is also
+`true` — must update the matching vendored source/dashboard entry too:
+Helm cannot compute a subchart's value from this chart's own
+(docs/reference.md, "Why some values appear twice"), so a caller who
+changes only one half gets exactly the silent gap this refusal exists
+to close (found live, 2026-09-29: `alertmanager.rules`, `vmalert.rules`
+and three dashboards vanished on a cutover with nothing saying so).
+*/}}
+{{- define "observability-stack.validate.vendoredSyncSources" -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- /*
+The vendored sync Job renders NOTHING — no ConfigMap, no VMRule, no
+dashboard — while its own `syncJob.enabled` is off (vmks's default is
+`true`; `mode: operator-only` sets it `false` itself, since there is no
+vmalert/Grafana for anything it would fetch to reach). Every check below
+is dead while that is the case, so none of them run: a values file that
+turns `alertmanager.enabled`/`vmalert.enabled` off ALONGSIDE `syncJob.
+enabled: false` has nothing left for these sources to disagree with.
+*/ -}}
+{{- $syncJobEnabled := ($vmks.syncJob).enabled -}}
+{{- $syncJobOn := and $vmks.enabled (or (kindIs "invalid" $syncJobEnabled) $syncJobEnabled) -}}
+{{- $ruleSources := ($vmks.defaultRules).sources | default dict -}}
+{{- $dashboards := ($vmks.defaultDashboards).dashboards | default dict -}}
+{{- $dashSources := ($vmks.defaultDashboards).sources | default dict -}}
+{{- $dashboardsSyncing := and $syncJobOn ($vmks.defaultDashboards).enabled -}}
+{{- /*
+`defaultRules.create: false` (set above) does NOT by itself turn the
+rule sync off — vmks's own gate is `defaultRules.enabled OR .create`,
+and `enabled` stays at vmks's default `true` unless a caller (like
+tests/cases/observability-stack/vendored-rules-off) turns it off too,
+the documented way to opt out of the vendored rule set entirely. While
+BOTH are false, `$ruleSources` never reaches the ConfigMap either, so
+these four checks have nothing to be wrong about.
+*/ -}}
+{{- $rulesEnabled := ($vmks.defaultRules).enabled -}}
+{{- $rulesSyncing := and $syncJobOn (or (kindIs "invalid" $rulesEnabled) $rulesEnabled ($vmks.defaultRules).create) -}}
+{{- $checks := list
+  (dict "flag" "alertmanager.enabled" "effective" $observabilityStackEffective.alertmanager "active" $rulesSyncing "path" "victoria-metrics-k8s-stack.defaultRules.sources.alertmanager.enabled" "got" ($ruleSources.alertmanager).enabled)
+  (dict "flag" "vmalert.enabled" "effective" $observabilityStackEffective.vmalert "active" $rulesSyncing "path" "victoria-metrics-k8s-stack.defaultRules.sources.vmalert.enabled" "got" ($ruleSources.vmalert).enabled)
+  (dict "flag" "alertmanager.enabled" "effective" $observabilityStackEffective.alertmanager "active" $dashboardsSyncing "path" "victoria-metrics-k8s-stack.defaultDashboards.dashboards.alertmanager-overview.enabled" "got" (index $dashboards "alertmanager-overview").enabled)
+  (dict "flag" "vmalert.enabled" "effective" $observabilityStackEffective.vmalert "active" $dashboardsSyncing "path" "victoria-metrics-k8s-stack.defaultDashboards.sources.victoriametrics-vmalert.enabled" "got" (index $dashSources "victoriametrics-vmalert").enabled)
+  (dict "flag" "grafana.enabled" "effective" (.Values.grafana).enabled "active" $dashboardsSyncing "path" "victoria-metrics-k8s-stack.defaultDashboards.dashboards.grafana-overview.enabled" "got" (index $dashboards "grafana-overview").enabled)
+-}}
+{{- range $c := $checks -}}
+{{- if $c.active -}}
+{{- /*
+`got` is whatever this chart (or a caller overriding it further) put at
+that path — a real boolean for the four this chart's own values.yaml
+sets, but upstream's OWN default for `grafana-overview` is still its
+original template STRING (this chart does not override it — see
+values.yaml's own comment), which `ne` cannot compare against a
+boolean at all. Every one of upstream's own such strings references a
+vendored flag this chart hard-codes `false`, so a string here always
+means "off", the same as `_validate.tpl`'s sibling checks resolve it.
+*/ -}}
+{{- $got := $c.got -}}
+{{- if kindIs "string" $got -}}{{- $got = false -}}{{- end -}}
+{{- if and $c.effective (ne $got true) -}}
+{{- fail (printf "observability-stack: `%s` is true, but `%s` is %s, not `true`. Left this way, the vendored sync job renders one fewer VMRule source or dashboard than this install's own Alertmanager/vmalert/Grafana actually has — silently, since a source or dashboard it did not fetch is simply absent from the ConfigMap, not an error. Set `%s: true`." $c.flag $c.path (toYaml $c.got) $c.path) -}}
+{{- end -}}
+{{- if and (not $c.effective) (ne $got false) -}}
+{{- fail (printf "observability-stack: `%s` is false, but `%s` is %s, not `false`. Left this way, the vendored sync job renders `alertmanager.rules`/`vmalert.rules`/a dashboard for a component this install does not run — permanently unhealthy or empty, not an error either. Set `%s: false`." $c.flag $c.path (toYaml $c.got) $c.path) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

@@ -21,6 +21,16 @@ alertmanager:
 vmalert:
   externalUrl: https://grafana.example
 
+# MIRROR of alertmanager.enabled above — observability-stack.validate.
+# vendoredSyncSources' own doc comment has the reasoning: the vendored
+# sync job's alertmanager.rules source is gated on THIS chart's own
+# Alertmanager, not the vendored one, which is always off regardless.
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      alertmanager:
+        enabled: false
+
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client
