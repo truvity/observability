@@ -81,7 +81,11 @@
             "enabled": { "type": "boolean" },
             "maxSuccessAge": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" },
-            "failedSeverity": { "$ref": "#/definitions/severity" }
+            "failedSeverity": { "$ref": "#/definitions/severity" },
+            "ignoreSuspended": {
+              "type": "boolean",
+              "description": "Default true: both backup rules skip a CronJob whose kube_cronjob_spec_suspend is 1. `false` renders the 0.10.0 expressions."
+            }
           }
         },
         "writePath": {

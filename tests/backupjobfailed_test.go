@@ -72,10 +72,14 @@ func TestBackupJobFailedExprIsTheNewestJobJoin(t *testing.T) {
 	assert.Equal(t, "WITH (\n\n  cronjob_jobs = (\n    kube_job_created{namespace=~\".*\"}\n"+
 		"    * on (namespace, job_name) group_left(owner_name)\n"+
 		"    kube_job_owner{namespace=~\".*\", owner_kind=\"CronJob\"}\n  ),\n"+
-		"  newest_per_cronjob = max by (namespace, owner_name) (cronjob_jobs)\n"+
+		"  newest_per_cronjob = max by (namespace, owner_name) (cronjob_jobs),\n"+
+		"  suspended_cronjobs = label_replace(\n"+
+		"    kube_cronjob_spec_suspend{namespace=~\".*\"} == 1,\n"+
+		"    \"owner_name\", \"$1\", \"cronjob\", \"(.+)\"\n  )\n"+
 		") max by (namespace, job_name) (\n\n  kube_job_status_failed{namespace=~\".*\"}\n"+
 		"  and on (namespace, job_name) (\n"+
-		"    cronjob_jobs == on (namespace, owner_name) group_left() newest_per_cronjob\n  )\n) > 0",
+		"    cronjob_jobs == on (namespace, owner_name) group_left() newest_per_cronjob\n"+
+		"    unless on (namespace, owner_name) suspended_cronjobs\n  )\n) > 0",
 		expr)
 
 	// Unchanged by this fix, and deliberately so: the rule already fires
@@ -93,7 +97,39 @@ func TestBackupJobFailedExprIsTheNewestJobJoin(t *testing.T) {
 func TestBackupJobFailedNamespaceSelectorIsThreaded(t *testing.T) {
 	expr, _ := backupsRule(t, "golden/platform-alerts/everything.yaml", "BackupJobFailed")
 
-	for _, metric := range []string{"kube_job_created", "kube_job_owner", "kube_job_status_failed"} {
+	for _, metric := range []string{"kube_job_created", "kube_job_owner", "kube_job_status_failed", "kube_cronjob_spec_suspend"} {
 		assert.Containsf(t, expr, metric+`{namespace=~"example-.*"`, "%s: expr does not scope %s by namespaceSelector", expr, metric)
+	}
+}
+
+// TestBackupRulesSkipOnlyASuspendedCronJob pins the suspend clause of
+// both backup rules (groups.backups.ignoreSuspended, 0.11.0): a suspended
+// CronJob fired both rules forever. It must be `unless ... == 1` —
+// never `and ... == 0`, which would silence both rules on any cluster
+// whose kube-state-metrics does not export kube_cronjob_spec_suspend.
+// hack/platform-alerts-suspended-proof.sh evaluates both against a real
+// VictoriaMetrics, including that absent-series case.
+func TestBackupRulesSkipOnlyASuspendedCronJob(t *testing.T) {
+	notSucceeding, hold := backupsRule(t, "golden/platform-alerts/minimal.yaml", "CronJobNotSucceeding")
+	assert.Empty(t, hold)
+	assert.Regexp(t, `unless on \(namespace, cronjob\)\s+kube_cronjob_spec_suspend\{namespace=~"\.\*"\} == 1$`, notSucceeding)
+
+	failed, _ := backupsRule(t, "golden/platform-alerts/minimal.yaml", "BackupJobFailed")
+	assert.Contains(t, failed, "unless on (namespace, owner_name) suspended_cronjobs")
+
+	for _, expr := range []string{notSucceeding, failed} {
+		assert.NotContains(t, expr, "== 0", "a suspend clause joined on `== 0` goes silent when the series is absent")
+		assert.NotRegexp(t, `and\s+on\s*\([^)]*\)\s*kube_cronjob_spec_suspend`, expr)
+	}
+}
+
+// TestBackupRulesSuspendOptOutIsTheOldRule: `ignoreSuspended: false`
+// renders both expressions exactly as 0.10.0 did, with no trace of the
+// suspend series.
+func TestBackupRulesSuspendOptOutIsTheOldRule(t *testing.T) {
+	for _, alert := range []string{"CronJobNotSucceeding", "BackupJobFailed"} {
+		expr, _ := backupsRule(t, "golden/platform-alerts/suspended-not-ignored.yaml", alert)
+		assert.NotContains(t, expr, "kube_cronjob_spec_suspend", alert)
+		assert.NotContains(t, expr, "suspended_cronjobs", alert)
 	}
 }

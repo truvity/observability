@@ -1,0 +1,12 @@
+# `minimal`, with the backup rules' suspend handling switched off: the
+# expressions 0.10.0 rendered, byte for byte (tests/backupjobfailed_test.go
+# holds this golden to v0.10.0's `minimal` shape). For an estate that
+# wants a suspended CronJob to keep paging.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+
+groups:
+  backups:
+    enabled: true
+    ignoreSuspended: false

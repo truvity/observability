@@ -209,6 +209,20 @@ gatus-boot-proof:
 platform-alerts-newest-job-proof:
     hack/platform-alerts-newest-job-proof.sh
 
+# REAL proof, against a real victoria-metrics binary, that
+# `charts/platform-alerts`' CronJobNotSucceeding and BackupJobFailed skip
+# a SUSPENDED CronJob (0.11.0, `groups.backups.ignoreSuspended`), still
+# fire on an active one, and still fire when kube_cronjob_spec_suspend is
+# absent — and that the 0.10.0 expressions do not skip it. The companion
+# of `platform-alerts-newest-job-proof` above, for the same reason: no
+# engine in this repository can evaluate the join. See
+# hack/platform-alerts-suspended-proof.sh's own header.
+#
+# Needs Docker, curl, helm and python3 (with PyYAML); deliberately NOT
+# part of `check` or CI, the same reason as the newest-job proof.
+platform-alerts-suspended-proof:
+    hack/platform-alerts-suspended-proof.sh
+
 # REAL proof, in Docker, of `backup.auth.mode: credentialProcess` end to
 # end: MinIO stands in for an S3-compatible store that is not AWS, the
 # RENDERED vmbackup command/env/AWS-config this chart produces for that
