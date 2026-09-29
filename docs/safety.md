@@ -262,7 +262,7 @@ underneath it.
 
 ## The refusals: `observability-stack`
 
-Sixty-one, each with a fixture under
+Seventy-one, each with a fixture under
 `tests/invalid/observability-stack/` that is otherwise valid, so it fails
 for its one reason and no other.
 
@@ -272,8 +272,10 @@ for its one reason and no other.
 | A retention without a unit | Every store in this family reads a bare number as MONTHS. `90` is seven and a half years on a volume sized for three months, and the first anyone hears of it is the volume filling up a quarter later. |
 | Both disk guards on one store | `-retention.maxDiskUsagePercent` and `-retention.maxDiskSpaceUsageBytes` are mutually exclusive: the binary calls Fatal and never starts. A values file that looks more careful than the correct one produces a store that does not come up. |
 | A `-retention.max*` flag on the metrics store | Single-node VictoriaMetrics has neither flag — they exist only on the log and trace stores — and refuses to start on an unknown one. Its guard is `-storage.minFreeDiskSpaceBytes`. |
-| A fractional CPU | The binaries size their thread pool from the cgroup quota and round DOWN, so `1500m` buys one thread and pays for 1.5. Nothing reports it but a log line at startup. |
-| Requests that differ from limits | A Burstable pod is evicted before a Guaranteed one — at the moment of node pressure, which is when a store matters most. |
+| A fractional CPU | The binaries size their thread pool from the cgroup quota and round DOWN, so `1500m` buys one thread and pays for 1.5. Nothing reports it but a log line at startup. Under `resources.policy: burstable`, a fractional REQUEST is accepted; a fractional LIMIT is still refused, because the limit is the quota. See "Resources", below. |
+| Requests that differ from limits | A Burstable pod is evicted before a Guaranteed one — at the moment of node pressure, which is when a store matters most. Under `resources.policy: burstable` the CPU half is relaxed; memory still is not. |
+| Under `resources.policy: burstable`: a missing request, a missing memory limit, or memory request below its limit | A pod with no requests is BestEffort, evicted first of all. With no memory limit VictoriaMetrics sizes its caches from the node's memory and is OOM-killed by it. A memory request below the limit puts the pod in the kubelet's first eviction tier under memory pressure. |
+| A `null` in a vendored subchart's `resources` (the operator, the stores, Grafana) | Helm deletes a null from this chart's own values but passes it through to a subchart's unchanged, and the API server reads `cpu: null` as a limit of 0 and refuses the pod (measured with `just apply`; VMSingle's CRD refuses the null outright). Refused at render, with the fix: a whole-number limit well above the request. |
 | An `enterprise` image tag | An Enterprise image without a licence key RUNS, refusing only the Enterprise features, so the estate is in breach of the vendor's terms with everything apparently healthy. |
 | A `-license` or `-licenseFile` flag | The same boundary from the other side. This chart wraps the community edition; an install that needs a licence flag is an install this chart is the wrong shape for. |
 | A vmauth tag below v1.152.0 | `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0 through v1.151.x matched `match_claims` values UNANCHORED (GHSA-f99m-22fh-qw96) — `admin` also matched `not-admin-really`, in the exact mechanism that decides which user a token is. |
@@ -303,9 +305,15 @@ for its one reason and no other.
 | `notifications.mode` outside `route` or `evaluate-only` | Refused by the schema, the same as any other enum this chart writes: a typo in the mode name is not a value to guess a fallback for. |
 | `notifications.mode: evaluate-only` with `alertmanager.enabled` true (or left at its default) | Evaluate-only means vmalert sends its result to nobody, on purpose; an Alertmanager rendered beside it has nothing to route, so the chart does not render it in this mode and refuses the value that would ask it to. |
 | `notifications.mode: evaluate-only` with `alertmanager.notifierUrl` set | The mode renders vmalert's `-notifier.blackhole`, and vmalert itself refuses to start with that flag alongside any notifier URL — `-notifier.url`, `-notifier.config` and `-notifier.blackhole` are mutually exclusive. Refused here, before the two ever reach the same pod. |
-| `notifications.mode: evaluate-only` with a receiver, a severity, a route or an `also` bridge configured | Nobody is notified in this mode: a receiver configured beside it looks wired up in the values file and review, and is never reached, because vmalert never sends what it would carry. |
+| `notifications.mode: evaluate-only` with a receiver, a severity, a route, an `also` bridge, a `catchAll` or a `drop` configured | Nobody is notified in this mode: a receiver configured beside it looks wired up in the values file and review, and is never reached, because vmalert never sends what it would carry. |
+| `notifications.inhibit.equal` empty (schema) | An inhibit rule with no `equal` lets any critical mute every warning in the install. |
+| A `notifications.drop` entry with no key (schema) | An empty matcher matches every alert: the whole install routed to nobody. |
+| `notifications.catchAll.receiver` naming a kind that is not configured | Every alert no tier claimed — every `info`, every alert without a severity — routed to nowhere while looking routed. |
+| `notifications.telegram` with neither or both of `chatId` and `chatIdSecret` (schema) | A bot with nowhere to post, or two defaults for one chat and nothing saying which wins. |
 | `alertmanager.watchdog.repeatInterval` not strictly less than `alertmanager.watchdog.timeout` | The heartbeat is due at or after the moment the far end gives up on it, so a single delayed delivery reads as the estate being down when it is not. |
-| A Grafana datasource without `oauthPassThru` | Every query reaches the proxy as GRAFANA's identity rather than the signed-in person's, so the proxy scopes nothing and a viewer sees every namespace on every cluster. It looks exactly like a working dashboard. |
+| A Grafana datasource without `oauthPassThru` (with the proxy on) | Every query reaches the proxy as GRAFANA's identity rather than the signed-in person's, so the proxy scopes nothing and a viewer sees every namespace on every cluster. It looks exactly like a working dashboard. |
+| With `vmauth` off: a datasource WITH `oauthPassThru`, one without basic auth, or one whose credential is a literal or reads a Secret/key other than `storeCredentials`' | There is no proxy to scope a person's token, and the store the datasource now reaches directly runs `-httpAuth.*`: a bearer token, a missing credential or the wrong one is a 401 on every panel. A literal is a store credential in git and in the release's manifest. |
+| An enabled Grafana with `grafana.envValueFrom.GF_SECURITY_SECRET_KEY.secretKeyRef.name` empty | The pod names a Secret called "", which the API server refuses on apply. Refused here with the fix: any Secret and key, the admin Secret included. |
 | A Grafana datasource without a `version` | With more than one replica Grafana only updates a provisioned datasource whose version is at least the stored one, so an edit without a bump lands on a fresh install and nowhere else. |
 | Grafana with alerting enabled | A second alerting engine, with its own rules, silences and notification policies: a second place to look at three in the morning, and the one nobody remembers. |
 | Grafana without an admin Secret | The Grafana chart then generates a random admin password on every render: `helm upgrade` rotates it silently, and the release's manifest differs from itself when nothing changed. |
@@ -321,6 +329,8 @@ for its one reason and no other.
 | `selfAlerts.gateway.queueSizeMetric` or `queueCapacityMetric` set without the other | GatewayQueueFilling would compare a gauge against nothing. |
 | `selfAlerts.enabled` true with no metric name set anywhere and no `backup.<store>.enabled` | The rendered `VMRule` would have an empty rule list — coverage that looks like coverage and evaluates nothing. |
 | `victoria-logs-single.server.serviceMonitor.basicAuth` or `victoria-traces-single...`'s naming a Secret other than `storeCredentials.secretName` | The store answers 401 to every scrape forever, and a target that always 401s is indistinguishable, from the outside, from one that was never there. |
+| `networkPolicy.clientsFrom[].from` empty (schema), or one of its peers named by `ipBlock` alone | In a NetworkPolicy an empty `from` admits EVERY source — an entry meant for one prober would open the stores to the whole cluster. And a pod IP moves on every reschedule, the same failure the `scrapeFrom` row below describes. |
+| Two backup prefixes in use that are equal, or one inside another (`backup.<store>.prefix`, `backup.metrics.fullPrefix`) | vmbackup and `rclone sync` both DELETE whatever at their destination the source does not have. A logs prefix that is the parent of the metrics one erases the metrics backup on every run — and both jobs exit zero, every time. A prefix that is not a relative path is refused by the schema. |
 | `networkPolicy.scrapeFrom[]` naming an `ipBlock` with neither `podSelector` nor `namespaceSelector` | A pod IP is reassigned on every reschedule, eviction and rollout. The rule installs and scrapes fine today, and stops silently the first time the scraper pod moves — the same failure this value exists to fix, reintroduced by the value meant to fix it. |
 | `metricsSelfScrape.enabled` with `victoria-metrics-k8s-stack.vmsingle.spec.disableSelfServiceScrape` not `true` | The operator reconciles its own `VMServiceScrape` for the VMSingle alongside this chart's `ServiceMonitor` — a kind this file rules out on its own, and one with no `basicAuth` either way, so every scrape it drives 401s against a store running `-httpAuth.*`. |
 | A `ServiceMonitor` this chart renders (`metricsSelfScrape`, or the log/trace stores' own `serviceMonitor`) with the operator's ServiceMonitor converter off — `disable_prometheus_converter: true`, or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE: "false"` in the operator's `env` | Nothing ever converts the object to the native `VMServiceScrape` vmagent watches, so nothing ever scrapes it — a render that looks like coverage and is not. Measured on a live install; see "The doctrine's own promise was broken from this chart's first commit", above. |
@@ -329,6 +339,47 @@ for its one reason and no other.
 | `backup.seLinuxLevel` set with `backup.enabled: false` | It only shapes the backup CronJobs' pods; with backups off it renders nowhere; a value that never does anything is one nobody notices has drifted the day backups are turned back on. |
 | `backup.seLinuxLevel` set but the matching store's own `securityContext.seLinuxOptions.level` (`victoria-metrics-k8s-stack.vmsingle.spec...`, `victoria-logs-single.server.podSecurityContext...`, `victoria-traces-single.server.podSecurityContext...`) left empty | See "SELinux MCS categories, and why one value cannot set both sides", below — the exact `permission denied` this pair of values exists to prevent, left to happen live instead of at render time. |
 | The same store field set, but to a DIFFERENT level than `backup.seLinuxLevel` | The backup job and the store need identical categories to read the same volume; two different ones is the same failure the row above catches, from the other direction — a value someone already set, for this or an unrelated reason, that this chart cannot silently overrule. |
+
+### Resources
+
+`resources.policy: guaranteed`, the default, is the rule the two rows
+above state: requests equal limits, whole-number CPU, for vmauth, both
+vmalerts, Alertmanager, the operator, the three stores, Grafana and the
+backup jobs. It suits an install carrying many teams' traffic, where the
+store is load-bearing and CPU is cheap relative to an outage.
+
+`burstable` exists for an estate that measured otherwise: vmalert and
+Alertmanager at 3–16 millicores, and CPU limits removed on purpose after
+measuring CFS throttling. At that scale the rule costs a whole reserved
+core per component for nothing. What it relaxes, and why only that:
+
+- **The CPU request** may be fractional and below the limit. The request
+  is a scheduling hint; no thread pool is sized from it.
+- **The CPU limit** may be absent — no quota, nothing to round. A limit
+  that IS set must still be a whole number: the quota is exactly what the
+  thread pool rounds down.
+- **Memory is not relaxed.** A memory limit stays required and equal to
+  the request, for two reasons. VictoriaMetrics sizes its caches from the
+  cgroup memory limit, so with none it sizes them from the node's memory
+  and the node OOM-kills it — silently, in the sense that nothing says
+  why. And the kubelet evicts under memory pressure first the pods whose
+  usage exceeds their request; a pod whose usage cannot exceed its
+  request (it is killed at the limit first) is never in that tier. So
+  memory request == limit keeps most of the eviction protection
+  `guaranteed` bought, even though the QoS class now reads Burstable.
+- **Both requests stay required**: a pod with none is BestEffort, and
+  BestEffort goes first.
+
+The switch changes what is ACCEPTED, not what is rendered: every
+component keeps its guaranteed default until the estate writes its own.
+Removing a CPU limit is `limits: {cpu: null}` because Helm merges a
+values file into the defaults — and that works for this chart's own
+components only. Helm passes a null through to a vendored subchart
+unchanged; measured with `just apply`, the API server then reads `cpu:
+null` as a limit of 0 and refuses the pod ("must be less than or equal
+to cpu limit of 0"), and VMSingle's CRD refuses the null outright. The
+render refuses it first and says what to write instead: a whole-number
+limit well above the request.
 
 ### SELinux MCS categories, and why one value cannot set both sides
 

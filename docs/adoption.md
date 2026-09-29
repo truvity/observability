@@ -251,7 +251,29 @@ for a different version of the exporter.
 
 The smallest values file that is worth installing is
 `tests/cases/observability-stack/minimal/values.yaml`; the shape this
-release supports, written out, is `…/single/values.yaml`.
+release supports, written out, is `…/single/values.yaml`. An estate run
+by one operator — no per-team read scoping, a few millicores per
+component, its own alert labels and bucket prefixes — starts from
+`…/small-estate/values.yaml` instead; docs/reference.md, "The
+single-operator estate", lists every switch it turns.
+
+### Store credentials: who needs them
+
+The stores' `-httpAuth.*` is mandatory for every estate, one-operator
+ones included: there is no switch that turns it off. Adopting the chart
+over stores that ran without it means giving the credential to every
+client that reaches a store directly:
+
+| Client | Who wires it |
+|---|---|
+| Both vmalerts, the proxy's VMUser targets, the backup CronJobs, the stores' own ServiceMonitors | This chart, from `storeCredentials`. |
+| A writer that bypasses the proxy — a vmagent remote-write, an OpenTelemetry exporter, a log shipper | The estate: basic auth from the same Secret. |
+| Grafana with `vmauth` off | The estate, through `grafana.envValueFrom`; checked by the chart (docs/reference.md, "Grafana without the proxy"). |
+| A hand-made job calling a store's API — a snapshot, an export | The estate. |
+| A prober on `/health` or `/ping` | Nobody. The stores answer those before their auth check; the prober needs NetworkPolicy admission only (`networkPolicy.clientsFrom`). `/metrics` needs the credential. |
+
+List them before the cut-over: a client that was missed does not fail
+at install, it gets 401 from then on.
 
 ### Some values are written twice, and the chart refuses the disagreement
 
@@ -390,6 +412,15 @@ sets `logs.enabled: false` and keeps the other two.
 Each entry says what to do; none is optional reading before a bump. What
 changed and why is in CHANGELOG.md, and is not repeated here: an entry
 below is the work, in the order it has to happen.
+
+### 0.10.0 → 0.11.0
+
+Nothing to do: every new value defaults to the behaviour 0.10.0
+rendered, and every existing golden is byte-identical. What there is to
+adopt is listed in docs/reference.md, "The single-operator estate". One
+new refusal can reach an existing install: an enabled Grafana with
+`grafana.envValueFrom.GF_SECURITY_SECRET_KEY.secretKeyRef.name` left
+empty, which the API server already refused on apply.
 
 ### 0.9.0 → 0.9.1
 

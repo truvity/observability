@@ -150,6 +150,7 @@ values.yaml, listed here, and enforced rather than remembered.
 | `ha` | bool | `false` | Zone-redundant mode. Accepted today, behaviour in a later release. **Refused with fewer than two `zones`.** |
 | `zones` | list | `[]` | Zone names, at least two when `ha` is true. Labels, not addresses. |
 | `interval` | duration | `30s` | The one interval: both vmalerts' evaluation interval, and — through its mirror — the metrics store's `-dedup.minScrapeInterval`. Mirror: `victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval']`. |
+| `resources.policy` | `guaranteed`/`burstable` | `guaranteed` | 0.11.0. How every component's `resources` are judged (vmauth, both vmalerts, Alertmanager, the operator, the three stores, Grafana, the backup jobs). `guaranteed`: requests equal limits, whole-number CPU — the rule this chart has always enforced. `burstable`: both requests required; `requests.cpu` may be fractional and below the limit; `limits.cpu` may be absent, and a set one is still whole; memory stays request == limit with a limit required. It changes what is accepted, not what is rendered. See docs/safety.md, "Resources", and "The single-operator estate" below. |
 
 ### `vmauth` — the authorising proxy
 
@@ -237,6 +238,17 @@ mechanism.
 | `storeCredentials.secretName` | string | `observability-store-credentials` | The Secret holding the `-httpAuth.*` credentials every store demands. **Must exist before the stores start**; the chart neither creates nor reads it. Mirrors: the `VM_httpAuth_username` / `VM_httpAuth_password` entries in each store's `env` / `extraEnvs`. |
 | `storeCredentials.usernameKey` | string | `username` | |
 | `storeCredentials.passwordKey` | string | `password` | |
+
+Mandatory for every estate — there is no switch that turns it off.
+Who needs the credential:
+
+| Client | Who wires it |
+|---|---|
+| Both vmalerts, the proxy's VMUser targets, the backup CronJobs, the stores' own ServiceMonitors | This chart, from `storeCredentials` (and its mirrors). |
+| A writer that reaches a store directly rather than through the proxy — a vmagent remote-write, an OpenTelemetry exporter, a log shipper | The estate. |
+| Grafana when `vmauth` is off | The estate, through `grafana.envValueFrom` — see "Grafana without the proxy" below. The chart checks it as a mirror. |
+| A hand-made job calling a store's API (a snapshot, an export) | The estate. |
+| A prober on `/health` or `/ping` | Nobody: every store in this family answers those before its auth check. It needs NetworkPolicy admission only (`networkPolicy.clientsFrom`). `/metrics` is **not** in this group: it answers 401 without the credential. |
 
 ### `stores`
 
@@ -331,9 +343,15 @@ docs/safety.md for the failure it closes; this is the value list.
 | `notifications.groupWait` | duration | `30s` | |
 | `notifications.groupInterval` | duration | `5m` | |
 | `notifications.repeatInterval` | duration | `4h` | |
+| `notifications.groupBy` | list | `[alertname, k8s_cluster_name, k8s_namespace_name]` | 0.11.0. The root route's `group_by`. Name the labels your alerts actually carry; a label none of them carries groups every alert together. `["..."]` groups by every label. |
+| `notifications.inhibit.enabled` | bool | `true` | 0.11.0. The one inhibit rule: a `critical` silences a `warning` with equal values for every label in `equal`. |
+| `notifications.inhibit.equal` | list | `[k8s_cluster_name, k8s_namespace_name]` | 0.11.0. Never empty (schema): with no `equal`, any critical mutes every warning. **A label missing on both alerts compares EQUAL** — docs/notifications.md, "Inhibition". |
+| `notifications.drop[]` | list of maps | `[]` | 0.11.0. Exact-match matchers routed to the null receiver ahead of every other route — an alert the estate will never act on. Each entry needs at least one key (schema): an empty one matches everything. |
+| `notifications.catchAll` | severity target | unset | 0.11.0. Where an alert lands when no tier claimed it — `info`, no `severity`, or a tier `severities` leaves out — as the fallback of every node in the primary tree. Same shape and receiver kinds as a `severities` entry. Set, `severities.critical`/`.warning` are no longer required; and with no `alertmanager.watchdog.secretName`, `Watchdog` is routed to nobody so the heartbeat does not arrive here every `repeatInterval`. Refused under `mode: evaluate-only`. |
 | `notifications.slack.webhookSecret` | `{name, key}` | unset | The one Slack webhook, mounted and read with `api_url_file` — never interpolated into the config. |
 | `notifications.telegram.botTokenSecret` | `{name, key}` | unset | 0.10.0. The Telegram bot token, from an EXISTING Secret: mounted at `/etc/alertmanager/notifications-telegram` and read with `bot_token_file` — never a value, never interpolated. **Required when `telegram` is set** (schema). |
-| `notifications.telegram.chatId` | integer | unset | The default chat, as Alertmanager's `chat_id` takes it (negative for a group or channel). **Required when `telegram` is set** (schema). |
+| `notifications.telegram.chatId` | integer | unset | The default chat, as Alertmanager's `chat_id` takes it (negative for a group or channel). **Exactly one of `chatId` and `chatIdSecret` when `telegram` is set** (schema). |
+| `notifications.telegram.chatIdSecret` | `{name, key}` | unset | 0.11.0. The default chat id read from an EXISTING Secret instead, for an estate that keeps chat ids private: mounted at `/etc/alertmanager/notifications-telegram-chat` and read with Alertmanager's `chat_id_file` (Alertmanager v0.31.0 or later; the pinned operator deploys v0.34.0). The receiver is named `telegram-chatfile[-<thread>]`. A tier's own `chatId` still overrides it. |
 | `notifications.telegram.messageThreadId` | integer | unset | A forum topic in that chat. Unset or `0` renders no `message_thread_id`. |
 | `notifications.telegram.parseMode` | `HTML`/`MarkdownV2`/`Markdown` | `HTML` | The shipped message is HTML, where Alertmanager escapes every alert value itself. Any other mode requires `message`. |
 | `notifications.telegram.sendResolved` | bool | `true` | |
@@ -344,9 +362,10 @@ docs/safety.md for the failure it closes; this is the value list.
 | `notifications.routes[].critical` / `.warning` | string | unset | Per-project channel overrides. An entry naming only one tier sends the other to `severities`' default. Refused on a tier whose receiver is `telegram`, which has no channel. |
 | `notifications.also[].receiver` / `.match` | string / map | `[]` | Delivers a matching alert to a named `webhook` receiver IN ADDITION TO its normal route — the status-page bridge. Arbitrary matchers, not limited to the cluster/namespace vocabulary. |
 
-The chart renders `group_by: [alertname, k8s_cluster_name,
-k8s_namespace_name]` unconditionally — it is the vocabulary this whole
-design is built on, not a value.
+Until 0.11.0 the chart rendered `group_by: [alertname,
+k8s_cluster_name, k8s_namespace_name]` and the inhibit rule
+unconditionally. Both are values now, with those as their defaults, for
+an estate whose alerts carry other labels.
 
 ### `networkPolicy`
 
@@ -356,6 +375,12 @@ design is built on, not a value.
 | `networkPolicy.proxyFrom` | list | `[]` | Who may reach the proxy, as `NetworkPolicyPeer` objects. Empty means the release's own namespace. |
 | `networkPolicy.writersFrom` | list | `[]` | Who may write to a store directly. The collectors need this; nothing else does. |
 | `networkPolicy.scrapeFrom` | list | `[]` | Who may scrape a store's metrics port, the proxy's or vmalert's own `/metrics`, or any of their config-reloader sidecars' `reloader-http` (8435) directly, as `NetworkPolicyPeer` objects. Empty means the metrics agent `charts/observability-emitters` renders (`app.kubernetes.io/name: vmagent`) in the release's own namespace. Non-empty REPLACES that default everywhere it is read, the same way `proxyFrom` replaces its own. |
+| `networkPolicy.clientsFrom[]` | list of `{stores?, from}` | `[]` | 0.11.0. Other in-cluster clients of the stores — a prober, a hand-made job, a collector the chart does not know — each admitted on the stores it names (`metrics`/`logs`/`traces`; omitted means all three) and no others, as one extra ingress rule per entry. `from` is `NetworkPolicyPeer` objects, passed through. **Refused:** an empty `from` (in a NetworkPolicy that admits every source) and a peer named by `ipBlock` alone. Admission is not authentication: see `storeCredentials`. |
+
+With `vmauth` off and Grafana enabled here, Grafana's own pods
+(`app.kubernetes.io/name: grafana`, or `grafana.nameOverride`) are also
+admitted to every store — its datasources reach them directly in that
+mode. With the proxy on they never are.
 
 Egress is deliberately unrestricted: a policy naming every DNS server,
 object store and issuer breaks the first time one moves, and it breaks as
@@ -371,12 +396,14 @@ a backup that stopped.
 | `backup.metrics.enabled` | bool | `true` | `vmbackup` against an instant snapshot. Incremental by construction: a destination that already holds a backup receives only what changed. |
 | `backup.metrics.schedule` | cron | `17 * * * *` | The incremental run. |
 | `backup.metrics.fullSchedule` | cron | `17 3 * * 0` | The weekly full, which names the existing backup as `-origin` so unchanged data is copied inside the object store. |
+| `backup.metrics.prefix` / `.fullPrefix` | path | `metrics` / `metrics-full` | 0.11.0. Where under `destination` the incremental and the weekly full land. Relative, no leading or trailing `/`. See the refusal below the table. |
 | `backup.metrics.claimName` | string | `""` | The store's volume. Empty derives the operator's own name for it. |
 | `backup.metrics.image` | `{repository, tag}` | `victoriametrics/vmbackup:v1.152.0` | `vmbackupmanager` is Enterprise and is never wrapped. |
 | `backup.metrics.s3CustomEndpoint` | string | `""` | `vmbackup -customS3Endpoint`, for an S3-compatible store that is not AWS — Cloudflare R2 is the worked example. Empty renders no flag. |
 | `backup.metrics.s3ForcePathStyle` | `""`/`"true"`/`"false"` | `""` | `vmbackup -s3ForcePathStyle`. `""` renders no flag at all, so vmbackup's own default (`true`) applies. |
 | **`backup.logs.enabled` is `true` BY DEFAULT** | bool | `true` | The partition snapshot API: create, copy, delete. **Turning `backup.enabled` on with nothing else set backs up logs too** — see the warning below. |
 | `backup.logs.schedule` | cron | `37 * * * *` | |
+| `backup.logs.prefix` / `backup.traces.prefix` | path | `logs` / `traces` | 0.11.0. `<destination>/<prefix>`. |
 | `backup.traces.enabled` | bool | `false` | The vendor's documented procedure: sync, detach, sync, attach. |
 | `backup.traces.schedule` | cron | `57 * * * *` | |
 | `backup.image` | `{repository, tag}` | `rclone/rclone:1.73.0` | Needs a shell, `rclone` and busybox `wget`. |
@@ -601,6 +628,22 @@ changes and its controller rolls the pod — a single-replica store is
 briefly unavailable while it does, the same as any other pod-spec
 change already possible through this chart's values.
 
+**Backup prefixes (0.11.0).** For an estate whose object-store policy
+grants only the prefixes it already uses. No two prefixes in use may be
+equal and none may sit inside another (compared on whole path segments,
+so `metrics` and `metrics-full` are fine): vmbackup and `rclone sync`
+both DELETE whatever at their destination the source does not have, so a
+logs prefix that is the parent of the metrics one erases the metrics
+backup on every run and exits zero. The render refuses it.
+
+```yaml
+backup:
+  destination: s3://<bucket>/observability
+  metrics: {prefix: metrics/incremental, fullPrefix: metrics/weekly}
+  logs: {prefix: logs-snapshots}
+  traces: {enabled: true, prefix: traces-snapshots}
+```
+
 #### Restore
 
 Undocumented upstream — this is this chart's own runbook. `vmrestore`
@@ -611,7 +654,7 @@ rebuilds a VictoriaMetrics data directory from it:
 ```
 docker run --rm -v restore-data:/storage \
   victoriametrics/vmrestore:v1.152.0 \
-  -src=s3://<bucket>/<path>/metrics \
+  -src=s3://<bucket>/<path>/<backup.metrics.prefix> \
   -storageDataPath=/storage
 ```
 
@@ -738,11 +781,86 @@ through.
 | `grafana.enabled` | `false` | An estate that already runs one points it at this stack's proxy instead. |
 | `grafana.admin.existingSecret` | `""` | **Required when Grafana is enabled**: with none, the chart generates a random admin password on every render. |
 | `grafana.replicas` | `1` | **Above one requires a shared database.** Grafana's default is SQLite on the pod; the chart refuses more than one replica on it. |
-| `grafana.datasources` | one per **enabled** store, through the proxy | Every datasource needs `jsonData.oauthPassThru: true` and a `version`. The chart refuses an enabled store that no datasource type reads. |
+| `grafana.datasources` | one per **enabled** store, through the proxy | Every datasource needs a `version`, and with the proxy on (the default) `jsonData.oauthPassThru: true`; with `vmauth` off the rule flips — see "Grafana without the proxy" below. The chart refuses an enabled store that no datasource type reads. |
+| `grafana.envValueFrom.GF_SECURITY_SECRET_KEY` | `{secretKeyRef: {name: "", key: secret_key}}` | The session-signing key, from any Secret and key the estate names — the admin Secret included, so it needs a key rather than a Secret of its own. **Refused left empty on an enabled Grafana** (0.11.0; before, the API server refused the pod). Set it to `null` to drop the variable entirely. |
 | `grafana.datasources` trace type | `jaeger` | **Not arbitrary.** The store answers Jaeger and Tempo and implements neither completely; Grafana's Jaeger datasource calls only endpoints it has, its Tempo datasource calls `api/status/buildinfo`, which it does not. `hack/trace-api.sh` measures the surface. |
 | `grafana.grafana.ini.database.type` | unset (`sqlite3`) | `postgres` or `mysql` to share it. The password belongs in `envValueFrom.GF_DATABASE_PASSWORD`, never here — this section renders into a ConfigMap. |
 | `grafana.sidecar.dashboards.provider.updateIntervalSeconds` | `30` | **Above 10.** At 10 or below Grafana watches the filesystem, and a ConfigMap projection is a symlink swap that fires no watch event. |
 | `grafana.grafana.ini` | see values.yaml | `use_refresh_token` true, `role_attribute_strict` true, `locking_attempt_timeout_sec` 60–300, analytics off, `[unified_alerting]` and `[alerting]` off. |
+
+### Grafana without the proxy
+
+With `vmauth.enabled: false` there is nothing to scope a person's token
+and nothing that accepts one — every store runs `-httpAuth.*` and
+answers 401 to a bearer token. So from 0.11.0 the datasource rule
+follows the proxy: without it, every datasource
+
+- points at the store directly,
+- does **not** set `jsonData.oauthPassThru` (refused),
+- sets `basicAuth: true`, with `basicAuthUser` and
+  `secureJsonData.basicAuthPassword` as environment references —
+  `${VAR}` or `$__env{VAR}`, which Grafana expands at provisioning — and
+- each variable is read by `grafana.envValueFrom` from
+  `storeCredentials`' own Secret and keys. MIRROR: refused otherwise,
+  and refused as a literal.
+
+`grafana.datasources` is a subchart value, so it cannot follow
+`vmauth.enabled` by itself: an estate turning the proxy off re-states
+it. The chart admits Grafana's pods to the stores' NetworkPolicies in
+this mode.
+
+```yaml
+vmauth:
+  enabled: false
+grafana:
+  enabled: true
+  envValueFrom:
+    STORE_USERNAME:
+      secretKeyRef: {name: observability-store-credentials, key: username}
+    STORE_PASSWORD:
+      secretKeyRef: {name: observability-store-credentials, key: password}
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: VictoriaMetrics
+          type: prometheus
+          uid: victoriametrics
+          version: 1
+          url: http://vmsingle-<release>-victoria-metrics-k8s-stack:8428/prometheus
+          basicAuth: true
+          basicAuthUser: ${STORE_USERNAME}
+          secureJsonData:
+            basicAuthPassword: ${STORE_PASSWORD}
+        # ...one per enabled store, the same way.
+```
+
+### The single-operator estate
+
+The defaults suit an estate with many teams behind one install. An
+estate run by one operator turns five switches (0.11.0), each of which
+defaults to the behaviour above; `tests/cases/observability-stack/small-estate`
+sets all of them at once and its golden is the whole profile.
+
+| Rule | Switch | Default |
+|---|---|---|
+| Store credentials | none — mandatory; see `storeCredentials` for who needs them | — |
+| Requests equal limits, whole CPUs | `resources.policy: burstable` | `guaranteed` |
+| Grouping and inhibition on `k8s_*` | `notifications.groupBy`, `notifications.inhibit.{enabled,equal}` | the `k8s_*` labels |
+| Only `critical`/`warning` routed | `notifications.catchAll`, `notifications.drop` | unset / `[]` |
+| Telegram chat id in values | `notifications.telegram.chatIdSecret` | `chatId` |
+| Fixed backup paths | `backup.<store>.prefix`, `backup.metrics.fullPrefix` | `metrics`, `metrics-full`, `logs`, `traces` |
+| Datasources through the proxy | `vmauth.enabled: false` + basic-auth datasources | through the proxy |
+| Unknown clients blocked | `networkPolicy.clientsFrom` | `[]` |
+
+One Helm trap under `burstable`: a values file MERGES into this chart's
+defaults, so a CPU limit is removed with `limits: {cpu: null}` — and
+that works only for this chart's own components (vmauth, the vmalerts,
+Alertmanager, the backup jobs). Helm passes a null through to a vendored
+subchart unchanged (the operator, the stores, Grafana), where the API
+server reads it as a CPU limit of 0 and refuses the pod; the chart
+refuses that render first. Give those a whole-number limit well above
+the request.
 
 ## `charts/observability-emitters`
 
