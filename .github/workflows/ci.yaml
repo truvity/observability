@@ -38,7 +38,7 @@ jobs:
   recipes:
     uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     with:
-      recipes: '["lint", "test", "leak-canary", "dashboard-lint", "apply", "reconcile", "statusbox", "statusbox-debian"]'
+      recipes: '["lint", "test", "leak-canary", "dashboard-lint", "rulecheck", "apply", "reconcile", "statusbox", "statusbox-debian"]'
 
   # Pull-request only: a change to an existing golden is a default-render
   # change and must be declared in CHANGELOG.md. See

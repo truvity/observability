@@ -107,6 +107,35 @@ dashboard-lint *files:
 dashboard-queries:
     DASHBOARD_VM=require go test ./tests -run 'AvailableMetrics|OperationalDashboard|TheAllowList' -v
 
+# Parse every VMRule expression on the REAL VictoriaMetrics / VictoriaLogs
+# binaries, at the versions charts/observability-stack pins (read from its
+# vendored archives, so never written down twice). With no arguments, checks
+# the golden renders -- every rule the charts ship: platform-alerts, the
+# stack's own self-alerts and Watchdog, alert-ingress's. `just test`
+# already proves each golden equals what `helm template` renders, so these
+# ARE the rendered rules. An expression neither parser accepts is a VMRule
+# the operator's admission webhook refuses, and a sync that never finishes;
+# every other check passes on it, because text is valid YAML whatever the
+# expression inside says. An estate runs the same command on its own
+# manifests:
+#
+#   just rulecheck path/to/rendered.yaml some/dir
+#
+# Downloads the two release binaries from github.com (sha256-verified
+# against the release's checksum file) on first use; RULECHECK_BIN_DIR
+# names a directory already holding victoria-metrics-prod and
+# victoria-logs-prod for offline use. Vendored default rules the upstream
+# stack chart's sync job fetches at install time are not in any render and
+# so are not checked here.
+rulecheck *paths:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    paths=({{ paths }})
+    if [ ${#paths[@]} -eq 0 ]; then
+      paths=(tests/golden)
+    fi
+    go run ./cmd/rulecheck "${paths[@]}"
+
 # Re-vendor one chart's pinned dependencies into its charts/ directory,
 # after moving a version in its Chart.yaml. The archives are committed on
 # purpose: a render that needs the network is a render that differs
@@ -337,4 +366,4 @@ fmt:
     golangci-lint fmt ./...
 
 # Everything CI runs on a pull request.
-check: lint test leak-canary dashboard-lint
+check: lint test leak-canary dashboard-lint rulecheck

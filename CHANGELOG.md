@@ -4,6 +4,36 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.14.1
+
+`pkg/rulecheck` parses every VMRule expression on the real VictoriaMetrics and
+VictoriaLogs binaries, and this repository's own CI now runs it.
+
+- **`pkg/rulecheck` and `cmd/rulecheck` (new).** Every alerting and
+  recording expression in a VMRule is parsed by the real VictoriaMetrics
+  (MetricsQL, `/api/v1/query`) or VictoriaLogs (`type: vlogs`, LogsQL,
+  `/select/logsql/stats_query`) release binary, so an expression the
+  operator's admission webhook would refuse is found before it reaches a
+  cluster. The library is `rulecheck.Rules` / `Load` (read VMRule
+  documents), `Check(ctx, rules, Options{VMVersion, VLVersion, BinDir,
+  CacheDir})` (returns one `Finding` per refused expression, with the
+  rule's source, resource, group, type and expression, the parser and its
+  version, and the parser's own error), and `ChartVersions` /
+  `RenderedVersions` (the parser tags, read from the vendored stack chart
+  or from a rendered one, so they follow the chart and are not written
+  down twice). The binaries are downloaded from the projects' GitHub
+  releases, verified against each release's published sha256, and cached;
+  `BinDir` (`-bin-dir`, `RULECHECK_BIN_DIR`) serves offline use. A group of
+  an unknown `type` and an empty rule set are errors, never skips. No
+  chart changes and no default moves.
+- **`just rulecheck`, and a `rulecheck` CI job.** Runs the CLI over the
+  golden renders (or the paths given) and exits non-zero on any refused
+  expression. It is part of `just check`, so every rule the charts render
+  is parsed in CI: platform-alerts, the stack's own self-alerts and
+  Watchdog, and alert-ingress's. The vendored default rules the upstream
+  chart's sync job fetches at install time are in no render, so they are
+  not covered.
+
 ## v0.14.0
 
 `pkg/statusbox` covers what a consumer with its own host type needs to
