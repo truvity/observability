@@ -135,7 +135,7 @@ func TestAvailableMetricsAllowListMatchesTheSurvey(t *testing.T) {
 		"vmalert_alerts_firing", "vl_rows_ingested_total", "vt_rows_dropped_total", "up",
 		// the platform components' scrapes (0.13.0)
 		"argocd_app_info", "certmanager_certificate_ready_status", "certmanager_certificate_expiration_timestamp_seconds",
-		"gnatsd_varz_slow_consumers", "jetstream_server_jetstream_disabled", "jetstream_consumer_num_pending",
+		"nats_varz_slow_consumers", "nats_server_jetstream_disabled", "nats_consumer_num_pending",
 		"controller_runtime_reconcile_total", "envoy_http_downstream_rq_xx", "envoy_cluster_upstream_rq_total",
 		"watchable_depth", "xds_snapshot_update_total",
 	} {
@@ -154,9 +154,12 @@ func TestAvailableMetricsAllowListMatchesTheSurvey(t *testing.T) {
 		"cnpg_collector_up", "cnpg_pg_replication_lag", // the instance exporter is not scraped
 		"karpenter_nodes_total",
 		// scraped by the platform jobs but read by no dashboard, and not claimed
-		"gnatsd_connz_total", "gnatsd_healthz_status", "wasm_cache_entries", "argocd_app_labels",
+		"nats_connz_total", "nats_healthz_status", "wasm_cache_entries", "argocd_app_labels",
 		"kargo_promotions_completed_total", // Kargo v1.12 and later
 		"envoy_cluster_upstream_rq_retry",  // outside the proxies' keep list
+		// created only when the feature is used, so no store is claimed to hold them
+		"certmanager_http_acme_client_request_count", "envoy_tcp_downstream_cx_total",
+		"envoy_cluster_outlier_detection_ejections_active",
 	} {
 		assert.Falsef(t, metricAvailable(src, m), "%s is not held by any store today and must stay off the allow-list until its source ships", m)
 	}

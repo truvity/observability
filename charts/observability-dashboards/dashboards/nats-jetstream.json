@@ -74,7 +74,7 @@
       },
       "targets": [
         {
-          "expr": "sum(gnatsd_varz_jetstream_stats_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})/sum(gnatsd_varz_jetstream_config_max_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+          "expr": "sum(nats_varz_jetstream_stats_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})/sum(nats_varz_jetstream_config_max_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
           "interval": "",
           "legendFormat": "",
           "refId": "A",
@@ -133,7 +133,7 @@
       },
       "targets": [
         {
-          "expr": "sum(gnatsd_varz_jetstream_stats_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+          "expr": "sum(nats_varz_jetstream_stats_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
           "interval": "",
           "legendFormat": "",
           "refId": "A",
@@ -200,7 +200,7 @@
       },
       "targets": [
         {
-          "expr": "sum(gnatsd_varz_jetstream_stats_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})/sum(gnatsd_varz_jetstream_config_max_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+          "expr": "sum(nats_varz_jetstream_stats_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})/sum(nats_varz_jetstream_config_max_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
           "interval": "",
           "legendFormat": "",
           "refId": "A",
@@ -259,7 +259,7 @@
       },
       "targets": [
         {
-          "expr": "sum(gnatsd_varz_jetstream_stats_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+          "expr": "sum(nats_varz_jetstream_stats_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
           "interval": "",
           "legendFormat": "",
           "refId": "A",
@@ -323,7 +323,7 @@
       },
       "targets": [
         {
-          "expr": "sum(gnatsd_varz_connections{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+          "expr": "sum(nats_varz_connections{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
           "interval": "",
           "legendFormat": "",
           "refId": "A",
@@ -382,7 +382,7 @@
       },
       "targets": [
         {
-          "expr": "sum(gnatsd_varz_jetstream_config_max_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+          "expr": "sum(nats_varz_jetstream_config_max_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
           "interval": "",
           "legendFormat": "",
           "refId": "A",
@@ -441,7 +441,7 @@
       },
       "targets": [
         {
-          "expr": "sum(gnatsd_varz_jetstream_config_max_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+          "expr": "sum(nats_varz_jetstream_config_max_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
           "interval": "",
           "legendFormat": "",
           "refId": "A",
@@ -504,7 +504,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jetstream_server_total_consumers{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+          "expr": "sum(nats_server_total_consumers{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
           "interval": "",
           "legendFormat": "",
           "refId": "A",
@@ -606,7 +606,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jetstream_stream_total_bytes{k8s_cluster_name=~\"$cluster\"}) by (stream_name)",
+          "expr": "sum(nats_stream_total_bytes{k8s_cluster_name=~\"$cluster\"}) by (stream_name)",
           "interval": "",
           "legendFormat": "{{stream_name}}",
           "refId": "A",
@@ -695,7 +695,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jetstream_stream_total_messages{k8s_cluster_name=~\"$cluster\"}) by (stream_name)",
+          "expr": "sum(nats_stream_total_messages{k8s_cluster_name=~\"$cluster\"}) by (stream_name)",
           "interval": "",
           "legendFormat": "{{stream_name}}",
           "refId": "A",
@@ -784,7 +784,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(jetstream_stream_last_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\"}[$__rate_interval])) by (stream_name)",
+          "expr": "sum(rate(nats_stream_last_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\"}[$__rate_interval])) by (stream_name)",
           "hide": false,
           "interval": "",
           "legendFormat": "{{stream_name}}",
@@ -888,7 +888,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(jetstream_consumer_num_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}[$__rate_interval])+rate(jetstream_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}[$__rate_interval])) by (consumer_name)",
+          "expr": "sum(rate(nats_consumer_num_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}[$__rate_interval])+rate(nats_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}[$__rate_interval])) by (consumer_name)",
           "hide": false,
           "instant": false,
           "interval": "",
@@ -901,7 +901,7 @@
           }
         },
         {
-          "expr": "- sum(rate(jetstream_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\",consumer_name=~\"$consumer\"}[$__rate_interval])) by (consumer_name)",
+          "expr": "- sum(rate(nats_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\",consumer_name=~\"$consumer\"}[$__rate_interval])) by (consumer_name)",
           "hide": false,
           "interval": "",
           "legendFormat": "{{consumer_name}} -",
@@ -990,7 +990,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jetstream_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
+          "expr": "sum(nats_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
           "hide": false,
           "interval": "",
           "legendFormat": "{{consumer_name}}",
@@ -1081,7 +1081,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jetstream_consumer_num_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
+          "expr": "sum(nats_consumer_num_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
           "hide": false,
           "interval": "",
           "legendFormat": "{{consumer_name}}",
@@ -1172,7 +1172,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jetstream_consumer_num_ack_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
+          "expr": "sum(nats_consumer_num_ack_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
           "hide": false,
           "interval": "",
           "legendFormat": "{{consumer_name}}",
@@ -1229,7 +1229,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(jetstream_server_total_streams, k8s_cluster_name)",
+        "definition": "label_values(nats_server_total_streams, k8s_cluster_name)",
         "hide": 0,
         "includeAll": false,
         "label": "cluster",
@@ -1237,7 +1237,7 @@
         "name": "cluster",
         "options": [],
         "query": {
-          "query": "label_values(jetstream_server_total_streams, k8s_cluster_name)",
+          "query": "label_values(nats_server_total_streams, k8s_cluster_name)",
           "refId": "cluster-Variable-Query"
         },
         "refresh": 2,
@@ -1248,7 +1248,7 @@
       },
       {
         "current": {},
-        "definition": "label_values(jetstream_server_total_streams{k8s_cluster_name=~\"$cluster\"}, server_id)",
+        "definition": "label_values(nats_server_total_streams{k8s_cluster_name=~\"$cluster\"}, server_id)",
         "hide": 0,
         "includeAll": true,
         "label": "Server",
@@ -1256,7 +1256,7 @@
         "name": "server",
         "options": [],
         "query": {
-          "query": "label_values(jetstream_server_total_streams{k8s_cluster_name=~\"$cluster\"}, server_id)",
+          "query": "label_values(nats_server_total_streams{k8s_cluster_name=~\"$cluster\"}, server_id)",
           "refId": "server-Variable-Query"
         },
         "refresh": 2,
@@ -1271,7 +1271,7 @@
       },
       {
         "current": {},
-        "definition": "label_values(jetstream_stream_last_seq{k8s_cluster_name=~\"$cluster\"}, stream_name)",
+        "definition": "label_values(nats_stream_last_seq{k8s_cluster_name=~\"$cluster\"}, stream_name)",
         "hide": 0,
         "includeAll": true,
         "label": "Stream",
@@ -1279,7 +1279,7 @@
         "name": "stream",
         "options": [],
         "query": {
-          "query": "label_values(jetstream_stream_last_seq{k8s_cluster_name=~\"$cluster\"}, stream_name)",
+          "query": "label_values(nats_stream_last_seq{k8s_cluster_name=~\"$cluster\"}, stream_name)",
           "refId": "stream-Variable-Query"
         },
         "refresh": 2,
@@ -1294,7 +1294,7 @@
       },
       {
         "current": {},
-        "definition": "label_values(jetstream_consumer_num_pending{k8s_cluster_name=~\"$cluster\"}, consumer_name)",
+        "definition": "label_values(nats_consumer_num_pending{k8s_cluster_name=~\"$cluster\"}, consumer_name)",
         "hide": 0,
         "includeAll": true,
         "label": "Consumer",
@@ -1302,7 +1302,7 @@
         "name": "consumer",
         "options": [],
         "query": {
-          "query": "label_values(jetstream_consumer_num_pending{k8s_cluster_name=~\"$cluster\"}, consumer_name)",
+          "query": "label_values(nats_consumer_num_pending{k8s_cluster_name=~\"$cluster\"}, consumer_name)",
           "refId": "consumer-Variable-Query"
         },
         "refresh": 2,

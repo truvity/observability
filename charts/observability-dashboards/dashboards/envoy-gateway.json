@@ -447,7 +447,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum(watchable_panics_recovered_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"})",
+          "expr": "sum(watchable_panics_recovered_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}) or vector(0)",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,

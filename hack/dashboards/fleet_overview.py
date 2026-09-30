@@ -402,10 +402,10 @@ def build():
          'count(%s == 0)' % nats_up, nats_up, {"link": to_nats}),
         ("JetStream disabled",
          "NATS servers reporting JetStream as disabled. Streams and durable consumers need it: a server that should have it and does not is misconfigured or restarted without its store.",
-         'count(jetstream_server_jetstream_disabled{%s} == 1)' % K, 'jetstream_server_jetstream_disabled{%s}' % K, {"link": to_nats}),
+         'count(nats_server_jetstream_disabled{%s} == 1)' % K, 'nats_server_jetstream_disabled{%s}' % K, {"link": to_nats}),
         ("NATS slow consumers (1h)",
          "Slow consumers the servers reported in the last hour: clients that could not keep up and were disconnected or lost messages. Find the client and raise its limit or speed it up.",
-         'sum(increase(gnatsd_varz_slow_consumers{%s}[1h]))' % K, 'gnatsd_varz_slow_consumers{%s}' % K, {"link": to_nats}),
+         'sum(increase(nats_varz_slow_consumers{%s}[1h]))' % K, 'nats_varz_slow_consumers{%s}' % K, {"link": to_nats}),
     ], y)
     y += 3
 

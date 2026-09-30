@@ -85,10 +85,20 @@ by default and can be turned off one key at a time.
   `cnpg_*` instance exporter is not scraped yet (recorded as
   `deferred: [cnpg-instance-metrics]` in the catalog); what remains is the
   operator's own row plus reconcile rate, duration and queue depth. Envoy
-  Gateway: the Wasm row. NATS: the cumulative message and byte counters are
-  drawn as rates.
+  Gateway: the Wasm row, the three TCP listener panels of `envoy-proxy`
+  (`envoy-tcp-listeners`) and the outlier-detection panel of `envoy-clusters`
+  (`envoy-outlier-detection`), since Envoy creates those series only when the
+  feature is used; the panic counter panel is kept and reads 0 when the
+  counter does not exist yet. cert-manager: the two ACME client panels
+  (`acme-issuer`), created only when an ACME issuer is used. NATS: the
+  cumulative message and byte counters are drawn as rates, and the
+  walkthrough dashboards' metric names are rewritten from the exporter's
+  default prefix to the `nats_` prefix the NATS chart runs it with
+  (`metricPrefixRewrite` in `sources.yaml`).
 - **The allow-lists grow.** `hack/dashboards/available-metrics.yaml` lists
   each platform family by exact name (not by prefix), and
+  `hack/dashboards/verify-live.sh` (maintainers, before a release; not CI)
+  prints, per source, which listed names a live store lacks.
   `hack/dashboards/available-labels.yaml` gains one job per scrape with the
   job names the converters produce: a ServiceMonitor's job is its Service
   name, a PodMonitor's is `<namespace>/<PodMonitor name>`. A dashboard that

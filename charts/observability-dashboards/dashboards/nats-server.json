@@ -118,10 +118,10 @@
       },
       "targets": [
         {
-          "expr": "gnatsd_varz_cpu{k8s_cluster_name=~\"$cluster\"}",
+          "expr": "nats_varz_cpu{k8s_cluster_name=~\"$cluster\"}",
           "intervalFactor": 2,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_cpu",
+          "metric": "nats_varz_cpu",
           "refId": "A",
           "step": 4,
           "datasource": {
@@ -214,10 +214,10 @@
       },
       "targets": [
         {
-          "expr": "gnatsd_varz_mem{k8s_cluster_name=~\"$cluster\"}",
+          "expr": "nats_varz_mem{k8s_cluster_name=~\"$cluster\"}",
           "intervalFactor": 2,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_mem",
+          "metric": "nats_varz_mem",
           "refId": "A",
           "step": 4,
           "datasource": {
@@ -321,10 +321,10 @@
       },
       "targets": [
         {
-          "expr": "rate(gnatsd_varz_in_bytes{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
+          "expr": "rate(nats_varz_in_bytes{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
           "intervalFactor": 2,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_in_bytes",
+          "metric": "nats_varz_in_bytes",
           "refId": "A",
           "step": 10,
           "datasource": {
@@ -415,10 +415,10 @@
       },
       "targets": [
         {
-          "expr": "rate(gnatsd_varz_in_msgs{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
+          "expr": "rate(nats_varz_in_msgs{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
           "intervalFactor": 2,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_in_msgs",
+          "metric": "nats_varz_in_msgs",
           "refId": "A",
           "step": 10,
           "datasource": {
@@ -509,10 +509,10 @@
       },
       "targets": [
         {
-          "expr": "rate(gnatsd_varz_out_bytes{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
+          "expr": "rate(nats_varz_out_bytes{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
           "intervalFactor": 2,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_out_bytes",
+          "metric": "nats_varz_out_bytes",
           "refId": "A",
           "step": 10,
           "datasource": {
@@ -603,10 +603,10 @@
       },
       "targets": [
         {
-          "expr": "rate(gnatsd_varz_out_msgs{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
+          "expr": "rate(nats_varz_out_msgs{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
           "intervalFactor": 2,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_out_msgs",
+          "metric": "nats_varz_out_msgs",
           "refId": "A",
           "step": 10,
           "datasource": {
@@ -713,10 +713,10 @@
       },
       "targets": [
         {
-          "expr": "gnatsd_varz_connections{k8s_cluster_name=~\"$cluster\"}",
+          "expr": "nats_varz_connections{k8s_cluster_name=~\"$cluster\"}",
           "intervalFactor": 1,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_connections",
+          "metric": "nats_varz_connections",
           "refId": "A",
           "step": 2,
           "datasource": {
@@ -810,11 +810,11 @@
       },
       "targets": [
         {
-          "expr": "gnatsd_varz_subscriptions{k8s_cluster_name=~\"$cluster\"}",
+          "expr": "nats_varz_subscriptions{k8s_cluster_name=~\"$cluster\"}",
           "hide": false,
           "intervalFactor": 2,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_subscriptions",
+          "metric": "nats_varz_subscriptions",
           "refId": "A",
           "step": 4,
           "datasource": {
@@ -908,10 +908,10 @@
       },
       "targets": [
         {
-          "expr": "gnatsd_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}",
+          "expr": "nats_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}",
           "intervalFactor": 1,
           "legendFormat": "{{server_id}}",
-          "metric": "gnatsd_varz_slow_consumers",
+          "metric": "nats_varz_slow_consumers",
           "refId": "A",
           "step": 2,
           "datasource": {
@@ -962,7 +962,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(gnatsd_varz_connections, k8s_cluster_name)",
+        "definition": "label_values(nats_varz_connections, k8s_cluster_name)",
         "hide": 0,
         "includeAll": false,
         "label": "cluster",
@@ -970,7 +970,7 @@
         "name": "cluster",
         "options": [],
         "query": {
-          "query": "label_values(gnatsd_varz_connections, k8s_cluster_name)",
+          "query": "label_values(nats_varz_connections, k8s_cluster_name)",
           "refId": "cluster-Variable-Query"
         },
         "refresh": 2,

@@ -132,16 +132,16 @@ sources:
     note: >-
       the controller's certificate and ACME client series, as read by the
       cert-manager mixin v1.6.0 overview and documented in cert-manager's
-      metrics reference. `certmanager_certificate_ready_status` and
+      metrics reference. The ACME client families
+      (certmanager_http_acme_client_*) exist only once an ACME issuer is
+      used, so they are not listed; that is `acme-issuer` in
+      available-labels.yaml. `certmanager_certificate_ready_status` and
       `..._expiration_timestamp_seconds` carry the Certificate's own namespace
       as `exported_namespace`, the scraped `namespace` being cert-manager's.
     names:
       - certmanager_certificate_ready_status
       - certmanager_certificate_expiration_timestamp_seconds
       - certmanager_controller_sync_call_count
-      - certmanager_http_acme_client_request_count
-      - certmanager_http_acme_client_request_duration_seconds_sum
-      - certmanager_http_acme_client_request_duration_seconds_count
 
   - name: CloudNativePG operator (PodMonitor, job cnpg-system/cnpg-cloudnative-pg)
     note: >-
@@ -155,40 +155,51 @@ sources:
 
   - name: NATS (prometheus-nats-exporter sidecar, PodMonitor job nats/nats)
     note: >-
-      -varz and -jsz=all of prometheus-nats-exporter v0.20.2. varz series are
-      the server's /varz numbers under `gnatsd_varz_`; jsz series are named in
-      the exporter's collector/jsz.go (`jetstream_server_`, `jetstream_stream_`,
-      `jetstream_consumer_`). -connz, -routez and -subz are scraped too, but no
+      -varz and -jsz=all of prometheus-nats-exporter v0.20.2, run by the NATS
+      chart with metric prefix `nats` (the exporter's default is `gnatsd`, so
+      the imported dashboards are rewritten: `metricPrefixRewrite` in
+      sources.yaml). Every name below was checked against a live store's
+      names on the job. varz series are
+      the server's /varz numbers under `nats_varz_`; jsz series are named in
+      the exporter's collector/jsz.go (`nats_server_`, `nats_stream_`,
+      `nats_consumer_`). -connz, -routez and -subz are scraped too, but no
       dashboard reads them.
     names:
-      - gnatsd_varz_cpu
-      - gnatsd_varz_mem
-      - gnatsd_varz_in_bytes
-      - gnatsd_varz_out_bytes
-      - gnatsd_varz_in_msgs
-      - gnatsd_varz_out_msgs
-      - gnatsd_varz_connections
-      - gnatsd_varz_subscriptions
-      - gnatsd_varz_slow_consumers
-      - gnatsd_varz_jetstream_stats_storage
-      - gnatsd_varz_jetstream_stats_memory
-      - gnatsd_varz_jetstream_config_max_storage
-      - gnatsd_varz_jetstream_config_max_memory
-      - jetstream_server_jetstream_disabled
-      - jetstream_server_total_streams
-      - jetstream_server_total_consumers
-      - jetstream_stream_total_messages
-      - jetstream_stream_total_bytes
-      - jetstream_stream_last_seq
-      - jetstream_consumer_delivered_consumer_seq
-      - jetstream_consumer_num_pending
-      - jetstream_consumer_num_ack_pending
+      - nats_varz_cpu
+      - nats_varz_mem
+      - nats_varz_in_bytes
+      - nats_varz_out_bytes
+      - nats_varz_in_msgs
+      - nats_varz_out_msgs
+      - nats_varz_connections
+      - nats_varz_subscriptions
+      - nats_varz_slow_consumers
+      - nats_varz_jetstream_stats_storage
+      - nats_varz_jetstream_stats_memory
+      - nats_varz_jetstream_config_max_storage
+      - nats_varz_jetstream_config_max_memory
+      - nats_server_jetstream_disabled
+      - nats_server_total_streams
+      - nats_server_total_consumers
+      - nats_stream_total_messages
+      - nats_stream_total_bytes
+      - nats_stream_last_seq
+      - nats_consumer_delivered_consumer_seq
+      - nats_consumer_num_pending
+      - nats_consumer_num_ack_pending
 
   - name: Envoy Gateway controller (PodMonitor, job envoy-gateway-system/envoy-gateway, /metrics)
     note: >-
       the controller families envoyproxy/gateway v1.9.2's
       envoy-gateway-global.json reads, less the wasm_* ones (not confirmed on a
       default install).
+      `watchable_panics_recovered_total` is a counter created on the first
+      panic, so a healthy store does not hold it: it is listed under
+      `absentOk` and its one panel is written `... or vector(0)`, so absence
+      reads as 0. `absentOk` names are allowed to be missing from a live store
+      (hack/dashboards/verify-live.sh skips them); nothing else is.
+    absentOk:
+      - watchable_panics_recovered_total
     names:
       - watchable_depth
       - watchable_panics_recovered_total
@@ -216,7 +227,10 @@ sources:
     note: >-
       exactly the proxies' `keep` list: the families read by envoyproxy/gateway
       v1.9.2's envoy-proxy-global.json and envoy-clusters.json, plus
-      envoy_http_downstream_rq_xx (the Fleet overview's 5xx tile).
+      envoy_http_downstream_rq_xx (the Fleet overview's 5xx tile), less the
+      families Envoy creates only when the feature is used
+      (envoy_tcp_downstream_*: `envoy-tcp-listeners`;
+      envoy_cluster_outlier_detection_*: `envoy-outlier-detection`).
     names:
       - envoy_server_live
       - envoy_server_uptime
@@ -230,9 +244,6 @@ sources:
       - envoy_http_downstream_cx_tx_bytes_total
       - envoy_listener_downstream_cx_active
       - envoy_listener_ssl_certificate_expiration_unix_time_seconds
-      - envoy_tcp_downstream_cx_total
-      - envoy_tcp_downstream_cx_rx_bytes_total
-      - envoy_tcp_downstream_cx_tx_bytes_total
       - envoy_cluster_upstream_rq_total
       - envoy_cluster_upstream_rq_xx
       - envoy_cluster_upstream_rq_time_bucket
@@ -244,14 +255,13 @@ sources:
       - envoy_cluster_membership_healthy
       - envoy_cluster_membership_degraded
       - envoy_cluster_membership_excluded
-      - envoy_cluster_outlier_detection_ejections_active
 
 # Families that do NOT exist yet and must not be queried by a shipped
 # dashboard. Not read by the code; here so a reviewer sees the boundary.
 absent:
   - node-exporter (node_*)
   - CloudNativePG instance metrics (cnpg_*, the :9187 exporter on each Postgres pod; only the operator's controller-runtime series are scraped)
-  - NATS exporter families other than varz and jsz (gnatsd_connz_*, gnatsd_routez_*, gnatsd_subz_* are scraped but no dashboard reads them; gnatsd_healthz_* needs -healthz, not enabled)
+  - NATS exporter families other than varz and jsz (nats_connz_*, nats_routez_*, nats_subz_* are scraped but no dashboard reads them; nats_healthz_* needs -healthz, not enabled)
   - Envoy families outside the proxies' scrape keep list
   - Karpenter (karpenter_*)
   - Kargo's own promotion and stage series (kargo_promotions_*, kargo_stages_by_ready_reason: v1.12 and later)

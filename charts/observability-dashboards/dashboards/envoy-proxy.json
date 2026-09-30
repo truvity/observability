@@ -858,300 +858,6 @@
       "description": "Client connections open on the listeners, by proxy namespace. A steady climb is clients not closing connections."
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "cps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 0,
-        "y": 16
-      },
-      "id": 10,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "maxHeight": 600,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "editorMode": "builder",
-          "expr": "sum by(namespace) (rate(envoy_tcp_downstream_cx_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[5m]))",
-          "instant": false,
-          "legendFormat": "{{namespace}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "TCP Downstream CPS",
-      "type": "timeseries",
-      "description": "New TCP client connections per second on TCP routes, by proxy namespace."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 6,
-        "y": 16
-      },
-      "id": 11,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "maxHeight": 600,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "editorMode": "builder",
-          "expr": "sum by(namespace) (rate(envoy_tcp_downstream_cx_rx_bytes_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[5m]))",
-          "instant": false,
-          "legendFormat": "{{namespace}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "TCP Downstream Bytes Rx/second",
-      "type": "timeseries",
-      "description": "Bytes per second received from clients on TCP routes."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 12,
-        "y": 16
-      },
-      "id": 12,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "maxHeight": 600,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "editorMode": "builder",
-          "expr": "sum by(namespace) (rate(envoy_tcp_downstream_cx_tx_bytes_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[5m]))",
-          "instant": false,
-          "legendFormat": "{{namespace}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "TCP Downstream Bytes Tx/Second",
-      "type": "timeseries",
-      "description": "Bytes per second sent to clients on TCP routes."
-    },
-    {
       "collapsed": false,
       "datasource": {
         "type": "datasource",
@@ -1161,9 +867,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 16
       },
-      "id": 13,
+      "id": 10,
       "panels": [],
       "targets": [
         {
@@ -1261,9 +967,9 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 25
+        "y": 17
       },
-      "id": 14,
+      "id": 11,
       "options": {
         "legend": {
           "calcs": [
@@ -1381,9 +1087,9 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 25
+        "y": 17
       },
-      "id": 15,
+      "id": 12,
       "options": {
         "legend": {
           "calcs": [
@@ -1503,9 +1209,9 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 25
+        "y": 17
       },
-      "id": 16,
+      "id": 13,
       "options": {
         "legend": {
           "calcs": [
@@ -1650,9 +1356,9 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 25
+        "y": 17
       },
-      "id": 17,
+      "id": 14,
       "options": {
         "legend": {
           "calcs": [
@@ -1750,9 +1456,9 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 33
+        "y": 25
       },
-      "id": 18,
+      "id": 15,
       "options": {
         "legend": {
           "calcs": [],
@@ -1843,9 +1549,9 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 33
+        "y": 25
       },
-      "id": 19,
+      "id": 16,
       "options": {
         "legend": {
           "calcs": [],
@@ -1886,9 +1592,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 33
       },
-      "id": 20,
+      "id": 17,
       "panels": [],
       "targets": [
         {
@@ -1986,9 +1692,9 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 42
+        "y": 34
       },
-      "id": 21,
+      "id": 18,
       "options": {
         "legend": {
           "calcs": [
@@ -2110,9 +1816,9 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 42
+        "y": 34
       },
-      "id": 22,
+      "id": 19,
       "options": {
         "legend": {
           "calcs": [
@@ -2231,9 +1937,9 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 42
+        "y": 34
       },
-      "id": 23,
+      "id": 20,
       "options": {
         "legend": {
           "calcs": [
@@ -2352,9 +2058,9 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 42
+        "y": 34
       },
-      "id": 24,
+      "id": 21,
       "options": {
         "legend": {
           "calcs": [
@@ -2399,9 +2105,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 42
       },
-      "id": 25,
+      "id": 22,
       "panels": [],
       "targets": [
         {
@@ -2500,9 +2206,9 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 51
+        "y": 43
       },
-      "id": 26,
+      "id": 23,
       "options": {
         "legend": {
           "calcs": [
@@ -2622,9 +2328,9 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 51
+        "y": 43
       },
-      "id": 27,
+      "id": 24,
       "options": {
         "legend": {
           "calcs": [
@@ -2744,9 +2450,9 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 51
+        "y": 43
       },
-      "id": 28,
+      "id": 25,
       "options": {
         "legend": {
           "calcs": [
@@ -2866,9 +2572,9 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 51
+        "y": 43
       },
-      "id": 29,
+      "id": 26,
       "options": {
         "legend": {
           "calcs": [
@@ -2909,9 +2615,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 51
       },
-      "id": 30,
+      "id": 27,
       "panels": [],
       "title": "TLS Certificates",
       "type": "row"
@@ -2979,9 +2685,9 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 52
       },
-      "id": 31,
+      "id": 28,
       "options": {
         "cellHeight": "sm",
         "footer": {

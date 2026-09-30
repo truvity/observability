@@ -236,6 +236,27 @@ def adapt(dashboard, spec, metric_available, extras=None):
     dashboard["tags"] = []
     dashboard.setdefault("templating", {}).setdefault("list", [])
 
+    # -- 2b. a declared metric-name prefix rewrite (NATS: the chart runs the
+    # exporter with a prefix the walkthrough dashboards do not use). The
+    # rewrite must match something, or the build fails; one map serves both
+    # NATS dashboards, so a single entry may match nothing in one of them.
+    total = [0]
+    for old, new in (cfg.get("metricPrefixRewrite") or {}).items():
+        pat = re.compile(r"(?<![A-Za-z0-9_])%s" % re.escape(old))
+        hits = [0]
+
+        def _rw(text, pat=pat, new=new):
+            out, n = pat.subn(new, text)
+            hits[0] += n
+            return out
+
+        fixed = _map_strings(dashboard, _rw)
+        dashboard.clear()
+        dashboard.update(fixed)
+        total[0] += hits[0]
+    if cfg.get("metricPrefixRewrite") and not total[0]:
+        raise SystemExit("%s: metricPrefixRewrite matched nothing (upstream moved?)" % name)
+
     # -- 3. variables -------------------------------------------------------
     tv = dashboard["templating"]["list"]
     for vname in cfg.get("dropVars", []):
