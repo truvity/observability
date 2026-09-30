@@ -304,10 +304,9 @@ spec:
             timeoutSeconds: 5
           resources: 
             limits:
-              cpu: "1"
               memory: 2Gi
             requests:
-              cpu: "1"
+              cpu: 100m
               memory: 2Gi
           volumeMounts:
             - name: server-volume
@@ -401,10 +400,9 @@ spec:
   ruleNamespaceSelector: {}
   resources:
     limits:
-      cpu: "1"
       memory: 512Mi
     requests:
-      cpu: "1"
+      cpu: 50m
       memory: 512Mi
   datasource:
     url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
@@ -457,10 +455,9 @@ spec:
   ruleNamespaceSelector: {}
   resources:
     limits:
-      cpu: "1"
       memory: 512Mi
     requests:
-      cpu: "1"
+      cpu: 50m
       memory: 512Mi
   datasource:
     url: "http://observability-stack-victoria-logs-single-server.default.svc:9428"
@@ -510,7 +507,6 @@ spec:
   replicaCount: 1
   resources:
     limits:
-      cpu: "1"
       memory: 256Mi
     requests:
       cpu: "1"
@@ -613,10 +609,9 @@ spec:
   replicaCount: 1
   resources:
     limits:
-      cpu: "1"
       memory: 512Mi
     requests:
-      cpu: "1"
+      cpu: 100m
       memory: 512Mi
   selectAllByDefault: false
   userSelector:
