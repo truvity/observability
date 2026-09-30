@@ -1050,3 +1050,58 @@ func TestMetricMetadataOptIn(t *testing.T) {
 		})
 	}
 }
+
+// A principal selected by several groups renders ONE user whose group
+// claim matches each of them and nothing else, and every group is escaped
+// on its own so that the only unescaped `|` is the alternation.
+func TestAPrincipalWithSeveralGroupsRendersOneUnion(t *testing.T) {
+	cfg := tenancy.Config{
+		ClaimName:      "groups",
+		Audience:       "example-client",
+		MetricsBackend: "http://metrics",
+		LogsBackend:    "http://logs",
+		Principals: []tenancy.Principal{{
+			Name:   "viewer",
+			Groups: []string{"cluster-a:viewer", "cluster.b:viewer"},
+			Grants: []tenancy.Grant{
+				{Cluster: "cluster-a", AllNamespaces: true},
+				{Cluster: "cluster-b", AllNamespaces: true},
+			},
+		}},
+	}
+	out, err := cfg.RenderVMAuth("https://issuer.example")
+	require.NoError(t, err)
+	require.Len(t, out.Users, 1)
+	u := out.Users[0]
+	assert.Equal(t, "viewer", u.Name)
+	assert.Equal(t, `^(cluster-a:viewer|cluster\.b:viewer)$`, u.JWT.MatchClaims["groups"])
+	re := regexp.MustCompile(u.JWT.MatchClaims["groups"])
+	assert.True(t, re.MatchString("cluster-a:viewer"))
+	assert.True(t, re.MatchString("cluster.b:viewer"))
+	assert.False(t, re.MatchString("clusterXb:viewer"), "the dot in a group must mean itself")
+	assert.False(t, re.MatchString("cluster-a:viewer2"))
+	assert.Equal(t, []string{
+		`{k8s_cluster_name="cluster-a"}`,
+		`{k8s_cluster_name="cluster-b"}`,
+	}, u.JWT.DefaultVMAccess.MetricsExtraFilters)
+	assert.Equal(t, []string{
+		`_stream:{"k8s.cluster.name"="cluster-a" or "k8s.cluster.name"="cluster-b"}`,
+	}, u.JWT.DefaultVMAccess.LogsExtraStreamFilters)
+}
+
+func TestSeveralGroupsAreRefusedWhenAmbiguous(t *testing.T) {
+	grant := []tenancy.Grant{{Cluster: "cluster-a", AllNamespaces: true}}
+	for name, principals := range map[string][]tenancy.Principal{
+		"groups without a name":  {{Groups: []string{"a", "b"}, Grants: grant}},
+		"group beside groups":    {{Group: "a", Name: "n", Groups: []string{"b"}, Grants: grant}},
+		"group beside name":      {{Group: "a", Name: "n", Grants: grant}},
+		"an empty group":         {{Name: "n", Groups: []string{"a", ""}, Grants: grant}},
+		"a group in two entries": {{Name: "n", Groups: []string{"a", "b"}, Grants: grant}, {Group: "b", Grants: grant}},
+		"a group twice":          {{Name: "n", Groups: []string{"a", "a"}, Grants: grant}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := tenancy.Config{ClaimName: "groups", Principals: principals}.Validate()
+			require.Error(t, err)
+		})
+	}
+}

@@ -386,13 +386,27 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "group",
               "grants"
             ],
             "properties": {
               "group": {
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "description": "The group a token's claim must equal. Exactly one of `group` and `groups` is required (checked at render time)."
+              },
+              "groups": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Several group spellings for ONE principal: a token carrying ANY of them selects it and reads EVERY grant. Requires `name`; refused beside `group`. A token holding only one of the groups reads all the grants, which is correct only while every holder of one spelling holds them all - otherwise mint per-person vm_access claims instead. Each entry is escaped and anchored like `group`."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The VMUser's name when `groups` is used."
               },
               "audience": {
                 "$ref": "#/definitions/audience",

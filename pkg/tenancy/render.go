@@ -81,7 +81,7 @@ func (c Config) RenderClaim(p Principal) (Claim, error) {
 		LogsNamespaceField: c.LogsNamespaceField,
 		Principals:         []Principal{p},
 	}).Validate(); err != nil {
-		return Claim{}, fmt.Errorf("rendering claim for %q: %w", p.Group, err)
+		return Claim{}, fmt.Errorf("rendering claim for %q: %w", p.label(), err)
 	}
 
 	grants := sortedGrants(p)
@@ -105,7 +105,7 @@ func (c Config) RenderClaim(p Principal) (Claim, error) {
 	// at the far end it looks like a successful query.
 	if len(claim.MetricsExtraFilters) == 0 || len(claim.LogsExtraStreamFilters) == 0 {
 		return Claim{}, fmt.Errorf("rendering claim for %q: it carries no filter for one of the signals, which vmauth expands to an ABSENT query argument rather "+
-			"than to a deny — and an absent argument is one the caller may then supply itself", p.Group)
+			"than to a deny — and an absent argument is one the caller may then supply itself", p.label())
 	}
 	return claim, nil
 }
@@ -235,7 +235,7 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 		}
 
 		out.Users = append(out.Users, VMAuthUser{
-			Name: p.Group,
+			Name: p.label(),
 			JWT: &VMAuthJWT{
 				OIDC: issuer,
 				// Two claims, and they answer two different questions.
@@ -251,7 +251,7 @@ func (c Config) RenderVMAuth(issuer string) (VMAuthConfig, error) {
 				// neither value is ours: escaped, so each means itself,
 				// and anchored, so each means only itself.
 				MatchClaims: map[string]string{
-					c.ClaimName:   claimMatch(p.Group),
+					c.ClaimName:   claimMatchAny(p.groupList()),
 					AudienceClaim: claimMatch(c.Audience),
 				},
 				DefaultVMAccess: &claim,

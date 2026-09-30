@@ -4,6 +4,43 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.13.1
+
+A reader can now be selected by SEVERAL groups, so a role held under one
+group per cluster reads every cluster it is entitled to instead of only the
+first one vmauth happens to try.
+
+- **`tenancy.principals[]` accepts `groups` and `name`** as an alternative to
+  `group`. A token carrying ANY of the listed groups selects the principal
+  and reads EVERY grant it lists. Each group is escaped on its own and
+  joined into one anchored alternation
+  (`^(cluster-a:role|cluster-b:role)$`), so the only unescaped `|` is the
+  one the chart wrote; `name` becomes the VMUser's name. A principal sets
+  `group`, or `groups` with a `name`, never both; a group may appear in one
+  principal only; each refusal has a fixture under `tests/invalid/`.
+  `pkg/tenancy.Principal` gains the same `Groups` and `Name` fields, and
+  the chart and the library are compared for the new shape in
+  `tests/agreement_test.go`. No existing render changes and no default
+  moves: a principal that sets `group` renders byte-for-byte as before, and
+  the new `tenancy-multi-group` golden case is a new file.
+- **Why it exists.** vmauth selects the FIRST user a token matches and never
+  a union of several. With one principal per cluster, each selected by that
+  cluster's group, a token holding all of the groups is filtered to whichever
+  cluster's user comes first. One principal with every group and one grant per
+  cluster reads them all; metrics OR the grants' selectors, and the logs
+  filter is one stream filter with the grants as `or` alternatives.
+- **Read the consequence before using it.** A token holding only ONE of
+  the listed groups reads EVERY cluster in the principal's grants. That is
+  correct exactly when every holder of one spelling holds all of them; if
+  roles can diverge by cluster, mint per-person `vm_access` claims
+  (`pkg/tenancy.RenderClaim`) instead.
+- **`hack/multi-group-reader-proof.sh`** proves it against real vmauth,
+  VictoriaMetrics and VictoriaLogs (`just multi-group-reader-proof`): a
+  token with all the groups, and one with a single group, read every
+  cluster's series and log lines; an unmatched group or audience gets 401;
+  the one-principal-per-cluster shape reads one cluster only. Run by hand,
+  not part of `check`.
+
 ## v0.13.0
 
 The `observability-emitters` cadvisor series now carry the labels the

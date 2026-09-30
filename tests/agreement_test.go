@@ -190,6 +190,57 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 	}
 }
 
+// TestChartAndLibraryAgreeOnAPrincipalWithSeveralGroups is the same
+// comparison for a principal selected by a LIST of groups: the chart
+// (tests/cases/observability-stack/tenancy-multi-group) and the library
+// must render the same matchClaims alternation, the same name and the same
+// filters, and the alternation must match each listed group and nothing
+// else.
+func TestChartAndLibraryAgreeOnAPrincipalWithSeveralGroups(t *testing.T) {
+	groups := []string{"cluster-a:k8s:viewer", "cluster-b:k8s:viewer", "cluster-c:k8s:viewer"}
+	cfg := tenancy.Config{
+		ClaimName:      "groups",
+		Audience:       goldenAudience,
+		MetricsBackend: goldenMetricsURL,
+		LogsBackend:    goldenLogsURL,
+		Principals: []tenancy.Principal{
+			{Name: "k8s:viewer", Groups: groups, Grants: []tenancy.Grant{
+				{Cluster: "cluster-a", AllNamespaces: true},
+				{Cluster: "cluster-b", AllNamespaces: true},
+				{Cluster: "cluster-c", AllNamespaces: true},
+			}},
+			{Group: "example:example-app:deployer", Grants: []tenancy.Grant{
+				{Cluster: "cluster-a", Namespaces: []string{"example-app"}},
+			}},
+		},
+	}
+	want, err := cfg.RenderVMAuth(goldenIssuer)
+	require.NoError(t, err)
+
+	got := readVMUsers(t, "golden/observability-stack/tenancy-multi-group.yaml")
+	require.Len(t, got, len(want.Users))
+	byName := map[string]vmUser{}
+	for _, u := range got {
+		byName[u.Spec.Name] = u
+	}
+	for _, user := range want.Users {
+		chart, ok := byName[user.Name]
+		require.True(t, ok, "the chart renders no VMUser for %q", user.Name)
+		assert.Equal(t, user.JWT.MatchClaims, chart.Spec.JWT.MatchClaims)
+		assert.Equal(t, user.JWT.DefaultVMAccess.MetricsExtraFilters, chart.Spec.JWT.DefaultVMAccessClaim.MetricsExtraFilters)
+		assert.Equal(t, user.JWT.DefaultVMAccess.LogsExtraStreamFilters, chart.Spec.JWT.DefaultVMAccessClaim.LogsExtraStreamFilters)
+	}
+
+	re, err := regexp.Compile(byName["k8s:viewer"].Spec.JWT.MatchClaims["groups"])
+	require.NoError(t, err)
+	for _, g := range groups {
+		assert.True(t, re.MatchString(g), "%q must select the principal", g)
+	}
+	for _, g := range []string{"cluster-d:k8s:viewer", "cluster-a:k8s:viewerX", "Xcluster-a:k8s:viewer", "cluster-aXk8s:viewer", ""} {
+		assert.False(t, re.MatchString(g), "%q must not select the principal", g)
+	}
+}
+
 // The test that would have caught it, on the chart's side.
 //
 // It walks every route in the rendered VMUser objects and fails on any

@@ -1,0 +1,63 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+# It also proves the chart renders on a cluster that does not use the
+# default — an estate on the default sees exactly this one difference.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The tenancy case, and the reason it exists.
+#
+# These are the principals from the repository's README, and the golden
+# render beside this file is what the proxy will enforce for them. A Go
+# test in tests/ renders the SAME principals through
+# pkg/tenancy.RenderVMAuth and compares the two, so the library and the
+# chart cannot drift: a difference between them is a difference between
+# what a token says a person may read and what the proxy lets them read,
+# and nothing surfaces that until somebody sees data they should not.
+tenancy:
+  issuerUrl: https://issuer.example
+  # The client id these tokens are minted under. vmauth validates a
+  # token's expiry and its issuer and nothing else, so this pin is the
+  # only thing that makes a token minted for another client of the same
+  # issuer fail here rather than read whatever its groups allow.
+  audience: example-observability-client
+  claimName: groups
+  principals:
+    # ONE principal for a role held under a group per cluster. A token
+    # carrying any of the three groups selects it and reads all three
+    # clusters. vmauth takes the FIRST user a token matches and never a
+    # union, so three per-cluster principals would show a holder of all
+    # three groups only whichever cluster's user came first.
+    - name: k8s:viewer
+      groups:
+        - cluster-a:k8s:viewer
+        - cluster-b:k8s:viewer
+        - cluster-c:k8s:viewer
+      grants:
+        - cluster: cluster-a
+          allNamespaces: true
+        - cluster: cluster-b
+          allNamespaces: true
+        - cluster: cluster-c
+          allNamespaces: true
+    # A single-group principal beside it renders exactly as it always did.
+    - group: example:example-app:deployer
+      grants:
+        - cluster: cluster-a
+          namespaces: [example-app]
+
+# Off, so the render is the tenancy and nothing else.
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+networkPolicy:
+  enabled: false
+victoria-metrics-k8s-stack:
+  enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false
