@@ -4,6 +4,43 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.13.0
+
+The `observability-emitters` cadvisor series now carry the labels the
+kube-prometheus recording rules select on.
+
+- **Behaviour change: every cadvisor series is now stored with
+  `job="kubelet"` instead of `job="cadvisor"`**, keeping
+  `metrics_path="/metrics/cadvisor"` (the label 0.12.1 added, which is what
+  tells them from the kubelet's own `metrics_path="/metrics"` series). It is
+  the identity kube-prometheus gives the same series, and the k8s-stack's
+  default recording rules (`k8s.rules.container_cpu_usage_seconds_total`,
+  `.container_memory_working_set_bytes`, `.container_memory_cache`,
+  `.container_memory_rss`, `.container_memory_swap`) and the mixin
+  dashboards select `job="kubelet", metrics_path="/metrics/cadvisor"`, so
+  under the old label those rules matched nothing and everything built on
+  them (`node_namespace_pod_container:*`) stayed empty. The scrape is still
+  named `cadvisor` inside vmagent (names must be unique); a relabel step
+  sets the stored `job`. The `observability-emitters` goldens change to
+  match. Two consequences to know before you upgrade:
+  - **Every cadvisor series changes its `job` label once**, so each cluster
+    sees a one-time burst of new series of about the cadvisor series count
+    (the old series go stale and age out of the store on their own).
+  - **A query, dashboard or alert outside this repo that selects
+    `job="cadvisor"` must switch to `job="kubelet",
+    metrics_path="/metrics/cadvisor"`.** Shipped dashboards and rules here
+    never selected it. `up{job="kubelet"}` now has two series per node, one
+    per `metrics_path`; a query that counts kubelets should keep filtering
+    `metrics_path="/metrics"`, as the shipped kubelet dashboard does.
+
+  `metrics.scrape.cadvisorAsKubeletJob: false` restores `job="cadvisor"`; its
+  golden (`cadvisor-own-job`) is byte for byte the 0.12.1 render. Proof:
+  `just metrics-path-proof` stores the fixture's cadvisor series as
+  `job="kubelet", metrics_path="/metrics/cadvisor"`, evaluates the upstream
+  `sum_irate` recording rule against them (data; none with the opt-out) and
+  checks the kubelet dashboard's "Running Kubelets" still counts one per
+  node.
+
 ## v0.12.1
 
 A fix for the shipped `kubelet` dashboard, which read "No data" on every

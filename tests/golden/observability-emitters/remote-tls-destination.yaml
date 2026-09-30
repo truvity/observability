@@ -756,6 +756,8 @@ spec:
           replacement: "production"
         - source_labels: [__metrics_path__]
           target_label: metrics_path
+        - target_label: job
+          replacement: kubelet
       metric_relabel_configs:
         - source_labels: [namespace]
           regex: (.+)

@@ -237,6 +237,14 @@ metrics:
     # authored by the chart that owns the thing being watched.
     kubelet: true
     cadvisor: true
+    # -- Store the cadvisor series under `job="kubelet"` (with the
+    # `metrics_path="/metrics/cadvisor"` label that tells them from the
+    # kubelet's own), the kube-prometheus / kubernetes-mixin convention the
+    # k8s-stack's default recording rules (`k8s.rules.container_*`) and the
+    # mixin dashboards select on. `false` keeps the pre-0.13.0
+    # `job="cadvisor"`; any query of yours that selected that label then
+    # keeps working, and those recording rules keep matching nothing.
+    cadvisorAsKubeletJob: true
     # -- Node labels to copy onto every kubelet and cadvisor series, by
     # name. Empty is the default, and the node's own `node` label is always
     # present. Opt-in rather than a `labelmap` of every node label because
