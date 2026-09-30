@@ -485,6 +485,11 @@ data:
           spec:
             annotations: {}
             labels: {}
+      rules: 
+        RecordingRulesNoData:
+          spec:
+            expr: sum(vmalert_recording_rules_last_evaluation_samples{recording!~"count:up0"})
+              without(id) < 1
       groups: 
         alertmanager.rules:
           labelRewrites:
