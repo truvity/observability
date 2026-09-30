@@ -4,6 +4,29 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.16.0
+
+A new chart, `observability-mcp`: read-only MCP servers over the store.
+
+- **New chart `observability-mcp`.** One Deployment per enabled server, each
+  the stock upstream MCP server on loopback (no credential, no container
+  port) beside a `resource-proxy` sidecar, the pod's only port, that
+  validates the caller's access token against the issuer and holds the one
+  credential the store sees, obtained by exchanging the pod's projected
+  ServiceAccount token. `servers.metrics` runs the stock
+  `mcp-victoriametrics` v1.20.2 in single-node mode against the store
+  proxy's `/prometheus` read path, with every non-read, debugging, Cloud and
+  cross-principal tool disabled. `logs`, `traces` and `dashboards` are
+  disabled values stubs (enabling one is refused). Nothing is enabled by
+  default, the proxy image has no default tag, and an enabled server with no
+  `issuerURL`, `resourceURL`, complete `outbound` settings or NetworkPolicy
+  peers is refused. The NetworkPolicy lets the pod reach the issuer, the
+  store's proxy and cluster DNS, and nothing else. See
+  [docs/mcp.md](docs/mcp.md), which also records what the store's proxy must
+  route for the `alerts` and `rules` tools.
+- The release publishes it to `oci://ghcr.io/truvity/charts/observability-mcp`.
+  No existing chart, default or golden changes.
+
 ## v0.15.3
 
 `observability-grafana` links each store's logs to its traces and back.

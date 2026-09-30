@@ -1,0 +1,233 @@
+---
+# Source: observability-mcp/templates/mcp.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-mcp-metrics
+  labels:
+    app.kubernetes.io/name: observability-mcp
+    app.kubernetes.io/instance: observability-mcp
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/managed-by: Helm
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: observability-mcp
+      app.kubernetes.io/instance: observability-mcp
+      app.kubernetes.io/component: metrics
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The gateway, on the proxy's one port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # 1. The issuer: signing keys, and the token exchange.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: issuer
+      ports:
+        - protocol: TCP
+          port: 443
+    # 2. The store's proxy.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmauth
+      ports:
+        - protocol: TCP
+          port: 8427
+    # 3. Cluster DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Source: observability-mcp/templates/mcp.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-mcp-metrics
+  labels:
+    app.kubernetes.io/name: observability-mcp
+    app.kubernetes.io/instance: observability-mcp
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/managed-by: Helm
+# The pod gets the ONE token it needs, projected below with its own
+# audience; the default-audience token is never mounted.
+automountServiceAccountToken: false
+
+---
+# Source: observability-mcp/templates/mcp.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-mcp-metrics
+  labels:
+    app.kubernetes.io/name: observability-mcp
+    app.kubernetes.io/instance: observability-mcp
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    app.kubernetes.io/name: observability-mcp
+    app.kubernetes.io/instance: observability-mcp
+    app.kubernetes.io/component: metrics
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: observability-mcp/templates/mcp.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-mcp-metrics
+  labels:
+    app.kubernetes.io/name: observability-mcp
+    app.kubernetes.io/instance: observability-mcp
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: observability-mcp
+      app.kubernetes.io/instance: observability-mcp
+      app.kubernetes.io/component: metrics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: observability-mcp
+        app.kubernetes.io/instance: observability-mcp
+        app.kubernetes.io/component: metrics
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: observability-mcp-metrics
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        # The stock server. Loopback only, no container port, no credential:
+        # the only thing that can reach it is the proxy next to it.
+        - name: upstream
+          image: "ghcr.io/victoriametrics/mcp-victoriametrics:v1.20.2@sha256:bcbf84f945d6efb03fb8b2d2ccc3294420dccdc0b445752dce96f02619416dfe"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MCP_SERVER_MODE
+              value: http
+            - name: MCP_LISTEN_ADDR
+              value: "127.0.0.1:8081"
+            - name: VM_INSTANCE_TYPE
+              value: single
+            - name: VM_INSTANCE_ENTRYPOINT
+              value: "http://127.0.0.1:8429/prometheus"
+            - name: MCP_DISABLED_TOOLS
+              value: "export,flags,metric_relabel_debug,downsampling_filters_debug,retention_filters_debug,test_rules,metric_statistics,active_queries,top_queries,tenants,documentation,deployments,cloud_providers,regions,tiers,access_tokens,rule_filenames,rule_file"
+            - name: MCP_DISABLE_RESOURCES
+              value: "true"
+            - name: MCP_LOG_FORMAT
+              value: json
+          securityContext:
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        # The resource-proxy. The pod's only port. Its probes are the pod's:
+        # the upstream listens on loopback, which the kubelet cannot reach.
+        - name: proxy
+          image: "ghcr.io/truvity/access-roster/resource-proxy:v0.0.1"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: LISTEN
+              value: ":8080"
+            - name: UPSTREAM
+              value: "http://127.0.0.1:8081/mcp"
+            - name: ISSUER_URL
+              value: "https://issuer.example.com"
+            - name: RESOURCE_URL
+              value: "https://mcp.example.com/metrics"
+            - name: SCOPE
+              value: "openid"
+            - name: OUTBOUND_LISTEN
+              value: "127.0.0.1:8429"
+            - name: OUTBOUND_TARGET
+              value: "http://vmauth.observability.svc:8427"
+            - name: OUTBOUND_SA_TOKEN_FILE
+              value: "/var/run/observability-mcp/sa-token"
+            - name: OUTBOUND_TOKEN_ENDPOINT
+              value: "https://issuer.example.com/token"
+            - name: OUTBOUND_CLIENT_ID
+              value: "observability-mcp"
+            - name: OUTBOUND_AUDIENCE
+              value: "store-proxy"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          securityContext:
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            limits:
+              memory: 96Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          volumeMounts:
+            - name: sa-token
+              mountPath: /var/run/observability-mcp
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: sa-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: "access-issuer"
+                  expirationSeconds: 600
+                  path: sa-token

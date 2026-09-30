@@ -1,0 +1,20 @@
+# expect: `servers.metrics.resourceURL` is empty
+# No resource identifier: no token's aud could ever match.
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+servers:
+  metrics:
+    enabled: true
+    outbound:
+      target: http://vmauth.observability.svc:8427
+      tokenEndpoint: https://issuer.example.com/token
+      clientId: observability-mcp
+      audience: store-proxy
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}
+  egress:
+    issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]
+    vmauth: [{podSelector: {matchLabels: {app.kubernetes.io/name: vmauth}}}]

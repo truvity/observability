@@ -1,0 +1,20 @@
+# expect: `servers.metrics.outbound.tokenEndpoint` is empty
+# Incomplete outbound.
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+servers:
+  metrics:
+    enabled: true
+    resourceURL: https://mcp.example.com/metrics
+    outbound:
+      target: http://vmauth.observability.svc:8427
+      clientId: observability-mcp
+      audience: store-proxy
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}
+  egress:
+    issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]
+    vmauth: [{podSelector: {matchLabels: {app.kubernetes.io/name: vmauth}}}]

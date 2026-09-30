@@ -1,0 +1,47 @@
+# Every knob on the one implemented server: two replicas with a budget, a
+# pinned proxy digest, a different token lifetime, a narrowed tool set and
+# an issuer on a non-default port.
+issuerURL: https://issuer.example.com:8443
+proxy:
+  image:
+    tag: v0.0.1
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+    pullPolicy: Always
+  runAsUser: 65532
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      memory: 128Mi
+serviceAccountToken:
+  audience: access-issuer
+  expirationSeconds: 900
+servers:
+  metrics:
+    enabled: true
+    resourceURL: https://mcp.example.com/metrics
+    scope: openid
+    replicaCount: 2
+    entrypointPath: /prometheus
+    disabledTools: [export, flags, documentation]
+    outbound:
+      target: http://vmauth.observability.svc:8427
+      tokenEndpoint: https://issuer.example.com:8443/token
+      clientId: observability-mcp
+      audience: store-proxy
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway
+  egress:
+    issuer:
+      - ipBlock:
+          cidr: 192.0.2.0/24
+    vmauth:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: vmauth
+podDisruptionBudget:
+  enabled: true
