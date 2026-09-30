@@ -335,6 +335,7 @@ for its one reason and no other.
 | A Slack destination with no `workspace` while two or more workspaces are declared | The same channel name is a different place in each workspace; with exactly one declared the name may be left out, with two or more it is required. |
 | A Slack destination with an empty `channel` | Slack refuses every message the token posts without a channel, and the route looks wired up. |
 | Two `notifications.slack.workspaces` entries with one name | A `workspace` that could mean either is a destination nobody can read, and both would mount one volume name. |
+| `mention` on a destination whose receiver is not `slack`, or a value other than `here`/`channel` | A mention is Slack's `<!here>`/`<!channel>` in the message text; on any other receiver it is read by nothing, and an unknown value would page nobody while looking like a ping. |
 | `workspace` on a destination whose receiver is not `slack` | A workspace picks the Slack app whose token posts; on any other receiver it is read by nothing. |
 | `notifications.slack.failureReceiver` naming `slack`, a receiver that is not configured, or set with no workspaces | The `SlackNotificationsFailing` alert says Slack is not delivering; routed to Slack it fails to deliver itself, routed to an unconfigured receiver it reaches nobody, and with no workspace there is no alert to route. |
 | `notifications.mode` outside `route` or `evaluate-only` | Refused by the schema, the same as any other enum this chart writes: a typo in the mode name is not a value to guess a fallback for. |

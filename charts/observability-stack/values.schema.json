@@ -81,7 +81,7 @@
       }
     },
     "routeOverride": {
-      "description": "A route's per-tier override of a Slack destination: a channel string (the tier's workspace is kept), or `{channel, workspace}` to move that project to another channel and/or workspace. Either half omitted is taken from the tier.",
+      "description": "A route's per-tier override of a Slack destination: a channel string (the tier's workspace and mention are kept), or `{channel, workspace, mention}` to move that project to another channel and/or workspace. Either half omitted is taken from the tier.",
       "oneOf": [
         {
           "type": "string",
@@ -98,10 +98,18 @@
             },
             "workspace": {
               "$ref": "#/definitions/workspaceName"
+            },
+            "mention": {
+              "$ref": "#/definitions/slackMention"
             }
           }
         }
       ]
+    },
+    "slackMention": {
+      "type": "string",
+      "enum": ["here", "channel"],
+      "description": "Ping people from a Slack destination: `here` renders Slack's `<!here>` (people online in the channel), `channel` renders `<!channel>` (everyone in it), at the start of the message text, for FIRING notifications only. Unset means no mention. A destination with a mention is its own receiver, named `slack-<workspace>--<channel>--<mention>`."
     },
     "workspaceName": {
       "type": "string",
@@ -129,6 +137,9 @@
         "workspace": {
           "$ref": "#/definitions/workspaceName",
           "description": "The Slack workspace (an entry of `notifications.slack.workspaces`) this destination posts in. Optional when exactly one is declared, required with two or more."
+        },
+        "mention": {
+          "$ref": "#/definitions/slackMention"
         },
         "chatId": {
           "$ref": "#/definitions/telegramChatId"

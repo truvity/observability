@@ -1008,6 +1008,9 @@ same ways to name a receiver that is not there.
 {{- if and $cfg.workspace (ne $cfg.receiver "slack") -}}
 {{- fail (printf "observability-stack: %s sets `workspace` but its receiver is %q, not `slack`. A workspace picks the Slack app whose bot token posts; on any other receiver it would be read by nothing." $t.where (toString $cfg.receiver)) -}}
 {{- end -}}
+{{- if and $cfg.mention (ne $cfg.receiver "slack") -}}
+{{- fail (printf "observability-stack: %s sets `mention` but its receiver is %q, not `slack`. A mention is Slack's `<!here>`/`<!channel>` in the message text; on any other receiver it would be read by nothing." $t.where (toString $cfg.receiver)) -}}
+{{- end -}}
 {{- if eq $cfg.receiver "slack" -}}
 {{- include "observability-stack.validate.slackDestination" (list $t.where $cfg.channel $cfg.workspace $slackWorkspaceNames) -}}
 {{- end -}}

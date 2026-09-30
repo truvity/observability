@@ -1,0 +1,24 @@
+# expect: /mention': value must be one of 'here', 'channel'
+# Only `here` and `channel` are Slack mentions the chart renders (schema enum).
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+  telegram:
+    botTokenSecret: {name: example-telegram-bot, key: bot-token}
+    chatId: -1000000000001
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical", mention: everyone}
+    warning: {receiver: slack, channel: "#alerts"}

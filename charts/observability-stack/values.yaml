@@ -829,7 +829,13 @@ notifications:
   # `catchAll`, a route's per-tier override — may carry `workspace`. With
   # exactly one workspace declared it may be omitted and means that one;
   # with two or more it is required. One Alertmanager receiver renders
-  # per distinct (workspace, channel), named `slack-<workspace>--<channel>`.
+  # per distinct (workspace, channel, mention), named
+  # `slack-<workspace>--<channel>`, with `--<mention>` appended only when
+  # the destination sets one.
+  #
+  # `mention: here | channel` (unset = none) on any of those destinations
+  # puts Slack's `<!here>` / `<!channel>` at the start of the message
+  # text, for FIRING notifications only (never a resolved one). Slack only.
   #
   # `failureReceiver` names where the `SlackNotificationsFailing` alert
   # (selfAlerts.slackDelivery) goes: a `webhook[].name`, or `telegram`.
@@ -904,7 +910,7 @@ notifications:
   #   warning: {channel: "", workspace: globex}  # or another workspace
   #
   # A per-tier value is a channel string (the tier's workspace is kept) or
-  # `{channel, workspace}`; either half omitted is taken from the tier.
+  # `{channel, workspace, mention}`; anything omitted is taken from the tier.
   # -- Which alerts ALSO reach a webhook receiver, beside their normal
   # route — the status-page bridge. Matchers, not channels: an entry adds
   # a delivery, it never replaces the one `severities`/`routes` already

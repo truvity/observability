@@ -96,7 +96,7 @@ token is a token in git.
 | `alertmanager.enabled` with no `notifications` | the blackhole: rules evaluated into nothing |
 | a route or a severity naming a receiver that is not configured | a route to nowhere looks like a route |
 | a receiver with no secret | a receiver that cannot send |
-| a leftover `slack.webhookSecret`; a `workspace` no entry declares; `workspace` left out with two or more declared; an empty channel; a duplicate workspace name; a workspace with an empty secret name or key; `slack.failureReceiver` naming Slack or an unconfigured receiver | the Slack shapes that look wired up and deliver nowhere; see "Slack" |
+| a leftover `slack.webhookSecret`; a `workspace` no entry declares; `workspace` left out with two or more declared; an empty channel; a `mention` on a non-Slack receiver or outside `here`/`channel`; a duplicate workspace name; a workspace with an empty secret name or key; `slack.failureReceiver` naming Slack or an unconfigured receiver | the Slack shapes that look wired up and deliver nowhere; see "Slack" |
 | a route matching on a label the collectors do not stamp (`tenant`, `env`, …) | matches nothing, pages nobody; the vocabulary is cluster × namespace |
 | `externalUrl` unset | every link dead |
 | `repeat_interval` on the deadman route longer than the far end's heartbeat | the far end alerts on healthy silence |
@@ -147,11 +147,33 @@ severity tier, `catchAll`, a route's per-tier override — may carry
 `workspace`. With exactly one workspace declared it may be omitted and
 means that one; with two or more it is required (refused otherwise, as
 is a workspace nothing declares). A route's per-tier value is a channel
-string (the tier's workspace is kept) or `{channel, workspace}`, either
-half defaulting to the tier's. One Alertmanager receiver renders per
-distinct (workspace, channel), named `slack-<workspace>--<channel>` with
-the channel lower-cased and reduced to `[a-z0-9-]`, so two tiers landing
-in one channel are one receiver.
+string (the tier's workspace and mention are kept) or
+`{channel, workspace, mention}`, anything omitted defaulting to the
+tier's. One Alertmanager receiver renders per distinct (workspace,
+channel, mention), named `slack-<workspace>--<channel>` with the channel
+lower-cased and reduced to `[a-z0-9-]`, so two tiers landing in one
+channel with the same mention are one receiver.
+
+**Mentions.** `mention: here` or `mention: channel` on a destination
+(beside `channel`/`workspace`, in `severities.<tier>`, `catchAll` or the
+object form of a route override) starts the message text with Slack's
+`<!here>` (people online in the channel) or `<!channel>` (everyone in
+it). Unset, the default, is no mention. Only FIRING notifications carry
+it; the resolved message does not ping anyone. A mention is part of the
+receiver's text, so the receiver is keyed by (workspace, channel,
+mention): a destination WITHOUT a mention keeps exactly the name it had
+before, and `critical` pinging `@here` while `warning` posts quietly to
+the same channel is two receivers, `slack-acme--alerts--here` and
+`slack-acme--alerts`.
+
+```yaml
+  severities:
+    critical: {receiver: slack, channel: "#alerts", workspace: acme, mention: here}
+    warning:  {receiver: slack, channel: "#alerts", workspace: acme}
+```
+
+A `mention` on a non-Slack receiver, or any value other than `here` and
+`channel`, is refused.
 
 **The Slack app.** One app per workspace. Create it from a manifest with
 only what posting needs:

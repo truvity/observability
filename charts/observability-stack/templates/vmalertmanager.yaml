@@ -36,7 +36,7 @@ set the vmalert one gets a working Grafana link in Slack for free.
 */}}
 {{- $externalUrl := $n.externalUrl | default .Values.vmalert.externalUrl }}
 {{- /*
-Slack destinations: one receiver per distinct (workspace, channel) any
+Slack destinations: one receiver per distinct (workspace, channel, mention) any
 severity tier, the catch-all or a route's per-tier override resolves to.
 A bot token belongs to one workspace, so the workspace is half of what a
 destination IS; `slackTarget` resolves an omitted workspace to the one
@@ -300,13 +300,19 @@ spec:
           deliberately absent: Alertmanager v0.34.0 crashes while LOADING a
           config that sets it without an explicit `api_url`, and `api_url`
           may not be set beside an app token (docs/notifications.md).
+          A mention (`<!here>`/`<!channel>`) pings people, so it is for a
+          FIRING notification only: a resolved one is news, not a page.
           */}}
+          {{- $mentionPrefix := "" }}
+          {{- if $target.mention }}
+          {{- $mentionPrefix = printf "{{ if eq .Status \"firing\" }}<!%s> {{ end }}" $target.mention }}
+          {{- end }}
           - channel: {{ $target.channel | quote }}
             app_token_file: {{ printf "/etc/alertmanager/notifications-slack-%s/%s" $target.workspace (include "observability-stack.notifications.workspaceKey" (list $slackWorkspaces $target.workspace)) }}
             send_resolved: true
             title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}'
             text: |-
-              {{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }}
+              {{ $mentionPrefix }}{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }}
               {{- if $n.runbookBaseUrl }}
               {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
