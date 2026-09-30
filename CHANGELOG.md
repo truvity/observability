@@ -4,6 +4,35 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.14.3
+
+Grafana no longer starts before its dashboards exist, and the dashboard
+allow-list stops claiming series no scrape produces.
+
+- **Behaviour change: `observability-grafana` now runs the dashboards sidecar
+  as a native sidecar that Grafana waits for.** Grafana watches the home
+  dashboard's directory once, at start. It used to start before the sidecar
+  had written the first ConfigMaps, so that directory did not exist yet:
+  Grafana logged `failed to watch home dashboard directory ... no such file
+  or directory`, and the home dashboard did not hot-reload until the pod was
+  restarted (the page itself still loaded, the file appearing seconds later).
+  The chart now sets `grafana.sidecar.dashboards.initDashboards: true`,
+  `restartPolicy: Always` and a startup probe on the sidecar's `/healthz`,
+  which answers only after the first sync: the sidecar moves from
+  `containers` to `initContainers` (as `grafana-init-sc-dashboard`), keeps
+  watching for the life of the pod, and Grafana starts once it is healthy.
+  The dashboards, folders and reload behaviour are unchanged. Native
+  sidecars need Kubernetes 1.29 or later; on an older cluster set
+  `grafana.sidecar.dashboards.initDashboards: false` (and clear
+  `restartPolicy` and `startupProbe`) to get the previous layout.
+- The maintainers' allow-list of live metrics
+  (`hack/dashboards/available-metrics.yaml`) no longer lists
+  `kube_state_metrics_`: it is kube-state-metrics' self-telemetry, served on a
+  port the chart does not scrape (`kube-state-metrics.selfMonitor` is off).
+  `kube_horizontalpodautoscaler_` moves to an optional source: the collector
+  is on, but a cluster with no HorizontalPodAutoscaler produces no such
+  series. No dashboard queries either, and no chart render changes.
+
 ## v0.14.2
 
 The vendored Kubernetes recording rules now join and aggregate on the label

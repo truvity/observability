@@ -102,7 +102,7 @@ jobs:
   # it, `app_kubernetes_io_instance`. The job NAME depends on the monitor,
   # so it is not pinned. No `node` and no `metrics_path`: nothing sets them.
   - name: kube-state-metrics
-    prefixes: [scrape_, kube_, kube_state_metrics_, kargo_]
+    prefixes: [scrape_, kube_, kargo_]
     names: [up]
     # `node` is a label kube-state-metrics' own node and pod series carry.
     labels: [job, instance, endpoint, service, node, k8s_cluster_name, k8s_namespace_name, deployment_environment_name, app_kubernetes_io_instance]

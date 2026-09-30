@@ -283,12 +283,21 @@ spec:
         runAsGroup: 472
         runAsNonRoot: true
         runAsUser: 472
-      enableServiceLinks: true
-      containers:
-        - name: grafana-sc-dashboard
+      initContainers:
+        - name: grafana-init-sc-dashboard
           image: "quay.io/kiwigrid/k8s-sidecar:2.8.1"
           imagePullPolicy: IfNotPresent
+          restartPolicy: Always
+          startupProbe:
+            failureThreshold: 150
+            httpGet:
+              path: /healthz
+              port: 8084
+            initialDelaySeconds: 2
+            periodSeconds: 2
           env:
+            - name: HEALTH_PORT
+              value: "8084"
             - name: METHOD
               value: WATCH
             - name: LABEL
@@ -317,6 +326,8 @@ spec:
               value: http://localhost:3000/api/admin/provisioning/dashboards/reload
             - name: REQ_METHOD
               value: POST
+            - name: REQ_SKIP_INIT
+              value: "true"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -327,6 +338,8 @@ spec:
           volumeMounts:
             - name: sc-dashboard-volume
               mountPath: "/tmp/dashboards"
+      enableServiceLinks: true
+      containers:
         - name: grafana
           image: "docker.io/grafana/grafana:13.1.1"
           imagePullPolicy: IfNotPresent
