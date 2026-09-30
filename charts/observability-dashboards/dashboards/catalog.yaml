@@ -17,6 +17,8 @@ argocd:
   ref: v3.5.3
   upstream: argo-cd
 cert-manager:
+  deferred:
+  - acme-issuer
   file: cert-manager.json
   folder: platform
   queryCheck: true
@@ -31,6 +33,8 @@ cnpg-operator:
   ref: cluster-v0.0.5
   upstream: cloudnative-pg
 envoy-clusters:
+  deferred:
+  - envoy-outlier-detection
   file: envoy-clusters.json
   folder: platform
   queryCheck: true
@@ -43,6 +47,8 @@ envoy-gateway:
   ref: v1.9.2
   upstream: envoy-gateway
 envoy-proxy:
+  deferred:
+  - envoy-tcp-listeners
   file: envoy-proxy.json
   folder: platform
   queryCheck: true

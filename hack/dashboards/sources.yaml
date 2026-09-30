@@ -230,6 +230,7 @@ dashboards:
     folder: platform
     tags: [observability-platform, cert-manager]
     queryCheck: true
+    deferred: [acme-issuer]
     mixinDefaults:
       containerCPUUsageSecondsTotalSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
       kubePodContainerResourceLimitsCpuCoresSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
@@ -244,6 +245,9 @@ dashboards:
     platform:
       anchor: 'certmanager_certificate_ready_status'
       dropVars: ['']
+      dropPanels:
+        - {title: ACME HTTP Requests/sec, reason: certmanager_http_acme_client_request_count is created only when an ACME issuer is used; requires acme-issuer}
+        - {title: ACME HTTP Request avg duration, reason: certmanager_http_acme_client_request_duration_seconds_* are created only when an ACME issuer is used; requires acme-issuer}
       addVars:
         - name: namespace
           label: cert-manager namespace
@@ -304,13 +308,20 @@ dashboards:
     tags: [observability-platform, nats]
     queryCheck: true
     platform:
-      anchor: 'gnatsd_varz_connections'
+      anchor: 'nats_varz_connections'
       datasourcePlaceholder: '${DS__NATS-PROMETHEUS}'
+      metricPrefixRewrite: &natsPrefix
+        # The NATS chart runs the exporter with prefix `nats`; the walkthrough
+        # dashboards were drawn for the exporter's default names.
+        gnatsd_: nats_
+        jetstream_server_: nats_server_
+        jetstream_stream_: nats_stream_
+        jetstream_consumer_: nats_consumer_
       replace:
-        - {from: 'gnatsd_varz_in_bytes', to: 'rate(gnatsd_varz_in_bytes[$__rate_interval])'}
-        - {from: 'gnatsd_varz_out_bytes', to: 'rate(gnatsd_varz_out_bytes[$__rate_interval])'}
-        - {from: 'gnatsd_varz_in_msgs', to: 'rate(gnatsd_varz_in_msgs[$__rate_interval])'}
-        - {from: 'gnatsd_varz_out_msgs', to: 'rate(gnatsd_varz_out_msgs[$__rate_interval])'}
+        - {from: 'nats_varz_in_bytes', to: 'rate(nats_varz_in_bytes[$__rate_interval])'}
+        - {from: 'nats_varz_out_bytes', to: 'rate(nats_varz_out_bytes[$__rate_interval])'}
+        - {from: 'nats_varz_in_msgs', to: 'rate(nats_varz_in_msgs[$__rate_interval])'}
+        - {from: 'nats_varz_out_msgs', to: 'rate(nats_varz_out_msgs[$__rate_interval])'}
       units:
         Server CPU: percent
         Server Memory: bytes
@@ -328,8 +339,9 @@ dashboards:
     tags: [observability-platform, nats]
     queryCheck: true
     platform:
-      anchor: 'jetstream_server_total_streams'
+      anchor: 'nats_server_total_streams'
       datasourcePlaceholder: '${DS__NATS-PROMETHEUS}'
+      metricPrefixRewrite: *natsPrefix
 
   # envoyproxy/gateway's addons dashboards. The proxies' scrape keeps only the
   # families envoy-proxy-global.json and envoy-clusters.json read (plus
@@ -351,6 +363,9 @@ dashboards:
       renameVars:
         Namespace: {name: namespace, label: namespace}
       regexMatchVars: [namespace, Runner]
+      replace:
+        # A counter created on the first panic: no series is the healthy state.
+        - {from: 'sum(watchable_panics_recovered_total{namespace="$namespace"})', to: 'sum(watchable_panics_recovered_total{namespace="$namespace"}) or vector(0)'}
       dropRows:
         - title: Wasm
           reason: wasm_* series exist only once a Wasm extension is configured, and export on a default install is not confirmed
@@ -363,11 +378,16 @@ dashboards:
     folder: platform
     tags: [observability-platform, envoy]
     queryCheck: true
+    deferred: [envoy-tcp-listeners]
     platform:
       anchor: 'envoy_server_live'
       renameVars:
         Namespace: {name: namespace, label: namespace}
       regexMatchVars: [namespace]
+      dropPanels:
+        - {title: TCP Downstream CPS, reason: envoy_tcp_downstream_* exist only when a TCP listener is configured; requires envoy-tcp-listeners}
+        - {title: TCP Downstream Bytes Rx/second, reason: envoy_tcp_downstream_* exist only when a TCP listener is configured; requires envoy-tcp-listeners}
+        - {title: TCP Downstream Bytes Tx/Second, reason: envoy_tcp_downstream_* exist only when a TCP listener is configured; requires envoy-tcp-listeners}
       units:
         Downstream RPS: reqps
         Downstream CPS: cps
@@ -391,12 +411,15 @@ dashboards:
     folder: platform
     tags: [observability-platform, envoy]
     queryCheck: true
+    deferred: [envoy-outlier-detection]
     platform:
       anchor: 'envoy_server_live'
       varAnchor: 'envoy_cluster_membership_total'
       renameVars:
         cluster: {name: envoy_cluster, label: envoy cluster}
         namespace: {name: route_namespace, label: route namespace}
+      dropPanels:
+        - {title: Outlier ejected, reason: envoy_cluster_outlier_detection_* exist only when outlier detection is configured; requires envoy-outlier-detection}
       units:
         Total requests: reqps
 

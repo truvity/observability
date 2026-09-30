@@ -53,6 +53,9 @@ scrapeLabels:
 optionalSources:
   node-exporter: no install runs node-exporter yet, so every node_* series is absent
   alertmanager: Alertmanager is optional; its job and metrics exist only where it is enabled
+  acme-issuer: no install issues from an ACME issuer, so certmanager_http_acme_client_* is never created
+  envoy-tcp-listeners: envoy_tcp_downstream_* is created only when a TCP listener exists
+  envoy-outlier-detection: envoy_cluster_outlier_detection_* is created only when outlier detection is configured
   cnpg-instance-metrics: the CloudNativePG instance exporter (:9187 on each Postgres pod) is not scraped yet, so every cnpg_* series is absent; the operator's own series are not
 
 # The two node jobs (metrics.scrape.kubelet, .cadvisor) are inline scrape
@@ -128,7 +131,7 @@ jobs:
       job: [argocd-application-controller-metrics, argocd-server-metrics, argocd-repo-server-metrics]
 
   - name: cert-manager
-    names: [up, certmanager_certificate_ready_status, certmanager_certificate_expiration_timestamp_seconds, certmanager_controller_sync_call_count, certmanager_http_acme_client_request_count, certmanager_http_acme_client_request_duration_seconds_sum, certmanager_http_acme_client_request_duration_seconds_count]
+    names: [up, certmanager_certificate_ready_status, certmanager_certificate_expiration_timestamp_seconds, certmanager_controller_sync_call_count]
     prefixes: [go_, process_]
     labels: *platformLabels
     values:
@@ -141,9 +144,14 @@ jobs:
     values:
       job: [cnpg-system/cnpg-cloudnative-pg]
 
+  # NATS series also carry the NATS cluster's own name as `cluster` (plus
+  # server_id, server_name, stream_name, consumer_name, account_name and
+  # is_meta_leader), so `cluster` is a label of this job. It is never the
+  # install: dashboards select the install by k8s_cluster_name, and the
+  # imported NATS dashboards use no `cluster` variable.
   - name: NATS
-    names: [up, gnatsd_varz_cpu, gnatsd_varz_mem, gnatsd_varz_in_bytes, gnatsd_varz_out_bytes, gnatsd_varz_in_msgs, gnatsd_varz_out_msgs, gnatsd_varz_connections, gnatsd_varz_subscriptions, gnatsd_varz_slow_consumers, gnatsd_varz_jetstream_stats_storage, gnatsd_varz_jetstream_stats_memory, gnatsd_varz_jetstream_config_max_storage, gnatsd_varz_jetstream_config_max_memory, jetstream_server_jetstream_disabled, jetstream_server_total_streams, jetstream_server_total_consumers, jetstream_stream_total_messages, jetstream_stream_total_bytes, jetstream_stream_last_seq, jetstream_consumer_delivered_consumer_seq, jetstream_consumer_num_pending, jetstream_consumer_num_ack_pending]
-    labels: *platformLabels
+    names: [up, nats_varz_cpu, nats_varz_mem, nats_varz_in_bytes, nats_varz_out_bytes, nats_varz_in_msgs, nats_varz_out_msgs, nats_varz_connections, nats_varz_subscriptions, nats_varz_slow_consumers, nats_varz_jetstream_stats_storage, nats_varz_jetstream_stats_memory, nats_varz_jetstream_config_max_storage, nats_varz_jetstream_config_max_memory, nats_server_jetstream_disabled, nats_server_total_streams, nats_server_total_consumers, nats_stream_total_messages, nats_stream_total_bytes, nats_stream_last_seq, nats_consumer_delivered_consumer_seq, nats_consumer_num_pending, nats_consumer_num_ack_pending]
+    labels: [job, instance, endpoint, service, cluster, k8s_cluster_name, k8s_namespace_name, deployment_environment_name, app_kubernetes_io_instance]
     values:
       job: [nats/nats]
 

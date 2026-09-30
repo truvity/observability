@@ -2245,7 +2245,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(count(jetstream_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"} == 1)) or (0 * count(jetstream_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"}))",
+          "expr": "(count(nats_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"} == 1)) or (0 * count(nats_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -2318,7 +2318,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(sum(increase(gnatsd_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}[1h]))) or (0 * count(gnatsd_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}))",
+          "expr": "(sum(increase(nats_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}[1h]))) or (0 * count(nats_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,

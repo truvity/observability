@@ -4541,246 +4541,6 @@ data:
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "description": "Rate of requests to ACME provider.",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "never",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "links": [],
-              "mappings": [],
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "reqps"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byValue",
-                  "options": {
-                    "op": "gte",
-                    "reducer": "allIsNull",
-                    "value": 0
-                  }
-                },
-                "properties": [
-                  {
-                    "id": "custom.hideFrom",
-                    "value": {
-                      "legend": true,
-                      "tooltip": true,
-                      "viz": false
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 16
-          },
-          "id": 5,
-          "interval": "20s",
-          "maxDataPoints": 250,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "expr": "sum by (method, path, status) (\n  rate(certmanager_http_acme_client_request_count{k8s_cluster_name=~\"$cluster\"}[$__rate_interval ])\n)",
-              "interval": "",
-              "legendFormat": "{{ method }} {{ path }} {{ status }}",
-              "refId": "A"
-            }
-          ],
-          "title": "ACME HTTP Requests/sec",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "description": "Average duration of requests to ACME provider. ",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "never",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "links": [],
-              "mappings": [],
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "s"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byValue",
-                  "options": {
-                    "op": "gte",
-                    "reducer": "allIsNull",
-                    "value": 0
-                  }
-                },
-                "properties": [
-                  {
-                    "id": "custom.hideFrom",
-                    "value": {
-                      "legend": true,
-                      "tooltip": true,
-                      "viz": false
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 16
-          },
-          "id": 6,
-          "interval": "30s",
-          "maxDataPoints": 250,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "expr": "sum by (method, path, status) (rate(certmanager_http_acme_client_request_duration_seconds_sum{k8s_cluster_name=~\"$cluster\"}[$__rate_interval ]))\n/\nsum by (method, path, status) (rate(certmanager_http_acme_client_request_duration_seconds_count{k8s_cluster_name=~\"$cluster\"}[$__rate_interval ]))",
-              "interval": "",
-              "legendFormat": "{{ method }} {{ path }} {{ status }}",
-              "refId": "A"
-            }
-          ],
-          "title": "ACME HTTP Request avg duration",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
           "description": "CPU Usage and limits, as percent of a vCPU core. ",
           "fieldConfig": {
             "defaults": {
@@ -4925,9 +4685,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 24
+            "y": 16
           },
-          "id": 7,
+          "id": 5,
           "interval": "1m",
           "maxDataPoints": 250,
           "options": {
@@ -5085,9 +4845,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 6,
-            "y": 24
+            "y": 16
           },
-          "id": 8,
+          "id": 6,
           "interval": "1m",
           "maxDataPoints": 250,
           "options": {
@@ -5269,9 +5029,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 12,
-            "y": 24
+            "y": 16
           },
-          "id": 9,
+          "id": 7,
           "interval": "1m",
           "maxDataPoints": 250,
           "options": {
@@ -5422,9 +5182,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 24
+            "y": 16
           },
-          "id": 10,
+          "id": 8,
           "interval": "1m",
           "options": {
             "legend": {
@@ -8615,115 +8375,11 @@ data:
               },
               "gridPos": {
                 "h": 12,
-                "w": 8,
+                "w": 12,
                 "x": 0,
                 "y": 49
               },
               "id": 20,
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": true,
-                  "sortBy": "Last *",
-                  "sortDesc": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "maxHeight": 600,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "avg by (envoy_cluster_name) (envoy_cluster_outlier_detection_ejections_active{k8s_cluster_name=~\"$cluster\",envoy_cluster_name=~\"$envoy_cluster\", envoy_cluster_name=~\".+?route/${route_namespace}/${resource}/rule/${rule}\"})",
-                  "hide": false,
-                  "instant": false,
-                  "legendFormat": "ejected {{envoy_cluster_name}}",
-                  "range": true,
-                  "refId": "C"
-                }
-              ],
-              "title": "Outlier ejected",
-              "type": "timeseries",
-              "description": "Endpoints currently ejected by outlier detection, per Envoy cluster. Ejection means the proxy saw repeated failures from them and stopped sending traffic."
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 10,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": 0
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "short"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 12,
-                "w": 8,
-                "x": 8,
-                "y": 49
-              },
-              "id": 21,
               "options": {
                 "legend": {
                   "calcs": [],
@@ -8823,11 +8479,11 @@ data:
               },
               "gridPos": {
                 "h": 12,
-                "w": 8,
-                "x": 16,
+                "w": 12,
+                "x": 12,
                 "y": 49
               },
-              "id": 22,
+              "id": 21,
               "options": {
                 "legend": {
                   "calcs": [],
@@ -9553,7 +9209,7 @@ data:
               },
               "disableTextWrap": false,
               "editorMode": "builder",
-              "expr": "sum(watchable_panics_recovered_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"})",
+              "expr": "sum(watchable_panics_recovered_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}) or vector(0)",
               "fullMetaSearch": false,
               "includeNullMetadata": true,
               "instant": false,
@@ -12921,300 +12577,6 @@ data:
           "description": "Client connections open on the listeners, by proxy namespace. A steady climb is clients not closing connections."
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "cps"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 6,
-            "x": 0,
-            "y": 16
-          },
-          "id": 10,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "maxHeight": 600,
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "builder",
-              "expr": "sum by(namespace) (rate(envoy_tcp_downstream_cx_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[5m]))",
-              "instant": false,
-              "legendFormat": "{{namespace}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "TCP Downstream CPS",
-          "type": "timeseries",
-          "description": "New TCP client connections per second on TCP routes, by proxy namespace."
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "Bps"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 6,
-            "x": 6,
-            "y": 16
-          },
-          "id": 11,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "maxHeight": 600,
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "builder",
-              "expr": "sum by(namespace) (rate(envoy_tcp_downstream_cx_rx_bytes_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[5m]))",
-              "instant": false,
-              "legendFormat": "{{namespace}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "TCP Downstream Bytes Rx/second",
-          "type": "timeseries",
-          "description": "Bytes per second received from clients on TCP routes."
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "Bps"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 6,
-            "x": 12,
-            "y": 16
-          },
-          "id": 12,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "maxHeight": 600,
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "builder",
-              "expr": "sum by(namespace) (rate(envoy_tcp_downstream_cx_tx_bytes_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[5m]))",
-              "instant": false,
-              "legendFormat": "{{namespace}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "TCP Downstream Bytes Tx/Second",
-          "type": "timeseries",
-          "description": "Bytes per second sent to clients on TCP routes."
-        },
-        {
           "collapsed": false,
           "datasource": {
             "type": "datasource",
@@ -13224,9 +12586,9 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 24
+            "y": 16
           },
-          "id": 13,
+          "id": 10,
           "panels": [],
           "targets": [
             {
@@ -13324,9 +12686,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 25
+            "y": 17
           },
-          "id": 14,
+          "id": 11,
           "options": {
             "legend": {
               "calcs": [
@@ -13444,9 +12806,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 6,
-            "y": 25
+            "y": 17
           },
-          "id": 15,
+          "id": 12,
           "options": {
             "legend": {
               "calcs": [
@@ -13566,9 +12928,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 12,
-            "y": 25
+            "y": 17
           },
-          "id": 16,
+          "id": 13,
           "options": {
             "legend": {
               "calcs": [
@@ -13713,9 +13075,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 25
+            "y": 17
           },
-          "id": 17,
+          "id": 14,
           "options": {
             "legend": {
               "calcs": [
@@ -13813,9 +13175,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 33
+            "y": 25
           },
-          "id": 18,
+          "id": 15,
           "options": {
             "legend": {
               "calcs": [],
@@ -13906,9 +13268,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 6,
-            "y": 33
+            "y": 25
           },
-          "id": 19,
+          "id": 16,
           "options": {
             "legend": {
               "calcs": [],
@@ -13949,9 +13311,9 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 41
+            "y": 33
           },
-          "id": 20,
+          "id": 17,
           "panels": [],
           "targets": [
             {
@@ -14049,9 +13411,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 42
+            "y": 34
           },
-          "id": 21,
+          "id": 18,
           "options": {
             "legend": {
               "calcs": [
@@ -14173,9 +13535,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 6,
-            "y": 42
+            "y": 34
           },
-          "id": 22,
+          "id": 19,
           "options": {
             "legend": {
               "calcs": [
@@ -14294,9 +13656,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 12,
-            "y": 42
+            "y": 34
           },
-          "id": 23,
+          "id": 20,
           "options": {
             "legend": {
               "calcs": [
@@ -14415,9 +13777,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 42
+            "y": 34
           },
-          "id": 24,
+          "id": 21,
           "options": {
             "legend": {
               "calcs": [
@@ -14462,9 +13824,9 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 50
+            "y": 42
           },
-          "id": 25,
+          "id": 22,
           "panels": [],
           "targets": [
             {
@@ -14563,9 +13925,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 51
+            "y": 43
           },
-          "id": 26,
+          "id": 23,
           "options": {
             "legend": {
               "calcs": [
@@ -14685,9 +14047,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 6,
-            "y": 51
+            "y": 43
           },
-          "id": 27,
+          "id": 24,
           "options": {
             "legend": {
               "calcs": [
@@ -14807,9 +14169,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 12,
-            "y": 51
+            "y": 43
           },
-          "id": 28,
+          "id": 25,
           "options": {
             "legend": {
               "calcs": [
@@ -14929,9 +14291,9 @@ data:
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 51
+            "y": 43
           },
-          "id": 29,
+          "id": 26,
           "options": {
             "legend": {
               "calcs": [
@@ -14972,9 +14334,9 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 59
+            "y": 51
           },
-          "id": 30,
+          "id": 27,
           "panels": [],
           "title": "TLS Certificates",
           "type": "row"
@@ -15042,9 +14404,9 @@ data:
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 60
+            "y": 52
           },
-          "id": 31,
+          "id": 28,
           "options": {
             "cellHeight": "sm",
             "footer": {
@@ -17566,7 +16928,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "(count(jetstream_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"} == 1)) or (0 * count(jetstream_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"}))",
+              "expr": "(count(nats_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"} == 1)) or (0 * count(nats_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -17639,7 +17001,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "(sum(increase(gnatsd_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}[1h]))) or (0 * count(gnatsd_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}))",
+              "expr": "(sum(increase(nats_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}[1h]))) or (0 * count(nats_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -29459,7 +28821,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(gnatsd_varz_jetstream_stats_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})/sum(gnatsd_varz_jetstream_config_max_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+              "expr": "sum(nats_varz_jetstream_stats_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})/sum(nats_varz_jetstream_config_max_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
               "interval": "",
               "legendFormat": "",
               "refId": "A",
@@ -29518,7 +28880,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(gnatsd_varz_jetstream_stats_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+              "expr": "sum(nats_varz_jetstream_stats_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
               "interval": "",
               "legendFormat": "",
               "refId": "A",
@@ -29585,7 +28947,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(gnatsd_varz_jetstream_stats_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})/sum(gnatsd_varz_jetstream_config_max_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+              "expr": "sum(nats_varz_jetstream_stats_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})/sum(nats_varz_jetstream_config_max_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
               "interval": "",
               "legendFormat": "",
               "refId": "A",
@@ -29644,7 +29006,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(gnatsd_varz_jetstream_stats_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+              "expr": "sum(nats_varz_jetstream_stats_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
               "interval": "",
               "legendFormat": "",
               "refId": "A",
@@ -29708,7 +29070,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(gnatsd_varz_connections{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+              "expr": "sum(nats_varz_connections{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
               "interval": "",
               "legendFormat": "",
               "refId": "A",
@@ -29767,7 +29129,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(gnatsd_varz_jetstream_config_max_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+              "expr": "sum(nats_varz_jetstream_config_max_storage{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
               "interval": "",
               "legendFormat": "",
               "refId": "A",
@@ -29826,7 +29188,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(gnatsd_varz_jetstream_config_max_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+              "expr": "sum(nats_varz_jetstream_config_max_memory{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
               "interval": "",
               "legendFormat": "",
               "refId": "A",
@@ -29889,7 +29251,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(jetstream_server_total_consumers{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
+              "expr": "sum(nats_server_total_consumers{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\"})",
               "interval": "",
               "legendFormat": "",
               "refId": "A",
@@ -29991,7 +29353,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(jetstream_stream_total_bytes{k8s_cluster_name=~\"$cluster\"}) by (stream_name)",
+              "expr": "sum(nats_stream_total_bytes{k8s_cluster_name=~\"$cluster\"}) by (stream_name)",
               "interval": "",
               "legendFormat": "{{stream_name}}",
               "refId": "A",
@@ -30080,7 +29442,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(jetstream_stream_total_messages{k8s_cluster_name=~\"$cluster\"}) by (stream_name)",
+              "expr": "sum(nats_stream_total_messages{k8s_cluster_name=~\"$cluster\"}) by (stream_name)",
               "interval": "",
               "legendFormat": "{{stream_name}}",
               "refId": "A",
@@ -30169,7 +29531,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(rate(jetstream_stream_last_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\"}[$__rate_interval])) by (stream_name)",
+              "expr": "sum(rate(nats_stream_last_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\"}[$__rate_interval])) by (stream_name)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{stream_name}}",
@@ -30273,7 +29635,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(rate(jetstream_consumer_num_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}[$__rate_interval])+rate(jetstream_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}[$__rate_interval])) by (consumer_name)",
+              "expr": "sum(rate(nats_consumer_num_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}[$__rate_interval])+rate(nats_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}[$__rate_interval])) by (consumer_name)",
               "hide": false,
               "instant": false,
               "interval": "",
@@ -30286,7 +29648,7 @@ data:
               }
             },
             {
-              "expr": "- sum(rate(jetstream_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\",consumer_name=~\"$consumer\"}[$__rate_interval])) by (consumer_name)",
+              "expr": "- sum(rate(nats_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\",consumer_name=~\"$consumer\"}[$__rate_interval])) by (consumer_name)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{consumer_name}} -",
@@ -30375,7 +29737,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(jetstream_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
+              "expr": "sum(nats_consumer_delivered_consumer_seq{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{consumer_name}}",
@@ -30466,7 +29828,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(jetstream_consumer_num_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
+              "expr": "sum(nats_consumer_num_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{consumer_name}}",
@@ -30557,7 +29919,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(jetstream_consumer_num_ack_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
+              "expr": "sum(nats_consumer_num_ack_pending{k8s_cluster_name=~\"$cluster\",server_id=~\"$server\",stream_name=~\"$stream\",consumer_name=~\"$consumer\"}) by (consumer_name)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{consumer_name}}",
@@ -30614,7 +29976,7 @@ data:
               "type": "prometheus",
               "uid": "${datasource}"
             },
-            "definition": "label_values(jetstream_server_total_streams, k8s_cluster_name)",
+            "definition": "label_values(nats_server_total_streams, k8s_cluster_name)",
             "hide": 0,
             "includeAll": false,
             "label": "cluster",
@@ -30622,7 +29984,7 @@ data:
             "name": "cluster",
             "options": [],
             "query": {
-              "query": "label_values(jetstream_server_total_streams, k8s_cluster_name)",
+              "query": "label_values(nats_server_total_streams, k8s_cluster_name)",
               "refId": "cluster-Variable-Query"
             },
             "refresh": 2,
@@ -30633,7 +29995,7 @@ data:
           },
           {
             "current": {},
-            "definition": "label_values(jetstream_server_total_streams{k8s_cluster_name=~\"$cluster\"}, server_id)",
+            "definition": "label_values(nats_server_total_streams{k8s_cluster_name=~\"$cluster\"}, server_id)",
             "hide": 0,
             "includeAll": true,
             "label": "Server",
@@ -30641,7 +30003,7 @@ data:
             "name": "server",
             "options": [],
             "query": {
-              "query": "label_values(jetstream_server_total_streams{k8s_cluster_name=~\"$cluster\"}, server_id)",
+              "query": "label_values(nats_server_total_streams{k8s_cluster_name=~\"$cluster\"}, server_id)",
               "refId": "server-Variable-Query"
             },
             "refresh": 2,
@@ -30656,7 +30018,7 @@ data:
           },
           {
             "current": {},
-            "definition": "label_values(jetstream_stream_last_seq{k8s_cluster_name=~\"$cluster\"}, stream_name)",
+            "definition": "label_values(nats_stream_last_seq{k8s_cluster_name=~\"$cluster\"}, stream_name)",
             "hide": 0,
             "includeAll": true,
             "label": "Stream",
@@ -30664,7 +30026,7 @@ data:
             "name": "stream",
             "options": [],
             "query": {
-              "query": "label_values(jetstream_stream_last_seq{k8s_cluster_name=~\"$cluster\"}, stream_name)",
+              "query": "label_values(nats_stream_last_seq{k8s_cluster_name=~\"$cluster\"}, stream_name)",
               "refId": "stream-Variable-Query"
             },
             "refresh": 2,
@@ -30679,7 +30041,7 @@ data:
           },
           {
             "current": {},
-            "definition": "label_values(jetstream_consumer_num_pending{k8s_cluster_name=~\"$cluster\"}, consumer_name)",
+            "definition": "label_values(nats_consumer_num_pending{k8s_cluster_name=~\"$cluster\"}, consumer_name)",
             "hide": 0,
             "includeAll": true,
             "label": "Consumer",
@@ -30687,7 +30049,7 @@ data:
             "name": "consumer",
             "options": [],
             "query": {
-              "query": "label_values(jetstream_consumer_num_pending{k8s_cluster_name=~\"$cluster\"}, consumer_name)",
+              "query": "label_values(nats_consumer_num_pending{k8s_cluster_name=~\"$cluster\"}, consumer_name)",
               "refId": "consumer-Variable-Query"
             },
             "refresh": 2,
@@ -30941,10 +30303,10 @@ data:
           },
           "targets": [
             {
-              "expr": "gnatsd_varz_cpu{k8s_cluster_name=~\"$cluster\"}",
+              "expr": "nats_varz_cpu{k8s_cluster_name=~\"$cluster\"}",
               "intervalFactor": 2,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_cpu",
+              "metric": "nats_varz_cpu",
               "refId": "A",
               "step": 4,
               "datasource": {
@@ -31037,10 +30399,10 @@ data:
           },
           "targets": [
             {
-              "expr": "gnatsd_varz_mem{k8s_cluster_name=~\"$cluster\"}",
+              "expr": "nats_varz_mem{k8s_cluster_name=~\"$cluster\"}",
               "intervalFactor": 2,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_mem",
+              "metric": "nats_varz_mem",
               "refId": "A",
               "step": 4,
               "datasource": {
@@ -31144,10 +30506,10 @@ data:
           },
           "targets": [
             {
-              "expr": "rate(gnatsd_varz_in_bytes{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
+              "expr": "rate(nats_varz_in_bytes{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
               "intervalFactor": 2,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_in_bytes",
+              "metric": "nats_varz_in_bytes",
               "refId": "A",
               "step": 10,
               "datasource": {
@@ -31238,10 +30600,10 @@ data:
           },
           "targets": [
             {
-              "expr": "rate(gnatsd_varz_in_msgs{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
+              "expr": "rate(nats_varz_in_msgs{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
               "intervalFactor": 2,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_in_msgs",
+              "metric": "nats_varz_in_msgs",
               "refId": "A",
               "step": 10,
               "datasource": {
@@ -31332,10 +30694,10 @@ data:
           },
           "targets": [
             {
-              "expr": "rate(gnatsd_varz_out_bytes{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
+              "expr": "rate(nats_varz_out_bytes{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
               "intervalFactor": 2,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_out_bytes",
+              "metric": "nats_varz_out_bytes",
               "refId": "A",
               "step": 10,
               "datasource": {
@@ -31426,10 +30788,10 @@ data:
           },
           "targets": [
             {
-              "expr": "rate(gnatsd_varz_out_msgs{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
+              "expr": "rate(nats_varz_out_msgs{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])",
               "intervalFactor": 2,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_out_msgs",
+              "metric": "nats_varz_out_msgs",
               "refId": "A",
               "step": 10,
               "datasource": {
@@ -31536,10 +30898,10 @@ data:
           },
           "targets": [
             {
-              "expr": "gnatsd_varz_connections{k8s_cluster_name=~\"$cluster\"}",
+              "expr": "nats_varz_connections{k8s_cluster_name=~\"$cluster\"}",
               "intervalFactor": 1,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_connections",
+              "metric": "nats_varz_connections",
               "refId": "A",
               "step": 2,
               "datasource": {
@@ -31633,11 +30995,11 @@ data:
           },
           "targets": [
             {
-              "expr": "gnatsd_varz_subscriptions{k8s_cluster_name=~\"$cluster\"}",
+              "expr": "nats_varz_subscriptions{k8s_cluster_name=~\"$cluster\"}",
               "hide": false,
               "intervalFactor": 2,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_subscriptions",
+              "metric": "nats_varz_subscriptions",
               "refId": "A",
               "step": 4,
               "datasource": {
@@ -31731,10 +31093,10 @@ data:
           },
           "targets": [
             {
-              "expr": "gnatsd_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}",
+              "expr": "nats_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}",
               "intervalFactor": 1,
               "legendFormat": "{{server_id}}",
-              "metric": "gnatsd_varz_slow_consumers",
+              "metric": "nats_varz_slow_consumers",
               "refId": "A",
               "step": 2,
               "datasource": {
@@ -31785,7 +31147,7 @@ data:
               "type": "prometheus",
               "uid": "${datasource}"
             },
-            "definition": "label_values(gnatsd_varz_connections, k8s_cluster_name)",
+            "definition": "label_values(nats_varz_connections, k8s_cluster_name)",
             "hide": 0,
             "includeAll": false,
             "label": "cluster",
@@ -31793,7 +31155,7 @@ data:
             "name": "cluster",
             "options": [],
             "query": {
-              "query": "label_values(gnatsd_varz_connections, k8s_cluster_name)",
+              "query": "label_values(nats_varz_connections, k8s_cluster_name)",
               "refId": "cluster-Variable-Query"
             },
             "refresh": 2,

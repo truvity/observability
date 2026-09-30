@@ -1909,115 +1909,11 @@
           },
           "gridPos": {
             "h": 12,
-            "w": 8,
+            "w": 12,
             "x": 0,
             "y": 49
           },
           "id": 20,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true,
-              "sortBy": "Last *",
-              "sortDesc": true
-            },
-            "tooltip": {
-              "hideZeros": false,
-              "maxHeight": 600,
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "code",
-              "expr": "avg by (envoy_cluster_name) (envoy_cluster_outlier_detection_ejections_active{k8s_cluster_name=~\"$cluster\",envoy_cluster_name=~\"$envoy_cluster\", envoy_cluster_name=~\".+?route/${route_namespace}/${resource}/rule/${rule}\"})",
-              "hide": false,
-              "instant": false,
-              "legendFormat": "ejected {{envoy_cluster_name}}",
-              "range": true,
-              "refId": "C"
-            }
-          ],
-          "title": "Outlier ejected",
-          "type": "timeseries",
-          "description": "Endpoints currently ejected by outlier detection, per Envoy cluster. Ejection means the proxy saw repeated failures from them and stopped sending traffic."
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "barWidthFactor": 0.6,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "never",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "links": [],
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": 0
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "short"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 12,
-            "w": 8,
-            "x": 8,
-            "y": 49
-          },
-          "id": 21,
           "options": {
             "legend": {
               "calcs": [],
@@ -2117,11 +2013,11 @@
           },
           "gridPos": {
             "h": 12,
-            "w": 8,
-            "x": 16,
+            "w": 12,
+            "x": 12,
             "y": 49
           },
-          "id": 22,
+          "id": 21,
           "options": {
             "legend": {
               "calcs": [],
