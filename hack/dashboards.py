@@ -26,6 +26,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "hack" / "dashboards"))
 
 import fleet_overview  # noqa: E402  (hack/dashboards/fleet_overview.py)
+import kargo as kargo_dashboard  # noqa: E402  (hack/dashboards/kargo.py)
+import platform_extras  # noqa: E402  (hack/dashboards/platform_extras.py)
+import platform_adapt  # noqa: E402  (hack/dashboards/platform_adapt.py)
 from descriptions import DESCRIPTIONS  # noqa: E402
 
 AVAILABLE = ROOT / "hack" / "dashboards" / "available-metrics.yaml"
@@ -302,6 +305,10 @@ NAV_LINKS = [
     ("Store dashboards", "observability-stores", "The observability stack's own health"),
 ]
 
+# Carried by the platform-component dashboards only, so the dashboards that
+# shipped before them are byte-for-byte what they were.
+PLATFORM_NAV_LINK = ("Platform dashboards", "observability-platform", "ArgoCD, cert-manager, CloudNativePG, NATS, Envoy Gateway and Kargo")
+
 
 def add_navigation(dashboard, spec) -> None:
     tags = list(dashboard.get("tags") or [])
@@ -311,7 +318,10 @@ def add_navigation(dashboard, spec) -> None:
     dashboard["tags"] = tags
     links = list(dashboard.get("links") or [])
     have = {l.get("title") for l in links}
-    for title, tag, tip in NAV_LINKS:
+    nav = list(NAV_LINKS)
+    if "observability-platform" in spec.get("tags", []):
+        nav.append(PLATFORM_NAV_LINK)
+    for title, tag, tip in nav:
         if title in have:
             continue
         links.append({
@@ -549,7 +559,7 @@ def adapt_k8s_views(dashboard, name: str) -> None:
 def build_one(spec: dict, bundles: dict) -> None:
     name = spec["name"]
     if spec.get("generator"):
-        dashboard = fleet_overview.build()
+        dashboard = GENERATORS[spec["generator"]].build()
         url = spec["generator"]
     elif spec.get("bundle"):
         bundle = bundles[spec["bundle"]]
@@ -557,7 +567,10 @@ def build_one(spec: dict, bundles: dict) -> None:
         dashboard = load_bundle_dashboard(url, spec["bundleKey"])
     else:
         url = spec["url"].format(ref=spec["ref"])
-        dashboard = json.loads(fetch(url))
+        raw = fetch(url)
+        if spec.get("mixinDefaults"):
+            raw = platform_adapt.render_mixin_defaults(raw, spec["mixinDefaults"])
+        dashboard = json.loads(raw)
 
     dashboard["uid"] = stable_uid(name)
 
@@ -570,6 +583,8 @@ def build_one(spec: dict, bundles: dict) -> None:
     elif spec.get("adapt") == "k8s-views":
         rename_datasource_var(dashboard)
         adapt_k8s_views(dashboard, name)
+    elif spec.get("adapt") == "platform":
+        REPORTS[name] = platform_adapt.adapt(dashboard, spec, metric_available, platform_extras.extras)
     elif spec.get("preRenamed"):
         # kubelet: already has `datasource` and `cluster` variables in the
         # right shape; only the label under `cluster` needs to change.
@@ -623,7 +638,7 @@ def write_catalog(manifest: dict) -> None:
         # Provenance of a dashboard adopted from a third party, and whether
         # tests/dashboard_queries_test.go holds it to the available-metrics
         # allow-list.
-        for key in ("upstream", "authored", "ref", "queryCheck", "requires"):
+        for key in ("upstream", "authored", "ref", "queryCheck", "requires", "deferred"):
             if key in spec:
                 entry[key] = spec[key]
         catalog[spec["name"]] = entry
@@ -642,6 +657,11 @@ def write_catalog(manifest: dict) -> None:
 
 
 MANIFEST: dict = {}
+REPORTS: dict = {}
+GENERATORS = {
+    "hack/dashboards/fleet_overview.py": fleet_overview,
+    "hack/dashboards/kargo.py": kargo_dashboard,
+}
 
 
 def write_notices(manifest: dict) -> None:

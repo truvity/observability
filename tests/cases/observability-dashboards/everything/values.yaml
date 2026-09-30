@@ -13,6 +13,7 @@ folders:
   kubernetes: K8s
   infrastructure: Infra
   stores: Stores
+  platform: Platform-Set
 
 home: k8s-views-global
 
@@ -44,6 +45,24 @@ dashboards:
   node-exporter-full:
     enabled: true
   kubelet:
+    enabled: true
+  argocd:
+    enabled: true
+  cert-manager:
+    enabled: true
+  cnpg-operator:
+    enabled: true
+  nats-server:
+    enabled: true
+  nats-jetstream:
+    enabled: true
+  envoy-gateway:
+    enabled: true
+  envoy-proxy:
+    enabled: true
+  envoy-clusters:
+    enabled: true
+  kargo:
     enabled: true
 
 extraDashboards:

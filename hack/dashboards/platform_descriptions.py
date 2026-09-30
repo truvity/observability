@@ -1,0 +1,161 @@
+"""Descriptions for the panels of the adapted platform dashboards.
+
+Keyed by (dashboard, panel title); a ("*", title) entry serves every
+dashboard. The upstream dashboards describe only some of their panels;
+docs/dashboards.md requires every panel to say what it shows and what to do
+about it. Applied by hack/dashboards/platform_adapt.py to a panel that has
+none; upstream's own wording, where it exists, is kept.
+"""
+
+_D = {}
+
+
+def _add(dashboard, entries):
+    for title, text in entries.items():
+        _D[(dashboard, title)] = text
+
+
+_add("argocd", {
+    "Uptime": "How long the Argo CD API server has been running. A value that keeps resetting is a crash loop: read the server's pod events.",
+    "Clusters": "Destination clusters Argo CD manages. A number that changes with no planned cluster change means a cluster was removed or its credentials expired.",
+    "Applications": "Applications matching the health, sync and destination filters above. Compare with the total to see how much is in trouble.",
+    "Repositories": "Distinct Git repositories the applications track. Use it as a scale figure; an unexpected drop is applications that lost their source.",
+    "Operations": "Applications with a sync or refresh operation in flight now. A number that stays high for long is a stuck operation: open the application and read its operation state.",
+    "Applications over time": "Applications by the chosen grouping over time. A step is applications added or removed; a slow slide is applications leaving the selected filters.",
+    "Health Status": "Applications by health status over time. Anything other than Healthy for long, especially Degraded or Missing, needs a look: open the application and read the failing resource.",
+    "Sync Status": "Applications by sync status over time. OutOfSync that persists means Git and the cluster disagree and nothing is reconciling it: check auto-sync and the last sync result.",
+    "Sync Activity": "Syncs started in each interval, by the chosen grouping. A burst is a deploy or a sync loop; a flat zero on a busy estate is a controller that stopped.",
+    "Sync Failures": "Syncs that ended in Error or Failed in each interval. Should be zero. Open the affected application and read the sync result message.",
+    "Reconciliation Activity": "Application reconciliations in each interval, by the chosen grouping. A sudden rise is a resync storm; a fall to zero means the application controller is not reconciling.",
+    "Reconciliation Performance": "Distribution of how long an application reconcile takes. A band that moves up means slow Git or a heavy manifest: compare with the repo server panels.",
+    "K8s API Activity": "Kubernetes API requests the controller made in each interval, by verb and resource kind. A spike is a resync or a cluster watch restarting; sustained high volume can throttle the API server.",
+    "Workqueue Depth": "Items waiting in the application controller's work queues. A depth that does not drain means reconciles are slower than changes arrive: check the controller's CPU and the repo server.",
+    "Pending kubectl run": "kubectl commands the controller has queued and not started. A number that grows means the controller is short of exec capacity.",
+    "Controller memory usage": "Go heap allocated by the application controller. A steady climb over days is a leak or a growing estate; a jump on restart is the cluster cache filling.",
+    "Controller CPU usage": "CPU seconds per second used by the application controller. Sustained near its limit means reconciles queue behind it.",
+    "Controller goroutines": "Goroutines in the application controller. A count that only grows is a leak; compare with memory.",
+    "Resource Objects Count": "Kubernetes objects Argo CD caches per destination cluster. Growth is the estate growing; it also sizes the controller's memory.",
+    "API Resources Count": "API resource kinds Argo CD watches per destination cluster. A change with no CRD change points at a cluster upgrade or a broken discovery.",
+    "Cluster Events Count": "Cluster events the controller processed in each interval, per destination cluster. Sustained high volume is a noisy workload driving reconciles.",
+    "Git Requests (ls-remote)": "Git ls-remote calls the repo server made in each window, to detect new commits. A rise means more applications or a shorter refresh interval; failures show in sync errors.",
+    "Git Requests (checkout)": "Git fetches the repo server made in each window, to render manifests. A rise is new commits or cache misses; sustained high volume loads the Git host.",
+    "Git Fetch Performance": "Distribution of Git fetch durations. A band that moves up is a slow Git host or network: sync latency follows.",
+    "Git Ls-Remote Performance": "Distribution of Git ls-remote durations. A band that moves up delays the detection of new commits.",
+    "API server memory used": "Go heap allocated by the Argo CD API server. A steady climb is a leak; a jump follows a restart.",
+    "API server goroutines": "Goroutines in the Argo CD API server. A count that only grows is a leak; compare with memory.",
+    "Repo server memory used": "Go heap allocated by the repo server. Large manifests and many parallel renders raise it; a steady climb is a leak.",
+    "Repo server goroutines": "Goroutines in the repo server. A count that only grows is a leak; compare with memory.",
+    "GC Time Quantiles": "Go garbage-collection pause of the API server, worst case. Long pauses mean memory pressure: compare with the memory panel.",
+    "Requests by result": "Redis requests made by Argo CD components, split by whether they failed. The failed series should be zero; a rise means Redis is unavailable or slow and the UI and controller cache suffer.",
+})
+for _svc in ("Application", "Cluster", "Project", "Repository", "Session", "Version", "Account", "Settings"):
+    _add("argocd", {
+        "%sService Requests" % _svc: "gRPC calls to the API server's %s service in each interval, by method and result code. Non-OK codes are the ones to read: a rise in errors on a method is a failing feature or a client misbehaving." % _svc,
+    })
+
+_add("cert-manager", {
+    "Soonest Cert Expiry": "Time left before the soonest certificate expires, across the selected cluster. Below two weeks and not renewing means an issuer or an ACME challenge is failing: open the Certificates table and read the Ready status.",
+})
+
+_add("cnpg-operator", {
+    "Operator pods up": "CloudNativePG operator metrics endpoints answering. Zero means the operator is down or not scraped: no Postgres cluster is being reconciled, and the panels below are empty.",
+}, )
+
+_add("nats-server", {
+    "Server CPU": "CPU used by each NATS server, in percent of one core. Sustained high values mean the server is saturated: look at message rate and connection count.",
+    "Server Memory": "Resident memory of each NATS server. A steady climb is a slow consumer holding messages or a leak; a JetStream server also holds memory-backed streams here.",
+    "Bytes In": "Bytes per second received by each server from clients and routes. Read with Bytes Out: a large gap is fan-in or fan-out, not a fault.",
+    "NATS Msgs In": "Messages per second received by each server. A drop to zero on a busy subject is a publisher that stopped.",
+    "Bytes Out": "Bytes per second sent by each server to clients and routes. A rise with flat input is fan-out growing: more subscribers.",
+    "NATS Msgs Out": "Messages per second sent by each server. A rise with flat input is more subscribers; a fall with flat input is subscribers that left or fell behind.",
+    "Connections": "Client connections open on each server. A sudden drop is a server restart or a network split; a steady rise is a client leaking connections.",
+    "Subscriptions": "Subscriptions registered on each server. Growth without more clients is a subscription leak.",
+    "Slow Consumers": "Clients the server disconnected or dropped messages for because they could not keep up. Should be zero. Find the client behind it and raise its pending limit or speed it up.",
+})
+
+_add("nats-jetstream", {
+    "Storage Used": "File-backed JetStream storage used, as a share of the configured maximum, across the selected servers. Past 80% means streams will start refusing writes: add storage or trim stream limits.",
+    "Total Storage Used": "Bytes of file-backed JetStream storage in use across the selected servers.",
+    "Memory Used": "JetStream memory storage in use, as a share of the configured maximum. Past 80% means memory-backed streams are close to their limit: raise the limit or move the stream to file storage.",
+    "Connections": "Client connections across the selected servers, for scale.",
+    "Max Storage": "Configured maximum of JetStream file storage across the selected servers. The denominator of Storage Used.",
+    "Total Memory": "Configured maximum of JetStream memory storage across the selected servers. The denominator of the memory gauge.",
+    "Total Consumers": "JetStream consumers across the selected servers. A sudden fall is consumers deleted or a server that lost its state.",
+    "Stream data size": "Bytes held by each stream. A stream that only grows is missing a retention limit; a fall is retention or a purge working.",
+    "Stream message count": "Messages held by each stream. Compare with the size panel: many small messages and a few large ones cost differently.",
+    "Message Rate (per second)": "Messages per second appended to each stream, from its last sequence number. Zero on a stream that should be busy means its publishers stopped.",
+    "Total delivered messages": "Messages delivered to each consumer since it was created. It should keep rising for an active consumer; a flat line is a consumer that stopped receiving.",
+    "Pending messages": "Messages a consumer has not yet been sent. A number that only grows is a consumer that cannot keep up: scale it or read its acknowledgement errors.",
+    "Message Acks Pending": "Messages delivered to a consumer and not yet acknowledged. A large or growing number is a slow or stuck handler; messages will be redelivered after the ack wait.",
+})
+
+_add("envoy-gateway", {
+    "Duration Status": "Average time the selected runner takes to process a resource update, in milliseconds. A rise means the controller is slower to react to Gateway API changes.",
+    "Statistics": "Updates the selected runner processed, by outcome. Failures should be zero: a rise means resources are being refused; read the controller's log.",
+    "Avg Duration": "Average time to write a status back to Gateway API resources, by kind. A rise means the API server is slow or the controller is backed up.",
+    "p99 Duration": "99th-percentile time to write a status back, by kind. Long tails delay the Accepted and Programmed conditions users wait on.",
+    "p50 Duration": "Median time to write a status back, by kind. The baseline the p99 is read against.",
+    "Status": "Status updates by outcome. Failures should be zero; a rise means the controller cannot write conditions back to resources.",
+    "Snapshot Creation Status": "xDS snapshots the controller built, in total and by outcome. Failures mean a configuration it could not translate: read the controller's log and the resource's conditions.",
+    "Finished Stream": "The highest bucket count of finished delta xDS streams. Context for how many proxy connections came and went; a steady climb means proxies reconnect often.",
+    "Update Status": "xDS snapshot updates pushed to proxies, by outcome. Failures mean a proxy did not get its configuration: check the proxy's connection to the controller.",
+    "Total Apply Duration Bucket": "Distribution of how long applying an infrastructure resource (proxy Deployment and Service) took, in cumulative buckets. Most of the mass should sit in the low buckets.",
+    "Avg Apply Duration": "Average time to apply infrastructure resources, by kind. A rise means the Kubernetes API is slow or contended.",
+    "p99 Apply Duration": "99th-percentile time to apply infrastructure resources, by kind. Long tails delay a new Gateway becoming ready.",
+    "p50 Apply Duration": "Median time to apply infrastructure resources, by kind. The baseline the p99 is read against.",
+    "Total Delete Duration Bucket": "Distribution of how long deleting an infrastructure resource took, in cumulative buckets.",
+    "Avg Delete Duration": "Average time to delete infrastructure resources, by kind. A rise delays cleanup after a Gateway is removed.",
+    "p99 Delete Duration": "99th-percentile time to delete infrastructure resources, by kind.",
+    "p50 Delete Duration": "Median time to delete infrastructure resources, by kind. The baseline the p99 is read against.",
+})
+
+_add("*", {
+    "Live servers": "Envoy proxies reporting live now. Zero means no data plane is serving; compare with the number of proxy pods you expect.",
+    "Avg uptime per node": "Average time the proxies have been running. A value that keeps resetting is a crash loop or repeated restarts: read the proxy pods' events.",
+    "Heap Size": "Envoy heap memory reserved from the operating system, per proxy. Compare with the pod's memory limit.",
+    "Allocated Memory": "Envoy heap memory in use, per proxy. Compare with the pod's memory limit; a steady climb is a leak or a growing configuration.",
+})
+
+_add("envoy-proxy", {
+    "Downstream RPS": "HTTP requests per second received by all proxies. The traffic level the rest of the dashboard is read against; a fall to zero with no cause is an outage upstream of the gateway.",
+    "Downstream CPS": "New client connections per second, by proxy namespace. A spike is a client reconnecting in a loop or a connection-per-request client.",
+    "Downstream Latency": "Client-facing request latency at p50, p90 and p99, in milliseconds. A rising p99 with a flat p50 is a slow backend or a saturated proxy.",
+    "Downstream Total Connections": "Client connections open on the listeners, by proxy namespace. A steady climb is clients not closing connections.",
+    "TCP Downstream CPS": "New TCP client connections per second on TCP routes, by proxy namespace.",
+    "TCP Downstream Bytes Rx/second": "Bytes per second received from clients on TCP routes.",
+    "TCP Downstream Bytes Tx/Second": "Bytes per second sent to clients on TCP routes.",
+    "Upstream CPS": "New connections per second from the proxies to backends, by proxy namespace. High churn with low request rate means connections are not reused.",
+    "Upstream Latency": "Backend request latency at p50, p90 and p99, in milliseconds. Compare with the downstream latency to see how much time the backend accounts for.",
+    "Upstream Total Connections": "Connections open from the proxies to backends, by proxy namespace. A steady climb is a backend not closing idle connections.",
+    "Upstream Bytes Rx/Second": "Bytes per second received from backends.",
+    "Upstream Bytes Tx/Second": "Bytes per second sent to backends.",
+    "Upstream 2xx Responses": "Backend responses per second with a 2xx status. The healthy baseline the error panels are read against.",
+    "Upstream 3xx Responses": "Backend responses per second with a 3xx status (redirects).",
+    "Upstream 4xx Responses": "Backend responses per second with a 4xx status. A rise is clients sending bad requests or a broken route or auth policy.",
+    "Upstream 5xx Responses": "Backend responses per second with a 5xx status. Should be near zero. A rise is a failing backend: open the Envoy clusters dashboard to see which one.",
+    "Endpoint Percentage Health": "Healthy endpoints as a share of all endpoints known to the proxies, by proxy namespace. Below 100% means backends are failing health checks or being removed.",
+    "Total Endpoints": "Backend endpoints known to the proxies, by proxy namespace.",
+    "Healthy Endpoints": "Backend endpoints currently healthy, by proxy namespace.",
+    "Unhealthy Endpoints": "Backend endpoints known to the proxies but not healthy, by proxy namespace. Should be zero; find them in the Envoy clusters dashboard.",
+    "TLS Certificate Expiry": "Days until each certificate served by the listeners expires. Under 14 days and not renewing means cert-manager or the issuer is failing: open the cert-manager dashboard.",
+})
+
+_add("envoy-clusters", {
+    "Unhealthy Clusters": "Endpoints that are known to the selected Envoy cluster and not healthy. Should be zero; if not, the panels below name the cluster.",
+    "Cluster State": "One when every endpoint of the selected clusters is healthy, zero otherwise.",
+    "Total active connections": "Connections open from the proxies to each selected Envoy cluster. A steady climb is connections not being closed.",
+    "Total requests": "Requests per second sent to each selected Envoy cluster. A cluster at zero that should carry traffic is unrouted.",
+    "Upstream Network Traffic": "Bytes per second received from and sent to each selected Envoy cluster (received above, sent below, per series). A cluster with requests and no bytes returns empty answers.",
+    "Downstream Network Traffic": "Bytes per second received from and sent to clients on HTTP listeners. The client side of the traffic in the panel beside it.",
+    "Upstream Latency": "Request latency at p50, p90 and p99 for each selected Envoy cluster, in milliseconds. One cluster far above the others is a slow backend.",
+    "Upstream 2xx Responses": "Responses per second with a 2xx status from each selected Envoy cluster. The healthy baseline.",
+    "Upstream 3xx Responses": "Responses per second with a 3xx status from each selected Envoy cluster (redirects).",
+    "Upstream 4xx Responses": "Responses per second with a 4xx status from each selected Envoy cluster. A rise is a broken route, auth policy or a client sending bad requests.",
+    "Upstream 5xx Responses": "Responses per second with a 5xx status from each selected Envoy cluster. Should be near zero; the cluster with the rate is the failing backend.",
+    "Downstream members": "Healthy endpoints in the selected Envoy clusters, in total and per cluster; the second panel adds the unhealthy count. A fall is backends leaving or failing health checks.",
+    "Outlier ejected": "Endpoints currently ejected by outlier detection, per Envoy cluster. Ejection means the proxy saw repeated failures from them and stopped sending traffic.",
+    "Degraded": "Endpoints marked degraded, per Envoy cluster: still receiving traffic at a reduced share.",
+    "Excluded": "Endpoints excluded from load balancing, per Envoy cluster, for example while draining.",
+})
+
+DESCRIPTIONS = _D

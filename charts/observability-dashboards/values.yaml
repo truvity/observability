@@ -30,7 +30,9 @@ datasources:
 
 # -- Display names for the folders the shipped set files into.
 # `fleet` holds the home page (Fleet overview); `kubernetes` the cluster,
-# namespace and pod drill-down views. Infrastructure dashboards are keyed
+# namespace and pod drill-down views; `platform` the platform components
+# (ArgoCD, cert-manager, CloudNativePG, NATS, Envoy Gateway, Kargo).
+# Infrastructure dashboards are keyed
 # by cluster, in one folder: the same components run on every cluster and
 # the question is always "which one". Store dashboards are the stack's own
 # health. A project's
@@ -62,6 +64,7 @@ folders:
   kubernetes: Kubernetes
   infrastructure: Infrastructure
   stores: Observability
+  platform: Platform
 
 # -- The dashboard designated as the estate's home page: the name of one
 # ENABLED shipped dashboard, or "" for none. The chart annotates that
@@ -122,6 +125,30 @@ dashboards:
   node-exporter-full:
     enabled: true
   kubelet:
+    enabled: true
+  # The platform components. Each reads only series the component's scrape
+  # produces (hack/dashboards/available-metrics.yaml), so a component an
+  # install does not run leaves its dashboard empty, never wrong; turn it off
+  # to drop it. The Fleet overview's platform tiles link to argocd,
+  # cert-manager, nats-jetstream, envoy-proxy and cnpg-operator, so
+  # disabling one of those leaves a link that opens "not found".
+  argocd:
+    enabled: true
+  cert-manager:
+    enabled: true
+  cnpg-operator:
+    enabled: true
+  nats-server:
+    enabled: true
+  nats-jetstream:
+    enabled: true
+  envoy-gateway:
+    enabled: true
+  envoy-proxy:
+    enabled: true
+  envoy-clusters:
+    enabled: true
+  kargo:
     enabled: true
 
 # -- The estate's own dashboards, held to the same lint as the shipped

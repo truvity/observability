@@ -10,6 +10,44 @@ alertmanager:
   requires:
   - alertmanager
   upstream: kube-prometheus
+argocd:
+  file: argocd.json
+  folder: platform
+  queryCheck: true
+  ref: v3.5.3
+  upstream: argo-cd
+cert-manager:
+  file: cert-manager.json
+  folder: platform
+  queryCheck: true
+  ref: v1.6.0
+  upstream: cert-manager-mixin
+cnpg-operator:
+  deferred:
+  - cnpg-instance-metrics
+  file: cnpg-operator.json
+  folder: platform
+  queryCheck: true
+  ref: cluster-v0.0.5
+  upstream: cloudnative-pg
+envoy-clusters:
+  file: envoy-clusters.json
+  folder: platform
+  queryCheck: true
+  ref: v1.9.2
+  upstream: envoy-gateway
+envoy-gateway:
+  file: envoy-gateway.json
+  folder: platform
+  queryCheck: true
+  ref: v1.9.2
+  upstream: envoy-gateway
+envoy-proxy:
+  file: envoy-proxy.json
+  folder: platform
+  queryCheck: true
+  ref: v1.9.2
+  upstream: envoy-gateway
 fleet-overview:
   authored: true
   file: fleet-overview.json
@@ -33,10 +71,27 @@ k8s-views-pods:
   queryCheck: true
   ref: v3.0.8
   upstream: dotdc
+kargo:
+  authored: true
+  file: kargo.json
+  folder: platform
+  queryCheck: true
 kubelet:
   file: kubelet.json
   folder: infrastructure
   upstream: kube-prometheus
+nats-jetstream:
+  file: nats-jetstream.json
+  folder: platform
+  queryCheck: true
+  ref: v0.20.2
+  upstream: nats-exporter
+nats-server:
+  file: nats-server.json
+  folder: platform
+  queryCheck: true
+  ref: v0.20.2
+  upstream: nats-exporter
 node-exporter-full:
   file: node-exporter-full.json
   folder: infrastructure

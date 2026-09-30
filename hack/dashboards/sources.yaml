@@ -162,6 +162,253 @@ dashboards:
     tags: [observability-kubernetes, kubernetes]
     queryCheck: true
 
+  # -- Platform components (charts/observability-dashboards 0.13.0). The same
+  # contract and the same query check as the operational views, plus the
+  # absent-metric rule: a panel reads only metrics and labels in
+  # available-metrics.yaml and available-labels.yaml, so a panel whose series
+  # no scrape produces is dropped here and listed in the PR, never shipped
+  # empty. Rewritten by hack/dashboards/platform_adapt.py from each source's
+  # `platform:` block. Job names follow the converters: a ServiceMonitor's
+  # job is its Service name, a PodMonitor's is `<namespace>/<podmonitor name>`.
+
+  # argo-cd's own example dashboard. Upstream's `cluster` picker is an
+  # application's DESTINATION cluster, so it is renamed `destination` and the
+  # contract's `cluster` (the install) is added; its `interval` picker becomes
+  # `resolution` so a range vector built from it is a duration in every query
+  # tool; its namespace picker lists the namespaces that hold applications.
+  - name: argocd
+    upstream: argo-cd
+    url: https://raw.githubusercontent.com/argoproj/argo-cd/{ref}/examples/dashboard.json
+    ref: v3.5.3
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, argocd]
+    queryCheck: true
+    platform:
+      anchor: 'argocd_app_info'
+      renameVars:
+        cluster: {name: destination, label: destination cluster}
+        interval: {name: resolution, label: interval}
+      varOverrides:
+        namespace:
+          query: 'label_values(argocd_app_info, namespace)'
+          regex: ''
+      varOptionsDrop:
+        # `namespace` on an ArgoCD series is the namespace of the pod that
+        # exposes it, not the application's: grouping by it says nothing.
+        grouping: [namespace]
+      dropRows:
+        - title: AppSet Controller Telemetry
+          reason: the ApplicationSet controller's metrics are not scraped (no argocd-applicationset-controller-metrics job)
+      retitle:
+        - {type: graph, from: Applications, to: Applications over time}
+        # Upstream files these two pairs under the other component's row; the
+        # titles follow the `job` each panel actually queries.
+        - {row: Repo Server Stats, from: Memory Used, to: API server memory used}
+        - {row: Repo Server Stats, from: Goroutines, to: API server goroutines}
+        - {row: Server Stats, from: Memory Used, to: Repo server memory used}
+        - {row: Server Stats, from: Goroutines, to: Repo server goroutines}
+        - {row: Controller Telemetry, from: Memory Usage, to: Controller memory usage}
+        - {row: Controller Telemetry, from: CPU Usage, to: Controller CPU usage}
+        - {row: Controller Telemetry, from: Goroutines, to: Controller goroutines}
+      units:
+        Uptime: s
+        Controller memory usage: bytes
+        Repo server memory used: bytes
+        API server memory used: bytes
+        Controller CPU usage: percentunit
+
+  # The cert-manager mixin's overview, rendered with the mixin's own
+  # single-cluster defaults (its dashboard is a jsonnet file one substitution
+  # from JSON). It names the deprecated `kube_pod_container_resource_*_cores`
+  # series; those become the current kube-state-metrics names.
+  - name: cert-manager
+    upstream: cert-manager-mixin
+    url: https://raw.githubusercontent.com/imusmanmalik/cert-manager-mixin/{ref}/dashboards/cert-manager-overview.json
+    ref: v1.6.0
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, cert-manager]
+    queryCheck: true
+    mixinDefaults:
+      containerCPUUsageSecondsTotalSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
+      kubePodContainerResourceLimitsCpuCoresSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
+      kubePodContainerResourceRequestsCpuCoresSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
+      containerCpuCfsThrottledPeriodsTotalSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
+      containerCpuCfsPeriodsTotalSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
+      containerMemoryUsageBytesSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
+      kubePodContainerResourceLimitsMemoryBytesSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
+      kubePodContainerResourceRequestsMemoryBytesSelector: 'container=~"cert-manager.*",namespace=~"$namespace"'
+      containerNetworkReceiveBytesTotalSelector: 'namespace=~"$namespace"'
+      containerNetworkTransmitBytesTotalSelector: 'namespace=~"$namespace"'
+    platform:
+      anchor: 'certmanager_certificate_ready_status'
+      dropVars: ['']
+      addVars:
+        - name: namespace
+          label: cert-manager namespace
+          query: 'label_values(up{job="cert-manager"}, namespace)'
+      replace:
+        - {from: 'kube_pod_container_resource_limits_cpu_cores{', to: 'kube_pod_container_resource_limits{resource="cpu",'}
+        - {from: 'kube_pod_container_resource_requests_cpu_cores{', to: 'kube_pod_container_resource_requests{resource="cpu",'}
+        - {from: 'kube_pod_container_resource_limits_memory_bytes{', to: 'kube_pod_container_resource_limits{resource="memory",'}
+        - {from: 'kube_pod_container_resource_requests_memory_bytes{', to: 'kube_pod_container_resource_requests{resource="memory",'}
+
+  # cloudnative-pg/grafana-dashboards' cluster dashboard is instance-centric:
+  # it reads cnpg_* series from each Postgres pod's :9187 exporter, and those
+  # are not scraped yet. Only its Operator row is kept (the operator's own
+  # controller-runtime series are); every other panel is dropped and recorded
+  # under `deferred`, to come back when the instance metrics ship.
+  - name: cnpg-operator
+    upstream: cloudnative-pg
+    url: https://raw.githubusercontent.com/cloudnative-pg/grafana-dashboards/{ref}/charts/cluster/grafana-dashboard.json
+    ref: cluster-v0.0.5
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, cnpg]
+    queryCheck: true
+    deferred: [cnpg-instance-metrics]
+    platform:
+      anchor: 'controller_runtime_reconcile_total{job="cnpg-system/cnpg-cloudnative-pg"}'
+      keepOnlyRows: [Operator]
+      keepOnlyReason: reads cnpg_* instance series (the :9187 exporter), not scraped yet; requires cnpg-instance-metrics
+      dropVars: [namespace, cluster, instances]
+      renameVars:
+        operatorNamespace: {name: namespace, label: operator namespace}
+      varOverrides:
+        namespace:
+          query: 'label_values(controller_runtime_reconcile_total{job="cnpg-system/cnpg-cloudnative-pg"}, namespace)'
+      dropPanels:
+        - {row: Operator, type: stat, reason: duplicates the time series of the same name below it}
+      retitle:
+        - {from: Ready Operator Pods, to: Operator pods up}
+      setExpr:
+        - {title: Operator pods up, expr: 'count(up{job="cnpg-system/cnpg-cloudnative-pg",namespace=~"$namespace"} == 1)', unit: short}
+      replace:
+        - {from: 'controller_runtime_reconcile_total{namespace', to: 'controller_runtime_reconcile_total{job="cnpg-system/cnpg-cloudnative-pg", namespace'}
+      units:
+        Cluster Reconcile Errors: short
+        Backup Reconcile Errors: short
+        Scheduled Backup Reconcile Errors: short
+        Pooler Reconcile Errors: short
+
+  # The prometheus-nats-exporter walkthrough dashboards, served by the
+  # sidecar with -connz -routez -subz -varz -jsz=all. The cumulative varz
+  # counters (bytes and messages in and out) are shown as rates.
+  - name: nats-server
+    upstream: nats-exporter
+    url: https://raw.githubusercontent.com/nats-io/prometheus-nats-exporter/{ref}/walkthrough/grafana-nats-dash.json
+    ref: v0.20.2
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, nats]
+    queryCheck: true
+    platform:
+      anchor: 'gnatsd_varz_connections'
+      datasourcePlaceholder: '${DS__NATS-PROMETHEUS}'
+      replace:
+        - {from: 'gnatsd_varz_in_bytes', to: 'rate(gnatsd_varz_in_bytes[$__rate_interval])'}
+        - {from: 'gnatsd_varz_out_bytes', to: 'rate(gnatsd_varz_out_bytes[$__rate_interval])'}
+        - {from: 'gnatsd_varz_in_msgs', to: 'rate(gnatsd_varz_in_msgs[$__rate_interval])'}
+        - {from: 'gnatsd_varz_out_msgs', to: 'rate(gnatsd_varz_out_msgs[$__rate_interval])'}
+      units:
+        Server CPU: percent
+        Server Memory: bytes
+        Bytes In: Bps
+        Bytes Out: Bps
+        NATS Msgs In: ops
+        NATS Msgs Out: ops
+
+  - name: nats-jetstream
+    upstream: nats-exporter
+    url: https://raw.githubusercontent.com/nats-io/prometheus-nats-exporter/{ref}/walkthrough/grafana-jetstream-dash.json
+    ref: v0.20.2
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, nats]
+    queryCheck: true
+    platform:
+      anchor: 'jetstream_server_total_streams'
+      datasourcePlaceholder: '${DS__NATS-PROMETHEUS}'
+
+  # envoyproxy/gateway's addons dashboards. The proxies' scrape keeps only the
+  # families envoy-proxy-global.json and envoy-clusters.json read (plus
+  # envoy_http_downstream_rq_xx for the Fleet overview), so exactly those
+  # panels work. Upstream's `Namespace` picker is the namespace of the pod,
+  # renamed to the contract's `namespace`; envoy-clusters' own `cluster` and
+  # `namespace` pickers are an Envoy cluster and a route namespace, renamed
+  # so the contract's names keep their meaning.
+  - name: envoy-gateway
+    upstream: envoy-gateway
+    url: https://raw.githubusercontent.com/envoyproxy/gateway/{ref}/charts/gateway-addons-helm/dashboards/envoy-gateway-global.json
+    ref: v1.9.2
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, envoy]
+    queryCheck: true
+    platform:
+      anchor: 'watchable_depth'
+      renameVars:
+        Namespace: {name: namespace, label: namespace}
+      regexMatchVars: [namespace, Runner]
+      dropRows:
+        - title: Wasm
+          reason: wasm_* series exist only once a Wasm extension is configured, and export on a default install is not confirmed
+
+  - name: envoy-proxy
+    upstream: envoy-gateway
+    url: https://raw.githubusercontent.com/envoyproxy/gateway/{ref}/charts/gateway-addons-helm/dashboards/envoy-proxy-global.json
+    ref: v1.9.2
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, envoy]
+    queryCheck: true
+    platform:
+      anchor: 'envoy_server_live'
+      renameVars:
+        Namespace: {name: namespace, label: namespace}
+      regexMatchVars: [namespace]
+      units:
+        Downstream RPS: reqps
+        Downstream CPS: cps
+        TCP Downstream CPS: cps
+        TCP Downstream Bytes Rx/second: Bps
+        TCP Downstream Bytes Tx/Second: Bps
+        Upstream RPS: reqps
+        Upstream CPS: cps
+        Upstream Bytes Rx/Second: Bps
+        Upstream Bytes Tx/Second: Bps
+        Upstream 2xx Responses: reqps
+        Upstream 3xx Responses: reqps
+        Upstream 4xx Responses: reqps
+        Upstream 5xx Responses: reqps
+
+  - name: envoy-clusters
+    upstream: envoy-gateway
+    url: https://raw.githubusercontent.com/envoyproxy/gateway/{ref}/charts/gateway-addons-helm/dashboards/envoy-clusters.json
+    ref: v1.9.2
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, envoy]
+    queryCheck: true
+    platform:
+      anchor: 'envoy_server_live'
+      varAnchor: 'envoy_cluster_membership_total'
+      renameVars:
+        cluster: {name: envoy_cluster, label: envoy cluster}
+        namespace: {name: route_namespace, label: route namespace}
+      units:
+        Total requests: reqps
+
+  # Authored: no upstream project ships a Kargo dashboard
+  # (hack/dashboards/kargo.py).
+  - name: kargo
+    authored: true
+    generator: hack/dashboards/kargo.py
+    folder: platform
+    tags: [observability-platform, kargo]
+    queryCheck: true
+
 # Third-party provenance. Every fetched dashboard names its `upstream`
 # here; hack/dashboards.py renders THIRD_PARTY_NOTICES.md from this and the
 # per-dashboard `url`/`ref`, and tests/third_party_notices_test.go fails a
@@ -201,6 +448,31 @@ upstreams:
     url: https://github.com/dotdc/grafana-dashboards-kubernetes
     license: Apache-2.0
     copyright: Copyright 2020 David Calvert
+  argo-cd:
+    project: Argo CD
+    url: https://github.com/argoproj/argo-cd
+    license: Apache-2.0
+    copyright: Copyright 2017-2018 The Argo Authors
+  cert-manager-mixin:
+    project: cert-manager-mixin
+    url: https://github.com/imusmanmalik/cert-manager-mixin
+    license: Apache-2.0
+    copyright: Copyright 2020 Ben Clapp
+  cloudnative-pg:
+    project: CloudNativePG Grafana dashboards
+    url: https://github.com/cloudnative-pg/grafana-dashboards
+    license: Apache-2.0
+    copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+  nats-exporter:
+    project: prometheus-nats-exporter
+    url: https://github.com/nats-io/prometheus-nats-exporter
+    license: Apache-2.0
+    copyright: Copyright 2017-2018 The NATS Authors
+  envoy-gateway:
+    project: Envoy Gateway
+    url: https://github.com/envoyproxy/gateway
+    license: Apache-2.0
+    copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
 
 bundles:
   kube-prometheus:
