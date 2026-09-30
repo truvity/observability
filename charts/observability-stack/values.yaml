@@ -1966,6 +1966,18 @@ victoria-metrics-k8s-stack:
     # `count:up1`, is full when healthy and stays watched.
     # `hack/recording-nodata-proof.sh` fails if upstream changes its
     # expression, so this copy cannot drift silently.
+    #
+    # The same map switches an upstream alert OFF by name: a rule
+    # whose value is `{enabled: false}` (or `create: false`) is dropped
+    # from what the sync job applies. Verified against the vendored sync
+    # job image, not only its template: its `-sync-job-config` carries the
+    # flag and the applied VMRule lacks the alert. An estate whose nodes are
+    # provisioned on demand (Karpenter, EKS Auto Mode) turns
+    # `KubeCPUOvercommit` and `KubeMemoryOvercommit` off this way:
+    # requests above allocatable is that estate's normal state, not a
+    # fault. The namespace-quota alerts (`KubeCPUQuotaOvercommit`,
+    # `KubeMemoryQuotaOvercommit`) are different alerts and are left on.
+    # Nothing is disabled by default.
     rules:
       RecordingRulesNoData:
         spec:

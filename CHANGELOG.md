@@ -4,6 +4,45 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`platform-alerts` and `observability-stack`: alert on what fails when nodes
+are provisioned on demand, and switch off the alert that cannot.
+
+- **`platform-alerts`: opt-in `groups.pendingPods`, alert `PodUnschedulable`.**
+  Fires for one pod that has been unschedulable (`kube_pod_status_unschedulable
+  == 1`) for `for` (default `10m`, severity `warning`). Off by default, so no
+  existing render changes. It needs `kube-state-metrics`' `pods` collector,
+  which `observability-emitters` already collects by default.
+  Two options for a store that holds several clusters: `namespaceSelector`
+  (this group's own, empty inherits the top-level one) and
+  `keepClusterLabel` (the series' own cluster label survives instead of
+  being overwritten by `commonLabels`; default `false`).
+- **`observability-emitters`: opt-in `kubeStateMetrics.customResources.nodeClaims`.**
+  Exports Karpenter's NodeClaims (`karpenter.sh/v1`) as
+  `nodeclaim_status_condition{nodeclaim,nodepool,type,reason}`, one series
+  per condition (Launched, Registered, Initialized, Ready and two more) per
+  NodeClaim, 1 when True and 0 when False or Unknown. Grants only
+  `get`/`list`/`watch` on `nodeclaims.karpenter.sh`. It composes with the
+  `kargo` preset. Off by default; existing renders do not change. On EKS
+  Auto Mode Karpenter's own metrics cannot be scraped, but its NodeClaim
+  objects can be read.
+- **`platform-alerts`: opt-in `groups.nodeClaims`, alerts `NodeClaimNotReady`
+  and `NodeClaimMetricsAbsent`.** `NodeClaimNotReady` fires when a
+  NodeClaim's Launched, Registered or Initialized condition has not been
+  True for `for` (default `10m`, inside Karpenter's 15 minute registration
+  TTL, after which it deletes the claim and retries). `NodeClaimMetricsAbsent`
+  is the deadman for the series (`absentFor`, default `30m`). Off by default;
+  `keepClusterLabel` as for `pendingPods`. NodeClaims are cluster-scoped, so
+  no namespace filter applies.
+- **`observability-stack`: documented and tested, no default moved.**
+  `victoria-metrics-k8s-stack.defaultRules.rules.<Alert>: {enabled: false}`
+  drops one upstream alert from what the sync job applies (checked against
+  the vendored sync job image). An estate on Karpenter or EKS Auto Mode,
+  where requests above allocatable is the normal state, uses it for
+  `KubeCPUOvercommit` and `KubeMemoryOvercommit` and leaves the
+  namespace-quota alerts on.
+
 ## v0.18.0
 
 `observability-stack`: a Slack destination can ping people.

@@ -1,0 +1,34 @@
+{{- /*
+The one extra grant `kubeStateMetrics.customResources.nodeClaims` needs:
+get/list/watch on `nodeclaims.karpenter.sh`, nothing else. Same mechanism
+as the kargo grant beside it (a ClusterRole of this chart's own, bound to
+kube-state-metrics' ServiceAccount, because a subchart's `rbac.extraRules`
+cannot be computed from this flag).
+*/ -}}
+{{- if and .Values.kubeStateMetrics.enabled (.Values.kubeStateMetrics.customResources.nodeClaims).enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ printf "%s-nodeclaims" (include "observability-emitters.kubeStateMetrics.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["karpenter.sh"]
+    resources: ["nodeclaims"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "%s-nodeclaims" (include "observability-emitters.kubeStateMetrics.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ printf "%s-nodeclaims" (include "observability-emitters.kubeStateMetrics.fullname" .) | trunc 63 | trimSuffix "-" }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "observability-emitters.kubeStateMetrics.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

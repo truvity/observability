@@ -24,11 +24,15 @@ Every enabled group that needs `stores`, so one refusal can name them all.
 
 {{/*
 A rule's labels: the estate's common labels with this rule's severity on
-top, so `severity` can never be shadowed by a common label.
+top, so `severity` can never be shadowed by a common label. An optional
+`omit` names one common label to leave off (see `groups.pendingPods.
+keepClusterLabel`).
 */}}
 {{- define "platform-alerts.labels" -}}
 {{- $severity := .severity -}}
-{{- $labels := merge (dict "severity" $severity) (deepCopy .root.Values.commonLabels) -}}
+{{- $common := deepCopy .root.Values.commonLabels -}}
+{{- if .omit -}}{{- $_ := unset $common .omit -}}{{- end -}}
+{{- $labels := merge (dict "severity" $severity) $common -}}
 {{- toYaml $labels -}}
 {{- end -}}
 

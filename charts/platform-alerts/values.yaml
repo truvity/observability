@@ -187,3 +187,84 @@ groups:
     # Kargo itself may be healthy underneath it — so it defaults one tier
     # below the rules it is the deadman for.
     absentSeverity: warning
+
+  # Pods the scheduler cannot place.
+  #
+  # The incident class: on a cluster whose nodes are provisioned on demand
+  # (Karpenter, including EKS Auto Mode), "requests exceed allocatable" is
+  # the normal, transient state, so an alert on overcommitted requests
+  # (upstream's KubeCPUOvercommit / KubeMemoryOvercommit) fires constantly
+  # and means nothing. What FAILS when provisioning stops working is a pod
+  # that stays unschedulable, and that is what this watches.
+  #
+  # Off by default: a cluster with fixed-size nodes is better served by the
+  # overcommit alerts and has no provisioner to fail.
+  #
+  # Reads `kube_pod_status_unschedulable` (kube-state-metrics' `pods`
+  # collector, which charts/observability-emitters' default list already
+  # carries): 1 while the pod's PodScheduled condition is False with reason
+  # Unschedulable, and no series otherwise. A pod that is Pending for some
+  # other reason (an image pull, a volume attach) is NOT this alert's; the
+  # vendored KubePodNotReady covers non-Job pods at 15m. This one is the
+  # scheduler's own verdict, so it also sees Job-owned pods, which
+  # KubePodNotReady leaves out.
+  #
+  # One alert per pod, not per namespace: a namespace whose pods are
+  # replaced every few minutes would keep a per-namespace count above zero
+  # for ever without any single pod waiting as long as `for`.
+  pendingPods:
+    enabled: false
+    # -- How long a pod must stay unschedulable before firing. A node is
+    # normally provisioned in a minute or two, so 10m is several failed
+    # attempts, not one slow one.
+    for: 10m
+    severity: warning
+    # -- Namespaces this group watches, instead of the top-level
+    # `namespaceSelector`. Empty inherits it. A pod that cannot be placed is
+    # a cluster-wide concern, and the top-level selector is often narrowed
+    # for the backup and volume rules to the namespaces that hold CronJobs.
+    namespaceSelector: ""
+    # -- Keep the series' own `clusterLabel` on the alert instead of letting
+    # `commonLabels` overwrite it (a rule's static labels win over the
+    # series'). Set it on a store that holds several clusters, where
+    # `commonLabels` names the cluster the RULES run on and the pod belongs
+    # to another: without it the alert names the wrong cluster. Ignored
+    # when `clusterLabel` is empty.
+    keepClusterLabel: false
+
+  # Karpenter NodeClaims that do not come up.
+  #
+  # The incident class: on a cluster whose nodes Karpenter provisions
+  # (including EKS Auto Mode, where Karpenter's own metrics are not
+  # scrapeable but its NodeClaim objects are readable), a NodeClaim that
+  # never launches, never registers as a node or never initializes is a
+  # provisioning failure that may not yet show as a stuck pod, or whose
+  # cause `pendingPods` cannot name. Karpenter deletes a claim that has not
+  # registered after 15 minutes (its registration TTL) and then tries
+  # again, so the wait here is shorter than that: the claim is still there
+  # to be seen.
+  #
+  # Off by default. Reads
+  #   nodeclaim_status_condition{nodeclaim, nodepool, type, reason}
+  # from kube-state-metrics' `customResourceState`, produced by
+  # charts/observability-emitters' `kubeStateMetrics.customResources.
+  # nodeClaims` (a guessed metric name is how a rule silently never fires,
+  # so the series and the deadman below are named, not assumed).
+  #
+  # NodeClaims are cluster-scoped: no namespace filter applies.
+  nodeClaims:
+    enabled: false
+    # -- How long a NodeClaim's Launched, Registered or Initialized condition
+    # must stay not-True before firing. A normal launch-to-initialized takes
+    # a few minutes; 10m is well past it and inside the 15m registration TTL.
+    for: 10m
+    severity: warning
+    # -- How long the series can be absent before `NodeClaimMetricsAbsent`
+    # fires. Longer than `for`. Note it cannot tell "no NodeClaims right
+    # now" from "not exported" on its own, so it is only meaningful on a
+    # cluster that always has at least one claim (Auto Mode always does).
+    absentFor: 30m
+    absentSeverity: warning
+    # -- Keep the series' own `clusterLabel` on the alert (see
+    # `pendingPods.keepClusterLabel`).
+    keepClusterLabel: false

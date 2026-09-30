@@ -129,6 +129,54 @@ docs/kube-state-metrics.md for a worked config.
 Alerts: `KargoStagePromotionErrored`, `KargoPromotionErrored`,
 `KargoStateMetricsAbsent`.
 
+### `groups.pendingPods`
+
+Off by default. On a cluster whose nodes are provisioned on demand
+(Karpenter, EKS Auto Mode) "requests exceed allocatable" is a normal,
+transient state, so upstream's `KubeCPUOvercommit` / `KubeMemoryOvercommit`
+mean nothing there (switch them off, see `observability-stack`'s
+`victoria-metrics-k8s-stack.defaultRules.rules` below). What fails when
+provisioning stops working is a pod that stays unschedulable, and this
+group watches that. It reads `kube_pod_status_unschedulable`
+(kube-state-metrics' `pods` collector, in `observability-emitters`'
+default list): 1 while the pod's PodScheduled condition is False with
+reason Unschedulable, no series otherwise.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `for` | duration | `10m` | How long one pod must stay unschedulable before firing. A node normally arrives within a minute or two. |
+| `severity` | enum | `warning` | Severity of `PodUnschedulable`. |
+| `namespaceSelector` | regex | `""` | Namespaces this group watches instead of the top-level `namespaceSelector`; empty inherits it. A pod that cannot be placed is cluster-wide, and the top-level selector is often narrowed for the backup and volume rules. |
+| `keepClusterLabel` | bool | `false` | Keep the series' own `clusterLabel` on the alert instead of having `commonLabels` overwrite it (a rule's static labels win). For a store that holds several clusters: without it an alert for another cluster's pod names the cluster the rule runs on. Ignored when `clusterLabel` is empty. |
+
+Alerts: `PodUnschedulable`, one per pod. It overlaps upstream's
+`KubePodNotReady` (Pending or Unknown for 15m) only for non-Job pods after
+15m: this one is the scheduler's own verdict, fires sooner, and also sees
+Job-owned pods, which `KubePodNotReady` excludes. A pod Pending for another
+reason (an image pull, a volume) is not this alert's.
+
+### `groups.nodeClaims`
+
+Off by default. For a cluster whose nodes Karpenter provisions (including
+EKS Auto Mode, where Karpenter's own metrics are not scrapeable but its
+NodeClaim objects are readable). Reads `nodeclaim_status_condition`, which
+`observability-emitters`' `kubeStateMetrics.customResources.nodeClaims`
+produces. It names the stage a node failed at (Launched, Registered,
+Initialized), which `groups.pendingPods` cannot.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `for` | duration | `10m` | How long a claim's Launched, Registered or Initialized must stay not-True. Inside Karpenter's 15m registration TTL, so the claim is still there to see. |
+| `severity` | enum | `warning` | Severity of `NodeClaimNotReady`. |
+| `absentFor` | duration | `30m` | How long the series can be absent before `NodeClaimMetricsAbsent`. Only meaningful where a claim always exists. |
+| `absentSeverity` | enum | `warning` | Severity of `NodeClaimMetricsAbsent`. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
+
+Alerts: `NodeClaimNotReady` (one per claim and condition type),
+`NodeClaimMetricsAbsent`.
+
 ## `charts/observability-stack`
 
 One install of the store. The chart renders the proxy, the two vmalerts,
@@ -763,6 +811,7 @@ through.
 | `victoria-metrics-k8s-stack.victoria-metrics-operator.crds.enabled` | `false` | The CRDs are `charts/observability-crds`'. **`crds.plain` must be `false` as well** — upstream disables CRD creation only when both are, because a Helm dependency condition cannot gate a `crds/` directory. |
 | `…operator.crds.cleanup.enabled` | `false` | The cleanup Job deletes every VictoriaMetrics object in the namespace on uninstall. |
 | `…operator.admissionWebhooks.certManager.enabled` | `true` | Otherwise the chart generates a self-signed CA at render time: a new certificate on every upgrade, and a render that is not a function of its inputs. This is why cert-manager is a prerequisite. |
+| `victoria-metrics-k8s-stack.defaultRules.rules.<Alert>` | `{}` | Per-alert override applied by the sync job: `{enabled: false}` (or `create: false`) drops that upstream alert, `{spec: {...}}` overrides fields of it (`RecordingRulesNoData` ships one). Used to turn `KubeCPUOvercommit` / `KubeMemoryOvercommit` off where nodes are provisioned on demand, paired with `platform-alerts`' `groups.pendingPods`. |
 | `victoria-metrics-k8s-stack.defaultRules.*` | upstream's own, ON | Left alone, deliberately: it fetches rule sources over the network and applies them directly to the cluster (invisible to `helm template`), and several — target- and pod-health, job failures, log/API-error volume, and this install's `Watchdog` alert (its `general.rules` group) — have no `charts/platform-alerts` equivalent. `templates/watchdog.yaml` renders this chart's own Watchdog only when this is turned OFF (`defaultRules.enabled: false`, not `create: false` alone — see its own doc comment in values.yaml); turning both off at once is refused (`observability-stack.validate.watchdogSource`). |
 | `victoria-metrics-k8s-stack.vmsingle.spec.retentionPeriod` | `90d` | **With a unit.** A bare number is months. |
 | `…vmsingle.spec.extraArgs['dedup.minScrapeInterval']` | `30s` | MIRROR of `interval`. |
@@ -1088,6 +1137,7 @@ with underscores, which is how they match the agent's labels.
 |---|---|---|---|
 | `kubeStateMetrics.enabled` | bool | `false` | Renders upstream's `kube-state-metrics` chart. **Off by default** — see docs/kube-state-metrics.md. |
 | `kubeStateMetrics.customResources.kargo.enabled` | bool | `false` (0.9.0) | `kargo_stage_condition` / `kargo_promotion_phase`, the shape `charts/platform-alerts`' `groups.kargo` reads (see docs/reference.md's own section on it) — without hand-writing kube-state-metrics' `customResourceState.config` and `rbac.extraRules`. Grants only `get`/`list`/`watch` on `stages.kargo.akuity.io` / `promotions.kargo.akuity.io`. Whenever `kubeStateMetrics.enabled` is true (this preset on or off), this chart pins `kube-state-metrics.customResourceState.enabled: true` / `.create: false` and renders the ConfigMap itself (empty when no preset is on) — **refused together with a consumer-authored `kube-state-metrics.customResourceState.config`**, which would otherwise never be read. |
+| `kubeStateMetrics.customResources.nodeClaims.enabled` | bool | `false` | `nodeclaim_status_condition{nodeclaim,nodepool,type,reason}`, the shape `platform-alerts`' `groups.nodeClaims` reads: Karpenter NodeClaim conditions, 1 when True. Grants only `get`/`list`/`watch` on `nodeclaims.karpenter.sh`. Composes with the `kargo` preset; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
 
 ### `kube-state-metrics` — the upstream chart
 

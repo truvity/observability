@@ -1,0 +1,22 @@
+# A store that holds several clusters, rules running on one of them: the
+# group has its own namespace selector (the top-level one is narrowed for
+# the backup rules) and keeps each series' own cluster label.
+commonLabels:
+  k8s_cluster_name: kernel
+  team: platform
+namespaceSelector: "^(backups)$"
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  pendingPods:
+    enabled: true
+    for: 15m
+    severity: critical
+    namespaceSelector: ".*"
+    keepClusterLabel: true

@@ -401,6 +401,20 @@ kubeStateMetrics:
     # kubeStateMetrics` in _validate.tpl.
     kargo:
       enabled: false
+    # -- Karpenter's NodeClaims (`nodeclaims.karpenter.sh`,
+    # `karpenter.sh/v1`) as one metric,
+    # `nodeclaim_status_condition{nodeclaim,nodepool,type,reason}` (a Gauge
+    # over `status.conditions[]`: 1 when the condition is True, 0 when False
+    # or Unknown), `metricNamePrefix: ""` — the shape
+    # `charts/platform-alerts`' `groups.nodeClaims` reads. For a cluster
+    # whose nodes Karpenter provisions, including EKS Auto Mode, where
+    # Karpenter's own metrics cannot be scraped but its NodeClaim objects
+    # can be read. Six condition series per NodeClaim, and a NodeClaim is
+    # one per node. Off by default; turning it on grants ONLY
+    # get/list/watch on `nodeclaims.karpenter.sh`. Same mechanism as
+    # `kargo` above (ConfigMap + ClusterRole of this chart's own).
+    nodeClaims:
+      enabled: false
 
 ###############################################################################
 # node-exporter: the node's own hardware and kernel metrics, as upstream's
