@@ -811,13 +811,38 @@ notifications:
   # rules a vendored set ships (`InfoInhibitor`) belong in `drop`.
   # catchAll: {receiver: telegram}
   # -- Receiver kinds. Each is a mechanism — how the secret is mounted,
-  # what the message looks like — and none carries a value: `slack` is a
-  # single webhook shared by every channel, so the channel a message
-  # lands in is chosen by `severities` and `routes` below, never here.
-  # Unset by default: a `slack.webhookSecret` with an empty name is
-  # refused by the schema rather than accepted and silently unreachable.
+  # what the message looks like — and none carries a value: which Slack
+  # channel a message lands in is chosen by `severities`, `routes` and
+  # `catchAll` below, never here.
+  #
+  # `slack` is one Slack APP per workspace, posting with its bot token
+  # (xoxb-...): each `workspaces` entry names an EXISTING Secret, mounted
+  # and read with Alertmanager's `app_token_file` (v0.30.0 and later) —
+  # never a value here, never in the rendered config. A token honours the
+  # `channel` each destination names. The incoming webhook this replaced
+  # did not: a webhook posts to the one channel it was created for and
+  # ignores `channel`, so routing to a second channel through it never
+  # worked. `webhookSecret` is therefore GONE, and a leftover one is
+  # refused at render with this migration.
+  #
+  # Every place that picks a Slack destination — `severities.<tier>`,
+  # `catchAll`, a route's per-tier override — may carry `workspace`. With
+  # exactly one workspace declared it may be omitted and means that one;
+  # with two or more it is required. One Alertmanager receiver renders
+  # per distinct (workspace, channel), named `slack-<workspace>--<channel>`.
+  #
+  # `failureReceiver` names where the `SlackNotificationsFailing` alert
+  # (selfAlerts.slackDelivery) goes: a `webhook[].name`, or `telegram`.
+  # Never `slack` — refused, since the alert says Slack is not delivering.
+  # UNSET, the alert is routed to the null receiver: it is visible in
+  # vmalert and reaches nobody, so set it. Unset by default: a workspace
+  # with an empty secret name or key is refused rather than accepted and
+  # silently unreachable. See docs/notifications.md, "Slack".
   # slack:
-  #   webhookSecret: {name: "", key: url}
+  #   workspaces:
+  #     - name: acme            # lower-case, [a-z0-9-], no double hyphen
+  #       appTokenSecret: {name: "", key: token}
+  #   failureReceiver: ""       # a webhook name, or telegram
   # -- Telegram: one bot, posting to a chat (and, optionally, a forum
   # topic in it). Coexists with `slack` and `webhook` — any combination,
   # each severity tier picking one — and counts as a receiver for the
@@ -850,7 +875,9 @@ notifications:
   # `receiver` names a configured kind above (`slack`, `telegram`, or
   # an entry in `webhook`); `channel` is the Slack channel — or, for a
   # webhook receiver, an identifying label only, since one webhook has
-  # one URL. A `telegram` tier takes no `channel`: it lands in
+  # one URL. A `slack` tier may also name a `workspace` (an entry of
+  # `slack.workspaces`): optional with exactly one declared, required
+  # with two or more. A `telegram` tier takes no `channel`: it lands in
   # `telegram.chatId`, or in the tier's own `chatId`/`messageThreadId`.
   #
   # This chart's rules carry only `critical` and `warning`: `critical`
@@ -861,7 +888,7 @@ notifications:
   # may carry whatever severity the consumer gives them; this chart only
   # ships a route for the two above.
   severities: {}
-  # critical: {receiver: slack, channel: ""}
+  # critical: {receiver: slack, channel: "", workspace: acme}
   # warning:  {receiver: telegram, messageThreadId: 0}
   # -- Routes, in order. The first entry whose `match` is satisfied wins,
   # per severity; an entry naming only `critical` sends its warnings to
@@ -873,8 +900,11 @@ notifications:
   # from namespaces.
   routes: []
   # - match: {k8s_cluster_name: ""}
-  #   critical: ""
-  #   warning: ""
+  #   critical: ""                        # a channel in the tier's workspace
+  #   warning: {channel: "", workspace: globex}  # or another workspace
+  #
+  # A per-tier value is a channel string (the tier's workspace is kept) or
+  # `{channel, workspace}`; either half omitted is taken from the tier.
   # -- Which alerts ALSO reach a webhook receiver, beside their normal
   # route — the status-page bridge. Matchers, not channels: an entry adds
   # a delivery, it never replaces the one `severities`/`routes` already
@@ -1565,6 +1595,33 @@ selfAlerts:
     limitedRequestsMetric: ""
     window: 5m
     for: 5m
+    severity: warning
+
+  # SlackNotificationsFailing.
+  #
+  # Alertmanager counts every failed Slack delivery in
+  # `alertmanager_notifications_failed_total{integration="slack"}` and
+  # retries; a revoked token, a channel the bot may not post in or Slack
+  # being down otherwise looks like a quiet estate. This rule fires when
+  # that counter increases over `window`.
+  #
+  # Unlike every rule above, its metric is stated here, not supplied: it
+  # is Alertmanager's own, and this chart renders that Alertmanager. It
+  # renders by itself — `selfAlerts.enabled` is not needed — whenever
+  # `notifications.slack.workspaces` is non-empty. Set `enabled: false`
+  # to drop it.
+  #
+  # It is NEVER routed to Slack: a route at the top of the tree sends it
+  # to `notifications.slack.failureReceiver`, or to the null receiver when
+  # that is unset (visible in vmalert, reaches nobody). The metric must
+  # reach this metrics store: if Alertmanager's own /metrics is not
+  # scraped into it the expression has no series and never fires.
+  #
+  # Healthy range: 0.
+  slackDelivery:
+    enabled: true
+    window: 15m
+    for: 1m
     severity: warning
 
 # -- The metrics store's own scrape object, this chart's — the vendored

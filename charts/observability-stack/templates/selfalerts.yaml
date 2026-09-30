@@ -24,7 +24,16 @@ The chart refuses `selfAlerts.enabled: true` with an empty rule list
 rather than shipping something that looks like coverage and is not — see
 templates/_validate.tpl.
 */ -}}
-{{- if .Values.selfAlerts.enabled -}}
+{{- /*
+SlackNotificationsFailing is the one rule here that renders without
+`selfAlerts.enabled`: its metric is Alertmanager's own, a name this chart
+CAN state (unlike the store counters above), and it is the alert for the
+failure this chart's own Slack receivers introduce. It renders when at
+least one Slack workspace is declared and Alertmanager is rendered.
+*/ -}}
+{{- $slackWorkspaces := (((.Values.notifications | default dict).slack) | default dict).workspaces | default list -}}
+{{- $slackRule := and $slackWorkspaces .Values.selfAlerts.slackDelivery.enabled (include "observability-stack.effectiveEnabled" . | fromYaml).alertmanager -}}
+{{- if or .Values.selfAlerts.enabled $slackRule -}}
 {{- $root := . -}}
 {{- $fullname := include "observability-stack.fullname" . -}}
 {{- $sa := .Values.selfAlerts -}}
@@ -40,6 +49,37 @@ spec:
     - name: observability-stack.selfalerts
       interval: {{ .Values.interval }}
       rules:
+        {{- if $slackRule }}
+        # SlackNotificationsFailing. Alertmanager counts a failed Slack
+        # delivery (bad or revoked token, a channel the bot may not post
+        # in, Slack down) and keeps retrying; nothing else says a
+        # notification is being lost. `integration="slack"` is the
+        # Alertmanager label for `slack_configs`.
+        #
+        # This alert must NEVER be routed to Slack: templates/
+        # vmalertmanager.yaml puts a route for it at the top of the tree,
+        # to `notifications.slack.failureReceiver`, or to the null
+        # receiver when that is unset.
+        #
+        # Healthy range: 0. Needs Alertmanager's own /metrics in this
+        # metrics store; with none, the expression has no series and
+        # never fires (docs/notifications.md, "Slack").
+        - alert: SlackNotificationsFailing
+          expr: >-
+            sum(increase(alertmanager_notifications_failed_total{integration="slack"}[{{ $sa.slackDelivery.window }}])) by (integration) > 0
+          for: {{ $sa.slackDelivery.for }}
+          labels:
+            severity: {{ $sa.slackDelivery.severity }}
+          annotations:
+            summary: "Alertmanager is failing to deliver to Slack"
+            description: >-
+              alertmanager_notifications_failed_total{integration="slack"}
+              rose in the last {{ $sa.slackDelivery.window }}. Alerts routed to
+              Slack are not arriving: check the workspace's bot token
+              Secret, that the channel exists (a private channel needs the
+              bot invited) and Slack's own status.
+        {{- end }}
+
         {{- if $sa.ingest.metric }}
         # MetricStoreIgnoringRows.
         #

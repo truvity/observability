@@ -136,7 +136,8 @@ notifications:
   groupInterval: 2m
   repeatInterval: 2h
   slack:
-    webhookSecret: {name: example-slack-webhook, key: url}
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
   webhook:
     - name: status-page
       urlSecret: {name: example-status-webhook, key: url}

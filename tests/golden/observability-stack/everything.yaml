@@ -2675,9 +2675,9 @@ spec:
     - name: watchdog
       secret:
         secretName: "example-watchdog-receiver"
-    - name: notifications-slack
+    - name: notifications-slack-acme
       secret:
-        secretName: "example-slack-webhook"
+        secretName: "example-slack-bot"
     - name: notifications-webhook-status-page
       secret:
         secretName: "example-status-webhook"
@@ -2685,8 +2685,8 @@ spec:
     - name: watchdog
       mountPath: /etc/alertmanager/watchdog
       readOnly: true
-    - name: notifications-slack
-      mountPath: /etc/alertmanager/notifications-slack
+    - name: notifications-slack-acme
+      mountPath: /etc/alertmanager/notifications-slack-acme
       readOnly: true
     - name: notifications-webhook-status-page
       mountPath: /etc/alertmanager/notifications-webhook-status-page
@@ -2707,6 +2707,15 @@ spec:
       group_interval: 2m
       repeat_interval: 2h
       routes:
+        # The Slack delivery self-alert, before everything else and with
+        # `continue: false`: it says Slack is not delivering, so it must
+        # never be routed to Slack, and no route below may claim it.
+        # `notifications.slack.failureReceiver` names where it goes; unset,
+        # it goes to the null receiver (docs/notifications.md).
+        - receiver: notifications-none
+          matchers:
+            - alertname = "SlackNotificationsFailing"
+          continue: false
         # The heartbeat, first and matched on its own: it must never be
         # grouped with anything, never inhibited and never silenced by a
         # rule written for a real alert.
@@ -2726,36 +2735,36 @@ spec:
               routes:
                 - match:
                     severity: critical
-                  receiver: slack-alerts-example-cluster
+                  receiver: slack-acme--alerts-example-cluster
                 - match:
                     severity: warning
-                  receiver: slack-alerts-example-cluster
+                  receiver: slack-acme--alerts-example-cluster
             - match:
                 k8s_namespace_name: example-app
               receiver: notifications-none
               routes:
                 - match:
                     severity: critical
-                  receiver: slack-example-app
+                  receiver: slack-acme--example-app
                 - match:
                     severity: warning
-                  receiver: slack-alerts
+                  receiver: slack-acme--alerts
             - match:
                 severity: critical
-              receiver: slack-alerts-critical
+              receiver: slack-acme--alerts-critical
             - match:
                 severity: warning
-              receiver: slack-alerts
+              receiver: slack-acme--alerts
         - match:
             customer_facing: "true"
             severity: critical
           receiver: status-page
     receivers:
       - name: notifications-none
-      - name: slack-alerts
+      - name: slack-acme--alerts
         slack_configs:
           - channel: "#alerts"
-            api_url_file: /etc/alertmanager/notifications-slack/url
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
             text: |-
@@ -2765,10 +2774,10 @@ spec:
               Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
-      - name: slack-alerts-critical
+      - name: slack-acme--alerts-critical
         slack_configs:
           - channel: "#alerts-critical"
-            api_url_file: /etc/alertmanager/notifications-slack/url
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
             text: |-
@@ -2778,10 +2787,10 @@ spec:
               Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
-      - name: slack-alerts-example-cluster
+      - name: slack-acme--alerts-example-cluster
         slack_configs:
           - channel: "#alerts-example-cluster"
-            api_url_file: /etc/alertmanager/notifications-slack/url
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
             text: |-
@@ -2791,10 +2800,10 @@ spec:
               Grafana: https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
-      - name: slack-example-app
+      - name: slack-acme--example-app
         slack_configs:
           - channel: "#example-app"
-            api_url_file: /etc/alertmanager/notifications-slack/url
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
             text: |-
@@ -2872,6 +2881,34 @@ spec:
     - name: observability-stack.selfalerts
       interval: 15s
       rules:
+        # SlackNotificationsFailing. Alertmanager counts a failed Slack
+        # delivery (bad or revoked token, a channel the bot may not post
+        # in, Slack down) and keeps retrying; nothing else says a
+        # notification is being lost. `integration="slack"` is the
+        # Alertmanager label for `slack_configs`.
+        #
+        # This alert must NEVER be routed to Slack: templates/
+        # vmalertmanager.yaml puts a route for it at the top of the tree,
+        # to `notifications.slack.failureReceiver`, or to the null
+        # receiver when that is unset.
+        #
+        # Healthy range: 0. Needs Alertmanager's own /metrics in this
+        # metrics store; with none, the expression has no series and
+        # never fires (docs/notifications.md, "Slack").
+        - alert: SlackNotificationsFailing
+          expr: >-
+            sum(increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) by (integration) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Alertmanager is failing to deliver to Slack"
+            description: >-
+              alertmanager_notifications_failed_total{integration="slack"}
+              rose in the last 15m. Alerts routed to
+              Slack are not arriving: check the workspace's bot token
+              Secret, that the channel exists (a private channel needs the
+              bot invited) and Slack's own status.
         # MetricStoreIgnoringRows.
         #
         # THE INCIDENT: a series past the metrics store's per-day label

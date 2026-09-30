@@ -22,6 +22,7 @@ second debugging session.
 {{- include "observability-stack.validate.resources" . -}}
 {{- include "observability-stack.validate.licence" . -}}
 {{- include "observability-stack.validate.selfAlerts" . -}}
+{{- include "observability-stack.validate.slackWorkspaces" . -}}
 {{- include "observability-stack.validate.evaluateOnly" . -}}
 {{- include "observability-stack.validate.mirrors" . -}}
 {{- include "observability-stack.validate.vendoredSyncSources" . -}}
@@ -431,6 +432,7 @@ watch it.
     $sa.writer.bufferMetric
     $sa.writer.droppedPacketsMetric
     $sa.proxyConcurrency.limitedRequestsMetric
+    (and ((.Values.notifications | default dict).slack | default dict).workspaces $sa.slackDelivery.enabled)
 -}}
 {{- if not $anyRule -}}
 {{- fail "observability-stack: `selfAlerts.enabled` is true but no rule would actually render — no metric name is set anywhere under `selfAlerts`, and no `backup.<store>.enabled` is true either. A VMRule with an empty rule list looks like coverage and is not. Confirm at least one metric name against your own component's /metrics and set it here, or leave `selfAlerts.enabled: false` until you have." -}}
@@ -826,6 +828,60 @@ would override its `-httpAuth.*`.
 {{- end -}}
 
 {{/*
+Slack workspaces: one Slack app (one bot token) per workspace.
+
+Before this, `notifications.slack.webhookSecret` was ONE incoming webhook
+shared by every channel, and `channel` was chosen per route. A webhook
+ignores the `channel` a message asks for and posts to the one channel it
+was created for, so a second channel looked routed and was not. The
+token of a Slack app honours `channel`, so the webhook is gone and this
+block replaces it. Everything below refuses a shape that looks wired up
+and delivers nowhere.
+
+Runs before `evaluateOnly` so a leftover `webhookSecret` is refused with
+its migration even when the rest of the file is otherwise (validly or
+not) evaluate-only.
+*/ -}}
+{{- define "observability-stack.validate.slackWorkspaces" -}}
+{{- $n := .Values.notifications | default dict -}}
+{{- $slack := $n.slack | default dict -}}
+{{- if hasKey $slack "webhookSecret" -}}
+{{- fail "observability-stack: `notifications.slack.webhookSecret` was removed. One incoming webhook ignores the `channel` a message asks for and always posts to the one channel it was created for, so routing to several channels through it could not work. Replace it with one entry per Slack workspace under `notifications.slack.workspaces`: `[{name: <short-name>, appTokenSecret: {name: <Secret>, key: <key>}}]`, holding that workspace's Slack app bot token (xoxb-...). Then each severity, route and `catchAll` destination may name a `workspace` (optional when exactly one is declared). See docs/notifications.md, \"Slack\"." -}}
+{{- end -}}
+{{- $workspaces := $slack.workspaces | default list -}}
+{{- $names := dict -}}
+{{- range $i, $w := $workspaces -}}
+{{- if not $w.name -}}
+{{- fail (printf "observability-stack: notifications.slack.workspaces[%d] has an empty `name`. The name is how a severity, route or catch-all picks this workspace, and it names the mounted Secret volume." $i) -}}
+{{- end -}}
+{{- if hasKey $names $w.name -}}
+{{- fail (printf "observability-stack: notifications.slack.workspaces has two entries named %q. A `workspace` that could mean either is a destination nobody can read, and the two would mount one volume name twice." (toString $w.name)) -}}
+{{- end -}}
+{{- $_ := set $names $w.name true -}}
+{{- if not (($w.appTokenSecret).name) -}}
+{{- fail (printf "observability-stack: notifications.slack.workspaces[%d] (%s) has an empty `appTokenSecret.name`. A workspace whose bot token Secret is unnamed cannot send: the route, the receiver and the schema would all agree it exists, and it would deliver nothing." $i (toString $w.name)) -}}
+{{- end -}}
+{{- if not (($w.appTokenSecret).key) -}}
+{{- fail (printf "observability-stack: notifications.slack.workspaces[%d] (%s) has an empty `appTokenSecret.key`. The key is the file under the mounted Secret that Alertmanager reads the bot token from; without it there is no file to read." $i (toString $w.name)) -}}
+{{- end -}}
+{{- end -}}
+{{- with $slack.failureReceiver -}}
+{{- if not $workspaces -}}
+{{- fail "observability-stack: `notifications.slack.failureReceiver` is set but `notifications.slack.workspaces` is empty. It names where the \"Slack is not delivering\" alert goes, and with no Slack workspace there is no such alert to route." -}}
+{{- end -}}
+{{- if eq . "slack" -}}
+{{- fail "observability-stack: `notifications.slack.failureReceiver` is \"slack\". The alert says Slack is failing to deliver; routed to Slack it would fail to deliver itself. Name a webhook from `notifications.webhook`, or `telegram`." -}}
+{{- end -}}
+{{- $isTelegram := and (eq . "telegram") ((($n.telegram | default dict).botTokenSecret).name) -}}
+{{- $isWebhook := false -}}
+{{- range $w := ($n.webhook | default list) -}}{{- if eq $w.name $slack.failureReceiver -}}{{- $isWebhook = true -}}{{- end -}}{{- end -}}
+{{- if not (or $isTelegram $isWebhook) -}}
+{{- fail (printf "observability-stack: notifications.slack.failureReceiver is %q, which is neither the name of an entry in notifications.webhook nor \"telegram\" (with notifications.telegram configured). An alert routed to a receiver that is not configured looks routed and reaches nobody." (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 `notifications.mode: evaluate-only` — the explicit, named opt-out for a
 consumer with no Slack or webhook credential YET, docs/notifications.md,
 "Evaluate, notify nobody yet". `route` (the default) changes nothing
@@ -850,7 +906,7 @@ trip over an unconfigured severity or receiver.
 {{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `alertmanager.notifierUrl` is set. Evaluate-only renders vmalert's `-notifier.blackhole`, which vmalert itself refuses to combine with any notifier URL: `-notifier.url`, `-notifier.config` and `-notifier.blackhole` are mutually exclusive. Unset `alertmanager.notifierUrl`, or drop `notifications.mode` back to `route` and point vmalert at the Alertmanager it names." -}}
 {{- end -}}
 {{- $slack := $n.slack | default dict -}}
-{{- $receiverConfigured := or ($slack.webhookSecret).name (($n.telegram | default dict).botTokenSecret).name (gt (len ($n.webhook | default list)) 0) (gt (len ($n.severities | default dict)) 0) (gt (len ($n.routes | default list)) 0) (gt (len ($n.also | default list)) 0) $n.catchAll (gt (len ($n.drop | default list)) 0) -}}
+{{- $receiverConfigured := or $slack.workspaces (($n.telegram | default dict).botTokenSecret).name (gt (len ($n.webhook | default list)) 0) (gt (len ($n.severities | default dict)) 0) (gt (len ($n.routes | default list)) 0) (gt (len ($n.also | default list)) 0) $n.catchAll (gt (len ($n.drop | default list)) 0) -}}
 {{- if $receiverConfigured -}}
 {{- fail "observability-stack: `notifications.mode` is `evaluate-only` and `notifications` also configures a receiver, a severity, a route or an `also` bridge (or a `catchAll` or `drop`). Evaluate-only means nobody is notified yet: a receiver configured beside it looks wired up and is never reached, because vmalert never sends the notification it would carry. Remove the receiver configuration, or drop `notifications.mode` back to `route`." -}}
 {{- end -}}
@@ -873,10 +929,12 @@ free-form passthrough. See docs/notifications.md and docs/safety.md.
 {{- $routes := $n.routes | default list -}}
 {{- $also := $n.also | default list -}}
 {{- $webhookNames := dict -}}
+{{- $slackWorkspaceNames := dict -}}
+{{- range $w := ($slack.workspaces | default list) -}}{{- $_ := set $slackWorkspaceNames $w.name true -}}{{- end -}}
 {{- range $w := $webhooks -}}{{- $_ := set $webhookNames $w.name true -}}{{- end -}}
-{{- $configured := or ($slack.webhookSecret).name $telegramConfigured (gt (len $webhooks) 0) -}}
+{{- $configured := or $slack.workspaces $telegramConfigured (gt (len $webhooks) 0) -}}
 {{- if and $observabilityStackEffective.alertmanager (not $configured) (ne $mode "evaluate-only") -}}
-{{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.webhookSecret`, no `notifications.telegram.botTokenSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs, or set `notifications.mode: evaluate-only` for the explicit \"evaluate every rule, notify nobody yet\" shape if there is no channel yet." -}}
+{{- fail "observability-stack: `alertmanager.enabled` is true and `notifications` configures no receiver kind — no `notifications.slack.workspaces`, no `notifications.telegram.botTokenSecret` and no `notifications.webhook` entries. Alertmanager then routes to the `blackhole` shape this chart exists to retire: vmalert evaluates every rule and the result reaches nobody, and nothing about the install looks unhealthy. Configure at least one receiver kind under `notifications`, set `alertmanager.enabled: false` and point `alertmanager.notifierUrl` at one the estate already runs, or set `notifications.mode: evaluate-only` for the explicit \"evaluate every rule, notify nobody yet\" shape if there is no channel yet." -}}
 {{- end -}}
 {{- /*
 `notifications.externalUrl` and `vmalert.externalUrl` are one fact — the
@@ -947,8 +1005,11 @@ same ways to name a receiver that is not there.
 {{- if and $isTelegram $cfg.channel -}}
 {{- fail (printf "observability-stack: %s.receiver is \"telegram\" and it also sets `channel`. `channel` is a Slack channel; a Telegram tier lands in `notifications.telegram.chatId`, or in this tier's own `chatId`/`messageThreadId`. Remove `channel`." $t.where) -}}
 {{- end -}}
-{{- if and (eq $cfg.receiver "slack") (not ($slack.webhookSecret).name) -}}
-{{- fail (printf "observability-stack: %s.receiver is \"slack\" but notifications.slack.webhookSecret is not set. A route to a receiver kind that is not configured looks like a route and reaches nobody." $t.where) -}}
+{{- if and $cfg.workspace (ne $cfg.receiver "slack") -}}
+{{- fail (printf "observability-stack: %s sets `workspace` but its receiver is %q, not `slack`. A workspace picks the Slack app whose bot token posts; on any other receiver it would be read by nothing." $t.where (toString $cfg.receiver)) -}}
+{{- end -}}
+{{- if eq $cfg.receiver "slack" -}}
+{{- include "observability-stack.validate.slackDestination" (list $t.where $cfg.channel $cfg.workspace $slackWorkspaceNames) -}}
 {{- end -}}
 {{- end -}}
 {{- /*
@@ -961,6 +1022,18 @@ looking exactly like a route that works.
 {{- $tcfg := index $severities $tier | default dict -}}
 {{- if and (index $r $tier) (eq ($tcfg.receiver | default "") "telegram") $telegramConfigured -}}
 {{- fail (printf "observability-stack: notifications.routes[%d].%s overrides a channel, but notifications.severities.%s.receiver is \"telegram\". A route's per-tier value is a Slack channel name; a Telegram tier has no channel to override, so it would be read by nothing. Remove it, or route that tier to Slack." $i $tier $tier) -}}
+{{- end -}}
+{{- end -}}
+{{- range $tier := list "critical" "warning" -}}
+{{- $tcfg := index $severities $tier | default dict -}}
+{{- $override := index $r $tier -}}
+{{- if and $override (eq ($tcfg.receiver | default "") "slack") -}}
+{{- $where := printf "notifications.routes[%d].%s" $i $tier -}}
+{{- if kindIs "map" $override -}}
+{{- include "observability-stack.validate.slackDestination" (list $where ($override.channel | default $tcfg.channel) ($override.workspace | default $tcfg.workspace) $slackWorkspaceNames) -}}
+{{- else -}}
+{{- include "observability-stack.validate.slackDestination" (list $where $override $tcfg.workspace $slackWorkspaceNames) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- range $k, $_ := ($r.match | default dict) -}}
@@ -991,6 +1064,29 @@ a single delayed delivery reads as the estate being down.
 {{- if ge $repeatS $timeoutS -}}
 {{- fail (printf "observability-stack: alertmanager.watchdog.repeatInterval is %q and alertmanager.watchdog.timeout is %q. The heartbeat must land comfortably INSIDE the far end's own timeout, or a single delayed delivery reads as the estate being down when it is not. repeatInterval must be strictly less than timeout." (toString $watchdog.repeatInterval) (toString $watchdog.timeout)) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+One Slack destination — a severity tier, the catch-all, or a route's
+per-tier override — as `(where channel workspace workspaceNames)`.
+*/ -}}
+{{- define "observability-stack.validate.slackDestination" -}}
+{{- $where := index . 0 -}}
+{{- $channel := index . 1 -}}
+{{- $workspace := index . 2 -}}
+{{- $names := index . 3 -}}
+{{- if not $names -}}
+{{- fail (printf "observability-stack: %s sends to Slack but notifications.slack.workspaces is empty. A route to a receiver kind that is not configured looks like a route and reaches nobody." $where) -}}
+{{- end -}}
+{{- if not $channel -}}
+{{- fail (printf "observability-stack: %s sends to Slack with an empty `channel`. A token posts to the channel a message names; with none named Slack refuses every message, and the route looks wired up and delivers nothing." $where) -}}
+{{- end -}}
+{{- if and (not $workspace) (gt (len $names) 1) -}}
+{{- fail (printf "observability-stack: %s sends to Slack without a `workspace`, and notifications.slack.workspaces declares %d. With exactly one workspace the name may be left out; with two or more it is required, because the same channel name is a different place in each." $where (len $names)) -}}
+{{- end -}}
+{{- if and $workspace (not (hasKey $names $workspace)) -}}
+{{- fail (printf "observability-stack: %s names workspace %q, which no entry in notifications.slack.workspaces declares. A destination in a workspace with no bot token looks routed and reaches nobody." $where (toString $workspace)) -}}
 {{- end -}}
 {{- end -}}
 

@@ -1,0 +1,42 @@
+# Two Slack workspaces, so `workspace` is required wherever a destination
+# is picked: the critical tier and the catch-all post in `acme`, a
+# project's route moves its critical alerts to a channel in `globex`
+# (its warnings stay on the tier's own destination). Each workspace has
+# its own bot token Secret, mounted at its own path; one receiver renders
+# per distinct (workspace, channel). The Slack delivery alert goes to
+# Telegram's default chat.
+# The cluster's DNS suffix is a neutral placeholder: a golden render is a
+# tracked file in a public repository.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+      - name: globex
+        appTokenSecret: {name: example-globex-slack-bot, key: bot-token}
+    failureReceiver: telegram
+  telegram:
+    botTokenSecret: {name: example-telegram-bot, key: bot-token}
+    chatId: -1000000000001
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical", workspace: acme}
+    warning: {receiver: slack, channel: "#alerts", workspace: acme}
+  catchAll: {receiver: slack, channel: "#alerts-everything-else", workspace: acme}
+  routes:
+    - match: {k8s_namespace_name: example-partner}
+      critical: {channel: "#partner-critical", workspace: globex}

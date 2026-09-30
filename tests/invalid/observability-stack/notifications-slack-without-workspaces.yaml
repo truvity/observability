@@ -1,0 +1,21 @@
+# expect: sends to Slack but notifications.slack.workspaces is empty
+# A Slack tier with no workspace declared (Telegram keeps the install
+# otherwise configured): a route to a kind that is not configured.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  telegram:
+    botTokenSecret: {name: example-telegram-bot, key: bot-token}
+    chatId: -1000000000001
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

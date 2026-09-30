@@ -4,6 +4,66 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`: Slack posts with a bot token per workspace.
+
+- **BREAKING (values interface): `notifications.slack.webhookSecret` is
+  removed; use `notifications.slack.workspaces`.** One incoming webhook
+  ignores the `channel` a message asks for and always posts to the one
+  channel it was created for, so routing to several channels through it
+  could not work. A leftover `webhookSecret` is refused at render, and the
+  message names the replacement. Migration: create one Slack app per
+  workspace (manifest in [docs/notifications.md](docs/notifications.md),
+  "Slack": bot scopes `chat:write` and `chat:write.public`), store its bot
+  token (`xoxb-...`) in a Secret, and replace
+
+  ```yaml
+  slack:
+    webhookSecret: {name: slack-webhook, key: url}
+  ```
+
+  with
+
+  ```yaml
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: slack-bot, key: token}
+  ```
+
+  The token is mounted and read with Alertmanager's `app_token_file`
+  (v0.30.0 or later; the pinned operator deploys v0.34.0), never
+  interpolated. Receivers are now named `slack-<workspace>--<channel>`
+  instead of `slack-<channel>`; nothing else refers to a receiver name.
+- **`workspace` on every Slack destination.** `severities.<tier>`,
+  `catchAll` and a route's per-tier override gain an optional `workspace`:
+  omitted it means the one declared workspace, and with two or more
+  declared it is required. A route's per-tier value may now be a channel
+  string (unchanged) or `{channel, workspace}`. One receiver renders per
+  distinct (workspace, channel). Several workspaces are supported.
+- **New refusals:** a leftover `webhookSecret`; a `workspace` no entry
+  declares; `workspace` omitted while two or more are declared; an empty
+  Slack channel; two workspaces with one name; a workspace with an empty
+  name, secret name or key; `workspace` on a non-Slack destination; a
+  `failureReceiver` naming Slack, an unconfigured receiver, or set with no
+  workspaces. `update_message` is not rendered: Alertmanager v0.34.0
+  crashes loading it beside `app_token_file`.
+- **New alert `SlackNotificationsFailing`** (`selfAlerts.slackDelivery`):
+  `alertmanager_notifications_failed_total{integration="slack"}` increased
+  over 15 minutes. It renders whenever a workspace is declared, without
+  `selfAlerts.enabled`. It is never routed to Slack: a route at the top of
+  the tree (`continue: false`) sends it to the new optional
+  `notifications.slack.failureReceiver` (a webhook name, or `telegram`).
+  Unset, it goes to the null receiver: visible in vmalert, reaches nobody.
+- **Behaviour change:** every existing golden with a Slack receiver moves.
+  The Slack receivers and their volume and mount names change as above,
+  and a `SlackNotificationsFailing` rule and its top route render.
+  `selfAlerts.slackDelivery.enabled: false` drops the rule (the top route
+  stays, harmlessly). New cases `notifications-slack-one-workspace`,
+  `notifications-slack-two-workspaces` and
+  `notifications-slack-failure-receiver`.
+
 ## v0.16.0
 
 A new chart, `observability-mcp`: read-only MCP servers over the store.
