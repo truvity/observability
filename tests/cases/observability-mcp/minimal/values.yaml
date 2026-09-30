@@ -1,0 +1,33 @@
+# The metrics server, the one implemented in this release, with only what
+# has no default: the issuer, the pinned proxy build, the resource URL, the
+# outbound exchange, and the peers the NetworkPolicy names.
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+servers:
+  metrics:
+    enabled: true
+    resourceURL: https://mcp.example.com/metrics
+    outbound:
+      target: http://vmauth.observability.svc:8427
+      tokenEndpoint: https://issuer.example.com/token
+      clientId: observability-mcp
+      audience: store-proxy
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway
+  egress:
+    issuer:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: issuer
+    vmauth:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: observability
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: vmauth

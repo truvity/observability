@@ -1,0 +1,19 @@
+apiVersion: v2
+name: observability-mcp
+description: >-
+  Read-only Model Context Protocol servers over the estate's observability
+  store: one Deployment per enabled server, each the stock upstream MCP
+  server on loopback behind a resource-proxy sidecar that validates the
+  caller's access token and holds the only credential the store sees.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - mcp
+  - observability
+  - victoriametrics
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability

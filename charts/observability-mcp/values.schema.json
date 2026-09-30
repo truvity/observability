@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-mcp",
+  "description": "Read-only MCP servers over the observability store. Strict: an unknown key fails the render rather than being silently ignored. Whether a value an enabled server needs is EMPTY is a render-time refusal in templates/_validate.tpl, with a message that says what the empty value would cost.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["servers", "networkPolicy"],
+  "definitions": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "digest": { "type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "peers": {
+      "type": "array",
+      "description": "NetworkPolicy peers, exactly as the NetworkPolicy API shapes one entry of a `from`/`to` list.",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/definitions/image" },
+        "runAsUser": { "type": "integer", "minimum": 1 },
+        "resourceURL": {
+          "type": "string",
+          "pattern": "^(https://[^\\s#]+)?$",
+          "description": "https, no fragment. Empty is refused at render time while the server is enabled."
+        },
+        "scope": { "type": "string", "pattern": "^[^\\s\"\\\\]+$" },
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "resources": { "type": "object" },
+        "entrypointPath": { "type": "string", "pattern": "^(/[A-Za-z0-9._~-]+)*$" },
+        "disabledTools": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+        },
+        "outbound": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "target": { "type": "string", "pattern": "^(https?://[^\\s/]+)?$", "description": "A base URL: scheme and host, no path." },
+            "tokenEndpoint": { "type": "string", "pattern": "^(https://[^\\s#]+)?$" },
+            "clientId": { "type": "string" },
+            "audience": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "issuerURL": { "type": "string", "pattern": "^(https://[^\\s#]+)?$" },
+    "proxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": { "$ref": "#/definitions/image" },
+        "runAsUser": { "type": "integer", "minimum": 1 },
+        "resources": { "type": "object" }
+      }
+    },
+    "serviceAccountToken": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "audience": { "type": "string", "minLength": 1 },
+        "expirationSeconds": { "type": "integer", "minimum": 600 }
+      }
+    },
+    "servers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metrics": { "$ref": "#/definitions/server" },
+        "logs": { "$ref": "#/definitions/server" },
+        "traces": { "$ref": "#/definitions/server" },
+        "dashboards": { "$ref": "#/definitions/server" }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ingressFrom": { "$ref": "#/definitions/peers" },
+        "egress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "issuer": { "$ref": "#/definitions/peers" },
+            "vmauth": { "$ref": "#/definitions/peers" }
+          }
+        }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

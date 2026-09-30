@@ -1,0 +1,232 @@
+# observability-mcp — read-only MCP servers over the observability store.
+#
+# Each enabled server is ONE Deployment with TWO containers:
+#
+#   upstream   the stock MCP server, pinned, in HTTP transport, listening on
+#              127.0.0.1 only and holding NO credential. It declares no
+#              container port: nothing outside the pod can reach it.
+#   proxy      truvity/access-roster's resource-proxy. INBOUND it is the
+#              pod's only port: it validates the caller's access token
+#              (signature against the issuer's JWKS, `iss`, and `aud` equal
+#              to this server's own resource URL), serves the protected
+#              resource metadata, and strips the caller's token before the
+#              request reaches the upstream. OUTBOUND it listens on loopback
+#              and forwards the upstream's store calls to the store's proxy,
+#              injecting a token it exchanged for this pod's own
+#              ServiceAccount token. The caller's token is never forwarded.
+#
+# Who may reach a server is decided by the issuer's own policy for the
+# resource URL, not by anything here. See docs/mcp.md.
+#
+# Every refusal is in templates/_validate.tpl; every one has a fixture under
+# tests/invalid/observability-mcp/.
+
+# -- The access-token issuer the proxy trusts (its `iss`, and where it finds
+# the signing keys). Required while any server is enabled.
+issuerURL: ""
+
+# -- The resource-proxy sidecar, shared by every server.
+proxy:
+  image:
+    repository: ghcr.io/truvity/access-roster/resource-proxy
+    # -- NO default: the image is built by a different repository's release,
+    # so a default here would be a version this chart's own tag cannot know
+    # is right. Required (refused empty) while any server is enabled.
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # -- The numeric uid the image runs as. `runAsNonRoot` cannot verify a
+  # named user, so the uid is stated.
+  runAsUser: 65532
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 96Mi
+
+# -- The projected ServiceAccount token the proxy exchanges at the issuer.
+# Audience and lifetime are the issuer's to set; the kubelet refreshes the
+# file, the proxy reads it fresh each time.
+serviceAccountToken:
+  audience: access-issuer
+  # -- Seconds. The kubelet minimum is 600.
+  expirationSeconds: 600
+
+# -- The servers. Only `metrics` is implemented in this release; `logs`,
+# `traces` and `dashboards` are values stubs so a later phase is a values
+# change — enabling one now is refused (see docs/mcp.md).
+#
+# Each server, when enabled, renders the objects `observability-mcp-<name>`:
+# a ServiceAccount, a Deployment, a Service, a NetworkPolicy and, optionally,
+# a PodDisruptionBudget.
+servers:
+  metrics:
+    # -- The stock `mcp-victoriametrics` (github.com/VictoriaMetrics/
+    # mcp-victoriametrics), against the store's metrics read path.
+    enabled: false
+    image:
+      repository: ghcr.io/victoriametrics/mcp-victoriametrics
+      tag: v1.20.2
+      digest: "sha256:bcbf84f945d6efb03fb8b2d2ccc3294420dccdc0b445752dce96f02619416dfe"
+      pullPolicy: IfNotPresent
+    # -- The uid of the `mcp` user in that image.
+    runAsUser: 1000
+    # -- This server's RFC 8707 resource identifier: the exact URL a client
+    # connects to, and the `aud` the proxy requires. https, no fragment.
+    # Required while enabled.
+    resourceURL: ""
+    # -- The scope the 401 challenge and the metadata advertise.
+    scope: openid
+    replicaCount: 1
+    # -- The upstream's own sizing. No CPU limit (a throttled query tool is
+    # a slow one); a memory limit. The upstream embeds a documentation
+    # index that dominates its memory when the `documentation` tool is on.
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+    # -- How the upstream reaches the store: the path prefix it appends to
+    # the proxy's loopback listener. The store's proxy serves the Prometheus
+    # API under `/prometheus`, and the upstream's single-node mode puts
+    # `/api/v1/...` (and `/vmalert/api/v1/...`) after its entrypoint.
+    entrypointPath: /prometheus
+    # -- Tools the upstream must NOT register. Setting this REPLACES the
+    # upstream's own default list, so it names that list too. Read-only is
+    # the contract: everything that debugs a configuration, exports raw
+    # data, or reads what the store's proxy does not admit is off.
+    disabledTools:
+      # the upstream's own defaults: not read paths, or need a local binary
+      - export
+      - flags
+      - metric_relabel_debug
+      - downsampling_filters_debug
+      - retention_filters_debug
+      - test_rules
+      # store endpoints the proxy's read routes do not admit (other
+      # principals' query text, every namespace's names with counts), and
+      # the cluster-only tenant listing
+      - metric_statistics
+      - active_queries
+      - top_queries
+      - tenants
+      # an embedded documentation index: the memory the upstream is sized
+      # around, and nothing an agent needs from a store
+      - documentation
+      # VictoriaMetrics Cloud only
+      - deployments
+      - cloud_providers
+      - regions
+      - tiers
+      - access_tokens
+      - rule_filenames
+      - rule_file
+    # -- How the pod authenticates to the store.
+    outbound:
+      # -- The store's proxy (vmauth) base URL, no path. Required while
+      # enabled.
+      target: ""
+      # -- The issuer's RFC 8693 token endpoint. Required while enabled.
+      tokenEndpoint: ""
+      # -- The exchange client this workload is registered as. Required
+      # while enabled.
+      clientId: ""
+      # -- The audience the exchanged token is minted for: the store's
+      # proxy's own audience. Required while enabled.
+      audience: ""
+  logs:
+    # -- STUB. The stock `mcp-victorialogs` (v1.9.0,
+    # ghcr.io/victoriametrics/mcp-victorialogs). Not implemented here.
+    enabled: false
+    image:
+      repository: ghcr.io/victoriametrics/mcp-victorialogs
+      tag: v1.9.0
+      digest: ""
+      pullPolicy: IfNotPresent
+    runAsUser: 1000
+    resourceURL: ""
+    scope: openid
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+    entrypointPath: ""
+    disabledTools: []
+    outbound: {target: "", tokenEndpoint: "", clientId: "", audience: ""}
+  traces:
+    # -- STUB. The stock `mcp-victoriatraces` (v1.5.0,
+    # ghcr.io/victoriametrics/mcp-victoriatraces). Not implemented here.
+    enabled: false
+    image:
+      repository: ghcr.io/victoriametrics/mcp-victoriatraces
+      tag: v1.5.0
+      digest: ""
+      pullPolicy: IfNotPresent
+    runAsUser: 1000
+    resourceURL: ""
+    scope: openid
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+    entrypointPath: ""
+    disabledTools: []
+    outbound: {target: "", tokenEndpoint: "", clientId: "", audience: ""}
+  dashboards:
+    # -- STUB. Grafana's `mcp-grafana` (v1.6.3, docker.io/grafana/mcp-grafana),
+    # dashboards only: `--enabled-tools=search,dashboard --disable-write`.
+    # Not implemented here.
+    enabled: false
+    image:
+      repository: docker.io/grafana/mcp-grafana
+      tag: v1.6.3
+      digest: ""
+      pullPolicy: IfNotPresent
+    runAsUser: 1000
+    resourceURL: ""
+    scope: openid
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+    entrypointPath: ""
+    disabledTools: []
+    outbound: {target: "", tokenEndpoint: "", clientId: "", audience: ""}
+
+networkPolicy:
+  enabled: true
+  # -- NetworkPolicy peers allowed to reach the proxy's one port: the
+  # gateway that fronts these servers. Required while `enabled`; an empty
+  # list would render an ingress rule that admits nobody.
+  #
+  #   ingressFrom:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           kubernetes.io/metadata.name: <gateway namespace>
+  ingressFrom: []
+  # -- Where the pod may connect: the issuer, the store's proxy, and cluster
+  # DNS — nothing else. Both peer lists are required while `enabled`.
+  egress:
+    # -- Peers the issuer (JWKS and token endpoint) is reached at. The port
+    # comes from `issuerURL` and each server's `outbound.tokenEndpoint`.
+    issuer: []
+    # -- Peers the store's proxy is reached at. The port comes from each
+    # server's `outbound.target`.
+    vmauth: []
+
+# -- Optional. Refused with fewer than two replicas: a budget of one
+# available on a single replica blocks every node drain.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
