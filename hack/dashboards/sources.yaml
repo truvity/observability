@@ -111,7 +111,8 @@ dashboards:
     folder: infrastructure
     tags: [observability-kubernetes]
     seedQuery: 'node_uname_info'
-    # No install runs node-exporter yet.
+    # node-exporter is off by default (`nodeExporter.enabled`, 0.15.0), so
+    # this dashboard is empty until it is on; a consumer hides it until then.
     requires: [node-exporter]
 
   # -- Operational views (charts/observability-dashboards 0.12.0). Held to
@@ -132,9 +133,12 @@ dashboards:
   # dotdc/grafana-dashboards-kubernetes, adapted (hack/dashboards.py,
   # adapt_k8s_views): the `cluster` label becomes `k8s_cluster_name`, and
   # every query on a metric the store does not hold is replaced or dropped.
-  # k8s-views-nodes is NOT imported: it is built on node-exporter, which no
-  # install runs yet. Add it, with node-exporter's metric family in
-  # available-metrics.yaml, when that source ships.
+  # k8s-views-nodes is built on node-exporter, an optional source
+  # (`nodeExporter.enabled`, 0.15.0), so it `requires:` it: its node_*
+  # queries are read against the node-exporter source of
+  # available-metrics.yaml, and a panel on a family that source does not
+  # claim (conntrack, CPU throttles) is dropped at import. Off by default in
+  # the chart's values, like the source it needs.
   - name: k8s-views-global
     upstream: dotdc
     url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/{ref}/dashboards/k8s-views-global.json
@@ -152,6 +156,16 @@ dashboards:
     folder: kubernetes
     tags: [observability-kubernetes, kubernetes]
     queryCheck: true
+
+  - name: k8s-views-nodes
+    upstream: dotdc
+    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/{ref}/dashboards/k8s-views-nodes.json
+    ref: v3.0.8
+    adapt: k8s-views
+    folder: kubernetes
+    tags: [observability-kubernetes, kubernetes]
+    queryCheck: true
+    requires: [node-exporter]
 
   - name: k8s-views-pods
     upstream: dotdc

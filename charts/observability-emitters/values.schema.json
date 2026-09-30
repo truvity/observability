@@ -12,6 +12,7 @@
     "metrics",
     "logs",
     "kubeStateMetrics",
+    "nodeExporter",
     "otlp",
     "selfMonitor"
   ],
@@ -356,6 +357,19 @@
         }
       }
     },
+    "nodeExporter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "description": "Off by default. The collector set, the scheduling defaults and the scrape object are `prometheus-node-exporter`'s own keys below, read back and refused by this chart, rather than a second set that would have to be kept in step with them.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
     "otlp": {
       "type": "object",
       "additionalProperties": false,
@@ -503,6 +517,10 @@
     "kube-state-metrics": {
       "type": "object",
       "description": "Passed through to the vendored upstream chart, and read back by this chart's refusals \u2014 the RBAC scope, the collector allow-list and the metric-relabel that corrects the namespace stamp among them. Upstream's surface, not this chart's, so it is not constrained here."
+    },
+    "prometheus-node-exporter": {
+      "type": "object",
+      "description": "Passed through to the vendored upstream chart, and read back by this chart's refusals \u2014 host network and PID, the scrape object and the relabelings that give it `job`, `instance` and `node`. Upstream's surface, not this chart's, so it is not constrained here."
     },
     "global": {
       "type": "object",

@@ -1,0 +1,60 @@
+# The two dashboards that read node-exporter, and nothing else: what a
+# cluster turns on together with `nodeExporter.enabled` in
+# charts/observability-emitters. Both are held to node-exporter's own source
+# in hack/dashboards/available-metrics.yaml (their catalog entries `require`
+# it). The rest of the set is off so the golden shows only these two, and the
+# home page is off with it (the default home is the fleet overview).
+datasources:
+  metrics: example-metrics
+
+home: ""
+
+dashboards:
+  fleet-overview:
+    enabled: false
+  k8s-views-global:
+    enabled: false
+  k8s-views-namespaces:
+    enabled: false
+  k8s-views-pods:
+    enabled: false
+  k8s-views-nodes:
+    enabled: true
+  victoriametrics-single:
+    enabled: false
+  victoriametrics-vmagent:
+    enabled: false
+  victoriametrics-vmalert:
+    enabled: false
+  victoriametrics-operator:
+    enabled: false
+  victorialogs-single:
+    enabled: false
+  victorialogs-vlagent:
+    enabled: false
+  victoriatraces-single:
+    enabled: false
+  alertmanager:
+    enabled: false
+  node-exporter-full:
+    enabled: true
+  kubelet:
+    enabled: false
+  argocd:
+    enabled: false
+  cert-manager:
+    enabled: false
+  cnpg-operator:
+    enabled: false
+  nats-server:
+    enabled: false
+  nats-jetstream:
+    enabled: false
+  envoy-gateway:
+    enabled: false
+  envoy-proxy:
+    enabled: false
+  envoy-clusters:
+    enabled: false
+  kargo:
+    enabled: false

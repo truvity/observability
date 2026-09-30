@@ -1,0 +1,53 @@
+# expect: has no step setting `job`
+# A relabelings list that lost the job step stores the series under the
+# Service's name, which no dashboard or rule selects.
+
+metrics:
+  destinations:
+  - name: primary
+    url: https://metrics.example/api/v1/write
+otlp:
+  destinations:
+    logs:
+    - name: primary
+      url: https://logs.example
+    metrics:
+    - name: primary
+      url: https://metrics.example
+    traces:
+    - name: primary
+      url: https://traces.example
+tenancy:
+  cluster: example-cluster
+  environment: development
+victoria-logs-collector:
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+  extraVolumeMounts:
+  - mountPath: /etc/observability-write-token
+    name: write-token
+    readOnly: true
+  extraVolumes:
+  - name: write-token
+    secret:
+      secretName: example-write-token
+  remoteWrite:
+  - bearerTokenFile: /etc/observability-write-token/token
+    maxDiskUsagePerURL: 5GB
+    url: https://logs.example
+writeCredentials:
+  secretName: example-write-token
+nodeExporter:
+  enabled: true
+prometheus-node-exporter:
+  prometheus:
+    monitor:
+      relabelings:
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_node_name]
+          regex: (.+)
+          targetLabel: instance
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_node_name]
+          regex: (.+)
+          targetLabel: node

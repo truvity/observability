@@ -4,6 +4,112 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.15.0
+
+`charts/observability-emitters` gains a node-exporter, off by default, and the
+dashboards and the allow-lists learn what an optional source is. Nothing
+changes for an install that leaves `nodeExporter.enabled` at its default: no
+existing golden render moves.
+
+- **New: `nodeExporter.enabled` (default `false`) runs node-exporter as a
+  DaemonSet, from the upstream `prometheus-node-exporter` chart vendored
+  under `charts/`.** Pinned to 4.55.1 (node-exporter 1.11.1), the version
+  the vendored `victoria-metrics-k8s-stack` carries and leaves disabled, for
+  the reason kube-state-metrics is pinned to its copy: one render of the
+  upstream chart per estate. It is off by default because a cluster may
+  already run one (a second install exports every `node_*` series twice),
+  and because it runs with the host's network and PID namespaces and the
+  host's `/proc`, `/sys` and root filesystem mounted read-only. It runs as
+  `nobody` with a read-only root filesystem and listens on the node's own
+  address rather than every interface.
+- **Scheduling is the log collector's.** `system-node-critical` (a node too
+  full for it is a node with no metrics, so it may preempt), tolerate every
+  taint (`operator: Exists`, NoExecute included), `kubernetes.io/os: linux`,
+  and small measured resources: requests 10m CPU and 64Mi, limits 100m CPU
+  and 64Mi (memory request equals limit). Where it must not run, pass the
+  same `affinity` value a log collector takes, under
+  `prometheus-node-exporter.affinity`, for instance a `nodeAffinity`
+  `NotIn` over the node pools of ephemeral CI nodes. Upstream merges that
+  over its own default (no Fargate, no virtual-kubelet nodes); a
+  `nodeAffinity` you set replaces that default. `nodeSelector` and
+  `tolerations` are upstream's own keys, under the same name.
+- **A lean collector set.** Upstream turns on about forty collectors; this
+  chart turns them all off (`--collector.disable-defaults`) and names 26:
+  `arp`, `conntrack`, `cpu`, `diskstats`, `entropy`, `filefd`, `filesystem`,
+  `hwmon`, `kernel_hung`, `loadavg`, `meminfo`, `netclass`, `netdev`,
+  `netstat`, `pressure`, `processes`, `schedstat`, `sockstat`, `softnet`,
+  `stat`, `tcpstat`, `time`, `timex`, `udp_queues`, `uname` and `vmstat`:
+  the families the node-exporter dashboard and `k8s-views-nodes` query, and
+  what `node.rules` and `kube-prometheus-node-recording.rules` record from.
+  Left out: `interrupts` (a series per CPU per IRQ), `systemd` (needs the
+  host's D-Bus socket), `cpufreq`, `thermal_zone`, `rapl` and
+  `powersupplyclass` (per CPU or sensor, absent on a cloud VM),
+  `zoneinfo`, `slabinfo`, and the storage and network-fabric collectors
+  (`nfs`, `xfs`, `zfs`, `btrfs`, `mdadm`, `nvme`, `ipvs`, `infiniband` and
+  the like). The pod interfaces the CNIs mint per pod (`veth*`,
+  `eni<hash>`, `lxc*`, `cali*`, `cilium_*`, `flannel*`) are excluded from
+  `netdev` and `netclass`, and the per-pod mounts under
+  `/var/lib/kubelet/{pods,plugins}` and the container runtime's own are
+  excluded from `filesystem`: a node's series count is decided by what is
+  plumbed and mounted, and those churn with every pod. Measured against the
+  real binary on an 8-CPU machine with nine interfaces, this set holds 776
+  series against 1023 for upstream's defaults; count on roughly 600 to 800
+  for an 8-vCPU node, and about 20 more per CPU (`cpu`, `softnet` and
+  `schedstat` are per CPU).
+- **The scrape is a `ServiceMonitor`, and stores `job="node-exporter"`.**
+  The kube-prometheus convention the dashboard and the k8s-stack's rules
+  select on (the operator would otherwise name the job for the Service),
+  with `instance` and `node` both set to the node's name (a stable identity
+  rather than `ip:9100`, and what the rules group on). The cluster and the
+  tier come from the default scrape class, like every other series. Node
+  series carry **no `k8s_namespace_name`**: a node belongs to no namespace,
+  so a grant on the exporter's own namespace does not read them, only a
+  grant on all namespaces of the cluster does, the same as the kubelet's and
+  cAdvisor's node-level series. The exporter pod's own `namespace` and `pod`
+  labels stay, because `node.rules` joins on them (`node_cpu_seconds_total`
+  to `kube_pod_info`, to find each series' node).
+- **New refusals**, each a way for the DaemonSet to be Ready, scraped and
+  wrong or silent: `nodeExporter.enabled` with `metrics.enabled` false; the
+  `ServiceMonitor` disabled; `hostNetwork`, `hostPID` or
+  `hostRootFsMount.enabled` false; and a `relabelings` list without a step
+  setting `job`, `instance` and `node` (docs/safety.md).
+- **The dashboards allow-lists have an optional source.**
+  `hack/dashboards/available-metrics.yaml` and `available-labels.yaml` no
+  longer list node-exporter as absent: it is a source marked `onlyWith:
+  node-exporter`, which counts only for a dashboard whose catalog entry says
+  `requires: [node-exporter]`. Every other dashboard is still held to the
+  default install, where the `node_*` series are absent, so a dashboard that
+  does not declare the dependency and reads one still fails the test. The
+  label check now judges node-exporter's job (for a dashboard that requires
+  it) instead of exempting the dashboard. Only the families that exist on
+  every Linux node are claimed: not `hwmon`, `pressure`, `conntrack` or
+  `schedstat`, which depend on the kernel or the hardware.
+- **New dashboard: `k8s-views-nodes`** (dotdc/grafana-dashboards-kubernetes
+  v3.0.8, Apache-2.0, the same pin as the other Kubernetes views, with its
+  notice): one node's CPU, memory, disk, network and pods. **Off by default**
+  (`dashboards.k8s-views-nodes.enabled: false`), like the source it needs;
+  `node-exporter-full` keeps its existing default. Its panels on
+  conntrack and CPU throttling are dropped at import (not claimed, above).
+- **A finding to read before enabling the k8s-stack's node recording
+  rules.** `node.rules` works with these labels: it joins on
+  `(k8s_cluster_name, namespace, pod)` and every output carries the
+  cluster. `kube-prometheus-node-recording.rules` does not: its
+  `instance:node_*:rate:sum` rules group by `instance` alone and
+  `cluster:node_cpu:sum_rate5m` and `:ratio` aggregate with no `by`, so five
+  of its six outputs carry no cluster label and, on a store several clusters
+  write to, merge across clusters. The cluster-label rewrite of 0.14.2 can
+  only rename a `cluster` an expression already names. Enable `node.rules`;
+  leave the other group off on a shared store.
+- **Proof.** `hack/node-exporter-proof.sh` (`just node-exporter-proof`): the
+  chart's rendered DaemonSet args on the real node-exporter, scraped by the
+  pinned vmagent with the chart's rendered relabel steps into the pinned
+  VictoriaMetrics, then the real sync job's `node.rules` and
+  `kube-prometheus-node-recording.rules` evaluated by the pinned vmalert.
+  With the chart's `job` step the series are stored as
+  `job="node-exporter"` with `k8s_cluster_name` and all eleven rules of the
+  two groups record; with the step removed the four `node.rules` outputs
+  that read node-exporter record nothing.
+
 ## v0.14.3
 
 Grafana no longer starts before its dashboards exist, and the dashboard

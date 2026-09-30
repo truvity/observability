@@ -130,6 +130,16 @@ ships a NOTICE file at the pinned ref.
 - Copyright: Copyright 2020 David Calvert
 - Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
 
+## k8s-views-nodes
+
+- Upstream project: dotdc/grafana-dashboards-kubernetes
+- URL: https://github.com/dotdc/grafana-dashboards-kubernetes
+- Fetched from: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/v3.0.8/dashboards/k8s-views-nodes.json
+- Pinned ref: `v3.0.8`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: Copyright 2020 David Calvert
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
 ## k8s-views-pods
 
 - Upstream project: dotdc/grafana-dashboards-kubernetes

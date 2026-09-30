@@ -71,6 +71,14 @@ k8s-views-namespaces:
   queryCheck: true
   ref: v3.0.8
   upstream: dotdc
+k8s-views-nodes:
+  file: k8s-views-nodes.json
+  folder: kubernetes
+  queryCheck: true
+  ref: v3.0.8
+  requires:
+  - node-exporter
+  upstream: dotdc
 k8s-views-pods:
   file: k8s-views-pods.json
   folder: kubernetes

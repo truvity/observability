@@ -1280,6 +1280,39 @@ object of every kind in `kube-state-metrics.collectors`, cluster-wide.
 | Any of the eight namespace-stamp `metricRelabelings` steps missing — the four bare-name `labeldrop`s, the four `exported_<name>` restores, the `exported_` cleanup `labeldrop`, or the final `namespace`-to-`k8s_namespace_name` derivation and its own leading drop | See "The namespace stamp kube-state-metrics needs and no other scrape object does" below — this is the one most series would silently get filed under the wrong tenant for. |
 | The same eight steps present but in the WRONG ORDER — a bare-name drop after its restore, a restore after its `exported_` cleanup, or the final derivation before the restore of `namespace` it depends on | Each dependency checked separately: the same rules, reordered, derive the wrong value rather than failing to render — this is the shape the first version of this fix shipped with, caught only by replaying the rendered rules through a real relabel engine (`tests/kubestatemetrics_relabel_test.go`), not by reading them. |
 
+### node-exporter, a host-level reader that is off by default
+
+Off by default, for the reason kube-state-metrics is: a cluster may already
+run one, and a second install exports every `node_*` series twice. It is
+also the one emitter that runs with the host's network and PID namespaces
+and the host's `/proc`, `/sys` and root filesystem mounted read-only, so
+turning it on is a decision. It runs as `nobody`, with a read-only root
+filesystem, and listens on the node's own address (not every interface).
+
+Its series are cluster-scoped: a node belongs to no namespace, so the
+default scrape class's `k8s_namespace_name` (the exporter pod's own
+namespace) is dropped from every node series, the same shape the kubelet and
+cadvisor node-level series have, and only a grant on all namespaces of the
+cluster reads them. The exporter pod's own `namespace` and `pod` labels stay,
+because `node.rules` joins on them.
+
+| Refusal | The failure it prevents |
+|---|---|
+| `nodeExporter.enabled` true with `metrics.enabled` false | Nothing scrapes it: the pods run, stay Ready and answer every `/metrics` request, and nothing ever reads one. |
+| `prometheus-node-exporter.prometheus.monitor.enabled` false | No `ServiceMonitor` is rendered for it: a component with no scrape object looks exactly like a component with nothing wrong. |
+| `hostNetwork` false | The exporter reads the pod's network namespace: `node_network_*` describes one virtual interface and every series still carries the node's name. |
+| `hostPID` false | `node_processes_*` and `node_procs_*` describe a pod of two processes while carrying the node's name. |
+| `hostRootFsMount.enabled` false | The filesystem collector reads the container's own overlay, not the node's disks: the disk-full panels read healthy while the node fills. |
+| `prometheus.monitor.relabelings` without a step setting `job`, `instance` or `node` | The dashboard and the k8s-stack's `node.rules` select on `job="node-exporter"` and group on `instance` and `node`: the rules record nothing and the dashboard's pickers are empty, with every series in the store. |
+
+The k8s-stack's `kube-prometheus-node-recording.rules` is **not** cluster-safe
+on a store several clusters write to: its `instance:node_*:rate:sum` rules
+group by `instance` alone and `cluster:node_cpu:sum_rate5m` and `:ratio`
+aggregate with no `by`, so five of its six outputs carry no cluster label and
+merge across clusters (the cluster-label rewrite can only rename a `cluster`
+an expression already names). `node.rules` carries `k8s_cluster_name` on every
+output. `hack/node-exporter-proof.sh` shows both against the real binaries.
+
 ### And the rest
 
 | Refusal | The failure it prevents |

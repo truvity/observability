@@ -70,6 +70,11 @@ type metricSource struct {
 	Deny         []string `yaml:"deny"`
 	DenySuffixes []string `yaml:"denySuffixes"`
 	Keep         []string `yaml:"keep"`
+	// OnlyWith names an optional component (node-exporter) this source
+	// exists for. It counts only for a dashboard that declares that
+	// component under `requires:` in its catalog entry; every other
+	// dashboard is held to the default install, where it is absent.
+	OnlyWith string `yaml:"onlyWith"`
 }
 
 func loadAvailableMetrics(t testing.TB) []metricSource {
@@ -94,8 +99,18 @@ func has(list []string, s string) bool {
 }
 
 func metricAvailable(sources []metricSource, name string) bool {
+	return metricAvailableWith(sources, name)
+}
+
+// metricAvailableWith is metricAvailable for a dashboard that requires the
+// optional components named in enabled: the sources marked `onlyWith` one of
+// them count, and no others do.
+func metricAvailableWith(sources []metricSource, name string, enabled ...string) bool {
 	for i := range sources {
 		s := &sources[i]
+		if s.OnlyWith != "" && !has(enabled, s.OnlyWith) {
+			continue
+		}
 		if has(s.Deny, name) {
 			continue
 		}
@@ -142,7 +157,7 @@ func TestAvailableMetricsAllowListMatchesTheSurvey(t *testing.T) {
 		assert.Truef(t, metricAvailable(src, m), "%s is held by a store and must be on the allow-list", m)
 	}
 	for _, m := range []string{
-		// node-exporter: no install runs it yet
+		// node-exporter: off by default (nodeExporter.enabled), so a default install holds none of it
 		"node_cpu_seconds_total", "node_memory_MemAvailable_bytes", "node_network_receive_bytes_total",
 		// the cadvisor churn drop (0.9.1)
 		"container_tasks_state", "container_memory_failures_total", "container_blkio_device_usage_total",
@@ -197,6 +212,17 @@ func checkedDashboards(t testing.TB) map[string]string {
 		}
 	}
 	require.NotEmpty(t, out, "no dashboard is flagged queryCheck: this test would pass vacuously")
+	return out
+}
+
+// requiredSources is each dashboard's `requires:` from the catalog: the
+// optional components (node-exporter) whose series it may read.
+func requiredSources(t testing.TB) map[string][]string {
+	t.Helper()
+	out := map[string][]string{}
+	for name, e := range allDashboards(t) {
+		out[name] = e.Requires
+	}
 	return out
 }
 
@@ -362,6 +388,7 @@ func metricNames(expr string) ([]string, error) {
 
 func TestOperationalDashboardsReadOnlyAvailableMetrics(t *testing.T) {
 	src := loadAvailableMetrics(t)
+	requires := requiredSources(t)
 	for name, path := range checkedDashboards(t) {
 		d := loadDashboard(t, path)
 		qs := d.queries()
@@ -370,9 +397,10 @@ func TestOperationalDashboardsReadOnlyAvailableMetrics(t *testing.T) {
 			names, err := metricNames(d.substitute(q.expr))
 			require.NoErrorf(t, err, "%s: %s: query does not parse: %s", name, q.where, q.expr)
 			for _, m := range names {
-				assert.Truef(t, metricAvailable(src, m),
+				assert.Truef(t, metricAvailableWith(src, m, requires[name]...),
 					"%s: %s reads %q, which no store holds today (hack/dashboards/available-metrics.yaml). "+
-						"Ship the metric source first, then add its family to that list.\n  query: %s", name, q.where, m, q.expr)
+						"Ship the metric source first, then add its family to that list. (An optional component's "+
+						"series count only for a dashboard that declares it under `requires:`.)\n  query: %s", name, q.where, m, q.expr)
 			}
 		}
 	}
@@ -386,6 +414,36 @@ func TestTheAllowListGuardRejectsAnAbsentMetric(t *testing.T) {
 	assert.Equal(t, []string{"machine_cpu_cores", "node_cpu_seconds_total"}, names)
 	assert.False(t, metricAvailable(src, "node_cpu_seconds_total"))
 	assert.True(t, metricAvailable(src, "machine_cpu_cores"))
+}
+
+// node-exporter is an optional source: its families are held only where
+// nodeExporter.enabled, so they are on the list for a dashboard that
+// declares `requires: [node-exporter]` and off it for every other, which is
+// what keeps a consumer who leaves it off from a dashboard of empty panels.
+func TestNodeExporterFamiliesCountOnlyForADashboardThatRequiresThem(t *testing.T) {
+	src := loadAvailableMetrics(t)
+	held := []string{
+		"node_cpu_seconds_total", "node_memory_MemAvailable_bytes", "node_network_receive_bytes_total",
+		"node_filesystem_avail_bytes", "node_load1", "node_uname_info", "node_disk_io_time_seconds_total",
+	}
+	for _, m := range held {
+		assert.Falsef(t, metricAvailable(src, m), "%s must be absent for a dashboard that does not require node-exporter", m)
+		assert.Truef(t, metricAvailableWith(src, m, "node-exporter"),
+			"%s is scraped when nodeExporter.enabled and must be on the list for a dashboard that requires it", m)
+	}
+	// Claimed only where the kernel or the hardware provides them, and
+	// families the collector set leaves out: not on the list either way.
+	for _, m := range []string{
+		"node_hwmon_temp_celsius", "node_pressure_cpu_waiting_seconds_total", "node_nf_conntrack_entries",
+		"node_cpu_scaling_frequency_hertz", "node_cpu_core_throttles_total",
+		"node_systemd_units", "node_interrupts_total", "node_thermal_zone_temp", "node_power_supply_online",
+		// a recording rule's name is not a node-exporter family
+		"node_namespace_pod:kube_pod_info:", "node:node_num_cpu:sum",
+	} {
+		assert.Falsef(t, metricAvailableWith(src, m, "node-exporter"), "%s is not claimed even with node-exporter on", m)
+	}
+	// Enabling some other optional source does not unlock node-exporter.
+	assert.False(t, metricAvailableWith(src, "node_cpu_seconds_total", "alertmanager"))
 }
 
 func TestOperationalDashboardPanelsAreDescribedAndHaveUnits(t *testing.T) {
@@ -566,7 +624,7 @@ func selectors(expr string, parseable func(string) string) []selector {
 // job can ever satisfy. Metrics no job selects are not judged here (the
 // allow-list test owns names); nor are label values that are Grafana
 // variables (sample values), nor `!=`/regex matchers.
-func (spec labelSpec) unsatisfiable(d dashboard, expr string) []string {
+func (spec labelSpec) unsatisfiable(d dashboard, expr string, enabled ...string) []string {
 	// A variable used as a number (`topk($topk, ...)`) does not parse with
 	// a string sample; try that first, then a number.
 	sampleFor := sampleValue
@@ -598,7 +656,7 @@ func (spec labelSpec) unsatisfiable(d dashboard, expr string) []string {
 		}
 		var jobs []*labelJob
 		for i := range spec.Jobs {
-			if metricAvailable([]metricSource{spec.Jobs[i].metricSource}, sel.metric) {
+			if metricAvailableWith([]metricSource{spec.Jobs[i].metricSource}, sel.metric, enabled...) {
 				jobs = append(jobs, &spec.Jobs[i])
 			}
 		}
@@ -643,18 +701,31 @@ func TestDashboardLabelMatchersCanMatch(t *testing.T) {
 	total, exempt := 0, 0
 	for name, e := range allDashboards(t) {
 		if len(e.Requires) > 0 {
+			// Every required source must be declared. One that has a job
+			// here (`onlyWith`) is checked like any other; one with none is
+			// legitimately unsatisfiable, so the dashboard is exempt.
+			hasJob := true
 			for _, r := range e.Requires {
 				_, known := spec.OptionalSources[r]
 				assert.Truef(t, known, "%s: requires %q, which is not an optionalSource in hack/dashboards/available-labels.yaml", name, r)
+				found := false
+				for _, j := range spec.Jobs {
+					if j.OnlyWith == r {
+						found = true
+					}
+				}
+				hasJob = hasJob && found
 			}
-			exempt++
-			continue
+			if !hasJob {
+				exempt++
+				continue
+			}
 		}
 		d := loadDashboard(t, dashboardsDir+"/"+e.File)
 		qs := d.queries()
 		require.NotEmptyf(t, qs, "%s: no queries found; this test would pass vacuously", name)
 		for _, q := range qs {
-			for _, b := range spec.unsatisfiable(d, q.expr) {
+			for _, b := range spec.unsatisfiable(d, q.expr, e.Requires...) {
 				assert.Failf(t, "unsatisfiable selector",
 					"%s: %s can never match: %s\n  (hack/dashboards/available-labels.yaml; if the chart is what is missing, fix its relabel config)\n  query: %s",
 					name, q.where, b, q.expr)
@@ -664,6 +735,29 @@ func TestDashboardLabelMatchersCanMatch(t *testing.T) {
 	}
 	require.NotZero(t, total)
 	t.Logf("%d queries checked; %d dashboards exempt through requires:", total, exempt)
+}
+
+// node-exporter's job is judged only for a dashboard that requires it, and
+// there it holds a selector to what the chart's relabelings produce: the
+// kube-prometheus job name, the node's name as instance and node, the
+// cluster, and no namespace key (a node belongs to none).
+func TestTheLabelGuardJudgesNodeExporterOnlyForADashboardThatRequiresIt(t *testing.T) {
+	spec := loadAvailableLabels(t)
+	d := dashboard{}
+	on := []string{"node-exporter"}
+	good := `node_cpu_seconds_total{job="node-exporter", instance="node-a", node="node-a", k8s_cluster_name="c", mode="idle"}`
+	assert.Empty(t, spec.unsatisfiable(d, good, on...))
+	// The Service-named job the operator would have written without the
+	// relabel, the retired ip:port-free identity, and a namespace key.
+	bad := spec.unsatisfiable(d, `node_cpu_seconds_total{job="prometheus-node-exporter"}`, on...)
+	assert.Len(t, bad, 1, "the job is node-exporter, the kube-prometheus name")
+	bad = spec.unsatisfiable(d, `node_memory_MemTotal_bytes{k8s_namespace_name="team-a"}`, on...)
+	assert.Len(t, bad, 1, "node series carry no k8s_namespace_name")
+	bad = spec.unsatisfiable(d, `node_load1{metrics_path="/metrics"}`, on...)
+	assert.Len(t, bad, 1, "node-exporter series carry no metrics_path")
+	// A dashboard that does not require it is not judged against the job at
+	// all (and the allow-list test is what refuses its node_* metric).
+	assert.Empty(t, spec.unsatisfiable(d, `node_cpu_seconds_total{job="prometheus-node-exporter"}`))
 }
 
 // The guard must fail on exactly the bug it exists for: the kubelet

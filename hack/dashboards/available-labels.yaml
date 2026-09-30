@@ -46,12 +46,14 @@ scrapeLabels:
 
 # Sources a dashboard may depend on that a default install does not run.
 # A dashboard that names one under `requires:` in its catalog entry (see
-# hack/dashboards/sources.yaml) is EXEMPT from the label check, because it
-# is legitimately unsatisfiable until the source ships; it is not exempt
-# from being listed here, so a dashboard cannot opt out by inventing a
-# reason.
+# hack/dashboards/sources.yaml) is checked against the jobs marked
+# `onlyWith: <source>` below (and the default jobs) when the source has a job
+# here, and is EXEMPT from the label check when it has none, because it is
+# then legitimately unsatisfiable until the source ships. Either way it must
+# be listed here, so a dashboard cannot opt out by inventing a reason. A
+# dashboard that does NOT declare the source never sees its jobs.
 optionalSources:
-  node-exporter: no install runs node-exporter yet, so every node_* series is absent
+  node-exporter: node-exporter runs only where nodeExporter.enabled (charts/observability-emitters, off by default), so its node_* series are absent from a default install
   alertmanager: Alertmanager is optional; its job and metrics exist only where it is enabled
   acme-issuer: no install issues from an ACME issuer, so certmanager_http_acme_client_* is never created
   envoy-tcp-listeners: envoy_tcp_downstream_* is created only when a TCP listener exists
@@ -94,6 +96,57 @@ jobs:
     values:
       job: [kubelet]
       metrics_path: [/metrics/cadvisor]
+
+  # node-exporter (nodeExporter.enabled, off by default): a ServiceMonitor
+  # from the vendored upstream chart, under the same `tenancy` scrape class.
+  # Its endpoint relabelings fix `job` (node-exporter, the kube-prometheus
+  # convention) and set `instance` and `node` to the node's name; its metric
+  # relabelings drop `k8s_namespace_name`, because a node belongs to no
+  # namespace (so no `k8s_namespace_name` matcher can match a node series,
+  # the same as the kubelet and cadvisor jobs). The series keep the exporter
+  # pod's own `namespace` and `pod` (node.rules joins on them), which are
+  # not judged here. The metric names are the same list as the source of the
+  # same name in available-metrics.yaml.
+  - name: node-exporter
+    onlyWith: node-exporter
+    names:
+      - up
+      - node_boot_time_seconds
+      - node_context_switches_total
+      - node_forks_total
+      - node_intr_total
+      - node_cpu_seconds_total
+      - node_cpu_guest_seconds_total
+      - node_load1
+      - node_load5
+      - node_load15
+      - node_time_seconds
+      - node_uname_info
+      - node_arp_entries
+      - node_tcp_connection_states
+      - node_exporter_build_info
+    prefixes:
+      - scrape_
+      - go_
+      - process_
+      - node_memory_
+      - node_disk_
+      - node_filesystem_
+      - node_network_
+      - node_netstat_
+      - node_sockstat_
+      - node_vmstat_
+      - node_softnet_
+      - node_filefd_
+      - node_entropy_
+      - node_procs_
+      - node_processes_
+      - node_timex_
+      - node_udp_queues
+      - node_scrape_collector_
+    labels: [job, instance, node, endpoint, service, k8s_cluster_name, deployment_environment_name, app_kubernetes_io_instance]
+    values:
+      job: [node-exporter]
 
   # Everything else is scraped from a PodMonitor or ServiceMonitor, under
   # the `tenancy` scrape class (tenancy.relabelConfigs): the operator sets
