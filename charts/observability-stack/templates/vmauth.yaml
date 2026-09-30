@@ -24,7 +24,7 @@ spec:
     tag: {{ .Values.vmauth.image.tag }}
   replicaCount: {{ .Values.vmauth.replicaCount }}
   resources:
-    {{- toYaml .Values.vmauth.resources | nindent 4 }}
+    {{- include "observability-stack.resources" .Values.vmauth.resources | nindent 4 }}
   selectAllByDefault: false
   userSelector:
     matchLabels:

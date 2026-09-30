@@ -1,0 +1,15 @@
+# expect: does not set both requests and limits for cpu and memory
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# `guaranteed` is a check, not a set of defaults: the component defaults
+# carry a CPU request and no CPU limit, so choosing it without writing
+# each component's own `resources` is refused, naming the component.
+resources:
+  policy: guaranteed

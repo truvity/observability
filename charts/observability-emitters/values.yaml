@@ -204,17 +204,20 @@ metrics:
     repository: victoriametrics/vmagent
     tag: v1.152.0
   replicaCount: 1
-  # -- Requests EQUAL limits, and the CPU is an INTEGER: the
-  # VictoriaMetrics binaries size their thread pool from the cgroup quota
-  # and round DOWN, so `1500m` buys one thread and pays for one and a half,
-  # and an agent whose requests are below its limits is evicted first under
-  # node pressure — which is the moment its buffer is holding the data.
+  # -- CPU request sized from measurement, no CPU limit, memory request ==
+  # memory limit. Measured on a three-cluster install, the agent's p95 was
+  # about 15m and its max about 31m; 100m is 1.5 x p95 rounded up with
+  # headroom for a restart that replays the persistent queue. There is no
+  # CPU limit, so a replay takes idle cores instead of being throttled,
+  # and the memory request equals its limit, which keeps the agent out of
+  # the kubelet's first eviction tier at the moment its buffer is holding
+  # the data. To get the Guaranteed class back, write a whole-number CPU
+  # limit equal to a whole-number request.
   resources:
     requests:
-      cpu: "1"
+      cpu: 100m
       memory: 1Gi
     limits:
-      cpu: "1"
       memory: 1Gi
   # -- The persistent queue.
   #
@@ -483,12 +486,18 @@ otlp:
     repository: otel/opentelemetry-collector-contrib
     tag: 0.161.0
   replicaCount: 2
+  # -- CPU request sized from measurement, no CPU limit, memory request ==
+  # memory limit. Measured on a three-cluster install, the collector's p95
+  # was under 5m and its max under 10m per replica; 50m is well above
+  # 1.5 x p95 (the 10m floor would be too tight for a burst of events or a
+  # restart that drains the queue). No CPU limit, so a burst is not
+  # throttled. To get the Guaranteed class back, write a whole-number CPU
+  # limit equal to a whole-number request.
   resources:
     requests:
-      cpu: "1"
+      cpu: 50m
       memory: 1Gi
     limits:
-      cpu: "1"
       memory: 1Gi
   # -- The persistent queue, one volume per replica.
   #

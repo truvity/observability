@@ -1,4 +1,7 @@
 # expect: size their thread pool from the cgroup CPU quota and round it DOWN
+# The guaranteed rule, now chosen rather than the default (v0.20.0).
+resources:
+  policy: guaranteed
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

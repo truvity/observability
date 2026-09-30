@@ -223,7 +223,8 @@ Unset is not neutral either: with `resources` empty the operator applies
 its own defaults, and its default CPU for VMSingle is 1200m, which is
 the rounding failure by default.
 
-That is `resources.policy: guaranteed`, the default. `burstable` is the
+That is `resources.policy: guaranteed`. `burstable`, the default since
+v0.20.0, is the
 same judgement made for an estate that measured otherwise — components
 using a few millicores, and CPU limits deliberately absent because the
 estate measured CFS throttling. It relaxes the CPU half only, and only
@@ -254,7 +255,7 @@ where the reason above does not reach:
     (dict "key" "grafana.resources" "value" (.Values.grafana).resources)
     (dict "key" "backup.resources" "value" .Values.backup.resources)
 -}}
-{{- $policy := (.Values.resources).policy | default "guaranteed" -}}
+{{- $policy := (.Values.resources).policy | default "burstable" -}}
 {{- range $site := $sites -}}
 {{- $r := $site.value | default dict -}}
 {{- if $r -}}
@@ -269,10 +270,13 @@ null through instead, and the rendered object carries `cpu: null` —
 which the API server reads as a CPU limit of 0 and refuses (measured with
 `just apply`: "must be less than or equal to cpu limit of 0"; VMSingle's
 CRD refuses the null outright). Refused here, where the fix can be named.
+The exception is this chart's own vmauth, vmalert and Alertmanager: their
+templates drop a null (`observability-stack.resources`), so a values file
+written when those carried a default CPU limit keeps meaning "no limit".
 */ -}}
 {{- range $side, $m := dict "requests" $requests "limits" $limits -}}
 {{- range $res, $q := $m -}}
-{{- if kindIs "invalid" $q -}}
+{{- if and (kindIs "invalid" $q) (not (has $site.key (list "vmauth.resources" "vmalert.resources" "alertmanager.resources"))) -}}
 {{- fail (printf "observability-stack: %s.%s.%s is null. Helm deletes a null from this chart's own values, but passes it through unchanged to a vendored subchart's, and the API server then reads it as a quantity of 0 and refuses the object. A default on this component cannot be removed through values: under `resources.policy: burstable`, give it a whole number of cores well above the request instead (the node's core count leaves it effectively unthrottled)." $site.key $side (toString $res)) -}}
 {{- end -}}
 {{- end -}}

@@ -48,7 +48,7 @@
     },
     "resources": {
       "type": "object",
-      "description": "Kubernetes resource requirements; passed through untouched. Under `resources.policy: guaranteed` (the default) the chart refuses requests that differ from limits and a fractional CPU; under `burstable`, see `resources.policy`.",
+      "description": "Kubernetes resource requirements; passed through untouched. Under `resources.policy: guaranteed` the chart refuses requests that differ from limits and a fractional CPU; under `burstable`, see `resources.policy`.",
       "required": [
         "requests",
         "limits"
@@ -310,7 +310,7 @@
         "policy": {
           "type": "string",
           "enum": ["guaranteed", "burstable"],
-          "description": "`guaranteed` (default): requests equal limits, whole-number CPU. `burstable`: requests required; CPU may be fractional and below or without a limit, a CPU limit that is set is still whole; memory stays request == limit."
+          "description": "`burstable` (default): requests required; CPU may be fractional and below or without a limit, a CPU limit that is set is still whole; memory stays request == limit. `guaranteed`: requests equal limits, whole-number CPU."
         }
       }
     },

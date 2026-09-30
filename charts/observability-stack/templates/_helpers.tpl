@@ -761,3 +761,24 @@ Takes the raw `backup.destination` string; the caller appends
 {{- fail (printf "observability-stack: `backup.destination` %q has no recognized scheme. rclone (the logs/traces backup jobs) and vmbackup (the metrics job) both need one of `s3://`, `gs://` or `fs://`." $url) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+A component's `resources` without its nulls.
+
+Until v0.20.0 this chart's own components (vmauth, the vmalerts,
+Alertmanager) defaulted a CPU limit, and Helm deletes a null that meets a
+default, so `limits: {cpu: null}` was how a consumer removed it. The
+default is gone, so Helm now keeps the null; dropping it here keeps that
+existing values file meaning the same thing.
+*/}}
+{{- define "observability-stack.resources" -}}
+{{- $out := dict -}}
+{{- range $side, $m := . -}}
+{{- $clean := dict -}}
+{{- range $k, $v := $m -}}
+{{- if not (kindIs "invalid" $v) -}}{{- $_ := set $clean $k $v -}}{{- end -}}
+{{- end -}}
+{{- $_ := set $out $side $clean -}}
+{{- end -}}
+{{- toYaml $out -}}
+{{- end -}}
