@@ -4,6 +4,20 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.14.0
+
+`pkg/statusbox` covers what a consumer with its own host type needs to
+render through `RenderGatus` instead of keeping a parallel copy.
+
+- **`CompanyHost.Component` (new, optional).** A caller-side label for the
+  product that owns a host, so a consumer can keep one host type end to end.
+  It is never rendered: no byte of the Gatus YAML depends on it, so leaving
+  it empty changes nothing. Backward compatible.
+- The leading YAML comment `RenderGatus` writes when `Catalogue.Providers`
+  is empty is the library's own text, not a consumer's; a consumer that
+  used to prepend its own wording sees a comment-only difference and no
+  difference in the parsed config.
+
 ## v0.13.1
 
 A reader can now be selected by SEVERAL groups, so a role held under one

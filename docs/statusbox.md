@@ -224,6 +224,7 @@ type Company struct {
 
 type CompanyHost struct {
     Host, Env, StatusPath string // StatusPath "" = the lenient fallback condition
+    Component             string // caller-side label, carried but never rendered
 }
 
 func RenderGatus(c Catalogue) (string, error)

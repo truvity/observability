@@ -165,6 +165,13 @@ type (
 	CompanyHost struct {
 		// Host is the hostname probed, e.g. "dms.devel.example.xyz".
 		Host string
+		// Component is the product or project that owns this host, a
+		// label the CALLER keeps beside the host (typically to look up
+		// the StatusPath). It is carried through the Catalogue so a
+		// consumer can keep one host type end to end, and it is NEVER
+		// rendered: an endpoint is named after the host's first DNS
+		// label and Env, and no rendered byte depends on Component.
+		Component string
 		// Env names the cluster/environment this host belongs to — an
 		// endpoint is named "<Host's first DNS label> · <Env>", never
 		// the company or project name.
