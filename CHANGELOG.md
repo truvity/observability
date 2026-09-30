@@ -70,6 +70,14 @@ must be done first, and whether a default moved. Newest first, one
   exposed tool's path is served by it and the dropped ones are not, and
   `hack/mcp-paths-proof.sh` observes the same paths from the real stock
   binaries. No existing golden of another chart changes.
+- **Behaviour change (`observability-mcp` only):** the `minimal` and
+  `everything` goldens of `observability-mcp` moved, because the values they
+  render from were replaced (see the BREAKING bullet above): `servers.metrics`
+  is now a `stores[]` entry, and a store's pod carries the aggregator and the
+  three stock servers where 0.16.0's carried one. No opt-out: the chart has no
+  consumer and the old shape is gone. Every golden of every other chart is
+  unchanged, `observability-grafana`'s included (the new opt-in renders
+  nothing while off).
 - The release workflow builds both images; `hack/check-image-refs.py` now
   looks for an own-registry image at any depth of a chart's values.
 
