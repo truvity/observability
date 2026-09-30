@@ -4,6 +4,51 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`, `observability-emitters`: CPU requests sized from
+measurement, Burstable by default.
+
+- **Behaviour change: CPU requests drop and the CPU limit is gone on every
+  component default, so every pod rolls and its QoS class becomes
+  Burstable.** Measured on a three-cluster install, the whole stack used
+  well under a tenth of the cores its defaults reserved (vmsingle p95 about
+  70m, vlogs about 15m, vmagent about 15m, everything else under 5m), and a
+  pair of one-core requests per component tripped node-loss overcommit
+  alerts on autoscaled clusters. The new requests are about 1.5 x p95,
+  rounded up, with a floor of 10m, and more for the stores, whose merges,
+  compaction and queries are bursty and grow with the data (the window was
+  a few days, so keep headroom and re-measure):
+
+  | Component | CPU request before | CPU request now |
+  |---|---|---|
+  | vmsingle | 2 | 500m |
+  | victoria-logs-single | 2 | 250m |
+  | victoria-traces-single | 1 | 100m |
+  | vmauth | 1 | 100m |
+  | vmalert (each) | 1 | 50m |
+  | victoria-metrics-operator | 1 | 50m |
+  | emitters vmagent (`metrics.resources`) | 1 | 100m |
+  | emitters OTLP gateway collector (`otlp.resources`, per replica) | 1 | 50m |
+
+  Alertmanager and Grafana were not measured: their request stays at 1
+  core and only their CPU limit is gone. Memory is unchanged everywhere
+  and stays request == limit, so the pods stay out of the kubelet's first
+  eviction tier. With no CPU limit a merge or a heavy query takes idle
+  cores instead of being throttled, and VictoriaMetrics sizes its thread
+  pool from the node's cores instead of a quota. Rolling the stores
+  restarts them: do it in a quiet window.
+- **Behaviour change: `resources.policy` defaults to `burstable`** (it was
+  `guaranteed`). Only what is ACCEPTED differs; a values file that wrote
+  its own requests equal to limits still renders. To keep the Guaranteed
+  class, set `resources.policy: guaranteed` and write each component's own
+  `resources` with a whole-number CPU limit equal to its request: the
+  defaults carry no CPU limit, so the render refuses them under
+  `guaranteed` and names the component.
+- A `limits: {cpu: null}` written for vmauth, a vmalert or Alertmanager
+  (the way to drop their old default CPU limit) still means "no limit";
+  the chart now strips the null itself.
+
 ## v0.19.0
 
 `platform-alerts` and `observability-stack`: alert on what fails when nodes

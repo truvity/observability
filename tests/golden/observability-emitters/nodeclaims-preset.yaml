@@ -878,10 +878,9 @@ spec:
                   key: "token"
           resources:
             limits:
-              cpu: "1"
               memory: 1Gi
             requests:
-              cpu: "1"
+              cpu: 50m
               memory: 1Gi
           volumeMounts:
             - name: config
@@ -1121,10 +1120,9 @@ spec:
   replicaCount: 1
   resources:
     limits:
-      cpu: "1"
       memory: 1Gi
     requests:
-      cpu: "1"
+      cpu: 100m
       memory: 1Gi
   scrapeClasses:
   - default: true
