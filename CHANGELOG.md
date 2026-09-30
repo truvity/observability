@@ -24,6 +24,15 @@ A new chart, `observability-mcp`: read-only MCP servers over the store.
   store's proxy and cluster DNS, and nothing else. See
   [docs/mcp.md](docs/mcp.md), which also records what the store's proxy must
   route for the `alerts` and `rules` tools.
+- **`observability-stack`: opt-in `tenancy.principals[].vmalertAPI`.** A
+  principal with `vmalertAPI: true` also gets the metrics vmalert's alerts
+  and rules, at `/prometheus/vmalert/api/v1/alerts` and `.../rules`,
+  forwarded as `/vmalert/api/v1/...`. **Unfiltered**: alerts and rules are
+  not tenant-scoped, so the principal's grants do not limit them; it
+  requires `tenancy.allowUnfilteredAlertReads` and is refused when `routes`
+  excludes `metrics` or `vmalert.enabled` is false. Off by default; no
+  existing render changes. New case `tenancy-vmalert-api` and
+  `hack/vmalert-api-proof.sh`.
 - The release publishes it to `oci://ghcr.io/truvity/charts/observability-mcp`.
   No existing chart, default or golden changes.
 

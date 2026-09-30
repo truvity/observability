@@ -1103,6 +1103,17 @@ has enabled, renders no route at all.
 {{- if not (or (has "metrics" $routes) (has "logs" $routes) $rendersTraces) -}}
 {{- fail (printf "observability-stack: principal %q's `routes` (%s) renders no route at all. Metrics and logs render whenever named; `traces` renders only when a trace store is enabled (independent of `tenancy.allowUnfilteredTraceReads`, checked next). A principal that may read nothing is written by leaving it out of `tenancy.principals` entirely, not by restricting it to nothing." $principalName (join ", " $routes)) -}}
 {{- end -}}
+{{- if $p.vmalertAPI -}}
+{{- if not (has "metrics" $routes) -}}
+{{- fail (printf "observability-stack: principal %q sets `vmalertAPI: true` but its `routes` (%s) does not include `metrics`. The alerts and rules routes belong to a metrics reader: they are vmalert's view of the same store, and a principal with no metrics route has no business reading what its rules say." $principalName (join ", " $routes)) -}}
+{{- end -}}
+{{- if not $.Values.tenancy.allowUnfilteredAlertReads -}}
+{{- fail (printf "observability-stack: principal %q sets `vmalertAPI: true` but `tenancy.allowUnfilteredAlertReads` is not. vmalert's alerts and rules have no per-namespace or per-cluster concept to filter on, so this principal's own grant would NOT scope them: it would read every alert and every rule's expression and labels this install's metrics vmalert holds, cluster-wide. Set `tenancy.allowUnfilteredAlertReads: true` and record that, or remove `vmalertAPI`." $principalName) -}}
+{{- end -}}
+{{- if not (include "observability-stack.effectiveEnabled" $ | fromYaml).vmalert -}}
+{{- fail (printf "observability-stack: principal %q sets `vmalertAPI: true` but `vmalert.enabled` is false. There is no vmalert for these routes to read." $principalName) -}}
+{{- end -}}
+{{- end -}}
 {{- if and $p.metricsQueryOnly (not (has "metrics" $routes)) -}}
 {{- fail (printf "observability-stack: principal %q sets `metricsQueryOnly: true` but its `routes` (%s) does not include `metrics`. metricsQueryOnly narrows the metrics route to its two query paths; with no metrics route requested there is nothing for it to narrow, and the flag would mean nothing." $principalName (join ", " $routes)) -}}
 {{- end -}}

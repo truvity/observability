@@ -429,6 +429,10 @@
                 "type": "boolean",
                 "description": "Narrow the metrics route (when this principal has one) to exactly `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range` — no series, labels, label values, tsdb status or vmui. Off by default, which keeps the full metrics read route. Refused when `routes` is set and excludes `metrics`: there would be nothing left for it to narrow."
               },
+              "vmalertAPI": {
+                "type": "boolean",
+                "description": "Give this principal the metrics vmalert's alerts and rules: `/prometheus/vmalert/api/v1/alerts` and `/prometheus/vmalert/api/v1/rules`, forwarded to vmalert as `/vmalert/api/v1/...`. Off by default. UNFILTERED: vmalert has no per-namespace or per-cluster concept, so this principal's grants do not scope what it reads here; it needs `tenancy.allowUnfilteredAlertReads`, like `alertReaders`. Refused when `routes` excludes `metrics`, or `vmalert.enabled` is false."
+              },
               "grants": {
                 "type": "array",
                 "minItems": 1,

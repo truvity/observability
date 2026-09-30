@@ -1,0 +1,534 @@
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-metrics-store
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: observability-stack-victoria-metrics-k8s-stack
+      app.kubernetes.io/name: vmsingle
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/name: vmauth
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmalert
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/part-of: observability-stack
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 8428
+
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-logs-store
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: victoria-logs-single
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/name: vmauth
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmalert
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/part-of: observability-stack
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 9428
+
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-vmalert
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vmalert
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmauth
+              app.kubernetes.io/instance: observability-stack
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 8435
+
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-proxy
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vmauth
+      app.kubernetes.io/instance: observability-stack
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8427
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 8435
+
+---
+# Source: observability-stack/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-metrics
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: prometheus
+spec:
+  replicaCount: 1
+  evaluationInterval: 30s
+  ruleSelector:
+    matchExpressions:
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
+  ruleNamespaceSelector: {}
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: "1"
+      memory: 512Mi
+  datasource:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteWrite:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteRead:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack.default.svc:9093"
+
+---
+# Source: observability-stack/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-logs
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: vlogs
+spec:
+  replicaCount: 1
+  evaluationInterval: 30s
+  ruleSelector:
+    matchLabels:
+      observability.rule-type: vlogs
+  ruleNamespaceSelector: {}
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: "1"
+      memory: 512Mi
+  datasource:
+    url: "http://observability-stack-victoria-logs-single-server.default.svc:9428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteWrite:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteRead:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack.default.svc:9093"
+  extraArgs:
+    rule.defaultRuleType: vlogs
+    rule.evalDelay: 5s
+
+---
+# Source: observability-stack/templates/vmalertmanager.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlertmanager
+metadata:
+  name: observability-stack
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: "1"
+      memory: 256Mi
+    requests:
+      cpu: "1"
+      memory: 256Mi
+  selectAllByDefault: false
+  volumes:
+    - name: notifications-slack
+      secret:
+        secretName: "example-slack-webhook"
+  volumeMounts:
+    - name: notifications-slack
+      mountPath: /etc/alertmanager/notifications-slack
+      readOnly: true
+  configRawYaml: |
+    route:
+      # `notifications-none` is a receiver with no configs: Alertmanager
+      # accepts that as a legitimate "do not send" target. It is the root
+      # receiver and the catch-all for a severity this chart's routing
+      # tree does not know (there is deliberately no `info` route — see
+      # docs/notifications.md), never a route somebody forgot to write.
+      receiver: notifications-none
+      group_by:
+        - alertname
+        - k8s_cluster_name
+        - k8s_namespace_name
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - match: {}
+          receiver: notifications-none
+          continue: true
+          routes:
+            - match:
+                severity: critical
+              receiver: slack-alerts-critical
+            - match:
+                severity: warning
+              receiver: slack-alerts
+    receivers:
+      - name: notifications-none
+      - name: slack-alerts
+        slack_configs:
+          - channel: "#alerts"
+            api_url_file: /etc/alertmanager/notifications-slack/url
+            send_resolved: true
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
+            text: |-
+              {{ range .Alerts }}{{ .Annotations.summary }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              {{ end }}
+              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
+      - name: slack-alerts-critical
+        slack_configs:
+          - channel: "#alerts-critical"
+            api_url_file: /etc/alertmanager/notifications-slack/url
+            send_resolved: true
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
+            text: |-
+              {{ range .Alerts }}{{ .Annotations.summary }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              {{ end }}
+              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
+    inhibit_rules:
+      - source_matchers:
+          - severity = "critical"
+          - k8s_cluster_name =~ ".+"
+          - k8s_namespace_name =~ ".+"
+        target_matchers:
+          - severity = "warning"
+        equal:
+          - k8s_cluster_name
+          - k8s_namespace_name
+
+---
+# Source: observability-stack/templates/vmauth.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAuth
+metadata:
+  name: observability-stack
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  image:
+    repository: victoriametrics/vmauth
+    tag: v1.152.0
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: "1"
+      memory: 512Mi
+  selectAllByDefault: false
+  userSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: observability-stack
+      app.kubernetes.io/instance: observability-stack
+  userNamespaceSelector: {}
+  extraArgs:
+    logInvalidAuthTokens: "true"
+
+---
+# Source: observability-stack/templates/watchdog.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-watchdog
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    - name: observability-stack.watchdog
+      interval: 30s
+      rules:
+        - alert: Watchdog
+          expr: vector(1)
+          labels:
+            severity: none
+          annotations:
+            summary: "This alert is always firing; its absence is the signal"
+            description: >-
+              The heartbeat of this observability stack. Something outside the
+              cluster watches for it — pushed through Alertmanager, or pulled
+              directly off vmalert's own read API — and pages when it stops
+              arriving: an alerting path that has died cannot report that it
+              has died.
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-example-observability-mcp-reader
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: reader
+spec:
+  name: "example:observability-mcp:reader"
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: "https://issuer.example"
+    matchClaims:
+      groups: "^(example:observability-mcp:reader)$"
+      aud: "^(example-mcp-reader)$"
+    defaultVMAccessClaim:
+      metricsExtraFilters:
+        - '{k8s_cluster_name="example-cluster"}'
+      logsExtraStreamFilters:
+        - _stream:{"k8s.cluster.name"="example-cluster"}
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+      paths:
+        - /prometheus/api/v1/query
+        - /prometheus/api/v1/query_range
+        - /prometheus/api/v1/series
+        - /prometheus/api/v1/labels
+        - /prometheus/api/v1/label/[^/]+/values
+        - /prometheus/api/v1/status/tsdb
+        - /prometheus/api/v1/status/buildinfo
+        - /prometheus/vmui.*
+      query_args:
+        - name: extra_filters
+          values:
+            - "{{.MetricsExtraFilters}}"
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+    - static:
+        url: "http://vmalert-observability-stack-metrics.default.svc:8080"
+      paths:
+        - /prometheus/vmalert/api/v1/alerts
+        - /prometheus/vmalert/api/v1/rules
+      drop_src_path_prefix_parts: 1
+
+---
+# Source: observability-stack/templates/vmusers.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: observability-stack-example-k8s-viewer
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.role: reader
+spec:
+  name: "example:k8s:viewer"
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: "https://issuer.example"
+    matchClaims:
+      groups: "^(example:k8s:viewer)$"
+      aud: "^(example-observability-client)$"
+    defaultVMAccessClaim:
+      metricsExtraFilters:
+        - '{k8s_cluster_name="example-cluster",k8s_namespace_name=~"^(example-app)$"}'
+      logsExtraStreamFilters:
+        - _stream:{"k8s.cluster.name"="example-cluster","kubernetes.pod_namespace"=~"^(example-app)$"}
+  load_balancing_policy: first_available
+  retry_status_codes: 
+    - 500
+    - 502
+    - 503
+  targetRefs:
+    - static:
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+      paths:
+        - /prometheus/api/v1/query
+        - /prometheus/api/v1/query_range
+        - /prometheus/api/v1/series
+        - /prometheus/api/v1/labels
+        - /prometheus/api/v1/label/[^/]+/values
+        - /prometheus/api/v1/status/tsdb
+        - /prometheus/api/v1/status/buildinfo
+        - /prometheus/vmui.*
+      query_args:
+        - name: extra_filters
+          values:
+            - "{{.MetricsExtraFilters}}"
+      targetRefBasicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
