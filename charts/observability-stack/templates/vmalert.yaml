@@ -95,7 +95,7 @@ spec:
          before selection was narrowed by label. */}}
   ruleNamespaceSelector: {}
   resources:
-    {{- toYaml $root.Values.vmalert.resources | nindent 4 }}
+    {{- include "observability-stack.resources" $root.Values.vmalert.resources | nindent 4 }}
   datasource:
     url: {{ ternary (include "observability-stack.logs.url" $root) $metrics $isLogs | quote }}
     basicAuth:

@@ -200,7 +200,7 @@ values.yaml, listed here, and enforced rather than remembered.
 | `ha` | bool | `false` | Zone-redundant mode. Accepted today, behaviour in a later release. **Refused with fewer than two `zones`.** |
 | `zones` | list | `[]` | Zone names, at least two when `ha` is true. Labels, not addresses. |
 | `interval` | duration | `30s` | The one interval: both vmalerts' evaluation interval, and — through its mirror — the metrics store's `-dedup.minScrapeInterval`. Mirror: `victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval']`. |
-| `resources.policy` | `guaranteed`/`burstable` | `guaranteed` | 0.11.0. How every component's `resources` are judged (vmauth, both vmalerts, Alertmanager, the operator, the three stores, Grafana, the backup jobs). `guaranteed`: requests equal limits, whole-number CPU — the rule this chart has always enforced. `burstable`: both requests required; `requests.cpu` may be fractional and below the limit; `limits.cpu` may be absent, and a set one is still whole; memory stays request == limit with a limit required. It changes what is accepted, not what is rendered. See docs/safety.md, "Resources", and "The single-operator estate" below. |
+| `resources.policy` | `burstable`/`guaranteed` | `burstable` | 0.11.0; default `burstable` since 0.20.0. How every component's `resources` are judged (vmauth, both vmalerts, Alertmanager, the operator, the three stores, Grafana, the backup jobs). `burstable`: both requests required; `requests.cpu` may be fractional and below the limit; `limits.cpu` may be absent, and a set one is still whole; memory stays request == limit with a limit required. `guaranteed`: requests equal limits, whole-number CPU; the component defaults carry no CPU limit, so choosing it means writing each component's own `resources`. It changes what is accepted, not what is rendered. See docs/safety.md, "Resources", and "The single-operator estate" below. |
 
 ### `vmauth` — the authorising proxy
 
@@ -210,7 +210,7 @@ values.yaml, listed here, and enforced rather than remembered.
 | `vmauth.image.repository` | string | `victoriametrics/vmauth` | |
 | `vmauth.image.tag` | string | `v1.152.0` | **Refused below v1.152.0.** `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0, where claim matching was introduced, through v1.151.x matched claim values unanchored (GHSA-f99m-22fh-qw96). The operator's own default tag is older than both, so it is set here. |
 | `vmauth.replicaCount` | int | `1` | |
-| `vmauth.resources` | object | 1 CPU / 512Mi | Requests equal limits, integer CPU. |
+| `vmauth.resources` | object | 100m CPU request, no CPU limit / 512Mi | CPU request from measured p95 x 1.5 with headroom; memory request == limit. |
 | `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | A rejected token that logs nothing is an access problem nobody can diagnose. Note the trade: with this flag vmauth also returns the offending token in the 401 body. |
 | `vmauth.deniedPaths` | list | `["/internal/.*", "/-/reload"]` | Paths no user may be routed to. Checked against every route the chart renders; a match fails the render. |
 | `vmauth.loadBalancingPolicy` | enum | `first_available` | A read balanced onto a replica still replaying its buffer returns a gap, and a gap reads as an outage. |
@@ -319,7 +319,7 @@ Who needs the credential:
 | `vmalert.externalUrl` | string | `""` | `-external.url`. Empty leaves vmalert's own default, which is the pod hostname — every alert's source link dead outside the cluster. |
 | `vmalert.externalLabels` | map | `{}` | Labels on every alert and recording rule. |
 | `vmalert.watchdog.enabled` | bool | `true` | Renders `templates/watchdog.yaml`'s `Watchdog` VMRule (`vector(1)`, always firing, on the metrics alerter) — but only when `victoria-metrics-k8s-stack`'s own vendored default rule set is not already providing one (see `victoria-metrics-k8s-stack.defaultRules.*`, below); on the default install, the vendored one is the Watchdog. Independent of `alertmanager.*` either way — read PUSHED, through `alertmanager.watchdog`'s route, or PULLED, through `tenancy.alertReaders`; only the former needs Alertmanager at all. |
-| `vmalert.resources` | object | 1 CPU / 512Mi | |
+| `vmalert.resources` | object | 50m CPU request, no CPU limit / 512Mi | Both vmalerts. Measured p95 was under 5m. |
 
 Both carry `remoteWrite` **and** `remoteRead` against the metrics store;
 neither is configurable, because each has exactly one correct value and the
@@ -375,7 +375,7 @@ rule with it. An install with no rules yet shows none of this.
 | `alertmanager.watchdog.key` | string | `url` | The key inside it. Read with `url_file` from a mounted volume, never interpolated into the rendered config. |
 | `alertmanager.watchdog.repeatInterval` | duration | `5m` | How often the heartbeat repeats. The outside watcher's timeout must be comfortably longer. |
 | `alertmanager.watchdog.timeout` | duration | unset | The far end's OWN timeout for a missing heartbeat, stated here rather than read from it. Set, the chart refuses a `repeatInterval` that would not land comfortably inside it. |
-| `alertmanager.resources` | object | 1 CPU / 256Mi | |
+| `alertmanager.resources` | object | 1 CPU request, no CPU limit / 256Mi | Not measured on the install the other defaults came from; only the limit was dropped. |
 
 `alertmanager.config` — the free-form Alertmanager routing tree a
 consumer used to fill in by hand — is gone. `notifications` (below)
@@ -817,7 +817,7 @@ through.
 | `…vmsingle.spec.extraArgs['dedup.minScrapeInterval']` | `30s` | MIRROR of `interval`. |
 | `…vmsingle.spec.extraArgs['storage.minFreeDiskSpaceBytes']` | `10GiB` | The metrics store's only disk guard — it has no `-retention.max*` flags. Upstream's default is 100MB, which is reached with the disk already full. |
 | `…vmsingle.spec.extraArgs['storage.maxHourlySeries' / 'maxDailySeries']` | `0` | Cardinality caps, off. A guessed cap silently drops every NEW series while the old ones keep ingesting, which looks exactly like an exporter that stopped. Set them from a measured active-series count. |
-| `…vmsingle.spec.resources` | 2 CPU / 8Gi | Requests equal limits, integer CPU. Unset is not neutral: the operator's own default is `1200m`. |
+| `…vmsingle.spec.resources` | 500m CPU request, no CPU limit / 8Gi | Measured p95 about 70m, max about 185m; the request leaves room for merges and heavy queries. Unset is not neutral: the operator's own default is `1200m`. The other stores: `victoria-logs-single.server.resources` 250m, `victoria-traces-single.server.resources` 100m, the operator 50m, all with no CPU limit. |
 | `…vmsingle.spec.extraEnvs` | the credential pair | MIRROR of `storeCredentials`. |
 | `…vmsingle.spec.securityContext.seLinuxOptions.level` | unset | MIRROR of `backup.seLinuxLevel`, only required while it is set. See `backup.seLinuxLevel`, above. |
 | `victoria-logs-single.server.retentionPeriod` | `90d` | With a unit; the store's own default is `7d`. |
@@ -900,7 +900,7 @@ sets all of them at once and its golden is the whole profile.
 | Rule | Switch | Default |
 |---|---|---|
 | Store credentials | none — mandatory; see `storeCredentials` for who needs them | — |
-| Requests equal limits, whole CPUs | `resources.policy: burstable` | `guaranteed` |
+| Requests equal limits, whole CPUs | `resources.policy: guaranteed` | `burstable` |
 | Grouping and inhibition on `k8s_*` | `notifications.groupBy`, `notifications.inhibit.{enabled,equal}` | the `k8s_*` labels |
 | Only `critical`/`warning` routed | `notifications.catchAll`, `notifications.drop` | unset / `[]` |
 | Telegram chat id in values | `notifications.telegram.chatIdSecret` | `chatId` |
@@ -908,9 +908,11 @@ sets all of them at once and its golden is the whole profile.
 | Datasources through the proxy | `vmauth.enabled: false` + basic-auth datasources | through the proxy |
 | Unknown clients blocked | `networkPolicy.clientsFrom` | `[]` |
 
-One Helm trap under `burstable`: a values file MERGES into this chart's
-defaults, so a CPU limit is removed with `limits: {cpu: null}` — and
-that works only for this chart's own components (vmauth, the vmalerts,
+The defaults carry no CPU limit since 0.20.0, so there is nothing to
+remove; a values file written earlier that says `limits: {cpu: null}` on
+vmauth, a vmalert or Alertmanager still means "no limit". One Helm trap
+if you add a limit and want it gone again: a values file MERGES into this
+chart's defaults, and a null removes a key only for this chart's own components (vmauth, the vmalerts,
 Alertmanager, the backup jobs). Helm passes a null through to a vendored
 subchart unchanged (the operator, the stores, Grafana), where the API
 server reads it as a CPU limit of 0 and refuses the pod; the chart
@@ -1008,7 +1010,7 @@ use or not.
 | `metrics.destinations[]` | `{name, url}` | `[]` | Every destination receives every sample. **Refused empty.** Names must be distinct: they become queue directories. |
 | `metrics.image` | `{repository, tag}` | `victoriametrics/vmagent:v1.152.0` | An `enterprise` tag is refused. |
 | `metrics.replicaCount` | int | `1` | |
-| `metrics.resources` | object | 1 CPU / 1Gi | Requests equal limits, integer CPU. |
+| `metrics.resources` | object | 100m CPU request, no CPU limit / 1Gi | Measured p95 about 15m, max about 31m; memory request == limit. |
 | `metrics.queue.size` | quantity | `10Gi` | The persistent queue's volume. The operator divides it by the number of destinations to derive `-remoteWrite.maxDiskUsagePerURL`, so size it in multiples of 500MB with at least 500Mi per destination. |
 | `metrics.queue.storageClassName` | string | `""` | Empty renders no class and takes the cluster's default. |
 | `metrics.scrape.kubelet` / `.cadvisor` | bool | `true` | The node's two endpoints, as inline scrape configs. Everything else arrives as a `PodMonitor` or `ServiceMonitor` authored by whoever owns the thing being watched. |
@@ -1104,7 +1106,7 @@ override any of the three.
 | `otlp.enabled` | bool | `true` | Renders the StatefulSet, its ConfigMap, Services, RBAC and `PodMonitor`. |
 | `otlp.image` | `{repository, tag}` | `otel/opentelemetry-collector-contrib:0.161.0` | The contrib distribution: `k8sattributes`, `k8s_events`, `file_storage` and `delta_to_cumulative` are not in core. |
 | `otlp.replicaCount` | int | `2` | Each replica owns a queue volume, which is why this is a StatefulSet. |
-| `otlp.resources` | object | 1 CPU / 1Gi | |
+| `otlp.resources` | object | 50m CPU request, no CPU limit / 1Gi | The gateway collector, per replica. Measured p95 under 5m. |
 | `otlp.queue.size` | quantity | `10Gi` | One volume per replica, holding both the OTLP `sending_queue`s and the remote-write WAL. **Required.** |
 | `otlp.queue.storageClassName` | string | `""` | |
 | `otlp.destinations.metrics[]` | `{name, url}` | `[]` | Base URLs; the exporter appends `/api/v1/write`. **Refused empty.** |

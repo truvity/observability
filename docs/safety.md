@@ -378,16 +378,25 @@ for its one reason and no other.
 
 ### Resources
 
-`resources.policy: guaranteed`, the default, is the rule the two rows
+`resources.policy: guaranteed` is the rule the two rows
 above state: requests equal limits, whole-number CPU, for vmauth, both
 vmalerts, Alertmanager, the operator, the three stores, Grafana and the
 backup jobs. It suits an install carrying many teams' traffic, where the
-store is load-bearing and CPU is cheap relative to an outage.
+store is load-bearing and CPU is cheap relative to an outage; choose it
+by writing each component's own `resources`, because the defaults carry
+no CPU limit.
 
-`burstable` exists for an estate that measured otherwise: vmalert and
-Alertmanager at 3–16 millicores, and CPU limits removed on purpose after
-measuring CFS throttling. At that scale the rule costs a whole reserved
-core per component for nothing. What it relaxes, and why only that:
+`burstable` is the default since v0.20.0. Measured on a three-cluster
+install, every component of this stack used a few millicores to under a
+tenth of a core (the metrics store, the busiest, peaked near 185m), so a
+whole reserved core or two per component reserved far more than the whole
+stack used, and on an autoscaled cluster tripped node-loss overcommit
+alerts for nothing. The defaults are therefore sized from those
+measurements: CPU request about 1.5 x p95 rounded up with a floor, more
+for the stores (merges, compaction and queries are bursty and grow with
+the data), no CPU limit, memory request == limit. The measurement window
+was a few days, so re-measure on your own install once it has run for a
+month. What it relaxes, and why only that:
 
 - **The CPU request** may be fractional and below the limit. The request
   is a scheduling hint; no thread pool is sized from it.
@@ -406,11 +415,11 @@ core per component for nothing. What it relaxes, and why only that:
 - **Both requests stay required**: a pod with none is BestEffort, and
   BestEffort goes first.
 
-The switch changes what is ACCEPTED, not what is rendered: every
-component keeps its guaranteed default until the estate writes its own.
-Removing a CPU limit is `limits: {cpu: null}` because Helm merges a
-values file into the defaults — and that works for this chart's own
-components only. Helm passes a null through to a vendored subchart
+The switch changes what is ACCEPTED, not what is rendered: the
+component defaults are the burstable shape whichever policy is named.
+Removing a CPU limit you added is `limits: {cpu: null}` because Helm
+merges a values file into the defaults — and that works for this chart's
+own components only. Helm passes a null through to a vendored subchart
 unchanged; measured with `just apply`, the API server then reads `cpu:
 null` as a limit of 0 and refuses the pod ("must be less than or equal
 to cpu limit of 0"), and VMSingle's CRD refuses the null outright. The

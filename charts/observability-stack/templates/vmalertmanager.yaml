@@ -121,7 +121,7 @@ metadata:
 spec:
   replicaCount: {{ .Values.alertmanager.replicaCount }}
   resources:
-    {{- toYaml .Values.alertmanager.resources | nindent 4 }}
+    {{- include "observability-stack.resources" .Values.alertmanager.resources | nindent 4 }}
   selectAllByDefault: false
   {{- /*
   The operator's own VMServiceScrape is off: templates/

@@ -100,20 +100,20 @@ interval: 30s
 # vmauth, both vmalerts, Alertmanager, the operator, the three stores,
 # Grafana and the backup jobs.
 resources:
-  # -- `guaranteed` (the default) or `burstable`.
+  # -- `burstable` (the default) or `guaranteed`.
   #
-  # `guaranteed` is the rule this chart has always enforced: requests
-  # EQUAL limits for both cpu and memory, and the CPU is a whole number
-  # of cores. VictoriaMetrics sizes its thread pool from the cgroup CPU
-  # quota and rounds DOWN, so `1500m` buys one thread; and a pod whose
-  # requests are below its limits is Burstable, evicted before a
-  # Guaranteed one at the moment of node pressure. It suits an estate
-  # whose stores and alerting path carry many teams' traffic.
-  #
-  # `burstable` is for an estate that measured otherwise — a small one
-  # where vmalert and Alertmanager use a few millicores, and one that
-  # deliberately runs without CPU limits because it measured CFS
-  # throttling. Under it:
+  # `burstable` is what the component defaults below are written for:
+  # the CPU REQUEST is sized from measured use (p95 x 1.5, rounded up,
+  # with a floor of 10m; the stores get more headroom, see each one), the
+  # CPU LIMIT is absent, and the MEMORY request equals the memory limit.
+  # Measured on a three-cluster install, every component of this stack
+  # used a few millicores to under a tenth of a core, so a one- or
+  # two-core request per component reserved far more than the whole
+  # stack used and tripped node-loss overcommit alerts on autoscaled
+  # clusters. A request is a scheduling hint and a limit is a throttle:
+  # with no CPU limit a merge, a compaction or a heavy query takes idle
+  # cores instead of being throttled, and the request still tells the
+  # scheduler what to keep free. Under it:
   #   - `requests.cpu` may be fractional and below `limits.cpu`;
   #   - `limits.cpu` may be absent; set, it must still be a whole number,
   #     because the QUOTA is what the thread pool rounds;
@@ -126,18 +126,29 @@ resources:
   #     the kubelet's first eviction tier under memory pressure, which
   #     keeps most of what `guaranteed` bought.
   #
-  # The switch changes what is ACCEPTED, not what is rendered: every
-  # component's own `resources` below keeps its guaranteed default until
-  # the estate writes its own. And Helm MERGES a values file into these
-  # defaults, so dropping a CPU limit is `limits: {cpu: null}` — leaving
-  # `cpu` out of your own `limits` keeps the default `"1"`. That works for
-  # this chart's own components (vmauth, the vmalerts, Alertmanager, the
-  # backup jobs) only: Helm passes a null through to a vendored subchart
-  # (the operator, the stores, Grafana) unchanged, the API server reads it
-  # as a limit of 0 and refuses the pod, and the chart refuses that render
-  # first. Give those a whole-number limit well above the request instead.
-  # See docs/safety.md, "Resources".
-  policy: guaranteed
+  # `guaranteed` is the rule this chart enforced before v0.20.0: requests
+  # EQUAL limits for both cpu and memory, and the CPU is a whole number
+  # of cores. VictoriaMetrics sizes its thread pool from the cgroup CPU
+  # quota and rounds DOWN, so `1500m` buys one thread; and a pod whose
+  # requests are below its limits is Burstable, evicted before a
+  # Guaranteed one at the moment of node pressure. It suits an estate
+  # whose stores and alerting path carry many teams' traffic and that
+  # wants that class back. It is a CHECK, not a set of defaults: choosing
+  # it means writing each component's own `resources` with a CPU limit
+  # equal to its request (whole cores), because the defaults below carry
+  # no CPU limit and the render refuses them under it, naming the
+  # component.
+  #
+  # The switch changes what is ACCEPTED, not what is rendered. Helm MERGES
+  # a values file into these defaults, so dropping a CPU limit you wrote
+  # is `limits: {cpu: null}`. That works for this chart's own components
+  # (vmauth, the vmalerts, Alertmanager, the backup jobs) only: Helm
+  # passes a null through to a vendored subchart (the operator, the
+  # stores, Grafana) unchanged, the API server reads it as a limit of 0
+  # and refuses the pod, and the chart refuses that render first. The
+  # defaults carry no CPU limit, so there is nothing to null out unless
+  # you added one. See docs/safety.md, "Resources".
+  policy: burstable
 
 # The authorising proxy: vmauth, in front of every read.
 #
@@ -173,14 +184,17 @@ vmauth:
     # set explicitly rather than left to it.
     tag: v1.152.0
   replicaCount: 1
-  # -- Requests equal limits, integer CPU. See `resources` on each store
-  # below for why.
+  # -- CPU request from measurement, no CPU limit, memory request == limit.
+  # See `resources.policy` and `resources` on each store below.
   resources:
+    # CPU request: vmauth: measured p95 was a few millicores across every
+    # read; 100m keeps room for a burst of dashboard reads, each of which
+    # verifies a JWT. No CPU limit (see `resources.policy`); the memory
+    # request equals its limit.
     requests:
-      cpu: "1"
+      cpu: 100m
       memory: 512Mi
     limits:
-      cpu: "1"
       memory: 512Mi
   # -- Extra flags for vmauth. `logInvalidAuthTokens` is on by default: a
   # rejected token that logs nothing is an access problem nobody can
@@ -644,11 +658,14 @@ vmalert:
   watchdog:
     enabled: true
   resources:
+    # CPU request: measured p95 was under 5m, so 1.5 x p95 is under the
+    # 10m floor; 50m keeps headroom for a rule-evaluation burst after a
+    # restart. No CPU limit (see `resources.policy`); the memory request
+    # equals its limit.
     requests:
-      cpu: "1"
+      cpu: 50m
       memory: 512Mi
     limits:
-      cpu: "1"
       memory: 512Mi
 
 alertmanager:
@@ -690,7 +707,6 @@ alertmanager:
       cpu: "1"
       memory: 256Mi
     limits:
-      cpu: "1"
       memory: 256Mi
 
 # The one router. See docs/notifications.md for the design this
@@ -1770,11 +1786,14 @@ victoria-metrics-k8s-stack:
       - name: VM_ENABLEDPROMETHEUSCONVERTER_ALERTMANAGERCONFIG
         value: "false"
     resources:
+      # CPU request: measured p95 was under 5m, so 1.5 x p95 is under the
+      # 10m floor; 50m keeps headroom for a rule-evaluation burst after a
+      # restart. No CPU limit (see `resources.policy`); the memory request
+      # equals its limit.
       requests:
-        cpu: "1"
+        cpu: 50m
         memory: 512Mi
       limits:
-        cpu: "1"
         memory: 512Mi
 
   # The metrics store.
@@ -1846,24 +1865,27 @@ victoria-metrics-k8s-stack:
       # `storeCredentials`, wired directly from it rather than
       # duplicated, so there is nothing here that could disagree.
       disableSelfServiceScrape: true
-      # -- Requests EQUAL limits, and the CPU is an INTEGER.
-      #
-      # Both halves matter. VictoriaMetrics sizes its thread pool from the
-      # cgroup CPU quota and rounds DOWN, so `1500m` buys exactly one
-      # thread and the other 500m is paid for and unused. And a store
-      # whose requests are below its limits is evicted first under node
-      # pressure, which is the moment it is most needed.
+      # -- CPU request sized from measurement, no CPU limit, memory
+      # request == memory limit (`resources.policy: burstable`). Under
+      # `guaranteed` both CPUs must be equal whole cores: VictoriaMetrics
+      # sizes its thread pool from the cgroup CPU quota and rounds DOWN,
+      # so `1500m` buys exactly one thread. With no quota it sizes the
+      # pool from the node's cores instead.
       #
       # Setting this at all is not optional: with `resources` unset the
       # operator applies its own defaults (1500Mi / 1200m for VMSingle),
       # and 1200m is a fractional CPU, so an unset value is the rounding
       # failure by default.
       resources:
+        # CPU request: vmsingle: measured p95 was about 70m and max about
+        # 185m; 500m leaves room for merges and heavy queries, which grow
+        # with the data volume (the measurement window was a few days
+        # old). No CPU limit (see `resources.policy`); the memory request
+        # equals its limit.
         requests:
-          cpu: "2"
+          cpu: 500m
           memory: 8Gi
         limits:
-          cpu: "2"
           memory: 8Gi
       storage:
         accessModes:
@@ -2069,11 +2091,14 @@ victoria-logs-single:
             name: observability-store-credentials
             key: password
     resources:
+      # CPU request: vlogs: measured p95 was about 15m and max about 32m;
+      # 250m leaves room for merges and LogsQL scans, which grow with the
+      # data volume. No CPU limit (see `resources.policy`); the memory
+      # request equals its limit.
       requests:
-        cpu: "2"
+        cpu: 250m
         memory: 4Gi
       limits:
-        cpu: "2"
         memory: 4Gi
     persistentVolume:
       enabled: true
@@ -2161,11 +2186,13 @@ victoria-traces-single:
             name: observability-store-credentials
             key: password
     resources:
+      # CPU request: vtraces: measured p95 was a few millicores; 100m
+      # leaves room for merges and trace searches. No CPU limit (see
+      # `resources.policy`); the memory request equals its limit.
       requests:
-        cpu: "1"
+        cpu: 100m
         memory: 2Gi
       limits:
-        cpu: "1"
         memory: 2Gi
     persistentVolume:
       enabled: true
@@ -2374,5 +2401,4 @@ grafana:
       cpu: "1"
       memory: 512Mi
     limits:
-      cpu: "1"
       memory: 512Mi
