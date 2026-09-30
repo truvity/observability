@@ -223,8 +223,7 @@ Unset is not neutral either: with `resources` empty the operator applies
 its own defaults, and its default CPU for VMSingle is 1200m, which is
 the rounding failure by default.
 
-That is `resources.policy: guaranteed`. `burstable`, the default since
-v0.20.0, is the
+That is `resources.policy: guaranteed`. `burstable`, the default, is the
 same judgement made for an estate that measured otherwise — components
 using a few millicores, and CPU limits deliberately absent because the
 estate measured CFS throttling. It relaxes the CPU half only, and only

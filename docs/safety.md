@@ -386,7 +386,7 @@ store is load-bearing and CPU is cheap relative to an outage; choose it
 by writing each component's own `resources`, because the defaults carry
 no CPU limit.
 
-`burstable` is the default since v0.20.0. Measured on a three-cluster
+`burstable` is the default. Measured on a three-cluster
 install, every component of this stack used a few millicores to under a
 tenth of a core (the metrics store, the busiest, peaked near 185m), so a
 whole reserved core or two per component reserved far more than the whole

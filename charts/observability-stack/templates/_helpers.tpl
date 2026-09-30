@@ -765,7 +765,7 @@ Takes the raw `backup.destination` string; the caller appends
 {{/*
 A component's `resources` without its nulls.
 
-Until v0.20.0 this chart's own components (vmauth, the vmalerts,
+Until the default CPU limits were removed this chart's own components (vmauth, the vmalerts,
 Alertmanager) defaulted a CPU limit, and Helm deletes a null that meets a
 default, so `limits: {cpu: null}` was how a consumer removed it. The
 default is gone, so Helm now keeps the null; dropping it here keeps that

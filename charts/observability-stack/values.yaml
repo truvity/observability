@@ -126,7 +126,7 @@ resources:
   #     the kubelet's first eviction tier under memory pressure, which
   #     keeps most of what `guaranteed` bought.
   #
-  # `guaranteed` is the rule this chart enforced before v0.20.0: requests
+  # `guaranteed` is the rule this chart enforced before `burstable` became the default: requests
   # EQUAL limits for both cpu and memory, and the CPU is a whole number
   # of cores. VictoriaMetrics sizes its thread pool from the cgroup CPU
   # quota and rounds DOWN, so `1500m` buys one thread; and a pod whose
