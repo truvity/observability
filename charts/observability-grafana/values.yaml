@@ -36,6 +36,14 @@ global:
     #            bearer token INSTEAD of the signed-in person's token. That
     #            datasource is then not scoped per person.
     stores: []
+    # -- Link a store's logs to ITS OWN traces and back (default true).
+    # Logs datasource: a derived field `TraceID` on the structured field
+    # `trace_id` (what OpenTelemetry logs carry in VictoriaLogs) opens
+    # `<name>-traces` on that id. Traces datasource: `tracesToLogsV2` opens
+    # `<name>-logs` with the LogsQL `trace_id:"<id>"`, -5m/+5m around the
+    # span. Only a store that provisions both gets the links; set false to
+    # render plain datasources.
+    correlate: true
     # -- Datasource NAMES that used to exist and no longer do. Provisioning
     # matches an existing datasource by name but the database also insists
     # on a unique uid, so a datasource renamed under the same uid makes a

@@ -108,7 +108,7 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: observability-grafana-datasources-dcd26ed1
+  name: observability-grafana-datasources-e8186081
   namespace: default
   labels:
     app.kubernetes.io/name: observability-grafana
@@ -137,6 +137,13 @@ data:
       url: https://store-a.example.org/prometheus
     - access: proxy
       jsonData:
+        derivedFields:
+        - datasourceUid: store-a-traces
+          matcherRegex: trace_id
+          matcherType: label
+          name: TraceID
+          url: $${__value.raw}
+          urlDisplayLabel: Open trace
         oauthPassThru: true
       name: Logs (store-a)
       type: victoriametrics-logs-datasource
@@ -145,6 +152,14 @@ data:
     - access: proxy
       jsonData:
         oauthPassThru: true
+        tracesToLogsV2:
+          customQuery: true
+          datasourceUid: store-a-logs
+          filterBySpanID: false
+          filterByTraceID: false
+          query: trace_id:"$${__trace.traceId}"
+          spanEndTimeShift: 5m
+          spanStartTimeShift: -5m
       name: Traces (store-a)
       type: jaeger
       uid: store-a-traces
@@ -167,6 +182,13 @@ data:
       url: https://store-b.example.org/prometheus
     - access: proxy
       jsonData:
+        derivedFields:
+        - datasourceUid: store-b-traces
+          matcherRegex: trace_id
+          matcherType: label
+          name: TraceID
+          url: $${__value.raw}
+          urlDisplayLabel: Open trace
         oauthPassThru: true
       name: Logs (store-b)
       type: victoriametrics-logs-datasource
@@ -175,6 +197,14 @@ data:
     - access: proxy
       jsonData:
         oauthPassThru: true
+        tracesToLogsV2:
+          customQuery: true
+          datasourceUid: store-b-logs
+          filterBySpanID: false
+          filterByTraceID: false
+          query: trace_id:"$${__trace.traceId}"
+          spanEndTimeShift: 5m
+          spanStartTimeShift: -5m
       name: Traces (store-b)
       type: jaeger
       uid: store-b-traces
@@ -457,5 +487,5 @@ spec:
           configMap:
             name: observability-grafana-config-dashboards
         - configMap:
-            name: 'observability-grafana-datasources-dcd26ed1'
+            name: 'observability-grafana-datasources-e8186081'
           name: observability-grafana-datasources

@@ -1,0 +1,24 @@
+# The minimal render with the logs/traces links switched off.
+global:
+  observabilityGrafana:
+    correlate: false
+    rootUrl: https://grafana.example.org
+    stores:
+      - name: store-a
+        url: https://store-a.example.org
+        default: true
+      - name: store-b
+        url: https://store-b.example.org
+    oauth:
+      issuer: https://issuer.example.org
+      clientId: grafana
+      clientSecretRef: {name: grafana-client}
+      roleAttributePath: "contains(groups[*], 'example:admin') && 'Admin' || 'Editor'"
+    database:
+      host: postgres.example.org:5432
+      secretRef: {name: grafana-pg-app}
+    secretKeyRef: {name: grafana-secret-key}
+grafana:
+  # Named so the render is the same every time: left empty, the subchart
+  # generates a random admin password on every render.
+  admin: {existingSecret: grafana-admin}

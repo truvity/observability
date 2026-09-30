@@ -33,7 +33,7 @@ data:
         type: file
         disableDeletion: false
         allowUiUpdates: false
-        updateIntervalSeconds: 60
+        updateIntervalSeconds: 30
         options:
           foldersFromFilesStructure: true
           path: /tmp/dashboards
@@ -61,7 +61,7 @@ data:
     reporting_enabled = false
     [auth]
     disable_login_form = true
-    login_maximum_lifetime_duration = 12h
+    login_maximum_lifetime_duration = 24h
     oauth_auto_login = true
     [auth.generic_oauth]
     api_url = https://issuer.example.org/userinfo
@@ -69,7 +69,7 @@ data:
     client_id = grafana
     enabled = true
     groups_attribute_path = groups
-    name = Example
+    name = SSO
     role_attribute_path = contains(groups[*], 'example:admin') && 'Admin' || 'Editor'
     role_attribute_strict = true
     scopes = openid profile email groups offline_access
@@ -77,9 +77,9 @@ data:
     use_pkce = true
     use_refresh_token = true
     [dashboards]
-    default_home_dashboard_path = /tmp/dashboards/Fleet/fleet-overview.json
+    default_home_dashboard_path = 
     [database]
-    ca_cert_path = /etc/ssl/private-ca/ca.crt
+    ca_cert_path = 
     host = postgres.example.org:5432
     locking_attempt_timeout_sec = 120
     name = grafana
@@ -108,7 +108,7 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: observability-grafana-datasources-d38c00d1
+  name: observability-grafana-datasources-dcd26ed1
   namespace: default
   labels:
     app.kubernetes.io/name: observability-grafana
@@ -121,10 +121,7 @@ data:
     - access: proxy
       jsonData:
         oauthPassThru: true
-        tlsAuthWithCACert: true
       name: Metrics (store-a)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
       type: victoriametrics-metrics-datasource
       uid: store-a-metrics
       url: https://store-a.example.org/prometheus
@@ -134,55 +131,28 @@ data:
         httpMethod: POST
         oauthPassThru: true
         prometheusType: Prometheus
-        tlsAuthWithCACert: true
       name: Prometheus (store-a)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
       type: prometheus
       uid: store-a-prom
       url: https://store-a.example.org/prometheus
     - access: proxy
       jsonData:
-        derivedFields:
-        - datasourceUid: store-a-traces
-          matcherRegex: trace_id
-          matcherType: label
-          name: TraceID
-          url: $${__value.raw}
-          urlDisplayLabel: Open trace
         oauthPassThru: true
-        tlsAuthWithCACert: true
       name: Logs (store-a)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
       type: victoriametrics-logs-datasource
       uid: store-a-logs
       url: https://store-a.example.org
     - access: proxy
       jsonData:
         oauthPassThru: true
-        tlsAuthWithCACert: true
-        tracesToLogsV2:
-          customQuery: true
-          datasourceUid: store-a-logs
-          filterBySpanID: false
-          filterByTraceID: false
-          query: trace_id:"$${__trace.traceId}"
-          spanEndTimeShift: 5m
-          spanStartTimeShift: -5m
       name: Traces (store-a)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
       type: jaeger
       uid: store-a-traces
       url: https://store-a.example.org/select/jaeger
     - access: proxy
       jsonData:
         oauthPassThru: true
-        tlsAuthWithCACert: true
       name: Metrics (store-b)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/other-ca/ca.crt}
       type: victoriametrics-metrics-datasource
       uid: store-b-metrics
       url: https://store-b.example.org/prometheus
@@ -191,61 +161,24 @@ data:
         httpMethod: POST
         oauthPassThru: true
         prometheusType: Prometheus
-        tlsAuthWithCACert: true
       name: Prometheus (store-b)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/other-ca/ca.crt}
       type: prometheus
       uid: store-b-prom
       url: https://store-b.example.org/prometheus
     - access: proxy
       jsonData:
-        httpHeaderName1: Authorization
-        tlsAuthWithCACert: true
+        oauthPassThru: true
+      name: Logs (store-b)
+      type: victoriametrics-logs-datasource
+      uid: store-b-logs
+      url: https://store-b.example.org
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
       name: Traces (store-b)
-      secureJsonData:
-        httpHeaderValue1: Bearer $__env{STORE_B_TRACES_TOKEN}
-        tlsCACert: $__file{/etc/ssl/other-ca/ca.crt}
       type: jaeger
       uid: store-b-traces
       url: https://store-b.example.org/select/jaeger
-    - access: proxy
-      jsonData:
-        oauthPassThru: true
-        tlsAuthWithCACert: true
-      name: Metrics (store-c)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
-      type: victoriametrics-metrics-datasource
-      uid: store-c-metrics
-      url: https://store-c.example.org/prometheus
-    - access: proxy
-      jsonData:
-        httpMethod: POST
-        oauthPassThru: true
-        prometheusType: Prometheus
-        tlsAuthWithCACert: true
-      name: Prometheus (store-c)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
-      type: prometheus
-      uid: store-c-prom
-      url: https://store-c.example.org/prometheus
-    - access: proxy
-      jsonData:
-        oauthPassThru: true
-        tlsAuthWithCACert: true
-      name: Logs (store-c)
-      secureJsonData:
-        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
-      type: victoriametrics-logs-datasource
-      uid: store-c-logs
-      url: https://store-c.example.org
-    deleteDatasources:
-    - name: store-a-metrics
-      orgId: 1
-    - name: store-a-logs
-      orgId: 1
 
 ---
 # Source: observability-grafana/charts/grafana/templates/role.yaml
@@ -321,7 +254,7 @@ metadata:
     app.kubernetes.io/instance: observability-grafana
     app.kubernetes.io/version: "13.1.1"
 spec:
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 10
   selector:
     matchLabels:
@@ -337,8 +270,8 @@ spec:
         app.kubernetes.io/instance: observability-grafana
         app.kubernetes.io/version: "13.1.1"
       annotations:
-        checksum/config: 01668f1209f0796c56826e79df4b1634384c1824df8b8a4f6f44d373eb043ef1
-        checksum/sc-dashboard-provider-config: 3ce35d7ee68b54f23dc0322df2731ab35cc97102e4c1c146bd1aa47951c445ad
+        checksum/config: d9a45ef384405f03f60f857135873f6348127d408d268064b806f7833970ca9e
+        checksum/sc-dashboard-provider-config: 81f722b8194d01e4a84ce12a0cbbe9b705b2d9145719c803ac264b4786c64a09
         kubectl.kubernetes.io/default-container: grafana
     spec:
       
@@ -422,10 +355,6 @@ spec:
             - name: config
               mountPath: "/etc/grafana/grafana.ini"
               subPath: grafana.ini
-            - name: private-ca
-              mountPath: /etc/ssl/private-ca
-              subPath: 
-              readOnly: true
             - name: storage
               mountPath: "/var/lib/grafana"
             - name: search
@@ -501,7 +430,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: 'secret_key'
-                  name: 'observability-grafana-no-secret-key'
+                  name: 'grafana-secret-key'
                   optional: true
           livenessProbe:
             failureThreshold: 10
@@ -514,15 +443,10 @@ spec:
             httpGet:
               path: /api/health
               port: grafana
-      nodeSelector:
-        kubernetes.io/arch: arm64
       volumes:
         - name: config
           configMap:
             name: observability-grafana
-        - name: private-ca
-          configMap:
-            name: private-ca
         - name: storage
           emptyDir: {}
         - name: search
@@ -533,5 +457,5 @@ spec:
           configMap:
             name: observability-grafana-config-dashboards
         - configMap:
-            name: 'observability-grafana-datasources-d38c00d1'
+            name: 'observability-grafana-datasources-dcd26ed1'
           name: observability-grafana-datasources

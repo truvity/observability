@@ -4,6 +4,25 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.15.3
+
+`observability-grafana` links each store's logs to its traces and back.
+
+- **Behaviour change: every store that provisions both a logs and a traces
+  datasource now carries cross-links, on by default.** The logs datasource
+  gains a derived field `TraceID` on the structured field `trace_id` (where
+  VictoriaLogs stores an OpenTelemetry log record's trace id) that opens the
+  SAME store's `<name>-traces` on that id; the traces datasource gains
+  `tracesToLogsV2` pointing at the same store's `<name>-logs`, with the
+  LogsQL query `trace_id:"<id>"` from five minutes before the span to five
+  minutes after. A store with `logs: false` or `traces.enabled: false` gets
+  neither. The `minimal` and `everything` goldens move, and because the
+  datasources ConfigMap name carries a hash of its content, the Grafana pods
+  roll once. Set `global.observabilityGrafana.correlate: false` to keep the
+  plain datasources (the `no-correlation` case renders that). A log line
+  that only embeds a `traceparent` or `trace_id=` in its message text has no
+  `trace_id` field and gets no link.
+
 ## v0.15.2
 
 `RecordingRulesNoData` no longer fires for a recording that is empty by

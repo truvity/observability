@@ -118,6 +118,26 @@ token from an environment variable you supply through
 `grafana.envValueFrom`, instead of the person's token. That datasource is
 unscoped, so use it only for a store whose trace API cannot scope.
 
+## Logs and traces link to each other
+
+On by default (`correlate: true`), and only inside one store: store A's logs
+open store A's traces and back, never another store's. A store that turns off
+`logs` or `traces` gets no link, since the other end does not exist.
+
+- **Logs to traces.** The logs datasource carries a derived field `TraceID`
+  on the structured field `trace_id`, which is where VictoriaLogs puts the
+  trace id of an OpenTelemetry log record. The value becomes a link that
+  opens `<name>-traces` on that id.
+- **Traces to logs.** The traces datasource carries `tracesToLogsV2` aimed at
+  `<name>-logs`, with the LogsQL query `trace_id:"<trace id>"` from five
+  minutes before the span to five minutes after it. It is a custom query
+  because the built-in filters write LogQL, which VictoriaLogs does not read.
+- **What it does not cover.** A log line that only embeds a `traceparent` or
+  `trace_id=` in its message text has no `trace_id` field and gets no link;
+  parse it into a field at ingestion if you want one.
+
+Set `correlate: false` for plain datasources.
+
 ## The traps, in plain words
 
 - **No second datasource, empty dashboards.** Grafana's dashboard variables
