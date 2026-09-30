@@ -1613,9 +1613,10 @@ selfAlerts:
   #
   # It is NEVER routed to Slack: a route at the top of the tree sends it
   # to `notifications.slack.failureReceiver`, or to the null receiver when
-  # that is unset (visible in vmalert, reaches nobody). The metric must
-  # reach this metrics store: if Alertmanager's own /metrics is not
-  # scraped into it the expression has no series and never fires.
+  # that is unset (visible in vmalert, reaches nobody). Its series exists
+  # because this chart scrapes Alertmanager itself: a ServiceMonitor
+  # (templates/alertmanager-scrape.yaml) renders whenever Alertmanager
+  # does, and the operator's own VMServiceScrape is disabled.
   #
   # Healthy range: 0.
   slackDelivery:

@@ -61,9 +61,8 @@ spec:
         # to `notifications.slack.failureReceiver`, or to the null
         # receiver when that is unset.
         #
-        # Healthy range: 0. Needs Alertmanager's own /metrics in this
-        # metrics store; with none, the expression has no series and
-        # never fires (docs/notifications.md, "Slack").
+        # Healthy range: 0. The series exists because templates/
+        # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
         - alert: SlackNotificationsFailing
           expr: >-
             sum(increase(alertmanager_notifications_failed_total{integration="slack"}[{{ $sa.slackDelivery.window }}])) by (integration) > 0

@@ -123,6 +123,13 @@ spec:
   resources:
     {{- toYaml .Values.alertmanager.resources | nindent 4 }}
   selectAllByDefault: false
+  {{- /*
+  The operator's own VMServiceScrape is off: templates/
+  alertmanager-scrape.yaml renders the ServiceMonitor that replaces it
+  (docs/safety.md, "Scrape objects are always the Prometheus Operator
+  kinds"). Not a value: nothing here could usefully turn it back on.
+  */}}
+  disableSelfServiceScrape: true
   {{- with .Values.vmalert.externalUrl }}
   externalURL: {{ . | quote }}
   {{- end }}
