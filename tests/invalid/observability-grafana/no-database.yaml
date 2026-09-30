@@ -1,0 +1,14 @@
+# expect: database.host` and `database.secretRef.name` are both required
+# No external database.
+global:
+  observabilityGrafana:
+    database: {}
+    oauth:
+      clientId: grafana
+      clientSecretRef: {name: grafana-client}
+      issuer: https://issuer.example.org
+      roleAttributePath: '''Editor'''
+    rootUrl: https://grafana.example.org
+    secretKeyRef: {name: grafana-secret-key}
+    stores:
+    - {default: true, name: store-a, url: 'https://store-a.example.org'}

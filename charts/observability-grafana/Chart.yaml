@@ -1,0 +1,26 @@
+apiVersion: v2
+name: observability-grafana
+description: >-
+  One Grafana as the read UI across several observability stores: a
+  datasource set per store, sign-in through an OIDC issuer, a database of
+  its own, and dashboards from git only. Wraps the same grafana subchart
+  charts/observability-stack vendors.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - grafana
+  - victoriametrics
+  - observability
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability
+# The same exact pin as charts/observability-stack (see the comment there
+# on why a range is never used): a Grafana here and one shipped with a
+# stack behave alike.
+dependencies:
+  - name: grafana
+    version: 12.7.3
+    repository: oci://ghcr.io/grafana-community/helm-charts

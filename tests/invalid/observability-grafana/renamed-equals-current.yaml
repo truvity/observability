@@ -1,0 +1,17 @@
+# expect: which is a datasource this chart provisions now
+# A rename entry naming a datasource that exists now would delete it on every start.
+global:
+  observabilityGrafana:
+    database:
+      host: pg:5432
+      secretRef: {name: grafana-pg-app}
+    oauth:
+      clientId: grafana
+      clientSecretRef: {name: grafana-client}
+      issuer: https://issuer.example.org
+      roleAttributePath: '''Editor'''
+    renamedDatasources: [Metrics (store-a)]
+    rootUrl: https://grafana.example.org
+    secretKeyRef: {name: grafana-secret-key}
+    stores:
+    - {default: true, name: store-a, url: 'https://store-a.example.org'}

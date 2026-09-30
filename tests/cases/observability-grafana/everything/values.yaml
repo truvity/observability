@@ -1,0 +1,50 @@
+# Every knob at once: a CA, a store without logs, a store whose traces use
+# a fixed bearer instead of the person's token, a rename, a home page,
+# Grafana's built-in key (knowingly), and pod-level values on the subchart.
+global:
+  observabilityGrafana:
+    rootUrl: https://grafana.example.org
+    caFile: /etc/ssl/private-ca/ca.crt
+    renamedDatasources: [store-a-metrics, store-a-logs]
+    stores:
+      - name: store-a
+        url: https://store-a.example.org/
+        default: true
+      - name: store-b
+        url: https://store-b.example.org
+        caFile: /etc/ssl/other-ca/ca.crt
+        logs: false
+        traces: {enabled: true, bearerEnv: STORE_B_TRACES_TOKEN}
+      - name: store-c
+        url: https://store-c.example.org
+        traces: {enabled: false}
+    oauth:
+      name: Example
+      issuer: https://issuer.example.org/
+      clientId: grafana
+      clientSecretRef: {name: grafana-client, key: client-secret}
+      roleAttributePath: "contains(groups[*], 'example:admin') && 'Admin' || 'Editor'"
+      sessionMaxLifetime: 12h
+    database:
+      host: postgres.example.org:5432
+      name: grafana
+      caFile: /etc/ssl/private-ca/ca.crt
+      secretRef: {name: grafana-pg-app}
+    secretKeyRef: {builtInKey: true}
+    dashboards:
+      home:
+        path: /tmp/dashboards/Fleet/fleet-overview.json
+grafana:
+  admin: {existingSecret: grafana-admin}
+  replicas: 2
+  nodeSelector:
+    kubernetes.io/arch: arm64
+  extraConfigmapMounts:
+    - name: private-ca
+      configMap: private-ca
+      mountPath: /etc/ssl/private-ca
+      readOnly: true
+  sidecar:
+    dashboards:
+      provider:
+        updateIntervalSeconds: 60
