@@ -1,0 +1,66 @@
+{{- /*
+Alertmanager's own scrape object.
+
+Nothing else scrapes Alertmanager. The operator creates a
+`VMServiceScrape` for every VMAlertmanager it reconciles unless told not
+to, and that kind is ruled out here for the reason templates/
+selfscrape.yaml gives at length: "Scrape objects are always the
+Prometheus Operator kinds" (docs/safety.md). templates/vmalertmanager.yaml
+therefore sets `disableSelfServiceScrape: true` on the VMAlertmanager
+(operator v0.74.1, `spec.disableSelfServiceScrape`), and THIS
+`ServiceMonitor` replaces it.
+
+Why it exists at all: `SlackNotificationsFailing` watches
+`alertmanager_notifications_failed_total`, a counter only Alertmanager's
+own /metrics carries. With no scrape object the series never lands, the
+rule has nothing to evaluate and never fires — a rule that looks wired
+up and reaches nobody. So it renders whenever the Alertmanager it
+scrapes does, not only when a Slack workspace is declared: the counter
+is every receiver's delivery health.
+
+The selector is the operator's own label set on the Service it puts in
+front of a VMAlertmanager (`SelectorLabels()`: name `vmalertmanager`,
+instance = the CR's name, which is this chart's fullname,
+component `monitoring`, `managed-by: vm-operator`). The instance label
+keeps it off any other Alertmanager in the namespace, the vendored
+stack's included.
+
+`targetPort`, not a named `port`: the operator names the Service's port
+itself and that name is not part of this chart's contract, while the
+container's listen port is: nothing here sets the VMAlertmanager's
+`port`, so it is the operator's default, 9093.
+
+No `basicAuth` and no TLS: Alertmanager's /metrics is unauthenticated,
+and nothing in this chart puts a web config or a proxy in front of it
+(compare the metrics store, whose `-httpAuth.*` is why selfscrape.yaml
+carries credentials). No NetworkPolicy of this chart selects the
+Alertmanager pods, so nothing refuses the agent on 9093 either; the
+policies in templates/networkpolicy.yaml select the stores, vmalert and
+the proxy only, and a test holds that line (tests/
+alertmanager_scrape_test.go).
+*/ -}}
+{{- $root := . -}}
+{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- if $observabilityStackEffective.alertmanager }}
+{{- $fullname := include "observability-stack.fullname" . }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ printf "%s-alertmanager-scrape" $fullname | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ $root.Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmalertmanager
+      app.kubernetes.io/instance: {{ $fullname }}
+      app.kubernetes.io/component: monitoring
+      managed-by: vm-operator
+  endpoints:
+    - targetPort: 9093
+      path: /metrics
+      interval: {{ $root.Values.interval }}
+{{- end }}

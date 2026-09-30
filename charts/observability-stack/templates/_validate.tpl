@@ -546,11 +546,11 @@ nothing ever scraped it. See docs/safety.md, "The doctrine's own promise
 was broken from this chart's first commit".
 
 Refused whenever this chart renders at least one ServiceMonitor of its
-own (`metricsSelfScrape`, or the log/trace stores' own
-`serviceMonitor`) and either the blanket switch or an explicit env
+own (`metricsSelfScrape`, Alertmanager's own scrape, or the
+log/trace stores' own `serviceMonitor`) and either the blanket switch or an explicit env
 override leaves the ServiceMonitor converter off.
 */ -}}
-{{- $anyServiceMonitor := or (and $metricsOn $observabilityStackEffective.metricsSelfScrape) (and $logsOn (((index .Values "victoria-logs-single").server).serviceMonitor).enabled) (and $tracesOn (((index .Values "victoria-traces-single").server).serviceMonitor).enabled) -}}
+{{- $anyServiceMonitor := or $observabilityStackEffective.alertmanager (and $metricsOn $observabilityStackEffective.metricsSelfScrape) (and $logsOn (((index .Values "victoria-logs-single").server).serviceMonitor).enabled) (and $tracesOn (((index .Values "victoria-traces-single").server).serviceMonitor).enabled) -}}
 {{- if $anyServiceMonitor -}}
 {{- $vmOperator := index $vmks "victoria-metrics-operator" -}}
 {{- $converterOff := ($vmOperator.operator).disable_prometheus_converter -}}
@@ -559,7 +559,7 @@ override leaves the ServiceMonitor converter off.
 {{- $_ := set $envOverrides $e.name $e.value -}}
 {{- end -}}
 {{- if or $converterOff (eq (index $envOverrides "VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE") "false") -}}
-{{- fail "observability-stack: this chart renders a ServiceMonitor of its own (`metricsSelfScrape`, or the log/trace stores' `serviceMonitor`), but `victoria-metrics-k8s-stack.victoria-metrics-operator.operator.disable_prometheus_converter` is `true` or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE` is explicitly \"false\" in its `env`. vmagent only watches the native VictoriaMetrics kinds, so nothing converts this object and nothing scrapes it — docs/safety.md, \"The doctrine's own promise was broken from this chart's first commit\"." -}}
+{{- fail "observability-stack: this chart renders a ServiceMonitor of its own (Alertmanager's own scrape, `metricsSelfScrape`, or the log/trace stores' `serviceMonitor`), but `victoria-metrics-k8s-stack.victoria-metrics-operator.operator.disable_prometheus_converter` is `true` or `VM_ENABLEDPROMETHEUSCONVERTER_SERVICESCRAPE` is explicitly \"false\" in its `env`. vmagent only watches the native VictoriaMetrics kinds, so nothing converts this object and nothing scrapes it — docs/safety.md, \"The doctrine's own promise was broken from this chart's first commit\"." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

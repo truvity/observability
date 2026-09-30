@@ -204,8 +204,16 @@ retries; a revoked token, a channel the bot may not post in or an outage
 otherwise looks like a quiet estate. The rule `SlackNotificationsFailing`
 (`selfAlerts.slackDelivery`) fires when that counter increases over 15
 minutes. It renders whenever a workspace is declared, without
-`selfAlerts.enabled`, and it needs Alertmanager's own `/metrics` in the
-metrics store — with none, the expression has no series and never fires.
+`selfAlerts.enabled`. Its series exists because the chart scrapes
+Alertmanager itself: `templates/alertmanager-scrape.yaml` renders a
+`ServiceMonitor` whenever Alertmanager is rendered (selecting the labels
+the operator puts on the VMAlertmanager's Service, port 9093, no
+credentials — Alertmanager's `/metrics` is unauthenticated here), and the
+VMAlertmanager sets `disableSelfServiceScrape: true` so the operator's own
+`VMServiceScrape` is not created beside it. No NetworkPolicy of this chart
+selects the Alertmanager pods, so the metrics agent is not refused. The
+operator's Prometheus converter must be on, as for every other
+ServiceMonitor this chart renders; it is refused otherwise.
 
 It is never routed to Slack. A route for it sits first in the tree, with
 `continue: false`, and goes to `notifications.slack.failureReceiver`: a

@@ -1997,6 +1997,32 @@ spec:
           name: observability-store-credentials
 
 ---
+# Source: observability-stack/templates/alertmanager-scrape.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: observability-stack-alertmanager-scrape
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - observability
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmalertmanager
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/component: monitoring
+      managed-by: vm-operator
+  endpoints:
+    - targetPort: 9093
+      path: /metrics
+      interval: 30s
+
+---
 # Source: observability-stack/templates/selfscrape.yaml
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -2166,6 +2192,7 @@ spec:
       cpu: "1"
       memory: 256Mi
   selectAllByDefault: false
+  disableSelfServiceScrape: true
   volumes:
     - name: notifications-slack-acme
       secret:
@@ -2303,9 +2330,8 @@ spec:
         # to `notifications.slack.failureReceiver`, or to the null
         # receiver when that is unset.
         #
-        # Healthy range: 0. Needs Alertmanager's own /metrics in this
-        # metrics store; with none, the expression has no series and
-        # never fires (docs/notifications.md, "Slack").
+        # Healthy range: 0. The series exists because templates/
+        # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
         - alert: SlackNotificationsFailing
           expr: >-
             sum(increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) by (integration) > 0

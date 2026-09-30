@@ -56,9 +56,20 @@ must be done first, and whether a default moved. Newest first, one
   the tree (`continue: false`) sends it to the new optional
   `notifications.slack.failureReceiver` (a webhook name, or `telegram`).
   Unset, it goes to the null receiver: visible in vmalert, reaches nobody.
+- **Alertmanager is now scraped.** A new `ServiceMonitor`
+  (`<release>-alertmanager-scrape`, port 9093, `/metrics`, no credentials)
+  renders whenever Alertmanager does, so `alertmanager_notifications_*`
+  lands in the metrics store and `SlackNotificationsFailing` can fire. The
+  VMAlertmanager sets `disableSelfServiceScrape: true`, so the operator's
+  own `VMServiceScrape` is not created beside it. The existing refusal for
+  a disabled ServiceMonitor converter now covers this object too. No
+  NetworkPolicy selects the Alertmanager pods, so the agent is not
+  refused; a test holds that line.
 - **Behaviour change:** every existing golden with a Slack receiver moves.
   The Slack receivers and their volume and mount names change as above,
-  and a `SlackNotificationsFailing` rule and its top route render.
+  a `SlackNotificationsFailing` rule and its top route render, and every
+  golden with Alertmanager gains the scrape `ServiceMonitor` and
+  `disableSelfServiceScrape: true`.
   `selfAlerts.slackDelivery.enabled: false` drops the rule (the top route
   stays, harmlessly). New cases `notifications-slack-one-workspace`,
   `notifications-slack-two-workspaces` and
