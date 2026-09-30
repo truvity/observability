@@ -110,3 +110,58 @@ func TestSlackReceiversUseABotTokenAndTheFailureAlertNeverReachesSlack(t *testin
 
 	require.Positive(t, withSlack, "no golden with a Slack receiver; this test would pass vacuously")
 }
+
+// A `mention` is text in one receiver, for FIRING notifications only, and
+// only where a destination asked for it. The golden
+// `notifications-slack-mention` has critical (`here`) and warning (none)
+// in one channel, a `channel` catch-all and a route override that keeps
+// the tier's mention.
+func TestSlackMentionAppearsOnlyWhereConfiguredAndOnlyWhenFiring(t *testing.T) {
+	docs := renderedDocs(t, "golden/observability-stack/notifications-slack-mention.yaml")
+
+	var raw string
+	for _, d := range docs {
+		if d["kind"] == "VMAlertmanager" {
+			raw, _ = dig(d, "spec", "configRawYaml").(string)
+		}
+	}
+	require.NotEmpty(t, raw)
+
+	var cfg struct {
+		Receivers []struct {
+			Name         string           `yaml:"name"`
+			SlackConfigs []map[string]any `yaml:"slack_configs"`
+		} `yaml:"receivers"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(raw), &cfg))
+
+	want := map[string]string{
+		"slack-acme--alerts--here":                    "<!here>",
+		"slack-acme--alerts":                          "",
+		"slack-acme--alerts-everything-else--channel": "<!channel>",
+		"slack-acme--example-app-critical--here":      "<!here>",
+		"slack-acme--example-app--channel":            "<!channel>",
+	}
+
+	seen := map[string]bool{}
+	for _, r := range cfg.Receivers {
+		for _, c := range r.SlackConfigs {
+			mention, ok := want[r.Name]
+			require.Truef(t, ok, "unexpected Slack receiver %s", r.Name)
+			seen[r.Name] = true
+
+			text, _ := c["text"].(string)
+			if mention == "" {
+				assert.NotContainsf(t, text, "<!", "%s: no mention was configured", r.Name)
+				continue
+			}
+			// At the very start, and inside a firing-only branch.
+			prefix := `{{ if eq .Status "firing" }}` + mention + ` {{ end }}`
+			assert.Truef(t, strings.HasPrefix(text, prefix), "%s: text must start with the firing-only %s, got %q", r.Name, mention, text)
+			assert.Equalf(t, 1, strings.Count(text, "<!"), "%s: exactly one mention", r.Name)
+		}
+	}
+	for name := range want {
+		assert.Truef(t, seen[name], "Slack receiver %s is not rendered", name)
+	}
+}

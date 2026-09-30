@@ -532,16 +532,32 @@ not a value this chart controls the shape of.
 {{- regexReplaceAll "[^a-z0-9]+" $s "-" | trimAll "-" -}}
 {{- end -}}
 
+{{/*
+A destination that pings (`mention: here|channel`) is a DIFFERENT receiver
+from the same (workspace, channel) without one: the mention is part of
+the receiver's message text, and one receiver cannot carry two texts. The
+receiver is therefore keyed by (workspace, channel, mention), and the
+mention is appended as a third `--` part ONLY when set. A destination
+with no mention keeps the name it always had, so an install that does not
+use `mention` renders byte-identical receivers (refusing a disagreement
+instead would also have worked, but would have made a channel that wants
+`@here` for critical and nothing for warning impossible to write). The
+suffix is unambiguous for the same reason the workspace half is: a slug
+never contains a double hyphen.
+*/}}
 {{- define "observability-stack.notifications.slackReceiver" -}}
-{{- printf "slack-%s--%s" .workspace (include "observability-stack.notifications.slug" .channel) -}}
+{{- $name := printf "slack-%s--%s" .workspace (include "observability-stack.notifications.slug" .channel) -}}
+{{- if .mention -}}{{- $name = printf "%s--%s" $name .mention -}}{{- end -}}
+{{- $name -}}
 {{- end -}}
 
 {{/*
-Notifications: one Slack destination, as YAML `{workspace, channel}`.
+Notifications: one Slack destination, as YAML `{workspace, channel, mention}`
+(`mention` empty for none).
 
 `$cfg` is a severity tier (or the catch-all); `$override` is what a
 route gave for that tier: "" for nothing, a channel string (the
-tier's workspace is kept), or `{channel, workspace}`. The workspace is
+tier's workspace is kept), or `{channel, workspace, mention}`. The workspace is
 the override's, else the tier's, else — when exactly ONE workspace is
 declared — that one. With two or more and none named it stays empty,
 which `observability-stack.validate.notifications` refuses before
@@ -555,8 +571,10 @@ anything renders from it.
 {{- $workspaces := $slack.workspaces | default list -}}
 {{- $channel := $cfg.channel -}}
 {{- $workspace := $cfg.workspace | default "" -}}
+{{- $mention := $cfg.mention | default "" -}}
 {{- if kindIs "map" $override -}}
 {{- $channel = $override.channel | default $cfg.channel -}}
+{{- $mention = $override.mention | default $mention -}}
 {{- $workspace = $override.workspace | default $workspace -}}
 {{- else if $override -}}
 {{- $channel = $override -}}
@@ -566,6 +584,7 @@ anything renders from it.
 {{- end -}}
 workspace: {{ $workspace | quote }}
 channel: {{ $channel | quote }}
+mention: {{ $mention | quote }}
 {{- end -}}
 
 {{/*
