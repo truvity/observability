@@ -1,5 +1,7 @@
 # expect: They must be equal, for the same reason the CPUs must
-# The guaranteed rule, now chosen rather than the default.
+# The guaranteed rule, chosen rather than the default: every component
+# carries an explicit requests == limits shape, and only the one this case
+# names breaks it.
 resources:
   policy: guaranteed
 tenancy:
@@ -7,33 +9,101 @@ tenancy:
   audience: example-observability-client
   allowUnfilteredTraceReads: true
   principals:
-    - group: example:k8s:viewer
-      grants:
-        - cluster: example-cluster
-          allNamespaces: true
-
-# backup.resources feeds the same requests-equal-limits check every
-# other component's resources does (templates/_validate.tpl): a backup
-# job whose requests are below its limits is Burstable, and evicted
-# before a Guaranteed pod under the exact node pressure a backup is
-# competing against.
+  - group: example:k8s:viewer
+    grants:
+    - cluster: example-cluster
+      allNamespaces: true
 backup:
   enabled: true
-  destination: "s3://example-backups/observability"
+  destination: s3://example-backups/observability
   credentialsSecret: example-backup-credentials
   resources:
     requests:
-      cpu: "1"
+      cpu: '1'
       memory: 1Gi
     limits:
-      cpu: "1"
+      cpu: '1'
       memory: 2Gi
-
 notifications:
   externalUrl: https://grafana.example
   slack:
     workspaces:
-      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
   severities:
-    critical: {receiver: slack, channel: "#alerts-critical"}
-    warning: {receiver: slack, channel: "#alerts"}
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+vmauth:
+  resources:
+    requests:
+      cpu: '1'
+      memory: 512Mi
+    limits:
+      cpu: '1'
+      memory: 512Mi
+vmalert:
+  resources:
+    requests:
+      cpu: '1'
+      memory: 512Mi
+    limits:
+      cpu: '1'
+      memory: 512Mi
+alertmanager:
+  resources:
+    requests:
+      cpu: '1'
+      memory: 256Mi
+    limits:
+      cpu: '1'
+      memory: 256Mi
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      resources:
+        requests:
+          cpu: '2'
+          memory: 8Gi
+        limits:
+          cpu: '2'
+          memory: 8Gi
+  victoria-metrics-operator:
+    resources:
+      requests:
+        cpu: '1'
+        memory: 512Mi
+      limits:
+        cpu: '1'
+        memory: 512Mi
+victoria-logs-single:
+  server:
+    resources:
+      requests:
+        cpu: '2'
+        memory: 4Gi
+      limits:
+        cpu: '2'
+        memory: 4Gi
+victoria-traces-single:
+  server:
+    resources:
+      requests:
+        cpu: '1'
+        memory: 2Gi
+      limits:
+        cpu: '1'
+        memory: 2Gi
+grafana:
+  resources:
+    requests:
+      cpu: '1'
+      memory: 512Mi
+    limits:
+      cpu: '1'
+      memory: 512Mi

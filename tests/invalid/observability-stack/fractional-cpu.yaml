@@ -1,19 +1,17 @@
 # expect: size their thread pool from the cgroup CPU quota and round it DOWN
-# The guaranteed rule, now chosen rather than the default.
+# The guaranteed rule, chosen rather than the default: every component
+# carries an explicit requests == limits shape, and only the one this case
+# names breaks it.
 resources:
   policy: guaranteed
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client
   principals:
-    - group: example:k8s:viewer
-      grants:
-        - cluster: example-cluster
-          allNamespaces: true
-
-# 1500m buys ONE thread: the VictoriaMetrics binaries size their thread
-# pool from the cgroup quota and round it down, so half the CPU is paid
-# for and never used, and nothing says so.
+  - group: example:k8s:viewer
+    grants:
+    - cluster: example-cluster
+      allNamespaces: true
 victoria-logs-single:
   server:
     resources:
@@ -23,3 +21,62 @@ victoria-logs-single:
       limits:
         cpu: 1500m
         memory: 4Gi
+vmauth:
+  resources:
+    requests:
+      cpu: '1'
+      memory: 512Mi
+    limits:
+      cpu: '1'
+      memory: 512Mi
+vmalert:
+  resources:
+    requests:
+      cpu: '1'
+      memory: 512Mi
+    limits:
+      cpu: '1'
+      memory: 512Mi
+alertmanager:
+  resources:
+    requests:
+      cpu: '1'
+      memory: 256Mi
+    limits:
+      cpu: '1'
+      memory: 256Mi
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      resources:
+        requests:
+          cpu: '2'
+          memory: 8Gi
+        limits:
+          cpu: '2'
+          memory: 8Gi
+  victoria-metrics-operator:
+    resources:
+      requests:
+        cpu: '1'
+        memory: 512Mi
+      limits:
+        cpu: '1'
+        memory: 512Mi
+victoria-traces-single:
+  server:
+    resources:
+      requests:
+        cpu: '1'
+        memory: 2Gi
+      limits:
+        cpu: '1'
+        memory: 2Gi
+grafana:
+  resources:
+    requests:
+      cpu: '1'
+      memory: 512Mi
+    limits:
+      cpu: '1'
+      memory: 512Mi
