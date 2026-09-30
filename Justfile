@@ -279,6 +279,17 @@ platform-alerts-suspended-proof:
 platform-alerts-cluster-proof:
     hack/platform-alerts-cluster-proof.sh
 
+# REAL proof that the vendored k8s-stack's default recording rules carry
+# `k8s_cluster_name`: the real sync job image rewrites the fetched rules,
+# and on a real victoria-metrics two clusters sharing a namespace and pod
+# name get one series each, where upstream's `cluster` form collapses them.
+# See hack/k8s-stack-cluster-label-proof.sh's own header.
+#
+# Needs Docker, curl, helm, python3 (with PyYAML) and network access;
+# deliberately NOT part of `check` or CI.
+k8s-stack-cluster-label-proof:
+    hack/k8s-stack-cluster-label-proof.sh
+
 # REAL proof, in Docker, of `backup.auth.mode: credentialProcess` end to
 # end: MinIO stands in for an S3-compatible store that is not AWS, the
 # RENDERED vmbackup command/env/AWS-config this chart produces for that

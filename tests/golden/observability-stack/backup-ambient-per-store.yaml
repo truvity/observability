@@ -279,7 +279,7 @@ metadata:
 data:
   config.yaml: |
     common:
-      clusterLabel: "cluster"
+      clusterLabel: "k8s_cluster_name"
       multicluster: false
     dashboards:
       common:

@@ -1594,6 +1594,20 @@ metricsSelfScrape:
 victoria-metrics-k8s-stack:
   enabled: true
 
+  global:
+    # -- MIRROR: `tenancy.clusterLabel`. The label the vendored default
+    # recording and alerting rules (and dashboards) join and aggregate on;
+    # upstream's default is `cluster`. Every series in these stores carries
+    # the cluster as `tenancy.clusterLabel` (`k8s_cluster_name`) and no
+    # series carries `cluster`, so with the upstream default the recorded
+    # series lose their cluster identity (a tenancy reader filtered on
+    # `k8s_cluster_name` cannot see them) and, on a store several clusters
+    # write to, `on (namespace, pod, cluster)` joins match across clusters.
+    # The sync job rewrites the fetched rules to this label at run time.
+    # Set it to the same value as `tenancy.clusterLabel`; the chart refuses
+    # to render when the two disagree.
+    clusterLabel: k8s_cluster_name
+
   victoria-metrics-operator:
     # -- The CRDs are NOT this chart's to install.
     #
