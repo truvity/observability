@@ -38,8 +38,8 @@ func TestRenderGatusRefusesAnEmptyPlatformHostList(t *testing.T) {
 // TestRenderGatusCarriesEveryJob is the combined-page contract: one
 // platform probe list, one business-host probe per company (grouped
 // under its display name), one customer-facing alerts-read check per
-// company, and the deadman alerts-read check — all as ORDINARY
-// endpoints.
+// company, internal infrastructure checks, and the deadman alerts-read
+// check — all as ORDINARY endpoints.
 func TestRenderGatusCarriesEveryJob(t *testing.T) {
 	c := testCatalogue()
 	c.PlatformHosts = []string{"example.xyz", "billing.devel.example.xyz"}
@@ -50,6 +50,9 @@ func TestRenderGatusCarriesEveryJob(t *testing.T) {
 			Hosts:       []CompanyHost{{Host: "billing.devel.example.xyz", Env: "devel"}},
 		},
 	}
+	c.InternalChecks = []InternalCheck{
+		{Name: "slack-notifications", AlertName: "SlackNotificationsFailing"},
+	}
 	c.Providers = DeadmanProviders{SlackKey: "slack", PagerDutyKey: "pd"}
 
 	out, err := RenderGatus(c)
@@ -58,8 +61,8 @@ func TestRenderGatusCarriesEveryJob(t *testing.T) {
 	var parsed gatusConfig
 	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
 
-	// 2 platform probes + 1 business host + 1 customer-facing + 1 deadman.
-	require.Len(t, parsed.Endpoints, 5)
+	// 2 platform probes + 1 business host + 1 customer-facing + 1 internal check + 1 deadman.
+	require.Len(t, parsed.Endpoints, 6)
 	assert.Equal(t, "/data/ops.db", parsed.Storage.Path)
 
 	byName := map[string]gatusEndpoint{}
@@ -90,6 +93,16 @@ func TestRenderGatusCarriesEveryJob(t *testing.T) {
 	assert.Contains(t, signal.Conditions, alertsAbsentCondition)
 	require.Len(t, signal.Alerts, 2)
 
+	check, ok := byName["slack-notifications"]
+	require.True(t, ok, "internal check must be present")
+	assert.Equal(t, "platform", check.Group, "internal checks belong in the platform group")
+	assert.Equal(t,
+		"https://alerts.kernel.example.private/api/v1/alerts?match%5B%5D=%7Balertname%3D%22SlackNotificationsFailing%22%7D",
+		check.URL)
+	assert.Equal(t, "Bearer ${ALERT_URL_TOK}", check.Headers["Authorization"])
+	assert.Contains(t, check.Conditions, alertsPresentCondition, "internal check is RED when alert fires")
+	assert.Empty(t, check.Alerts, "internal checks NEVER alert, even when providers are configured")
+
 	deadman, ok := byName["deadman"]
 	require.True(t, ok)
 	assert.Equal(t, "platform", deadman.Group)
@@ -104,6 +117,37 @@ func TestRenderGatusCarriesEveryJob(t *testing.T) {
 	assert.NotEqual(t, parsed.Alerting.Slack.WebhookURL, parsed.Alerting.PagerDuty.IntegrationKey,
 		"the two channels must be two distinct secrets, not the same one referenced twice")
 	assert.False(t, strings.HasPrefix(out, "#"), "a configured render carries no 'nobody is notified' comment")
+}
+
+// TestInternalChecksNeverAlert verifies that internal infrastructure checks
+// are displayed on the status page but NEVER forward as alerts, even when
+// alert providers (Slack, PagerDuty) are configured.
+func TestInternalChecksNeverAlert(t *testing.T) {
+	c := testCatalogue()
+	c.InternalChecks = []InternalCheck{
+		{Name: "slack-notifications", AlertName: "SlackNotificationsFailing"},
+		{Name: "another-check", AlertName: "AnotherInternalAlert"},
+	}
+	c.Providers = DeadmanProviders{SlackKey: "slack", PagerDutyKey: "pd"}
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	var parsed gatusConfig
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
+
+	byName := map[string]gatusEndpoint{}
+	for _, e := range parsed.Endpoints {
+		byName[e.Name] = e
+	}
+
+	// Both internal checks must be present
+	for _, check := range c.InternalChecks {
+		e, ok := byName[check.Name]
+		require.True(t, ok, "internal check %q must be rendered", check.Name)
+		assert.Equal(t, "platform", e.Group, "internal check %q must be in platform group", check.Name)
+		assert.Empty(t, e.Alerts, "internal check %q MUST have NO alert refs, even with providers configured", check.Name)
+	}
 }
 
 // TestRenderGatusNamesEndpointsByHostLabelAndEnv: two hosts owned by the

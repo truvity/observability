@@ -438,20 +438,28 @@ one route (vmalert's `/api/v1/alerts`) and nothing else — with an
 must not carry as a literal, repurposed: the value staged there is a
 bearer token here, not a push URL).
 
-Two conditions on that one response body carry both jobs:
+Three types of checks on that one response body:
 
 - **deadman**: the response's `data.alerts` array is non-empty when
   filtered (server-side, via the read API's own `match[]` parameter) to
   `alertname="Watchdog"` — which this install's own `Watchdog` VMRule
   (`vmalert.watchdog.enabled`, default on) is always evaluating, whether
   or not the install runs Alertmanager at all. Gatus's own condition is
-  `len([BODY].data.alerts) > 0`.
+  `len([BODY].data.alerts) > 0`. The deadman alerts when it goes red.
 - **a company's colour**: the same shape, `match[]` filtered instead to
   `customer_facing="true", company="<code>"` — a rule an estate writes
   in its own alerting rules, not something this repository ships.
-  `len([BODY].data.alerts) == 0` is green; anything else is red.
+  `len([BODY].data.alerts) == 0` is green; anything else is red. A company
+  signal alerts when it goes red.
+- **internal infrastructure checks**: internal alerts (not customer-facing)
+  that must be displayed on the status page but NEVER forwarded as alerts
+  — for example, `SlackNotificationsFailing` (the alert that Slack itself is
+  down). The same shape, `match[]` filtered to `alertname="<name>"` where
+  the estate configures the alert names. These checks show red when firing,
+  green when absent, but generate no alerts even when alert providers
+  (Slack, PagerDuty) are configured for the deadman and company signals.
 
-Neither condition needs a translator: the read API's own JSON is what
+No condition needs a translator: the read API's own JSON is what
 the condition reads, in the alerting pipeline's own vocabulary, and
 `match[]` does the narrowing before the response ever reaches Gatus —
 Gatus never has to filter an array of alerts itself, which its own

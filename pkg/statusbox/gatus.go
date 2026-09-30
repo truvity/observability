@@ -4,7 +4,8 @@
 // package ends up building: every piece of platform infrastructure and
 // every company's own hosts, as ORDINARY Gatus `endpoints:` entries, no
 // per-company Instance and no `external-endpoints:` at all, including
-// the deadman and each company's own customer-facing signal.
+// the deadman, internal infrastructure checks, and each company's own
+// customer-facing signal.
 //
 // What lives HERE is the estate-neutral half: given a Catalogue, render
 // the Config. What does NOT live here, and stays the consumer's own: how
@@ -110,17 +111,25 @@ type (
 		Companies []Company
 
 		// AlertsRead is the one pull path every alerts-read endpoint
-		// (the deadman, and each company's customer-facing signal) is
-		// built from.
+		// (the deadman, each company's customer-facing signal, and internal
+		// checks) is built from.
 		AlertsRead AlertsRead
 
-		// Providers are the OPTIONAL outbound alert channels every
-		// alerts-read check shares. A zero value renders NO alerting:
-		// stanza and no alerts: refs at all — the page still boots and
-		// still shows red/green, it just notifies nobody yet, which
-		// RenderGatus makes visible with a leading YAML comment rather
-		// than a silent gap.
+		// Providers are the OPTIONAL outbound alert channels the deadman
+		// and company signals share. Internal checks configured in
+		// InternalChecks never alert, regardless of whether Providers is
+		// configured. A zero value renders NO alerting: stanza and no
+		// alerts: refs at all — the page still boots and still shows
+		// red/green, it just notifies nobody yet, which RenderGatus makes
+		// visible with a leading YAML comment rather than a silent gap.
 		Providers DeadmanProviders
+
+		// InternalChecks are internal infrastructure alerts pulled from
+		// the alerting pipeline but NEVER forwarded as alerts — they are
+		// displayed on the status page only, in the "platform" group.
+		// Each check reads a specific alert (by name) and shows red when
+		// firing, green when absent.
+		InternalChecks []InternalCheck
 
 		// Security is this instance's OIDC block, or nil for a private,
 		// unauthenticated instance (a breakglass twin reached over a
@@ -236,6 +245,21 @@ type (
 		SlackKey     string
 		PagerDutyKey string
 	}
+
+	// InternalCheck is one internal infrastructure alert to display on the
+	// status page but never forward as an alert. It reads the alerting
+	// pipeline's /api/v1/alerts and shows red when a specific alert is
+	// firing, green when absent.
+	InternalCheck struct {
+		// Name is the Gatus endpoint name for this check — a neutral label
+		// like "slack-notifications" that describes what is being checked,
+		// not a company or project name.
+		Name string
+		// AlertName is the alerting rule name to query (e.g.,
+		// "SlackNotificationsFailing") — interpolated into the alerts-read
+		// match[] filter as {alertname=%q}.
+		AlertName string
+	}
 )
 
 type (
@@ -317,9 +341,9 @@ func alertsReadURL(host, matcher string) string {
 
 // RenderGatus builds the Gatus v5 YAML for one instance from a
 // Catalogue: the platform hosts, every company's own hosts and
-// customer-facing signal, and the deadman, all as ordinary `endpoints:`
-// entries — plus the security block Catalogue.Security carries, or none
-// for a private/breakglass instance.
+// customer-facing signal, internal infrastructure checks, and the deadman,
+// all as ordinary `endpoints:` entries — plus the security block
+// Catalogue.Security carries, or none for a private/breakglass instance.
 //
 // Two Catalogues that are otherwise identical and differ only in
 // Security produce Configs that differ ONLY in their security block —
@@ -347,7 +371,7 @@ func RenderGatus(c Catalogue) (string, error) {
 		alerting.PagerDuty = &gatusPagerDutyAlerting{IntegrationKey: alertVar(c.Providers.PagerDutyKey)}
 	}
 
-	endpoints := make([]gatusEndpoint, 0, len(c.PlatformHosts)+2*len(c.Companies)+1)
+	endpoints := make([]gatusEndpoint, 0, len(c.PlatformHosts)+2*len(c.Companies)+len(c.InternalChecks)+1)
 
 	for _, host := range c.PlatformHosts {
 		endpoints = append(endpoints, gatusEndpoint{
@@ -381,6 +405,21 @@ func RenderGatus(c Catalogue) (string, error) {
 			Interval:   alertsReadInterval,
 			Conditions: []string{statusCondition, alertsAbsentCondition},
 			Alerts:     alerts,
+		})
+	}
+
+	for _, check := range c.InternalChecks {
+		endpoints = append(endpoints, gatusEndpoint{
+			Name:  check.Name,
+			Group: "platform",
+			URL: alertsReadURL(c.AlertsRead.Host,
+				fmt.Sprintf(`{alertname=%q}`, check.AlertName)),
+			Headers:    authHeader,
+			Interval:   alertsReadInterval,
+			Conditions: []string{statusCondition, alertsPresentCondition},
+			// Internal checks are NEVER alerted on, even if Providers is
+			// configured. They are displayed on the status page only.
+			Alerts: nil,
 		})
 	}
 
