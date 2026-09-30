@@ -121,11 +121,13 @@ func TestMCPEveryExposedToolIsServedByTheStoreRoutes(t *testing.T) {
 		require.NotEmpty(t, exposed, "%s has no allowlist", upstream)
 		for _, tool := range exposed {
 			path, known := paths[tool]
-			require.True(t, known, "%s/%s is allowlisted but has no verified path in mcpToolPaths: read the stock server's source for what it calls, add it, and check a route serves it", upstream, tool)
+			require.True(t, known, "%s/%s is allowlisted but has no verified path in mcpToolPaths: read the stock server's "+
+				"source for what it calls, add it, and check a route serves it", upstream, tool)
 			if path == "" {
 				continue
 			}
-			assert.True(t, routed(routes, path), "%s/%s calls %s, which no route in the store's vmauth serves for the connector's principal: the tool would fail by design", upstream, tool, path)
+			assert.True(t, routed(routes, path), "%s/%s calls %s, which no route in the store's vmauth serves for the "+
+				"connector's principal: the tool would fail by design", upstream, tool, path)
 		}
 	}
 }
@@ -133,6 +135,7 @@ func TestMCPEveryExposedToolIsServedByTheStoreRoutes(t *testing.T) {
 func TestMCPDroppedToolsAreNotServed(t *testing.T) {
 	routes := readerRoutes(t)
 	for tool, path := range mcpDroppedToolPaths {
-		assert.False(t, routed(routes, path), "%s calls %s, which a route now serves: it was dropped because it could not work; decide whether to expose it", tool, path)
+		assert.False(t, routed(routes, path), "%s calls %s, which a route now serves: it was dropped because it "+
+			"could not work; decide whether to expose it", tool, path)
 	}
 }

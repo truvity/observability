@@ -1,10 +1,11 @@
 apiVersion: v2
 name: observability-mcp
 description: >-
-  Read-only Model Context Protocol servers over the estate's observability
-  store: one Deployment per enabled server, each the stock upstream MCP
-  server on loopback behind a resource-proxy sidecar that validates the
-  caller's access token and holds the only credential the store sees.
+  Read-only Model Context Protocol connectors over the observability stores
+  and Grafana: one Deployment per Victoria store (an aggregator over the
+  stock metrics, logs and traces MCP servers) and one for Grafana's
+  dashboards, each behind a resource-proxy that validates the caller's
+  access token and holds the only credential downstream.
 type: application
 # Stamped from the tag by the release workflow; never moved by hand.
 version: 0.0.0

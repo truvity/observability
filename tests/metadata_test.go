@@ -62,7 +62,7 @@ func TestMetricMetadataIsOptInAndSiblingsNever(t *testing.T) {
 
 	// The case that opts in, by the name of its golden. Every other
 	// golden must not carry the path at all.
-	optedIn := map[string]bool{"everything.yaml": true}
+	optedIn := map[string]bool{"everything.yaml": true, "tenancy-mcp-reader.yaml": true}
 
 	var seenReaders, seenOptedIn int
 
