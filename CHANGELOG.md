@@ -4,6 +4,30 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.15.2
+
+`RecordingRulesNoData` no longer fires for a recording that is empty by
+design.
+
+- **Behaviour change: the vendored `RecordingRulesNoData` alert ignores
+  `count:up0`.** Upstream's alert (vmalert's self-monitoring group) fires when
+  a recording rule produced no samples for 30 minutes. `count:up0`, from
+  kube-prometheus's `general.rules`, is `count without(instance, pod, node)
+  (up == 0)`: it has data only while a target is down, so on a healthy estate
+  it is empty and the alert fired exactly when nothing was wrong. The
+  expression is now
+  `sum(vmalert_recording_rules_last_evaluation_samples{recording!~"count:up0"})
+  without(id) < 1`, set through `victoria-metrics-k8s-stack.defaultRules.rules.
+  RecordingRulesNoData.spec.expr`, so the alert's `for`, labels and
+  annotations stay upstream's. `count:up0` itself is kept and still records
+  the moment a target goes down; every other recording, `count:up1`
+  included, is still watched. Every render with the sync job's config moves by
+  that one `rules:` block. To get upstream's alert back, set
+  `victoria-metrics-k8s-stack.defaultRules.rules.RecordingRulesNoData.spec.expr`
+  to upstream's own expression, `sum(vmalert_recording_rules_last_evaluation_samples)
+  without(id) < 1`. `hack/recording-nodata-proof.sh` runs the real sync job and a real
+  store.
+
 ## v0.15.1
 
 node-exporter no longer has a CPU limit. Nothing changes for an install that

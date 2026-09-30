@@ -1873,6 +1873,30 @@ victoria-metrics-k8s-stack:
         enabled: true
       vmalert:
         enabled: true
+    # -- 0.15.2. Recordings that are EMPTY WHEN HEALTHY, which upstream's
+    # `RecordingRulesNoData` (vmalert's self-monitoring group) flags as
+    # broken after 30m.
+    #
+    # `count:up0` (kube-prometheus's `general.rules`) is
+    # `count without(instance, pod, node) (up == 0)`: it has data only while
+    # a target is DOWN, so on a healthy estate it is empty by design and the
+    # alert fired exactly when nothing was wrong. The rule is kept (it
+    # produces data the moment a target goes down); the alert ignores it.
+    #
+    # Upstream's expression is
+    #   sum(vmalert_recording_rules_last_evaluation_samples) without(id) < 1
+    # and this restates it with one matcher added. The sync job applies a
+    # per-rule `spec` over the fetched rule, so nothing else of the alert
+    # (for, labels, annotations) is copied. Extend the regexp, never
+    # widen it: a recording belongs here only if an empty result is its
+    # healthy state. The one other `== 0`/`== 1` recording upstream ships,
+    # `count:up1`, is full when healthy and stays watched.
+    # `hack/recording-nodata-proof.sh` fails if upstream changes its
+    # expression, so this copy cannot drift silently.
+    rules:
+      RecordingRulesNoData:
+        spec:
+          expr: sum(vmalert_recording_rules_last_evaluation_samples{recording!~"count:up0"}) without(id) < 1
   defaultDashboards:
     enabled: false
     # -- Same defect, same fix, as `defaultRules.sources` above, for the
