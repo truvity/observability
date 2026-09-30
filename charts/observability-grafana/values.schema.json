@@ -18,65 +18,145 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["name", "url"],
+                "required": [
+                  "name",
+                  "url"
+                ],
                 "properties": {
-                  "name": { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", "description": "A lowercase slug; the prefix of every datasource uid." },
-                  "url": { "type": "string", "pattern": "^https?://", "description": "The store's root URL." },
-                  "default": { "type": "boolean" },
-                  "caFile": { "type": "string" },
-                  "logs": { "type": "boolean" },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+                    "description": "A lowercase slug; the prefix of every datasource uid."
+                  },
+                  "url": {
+                    "type": "string",
+                    "pattern": "^https?://",
+                    "description": "The store's root URL."
+                  },
+                  "default": {
+                    "type": "boolean"
+                  },
+                  "caFile": {
+                    "type": "string"
+                  },
+                  "logs": {
+                    "type": "boolean"
+                  },
                   "traces": {
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "enabled": { "type": "boolean" },
-                      "bearerEnv": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "bearerEnv": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
                     }
                   }
                 }
               }
             },
-            "correlate": { "type": "boolean", "description": "Link each store's logs to its traces and back. Default true." },
-            "renamedDatasources": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-            "caFile": { "type": "string" },
-            "rootUrl": { "type": "string" },
+            "correlate": {
+              "type": "boolean",
+              "description": "Link each store's logs to its traces and back. Default true."
+            },
+            "renamedDatasources": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "caFile": {
+              "type": "string"
+            },
+            "rootUrl": {
+              "type": "string"
+            },
             "oauth": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "name": { "type": "string" },
-                "issuer": { "type": "string" },
-                "clientId": { "type": "string" },
+                "name": {
+                  "type": "string"
+                },
+                "issuer": {
+                  "type": "string"
+                },
+                "clientId": {
+                  "type": "string"
+                },
                 "clientSecretRef": {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "name": { "type": "string" },
-                    "key": { "type": "string", "minLength": 1 }
+                    "name": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1
+                    }
                   }
                 },
-                "roleAttributePath": { "type": "string" },
-                "scopes": { "type": "string" },
-                "groupsAttributePath": { "type": "string" },
-                "usePkce": { "type": "boolean" },
-                "sessionMaxLifetime": { "type": "string", "pattern": "^[0-9]+[smhd]$" }
+                "roleAttributePath": {
+                  "type": "string"
+                },
+                "scopes": {
+                  "type": "string"
+                },
+                "groupsAttributePath": {
+                  "type": "string"
+                },
+                "usePkce": {
+                  "type": "boolean"
+                },
+                "sessionMaxLifetime": {
+                  "type": "string",
+                  "pattern": "^[0-9]+[smhd]$"
+                }
               }
             },
             "database": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "host": { "type": "string" },
-                "name": { "type": "string", "minLength": 1 },
-                "sslMode": { "type": "string", "enum": ["disable", "require", "verify-ca", "verify-full"] },
-                "caFile": { "type": "string" },
+                "host": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sslMode": {
+                  "type": "string",
+                  "enum": [
+                    "disable",
+                    "require",
+                    "verify-ca",
+                    "verify-full"
+                  ]
+                },
+                "caFile": {
+                  "type": "string"
+                },
                 "secretRef": {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "name": { "type": "string" },
-                    "usernameKey": { "type": "string", "minLength": 1 },
-                    "passwordKey": { "type": "string", "minLength": 1 }
+                    "name": {
+                      "type": "string"
+                    },
+                    "usernameKey": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "passwordKey": {
+                      "type": "string",
+                      "minLength": 1
+                    }
                   }
                 }
               }
@@ -85,9 +165,16 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "name": { "type": "string" },
-                "key": { "type": "string", "minLength": 1 },
-                "builtInKey": { "type": "boolean" }
+                "name": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "builtInKey": {
+                  "type": "boolean"
+                }
               }
             },
             "dashboards": {
@@ -98,8 +185,35 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "path": { "type": "string" }
+                    "path": {
+                      "type": "string"
+                    }
                   }
+                }
+              }
+            },
+            "workloadAuth": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Opt-in (default off): accept an access-issuer WORKLOAD token as a fixed-Viewer identity, for a service such as observability-mcp's Grafana connector. See docs/grafana.md.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "issuer": {
+                  "type": "string",
+                  "pattern": "^[^\\s\"'\\\\{}]*$",
+                  "description": "The token's `iss`, exactly. No whitespace, quotes or braces: the value is written into grafana.ini."
+                },
+                "jwksUrl": {
+                  "type": "string",
+                  "pattern": "^(https://[^\\s\"'\\\\{}]+)?$",
+                  "description": "https. The issuer's JWKS URL (its discovery document's jwks_uri)."
+                },
+                "audience": {
+                  "type": "string",
+                  "pattern": "^[^\\s\"'\\\\{}]*$",
+                  "description": "The `aud` only a workload token carries; never a human sign-in client's."
                 }
               }
             }

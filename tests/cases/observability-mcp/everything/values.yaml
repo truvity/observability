@@ -1,7 +1,10 @@
-# Every knob on the one implemented server: two replicas with a budget, a
-# pinned proxy digest, a different token lifetime, a narrowed tool set and
-# an issuer on a non-default port.
+# Every knob: a pinned proxy and aggregator, two replicas with a budget, a
+# narrowed allowlist, `metrics_metadata` on, a non-default metrics path and
+# cluster labels, extra instructions, a scrape peer and an issuer on a
+# non-default port.
 issuerURL: https://issuer.example.com:8443
+clusterLabel: cluster
+logsClusterField: cluster.name
 proxy:
   image:
     tag: v0.0.1
@@ -9,32 +12,61 @@ proxy:
     pullPolicy: Always
   runAsUser: 65532
   resources:
-    requests:
-      cpu: 20m
-      memory: 48Mi
-    limits:
-      memory: 128Mi
+    requests: {cpu: 20m, memory: 48Mi}
+    limits: {memory: 128Mi}
+aggregator:
+  image:
+    tag: v9.9.9
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+  callTimeout: 30s
+  resources:
+    requests: {cpu: 20m, memory: 48Mi}
+    limits: {memory: 192Mi}
 serviceAccountToken:
   audience: access-issuer
   expirationSeconds: 900
-servers:
-  metrics:
-    enabled: true
-    resourceURL: https://mcp.example.com/metrics
+upstreams:
+  victoriametrics:
+    tools: [query, query_range, labels]
+  victorialogs:
+    tools: [query, hits]
+  victoriatraces:
+    tools: [traces, trace]
+  grafana:
+    enabledTools: [search, dashboard]
+stores:
+  - name: primary
+    resourceURL: https://mcp.example.com/victoria/primary
     scope: openid
     replicaCount: 2
-    entrypointPath: /prometheus
-    disabledTools: [export, flags, documentation]
+    clusters: [alpha, beta]
+    metricsMetadata: true
+    instructions: "Prefer a short time range; the store is large."
+    vmauth:
+      url: "http://vmauth.monitoring.svc:8427"
+      metricsPath: /metrics-api
     outbound:
-      target: http://vmauth.observability.svc:8427
       tokenEndpoint: https://issuer.example.com:8443/token
-      clientId: observability-mcp
-      audience: store-proxy
+      clientId: observability-mcp-primary
+      audience: primary-store
+grafana:
+  enabled: true
+  resourceURL: https://mcp.example.com:8443/grafana
+  replicaCount: 2
+  url: https://grafana.monitoring.svc:3000
+  outbound:
+    tokenEndpoint: https://issuer.example.com:8443/token
+    clientId: observability-mcp-grafana
+    audience: grafana-workload
 networkPolicy:
   ingressFrom:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: gateway
+  metricsFrom:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmagent
   egress:
     issuer:
       - ipBlock:
@@ -43,5 +75,9 @@ networkPolicy:
       - podSelector:
           matchLabels:
             app.kubernetes.io/name: vmauth
+    grafana:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: grafana
 podDisruptionBudget:
   enabled: true

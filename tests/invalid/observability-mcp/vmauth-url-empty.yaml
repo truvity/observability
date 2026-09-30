@@ -1,0 +1,21 @@
+# expect: `stores[primary].vmauth.url` is empty
+# No vmauth: the stock servers have nothing to read.
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+stores:
+  - name: primary
+    resourceURL: https://mcp.example.com/victoria/primary
+    vmauth: {}
+    outbound:
+      tokenEndpoint: https://issuer.example.com/token
+      clientId: observability-mcp-primary
+      audience: primary-store
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}
+  egress:
+    issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]
+    vmauth: [{podSelector: {matchLabels: {app.kubernetes.io/name: vmauth}}}]
+    grafana: [{podSelector: {matchLabels: {app.kubernetes.io/name: grafana}}}]

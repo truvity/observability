@@ -1,0 +1,15 @@
+# expect: `networkPolicy.egress.grafana` is empty
+# The Grafana pod could not reach Grafana.
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+grafana:
+  enabled: true
+  resourceURL: https://mcp.example.com/grafana
+  url: http://grafana.monitoring.svc:80
+  outbound: {tokenEndpoint: "https://issuer.example.com/token", clientId: observability-mcp-grafana, audience: grafana-workload}
+networkPolicy:
+  ingressFrom: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}}]
+  egress:
+    issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]

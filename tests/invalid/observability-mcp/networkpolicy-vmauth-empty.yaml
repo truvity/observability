@@ -1,21 +1,18 @@
 # expect: `networkPolicy.egress.vmauth` is empty
-# An egress rule to nowhere: every tool call times out.
+# A store's pod could not reach its vmauth.
 issuerURL: https://issuer.example.com
 proxy:
   image:
     tag: v0.0.1
-servers:
-  metrics:
-    enabled: true
-    resourceURL: https://mcp.example.com/metrics
+stores:
+  - name: primary
+    resourceURL: https://mcp.example.com/victoria/primary
+    vmauth: {url: "http://vmauth.monitoring.svc:8427"}
     outbound:
-      target: http://vmauth.observability.svc:8427
       tokenEndpoint: https://issuer.example.com/token
-      clientId: observability-mcp
-      audience: store-proxy
+      clientId: observability-mcp-primary
+      audience: primary-store
 networkPolicy:
-  ingressFrom:
-    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}
+  ingressFrom: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}}]
   egress:
     issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]
-    vmauth: []

@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "observability-mcp",
-  "description": "Read-only MCP servers over the observability store. Strict: an unknown key fails the render rather than being silently ignored. Whether a value an enabled server needs is EMPTY is a render-time refusal in templates/_validate.tpl, with a message that says what the empty value would cost.",
+  "description": "Read-only MCP connectors over observability stores and Grafana. Strict: an unknown key fails the render rather than being silently ignored. Whether a value an enabled connector needs is EMPTY is a render-time refusal in templates/_validate.tpl, with a message that says what the empty value would cost.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["servers", "networkPolicy"],
+  "required": ["stores", "grafana", "networkPolicy"],
   "definitions": {
     "image": {
       "type": "object",
@@ -21,47 +21,89 @@
       "description": "NetworkPolicy peers, exactly as the NetworkPolicy API shapes one entry of a `from`/`to` list.",
       "items": { "type": "object", "additionalProperties": true }
     },
-    "server": {
+    "toolList": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+    },
+    "upstream": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean" },
         "image": { "$ref": "#/definitions/image" },
         "runAsUser": { "type": "integer", "minimum": 1 },
-        "resourceURL": {
-          "type": "string",
-          "pattern": "^(https://[^\\s#]+)?$",
-          "description": "https, no fragment. Empty is refused at render time while the server is enabled."
-        },
+        "resources": { "type": "object" },
+        "prefix": { "type": "string", "pattern": "^[a-zA-Z0-9-]{1,32}$" },
+        "entrypointPath": { "type": "string", "pattern": "^(/[A-Za-z0-9._~-]+)*$" },
+        "tools": { "$ref": "#/definitions/toolList" },
+        "disabledTools": { "$ref": "#/definitions/toolList" }
+      }
+    },
+    "outbound": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokenEndpoint": { "type": "string", "pattern": "^(https://[^\\s#]+)?$" },
+        "clientId": { "type": "string" },
+        "audience": { "type": "string" }
+      }
+    },
+    "resourceURL": {
+      "type": "string",
+      "pattern": "^(https://[^\\s#]+)?$",
+      "description": "https, no fragment. Empty is refused at render time."
+    },
+    "store": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "resourceURL": { "$ref": "#/definitions/resourceURL" },
         "scope": { "type": "string", "pattern": "^[^\\s\"\\\\]+$" },
         "replicaCount": { "type": "integer", "minimum": 1 },
-        "resources": { "type": "object" },
-        "entrypointPath": { "type": "string", "pattern": "^(/[A-Za-z0-9._~-]+)*$" },
-        "disabledTools": {
-          "type": "array",
-          "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
-        },
-        "outbound": {
+        "clusters": { "type": "array", "items": { "type": "string" } },
+        "signals": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "target": { "type": "string", "pattern": "^(https?://[^\\s/]+)?$", "description": "A base URL: scheme and host, no path." },
-            "tokenEndpoint": { "type": "string", "pattern": "^(https://[^\\s#]+)?$" },
-            "clientId": { "type": "string" },
-            "audience": { "type": "string" }
+            "metrics": { "type": "boolean" },
+            "logs": { "type": "boolean" },
+            "traces": { "type": "boolean" }
           }
-        }
+        },
+        "metricsMetadata": { "type": "boolean" },
+        "instructions": { "type": "string" },
+        "vmauth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": { "type": "string", "description": "A base URL: scheme and host, no path. Empty or a path is refused at render time." },
+            "metricsPath": { "type": "string", "pattern": "^(/[A-Za-z0-9._~-]+)*$" }
+          }
+        },
+        "outbound": { "$ref": "#/definitions/outbound" }
       }
     }
   },
   "properties": {
     "issuerURL": { "type": "string", "pattern": "^(https://[^\\s#]+)?$" },
+    "clusterLabel": { "type": "string", "minLength": 1 },
+    "logsClusterField": { "type": "string", "minLength": 1 },
     "proxy": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "image": { "$ref": "#/definitions/image" },
         "runAsUser": { "type": "integer", "minimum": 1 },
+        "resources": { "type": "object" }
+      }
+    },
+    "aggregator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": { "$ref": "#/definitions/image" },
+        "runAsUser": { "type": "integer", "minimum": 1 },
+        "callTimeout": { "type": "string", "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" },
         "resources": { "type": "object" }
       }
     },
@@ -73,14 +115,39 @@
         "expirationSeconds": { "type": "integer", "minimum": 600 }
       }
     },
-    "servers": {
+    "upstreams": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "metrics": { "$ref": "#/definitions/server" },
-        "logs": { "$ref": "#/definitions/server" },
-        "traces": { "$ref": "#/definitions/server" },
-        "dashboards": { "$ref": "#/definitions/server" }
+        "victoriametrics": { "$ref": "#/definitions/upstream" },
+        "victorialogs": { "$ref": "#/definitions/upstream" },
+        "victoriatraces": { "$ref": "#/definitions/upstream" },
+        "grafana": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": { "$ref": "#/definitions/image" },
+            "runAsUser": { "type": "integer", "minimum": 1 },
+            "resources": { "type": "object" },
+            "enabledTools": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9_]+$" } }
+          }
+        }
+      }
+    },
+    "stores": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/store" }
+    },
+    "grafana": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "resourceURL": { "$ref": "#/definitions/resourceURL" },
+        "scope": { "type": "string", "pattern": "^[^\\s\"\\\\]+$" },
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "pattern": "^(https?://[^\\s/]+)?$", "description": "A base URL: scheme and host, no path." },
+        "outbound": { "$ref": "#/definitions/outbound" }
       }
     },
     "networkPolicy": {
@@ -89,12 +156,14 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "ingressFrom": { "$ref": "#/definitions/peers" },
+        "metricsFrom": { "$ref": "#/definitions/peers" },
         "egress": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "issuer": { "$ref": "#/definitions/peers" },
-            "vmauth": { "$ref": "#/definitions/peers" }
+            "vmauth": { "$ref": "#/definitions/peers" },
+            "grafana": { "$ref": "#/definitions/peers" }
           }
         }
       }

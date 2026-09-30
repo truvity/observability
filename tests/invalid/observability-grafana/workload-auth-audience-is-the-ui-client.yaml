@@ -1,0 +1,17 @@
+# expect: is the same as `oauth.clientId`
+# The audience gates the workload path; the human client's would admit every person's token.
+global:
+  observabilityGrafana:
+    database:
+      host: pg:5432
+      secretRef: {name: grafana-pg-app}
+    oauth:
+      clientId: grafana
+      clientSecretRef: {name: grafana-client}
+      issuer: https://issuer.example.org
+      roleAttributePath: '''Editor'''
+    rootUrl: https://grafana.example.org
+    secretKeyRef: {name: grafana-secret-key}
+    stores:
+    - {default: true, name: store-a, url: 'https://a.example.org'}
+    workloadAuth: {enabled: true, issuer: 'https://issuer.example.org', jwksUrl: 'https://issuer.example.org/keys', audience: grafana}

@@ -1,37 +1,62 @@
-# observability-mcp — read-only MCP servers over the observability store.
+# observability-mcp: read-only Model Context Protocol connectors over the
+# observability stores and Grafana.
 #
-# Each enabled server is ONE Deployment with TWO containers:
+# The chart knows two kinds of thing, and nothing about an estate's
+# topology:
 #
-#   upstream   the stock MCP server, pinned, in HTTP transport, listening on
-#              127.0.0.1 only and holding NO credential. It declares no
-#              container port: nothing outside the pod can reach it.
-#   proxy      truvity/access-roster's resource-proxy. INBOUND it is the
-#              pod's only port: it validates the caller's access token
-#              (signature against the issuer's JWKS, `iss`, and `aud` equal
-#              to this server's own resource URL), serves the protected
-#              resource metadata, and strips the caller's token before the
-#              request reaches the upstream. OUTBOUND it listens on loopback
-#              and forwards the upstream's store calls to the store's proxy,
-#              injecting a token it exchanged for this pod's own
-#              ServiceAccount token. The caller's token is never forwarded.
+#   stores    each a Victoria store (VictoriaMetrics, VictoriaLogs and
+#             VictoriaTraces behind ONE vmauth). One entry renders ONE
+#             connector: one OAuth resource, one Deployment serving the
+#             store's tools for every signal, grouped by prefix
+#             (`metrics_`, `logs_`, `traces_`). Which stores exist, what
+#             they are called and which clusters each holds is the
+#             consumer's.
+#   grafana   one optional connector over a Grafana (dashboards, read
+#             only).
 #
-# Who may reach a server is decided by the issuer's own policy for the
+# A store's pod has these containers, all on loopback except the proxy:
+#
+#   proxy        truvity/access-roster's resource-proxy, the pod's only
+#                MCP port. INBOUND it validates the caller's access token
+#                (signature against the issuer's JWKS, `iss`, `aud` equal
+#                to the connector's resource URL), serves the protected
+#                resource metadata and strips the caller's token.
+#                OUTBOUND it listens on loopback and forwards to the
+#                store's vmauth, injecting a token it exchanged for the
+#                pod's own ServiceAccount token. The caller's token is
+#                never forwarded.
+#   aggregator   this repository's cmd/mcp-aggregator: one MCP server over
+#                the three below, tools only, allowlisted, prefixed.
+#   metrics / logs / traces
+#                the stock VictoriaMetrics-Community MCP servers, pinned,
+#                holding no credential, declaring no container port.
+#
+# A Grafana pod is the proxy and the stock mcp-grafana.
+#
+# Who may reach a connector is decided by the issuer's own policy for the
 # resource URL, not by anything here. See docs/mcp.md.
 #
 # Every refusal is in templates/_validate.tpl; every one has a fixture under
 # tests/invalid/observability-mcp/.
 
 # -- The access-token issuer the proxy trusts (its `iss`, and where it finds
-# the signing keys). Required while any server is enabled.
+# the signing keys). Required while anything is enabled.
 issuerURL: ""
 
-# -- The resource-proxy sidecar, shared by every server.
+# -- What the store's data says about where it came from. They are the
+# stack's `tenancy.clusterLabel` (metrics) and `tenancy.logsClusterField`
+# (logs and traces), and only fill in the connector's instructions text;
+# set them if the stack's are not the defaults.
+clusterLabel: k8s_cluster_name
+logsClusterField: k8s.cluster.name
+
+# -- The resource-proxy sidecar, shared by every connector.
 proxy:
   image:
     repository: ghcr.io/truvity/access-roster/resource-proxy
     # -- NO default: the image is built by a different repository's release,
     # so a default here would be a version this chart's own tag cannot know
-    # is right. Required (refused empty) while any server is enabled.
+    # is right. Required (refused empty) while anything is enabled.
     tag: ""
     digest: ""
     pullPolicy: IfNotPresent
@@ -45,6 +70,26 @@ proxy:
     limits:
       memory: 96Mi
 
+# -- The aggregator: one MCP server over a store's three stock servers
+# (cmd/mcp-aggregator in this repository, released with this chart).
+aggregator:
+  image:
+    repository: ghcr.io/truvity/observability/mcp-aggregator
+    # -- Empty: this chart's own appVersion, the release that built both.
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  runAsUser: 65532
+  # -- How long one tool call may run, end to end, before the caller gets
+  # an error naming the backend. A Go duration.
+  callTimeout: 60s
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
 # -- The projected ServiceAccount token the proxy exchanges at the issuer.
 # Audience and lifetime are the issuer's to set; the kubelet refreshes the
 # file, the proxy reads it fresh each time.
@@ -53,69 +98,63 @@ serviceAccountToken:
   # -- Seconds. The kubelet minimum is 600.
   expirationSeconds: 600
 
-# -- The servers. Only `metrics` is implemented in this release; `logs`,
-# `traces` and `dashboards` are values stubs so a later phase is a values
-# change — enabling one now is refused (see docs/mcp.md).
+# -- The stock servers, pinned by tag AND digest, and the read-only tool
+# allowlists the aggregator exposes from them. The allowlists are the
+# verified set (docs/mcp.md has the path of every tool through the store's
+# proxy); a tool that is not listed is never exposed, and a listed tool the
+# server does not offer keeps the pod from becoming ready, so a server
+# upgrade cannot silently change the surface.
 #
-# Each server, when enabled, renders the objects `observability-mcp-<name>`:
-# a ServiceAccount, a Deployment, a Service, a NetworkPolicy and, optionally,
-# a PodDisruptionBudget.
-servers:
-  metrics:
-    # -- The stock `mcp-victoriametrics` (github.com/VictoriaMetrics/
-    # mcp-victoriametrics), against the store's metrics read path.
-    enabled: false
+# No CPU limits anywhere (a throttled query tool is a slow one); a memory
+# limit each. `disabledTools` is defence in depth on the server itself
+# (MCP_DISABLED_TOOLS replaces the server's own default list, so it names
+# that list too).
+upstreams:
+  victoriametrics:
     image:
       repository: ghcr.io/victoriametrics/mcp-victoriametrics
       tag: v1.20.2
       digest: "sha256:bcbf84f945d6efb03fb8b2d2ccc3294420dccdc0b445752dce96f02619416dfe"
       pullPolicy: IfNotPresent
-    # -- The uid of the `mcp` user in that image.
+    # -- The uid of the `mcp` user in these images.
     runAsUser: 1000
-    # -- This server's RFC 8707 resource identifier: the exact URL a client
-    # connects to, and the `aud` the proxy requires. https, no fragment.
-    # Required while enabled.
-    resourceURL: ""
-    # -- The scope the 401 challenge and the metadata advertise.
-    scope: openid
-    replicaCount: 1
-    # -- The upstream's own sizing. No CPU limit (a throttled query tool is
-    # a slow one); a memory limit. The upstream embeds a documentation
-    # index that dominates its memory when the `documentation` tool is on.
     resources:
-      requests:
-        cpu: 25m
-        memory: 64Mi
-      limits:
-        memory: 256Mi
-    # -- How the upstream reaches the store: the path prefix it appends to
-    # the proxy's loopback listener. The store's proxy serves the Prometheus
-    # API under `/prometheus`, and the upstream's single-node mode puts
-    # `/api/v1/...` (and `/vmalert/api/v1/...`) after its entrypoint.
+      requests: {cpu: 25m, memory: 64Mi}
+      limits: {memory: 256Mi}
+    # -- The prefix and the path the server appends to the proxy's loopback
+    # listener: the store's vmauth serves the Prometheus API under it.
+    prefix: metrics
     entrypointPath: /prometheus
-    # -- Tools the upstream must NOT register. Setting this REPLACES the
-    # upstream's own default list, so it names that list too. Read-only is
-    # the contract: everything that debugs a configuration, exports raw
-    # data, or reads what the store's proxy does not admit is off.
+    # -- Read tools that work through the stack's read routes. Not here, on
+    # purpose: `prettify_query` (its upstream code calls a path no read route
+    # admits, so it fails by design on a valid query) and `metrics_metadata`
+    # (only a store that sets `tenancy.allowUnfilteredMetricMetadata` serves
+    # it; turn it on per store with `metricsMetadata: true`).
+    tools:
+      - query
+      - query_range
+      - metrics
+      - labels
+      - label_values
+      - series
+      - rules
+      - alerts
+      - tsdb_status
+      - explain_query
     disabledTools:
-      # the upstream's own defaults: not read paths, or need a local binary
       - export
       - flags
       - metric_relabel_debug
       - downsampling_filters_debug
       - retention_filters_debug
       - test_rules
-      # store endpoints the proxy's read routes do not admit (other
-      # principals' query text, every namespace's names with counts), and
-      # the cluster-only tenant listing
       - metric_statistics
       - active_queries
       - top_queries
       - tenants
-      # an embedded documentation index: the memory the upstream is sized
-      # around, and nothing an agent needs from a store
       - documentation
-      # VictoriaMetrics Cloud only
+      - prettify_query
+      - metrics_metadata
       - deployments
       - cloud_providers
       - regions
@@ -123,91 +162,145 @@ servers:
       - access_tokens
       - rule_filenames
       - rule_file
-    # -- How the pod authenticates to the store.
-    outbound:
-      # -- The store's proxy (vmauth) base URL, no path. Required while
-      # enabled.
-      target: ""
-      # -- The issuer's RFC 8693 token endpoint. Required while enabled.
-      tokenEndpoint: ""
-      # -- The exchange client this workload is registered as. Required
-      # while enabled.
-      clientId: ""
-      # -- The audience the exchanged token is minted for: the store's
-      # proxy's own audience. Required while enabled.
-      audience: ""
-  logs:
-    # -- STUB. The stock `mcp-victorialogs` (v1.9.0,
-    # ghcr.io/victoriametrics/mcp-victorialogs). Not implemented here.
-    enabled: false
+  victorialogs:
     image:
       repository: ghcr.io/victoriametrics/mcp-victorialogs
       tag: v1.9.0
-      digest: ""
+      digest: "sha256:753bb4fbe402ca1a782842f44636830f9895736f11d7fe783b924f8a0daf083d"
       pullPolicy: IfNotPresent
     runAsUser: 1000
-    resourceURL: ""
-    scope: openid
-    replicaCount: 1
     resources:
-      requests:
-        cpu: 25m
-        memory: 64Mi
-      limits:
-        memory: 256Mi
+      requests: {cpu: 25m, memory: 64Mi}
+      limits: {memory: 256Mi}
+    prefix: logs
+    # -- Empty: the store's vmauth serves `/select/logsql/*` at its root and
+    # the server adds that path itself. `flags` is left out (an admin path
+    # no read route admits) and so is `documentation`.
     entrypointPath: ""
-    disabledTools: []
-    outbound: {target: "", tokenEndpoint: "", clientId: "", audience: ""}
-  traces:
-    # -- STUB. The stock `mcp-victoriatraces` (v1.5.0,
-    # ghcr.io/victoriametrics/mcp-victoriatraces). Not implemented here.
-    enabled: false
+    tools:
+      - hits
+      - facets
+      - stats_query
+      - stats_query_range
+      - field_names
+      - field_values
+      - stream_field_names
+      - stream_field_values
+      - stream_ids
+      - streams
+      - query
+    disabledTools:
+      - documentation
+      - flags
+  victoriatraces:
     image:
-      repository: ghcr.io/victoriametrics/mcp-victoriatraces
+      repository: ghcr.io/victoriametrics-community/mcp-victoriatraces
       tag: v1.5.0
-      digest: ""
+      digest: "sha256:72b3227c03856048e0adcbf5d247e3ae0b6cf8ab1bc27df6fe10ed0cacdcd07c"
       pullPolicy: IfNotPresent
     runAsUser: 1000
-    resourceURL: ""
-    scope: openid
-    replicaCount: 1
     resources:
-      requests:
-        cpu: 25m
-        memory: 64Mi
-      limits:
-        memory: 256Mi
+      requests: {cpu: 25m, memory: 64Mi}
+      limits: {memory: 256Mi}
+    prefix: traces
+    # -- Empty: the server adds `/select/jaeger/api`, which the store's
+    # vmauth serves (only for a principal the stack admits to unfiltered
+    # trace reads).
     entrypointPath: ""
-    disabledTools: []
-    outbound: {target: "", tokenEndpoint: "", clientId: "", audience: ""}
-  dashboards:
-    # -- STUB. Grafana's `mcp-grafana` (v1.6.3, docker.io/grafana/mcp-grafana),
-    # dashboards only: `--enabled-tools=search,dashboard --disable-write`.
-    # Not implemented here.
-    enabled: false
+    tools:
+      - traces
+      - trace
+      - services
+      - service_operations
+      - dependencies
+    disabledTools:
+      - documentation
+  grafana:
     image:
       repository: docker.io/grafana/mcp-grafana
-      tag: v1.6.3
-      digest: ""
+      # Docker Hub's tags carry no `v`.
+      tag: 1.6.3
+      digest: "sha256:0479c026fd40a95e6a176855b8570e06845790f8a45de2f9c1ec8ba3ba06a8bf"
       pullPolicy: IfNotPresent
+    # -- The uid of the `mcp-grafana` user in that image.
     runAsUser: 1000
-    resourceURL: ""
-    scope: openid
-    replicaCount: 1
     resources:
-      requests:
-        cpu: 25m
-        memory: 64Mi
-      limits:
-        memory: 256Mi
-    entrypointPath: ""
-    disabledTools: []
-    outbound: {target: "", tokenEndpoint: "", clientId: "", audience: ""}
+      requests: {cpu: 25m, memory: 64Mi}
+      limits: {memory: 256Mi}
+    # -- Read-only, by construction: only these tool categories, and
+    # `--disable-write` on top (which leaves out `update_dashboard`).
+    enabledTools: [search, dashboard]
+
+# -- The Victoria stores. One connector each. Every entry:
+#
+#   name          required. A lowercase slug; objects are named
+#                 `observability-mcp-<name>`. It never changes once people
+#                 rely on it. `grafana` is reserved for the Grafana
+#                 connector.
+#   resourceURL   required. The connector's RFC 8707 resource identifier:
+#                 the exact URL a client connects to and the `aud` the
+#                 proxy requires. https, no fragment.
+#   scope         optional. The scope the 401 challenge advertises
+#                 (default `openid`).
+#   vmauth        required: {url}. The store's vmauth BASE URL, scheme and
+#                 host, no path; the proxy's outbound side forwards there.
+#                 `metricsPath` overrides `upstreams.victoriametrics.
+#                 entrypointPath` (the stack's `/prometheus`).
+#   outbound      required: {tokenEndpoint, clientId, audience}. How this
+#                 workload gets the token the store's vmauth accepts: an
+#                 RFC 8693 exchange of the pod's ServiceAccount token at
+#                 `tokenEndpoint` as client `clientId`, for `audience`.
+#   clusters      optional list of the cluster-label values the store
+#                 holds. Only used to write the connector's instructions.
+#   signals       optional {metrics, logs, traces}, each default true.
+#                 At least one stays on.
+#   metricsMetadata  optional bool (default false). Adds the
+#                 `metrics_metadata` tool: the store's vmauth serves it
+#                 only when the stack sets
+#                 `tenancy.allowUnfilteredMetricMetadata`.
+#   instructions  optional text appended to the generated instructions.
+#   replicaCount  optional (default 1).
+#
+# What the store's vmauth must admit for the connector's principal, and
+# which tools need what, is in docs/mcp.md.
+#
+#   stores:
+#     - name: primary
+#       resourceURL: https://mcp.example.com/victoria/primary
+#       clusters: [alpha, beta]
+#       vmauth: {url: http://vmauth.monitoring.svc:8427}
+#       outbound:
+#         tokenEndpoint: https://issuer.example.com/token
+#         clientId: observability-mcp-primary
+#         audience: primary-store
+stores: []
+
+# -- The Grafana connector: mcp-grafana, dashboards only, read only,
+# authenticating to Grafana with an access-issuer WORKLOAD token (the
+# proxy's outbound side), never a stored secret. Grafana must accept that
+# token: `global.observabilityGrafana.workloadAuth` in charts/
+# observability-grafana, whose `audience` is this connector's
+# `outbound.audience`. See docs/mcp.md.
+grafana:
+  enabled: false
+  # -- https, no fragment. Required while enabled.
+  resourceURL: ""
+  scope: openid
+  replicaCount: 1
+  # -- Grafana's URL as the pod reaches it: scheme and host, no path. The
+  # proxy's outbound side forwards there. Required while enabled.
+  url: ""
+  # -- Required while enabled. `audience` is what Grafana's `workloadAuth`
+  # expects; it must not be the audience of any human sign-in client.
+  outbound:
+    tokenEndpoint: ""
+    clientId: ""
+    audience: ""
 
 networkPolicy:
   enabled: true
-  # -- NetworkPolicy peers allowed to reach the proxy's one port: the
-  # gateway that fronts these servers. Required while `enabled`; an empty
+  # -- NetworkPolicy peers allowed to reach the proxy's one MCP port: the
+  # gateway that fronts these connectors. Required while `enabled`; an empty
   # list would render an ingress rule that admits nobody.
   #
   #   ingressFrom:
@@ -215,15 +308,23 @@ networkPolicy:
   #         matchLabels:
   #           kubernetes.io/metadata.name: <gateway namespace>
   ingressFrom: []
-  # -- Where the pod may connect: the issuer, the store's proxy, and cluster
-  # DNS — nothing else. Both peer lists are required while `enabled`.
+  # -- Optional. Peers allowed to scrape the aggregator's `/metrics` on its
+  # admin port (9090). Empty: nothing may (the kubelet's probes are not
+  # subject to it).
+  metricsFrom: []
+  # -- Where the pods may connect: the issuer, the store's vmauth (and
+  # Grafana), and cluster DNS. Nothing else. Both lists required while
+  # `enabled`.
   egress:
-    # -- Peers the issuer (JWKS and token endpoint) is reached at. The port
-    # comes from `issuerURL` and each server's `outbound.tokenEndpoint`.
+    # -- Peers the issuer (JWKS and token endpoint) is reached at. The ports
+    # come from `issuerURL` and each connector's `outbound.tokenEndpoint`.
     issuer: []
-    # -- Peers the store's proxy is reached at. The port comes from each
-    # server's `outbound.target`.
+    # -- Peers the stores' vmauth are reached at. The port comes from each
+    # store's `vmauth.url`.
     vmauth: []
+    # -- Peers Grafana is reached at. Required while the Grafana connector is
+    # enabled. The port comes from `grafana.url`.
+    grafana: []
 
 # -- Optional. Refused with fewer than two replicas: a budget of one
 # available on a single replica blocks every node drain.

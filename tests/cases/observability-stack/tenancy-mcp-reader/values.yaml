@@ -1,0 +1,43 @@
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The machine reader an observability-mcp store connector authenticates as:
+# all three read routes (unset `routes`), plus `vmalertAPI`, with the four
+# acknowledgements it needs to reach every tool the connector exposes —
+# unfiltered alerts and rules, unfiltered trace reads, and (optionally)
+# metric metadata. tests/mcp_routes_test.go proves every allowlisted tool's
+# HTTP path is served by a route in this render, and that the tools the
+# connector drops are not.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  allowUnfilteredAlertReads: true
+  allowUnfilteredTraceReads: true
+  allowUnfilteredMetricMetadata: true
+  principals:
+    - group: example:mcp:reader
+      audience: example-mcp-reader
+      vmalertAPI: true
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+victoria-metrics-k8s-stack:
+  enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: true
+  server:
+    persistentVolume:
+      enabled: false

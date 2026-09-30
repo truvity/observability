@@ -1,0 +1,17 @@
+# expect: `grafana` has no `resourceURL`
+# No resource identifier for Grafana.
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+grafana:
+  enabled: true
+  url: http://grafana.monitoring.svc:80
+  outbound: {tokenEndpoint: "https://issuer.example.com/token", clientId: observability-mcp-grafana, audience: grafana-workload}
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}
+  egress:
+    issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]
+    vmauth: [{podSelector: {matchLabels: {app.kubernetes.io/name: vmauth}}}]
+    grafana: [{podSelector: {matchLabels: {app.kubernetes.io/name: grafana}}}]
