@@ -98,20 +98,26 @@ not serve. With `entrypointPath: /prometheus` the paths on the wire are:
 | `series`, `labels`, `label_values`, `metrics` | `/prometheus/api/v1/series`, `/labels`, `/label/<name>/values` | yes |
 | `tsdb_status` | `/prometheus/api/v1/status/tsdb` | yes |
 | `metrics_metadata` | `/prometheus/api/v1/metadata` | only with `tenancy.allowUnfilteredMetricMetadata` |
-| `alerts` | `/prometheus/vmalert/api/v1/alerts` | **no** |
-| `rules` | `/prometheus/vmalert/api/v1/rules` | **no** |
+| `alerts` | `/prometheus/vmalert/api/v1/alerts` | only with `vmalertAPI` (unfiltered) |
+| `rules` | `/prometheus/vmalert/api/v1/rules` | only with `vmalertAPI` (unfiltered) |
 
 The stack's OIDC read routes carry the per-principal filter and cover the
-query tools. They do not route vmalert for a token principal: its alerts
-route is the bearer-token `tenancy.alertReaders` one, on the path
-`/api/v1/alerts`. For the `alerts` and `rules` tools to work, the store's
-proxy needs, for the workload's principal, routes
-`/prometheus/vmalert/api/v1/(alerts|rules)` to the metrics vmalert that drop
-the first path part (`drop_src_path_prefix_parts: 1`), so vmalert receives
-`/vmalert/api/v1/alerts`, a path it serves. Those routes are unfiltered (a
-vmalert listing has no per-namespace concept), the same caveat as
-`tenancy.allowUnfilteredAlertReads`. Until they exist the two tools return
-an authorisation error and the rest work.
+query tools. The alerts and rules routes are opt-in, per principal:
+`tenancy.principals[].vmalertAPI: true` in `observability-stack` (0.16.0)
+adds `/prometheus/vmalert/api/v1/alerts` and `.../rules` for that principal,
+forwarded to the metrics vmalert with the first path part dropped
+(`drop_src_path_prefix_parts: 1`), so vmalert receives
+`/vmalert/api/v1/...`, a path it serves. **The consumer sets the key on the
+principal the MCP server's exchanged token selects** (the MCP machine
+principal), together with `tenancy.allowUnfilteredAlertReads: true`.
+
+These two routes are **not scoped**: vmalert has no per-namespace or
+per-cluster concept, so the principal's grants do not limit what it reads
+there. It sees every active alert, and every rule's expression and labels,
+that the install's metrics vmalert holds, cluster-wide. That is the same
+caveat as `tenancy.alertReaders`. Without the key the `alerts` and `rules`
+tools fail and the rest work. `hack/vmalert-api-proof.sh` proves the route
+against real vmauth, VictoriaMetrics and vmalert.
 
 ### Tools
 

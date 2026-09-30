@@ -414,6 +414,15 @@ tenancy:
   # tsdb status or vmui. The shape a verification gate needs and nothing
   # past it. Refused if `routes` excludes `metrics`: there would be
   # nothing left to narrow.
+  #
+  # `vmalertAPI: true` adds the metrics vmalert's alerts and rules to this
+  # principal: `/prometheus/vmalert/api/v1/alerts` and `.../rules`,
+  # forwarded to vmalert as `/vmalert/api/v1/...` (the paths a stock
+  # VictoriaMetrics MCP server asks for). UNFILTERED — vmalert has no
+  # per-namespace concept, so the principal's grants do not scope what it
+  # reads here — hence it requires `allowUnfilteredAlertReads`, exactly
+  # as `alertReaders` does. Refused if `routes` excludes `metrics`, or
+  # `vmalert.enabled` is false.
   principals: []
   # -- The writers: collectors and agents that push, authenticated by a
   # bearer token rather than by a person's identity.

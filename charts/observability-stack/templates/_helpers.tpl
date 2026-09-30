@@ -293,6 +293,21 @@ be scoped by a filter.
 - /api/v1/alerts
 {{- end -}}
 
+{{/*
+The two routes a `tenancy.principals[].vmalertAPI` principal gets, written
+the way a stock VictoriaMetrics MCP server in single-node mode asks for
+them: `<entrypoint>/vmalert/api/v1/{alerts,rules}` with the entrypoint on
+the store's `/prometheus` path. vmauth forwards the request path as
+received, so each route drops its first path part
+(`drop_src_path_prefix_parts: 1`) and vmalert sees `/vmalert/api/v1/...`,
+which it serves. Exact paths, never a prefix: vmalert's `/-/reload` and its
+per-rule and per-group endpoints are not reads this chart admits.
+*/}}
+{{- define "observability-stack.readPaths.vmalertAPI" -}}
+- /prometheus/vmalert/api/v1/alerts
+- /prometheus/vmalert/api/v1/rules
+{{- end -}}
+
 {{- define "observability-stack.writePaths.metrics" -}}
 - /prometheus/api/v1/write
 - /api/v1/write

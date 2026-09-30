@@ -159,6 +159,20 @@ spec:
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
     {{- end }}
+    {{- if $p.vmalertAPI }}
+    {{- /*
+    The metrics vmalert's alerts and rules, for a principal that said so.
+    NOT filtered: there is no `query_args` because vmalert has no
+    per-namespace concept to substitute the grant into — the same reason
+    `tenancy.alertReaders` needs `allowUnfilteredAlertReads`, which
+    _validate.tpl requires here too. No basic auth: vmalert has none.
+    */}}
+    - static:
+        url: {{ include "observability-stack.vmalert.metrics.url" $root | quote }}
+      paths:
+        {{- include "observability-stack.readPaths.vmalertAPI" $root | nindent 8 }}
+      drop_src_path_prefix_parts: 1
+    {{- end }}
     {{- if $hasLogs }}
     - static:
         url: {{ $logs | quote }}
