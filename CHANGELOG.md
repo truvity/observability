@@ -41,6 +41,64 @@ kube-prometheus recording rules select on.
   checks the kubelet dashboard's "Running Kubelets" still counts one per
   node.
 
+Dashboards for the platform components an install runs: ArgoCD,
+cert-manager, CloudNativePG, NATS, Envoy Gateway and Kargo, and a line of
+health tiles for each on the home page. Additive; every new dashboard is on
+by default and can be turned off one key at a time.
+
+- **Behaviour change: the default `observability-dashboards` render gains
+  nine ConfigMaps and the Fleet overview gains rows.** The new dashboards
+  are `argocd`, `cert-manager`, `cnpg-operator`, `nats-server`,
+  `nats-jetstream`, `envoy-gateway`, `envoy-proxy`, `envoy-clusters` and
+  `kargo`, in a new folder `Platform` (`folders.platform`, one
+  `dashboards.<name>.enabled` key each, default true). The Fleet overview
+  home page gains a second per-cluster block, "Platform components", of one
+  line of "is it healthy?" tiles per component: ArgoCD (applications not
+  Synced, not Healthy, targets down), cert-manager (certificates expiring in
+  14 days, not Ready, targets down), NATS (servers down, JetStream disabled,
+  slow consumers in the last hour), Envoy (5xx per second, 5xx share of
+  requests, proxies down) and CloudNativePG (operator reconcile errors in
+  the last hour, operator down). Kargo's tiles were already in the cluster
+  row. A tile for a component a cluster does not run reads "n/a", not a
+  green 0. Both existing goldens (`minimal`, `everything`) change to match;
+  no existing dashboard other than the Fleet overview changes. Set
+  `dashboards.<name>.enabled: false` to drop a dashboard; the Fleet
+  overview's tiles link to `argocd`, `cert-manager`, `nats-jetstream`,
+  `envoy-proxy` and `cnpg-operator`, so disabling one of those leaves a link
+  that opens "not found".
+- **Where each one comes from** (source, licence and pinned ref are in
+  `THIRD_PARTY_NOTICES.md` and `dashboards/catalog.yaml`): ArgoCD, argo-cd
+  v3.5.3 `examples/dashboard.json`; cert-manager, the cert-manager mixin
+  v1.6.0 overview; CloudNativePG, `cloudnative-pg/grafana-dashboards`
+  cluster-v0.0.5; NATS, the prometheus-nats-exporter v0.20.2 walkthrough
+  dashboards (server and JetStream); Envoy Gateway, envoyproxy/gateway
+  v1.9.2 `envoy-gateway-global`, `envoy-proxy-global` and `envoy-clusters`.
+  All Apache-2.0. `kargo` is authored here (no upstream ships one): Stages
+  and Promotions from the state-metrics preset, and the controller's
+  reconcile and work-queue health. Upstream pickers that collide with the
+  contract's names are renamed (ArgoCD's `cluster` is the application
+  destination, Envoy's `cluster` and `namespace` are an Envoy cluster and a
+  route namespace).
+- **Panels left out, on purpose.** Every panel reads only metrics and labels
+  in the allow-lists. ArgoCD: the ApplicationSet controller row (that
+  controller is not scraped). CloudNativePG: every instance panel, since the
+  `cnpg_*` instance exporter is not scraped yet (recorded as
+  `deferred: [cnpg-instance-metrics]` in the catalog); what remains is the
+  operator's own row plus reconcile rate, duration and queue depth. Envoy
+  Gateway: the Wasm row. NATS: the cumulative message and byte counters are
+  drawn as rates.
+- **The allow-lists grow.** `hack/dashboards/available-metrics.yaml` lists
+  each platform family by exact name (not by prefix), and
+  `hack/dashboards/available-labels.yaml` gains one job per scrape with the
+  job names the converters produce: a ServiceMonitor's job is its Service
+  name, a PodMonitor's is `<namespace>/<PodMonitor name>`. A dashboard that
+  reads anything else still fails the query test.
+- **Import tooling.** `hack/dashboards.py` gains an `adapt: platform` mode
+  (`hack/dashboards/platform_adapt.py`, with a small PromQL scanner in
+  `promql_scan.py`): it drops the rows and panels a source names, converts
+  legacy `graph` panels, adds the cluster filter to every selector, and
+  refuses a replacement that matches nothing.
+
 ## v0.12.1
 
 A fix for the shipped `kubelet` dashboard, which read "No data" on every

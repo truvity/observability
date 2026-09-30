@@ -39,6 +39,7 @@ datasources:
 folders:
   infrastructure: Infrastructure       # keyed by cluster
   stores:         Observability        # the stack's own health
+  platform:       Platform             # ArgoCD, cert-manager, CloudNativePG, NATS, Envoy Gateway, Kargo
 dashboards:
   node-exporter-full: {enabled: true}
   kubelet:            {enabled: true}
@@ -99,7 +100,8 @@ Rules they follow, on top of the six above:
 - **Only metrics a store holds.** The sources are the node scrape (kubelet
   and cadvisor, less the 0.9.1 churn drop), kube-state-metrics with its
   11-collector allow-list (and the Kargo series only where that preset is
-  on), the stack's own components, `ALERTS` and OTLP. There is no
+  on), the stack's own components, the platform components' scrapes (below),
+  `ALERTS` and OTLP. There is no
   node-exporter. `hack/dashboards/available-metrics.yaml` is that list;
   `tests/dashboard_queries_test.go` fails a dashboard flagged `queryCheck`
   in `hack/dashboards/sources.yaml` that reads anything else, and parses
@@ -114,10 +116,46 @@ Rules they follow, on top of the six above:
 - **The home page** is the `home` value; see `values.yaml` for the two ways
   to point Grafana at it.
 
+## The platform components
+
+Dashboards for the components a platform install runs, in the `Platform`
+folder. The same contract and the same query check as the views above, plus
+one rule: a panel reads only metrics and labels the scrapes produce
+(`available-metrics.yaml` by exact name, `available-labels.yaml` by scrape
+job), so a panel whose series nothing emits is dropped at import and listed
+in the change, never shipped empty.
+
+| Dashboard | Scrape job(s) | Source |
+|---|---|---|
+| `argocd` | `argocd-application-controller-metrics`, `argocd-server-metrics`, `argocd-repo-server-metrics` | argo-cd `examples/dashboard.json` |
+| `cert-manager` | `cert-manager`, `cainjector`, `webhook` | cert-manager mixin overview |
+| `cnpg-operator` | `cnpg-system/cnpg-cloudnative-pg` | `cloudnative-pg/grafana-dashboards`, operator row only |
+| `nats-server`, `nats-jetstream` | `nats/nats` | prometheus-nats-exporter walkthrough |
+| `envoy-gateway` | `envoy-gateway-system/envoy-gateway` | envoyproxy/gateway addons |
+| `envoy-proxy`, `envoy-clusters` | `envoy-gateway-system/envoy-proxy` | envoyproxy/gateway addons |
+| `kargo` | `kargo-controller-metrics` | authored (`authored: true`) |
+
+- **Job names follow the converters.** A ServiceMonitor's `job` is its
+  Service name; a PodMonitor's is `<namespace>/<PodMonitor name>`. With
+  `honor_labels: false` a series' own `namespace` that collides with the
+  target's survives only as `exported_namespace`, which is where the
+  Certificate's and the Application's namespaces are.
+- **Pickers that collide with the contract are renamed**, not merged: an
+  ArgoCD application's destination is `destination`, an Envoy cluster is
+  `envoy_cluster`, a route namespace is `route_namespace`. `cluster` always
+  means the install.
+- **Deferred on purpose.** The CloudNativePG instance exporter is not scraped,
+  so `cnpg-operator` carries the operator's row only; the catalog records
+  `deferred: [cnpg-instance-metrics]`. The ApplicationSet controller and
+  Envoy's Wasm cache are not read either.
+- **The Fleet overview** carries one line of tiles per component, health only,
+  each linking to the component's dashboard with datasource and cluster
+  carried across. A component a cluster does not run reads `n/a`.
+
 ## Third-party dashboards
 
-Every dashboard except `fleet-overview` is an upstream project's work,
-modified to the contract above. Apache-2.0 requires the licence text, a
+Every dashboard except `fleet-overview` and `kargo` (both authored here) is an
+upstream project's work, modified to the contract above. Apache-2.0 requires the licence text, a
 modification notice and the attribution to travel with it, so
 `THIRD_PARTY_NOTICES.md` lists each one (upstream, URL, pinned ref, SPDX
 licence, copyright, modification) and `LICENSES/` holds each licence's full

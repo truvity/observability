@@ -139,3 +139,83 @@ ships a NOTICE file at the pinned ref.
 - SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
 - Copyright: Copyright 2020 David Calvert
 - Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## argocd
+
+- Upstream project: Argo CD
+- URL: https://github.com/argoproj/argo-cd
+- Fetched from: https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.3/examples/dashboard.json
+- Pinned ref: `v3.5.3`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: Copyright 2017-2018 The Argo Authors
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## cert-manager
+
+- Upstream project: cert-manager-mixin
+- URL: https://github.com/imusmanmalik/cert-manager-mixin
+- Fetched from: https://raw.githubusercontent.com/imusmanmalik/cert-manager-mixin/v1.6.0/dashboards/cert-manager-overview.json
+- Pinned ref: `v1.6.0`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: Copyright 2020 Ben Clapp
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## cnpg-operator
+
+- Upstream project: CloudNativePG Grafana dashboards
+- URL: https://github.com/cloudnative-pg/grafana-dashboards
+- Fetched from: https://raw.githubusercontent.com/cloudnative-pg/grafana-dashboards/cluster-v0.0.5/charts/cluster/grafana-dashboard.json
+- Pinned ref: `cluster-v0.0.5`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## nats-server
+
+- Upstream project: prometheus-nats-exporter
+- URL: https://github.com/nats-io/prometheus-nats-exporter
+- Fetched from: https://raw.githubusercontent.com/nats-io/prometheus-nats-exporter/v0.20.2/walkthrough/grafana-nats-dash.json
+- Pinned ref: `v0.20.2`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: Copyright 2017-2018 The NATS Authors
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## nats-jetstream
+
+- Upstream project: prometheus-nats-exporter
+- URL: https://github.com/nats-io/prometheus-nats-exporter
+- Fetched from: https://raw.githubusercontent.com/nats-io/prometheus-nats-exporter/v0.20.2/walkthrough/grafana-jetstream-dash.json
+- Pinned ref: `v0.20.2`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: Copyright 2017-2018 The NATS Authors
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## envoy-gateway
+
+- Upstream project: Envoy Gateway
+- URL: https://github.com/envoyproxy/gateway
+- Fetched from: https://raw.githubusercontent.com/envoyproxy/gateway/v1.9.2/charts/gateway-addons-helm/dashboards/envoy-gateway-global.json
+- Pinned ref: `v1.9.2`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## envoy-proxy
+
+- Upstream project: Envoy Gateway
+- URL: https://github.com/envoyproxy/gateway
+- Fetched from: https://raw.githubusercontent.com/envoyproxy/gateway/v1.9.2/charts/gateway-addons-helm/dashboards/envoy-proxy-global.json
+- Pinned ref: `v1.9.2`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## envoy-clusters
+
+- Upstream project: Envoy Gateway
+- URL: https://github.com/envoyproxy/gateway
+- Fetched from: https://raw.githubusercontent.com/envoyproxy/gateway/v1.9.2/charts/gateway-addons-helm/dashboards/envoy-clusters.json
+- Pinned ref: `v1.9.2`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed

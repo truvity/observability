@@ -39,12 +39,13 @@
     "folders": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fleet", "kubernetes", "infrastructure", "stores"],
+      "required": ["fleet", "kubernetes", "infrastructure", "stores", "platform"],
       "properties": {
         "fleet": { "type": "string", "minLength": 1 },
         "kubernetes": { "type": "string", "minLength": 1 },
         "infrastructure": { "type": "string", "minLength": 1 },
-        "stores": { "type": "string", "minLength": 1 }
+        "stores": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string", "minLength": 1 }
       }
     },
     "dashboards": {
@@ -64,7 +65,16 @@
         "victoriatraces-single",
         "alertmanager",
         "node-exporter-full",
-        "kubelet"
+        "kubelet",
+        "argocd",
+        "cert-manager",
+        "cnpg-operator",
+        "nats-server",
+        "nats-jetstream",
+        "envoy-gateway",
+        "envoy-proxy",
+        "envoy-clusters",
+        "kargo"
       ],
       "properties": {
         "fleet-overview": { "$ref": "#/definitions/dashboardEntry" },
@@ -80,7 +90,16 @@
         "victoriatraces-single": { "$ref": "#/definitions/dashboardEntry" },
         "alertmanager": { "$ref": "#/definitions/dashboardEntry" },
         "node-exporter-full": { "$ref": "#/definitions/dashboardEntry" },
-        "kubelet": { "$ref": "#/definitions/dashboardEntry" }
+        "kubelet": { "$ref": "#/definitions/dashboardEntry" },
+        "argocd": { "$ref": "#/definitions/dashboardEntry" },
+        "cert-manager": { "$ref": "#/definitions/dashboardEntry" },
+        "cnpg-operator": { "$ref": "#/definitions/dashboardEntry" },
+        "nats-server": { "$ref": "#/definitions/dashboardEntry" },
+        "nats-jetstream": { "$ref": "#/definitions/dashboardEntry" },
+        "envoy-gateway": { "$ref": "#/definitions/dashboardEntry" },
+        "envoy-proxy": { "$ref": "#/definitions/dashboardEntry" },
+        "envoy-clusters": { "$ref": "#/definitions/dashboardEntry" },
+        "kargo": { "$ref": "#/definitions/dashboardEntry" }
       }
     },
     "home": {

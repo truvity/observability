@@ -21,6 +21,11 @@ Design, stated so a reviewer can check it:
   * Only series a store holds today (hack/dashboards/available-metrics.yaml).
     Kargo tiles read series that exist only when the Kargo preset is on, so
     they show "n/a" when it is off and a count (possibly 0) when it is on.
+  * Below the cluster rows sits one line of tiles per platform component
+    (ArgoCD, cert-manager, NATS, Envoy, CloudNativePG; Kargo's are in the
+    cluster row): "is it healthy?" and nothing else, each tile linking to the
+    component's dashboard with datasource and cluster carried. A component a
+    cluster does not run reads "n/a".
 """
 
 DS = {"type": "prometheus", "uid": "${datasource}"}
@@ -33,9 +38,20 @@ NS = 'namespace=~"$namespace"'
 # nothing, so the same string serves a single value and a multi-select.
 CARRY = "var-datasource=${datasource:queryparam}&${cluster:queryparam}&${namespace:queryparam}&${__url_time_range}"
 
+# What a link to a platform component's dashboard carries: those dashboards
+# are scoped by cluster, not by the Kubernetes namespace this page filters on.
+CARRY_CLUSTER = "var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}"
+
 UID_NAMESPACES = "truvity-obs-k8s-views-namespaces"
 UID_GLOBAL = "truvity-obs-k8s-views-global"
 UID_VM = "truvity-obs-victoriametrics-single"
+UID_ARGOCD = "truvity-obs-argocd"
+UID_CERT_MANAGER = "truvity-obs-cert-manager"
+UID_NATS = "truvity-obs-nats-jetstream"
+UID_ENVOY = "truvity-obs-envoy-proxy"
+UID_CNPG = "truvity-obs-cnpg-operator"
+
+CNPG_JOB = "cnpg-system/cnpg-cloudnative-pg"
 
 GREEN = "green"
 RED = "red"
@@ -46,6 +62,14 @@ def link(title, uid):
     return {
         "title": title,
         "url": "/d/%s?%s" % (uid, CARRY),
+        "targetBlank": False,
+    }
+
+
+def link_cluster(title, uid):
+    return {
+        "title": title,
+        "url": "/d/%s?%s" % (uid, CARRY_CLUSTER),
         "targetBlank": False,
     }
 
@@ -88,7 +112,7 @@ class Builder:
         self.panels.append(r)
 
     def stat(self, title, description, expr, x, y, link_to, unit="short", w=4, h=4,
-             steps=None, no_value="0", instant=True):
+             steps=None, no_value="0", instant=True, decimals=0):
         # `steps`: [(value|None, color)]; the default is green at 0 and red
         # from 1, right for every count of "things that should be zero".
         steps = steps or [(None, GREEN), (1, RED)]
@@ -104,13 +128,13 @@ class Builder:
                 "defaults": {
                     "unit": unit,
                     "noValue": no_value,
-                    "decimals": 0,
+                    "decimals": decimals,
                     "mappings": [],
                     "thresholds": {
                         "mode": "absolute",
                         "steps": [{"color": c, "value": v} for v, c in steps],
                     },
-                    "links": [link_to],
+                    "links": [link_to] if link_to else [],
                 },
                 "overrides": [],
             },
@@ -151,7 +175,7 @@ class Builder:
                         "spanNulls": False,
                     },
                     "thresholds": {"mode": "absolute", "steps": [{"color": GREEN, "value": None}]},
-                    "links": [link_to],
+                    "links": [link_to] if link_to else [],
                 },
                 "overrides": overrides,
             },
@@ -317,6 +341,105 @@ def build():
          ('sum by (job, reason) (rate(vt_rows_dropped_total{%s}[$__rate_interval]))' % CLUSTER, "traces {{job}} {{reason}}")],
         12, y, 12, 7, "ops", to_store, colors={})
 
+    y += 7
+
+    # -- Platform components: is each one healthy? One line of tiles per
+    # component, the same on every cluster. A component a cluster does not run
+    # reads "n/a", never a green 0: the fallback multiplies an always-present
+    # series of the component by zero, so it is absent exactly when the
+    # component is.
+    b.row("Platform components, $cluster", y, repeat="cluster")
+    y += 1
+    K = CLUSTER
+
+    def line(components, y):
+        # components: [(title, description, bad, anchor, kwargs)]
+        w = 24 // len(components)
+        for i, (title, desc, bad, anchor, kw) in enumerate(components):
+            expr = "(%s) or (0 * count(%s))" % (bad, anchor)
+            b.stat(title, desc, expr, i * w, y, kw.pop("link"), w=w, h=3, no_value="n/a", **kw)
+
+    to_argocd = link_cluster("Open the ArgoCD dashboard", UID_ARGOCD)
+    to_certs = link_cluster("Open the cert-manager dashboard", UID_CERT_MANAGER)
+    to_nats = link_cluster("Open the NATS JetStream dashboard", UID_NATS)
+    to_envoy = link_cluster("Open the Envoy proxy dashboard", UID_ENVOY)
+    to_cnpg = link_cluster("Open the CloudNativePG operator dashboard", UID_CNPG)
+
+    argo_up = 'up{%s,job=~"argocd-.*-metrics"}' % K
+    line([
+        ("ArgoCD apps not Synced",
+         "Applications whose sync status is anything but Synced: Git and the cluster disagree. Open the ArgoCD dashboard, then the application, and read the sync result. n/a where ArgoCD is not scraped.",
+         'count(argocd_app_info{%s,sync_status!="Synced"})' % K, 'argocd_app_info{%s}' % K, {"link": to_argocd}),
+        ("ArgoCD apps not Healthy",
+         "Applications whose health is anything but Healthy (Progressing, Degraded, Missing, Suspended, Unknown). A few Progressing during a rollout is normal; one that stays is not. n/a where ArgoCD is not scraped.",
+         'count(argocd_app_info{%s,health_status!="Healthy"})' % K, 'argocd_app_info{%s}' % K, {"link": to_argocd}),
+        ("ArgoCD targets down",
+         "ArgoCD metrics endpoints (application controller, API server, repo server) that stopped answering. Any down leaves that part of ArgoCD unobserved, and the two tiles beside it stale.",
+         'count(%s == 0)' % argo_up, argo_up, {"link": to_argocd}),
+    ], y)
+    y += 3
+
+    cm_exp = 'certmanager_certificate_expiration_timestamp_seconds{%s}' % K
+    cm_up = 'up{%s,job=~"cert-manager|cainjector"}' % K
+    line([
+        ("Certificates expiring in 14 days",
+         "Certificates that expire within 14 days (certificates with no expiry yet, still being issued, are not counted). One that has not renewed means its issuer or challenge is failing: open the cert-manager dashboard and read the Ready condition. n/a where cert-manager is not scraped.",
+         'count((%s > 0) and (%s - time() < 1209600))' % (cm_exp, cm_exp), cm_exp, {"link": to_certs}),
+        ("Certificates not Ready",
+         "Certificates whose Ready condition is false or unknown. A new certificate is not Ready until issued; one that stays so is stuck. Open the cert-manager dashboard's Certificates table.",
+         'count(certmanager_certificate_ready_status{%s,condition!="True"} == 1)' % K,
+         'certmanager_certificate_ready_status{%s}' % K, {"link": to_certs}),
+        ("cert-manager targets down",
+         "cert-manager metrics endpoints (controller, cainjector) that stopped answering. Certificates are not being renewed while the controller is down.",
+         'count(%s == 0)' % cm_up, cm_up, {"link": to_certs}),
+    ], y)
+    y += 3
+
+    nats_up = 'up{%s,job="nats/nats"}' % K
+    line([
+        ("NATS servers down",
+         "NATS metrics endpoints that stopped answering: the server or its exporter is down. Publishers and consumers on that server are affected. n/a where NATS is not scraped.",
+         'count(%s == 0)' % nats_up, nats_up, {"link": to_nats}),
+        ("JetStream disabled",
+         "NATS servers reporting JetStream as disabled. Streams and durable consumers need it: a server that should have it and does not is misconfigured or restarted without its store.",
+         'count(jetstream_server_jetstream_disabled{%s} == 1)' % K, 'jetstream_server_jetstream_disabled{%s}' % K, {"link": to_nats}),
+        ("NATS slow consumers (1h)",
+         "Slow consumers the servers reported in the last hour: clients that could not keep up and were disconnected or lost messages. Find the client and raise its limit or speed it up.",
+         'sum(increase(gnatsd_varz_slow_consumers{%s}[1h]))' % K, 'gnatsd_varz_slow_consumers{%s}' % K, {"link": to_nats}),
+    ], y)
+    y += 3
+
+    envoy_total = 'envoy_http_downstream_rq_total{%s}' % K
+    envoy_up = 'up{%s,job="envoy-gateway-system/envoy-proxy"}' % K
+    envoy_5xx = 'sum(rate(envoy_http_downstream_rq_xx{%s,envoy_response_code_class="5"}[5m]))' % K
+    line([
+        ("Envoy 5xx per second",
+         "Requests per second the proxies answered with a 5xx, measured at the client side. Near zero is healthy; open the Envoy proxy dashboard, then the Envoy clusters dashboard to find the failing backend. n/a where the proxies are not scraped.",
+         envoy_5xx, envoy_total,
+         {"link": to_envoy, "unit": "reqps", "decimals": 2, "steps": [(None, GREEN), (0.05, ORANGE), (1, RED)]}),
+        ("Envoy 5xx share of requests",
+         "Share of client requests the proxies answered with a 5xx, over five minutes. Above 1% is worth a look; above 5% is an outage for some route.",
+         '100 * %s / (sum(rate(envoy_http_downstream_rq_total{%s}[5m])) > 0)' % (envoy_5xx, K), envoy_total,
+         {"link": to_envoy, "unit": "percent", "decimals": 1, "steps": [(None, GREEN), (1, ORANGE), (5, RED)]}),
+        ("Envoy proxies down",
+         "Envoy proxy metrics endpoints that stopped answering. A proxy pod that is down serves no traffic; check the Gateway's pods.",
+         'count(%s == 0)' % envoy_up, envoy_up, {"link": to_envoy}),
+    ], y)
+    y += 3
+
+    cnpg_sel = '%s,job="%s"' % (K, CNPG_JOB)
+    cnpg_up = 'up{%s}' % cnpg_sel
+    line([
+        ("CNPG operator reconcile errors (1h)",
+         "Reconciles that ended in an error in the last hour, across the CloudNativePG operator's control loops. A few are retried conflicts; a steady count means a Postgres cluster, backup or pooler cannot converge. n/a where the operator is not scraped.",
+         'sum(increase(controller_runtime_reconcile_total{%s,result="error"}[1h]))' % cnpg_sel,
+         'controller_runtime_reconcile_total{%s}' % cnpg_sel,
+         {"link": to_cnpg, "steps": [(None, GREEN), (1, ORANGE), (20, RED)]}),
+        ("CNPG operator down",
+         "CloudNativePG operator metrics endpoints that stopped answering. With the operator down no Postgres cluster is reconciled: failovers and backups are not driven.",
+         'count(%s == 0)' % cnpg_up, cnpg_up, {"link": to_cnpg}),
+    ], y)
+
     def var_ds():
         return {
             "name": "datasource", "label": "datasource", "type": "datasource", "query": "prometheus",
@@ -344,7 +467,7 @@ def build():
 
     return {
         "title": "Fleet overview",
-        "description": "Is anything wrong, and where? Firing alerts, then one row of health tiles per cluster. Every tile opens the drill-down view for that cluster and namespace.",
+        "description": "Is anything wrong, and where? Firing alerts, then one row of health tiles per cluster and one line of tiles per platform component. Every tile opens the drill-down view for that cluster and namespace, or the component's dashboard.",
         "editable": False,
         "graphTooltip": 1,
         "refresh": "1m",

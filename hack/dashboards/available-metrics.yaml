@@ -12,9 +12,11 @@
 #     `queryCheck` in hack/dashboards/sources.yaml that queries a metric not
 #     listed here.
 #
-# So a future dashboard that needs node-exporter, ArgoCD, cert-manager,
-# CNPG, NATS, Envoy Gateway or Karpenter series FAILS the test until the
-# metric source ships AND its family is added here, in the same change.
+# So a dashboard that needs node-exporter, the CloudNativePG instance
+# metrics, Karpenter or any other series a scrape does not produce FAILS the
+# test until the metric source ships AND its family is added here, in the same
+# change. (ArgoCD, cert-manager, the CloudNativePG operator, NATS and Envoy
+# Gateway are scraped since 0.13.0 and listed below by exact name.)
 # Do not add a family speculatively: an entry here is a claim that a store
 # holds the series.
 #
@@ -98,14 +100,159 @@ sources:
   - name: vmalert write-back
     names: [ALERTS, ALERTS_FOR_STATE]
 
+  # -- Platform components (charts/observability-dashboards 0.13.0). Unlike the
+  # families above these are listed by exact NAME, not by prefix: each entry is
+  # a claim that a scrape produces the series, and a prefix such as `argocd_`
+  # would claim every name upstream ever adds. The names are the ones the
+  # pinned upstream dashboards read (hack/dashboards/sources.yaml) and the
+  # exporter documents at that version; add a name when a dashboard reads it.
+  - name: ArgoCD (ServiceMonitors argocd-application-controller-metrics, argocd-server-metrics, argocd-repo-server-metrics)
+    note: >-
+      from argo-cd v3.5.3 examples/dashboard.json and its operator manual's
+      metrics page. The ApplicationSet controller is not scraped, so none of its
+      series are listed. The go_, process_ and workqueue_ series of these jobs
+      are covered by the prefixes above.
+    names:
+      - argocd_app_info
+      - argocd_app_sync_total
+      - argocd_app_reconcile_count
+      - argocd_app_reconcile_bucket
+      - argocd_app_k8s_request_total
+      - argocd_cluster_info
+      - argocd_cluster_api_resources
+      - argocd_cluster_api_resource_objects
+      - argocd_cluster_events_total
+      - argocd_kubectl_exec_pending
+      - argocd_git_request_total
+      - argocd_git_request_duration_seconds_bucket
+      - argocd_redis_request_total
+      - grpc_server_handled_total
+
+  - name: cert-manager (ServiceMonitor, jobs cert-manager, cainjector, webhook)
+    note: >-
+      the controller's certificate and ACME client series, as read by the
+      cert-manager mixin v1.6.0 overview and documented in cert-manager's
+      metrics reference. `certmanager_certificate_ready_status` and
+      `..._expiration_timestamp_seconds` carry the Certificate's own namespace
+      as `exported_namespace`, the scraped `namespace` being cert-manager's.
+    names:
+      - certmanager_certificate_ready_status
+      - certmanager_certificate_expiration_timestamp_seconds
+      - certmanager_controller_sync_call_count
+      - certmanager_http_acme_client_request_count
+      - certmanager_http_acme_client_request_duration_seconds_sum
+      - certmanager_http_acme_client_request_duration_seconds_count
+
+  - name: CloudNativePG operator (PodMonitor, job cnpg-system/cnpg-cloudnative-pg)
+    note: >-
+      the operator's controller-runtime series only (covered by the
+      controller_runtime_ and workqueue_ prefixes above). The cnpg_* families
+      come from each Postgres instance's exporter, which is not scraped yet:
+      that is what `cnpg-instance-metrics` in available-labels.yaml names.
+    names:
+      - controller_runtime_reconcile_total
+      - controller_runtime_reconcile_time_seconds_bucket
+
+  - name: NATS (prometheus-nats-exporter sidecar, PodMonitor job nats/nats)
+    note: >-
+      -varz and -jsz=all of prometheus-nats-exporter v0.20.2. varz series are
+      the server's /varz numbers under `gnatsd_varz_`; jsz series are named in
+      the exporter's collector/jsz.go (`jetstream_server_`, `jetstream_stream_`,
+      `jetstream_consumer_`). -connz, -routez and -subz are scraped too, but no
+      dashboard reads them.
+    names:
+      - gnatsd_varz_cpu
+      - gnatsd_varz_mem
+      - gnatsd_varz_in_bytes
+      - gnatsd_varz_out_bytes
+      - gnatsd_varz_in_msgs
+      - gnatsd_varz_out_msgs
+      - gnatsd_varz_connections
+      - gnatsd_varz_subscriptions
+      - gnatsd_varz_slow_consumers
+      - gnatsd_varz_jetstream_stats_storage
+      - gnatsd_varz_jetstream_stats_memory
+      - gnatsd_varz_jetstream_config_max_storage
+      - gnatsd_varz_jetstream_config_max_memory
+      - jetstream_server_jetstream_disabled
+      - jetstream_server_total_streams
+      - jetstream_server_total_consumers
+      - jetstream_stream_total_messages
+      - jetstream_stream_total_bytes
+      - jetstream_stream_last_seq
+      - jetstream_consumer_delivered_consumer_seq
+      - jetstream_consumer_num_pending
+      - jetstream_consumer_num_ack_pending
+
+  - name: Envoy Gateway controller (PodMonitor, job envoy-gateway-system/envoy-gateway, /metrics)
+    note: >-
+      the controller families envoyproxy/gateway v1.9.2's
+      envoy-gateway-global.json reads, less the wasm_* ones (not confirmed on a
+      default install).
+    names:
+      - watchable_depth
+      - watchable_panics_recovered_total
+      - watchable_subscribe_total
+      - watchable_subscribe_duration_seconds_bucket
+      - watchable_subscribe_duration_seconds_sum
+      - status_update_total
+      - status_update_duration_seconds_bucket
+      - status_update_duration_seconds_sum
+      - status_update_duration_seconds_count
+      - xds_snapshot_create_total
+      - xds_snapshot_update_total
+      - xds_stream_duration_seconds_bucket
+      - xds_stream_duration_seconds_sum
+      - resource_apply_total
+      - resource_apply_duration_seconds_bucket
+      - resource_apply_duration_seconds_sum
+      - resource_apply_duration_seconds_count
+      - resource_delete_total
+      - resource_delete_duration_seconds_bucket
+      - resource_delete_duration_seconds_sum
+      - resource_delete_duration_seconds_count
+
+  - name: Envoy proxies (PodMonitor, job envoy-gateway-system/envoy-proxy, /stats/prometheus)
+    note: >-
+      exactly the proxies' `keep` list: the families read by envoyproxy/gateway
+      v1.9.2's envoy-proxy-global.json and envoy-clusters.json, plus
+      envoy_http_downstream_rq_xx (the Fleet overview's 5xx tile).
+    names:
+      - envoy_server_live
+      - envoy_server_uptime
+      - envoy_server_memory_allocated
+      - envoy_server_memory_heap_size
+      - envoy_http_downstream_rq_total
+      - envoy_http_downstream_rq_xx
+      - envoy_http_downstream_rq_time_bucket
+      - envoy_http_downstream_cx_total
+      - envoy_http_downstream_cx_rx_bytes_total
+      - envoy_http_downstream_cx_tx_bytes_total
+      - envoy_listener_downstream_cx_active
+      - envoy_listener_ssl_certificate_expiration_unix_time_seconds
+      - envoy_tcp_downstream_cx_total
+      - envoy_tcp_downstream_cx_rx_bytes_total
+      - envoy_tcp_downstream_cx_tx_bytes_total
+      - envoy_cluster_upstream_rq_total
+      - envoy_cluster_upstream_rq_xx
+      - envoy_cluster_upstream_rq_time_bucket
+      - envoy_cluster_upstream_cx_total
+      - envoy_cluster_upstream_cx_active
+      - envoy_cluster_upstream_cx_rx_bytes_total
+      - envoy_cluster_upstream_cx_tx_bytes_total
+      - envoy_cluster_membership_total
+      - envoy_cluster_membership_healthy
+      - envoy_cluster_membership_degraded
+      - envoy_cluster_membership_excluded
+      - envoy_cluster_outlier_detection_ejections_active
+
 # Families that do NOT exist yet and must not be queried by a shipped
 # dashboard. Not read by the code; here so a reviewer sees the boundary.
 absent:
   - node-exporter (node_*)
-  - ArgoCD (argocd_*)
-  - cert-manager (certmanager_*)
-  - CloudNativePG (cnpg_*)
-  - NATS (nats_*, gnatsd_*)
-  - Envoy Gateway / Envoy (envoy_*)
+  - CloudNativePG instance metrics (cnpg_*, the :9187 exporter on each Postgres pod; only the operator's controller-runtime series are scraped)
+  - NATS exporter families other than varz and jsz (gnatsd_connz_*, gnatsd_routez_*, gnatsd_subz_* are scraped but no dashboard reads them; gnatsd_healthz_* needs -healthz, not enabled)
+  - Envoy families outside the proxies' scrape keep list
   - Karpenter (karpenter_*)
+  - Kargo's own promotion and stage series (kargo_promotions_*, kargo_stages_by_ready_reason: v1.12 and later)
   - kube-state-metrics kinds outside the 11 collectors (kube_configmap_*, kube_secret_*, kube_service_*, kube_endpoint_*, kube_ingress_*, kube_networkpolicy_*)

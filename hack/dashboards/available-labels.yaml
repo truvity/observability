@@ -53,6 +53,7 @@ scrapeLabels:
 optionalSources:
   node-exporter: no install runs node-exporter yet, so every node_* series is absent
   alertmanager: Alertmanager is optional; its job and metrics exist only where it is enabled
+  cnpg-instance-metrics: the CloudNativePG instance exporter (:9187 on each Postgres pod) is not scraped yet, so every cnpg_* series is absent; the operator's own series are not
 
 # The two node jobs (metrics.scrape.kubelet, .cadvisor) are inline scrape
 # configs: `job` and `metrics_path` are fixed by the chart. BOTH store
@@ -107,3 +108,62 @@ jobs:
     names: [up, ALERTS, ALERTS_FOR_STATE]
     prefixes: [scrape_, vm_, vmagent_, vmalert_, vmauth_, vl_, vt_, vlagent_, operator_, controller_runtime_, workqueue_, otelcol_, go_, process_]
     labels: [job, instance, endpoint, service, k8s_cluster_name, k8s_namespace_name, deployment_environment_name, app_kubernetes_io_instance]
+
+  # -- Platform components (0.13.0). Job names follow the VictoriaMetrics
+  # operator's converters (vmscrapes/servicescrape.go, podscrape.go): a
+  # ServiceMonitor's job is its Service name; a PodMonitor's job is
+  # `<namespace>/<PodMonitor name>`, set as a target label before the scrape
+  # class's rules run. The class then adds the tenancy labels and, when the
+  # pod has it, `app_kubernetes_io_instance`. The operator also sets
+  # `namespace`, `pod`, `container`, `instance`, `endpoint` and `service`.
+  #
+  # `overrideHonorLabels` forces honor_labels: false, so a series' own label
+  # that collides with one of those (ArgoCD's and cert-manager's `namespace`,
+  # the Certificate's or Application's) survives only as `exported_<name>`.
+  - name: ArgoCD
+    names: [up, argocd_app_info, argocd_app_sync_total, argocd_app_reconcile_count, argocd_app_reconcile_bucket, argocd_app_k8s_request_total, argocd_cluster_info, argocd_cluster_api_resources, argocd_cluster_api_resource_objects, argocd_cluster_events_total, argocd_kubectl_exec_pending, argocd_git_request_total, argocd_git_request_duration_seconds_bucket, argocd_redis_request_total, grpc_server_handled_total]
+    prefixes: [go_, process_, workqueue_]
+    labels: &platformLabels [job, instance, endpoint, service, k8s_cluster_name, k8s_namespace_name, deployment_environment_name, app_kubernetes_io_instance]
+    values:
+      job: [argocd-application-controller-metrics, argocd-server-metrics, argocd-repo-server-metrics]
+
+  - name: cert-manager
+    names: [up, certmanager_certificate_ready_status, certmanager_certificate_expiration_timestamp_seconds, certmanager_controller_sync_call_count, certmanager_http_acme_client_request_count, certmanager_http_acme_client_request_duration_seconds_sum, certmanager_http_acme_client_request_duration_seconds_count]
+    prefixes: [go_, process_]
+    labels: *platformLabels
+    values:
+      job: [cert-manager, cainjector, webhook]
+
+  - name: CloudNativePG operator
+    names: [up, controller_runtime_reconcile_total, controller_runtime_reconcile_time_seconds_bucket]
+    prefixes: [go_, process_, workqueue_]
+    labels: *platformLabels
+    values:
+      job: [cnpg-system/cnpg-cloudnative-pg]
+
+  - name: NATS
+    names: [up, gnatsd_varz_cpu, gnatsd_varz_mem, gnatsd_varz_in_bytes, gnatsd_varz_out_bytes, gnatsd_varz_in_msgs, gnatsd_varz_out_msgs, gnatsd_varz_connections, gnatsd_varz_subscriptions, gnatsd_varz_slow_consumers, gnatsd_varz_jetstream_stats_storage, gnatsd_varz_jetstream_stats_memory, gnatsd_varz_jetstream_config_max_storage, gnatsd_varz_jetstream_config_max_memory, jetstream_server_jetstream_disabled, jetstream_server_total_streams, jetstream_server_total_consumers, jetstream_stream_total_messages, jetstream_stream_total_bytes, jetstream_stream_last_seq, jetstream_consumer_delivered_consumer_seq, jetstream_consumer_num_pending, jetstream_consumer_num_ack_pending]
+    labels: *platformLabels
+    values:
+      job: [nats/nats]
+
+  - name: Envoy Gateway controller
+    names: [up, watchable_depth, watchable_panics_recovered_total, watchable_subscribe_total, watchable_subscribe_duration_seconds_bucket, watchable_subscribe_duration_seconds_sum, status_update_total, status_update_duration_seconds_bucket, status_update_duration_seconds_sum, status_update_duration_seconds_count, xds_snapshot_create_total, xds_snapshot_update_total, xds_stream_duration_seconds_bucket, xds_stream_duration_seconds_sum, resource_apply_total, resource_apply_duration_seconds_bucket, resource_apply_duration_seconds_sum, resource_apply_duration_seconds_count, resource_delete_total, resource_delete_duration_seconds_bucket, resource_delete_duration_seconds_sum, resource_delete_duration_seconds_count]
+    prefixes: [go_, process_, workqueue_, controller_runtime_]
+    labels: *platformLabels
+    values:
+      job: [envoy-gateway-system/envoy-gateway]
+
+  - name: Envoy proxies
+    prefixes: [envoy_]
+    names: [up]
+    labels: *platformLabels
+    values:
+      job: [envoy-gateway-system/envoy-proxy]
+
+  - name: Kargo controller
+    names: [up]
+    prefixes: [go_, process_, workqueue_, controller_runtime_]
+    labels: *platformLabels
+    values:
+      job: [kargo-controller-metrics]

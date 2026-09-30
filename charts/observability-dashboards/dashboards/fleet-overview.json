@@ -1,6 +1,6 @@
 {
   "title": "Fleet overview ($cluster)",
-  "description": "Is anything wrong, and where? Firing alerts, then one row of health tiles per cluster. Every tile opens the drill-down view for that cluster and namespace.",
+  "description": "Is anything wrong, and where? Firing alerts, then one row of health tiles per cluster and one line of tiles per platform component. Every tile opens the drill-down view for that cluster and namespace, or the component's dashboard.",
   "editable": false,
   "graphTooltip": 1,
   "refresh": "1m",
@@ -1695,6 +1695,1054 @@
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "Platform components, $cluster",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": [],
+      "repeat": "cluster"
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "ArgoCD apps not Synced",
+      "description": "Applications whose sync status is anything but Synced: Git and the cluster disagree. Open the ArgoCD dashboard, then the application, and read the sync result. n/a where ArgoCD is not scraped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(argocd_app_info{k8s_cluster_name=~\"$cluster\",sync_status!=\"Synced\"})) or (0 * count(argocd_app_info{k8s_cluster_name=~\"$cluster\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the ArgoCD dashboard",
+              "url": "/d/truvity-obs-argocd?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "ArgoCD apps not Healthy",
+      "description": "Applications whose health is anything but Healthy (Progressing, Degraded, Missing, Suspended, Unknown). A few Progressing during a rollout is normal; one that stays is not. n/a where ArgoCD is not scraped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(argocd_app_info{k8s_cluster_name=~\"$cluster\",health_status!=\"Healthy\"})) or (0 * count(argocd_app_info{k8s_cluster_name=~\"$cluster\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the ArgoCD dashboard",
+              "url": "/d/truvity-obs-argocd?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "ArgoCD targets down",
+      "description": "ArgoCD metrics endpoints (application controller, API server, repo server) that stopped answering. Any down leaves that part of ArgoCD unobserved, and the two tiles beside it stale.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(up{k8s_cluster_name=~\"$cluster\",job=~\"argocd-.*-metrics\"} == 0)) or (0 * count(up{k8s_cluster_name=~\"$cluster\",job=~\"argocd-.*-metrics\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the ArgoCD dashboard",
+              "url": "/d/truvity-obs-argocd?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Certificates expiring in 14 days",
+      "description": "Certificates that expire within 14 days (certificates with no expiry yet, still being issued, are not counted). One that has not renewed means its issuer or challenge is failing: open the cert-manager dashboard and read the Ready condition. n/a where cert-manager is not scraped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count((certmanager_certificate_expiration_timestamp_seconds{k8s_cluster_name=~\"$cluster\"} > 0) and (certmanager_certificate_expiration_timestamp_seconds{k8s_cluster_name=~\"$cluster\"} - time() < 1209600))) or (0 * count(certmanager_certificate_expiration_timestamp_seconds{k8s_cluster_name=~\"$cluster\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the cert-manager dashboard",
+              "url": "/d/truvity-obs-cert-manager?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Certificates not Ready",
+      "description": "Certificates whose Ready condition is false or unknown. A new certificate is not Ready until issued; one that stays so is stuck. Open the cert-manager dashboard's Certificates table.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 8,
+        "y": 29
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(certmanager_certificate_ready_status{k8s_cluster_name=~\"$cluster\",condition!=\"True\"} == 1)) or (0 * count(certmanager_certificate_ready_status{k8s_cluster_name=~\"$cluster\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the cert-manager dashboard",
+              "url": "/d/truvity-obs-cert-manager?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "stat",
+      "title": "cert-manager targets down",
+      "description": "cert-manager metrics endpoints (controller, cainjector) that stopped answering. Certificates are not being renewed while the controller is down.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(up{k8s_cluster_name=~\"$cluster\",job=~\"cert-manager|cainjector\"} == 0)) or (0 * count(up{k8s_cluster_name=~\"$cluster\",job=~\"cert-manager|cainjector\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the cert-manager dashboard",
+              "url": "/d/truvity-obs-cert-manager?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "NATS servers down",
+      "description": "NATS metrics endpoints that stopped answering: the server or its exporter is down. Publishers and consumers on that server are affected. n/a where NATS is not scraped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(up{k8s_cluster_name=~\"$cluster\",job=\"nats/nats\"} == 0)) or (0 * count(up{k8s_cluster_name=~\"$cluster\",job=\"nats/nats\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the NATS JetStream dashboard",
+              "url": "/d/truvity-obs-nats-jetstream?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "JetStream disabled",
+      "description": "NATS servers reporting JetStream as disabled. Streams and durable consumers need it: a server that should have it and does not is misconfigured or restarted without its store.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(jetstream_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"} == 1)) or (0 * count(jetstream_server_jetstream_disabled{k8s_cluster_name=~\"$cluster\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the NATS JetStream dashboard",
+              "url": "/d/truvity-obs-nats-jetstream?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "NATS slow consumers (1h)",
+      "description": "Slow consumers the servers reported in the last hour: clients that could not keep up and were disconnected or lost messages. Find the client and raise its limit or speed it up.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(sum(increase(gnatsd_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}[1h]))) or (0 * count(gnatsd_varz_slow_consumers{k8s_cluster_name=~\"$cluster\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the NATS JetStream dashboard",
+              "url": "/d/truvity-obs-nats-jetstream?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Envoy 5xx per second",
+      "description": "Requests per second the proxies answered with a 5xx, measured at the client side. Near zero is healthy; open the Envoy proxy dashboard, then the Envoy clusters dashboard to find the failing backend. n/a where the proxies are not scraped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 0,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(sum(rate(envoy_http_downstream_rq_xx{k8s_cluster_name=~\"$cluster\",envoy_response_code_class=\"5\"}[5m]))) or (0 * count(envoy_http_downstream_rq_total{k8s_cluster_name=~\"$cluster\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "n/a",
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the Envoy proxy dashboard",
+              "url": "/d/truvity-obs-envoy-proxy?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Envoy 5xx share of requests",
+      "description": "Share of client requests the proxies answered with a 5xx, over five minutes. Above 1% is worth a look; above 5% is an outage for some route.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 8,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(100 * sum(rate(envoy_http_downstream_rq_xx{k8s_cluster_name=~\"$cluster\",envoy_response_code_class=\"5\"}[5m])) / (sum(rate(envoy_http_downstream_rq_total{k8s_cluster_name=~\"$cluster\"}[5m])) > 0)) or (0 * count(envoy_http_downstream_rq_total{k8s_cluster_name=~\"$cluster\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "n/a",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the Envoy proxy dashboard",
+              "url": "/d/truvity-obs-envoy-proxy?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Envoy proxies down",
+      "description": "Envoy proxy metrics endpoints that stopped answering. A proxy pod that is down serves no traffic; check the Gateway's pods.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 16,
+        "y": 35
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(up{k8s_cluster_name=~\"$cluster\",job=\"envoy-gateway-system/envoy-proxy\"} == 0)) or (0 * count(up{k8s_cluster_name=~\"$cluster\",job=\"envoy-gateway-system/envoy-proxy\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the Envoy proxy dashboard",
+              "url": "/d/truvity-obs-envoy-proxy?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "CNPG operator reconcile errors (1h)",
+      "description": "Reconciles that ended in an error in the last hour, across the CloudNativePG operator's control loops. A few are retried conflicts; a steady count means a Postgres cluster, backup or pooler cannot converge. n/a where the operator is not scraped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(sum(increase(controller_runtime_reconcile_total{k8s_cluster_name=~\"$cluster\",job=\"cnpg-system/cnpg-cloudnative-pg\",result=\"error\"}[1h]))) or (0 * count(controller_runtime_reconcile_total{k8s_cluster_name=~\"$cluster\",job=\"cnpg-system/cnpg-cloudnative-pg\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the CloudNativePG operator dashboard",
+              "url": "/d/truvity-obs-cnpg-operator?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "CNPG operator down",
+      "description": "CloudNativePG operator metrics endpoints that stopped answering. With the operator down no Postgres cluster is reconciled: failovers and backups are not driven.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(count(up{k8s_cluster_name=~\"$cluster\",job=\"cnpg-system/cnpg-cloudnative-pg\"} == 0)) or (0 * count(up{k8s_cluster_name=~\"$cluster\",job=\"cnpg-system/cnpg-cloudnative-pg\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open the CloudNativePG operator dashboard",
+              "url": "/d/truvity-obs-cnpg-operator?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         }
       }
     }
