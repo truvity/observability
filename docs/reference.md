@@ -200,7 +200,7 @@ values.yaml, listed here, and enforced rather than remembered.
 | `ha` | bool | `false` | Zone-redundant mode. Accepted today, behaviour in a later release. **Refused with fewer than two `zones`.** |
 | `zones` | list | `[]` | Zone names, at least two when `ha` is true. Labels, not addresses. |
 | `interval` | duration | `30s` | The one interval: both vmalerts' evaluation interval, and — through its mirror — the metrics store's `-dedup.minScrapeInterval`. Mirror: `victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval']`. |
-| `resources.policy` | `burstable`/`guaranteed` | `burstable` | 0.11.0; default `burstable` since 0.20.0. How every component's `resources` are judged (vmauth, both vmalerts, Alertmanager, the operator, the three stores, Grafana, the backup jobs). `burstable`: both requests required; `requests.cpu` may be fractional and below the limit; `limits.cpu` may be absent, and a set one is still whole; memory stays request == limit with a limit required. `guaranteed`: requests equal limits, whole-number CPU; the component defaults carry no CPU limit, so choosing it means writing each component's own `resources`. It changes what is accepted, not what is rendered. See docs/safety.md, "Resources", and "The single-operator estate" below. |
+| `resources.policy` | `burstable`/`guaranteed` | `burstable` | 0.11.0; `burstable` is the default. How every component's `resources` are judged (vmauth, both vmalerts, Alertmanager, the operator, the three stores, Grafana, the backup jobs). `burstable`: both requests required; `requests.cpu` may be fractional and below the limit; `limits.cpu` may be absent, and a set one is still whole; memory stays request == limit with a limit required. `guaranteed`: requests equal limits, whole-number CPU; the component defaults carry no CPU limit, so choosing it means writing each component's own `resources`. It changes what is accepted, not what is rendered. See docs/safety.md, "Resources", and "The single-operator estate" below. |
 
 ### `vmauth` — the authorising proxy
 
@@ -908,7 +908,7 @@ sets all of them at once and its golden is the whole profile.
 | Datasources through the proxy | `vmauth.enabled: false` + basic-auth datasources | through the proxy |
 | Unknown clients blocked | `networkPolicy.clientsFrom` | `[]` |
 
-The defaults carry no CPU limit since 0.20.0, so there is nothing to
+The defaults carry no CPU limit, so there is nothing to
 remove; a values file written earlier that says `limits: {cpu: null}` on
 vmauth, a vmalert or Alertmanager still means "no limit". One Helm trap
 if you add a limit and want it gone again: a values file MERGES into this

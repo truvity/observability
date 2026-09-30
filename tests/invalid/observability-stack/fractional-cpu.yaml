@@ -1,5 +1,5 @@
 # expect: size their thread pool from the cgroup CPU quota and round it DOWN
-# The guaranteed rule, now chosen rather than the default (v0.20.0).
+# The guaranteed rule, now chosen rather than the default.
 resources:
   policy: guaranteed
 tenancy:

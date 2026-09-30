@@ -1,5 +1,5 @@
 # expect: They must be equal, for the same reason the CPUs must
-# The guaranteed rule, now chosen rather than the default (v0.20.0).
+# The guaranteed rule, now chosen rather than the default.
 resources:
   policy: guaranteed
 tenancy:
