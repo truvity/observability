@@ -25,6 +25,7 @@ instead.
 {{- include "observability-emitters.validate.metrics" . -}}
 {{- include "observability-emitters.validate.logs" . -}}
 {{- include "observability-emitters.validate.kubeStateMetrics" . -}}
+{{- include "observability-emitters.validate.nodeExporter" . -}}
 {{- include "observability-emitters.validate.otlp" . -}}
 {{- include "observability-emitters.validate.licence" . -}}
 {{- end -}}
@@ -624,6 +625,55 @@ and a stream field is a cardinality decision.
 {{- end -}}
 {{- if lt (int .Values.otlp.replicaCount) 1 -}}
 {{- fail "observability-emitters: `otlp.replicaCount` is below 1. An enabled gateway with no replica is an OTLP endpoint that refuses every connection, and an SDK that cannot export drops spans silently after its own queue fills." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+node-exporter's refusals.
+
+Every one is a way for the DaemonSet to be Ready, scraped and WRONG or
+silent, which is the failure this whole file exists for:
+
+  - no metrics agent, or no ServiceMonitor: nothing reads it;
+  - the pod's own network or PID namespace: `node_network_*` and
+    `node_processes_*` then describe a pod, not a node, and every series
+    still carries the node's name;
+  - a `relabelings` list that lost `job`, `instance` or `node`: the
+    dashboard and the k8s-stack's `node.rules` select on
+    `job="node-exporter"` and group on `instance` and `node`, so the rules
+    record nothing and the dashboard's pickers are empty, with the series
+    sitting in the store.
+*/}}
+{{- define "observability-emitters.validate.nodeExporter" -}}
+{{- if .Values.nodeExporter.enabled -}}
+{{- $ne := index .Values "prometheus-node-exporter" -}}
+{{- if not .Values.metrics.enabled -}}
+{{- fail "observability-emitters: `nodeExporter.enabled` is true but `metrics.enabled` is false. node-exporter is scraped by this chart's OWN metrics agent, through the ServiceMonitor every scrape object on the cluster is — with the agent off, nothing scrapes it at all. The pods run, stay Ready and answer every /metrics request; nothing ever reads one. Enable `metrics`, or leave `nodeExporter` off." -}}
+{{- end -}}
+{{- $mon := ($ne.prometheus).monitor | default dict -}}
+{{- if not $mon.enabled -}}
+{{- fail "observability-emitters: `prometheus-node-exporter.prometheus.monitor.enabled` is false, so no ServiceMonitor is rendered for node-exporter. A component with no scrape object looks exactly like a component with nothing wrong: the DaemonSet is Ready everywhere and no node series ever reaches a store." -}}
+{{- end -}}
+{{- if not $ne.hostNetwork -}}
+{{- fail "observability-emitters: `prometheus-node-exporter.hostNetwork` is false. node-exporter would then read the POD's network namespace: `node_network_*` reports the pod's one virtual interface, and every series is still labelled with the node's name. Leave it true." -}}
+{{- end -}}
+{{- if not $ne.hostPID -}}
+{{- fail "observability-emitters: `prometheus-node-exporter.hostPID` is false. node-exporter would then read the POD's PID namespace, so `node_processes_*` and `node_procs_*` describe a pod of two processes while carrying the node's name. Leave it true." -}}
+{{- end -}}
+{{- if not (($ne.hostRootFsMount).enabled) -}}
+{{- fail "observability-emitters: `prometheus-node-exporter.hostRootFsMount.enabled` is false. Without the host's root filesystem the filesystem collector reads the container's own mounts: `node_filesystem_*` describes an overlay, not the node's disks, and the disk-full panels and alerts read healthy while the node fills. Leave it true." -}}
+{{- end -}}
+{{- $set := dict -}}
+{{- range $r := ($mon.relabelings | default list) -}}
+{{- if $r.targetLabel -}}
+{{- $_ := set $set $r.targetLabel true -}}
+{{- end -}}
+{{- end -}}
+{{- range $want := list "job" "instance" "node" -}}
+{{- if not (hasKey $set $want) -}}
+{{- fail (printf "observability-emitters: `prometheus-node-exporter.prometheus.monitor.relabelings` has no step setting `%s`. The node-exporter dashboard and the k8s-stack's `node.rules` and `kube-prometheus-node-recording.rules` select on `job=\"node-exporter\"` and group on `instance` and `node`, so without it the rules record nothing and the dashboard's pickers are empty, with the series sitting in the store. The default list sets all three; keep them when you replace it." $want) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

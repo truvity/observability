@@ -29,7 +29,7 @@ import fleet_overview  # noqa: E402  (hack/dashboards/fleet_overview.py)
 import kargo as kargo_dashboard  # noqa: E402  (hack/dashboards/kargo.py)
 import platform_extras  # noqa: E402  (hack/dashboards/platform_extras.py)
 import platform_adapt  # noqa: E402  (hack/dashboards/platform_adapt.py)
-from descriptions import DESCRIPTIONS  # noqa: E402
+from descriptions import DESCRIPTIONS, NODE_DESCRIPTIONS  # noqa: E402
 
 AVAILABLE = ROOT / "hack" / "dashboards" / "available-metrics.yaml"
 SOURCES = ROOT / "hack" / "dashboards" / "sources.yaml"
@@ -357,11 +357,19 @@ _METRIC_RE = re.compile(
 )
 
 
-def metric_available(name: str) -> bool:
+def metric_available(name: str, optional=()) -> bool:
+    """Whether a store holds `name`. A source marked `onlyWith: <x>` in
+    available-metrics.yaml (node-exporter, which a cluster runs only when
+    `nodeExporter.enabled`) counts only when `<x>` is in `optional`: a
+    dashboard that `requires:` it in sources.yaml passes that, and every
+    other dashboard is held to the default install, where it is absent.
+    """
     global _SOURCES
     if _SOURCES is None:
         _SOURCES = _load_available()
     for src in _SOURCES:
+        if src.get("onlyWith") and src["onlyWith"] not in optional:
+            continue
         if name in src.get("deny", []):
             continue
         if name.endswith(tuple(src.get("denySuffixes", []))) and name not in src.get("keep", []):
@@ -377,11 +385,11 @@ def metrics_in(expr: str):
     return _METRIC_RE.findall(expr)
 
 
-def expr_available(expr: str) -> bool:
-    return all(metric_available(m) for m in metrics_in(expr))
+def expr_available(expr: str, optional=()) -> bool:
+    return all(metric_available(m, optional) for m in metrics_in(expr))
 
 
-def _strip_absent(dashboard, name: str) -> None:
+def _strip_absent(dashboard, name: str, optional=()) -> None:
     """Drop every target that reads a metric the store does not hold, then
     every panel left with no target. A panel that can only ever be empty is
     not shipped; each drop is printed so the review sees it.
@@ -394,8 +402,8 @@ def _strip_absent(dashboard, name: str) -> None:
         kept = []
         for t in p.get("targets") or []:
             e = t.get("expr", "")
-            if e and not expr_available(e):
-                missing = sorted({m for m in metrics_in(e) if not metric_available(m)})
+            if e and not expr_available(e, optional):
+                missing = sorted({m for m in metrics_in(e) if not metric_available(m, optional)})
                 print("  %s: drop query of %r (absent: %s)" % (name, p.get("title"), ", ".join(missing)))
                 continue
             kept.append(t)
@@ -495,7 +503,7 @@ def _strip_job(s: str) -> str:
     return s
 
 
-def adapt_k8s_views(dashboard, name: str) -> None:
+def adapt_k8s_views(dashboard, name: str, optional=()) -> None:
     """Adapt one dotdc/grafana-dashboards-kubernetes view to this store:
     its bare `cluster` label becomes `k8s_cluster_name`; queries and
     panels that read a metric the store does not hold are replaced (from
@@ -516,7 +524,10 @@ def adapt_k8s_views(dashboard, name: str) -> None:
 
     for p in dashboard["panels"]:
         title = p.get("title")
-        if title in REPLACE_QUERIES and p.get("targets"):
+        # The cluster-level replacements answer node_* panels from cadvisor
+        # for a store with no node-exporter; a dashboard that requires
+        # node-exporter keeps its own queries.
+        if title in REPLACE_QUERIES and p.get("targets") and not optional:
             expr, legend = REPLACE_QUERIES[title]
             p["targets"] = p["targets"][:1]
             p["targets"][0]["expr"] = expr
@@ -532,13 +543,15 @@ def adapt_k8s_views(dashboard, name: str) -> None:
             if isinstance(e, str) and e and names_a_metric(e) and not already_filtered(e):
                 t["expr"] = inject_cluster_filter(e)
 
-    _strip_absent(dashboard, name)
+    _strip_absent(dashboard, name, optional)
     _relayout(dashboard)
 
     for p in dashboard["panels"]:
         if p.get("type") == "row":
             continue
         title = p.get("title", "")
+        if not p.get("description") and optional and title in NODE_DESCRIPTIONS:
+            p["description"] = NODE_DESCRIPTIONS[title]
         if not p.get("description"):
             if title not in DESCRIPTIONS:
                 raise SystemExit("%s: panel %r has no description and none in hack/dashboards/descriptions.py" % (name, title))
@@ -582,7 +595,7 @@ def build_one(spec: dict, bundles: dict) -> None:
                 v["current"] = {"selected": True, "text": DATASOURCE_TOKEN, "value": DATASOURCE_TOKEN}
     elif spec.get("adapt") == "k8s-views":
         rename_datasource_var(dashboard)
-        adapt_k8s_views(dashboard, name)
+        adapt_k8s_views(dashboard, name, tuple(spec.get("requires", [])))
     elif spec.get("adapt") == "platform":
         REPORTS[name] = platform_adapt.adapt(dashboard, spec, metric_available, platform_extras.extras)
     elif spec.get("preRenamed"):

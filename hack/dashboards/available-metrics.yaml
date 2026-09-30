@@ -12,13 +12,19 @@
 #     `queryCheck` in hack/dashboards/sources.yaml that queries a metric not
 #     listed here.
 #
-# So a dashboard that needs node-exporter, the CloudNativePG instance
-# metrics, Karpenter or any other series a scrape does not produce FAILS the
-# test until the metric source ships AND its family is added here, in the same
-# change. (ArgoCD, cert-manager, the CloudNativePG operator, NATS and Envoy
+# So a dashboard that needs the CloudNativePG instance metrics, Karpenter or
+# any other series a scrape does not produce FAILS the test until the metric
+# source ships AND its family is added here, in the same change. (ArgoCD, cert-manager, the CloudNativePG operator, NATS and Envoy
 # Gateway are scraped since 0.13.0 and listed below by exact name.)
 # Do not add a family speculatively: an entry here is a claim that a store
 # holds the series.
+#
+# A source marked `onlyWith: <name>` is held only where that optional
+# component runs (node-exporter, `nodeExporter.enabled`, off by default). It
+# counts for a dashboard whose catalog entry says `requires: [<name>]` (see
+# hack/dashboards/sources.yaml) and for nobody else: a dashboard that does
+# not declare the dependency is still held to the default install, where the
+# series are absent, so a node_* query in it fails.
 #
 # Every series also carries `k8s_cluster_name`; many clusters share a store.
 #
@@ -106,6 +112,50 @@ sources:
       - controller_runtime_
       - workqueue_
       - otelcol_
+
+  - name: node-exporter (charts/observability-emitters, nodeExporter.enabled)
+    onlyWith: node-exporter
+    note: >-
+      only where nodeExporter.enabled. The families of the collectors that
+      series-exist on every Linux node: cpu, meminfo, loadavg, stat, vmstat,
+      diskstats, filesystem, netdev, netclass, netstat, sockstat, tcpstat,
+      udp_queues, softnet, arp, filefd, entropy, processes, time, timex,
+      uname. NOT claimed although the collector runs, because the series
+      exist only on some kernels or hardware: hwmon (sensors), pressure (PSI
+      kernels), conntrack (nf_conntrack loaded), schedstat, cpu throttles,
+      cpu frequency scaling. NOT collected at all: interrupts, systemd,
+      cpufreq, thermal_zone, power_supply, cooling_device, textfile.
+    names:
+      - node_boot_time_seconds
+      - node_context_switches_total
+      - node_forks_total
+      - node_intr_total
+      - node_cpu_seconds_total
+      - node_cpu_guest_seconds_total
+      - node_load1
+      - node_load5
+      - node_load15
+      - node_time_seconds
+      - node_uname_info
+      - node_arp_entries
+      - node_tcp_connection_states
+      - node_exporter_build_info
+    prefixes:
+      - node_memory_
+      - node_disk_
+      - node_filesystem_
+      - node_network_
+      - node_netstat_
+      - node_sockstat_
+      - node_vmstat_
+      - node_softnet_
+      - node_filefd_
+      - node_entropy_
+      - node_procs_
+      - node_processes_
+      - node_timex_
+      - node_udp_queues
+      - node_scrape_collector_
 
   - name: vmalert write-back
     names: [ALERTS, ALERTS_FOR_STATE]
@@ -269,7 +319,7 @@ sources:
 # Families that do NOT exist yet and must not be queried by a shipped
 # dashboard. Not read by the code; here so a reviewer sees the boundary.
 absent:
-  - node-exporter (node_*)
+  - node-exporter (node_*) on an install that leaves `nodeExporter.enabled` off, and, even where it is on, the families its source above does not claim
   - CloudNativePG instance metrics (cnpg_*, the :9187 exporter on each Postgres pod; only the operator's controller-runtime series are scraped)
   - NATS exporter families other than varz and jsz (nats_connz_*, nats_routez_*, nats_subz_* are scraped but no dashboard reads them; nats_healthz_* needs -healthz, not enabled)
   - Envoy families outside the proxies' scrape keep list

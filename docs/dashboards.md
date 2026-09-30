@@ -101,18 +101,30 @@ Rules they follow, on top of the six above:
   and cadvisor, less the 0.9.1 churn drop), kube-state-metrics with its
   11-collector allow-list (and the Kargo series only where that preset is
   on), the stack's own components, the platform components' scrapes (below),
-  `ALERTS` and OTLP. There is no
-  node-exporter. `hack/dashboards/available-metrics.yaml` is that list;
+  `ALERTS` and OTLP; and node-exporter, an OPTIONAL source that exists only
+  where `charts/observability-emitters` runs it (`nodeExporter.enabled`, off
+  by default). `hack/dashboards/available-metrics.yaml` is that list;
   `tests/dashboard_queries_test.go` fails a dashboard flagged `queryCheck`
   in `hack/dashboards/sources.yaml` that reads anything else, and parses
   every query on the pinned VictoriaMetrics. A panel that needs a metric
   the list lacks is dropped from an adapted dashboard, never shipped
   empty, and a new dashboard for a missing source waits for the source.
+  An optional source is marked `onlyWith:` in that list and counts only for
+  a dashboard whose entry in `sources.yaml` says `requires: [node-exporter]`
+  (`node-exporter-full`, `k8s-views-nodes`); every other dashboard is still
+  held to the default install, where every `node_*` series is absent, so a
+  node query in a dashboard that does not declare it fails the test. The
+  label check (`available-labels.yaml`) does the same: node-exporter's job
+  is judged, `job="node-exporter"`, `instance` and `node` the node's name,
+  and no `k8s_namespace_name` (a node belongs to no namespace), for a
+  dashboard that requires it.
 - **Adapted, not forked.** The Kubernetes views come from
   `dotdc/grafana-dashboards-kubernetes` (Apache-2.0), pinned by release
   in `hack/dashboards/sources.yaml`, with source and licence recorded in
   `dashboards/catalog.yaml`, and rewritten by `hack/dashboards.py`.
-  `k8s-views-nodes` is deferred until node-exporter ships.
+  `k8s-views-nodes` (0.15.0) requires node-exporter, so it is **off by
+  default** and its panels on families node-exporter does not claim on every
+  kernel (conntrack, CPU throttling) are dropped at import.
 - **The home page** is the `home` value; see `values.yaml` for the two ways
   to point Grafana at it.
 

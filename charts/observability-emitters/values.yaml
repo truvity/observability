@@ -403,6 +403,36 @@ kubeStateMetrics:
       enabled: false
 
 ###############################################################################
+# node-exporter: the node's own hardware and kernel metrics, as upstream's
+# chart.
+#
+# OFF BY DEFAULT, for two reasons. It is a DaemonSet of privileged-looking
+# pods (host network, host PID, the host's root filesystem read-only), which
+# is something an estate opts into, and a cluster may already run one — a
+# second install exports every `node_*` series twice, and every rate() or
+# sum() over them is silently double, the same failure `kubeStateMetrics`
+# above and charts/observability-stack's disabled copy exist to avoid.
+#
+# ONE PER NODE, here rather than in charts/observability-stack for the log
+# agent's reason: it is a node agent, it has to exist on every cluster this
+# chart is installed on whether or not that cluster hosts a store, and it
+# is scraped by this chart's own metrics agent.
+#
+# What turning it on gives: `job="node-exporter"` (the kube-prometheus
+# convention the node-exporter dashboard and the k8s-stack's `node.rules`
+# and `kube-prometheus-node-recording.rules` select on), `instance` and
+# `node` both the node's name, and the cluster and tier stamped like every
+# other series. The node series carry no `k8s_namespace_name`, the same as
+# the kubelet's and cAdvisor's node-level series: a node belongs to no
+# namespace, so only a grant on all namespaces of this cluster reads them.
+# The series do keep the `namespace` and `pod` of the node-exporter pod
+# itself, because `node.rules` joins on them to find each series' node.
+nodeExporter:
+  # -- Off by default; see above. Everything else is the vendor's own values
+  # shape under `prometheus-node-exporter` at the bottom of this file.
+  enabled: false
+
+###############################################################################
 # The OpenTelemetry gateway.
 #
 # Everything our own software emits arrives here over OTLP — traces, and
@@ -936,3 +966,192 @@ kube-state-metrics:
             sourceLabels: [namespace]
             regex: (.+)
             targetLabel: k8s_namespace_name
+
+# -- prometheus-node-exporter: upstream's own values shape, read back by
+# this chart's refusals the same way `kube-state-metrics` above is. Only
+# rendered while `nodeExporter.enabled` is true.
+#
+# Pinned to the same chart version the vendored k8s-stack carries and
+# leaves disabled (see Chart.yaml).
+prometheus-node-exporter:
+  # -- A node agent must see the node, not its own pod: the host's network
+  # namespace (otherwise `node_network_*` describes the pod's one veth), the
+  # host's PID namespace (`node_processes_*`, `node_procs_*`) and, below,
+  # the host's `/proc`, `/sys` and root filesystem read-only. Upstream's
+  # defaults; written out here because they are refused when changed (see
+  # `observability-emitters.validate.nodeExporter`): a pod with either off
+  # stays Ready, is scraped and reports a different machine's numbers.
+  hostNetwork: true
+  hostPID: true
+  hostRootFsMount:
+    enabled: true
+    mountPropagation: HostToContainer
+  service:
+    # -- Listen on the node's own address, not on every interface of a pod
+    # that shares the host's network: with `hostNetwork` the exporter's
+    # port would otherwise be open on every interface the node has,
+    # including any that face outward. The scrape goes to the node's
+    # address (the Endpoints of the Service are the nodes), which is the
+    # one this binds.
+    listenOnAllInterfaces: false
+  # -- Same reasoning as the log agent's, and the same defaults: a DaemonSet
+  # pod cannot go elsewhere, so a node too full for it is a node with no
+  # metrics and nothing saying so. `system-node-critical` lets the
+  # scheduler preempt to make room.
+  priorityClassName: system-node-critical
+  # -- `operator: Exists` tolerates every taint: a node agent that stays off
+  # tainted pools collects from whichever pool happens to carry no taint
+  # today. Upstream tolerates only NoSchedule, which leaves out NoExecute.
+  tolerations:
+    - operator: Exists
+  # -- Where NOT to run, the same setting the log agent takes
+  # (`victoria-logs-collector.affinity`). Empty here. A cluster whose
+  # nodes come and go by the minute, CI pools for one, sets a
+  # `nodeAffinity` such as
+  #
+  #   affinity:
+  #     nodeAffinity:
+  #       requiredDuringSchedulingIgnoredDuringExecution:
+  #         nodeSelectorTerms:
+  #           - matchExpressions:
+  #               - key: karpenter.sh/nodepool
+  #                 operator: NotIn
+  #                 values: [ci-a, ci-b]
+  #
+  # Upstream merges that over its own default (no Fargate, no virtual
+  # kubelet nodes); a `nodeAffinity` you set REPLACES that default rather
+  # than adding to it.
+  affinity: {}
+  # -- Linux nodes only; upstream's default, restated because it is a
+  # value a consumer replaces wholesale.
+  nodeSelector:
+    kubernetes.io/os: linux
+  # -- Sized from a running exporter with the collector set below: 8Mi at
+  # start and 10 to 25Mi and a few millicores per scrape, on a node with a
+  # handful of disks and interfaces. Memory request equals limit, as for the
+  # log agent, so the exporter is not the first thing evicted under node
+  # pressure, and the cap (about 3x the observed peak) is where a node with
+  # many mounts would show up; the CPU limit is left well above the
+  # request because only the request decides scheduling, and a tight CPU
+  # ceiling throttles the exporter exactly when a scrape lands on a busy
+  # node. Requests are small on purpose: `priorityClassName` above lets
+  # this pod preempt to fit, and a request sized to use keeps that a rare
+  # fallback.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+  # -- THE COLLECTOR SET. Upstream turns on about forty collectors; this
+  # chart turns ALL of them off (`--collector.disable-defaults`) and names
+  # the ones something reads. What is on, and who reads it:
+  #
+  #   cpu, loadavg, meminfo, stat, vmstat, filefd, entropy, time, timex,
+  #   uname, diskstats, filesystem, netdev, netclass, netstat, sockstat,
+  #   tcpstat, udp_queues, softnet, schedstat, pressure, processes,
+  #   conntrack, arp, hwmon, kernel_hung
+  #                       - every family the node-exporter dashboard
+  #                         (charts/observability-dashboards) queries, and
+  #                         `cpu` and `meminfo` are also what
+  #                         `node.rules` and `kube-prometheus-node-
+  #                         recording.rules` record from.
+  #
+  # Left OUT, each because nothing here reads it or it costs a lot of
+  # series for what it says: `interrupts` (one series per CPU per IRQ:
+  # thousands on a large node), `systemd` (needs the host's D-Bus socket
+  # mounted, a wider grant than the rest), `cpufreq`, `thermal_zone`,
+  # `rapl` and `powersupplyclass` (per-CPU or per-sensor, and absent on a
+  # cloud VM), `zoneinfo`, `buddyinfo` and `slabinfo`, `nfs`, `nfsd`,
+  # `xfs`, `zfs`, `btrfs`, `bcache`, `mdadm`, `nvme`, `edac`, `ipvs`,
+  # `infiniband`, `fibrechannel`, `bonding`, `tapestats`, `selinux`, `os`,
+  # `sysctl` and `dmi`. Adding one is one more `--collector.<name>` here.
+  #
+  # Two device filters, because a Kubernetes node's series count is decided
+  # by what is mounted and plumbed, not by its size. The pod interfaces the
+  # CNIs create (`veth*`, `eni<hash>` on the AWS CNI, `lxc*`, `cali*`,
+  # `cilium_*`, `flannel*`) and the container runtime's bridges are minted
+  # and destroyed with every pod, and each carries about twenty
+  # `node_network_*` series; the per-pod tmpfs and CSI mounts under
+  # `/var/lib/kubelet` and the runtime's own under `/run/containerd` and
+  # `/var/lib/containerd` are the same shape for `node_filesystem_*`.
+  # The network filter is also applied to `netclass`, which the interface
+  # up/carrier/speed panels read.
+  extraArgs:
+    - --collector.disable-defaults
+    - --collector.arp
+    - --collector.conntrack
+    - --collector.cpu
+    - --collector.diskstats
+    - --collector.entropy
+    - --collector.filefd
+    - --collector.filesystem
+    - --collector.hwmon
+    - --collector.kernel_hung
+    - --collector.loadavg
+    - --collector.meminfo
+    - --collector.netclass
+    - --collector.netdev
+    - --collector.netstat
+    - --collector.pressure
+    - --collector.processes
+    - --collector.schedstat
+    - --collector.sockstat
+    - --collector.softnet
+    - --collector.stat
+    - --collector.tcpstat
+    - --collector.time
+    - --collector.timex
+    - --collector.udp_queues
+    - --collector.uname
+    - --collector.vmstat
+    - --collector.netdev.device-exclude=^(veth.*|lxc.*|cali.*|cilium_.*|eni[0-9a-f]{8,}|flannel.*|docker.*|br-.*|[a-f0-9]{15})$
+    - --collector.netclass.ignored-devices=^(veth.*|lxc.*|cali.*|cilium_.*|eni[0-9a-f]{8,}|flannel.*|docker.*|br-.*|[a-f0-9]{15})$
+    - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/credentials/.+|run/containerd/.+|var/lib/containerd/.+|var/lib/docker/.+|var/lib/containers/storage/.+|var/lib/kubelet/(pods|plugins)/.+)($|/)
+  prometheus:
+    monitor:
+      # -- A ServiceMonitor, the Prometheus Operator kind every other scrape
+      # object in this chart uses. With this false nothing scrapes the
+      # exporter at all: the pods stay Ready and nothing ever reads them.
+      enabled: true
+      # -- The endpoint's own `relabelings`, run on the TARGET before the
+      # scrape. Three steps, all constants of the kube-prometheus
+      # convention the dashboard and the recording rules are written for:
+      #
+      #   job       `node-exporter`. The operator would otherwise name the job
+      #             for the Service (`<release>-prometheus-node-exporter`),
+      #             which no dashboard or rule selects.
+      #   instance  the NODE'S NAME, not `<node ip>:9100`: a stable identity
+      #             per node, and the value the dashboard's own node picker
+      #             and `instance:node_cpu:ratio` group on.
+      #   node      the same name under the `node` label
+      #             `node:node_cpu_utilization:ratio_rate5m` groups by and
+      #             kube-state-metrics' `kube_pod_info` carries.
+      #
+      # `action` is written out for the reason the kube-state-metrics
+      # block above gives. The cluster, tier and (for a namespaced target)
+      # namespace come from the default scrape class, not from here.
+      # Refused if any of the three is missing (see
+      # `observability-emitters.validate.nodeExporter`).
+      relabelings:
+        - action: replace
+          targetLabel: job
+          replacement: node-exporter
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_node_name]
+          regex: (.+)
+          targetLabel: instance
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_node_name]
+          regex: (.+)
+          targetLabel: node
+      # -- Series-level. A node is cluster-scoped: the default scrape class
+      # stamped `k8s_namespace_name` from the exporter pod's own namespace,
+      # which would make every node series readable by a grant on THAT
+      # namespace (this release's own) and by nobody else on the cluster
+      # who needs the node. Dropped, so the series carry the cluster and
+      # nothing narrower — the kubelet's and cAdvisor's node-level shape.
+      metricRelabelings:
+        - action: labeldrop
+          regex: k8s_namespace_name

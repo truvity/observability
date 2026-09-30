@@ -290,6 +290,20 @@ platform-alerts-cluster-proof:
 k8s-stack-cluster-label-proof:
     hack/k8s-stack-cluster-label-proof.sh
 
+# REAL proof, against the real node-exporter, vmagent, VictoriaMetrics and
+# vmalert binaries, that `nodeExporter.enabled` (0.15.0,
+# charts/observability-emitters) stores node-exporter's series as
+# `job="node-exporter"` with the cluster label from the chart's own rendered
+# relabel steps, and that the k8s-stack's `node.rules` and
+# `kube-prometheus-node-recording.rules` (fetched and rewritten by the real
+# sync job) record data on them -- and record nothing without the job step.
+# See hack/node-exporter-proof.sh's own header.
+#
+# Needs Docker, curl, helm, python3 (with PyYAML) and network access;
+# deliberately NOT part of `check` or CI.
+node-exporter-proof:
+    hack/node-exporter-proof.sh
+
 # REAL proof, in Docker, of `backup.auth.mode: credentialProcess` end to
 # end: MinIO stands in for an S3-compatible store that is not AWS, the
 # RENDERED vmbackup command/env/AWS-config this chart produces for that

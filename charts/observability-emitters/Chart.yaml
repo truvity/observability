@@ -2,9 +2,9 @@ apiVersion: v2
 name: observability-emitters
 description: >-
   Per-cluster collection: a metrics agent, a log agent, an OpenTelemetry
-  gateway and an optional kube-state-metrics, each stamping tenancy the
-  application cannot choose and each replicating to every destination with
-  its own on-disk buffer.
+  gateway and an optional kube-state-metrics and node-exporter, each
+  stamping tenancy the application cannot choose and each replicating to
+  every destination with its own on-disk buffer.
 type: application
 # Stamped from the tag by the release workflow; never moved by hand.
 version: 0.0.0
@@ -18,7 +18,7 @@ keywords:
 home: https://github.com/truvity/observability
 sources:
   - https://github.com/truvity/observability
-# Two dependencies, each pinned exactly and vendored under charts/ so a
+# Three dependencies, each pinned exactly and vendored under charts/ so a
 # render reaches no registry. A range would resolve to whatever exists on
 # the day of the install, and the zero-diff gate in docs/adoption.md would
 # stop meaning anything.
@@ -47,3 +47,7 @@ dependencies:
     version: 7.5.3
     repository: oci://ghcr.io/prometheus-community/charts
     condition: kubeStateMetrics.enabled
+  - name: prometheus-node-exporter
+    version: 4.55.1
+    repository: oci://ghcr.io/prometheus-community/charts
+    condition: nodeExporter.enabled

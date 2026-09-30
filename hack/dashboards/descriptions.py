@@ -71,3 +71,41 @@ DESCRIPTIONS = {
     "Network - Packets Dropped": "Packets dropped per second by the pod. Above zero means saturation or a network policy: check the node and the CNI.",
     "Network - Errors": "Network errors per second on the pod's interface. Above zero points at a faulty interface or CNI.",
 }
+
+# The Nodes view, keyed by title, and consulted BEFORE the table above: its
+# node-exporter panels share titles with the cluster-level ones there
+# ("CPU Usage", "RAM Usage") and mean something narrower. Its metric sources
+# are node-exporter (an optional source, see available-metrics.yaml), the
+# node scrape and kube-state-metrics.
+NODE_DESCRIPTIONS = {
+    "CPU  Usage": "CPU busy on the selected node, as a share of its cores (idle, iowait and steal excluded). Sustained above 70% means the node is short of CPU: move work off it or add nodes.",
+    "RAM Usage": "Memory in use on the selected node (total less available), as a share of its RAM. Sustained above 80% means eviction risk on this node.",
+    "Pods on node": "Pods scheduled on the selected node. Compare with the node's pod limit.",
+    "List of pods on node ($node)": "Every pod scheduled on the selected node, with its namespace and phase. Use it to find what to drain or move.",
+    "CPU Used": "CPU cores busy on the selected node right now.",
+    "CPU Total": "CPU cores the selected node has.",
+    "RAM Used": "Memory in use on the selected node right now (total less available).",
+    "RAM Total": "RAM the selected node has.",
+    "uptime": "Time since the selected node booted. A short uptime with no planned replacement means it restarted: look for a crash or a spot reclaim.",
+    "CPU Usage": "CPU time on the selected node by mode. A tall `iowait` is a slow disk, `steal` is a noisy neighbour on the hypervisor, `system` is the kernel (network or syscalls).",
+    "Memory Usage": "Memory on the selected node split into used, buffers, cache and free. Free near zero is normal; available falling toward zero is not.",
+    "System Load": "Load average over 1, 5 and 15 minutes on the selected node. Sustained above the node's core count means work is queueing for the CPU.",
+    "Context Switches & Interrupts": "Context switches and interrupts per second on the selected node. A jump with no traffic change points at a runaway process or a failing device.",
+    "File Descriptors": "File descriptors allocated against the node's maximum. Near the maximum, processes start failing to open files and sockets.",
+    "Time Sync": "The kernel's estimated and maximum clock error on the selected node. Growing error means the node is losing time sync: certificates and tokens start to fail.",
+    "Network usage (bytes/s)": "Bytes per second received and sent on the selected node's real interfaces (pod interfaces are left out). Compare with the instance's network limit.",
+    "Network errors": "Receive and transmit errors per second on the selected node. Above zero points at a faulty interface, driver or cable.",
+    "Network usage (packet/s)": "Packets per second received and sent on the selected node.",
+    "Network total drops": "Packets dropped per second on the selected node. Above zero means saturation of the interface or its queues.",
+    "TCP Currently Established": "TCP connections established on the selected node. A climb with no traffic change is a connection leak.",
+    "Persistent Volumes - Usage in %": "Used share of each persistent volume mounted on the selected node. Above 85% means the volume is close to full: expand it or clean it.",
+    "Persistent Volumes - Usage in GB": "Used, free and total bytes of each persistent volume mounted on the selected node.",
+    "FS usage in %": "Used share of each filesystem on the selected node. Above 85% on the root or the container runtime's disk means the node is close to evicting pods for disk pressure.",
+    "FS inode usage in %": "Used share of inodes on each filesystem of the selected node. Near 100% the disk refuses new files while still showing free space.",
+    "Reads by disk (bytes)": "Bytes per second read from each disk of the selected node.",
+    "Writes by disk (bytes)": "Bytes per second written to each disk of the selected node.",
+    "Completed reads by disk": "Read operations per second completed on each disk of the selected node. Compare with the volume's provisioned IOPS.",
+    "Completed writes by disk": "Write operations per second completed on each disk of the selected node. Compare with the volume's provisioned IOPS.",
+    "Disk(s) io/s": "Operations in flight on each disk of the selected node. A queue that stays above a few means the disk is the bottleneck.",
+    "FS - Device Errors": "Filesystems on the selected node that could not be read (1 is an error). Any value above zero is a mount that is broken or gone.",
+}
