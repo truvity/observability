@@ -4,6 +4,22 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`: a Slack destination can ping people.
+
+- **Additive: `mention: here | channel` on a Slack destination.** Beside
+  `channel`/`workspace` in `notifications.severities.<tier>`,
+  `notifications.catchAll` and the object form of a route's per-tier
+  override, it starts the message text with Slack's `<!here>` /
+  `<!channel>`, for FIRING notifications only (a resolved one pings
+  nobody). Unset is no mention, and nothing renders differently for an
+  install that does not set it: a destination without a mention keeps its
+  receiver name. A destination with one is its own receiver,
+  `slack-<workspace>--<channel>--<mention>`, so `critical` can ping
+  `@here` while `warning` posts quietly to the same channel. A `mention`
+  on a non-Slack receiver, or a value outside the enum, is refused.
+
 ## v0.18.0
 
 `observability-mcp`: one connector per Victoria store, and one for Grafana.
@@ -80,22 +96,6 @@ must be done first, and whether a default moved. Newest first, one
   nothing while off).
 - The release workflow builds both images; `hack/check-image-refs.py` now
   looks for an own-registry image at any depth of a chart's values.
-
-## Unreleased
-
-`observability-stack`: a Slack destination can ping people.
-
-- **Additive: `mention: here | channel` on a Slack destination.** Beside
-  `channel`/`workspace` in `notifications.severities.<tier>`,
-  `notifications.catchAll` and the object form of a route's per-tier
-  override, it starts the message text with Slack's `<!here>` /
-  `<!channel>`, for FIRING notifications only (a resolved one pings
-  nobody). Unset is no mention, and nothing renders differently for an
-  install that does not set it: a destination without a mention keeps its
-  receiver name. A destination with one is its own receiver,
-  `slack-<workspace>--<channel>--<mention>`, so `critical` can ping
-  `@here` while `warning` posts quietly to the same channel. A `mention`
-  on a non-Slack receiver, or a value outside the enum, is refused.
 
 ## v0.17.0
 
