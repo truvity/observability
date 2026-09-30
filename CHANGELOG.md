@@ -4,6 +4,75 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.18.0
+
+`observability-mcp`: one connector per Victoria store, and one for Grafana.
+
+- **BREAKING (values interface, `observability-mcp`; a chart no release has
+  asked anyone to adopt): `servers.*` is replaced by `stores[]` and
+  `grafana`.** 0.16.0's chart rendered one Deployment per `servers.<name>`
+  and only `metrics` worked. It has no consumer yet, so it is replaced
+  rather than migrated; a leftover `servers:` is refused by the schema. The
+  chart now knows two things and nothing about an estate's topology: a
+  **store** (VictoriaMetrics, VictoriaLogs and VictoriaTraces behind one
+  vmauth) and **Grafana**. Each `stores[]` entry (`name`, `resourceURL`,
+  `vmauth.url`, `outbound.{tokenEndpoint,clientId,audience}`, optional
+  `clusters`, `signals`, `metricsMetadata`, `instructions`) renders ONE
+  connector, `observability-mcp-<name>`: a pod with the resource-proxy, the
+  new aggregator and the three stock servers, exposing 26 read-only tools
+  grouped as `metrics_*`, `logs_*` and `traces_*`. `grafana.enabled` renders
+  `observability-mcp-grafana`: the proxy and the stock `mcp-grafana`,
+  dashboards only (seven tools, `--disable-write`). Pinned images with
+  digests, the verified read-only allowlists, the tool prefixes and the
+  instructions template are chart defaults; nothing is enabled by default.
+  The same chart renders one store with Grafana, several stores with
+  Grafana, or a store alone (goldens `single-store`, `two-stores`,
+  `minimal`, `everything`). What the consumer sets per connector, and what
+  each tool needs the store's vmauth to serve (two tools were dropped
+  because their path is served by no read route), is in
+  [docs/mcp.md](docs/mcp.md).
+- **New `cmd/mcp-aggregator`, released as an image**
+  (`ghcr.io/truvity/observability/mcp-aggregator`, linux/amd64 and arm64,
+  and a tar.gz per architecture; the chart's `aggregator.image.tag` defaults
+  to its own appVersion). A generic, config-driven MCP server over several
+  backends: tools only (resources and prompts are answered method-not-found),
+  a static allowlist, `<prefix>_<tool>` names, descriptions and schemas
+  verbatim, arguments and results passed through untouched, a session per
+  backend call and none exposed, a per-call timeout and cancellation, partial
+  failure that fails only the dead backend's tools, refusal to become ready
+  when an allowlisted tool is missing, Prometheus metrics and health
+  endpoints, and an unused per-tool authorization hook. Built on the official
+  Go SDK (v1.8.0) in its stateless mode, so one process answers both the
+  2026-07-28 revision (no sessions) and the 2025-06-18 handshake.
+- **`observability-grafana`: opt-in `global.observabilityGrafana.workloadAuth`.**
+  Off by default, and with it off every existing render is byte for byte what
+  it was. On, `grafana.ini` gains an `[auth.jwt]` section that accepts an
+  access-issuer workload token in `Authorization: Bearer`, verified against
+  the issuer's JWKS with `iss` and `aud` pinned, and gives the identity
+  (login `workload:<sub>`) a Viewer role that is a constant in the config: no
+  claim can ask for more, and the server-admin flag is never set. The
+  audience is what gates it; the chart refuses one equal to the human
+  sign-in client's. This is how the Grafana connector authenticates with no
+  stored secret. See [docs/grafana.md](docs/grafana.md), "Workload sign-in".
+- **New refusals** (`observability-mcp`): a store with no or a duplicate
+  `name`, a name that is not a slug or is `grafana`; a connector with no or a
+  duplicate `resourceURL`, or incomplete `outbound`; a store with no
+  `vmauth.url` or one carrying a path; every signal off; an allowlist that is
+  empty or would expose a name over 64 characters; `grafana.url` empty; an
+  empty `enabledTools`; a NetworkPolicy peer list empty for what is enabled.
+  (`observability-grafana`): `workloadAuth` enabled with an empty `issuer`,
+  `jwksUrl` or `audience`, or with `audience` equal to `oauth.clientId`.
+- **New opt-in peer list** `networkPolicy.metricsFrom` (who may scrape the
+  aggregator's `/metrics`), and `networkPolicy.egress.grafana`.
+- **New case** `tenancy-mcp-reader` in `observability-stack` (a machine
+  reader with all three routes, `vmalertAPI` and the acknowledgements a store
+  connector needs), a new golden only; `tests/mcp_routes_test.go` proves every
+  exposed tool's path is served by it and the dropped ones are not, and
+  `hack/mcp-paths-proof.sh` observes the same paths from the real stock
+  binaries. No existing golden of another chart changes.
+- The release workflow builds both images; `hack/check-image-refs.py` now
+  looks for an own-registry image at any depth of a chart's values.
+
 ## Unreleased
 
 `observability-stack`: a Slack destination can ping people.

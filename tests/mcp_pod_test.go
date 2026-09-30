@@ -178,7 +178,8 @@ func TestMCPStockServersAreLoopbackOnlyAndProxyIsTheOnlyMCPPort(t *testing.T) {
 					listen, ok = c.arg("--address=")
 				}
 				require.True(t, ok, "%s has no listen address: it would listen on the image's default", c.Name)
-				assert.True(t, strings.HasPrefix(listen, "127.0.0.1:"), "%s listens on %q: anything but loopback makes it reachable without the proxy's token check", c.Name, listen)
+				assert.True(t, strings.HasPrefix(listen, "127.0.0.1:"),
+					"%s listens on %q: anything but loopback makes it reachable without the proxy's token check", c.Name, listen)
 				assert.False(t, seenListen[listen], "%s shares %s with another container", c.Name, listen)
 				seenListen[listen] = true
 
