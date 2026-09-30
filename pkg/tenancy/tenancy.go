@@ -173,8 +173,53 @@ type Grant struct {
 // claimMatch — so a group that reads as a regular expression matches
 // only itself.
 type Principal struct {
-	Group  string  `json:"group" yaml:"group"`
+	Group  string  `json:"group,omitempty" yaml:"group,omitempty"`
 	Grants []Grant `json:"grants" yaml:"grants"`
+
+	// Groups is the alternative to Group for ONE population that arrives
+	// under several names: a token carrying ANY of them selects this
+	// principal, and the principal reads every grant it lists. Name is
+	// then required, because there is no single group to name the entry
+	// after.
+	//
+	// It exists for the case where the same role is granted the same
+	// reach on several clusters and each cluster spells the group
+	// differently (`cluster-a:role`, `cluster-b:role`). A token whose
+	// vmauth first match is one principal per cluster reads ONE cluster
+	// whichever it holds, because vmauth takes the first matching user
+	// and never a union of them; one principal listing every cluster in
+	// Grants and every spelling in Groups reads them all.
+	//
+	// Read the consequence before using it: a token holding ANY listed
+	// group is granted EVERY grant, so a token holding only the group for
+	// cluster-a reads cluster-b too. That is correct exactly when every
+	// holder of one spelling holds all of them, and a caller who cannot
+	// guarantee it should mint per-person `vm_access` claims (RenderClaim)
+	// instead. Each entry is escaped and anchored like Group.
+	Groups []string `json:"groups,omitempty" yaml:"groups,omitempty"`
+
+	// Name is the user's name when Groups is used. Ignored, and refused,
+	// beside Group.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+}
+
+// groupList is the groups that select this principal.
+func (p Principal) groupList() []string {
+	if len(p.Groups) > 0 {
+		return p.Groups
+	}
+	if p.Group != "" {
+		return []string{p.Group}
+	}
+	return nil
+}
+
+// label is what the principal is called in a name or a message.
+func (p Principal) label() string {
+	if p.Name != "" {
+		return p.Name
+	}
+	return p.Group
 }
 
 // Config is the whole input.
@@ -345,15 +390,27 @@ func (c Config) Validate() error {
 	seen := map[string]bool{}
 	for i, p := range c.Principals {
 		where := fmt.Sprintf("principals[%d]", i)
-		if p.Group == "" {
+		switch {
+		case p.Group != "" && (len(p.Groups) > 0 || p.Name != ""):
+			errs = append(errs, fmt.Errorf("%s: group is set beside groups or name. One principal is selected either by one group "+
+				"or by a list of them, and guessing which was meant is how a token gets the wrong reach", where))
+		case p.Group == "" && len(p.Groups) == 0:
 			errs = append(errs, fmt.Errorf("%s: group is empty", where))
-		} else {
-			if seen[p.Group] {
-				errs = append(errs, fmt.Errorf("%s: group %q appears twice; the second entry would be unreachable, so a grant somebody wrote would silently not "+
-					"apply", where, p.Group))
+		case len(p.Groups) > 0 && p.Name == "":
+			errs = append(errs, fmt.Errorf("%s: groups is set without a name. There is no single group to name the entry after", where))
+		}
+		for _, g := range p.groupList() {
+			switch {
+			case g == "":
+				errs = append(errs, fmt.Errorf("%s: a group is empty", where))
+			case seen[g]:
+				errs = append(errs, fmt.Errorf("%s: group %q appears twice; the second entry would be unreachable, "+
+					"so a grant somebody wrote would silently not apply", where, g))
 			}
-			seen[p.Group] = true
-			where = fmt.Sprintf("principal %q", p.Group)
+			seen[g] = true
+		}
+		if p.label() != "" {
+			where = fmt.Sprintf("principal %q", p.label())
 		}
 
 		if len(p.Grants) == 0 {
@@ -511,5 +568,17 @@ func alternation(names []string) string {
 // exactly `x`, which TestEveryMatchClaimValueMeansOnlyItself asserts
 // under both compilations.
 func claimMatch(value string) string {
-	return "^(" + regexp.QuoteMeta(value) + ")$"
+	return claimMatchAny([]string{value})
+}
+
+// claimMatchAny renders several values as ONE `match_claims` entry that
+// matches a token carrying any of them: each value escaped on its own, so
+// each means only itself, then joined and anchored once. A `|` between
+// values is the only unescaped metacharacter in the result.
+func claimMatchAny(values []string) string {
+	quoted := make([]string, len(values))
+	for i, v := range values {
+		quoted[i] = regexp.QuoteMeta(v)
+	}
+	return "^(" + strings.Join(quoted, "|") + ")$"
 }

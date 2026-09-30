@@ -1,0 +1,25 @@
+# expect: sets `group` beside `groups` or `name`
+# Both spellings at once: which one was meant is not for the chart to guess.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  principals:
+    - group: a:k8s:viewer
+      name: viewer
+      groups: [b:k8s:viewer]
+      grants:
+        - cluster: cluster-a
+          allNamespaces: true
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    webhookSecret: {name: example-slack-webhook, key: url}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

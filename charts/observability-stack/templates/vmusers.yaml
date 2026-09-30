@@ -26,7 +26,20 @@ person may read and what the proxy lets them read is not a difference
 anyone notices until it matters.
 */}}
 {{- range $i, $p := .Values.tenancy.principals }}
-{{- $slug := regexReplaceAll "[^a-z0-9]+" (lower $p.group) "-" | trimAll "-" | trunc 40 | trimSuffix "-" }}
+{{- /*
+A principal is selected by ONE `group`, or by a list of `groups` with a
+`name` (validated in _validate.tpl): a token carrying any of the listed
+groups selects it. Each group is escaped on its own and the alternation is
+joined afterwards, so the only unescaped `|` in the rendered claim is the
+one this template wrote.
+*/}}
+{{- $principalName := $p.name | default $p.group | default "" }}
+{{- $groupList := $p.groups | default (list $p.group) }}
+{{- $quotedGroups := list }}
+{{- range $g := $groupList }}
+{{- $quotedGroups = append $quotedGroups (regexQuoteMeta $g) }}
+{{- end }}
+{{- $slug := regexReplaceAll "[^a-z0-9]+" (lower $principalName) "-" | trimAll "-" | trunc 40 | trimSuffix "-" }}
 {{- /* Grants sort by cluster, so an unrelated edit produces no diff. */}}
 {{- $byCluster := dict }}
 {{- range $grant := $p.grants }}
@@ -66,7 +79,7 @@ metadata:
     {{- include "observability-stack.labels" $root | nindent 4 }}
     observability.role: reader
 spec:
-  name: {{ $p.group | quote }}
+  name: {{ $principalName | quote }}
   {{- /*
   The operator identifies a VMUser by its generated credentials Secret
   unless this is set, and every JWT user generates the same identity — so
@@ -100,7 +113,7 @@ spec:
     proxy is patched is a control with a version number in it.
     */}}
     matchClaims:
-      {{ $root.Values.tenancy.claimName }}: {{ printf "^(%s)$" (regexQuoteMeta $p.group) | quote }}
+      {{ $root.Values.tenancy.claimName }}: {{ printf "^(%s)$" (join "|" $quotedGroups) | quote }}
       aud: {{ printf "^(%s)$" (regexQuoteMeta $effectiveAudience) | quote }}
     {{- /*
     The filters this group is entitled to, used when the token itself

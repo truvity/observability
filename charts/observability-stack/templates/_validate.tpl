@@ -1043,34 +1043,46 @@ that selects on one of them and ignores the other.
 {{- end -}}
 {{- $groups := dict -}}
 {{- range $i, $p := $t.principals -}}
-{{- if not $p.group -}}
-{{- fail (printf "observability-stack: tenancy.principals[%d] has no `group`. The group is what the token's claim is matched against; without it the entry selects nobody." $i) -}}
+{{- if and $p.group (or $p.groups $p.name) -}}
+{{- fail (printf "observability-stack: tenancy.principals[%d] sets `group` beside `groups` or `name`. One principal is selected either by one group or by a list of them; guessing which was meant is how a token gets the wrong reach." $i) -}}
 {{- end -}}
-{{- if hasKey $groups $p.group -}}
-{{- fail (printf "observability-stack: group %q appears twice in `tenancy.principals`. The second entry would be unreachable, so a grant somebody wrote would silently not apply." $p.group) -}}
+{{- if and (not $p.group) (not $p.groups) -}}
+{{- fail (printf "observability-stack: tenancy.principals[%d] has neither `group` nor `groups`. The group is what the token's claim is matched against; without it the entry selects nobody." $i) -}}
 {{- end -}}
-{{- $_ := set $groups $p.group true -}}
+{{- if and $p.groups (not $p.name) -}}
+{{- fail (printf "observability-stack: tenancy.principals[%d] sets `groups` without a `name`. There is no single group to name the VMUser after, and two such entries would collide." $i) -}}
+{{- end -}}
+{{- $principalName := $p.name | default $p.group | default "" -}}
+{{- range $g := ($p.groups | default (list $p.group)) -}}
+{{- if not $g -}}
+{{- fail (printf "observability-stack: principal %q lists an empty group. It would match nothing, or with a careless rewrite everything." $principalName) -}}
+{{- end -}}
+{{- if hasKey $groups $g -}}
+{{- fail (printf "observability-stack: group %q appears twice in `tenancy.principals`. The second entry would be unreachable, so a grant somebody wrote would silently not apply." $g) -}}
+{{- end -}}
+{{- $_ := set $groups $g true -}}
+{{- end -}}
 {{- if not $p.grants -}}
-{{- fail (printf "observability-stack: principal %q has no grants. A principal that may read nothing is written by leaving it out, not by granting it nothing." $p.group) -}}
+{{- fail (printf "observability-stack: principal %q has no grants. A principal that may read nothing is written by leaving it out, not by granting it nothing." $principalName) -}}
 {{- end -}}
 {{- $clusters := dict -}}
 {{- range $g := $p.grants -}}
 {{- if not (regexMatch $shape (toString $g.cluster)) -}}
-{{- fail (printf "observability-stack: principal %q has cluster %q, which is not a plain name (%s). The cluster is half of the scoping key, and names are interpolated into a filter expression, so one carrying `|`, `)` or `.*` would widen the grant rather than look odd. Such a name is refused, never escaped." $p.group (toString $g.cluster) $shape) -}}
+{{- fail (printf "observability-stack: principal %q has cluster %q, which is not a plain name (%s). The cluster is half of the scoping key, and names are interpolated into a filter expression, so one carrying `|`, `)` or `.*` would widen the grant rather than look odd. Such a name is refused, never escaped." $principalName (toString $g.cluster) $shape) -}}
 {{- end -}}
 {{- if hasKey $clusters $g.cluster -}}
-{{- fail (printf "observability-stack: principal %q is granted cluster %q twice. Merge them, or one grant is silently ignored." $p.group $g.cluster) -}}
+{{- fail (printf "observability-stack: principal %q is granted cluster %q twice. Merge them, or one grant is silently ignored." $principalName $g.cluster) -}}
 {{- end -}}
 {{- $_ := set $clusters $g.cluster true -}}
 {{- if and $g.allNamespaces $g.namespaces -}}
-{{- fail (printf "observability-stack: principal %q grants cluster %q with both `allNamespaces` and a `namespaces` list. One of them is wrong, and guessing which is how a grant quietly widens." $p.group $g.cluster) -}}
+{{- fail (printf "observability-stack: principal %q grants cluster %q with both `allNamespaces` and a `namespaces` list. One of them is wrong, and guessing which is how a grant quietly widens." $principalName $g.cluster) -}}
 {{- end -}}
 {{- if and (not $g.allNamespaces) (not $g.namespaces) -}}
-{{- fail (printf "observability-stack: principal %q grants cluster %q with neither `namespaces` nor `allNamespaces`. An empty list is refused rather than read as \"everything\": a project that expands to no namespaces is the likeliest way a grant widens by accident. A grant is namespaces on a cluster; a project is the derivation that produces the list, and it lives with whoever writes this file." $p.group $g.cluster) -}}
+{{- fail (printf "observability-stack: principal %q grants cluster %q with neither `namespaces` nor `allNamespaces`. An empty list is refused rather than read as \"everything\": a project that expands to no namespaces is the likeliest way a grant widens by accident. A grant is namespaces on a cluster; a project is the derivation that produces the list, and it lives with whoever writes this file." $principalName $g.cluster) -}}
 {{- end -}}
 {{- range $ns := ($g.namespaces | default list) -}}
 {{- if not (regexMatch $shape (toString $ns)) -}}
-{{- fail (printf "observability-stack: principal %q grants namespace %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $p.group (toString $ns) $shape) -}}
+{{- fail (printf "observability-stack: principal %q grants namespace %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $principalName (toString $ns) $shape) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -1083,15 +1095,15 @@ that, combined with what else this principal set or what this install
 has enabled, renders no route at all.
 */}}
 {{- if and (hasKey $p "audience") (not (regexMatch $audienceShape (toString $p.audience))) -}}
-{{- fail (printf "observability-stack: principal %q sets `audience` to %q, which is not an identifier (%s). Like `tenancy.audience`, a client id may otherwise carry a dot, a `|` or an `@` — the issuer assigns it, this chart does not — and is escaped and anchored where it is rendered, so it pins itself and nothing else. What is refused is a value no issuer mints: empty, or carrying whitespace or a newline, which is how a value that arrived from the wrong place looks. Leave `audience` out entirely to fall back to `tenancy.audience`, rather than setting it to nothing." $p.group (toString $p.audience) $audienceShape) -}}
+{{- fail (printf "observability-stack: principal %q sets `audience` to %q, which is not an identifier (%s). Like `tenancy.audience`, a client id may otherwise carry a dot, a `|` or an `@` — the issuer assigns it, this chart does not — and is escaped and anchored where it is rendered, so it pins itself and nothing else. What is refused is a value no issuer mints: empty, or carrying whitespace or a newline, which is how a value that arrived from the wrong place looks. Leave `audience` out entirely to fall back to `tenancy.audience`, rather than setting it to nothing." $principalName (toString $p.audience) $audienceShape) -}}
 {{- end -}}
 {{- $routes := $p.routes | default (list "metrics" "logs" "traces") -}}
 {{- $rendersTraces := and (has "traces" $routes) (include "observability-stack.tracesEnabled" $) -}}
 {{- if not (or (has "metrics" $routes) (has "logs" $routes) $rendersTraces) -}}
-{{- fail (printf "observability-stack: principal %q's `routes` (%s) renders no route at all. Metrics and logs render whenever named; `traces` renders only when a trace store is enabled (independent of `tenancy.allowUnfilteredTraceReads`, checked next). A principal that may read nothing is written by leaving it out of `tenancy.principals` entirely, not by restricting it to nothing." $p.group (join ", " $routes)) -}}
+{{- fail (printf "observability-stack: principal %q's `routes` (%s) renders no route at all. Metrics and logs render whenever named; `traces` renders only when a trace store is enabled (independent of `tenancy.allowUnfilteredTraceReads`, checked next). A principal that may read nothing is written by leaving it out of `tenancy.principals` entirely, not by restricting it to nothing." $principalName (join ", " $routes)) -}}
 {{- end -}}
 {{- if and $p.metricsQueryOnly (not (has "metrics" $routes)) -}}
-{{- fail (printf "observability-stack: principal %q sets `metricsQueryOnly: true` but its `routes` (%s) does not include `metrics`. metricsQueryOnly narrows the metrics route to its two query paths; with no metrics route requested there is nothing for it to narrow, and the flag would mean nothing." $p.group (join ", " $routes)) -}}
+{{- fail (printf "observability-stack: principal %q sets `metricsQueryOnly: true` but its `routes` (%s) does not include `metrics`. metricsQueryOnly narrows the metrics route to its two query paths; with no metrics route requested there is nothing for it to narrow, and the flag would mean nothing." $principalName (join ", " $routes)) -}}
 {{- end -}}
 {{- end -}}
 {{- /*

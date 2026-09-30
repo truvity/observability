@@ -363,6 +363,23 @@ tenancy:
   # `|` or `.*` would widen the grant it appears in, and such a name is
   # refused rather than escaped.
   #
+  # A role held under one group PER CLUSTER is one principal with every
+  # spelling in `groups` (and a `name`, since there is no single group to
+  # name it after) and one grant per cluster:
+  #
+  #   principals:
+  #     - name: k8s:viewer
+  #       groups: [cluster-a:k8s:viewer, cluster-b:k8s:viewer]
+  #       grants:
+  #         - {cluster: cluster-a, allNamespaces: true}
+  #         - {cluster: cluster-b, allNamespaces: true}
+  #
+  # A token carrying ANY listed group selects it and reads EVERY grant, so
+  # this is right only while every holder of one spelling holds them all.
+  # It is also what makes a multi-cluster reader work at all: vmauth takes
+  # the FIRST user a token matches, never a union, so one principal per
+  # cluster shows a holder of every group one cluster.
+  #
   # Two more fields, both optional, both per-principal:
   #
   #   principals:

@@ -310,6 +310,15 @@ cadvisor-churn-drop-proof:
 metrics-path-proof:
     hack/metrics-path-proof.sh
 
+# REAL proof, against the pinned vmauth, VictoriaMetrics and VictoriaLogs,
+# that a `tenancy.principals[]` entry with several `groups` reads every
+# cluster its grants name, on metrics and logs, and that one principal per
+# cluster read only the first. Needs Docker, curl, python3 (PyYAML, PyJWT,
+# cryptography) and helm; not part of `check`, like the other proofs. See
+# hack/multi-group-reader-proof.sh's own header.
+multi-group-reader-proof:
+    hack/multi-group-reader-proof.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:
