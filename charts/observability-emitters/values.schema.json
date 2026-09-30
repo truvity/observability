@@ -352,6 +352,17 @@
                   "type": "boolean"
                 }
               }
+            },
+            "nodeClaims": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "description": "Off by default. `nodeclaim_status_condition`, the shape `charts/platform-alerts`' `groups.nodeClaims` reads: Karpenter NodeClaim conditions (`karpenter.sh/v1`). Grants only get/list/watch on `nodeclaims.karpenter.sh`.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
             }
           }
         }

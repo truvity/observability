@@ -314,3 +314,93 @@ spec:
               that the scrape itself is still up.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KargoStateMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
+    {{- if .Values.groups.pendingPods.enabled }}
+    {{- $g := .Values.groups.pendingPods }}
+    {{- $pns := default $ns $g.namespaceSelector }}
+    - name: platform-alerts.pending-pods
+      interval: {{ .Values.interval }}
+      rules:
+        # A pod the scheduler has declared unschedulable for `for`.
+        #
+        # `kube_pod_status_unschedulable` is 1 while the pod's PodScheduled
+        # condition is False with reason Unschedulable and has no series
+        # otherwise, so `== 1` only states what the series already means
+        # (it keeps the rule right if a kube-state-metrics version emits 0
+        # instead of omitting). On a cluster that adds nodes on demand this
+        # is the signal that provisioning did not happen: the pod is what
+        # the provisioner reacts to, and it is still waiting.
+        - alert: PodUnschedulable
+          expr: >-
+            max by ({{ $c }}namespace, pod) (
+              kube_pod_status_unschedulable{namespace=~"{{ $pns }}"} == 1
+            )
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" (ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")))) | nindent 12 }}
+          annotations:
+            summary: "Pod {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}} has been unschedulable for {{ $g.for }}"
+            description: >-
+              The scheduler has not been able to place this pod for {{ $g.for }}.
+              On a cluster that provisions nodes on demand that means no node was
+              added for it (a provisioning failure, a quota or capacity limit, or
+              a request no node type can satisfy); on any cluster it can also be
+              an affinity, taint or quota the pod can never meet. The pod's
+              events name the scheduler's reason.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "PodUnschedulable")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if .Values.groups.nodeClaims.enabled }}
+    {{- $g := .Values.groups.nodeClaims }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    - name: platform-alerts.node-claims
+      interval: {{ .Values.interval }}
+      rules:
+        # A NodeClaim whose Launched, Registered or Initialized condition is
+        # not True for `for`.
+        #
+        # `nodeclaim_status_condition` is a gauge kube-state-metrics'
+        # customResourceState exports from each NodeClaim's
+        # `.status.conditions`: 1 while the condition is True, 0 while it is
+        # False or Unknown. A claim that is still being created has no
+        # condition yet and so no series: the rule sees it only once
+        # Karpenter has written the condition, which is when it starts to
+        # count as not-True. Ready is left out on purpose: it is the
+        # conjunction of these three, so it would only repeat them.
+        - alert: NodeClaimNotReady
+          expr: >-
+            max by ({{ $c }}nodeclaim, nodepool, type) (
+              nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} == 0
+            )
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "NodeClaim {{`{{ $labels.nodeclaim }}`}} ({{`{{ $labels.nodepool }}`}}) has not reached {{`{{ $labels.type }}`}} for {{ $g.for }}"
+            description: >-
+              Karpenter created this NodeClaim but its {{`{{ $labels.type }}`}}
+              condition has not become True in {{ $g.for }}. Launched means the
+              instance was created, Registered that it joined the cluster as a
+              node, Initialized that it is ready for pods. Karpenter deletes a
+              claim that has not registered after 15 minutes and tries again, so
+              an alert that clears by itself is a retry. `kubectl describe
+              nodeclaim` shows the condition's reason and message.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NodeClaimNotReady")) }}{{ . | nindent 12 }}{{- end }}
+        # The deadman for the rule above: the series not being exported at
+        # all (the preset never applied, or the scrape is dark) reads as
+        # healthy to a rule that compares its values.
+        - alert: NodeClaimMetricsAbsent
+          expr: >-
+            absent(nodeclaim_status_condition{type="Launched"})
+          for: {{ $g.absentFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity) | nindent 12 }}
+          annotations:
+            summary: "kube-state-metrics has not exported NodeClaim conditions for {{ $g.absentFor }}"
+            description: >-
+              nodeclaim_status_condition{type="Launched"} has not been seen in
+              {{ $g.absentFor }}, so NodeClaimNotReady cannot fire even if a
+              node is failing to come up. Check that
+              `kubeStateMetrics.customResources.nodeClaims` is on in
+              observability-emitters and that the scrape is up. On a cluster
+              that can have no NodeClaims at all this alert is expected.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NodeClaimMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}

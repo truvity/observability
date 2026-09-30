@@ -1,0 +1,12 @@
+# The pendingPods group alone, at its own defaults (10m, warning).
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  pendingPods:
+    enabled: true

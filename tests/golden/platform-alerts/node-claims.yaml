@@ -1,0 +1,62 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.node-claims
+      interval: 1m
+      rules:
+        # A NodeClaim whose Launched, Registered or Initialized condition is
+        # not True for `for`.
+        #
+        # `nodeclaim_status_condition` is a gauge kube-state-metrics'
+        # customResourceState exports from each NodeClaim's
+        # `.status.conditions`: 1 while the condition is True, 0 while it is
+        # False or Unknown. A claim that is still being created has no
+        # condition yet and so no series: the rule sees it only once
+        # Karpenter has written the condition, which is when it starts to
+        # count as not-True. Ready is left out on purpose: it is the
+        # conjunction of these three, so it would only repeat them.
+        - alert: NodeClaimNotReady
+          expr: >-
+            max by (k8s_cluster_name, nodeclaim, nodepool, type) (
+              nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} == 0
+            )
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "NodeClaim {{ $labels.nodeclaim }} ({{ $labels.nodepool }}) has not reached {{ $labels.type }} for 10m"
+            description: >-
+              Karpenter created this NodeClaim but its {{ $labels.type }}
+              condition has not become True in 10m. Launched means the
+              instance was created, Registered that it joined the cluster as a
+              node, Initialized that it is ready for pods. Karpenter deletes a
+              claim that has not registered after 15 minutes and tries again, so
+              an alert that clears by itself is a retry. `kubectl describe
+              nodeclaim` shows the condition's reason and message.
+        # The deadman for the rule above: the series not being exported at
+        # all (the preset never applied, or the scrape is dark) reads as
+        # healthy to a rule that compares its values.
+        - alert: NodeClaimMetricsAbsent
+          expr: >-
+            absent(nodeclaim_status_condition{type="Launched"})
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "kube-state-metrics has not exported NodeClaim conditions for 30m"
+            description: >-
+              nodeclaim_status_condition{type="Launched"} has not been seen in
+              30m, so NodeClaimNotReady cannot fire even if a
+              node is failing to come up. Check that
+              `kubeStateMetrics.customResources.nodeClaims` is on in
+              observability-emitters and that the scrape is up. On a cluster
+              that can have no NodeClaims at all this alert is expected.

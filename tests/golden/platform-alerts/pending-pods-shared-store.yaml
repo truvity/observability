@@ -1,0 +1,42 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.pending-pods
+      interval: 1m
+      rules:
+        # A pod the scheduler has declared unschedulable for `for`.
+        #
+        # `kube_pod_status_unschedulable` is 1 while the pod's PodScheduled
+        # condition is False with reason Unschedulable and has no series
+        # otherwise, so `== 1` only states what the series already means
+        # (it keeps the rule right if a kube-state-metrics version emits 0
+        # instead of omitting). On a cluster that adds nodes on demand this
+        # is the signal that provisioning did not happen: the pod is what
+        # the provisioner reacts to, and it is still waiting.
+        - alert: PodUnschedulable
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod) (
+              kube_pod_status_unschedulable{namespace=~".*"} == 1
+            )
+          for: 15m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been unschedulable for 15m"
+            description: >-
+              The scheduler has not been able to place this pod for 15m.
+              On a cluster that provisions nodes on demand that means no node was
+              added for it (a provisioning failure, a quota or capacity limit, or
+              a request no node type can satisfy); on any cluster it can also be
+              an affinity, taint or quota the pod can never meet. The pod's
+              events name the scheduler's reason.

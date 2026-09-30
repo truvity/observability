@@ -33,7 +33,14 @@ own six (Pending, Running, Succeeded, Failed, Errored, Aborted) — SIX
 series per Promotion object, 1 on the current phase and 0 on the other
 five.
 
-`metricNamePrefix: ""` on both, explicit: unset, kube-state-metrics'
+`nodeclaim_status_condition` (the `nodeClaims` preset): the same Gauge
+shape over a Karpenter NodeClaim's status.conditions (Launched, Registered,
+Initialized, Ready, ConsistentStateFound, Consolidatable: six series per
+claim, a NodeClaim being one per provisioned node). NodeClaims are
+cluster-scoped, so there is no namespace label; `nodepool` is read from the
+`karpenter.sh/nodepool` label Karpenter sets on every claim.
+
+`metricNamePrefix: ""` on all of them, explicit: unset, kube-state-metrics'
 own default prefixes every name with `kube_customresource_`; the empty
 string is what yields the plain names `charts/platform-alerts`'
 `groups.kargo` reads.
@@ -51,6 +58,7 @@ data:
     kind: CustomResourceStateMetrics
     spec:
       resources:
+{{- if or (($customResources.kargo).enabled) (($customResources.nodeClaims).enabled) }}
 {{- if ($customResources.kargo).enabled }}
         - groupVersionKind:
             group: kargo.akuity.io
@@ -95,6 +103,31 @@ data:
                   path: [status, phase]
                   labelName: phase
                   list: [Pending, Running, Succeeded, Failed, Errored, Aborted]
+{{- end }}
+{{- if ($customResources.nodeClaims).enabled }}
+        - groupVersionKind:
+            group: karpenter.sh
+            version: v1
+            kind: NodeClaim
+          metricNamePrefix: ""
+          labelsFromPath:
+            nodeclaim: [metadata, name]
+            nodepool: [metadata, labels, karpenter.sh/nodepool]
+          metrics:
+            - name: nodeclaim_status_condition
+              help: >-
+                Karpenter NodeClaim status condition, from
+                status.conditions: 1 if the condition's own status is True,
+                0 if False or Unknown.
+              each:
+                type: Gauge
+                gauge:
+                  path: [status, conditions]
+                  labelsFromPath:
+                    type: ["type"]
+                    reason: ["reason"]
+                  valueFrom: ["status"]
+{{- end }}
 {{- else }}
         []
 {{- end }}
