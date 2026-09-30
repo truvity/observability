@@ -98,7 +98,7 @@ func TestDropAndSilencedWatchdogPrecedeThePrimaryTree(t *testing.T) {
 // the catch-all has to be that node's receiver too — not only the root's.
 func TestCatchAllIsTheFallbackOfEveryPrimaryNode(t *testing.T) {
 	for golden, want := range map[string]string{
-		"golden/observability-stack/notifications-catchall.yaml": "slack-alerts-everything-else",
+		"golden/observability-stack/notifications-catchall.yaml": "slack-acme--alerts-everything-else",
 		"golden/observability-stack/small-estate.yaml":           "telegram-chatfile",
 		"golden/observability-stack/single.yaml":                 "notifications-none",
 	} {

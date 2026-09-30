@@ -31,7 +31,10 @@ notifications:
   # Receiver kinds. Each is a mechanism (how the secret is mounted, what
   # the message looks like); none carries a value.
   slack:
-    webhookSecret: {name: example-slack-webhook, key: url}
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-slack-bot, key: token}
+    failureReceiver: status-page
   webhook:
     - name: status-page
       urlSecret: {name: example-status-webhook, key: url}
@@ -71,6 +74,8 @@ The chart renders from this an Alertmanager configuration with:
   `warning` on the same pair (`inhibit`, a value since 0.11.0 — see
   "Inhibition" below), and a rule that `Watchdog` inhibits
   nothing and is routed only by `deadman` (below);
+- one Slack receiver per distinct (workspace, channel), posting with the
+  workspace's bot token ("Slack", below);
 - the Slack template: the cluster and the namespace in the title, the
   alert's `summary`, a link to the runbook from `runbookBaseUrl` +
   `runbook` annotation, a link to Grafana built from `externalUrl` and
@@ -79,10 +84,10 @@ The chart renders from this an Alertmanager configuration with:
   (`deadman.urlSecret`), with `repeat_interval` equal to the heartbeat
   interval the far end expects.
 
-The receiver secret is **mounted**, never templated: the Slack webhook
-arrives as a file the way the watchdog URL already does, and the
+The receiver secret is **mounted**, never templated: the Slack bot
+token arrives as a file the way the watchdog URL already does, and the
 rendered configuration names the file. A manifest that contains a
-webhook is a webhook in git.
+token is a token in git.
 
 ## Refusals
 
@@ -91,6 +96,7 @@ webhook is a webhook in git.
 | `alertmanager.enabled` with no `notifications` | the blackhole: rules evaluated into nothing |
 | a route or a severity naming a receiver that is not configured | a route to nowhere looks like a route |
 | a receiver with no secret | a receiver that cannot send |
+| a leftover `slack.webhookSecret`; a `workspace` no entry declares; `workspace` left out with two or more declared; an empty channel; a duplicate workspace name; a workspace with an empty secret name or key; `slack.failureReceiver` naming Slack or an unconfigured receiver | the Slack shapes that look wired up and deliver nowhere; see "Slack" |
 | a route matching on a label the collectors do not stamp (`tenant`, `env`, …) | matches nothing, pages nobody; the vocabulary is cluster × namespace |
 | `externalUrl` unset | every link dead |
 | `repeat_interval` on the deadman route longer than the far end's heartbeat | the far end alerts on healthy silence |
@@ -101,6 +107,114 @@ webhook is a webhook in git.
 | `catchAll` naming a receiver that is not configured | every alert no tier claimed routed to nowhere |
 
 Each has a fixture under `tests/invalid/observability-stack/`.
+
+## Slack
+
+Slack is one **Slack app per workspace**, posting with the app's bot
+token. Each `notifications.slack.workspaces` entry names an existing
+Secret holding that token; it is mounted and read with Alertmanager's
+`app_token_file`, never interpolated into the config.
+
+```yaml
+notifications:
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+      - name: globex
+        appTokenSecret: {name: example-globex-slack-bot, key: token}
+    failureReceiver: status-page     # a webhook name, or telegram
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical", workspace: acme}
+    warning:  {receiver: slack, channel: "#alerts", workspace: acme}
+  catchAll: {receiver: slack, channel: "#alerts-everything-else", workspace: acme}
+  routes:
+    - match: {k8s_namespace_name: example-partner}
+      critical: {channel: "#partner-critical", workspace: globex}
+```
+
+**Why not a webhook.** Before this, `notifications.slack.webhookSecret`
+was one incoming webhook shared by every channel, with the channel
+chosen per route. A Slack-app incoming webhook ignores the `channel` a
+message asks for and always posts to the one channel it was created
+for, so routing to several channels through it could not work, and
+looked as if it did. A bot token honours `channel`. Several workspaces
+are supported; the webhook is gone, and a leftover `webhookSecret` is
+refused at render with the migration.
+
+**Destinations.** Every place that picks a Slack destination — a
+severity tier, `catchAll`, a route's per-tier override — may carry
+`workspace`. With exactly one workspace declared it may be omitted and
+means that one; with two or more it is required (refused otherwise, as
+is a workspace nothing declares). A route's per-tier value is a channel
+string (the tier's workspace is kept) or `{channel, workspace}`, either
+half defaulting to the tier's. One Alertmanager receiver renders per
+distinct (workspace, channel), named `slack-<workspace>--<channel>` with
+the channel lower-cased and reduced to `[a-z0-9-]`, so two tiers landing
+in one channel are one receiver.
+
+**The Slack app.** One app per workspace. Create it from a manifest with
+only what posting needs:
+
+```yaml
+display_information:
+  name: Alerts
+features:
+  bot_user:
+    display_name: Alerts
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.public
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+```
+
+No events, no interactivity, no redirect URLs: nothing calls back into
+the cluster. Install it to the workspace and store the **Bot User OAuth
+Token** (`xoxb-...`) in the Secret the workspace names. `chat:write`
+lets the bot post where it is a member; `chat:write.public` lets it post
+to any **public** channel without being invited, which is why alert
+channels should be public. A private channel needs the bot invited
+(`/invite @Alerts`), or Slack answers `not_in_channel` and the
+delivery fails.
+
+**`update_message` is not used.** Alertmanager v0.32.0 added
+`update_message` to edit an earlier message instead of posting a new
+one. In v0.34.0 (the version the pinned operator deploys) setting it
+together with `app_token_file` makes Alertmanager crash while loading
+the config — its check dereferences an `api_url` that is unset for a
+bot token — and `api_url` may not be set beside an app token. The chart
+therefore does not render it, and a test holds that line. Revisit when
+an Alertmanager release fixes the check.
+
+**The operator path.** The receivers reach Alertmanager through
+`VMAlertmanager.spec.configRawYaml`, not through `VMAlertmanagerConfig`.
+The operator (v0.74.1) only validates that text against Alertmanager's
+own config types (v0.33.1, which has `app_token_file`, since v0.30.0)
+and stores it; the running Alertmanager is v0.34.0.
+
+**When Slack itself fails.** Alertmanager counts failed deliveries in
+`alertmanager_notifications_failed_total{integration="slack"}` and
+retries; a revoked token, a channel the bot may not post in or an outage
+otherwise looks like a quiet estate. The rule `SlackNotificationsFailing`
+(`selfAlerts.slackDelivery`) fires when that counter increases over 15
+minutes. It renders whenever a workspace is declared, without
+`selfAlerts.enabled`, and it needs Alertmanager's own `/metrics` in the
+metrics store — with none, the expression has no series and never fires.
+
+It is never routed to Slack. A route for it sits first in the tree, with
+`continue: false`, and goes to `notifications.slack.failureReceiver`: a
+`notifications.webhook` name, or `telegram`. `failureReceiver` naming
+Slack, or a receiver that is not configured, is refused. **Unset, the
+alert still renders, so it is visible in vmalert, but the route sends it
+to the null receiver and it reaches nobody.** That gap is deliberate —
+refusing would block installs whose only receiver is Slack — and it is
+why `failureReceiver` is worth setting.
 
 ## Telegram
 

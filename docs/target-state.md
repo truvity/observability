@@ -142,14 +142,16 @@ smallest shape that exercises everything. Every value below is invented.
 **The stack** (`observability-stack`): the issuer and audience, the
 principals and their grants (or the same list through `pkg/tenancy`),
 the retention per store, the backup destination, the Secret names — and
-now the `notifications:` block: a webhook Secret name, the external URL,
+now the `notifications:` block: a Slack bot token Secret name, the external URL,
 and the route list.
 
 ```yaml
 notifications:
   externalUrl: https://grafana.example
   slack:
-    webhookSecret: {name: example-slack-webhook, key: url}
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-slack-bot, key: token}
   routes:
     - match: {k8s_cluster_name: example-cluster}
       critical: "#alerts-critical"

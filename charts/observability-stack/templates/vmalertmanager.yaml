@@ -35,14 +35,24 @@ one fact (see the refusal in _validate.tpl), and a consumer who already
 set the vmalert one gets a working Grafana link in Slack for free.
 */}}
 {{- $externalUrl := $n.externalUrl | default .Values.vmalert.externalUrl }}
-{{- $slackChannels := dict }}
+{{- /*
+Slack destinations: one receiver per distinct (workspace, channel) any
+severity tier, the catch-all or a route's per-tier override resolves to.
+A bot token belongs to one workspace, so the workspace is half of what a
+destination IS; `slackTarget` resolves an omitted workspace to the one
+declared workspace (the refusal for two or more is in _validate.tpl).
+*/}}
+{{- $slackWorkspaces := $slack.workspaces | default list }}
+{{- $slackTargets := dict }}
 {{- range $tier, $cfg := $severities }}
 {{- if eq $cfg.receiver "slack" }}
-{{- $_ := set $slackChannels $cfg.channel true }}
+{{- $target := include "observability-stack.notifications.slackTarget" (list $ $cfg "") | fromYaml }}
+{{- $_ := set $slackTargets (include "observability-stack.notifications.slackReceiver" $target) $target }}
 {{- end }}
 {{- end }}
 {{- if and $catchAll (eq $catchAll.receiver "slack") }}
-{{- $_ := set $slackChannels $catchAll.channel true }}
+{{- $target := include "observability-stack.notifications.slackTarget" (list $ $catchAll "") | fromYaml }}
+{{- $_ := set $slackTargets (include "observability-stack.notifications.slackReceiver" $target) $target }}
 {{- end }}
 {{- range $r := $routes }}
 {{- range $tier := list "critical" "warning" }}
@@ -50,10 +60,22 @@ set the vmalert one gets a working Grafana link in Slack for free.
 {{- if $override }}
 {{- $tcfg := index $severities $tier }}
 {{- if and $tcfg (eq $tcfg.receiver "slack") }}
-{{- $_ := set $slackChannels $override true }}
+{{- $target := include "observability-stack.notifications.slackTarget" (list $ $tcfg $override) | fromYaml }}
+{{- $_ := set $slackTargets (include "observability-stack.notifications.slackReceiver" $target) $target }}
 {{- end }}
 {{- end }}
 {{- end }}
+{{- end }}
+{{- /*
+The Slack delivery self-alert's receiver (`notifications.slack.failureReceiver`):
+a webhook's name, or `telegram`. Never Slack — that is refused — because
+the alert exists to say Slack is not delivering. Unset, the alert goes to
+the null receiver: it is visible in vmalert and reaches nobody, which
+docs/notifications.md states as the gap it is.
+*/}}
+{{- $failureReceiver := "notifications-none" }}
+{{- if $slack.failureReceiver }}
+{{- $failureReceiver = $slack.failureReceiver }}
 {{- end }}
 {{- /*
 Telegram targets: one receiver per distinct (chat, thread) a severity
@@ -73,6 +95,11 @@ tier (refused in _validate.tpl), so severities are the only source.
 {{- if and $catchAll (eq $catchAll.receiver "telegram") }}
 {{- $target := include "observability-stack.notifications.telegramTarget" (list $telegram $catchAll) | fromYaml }}
 {{- $_ := set $telegramTargets (include "observability-stack.notifications.telegramReceiver" $target) $target }}
+{{- end }}
+{{- if and $slackWorkspaces (eq ($slack.failureReceiver | default "") "telegram") }}
+{{- $target := include "observability-stack.notifications.telegramTarget" (list $telegram (dict)) | fromYaml }}
+{{- $failureReceiver = include "observability-stack.notifications.telegramReceiver" $target }}
+{{- $_ := set $telegramTargets $failureReceiver $target }}
 {{- end }}
 {{- end }}
 {{- /*
@@ -99,15 +126,15 @@ spec:
   {{- with .Values.vmalert.externalUrl }}
   externalURL: {{ . | quote }}
   {{- end }}
-  {{- if or $watchdog.secretName ($slack.webhookSecret).name ($telegram.botTokenSecret).name $webhooks }}
+  {{- if or $watchdog.secretName $slackWorkspaces ($telegram.botTokenSecret).name $webhooks }}
   {{- /*
   Mounted here rather than through the CR's own `secrets` list, which
   would put it under a path this repository's leak canary bans outright —
   and the canary is right to: a path with that shape is the one thing in
   a manifest that names where an estate keeps its secrets. A manifest
   that contains a webhook is a webhook in git, so every receiver's URL
-  arrives as a mounted file and is read with `*_url_file`, never
-  interpolated into the config below.
+  or token arrives as a mounted file and is read with `*_url_file` /
+  `*_token_file`, never interpolated into the config below.
   */}}
   volumes:
     {{- if $watchdog.secretName }}
@@ -115,10 +142,10 @@ spec:
       secret:
         secretName: {{ $watchdog.secretName | quote }}
     {{- end }}
-    {{- if ($slack.webhookSecret).name }}
-    - name: notifications-slack
+    {{- range $w := $slackWorkspaces }}
+    - name: {{ printf "notifications-slack-%s" $w.name }}
       secret:
-        secretName: {{ $slack.webhookSecret.name | quote }}
+        secretName: {{ $w.appTokenSecret.name | quote }}
     {{- end }}
     {{- if ($telegram.botTokenSecret).name }}
     - name: notifications-telegram
@@ -141,9 +168,9 @@ spec:
       mountPath: /etc/alertmanager/watchdog
       readOnly: true
     {{- end }}
-    {{- if ($slack.webhookSecret).name }}
-    - name: notifications-slack
-      mountPath: /etc/alertmanager/notifications-slack
+    {{- range $w := $slackWorkspaces }}
+    - name: {{ printf "notifications-slack-%s" $w.name }}
+      mountPath: {{ printf "/etc/alertmanager/notifications-slack-%s" $w.name }}
       readOnly: true
     {{- end }}
     {{- if ($telegram.botTokenSecret).name }}
@@ -178,6 +205,17 @@ spec:
       group_interval: {{ $n.groupInterval | default "5m" }}
       repeat_interval: {{ $n.repeatInterval | default "4h" }}
       routes:
+        {{- if $slackWorkspaces }}
+        # The Slack delivery self-alert, before everything else and with
+        # `continue: false`: it says Slack is not delivering, so it must
+        # never be routed to Slack, and no route below may claim it.
+        # `notifications.slack.failureReceiver` names where it goes; unset,
+        # it goes to the null receiver (docs/notifications.md).
+        - receiver: {{ $failureReceiver }}
+          matchers:
+            - alertname = "SlackNotificationsFailing"
+          continue: false
+        {{- end }}
         {{- if $watchdog.secretName }}
         # The heartbeat, first and matched on its own: it must never be
         # grouped with anything, never inhibited and never silenced by a
@@ -244,11 +282,20 @@ spec:
         {{- end }}
     receivers:
       - name: notifications-none
-      {{- range $ch, $_ := $slackChannels }}
-      - name: {{ include "observability-stack.notifications.slackReceiver" $ch }}
+      {{- range $name, $target := $slackTargets }}
+      - name: {{ $name }}
         slack_configs:
-          - channel: {{ $ch | quote }}
-            api_url_file: /etc/alertmanager/notifications-slack/{{ $slack.webhookSecret.key | default "url" }}
+          {{- /*
+          A Slack app's bot token, mounted and read with `app_token_file`
+          (Alertmanager v0.30.0 and later), never interpolated: it can post
+          as the bot anywhere the bot may. `channel` is honoured with a
+          token, which an incoming webhook never did. `update_message` is
+          deliberately absent: Alertmanager v0.34.0 crashes while LOADING a
+          config that sets it without an explicit `api_url`, and `api_url`
+          may not be set beside an app token (docs/notifications.md).
+          */}}
+          - channel: {{ $target.channel | quote }}
+            app_token_file: {{ printf "/etc/alertmanager/notifications-slack-%s/%s" $target.workspace (include "observability-stack.notifications.workspaceKey" (list $slackWorkspaces $target.workspace)) }}
             send_resolved: true
             title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}'
             text: |-

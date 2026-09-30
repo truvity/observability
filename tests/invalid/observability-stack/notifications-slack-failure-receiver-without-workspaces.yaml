@@ -1,0 +1,22 @@
+# expect: `notifications.slack.failureReceiver` is set but `notifications.slack.workspaces` is empty
+# A failure receiver with no Slack workspace: no alert to route.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    failureReceiver: pager
+  webhook:
+    - name: pager
+      urlSecret: {name: example-pager-webhook, key: url}
+  severities:
+    critical: {receiver: pager, channel: pager}
+    warning: {receiver: pager, channel: pager}

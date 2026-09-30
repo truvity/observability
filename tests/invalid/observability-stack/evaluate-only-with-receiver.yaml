@@ -18,4 +18,5 @@ alertmanager:
 notifications:
   mode: evaluate-only
   slack:
-    webhookSecret: {name: example-slack-webhook, key: url}
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}

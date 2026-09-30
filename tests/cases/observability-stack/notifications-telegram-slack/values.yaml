@@ -39,7 +39,8 @@ tenancy:
 notifications:
   externalUrl: https://grafana.example
   slack:
-    webhookSecret: {name: example-slack-webhook, key: url}
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
   telegram:
     botTokenSecret: {name: example-telegram-bot, key: bot-token}
     chatId: -1000000000001

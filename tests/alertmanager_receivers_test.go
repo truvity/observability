@@ -1,7 +1,7 @@
 // Every receiver's credential is a mounted file, and every file is mounted.
 //
 // Alertmanager's receivers here never carry a secret inline: a Slack
-// webhook, a webhook URL, the deadman's URL and (since 0.10.0) a Telegram
+// bot token, a webhook URL, the deadman's URL and (since 0.10.0) a Telegram
 // bot token each arrive as a Secret mounted into the VMAlertmanager pod,
 // read with `*_file`. That has two ways to go wrong that a golden diff
 // shows but nobody reads for: a `*_file` path under a directory no volume
@@ -27,7 +27,8 @@ import (
 // inlineCredentialKeys are the receiver keys that would carry the
 // credential itself rather than a path to it.
 var inlineCredentialKeys = map[string]bool{
-	"api_url":   true, // slack_configs
+	"api_url":   true, // slack_configs, an incoming webhook
+	"app_token": true, // slack_configs, a Slack app's bot token
 	"url":       true, // webhook_configs
 	"bot_token": true, // telegram_configs
 }
@@ -37,7 +38,7 @@ func TestEveryReceiverCredentialIsAMountedFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, goldens)
 
-	var files, telegram int
+	var files, telegram, slack int
 
 	for _, g := range goldens {
 		for _, doc := range renderedDocs(t, g) {
@@ -88,6 +89,11 @@ func TestEveryReceiverCredentialIsAMountedFile(t *testing.T) {
 							if kind == "telegram_configs" {
 								telegram++
 							}
+							if kind == "slack_configs" {
+								slack++
+								assert.Equalf(t, "app_token_file", key,
+									"%s: receiver %v reads its Slack credential from %s; only a bot token's app_token_file honours `channel`", g, r["name"], key)
+							}
 							dir := path.Dir(val.(string))
 							vol, mounted := mounts[dir]
 							if assert.Truef(t, mounted,
@@ -106,4 +112,5 @@ func TestEveryReceiverCredentialIsAMountedFile(t *testing.T) {
 	// A check that found nothing to check proves nothing.
 	require.Positive(t, files, "no *_file receiver keys found in any golden; this test would pass vacuously")
 	require.Positive(t, telegram, "no telegram_configs found in any golden; the Telegram cases are missing")
+	require.Positive(t, slack, "no slack_configs found in any golden; the Slack cases are missing")
 }

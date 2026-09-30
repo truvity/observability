@@ -60,7 +60,8 @@ alertmanager:
 # consumer having to set the same fact twice.
 notifications:
   slack:
-    webhookSecret: {name: example-slack-webhook, key: url}
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
   severities:
     critical: {receiver: slack, channel: "#alerts-critical"}
     warning: {receiver: slack, channel: "#alerts"}

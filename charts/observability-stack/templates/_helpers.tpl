@@ -511,11 +511,18 @@ password:
 {{- end -}}
 
 {{/*
-Notifications: a Slack channel into an Alertmanager receiver name.
+Notifications: a Slack destination into an Alertmanager receiver name.
 
-Every project's route only ever OVERRIDES a channel string, so the same
-channel used from two places must render as the same receiver — hence a
-name derived from the channel itself rather than invented per site.
+A destination is a (workspace, channel) pair: a bot token belongs to one
+workspace, and the same channel name in two workspaces is two places. So
+the name is derived from BOTH, joined by `--`: a slug never contains a
+double hyphen (runs of non-alphanumerics collapse to one) and a workspace
+name may not (values.schema.json), so `slack-a-b--c` and `slack-a--b-c`
+can never be the same receiver by accident.
+
+Every route only ever OVERRIDES a channel string, so the same destination
+used from two places must render as the same receiver — hence a name
+derived from the destination itself rather than invented per site.
 Lower-cased and stripped to `[a-z0-9-]` because a receiver name reaching
 this from `notifications.routes[].critical` is an estate's channel name,
 not a value this chart controls the shape of.
@@ -526,7 +533,50 @@ not a value this chart controls the shape of.
 {{- end -}}
 
 {{- define "observability-stack.notifications.slackReceiver" -}}
-{{- printf "slack-%s" (include "observability-stack.notifications.slug" .) -}}
+{{- printf "slack-%s--%s" .workspace (include "observability-stack.notifications.slug" .channel) -}}
+{{- end -}}
+
+{{/*
+Notifications: one Slack destination, as YAML `{workspace, channel}`.
+
+`$cfg` is a severity tier (or the catch-all); `$override` is what a
+route gave for that tier: "" for nothing, a channel string (the
+tier's workspace is kept), or `{channel, workspace}`. The workspace is
+the override's, else the tier's, else — when exactly ONE workspace is
+declared — that one. With two or more and none named it stays empty,
+which `observability-stack.validate.notifications` refuses before
+anything renders from it.
+*/}}
+{{- define "observability-stack.notifications.slackTarget" -}}
+{{- $root := index . 0 -}}
+{{- $cfg := index . 1 -}}
+{{- $override := index . 2 -}}
+{{- $slack := ($root.Values.notifications | default dict).slack | default dict -}}
+{{- $workspaces := $slack.workspaces | default list -}}
+{{- $channel := $cfg.channel -}}
+{{- $workspace := $cfg.workspace | default "" -}}
+{{- if kindIs "map" $override -}}
+{{- $channel = $override.channel | default $cfg.channel -}}
+{{- $workspace = $override.workspace | default $workspace -}}
+{{- else if $override -}}
+{{- $channel = $override -}}
+{{- end -}}
+{{- if and (not $workspace) (eq (len $workspaces) 1) -}}
+{{- $workspace = (index $workspaces 0).name -}}
+{{- end -}}
+workspace: {{ $workspace | quote }}
+channel: {{ $channel | quote }}
+{{- end -}}
+
+{{/*
+Notifications: the key a workspace's bot token is read from, in the
+Secret `workspaces[].appTokenSecret` names.
+*/}}
+{{- define "observability-stack.notifications.workspaceKey" -}}
+{{- $want := index . 1 -}}
+{{- range $w := index . 0 -}}
+{{- if eq $w.name $want -}}{{- $w.appTokenSecret.key -}}{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -595,8 +645,8 @@ Resolve one severity tier's target to an already-rendered receiver name.
 
 `$root` is the top-level context (for the webhook list), `$severities`
 is `notifications.severities`, `$tier` is "critical" or "warning", and
-`$override` is the channel string a project's own route entry gave for
-that tier, or "" when it gave none — in which case the tier's own
+`$override` is what a project's own route entry gave for that tier (a
+channel string, or `{channel, workspace}`), or "" when it gave none — in which case the tier's own
 default channel is used, which is how a project naming only `critical`
 gets its warnings routed to `severities.warning` without a second route
 ever being written.
@@ -609,8 +659,7 @@ ever being written.
 {{- $cfg := index $severities $tier -}}
 {{- $telegram := ($root.Values.notifications | default dict).telegram | default dict -}}
 {{- if eq $cfg.receiver "slack" -}}
-{{- $channel := $override | default $cfg.channel -}}
-{{- include "observability-stack.notifications.slackReceiver" $channel -}}
+{{- include "observability-stack.notifications.slackReceiver" (include "observability-stack.notifications.slackTarget" (list $root $cfg $override) | fromYaml) -}}
 {{- else if and (eq $cfg.receiver "telegram") ($telegram.botTokenSecret).name -}}
 {{- include "observability-stack.notifications.telegramReceiver" (include "observability-stack.notifications.telegramTarget" (list $telegram $cfg) | fromYaml) -}}
 {{- else -}}

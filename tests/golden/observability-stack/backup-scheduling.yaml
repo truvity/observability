@@ -2606,12 +2606,12 @@ spec:
       memory: 256Mi
   selectAllByDefault: false
   volumes:
-    - name: notifications-slack
+    - name: notifications-slack-acme
       secret:
-        secretName: "example-slack-webhook"
+        secretName: "example-slack-bot"
   volumeMounts:
-    - name: notifications-slack
-      mountPath: /etc/alertmanager/notifications-slack
+    - name: notifications-slack-acme
+      mountPath: /etc/alertmanager/notifications-slack-acme
       readOnly: true
   configRawYaml: |
     route:
@@ -2629,22 +2629,31 @@ spec:
       group_interval: 5m
       repeat_interval: 4h
       routes:
+        # The Slack delivery self-alert, before everything else and with
+        # `continue: false`: it says Slack is not delivering, so it must
+        # never be routed to Slack, and no route below may claim it.
+        # `notifications.slack.failureReceiver` names where it goes; unset,
+        # it goes to the null receiver (docs/notifications.md).
+        - receiver: notifications-none
+          matchers:
+            - alertname = "SlackNotificationsFailing"
+          continue: false
         - match: {}
           receiver: notifications-none
           continue: true
           routes:
             - match:
                 severity: critical
-              receiver: slack-alerts-critical
+              receiver: slack-acme--alerts-critical
             - match:
                 severity: warning
-              receiver: slack-alerts
+              receiver: slack-acme--alerts
     receivers:
       - name: notifications-none
-      - name: slack-alerts
+      - name: slack-acme--alerts
         slack_configs:
           - channel: "#alerts"
-            api_url_file: /etc/alertmanager/notifications-slack/url
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
             text: |-
@@ -2652,10 +2661,10 @@ spec:
               Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
               {{ end }}
               Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
-      - name: slack-alerts-critical
+      - name: slack-acme--alerts-critical
         slack_configs:
           - channel: "#alerts-critical"
-            api_url_file: /etc/alertmanager/notifications-slack/url
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
             text: |-
@@ -2705,6 +2714,82 @@ spec:
   userNamespaceSelector: {}
   extraArgs:
     logInvalidAuthTokens: "true"
+
+---
+# Source: observability-stack/templates/selfalerts.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-selfalerts
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    - name: observability-stack.selfalerts
+      interval: 30s
+      rules:
+        # SlackNotificationsFailing. Alertmanager counts a failed Slack
+        # delivery (bad or revoked token, a channel the bot may not post
+        # in, Slack down) and keeps retrying; nothing else says a
+        # notification is being lost. `integration="slack"` is the
+        # Alertmanager label for `slack_configs`.
+        #
+        # This alert must NEVER be routed to Slack: templates/
+        # vmalertmanager.yaml puts a route for it at the top of the tree,
+        # to `notifications.slack.failureReceiver`, or to the null
+        # receiver when that is unset.
+        #
+        # Healthy range: 0. Needs Alertmanager's own /metrics in this
+        # metrics store; with none, the expression has no series and
+        # never fires (docs/notifications.md, "Slack").
+        - alert: SlackNotificationsFailing
+          expr: >-
+            sum(increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) by (integration) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Alertmanager is failing to deliver to Slack"
+            description: >-
+              alertmanager_notifications_failed_total{integration="slack"}
+              rose in the last 15m. Alerts routed to
+              Slack are not arriving: check the workspace's bot token
+              Secret, that the channel exists (a private channel needs the
+              bot invited) and Slack's own status.
+        - alert: MetricStoreSnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-metrics-incremental"}
+            ) > 150m
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The metrics store's newest backup snapshot is stale"
+            description: >-
+              No successful run of observability-stack-backup-metrics-incremental
+              within 150m. A CronJob that has stopped
+              being scheduled produces no failures at all, which is the
+              same reasoning platform-alerts' CronJobNotSucceeding rule
+              uses for any other CronJob.
+        - alert: LogStoreSnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace="observability", cronjob="observability-stack-backup-logs"}
+            ) > 2h
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The log store's newest backup snapshot is stale"
+            description: >-
+              No successful run of observability-stack-backup-logs
+              within 2h. A CronJob that has
+              stopped being scheduled produces no failures at all — the
+              same blind spot the metrics store's own rule exists for.
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/monitor.yaml

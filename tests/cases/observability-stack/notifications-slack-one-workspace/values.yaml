@@ -1,0 +1,33 @@
+# One Slack workspace: `workspace` is left out everywhere and means that
+# one. A route's per-tier override is either a channel string (the tier's
+# workspace is kept) or `{channel}`; both land in the one workspace's
+# bot token, mounted and read with `app_token_file`.
+# The cluster's DNS suffix is a neutral placeholder: a golden render is a
+# tracked file in a public repository.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+  routes:
+    - match: {k8s_namespace_name: example-app}
+      critical: "#example-app-critical"
+      warning: {channel: "#example-app"}
