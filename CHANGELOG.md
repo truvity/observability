@@ -19,10 +19,7 @@ must be done first, and whether a default moved. Newest first, one
   `slack-<workspace>--<channel>--<mention>`, so `critical` can ping
   `@here` while `warning` posts quietly to the same channel. A `mention`
   on a non-Slack receiver, or a value outside the enum, is refused.
-
-## v0.18.0
-
-`observability-mcp`: one connector per Victoria store, and one for Grafana.
+- `observability-mcp`: one connector per Victoria store, and one for Grafana.
 
 - **BREAKING (values interface, `observability-mcp`; a chart no release has
   asked anyone to adopt): `servers.*` is replaced by `stores[]` and
