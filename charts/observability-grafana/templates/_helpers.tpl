@@ -42,17 +42,30 @@ the store's proxy, not Grafana, is the boundary.
 {{- $_ := set $prom "secureJsonData" (deepCopy $secure) -}}
 {{- end -}}
 {{- $rows = concat $rows (list $metrics $prom) -}}
-{{- if or (not (hasKey $s "logs")) $s.logs -}}
+{{- $t := $s.traces | default dict -}}
+{{- $hasLogs := or (not (hasKey $s "logs")) $s.logs -}}
+{{- $hasTraces := or (not (hasKey $t "enabled")) $t.enabled -}}
+{{- /* Logs and traces are linked only inside ONE store, and only when that
+       store provisions both: a link to a uid that does not exist is a
+       dead button. `correlate` is on unless set false. */ -}}
+{{- $link := and $hasLogs $hasTraces (or (not (hasKey $c "correlate")) $c.correlate) -}}
+{{- if $hasLogs -}}
 {{- /* THE ROOT, not the query path: the logs plugin appends
        /select/logsql/query itself. */ -}}
 {{- $logs := dict "name" (printf "Logs (%s)" $s.name) "type" "victoriametrics-logs-datasource" "uid" (printf "%s-logs" $s.name) "url" $url "access" "proxy" "jsonData" (deepCopy $json) -}}
 {{- if $ca -}}
 {{- $_ := set $logs "secureJsonData" (deepCopy $secure) -}}
 {{- end -}}
+{{- if $link -}}
+{{- /* OpenTelemetry logs reach VictoriaLogs with the trace id in the
+       structured field `trace_id`; the derived field matches that field
+       (matcherType label) and opens the same store's traces datasource on
+       that id. */ -}}
+{{- $_ := set (get $logs "jsonData") "derivedFields" (list (dict "name" "TraceID" "matcherType" "label" "matcherRegex" "trace_id" "url" "$${__value.raw}" "urlDisplayLabel" "Open trace" "datasourceUid" (printf "%s-traces" $s.name))) -}}
+{{- end -}}
 {{- $rows = append $rows $logs -}}
 {{- end -}}
-{{- $t := $s.traces | default dict -}}
-{{- if or (not (hasKey $t "enabled")) $t.enabled -}}
+{{- if $hasTraces -}}
 {{- $traces := dict "name" (printf "Traces (%s)" $s.name) "type" "jaeger" "uid" (printf "%s-traces" $s.name) "url" (printf "%s/select/jaeger" $url) "access" "proxy" "jsonData" (deepCopy $json) -}}
 {{- if $ca -}}
 {{- $_ := set $traces "secureJsonData" (deepCopy $secure) -}}
@@ -64,6 +77,13 @@ the store's proxy, not Grafana, is the boundary.
 {{- $sj := get $traces "secureJsonData" | default dict -}}
 {{- $_ := set $sj "httpHeaderValue1" (printf "Bearer $__env{%s}" $t.bearerEnv) -}}
 {{- $_ := set $traces "secureJsonData" $sj -}}
+{{- end -}}
+{{- if $link -}}
+{{- /* (`$$` is Grafana provisioning's escape for a literal `$`.)
+       Trace to logs: the same store's logs datasource, by trace id, in a
+       window around the span. A custom LogsQL query, because the built-in
+       filters write LogQL. */ -}}
+{{- $_ := set (get $traces "jsonData") "tracesToLogsV2" (dict "datasourceUid" (printf "%s-logs" $s.name) "spanStartTimeShift" "-5m" "spanEndTimeShift" "5m" "filterByTraceID" false "filterBySpanID" false "customQuery" true "query" "trace_id:\"$${__trace.traceId}\"") -}}
 {{- end -}}
 {{- $rows = append $rows $traces -}}
 {{- end -}}

@@ -36,6 +36,7 @@
                 }
               }
             },
+            "correlate": { "type": "boolean", "description": "Link each store's logs to its traces and back. Default true." },
             "renamedDatasources": { "type": "array", "items": { "type": "string", "minLength": 1 } },
             "caFile": { "type": "string" },
             "rootUrl": { "type": "string" },
