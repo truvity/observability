@@ -1031,18 +1031,23 @@ prometheus-node-exporter:
   # handful of disks and interfaces. Memory request equals limit, as for the
   # log agent, so the exporter is not the first thing evicted under node
   # pressure, and the cap (about 3x the observed peak) is where a node with
-  # many mounts would show up; the CPU limit is left well above the
-  # request because only the request decides scheduling, and a tight CPU
-  # ceiling throttles the exporter exactly when a scrape lands on a busy
-  # node. Requests are small on purpose: `priorityClassName` above lets
-  # this pod preempt to fit, and a request sized to use keeps that a rare
-  # fallback.
+  # many mounts would show up. There is NO CPU limit, on purpose: the
+  # collectors all run in parallel at scrape time, so one scrape is a burst
+  # of a few hundred millicores for a few tens of milliseconds on a pod that
+  # averages about 1m. Measured on production-sized nodes, 30 to 40% of
+  # active CFS periods were throttled under a 100m quota, which fires
+  # CPUThrottlingHigh and adds 0.2 to 0.3 s to every scrape. The quota
+  # throttles the scrape itself, and only the request decides scheduling, so
+  # the request stays and the limit goes; the memory limit and the lean
+  # collector set below bound a misbehaving exporter. Requests are small on
+  # purpose: `priorityClassName` above lets this pod preempt to fit, and a
+  # request sized to use keeps that a rare fallback. To add a limit anyway,
+  # set `resources.limits.cpu`.
   resources:
     requests:
       cpu: 10m
       memory: 64Mi
     limits:
-      cpu: 100m
       memory: 64Mi
   # -- THE COLLECTOR SET. Upstream turns on about forty collectors; this
   # chart turns ALL of them off (`--collector.disable-defaults`) and names

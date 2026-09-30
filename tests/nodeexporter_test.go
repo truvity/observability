@@ -95,7 +95,7 @@ func TestNodeExporterHasTheNodeAgentDefaults(t *testing.T) {
 	req, lim := res["requests"].(map[string]any), res["limits"].(map[string]any)
 	assert.Equal(t, lim["memory"], req["memory"], "memory is capped where it is measured: request equals limit")
 	assert.Equal(t, "10m", req["cpu"])
-	assert.Equal(t, "100m", lim["cpu"], "the CPU limit leaves headroom above the request")
+	assert.NotContains(t, lim, "cpu", "no CPU limit: a quota throttles the scrape burst")
 }
 
 // A consumer that keeps ephemeral CI pools out of its DaemonSets passes the

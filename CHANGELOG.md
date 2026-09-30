@@ -4,6 +4,23 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.15.1
+
+node-exporter no longer has a CPU limit. Nothing changes for an install that
+leaves `nodeExporter.enabled` at its default.
+
+- **Behaviour change: the node-exporter DaemonSet drops its CPU limit
+  (`nodeExporter.resources.limits.cpu`, was `100m`).** The 10m CPU request,
+  the 64Mi memory request and the 64Mi memory limit are unchanged. The
+  collectors all run in parallel when a scrape lands, so a scrape is a short
+  burst well past 100m on a pod that averages about 1m; measured on
+  production-sized nodes, 30 to 40% of active CFS periods were throttled,
+  which fired `CPUThrottlingHigh` and added 0.2 to 0.3 s to each scrape. The
+  request still reserves the scheduling share and the memory limit and the
+  lean collector set bound a misbehaving exporter. Only the render of the
+  opt-in `node-exporter` case moves. To keep a CPU limit, set
+  `nodeExporter.resources.limits.cpu` yourself.
+
 ## v0.15.0
 
 `charts/observability-emitters` gains a node-exporter, off by default, and the
