@@ -142,6 +142,25 @@ grafana:
         # ConfigMap volume is updated by swapping a symlink, which raises
         # no watch event: an edited dashboard would never load.
         updateIntervalSeconds: 30
+      # Grafana must not start before the sidecar's first sync: it watches
+      # the home dashboard's directory once at start, and a directory that
+      # does not exist yet is never watched (the home dashboard then does
+      # not hot-reload until the pod restarts). `initDashboards` moves the
+      # sidecar from the container list to the init list; `restartPolicy:
+      # Always` makes it a native sidecar, so it keeps watching for the
+      # pod's life, and the startup probe holds Grafana back until the
+      # sidecar's health endpoint answers, which it does only after that
+      # first sync. Needs Kubernetes 1.29+. Without `restartPolicy` the
+      # init container would watch forever and Grafana would never start.
+      initDashboards: true
+      restartPolicy: Always
+      startupProbe:
+        httpGet:
+          path: /healthz
+          port: 8084
+        initialDelaySeconds: 2
+        periodSeconds: 2
+        failureThreshold: 150
   # The provisioned datasources are a ConfigMap of this chart's own
   # (templates/datasources.yaml), named after a hash of its content so a
   # change rolls the pods; the subchart mounts it here.

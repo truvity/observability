@@ -70,8 +70,18 @@ sources:
       - kube_daemonset_
       - kube_namespace_
       - kube_persistentvolumeclaim_
+
+  - name: kube-state-metrics HorizontalPodAutoscaler collector (kube-state-metrics.collectors)
+    note: >-
+      the collector is on, but kube-state-metrics writes nothing for a kind
+      the cluster holds no objects of: a store whose clusters run no
+      HorizontalPodAutoscaler has none of these series. Dashboards must
+      tolerate absence. (kube-state-metrics' own `kube_state_metrics_*`
+      self-telemetry is NOT listed: it is served on the telemetry port, which
+      no scrape reads, since `kube-state-metrics.selfMonitor` is off.)
+    optional: true
+    prefixes:
       - kube_horizontalpodautoscaler_
-      - kube_state_metrics_
 
   - name: kube-state-metrics Kargo preset (kubeStateMetrics.customResources.kargo)
     note: only on installs that turn the preset on; dashboards must tolerate absence
