@@ -1,0 +1,30 @@
+# The smallest values file that renders (two stores, sign-in, a database),
+# with the opt-in workload sign-in on: an access-issuer token with the one
+# audience only a workload's own client can mint is accepted as a Viewer.
+global:
+  observabilityGrafana:
+    rootUrl: https://grafana.example.org
+    stores:
+      - name: store-a
+        url: https://store-a.example.org
+        default: true
+      - name: store-b
+        url: https://store-b.example.org
+    oauth:
+      issuer: https://issuer.example.org
+      clientId: grafana
+      clientSecretRef: {name: grafana-client}
+      roleAttributePath: "contains(groups[*], 'example:admin') && 'Admin' || 'Editor'"
+    database:
+      host: postgres.example.org:5432
+      secretRef: {name: grafana-pg-app}
+    secretKeyRef: {name: grafana-secret-key}
+    workloadAuth:
+      enabled: true
+      issuer: https://issuer.example.org
+      jwksUrl: https://issuer.example.org/keys
+      audience: grafana-workload
+grafana:
+  # Named so the render is the same every time: left empty, the subchart
+  # generates a random admin password on every render.
+  admin: {existingSecret: grafana-admin}

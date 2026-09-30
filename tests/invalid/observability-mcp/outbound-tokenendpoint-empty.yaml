@@ -1,20 +1,20 @@
-# expect: `servers.metrics.outbound.tokenEndpoint` is empty
-# Incomplete outbound.
+# expect: `stores[primary].outbound.tokenEndpoint` is empty
+# No exchange endpoint: the stock servers would call with no credential.
 issuerURL: https://issuer.example.com
 proxy:
   image:
     tag: v0.0.1
-servers:
-  metrics:
-    enabled: true
-    resourceURL: https://mcp.example.com/metrics
+stores:
+  - name: primary
+    resourceURL: https://mcp.example.com/victoria/primary
+    vmauth: {url: "http://vmauth.monitoring.svc:8427"}
     outbound:
-      target: http://vmauth.observability.svc:8427
-      clientId: observability-mcp
-      audience: store-proxy
+      clientId: observability-mcp-primary
+      audience: primary-store
 networkPolicy:
   ingressFrom:
     - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}
   egress:
     issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]
     vmauth: [{podSelector: {matchLabels: {app.kubernetes.io/name: vmauth}}}]
+    grafana: [{podSelector: {matchLabels: {app.kubernetes.io/name: grafana}}}]

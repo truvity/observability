@@ -109,6 +109,35 @@ global:
         # when set: a path to a dashboard that is not there breaks the
         # home page, so the consumer decides.
         path: ""
+    # -- OPT-IN, default off. Let a WORKLOAD (a service that is not a
+    # person: observability-mcp's Grafana connector) call Grafana with an
+    # access-issuer token, instead of a stored service-account token.
+    #
+    # When enabled, grafana.ini gets an `[auth.jwt]` section that reads the
+    # token from `Authorization: Bearer ...` (Grafana strips the prefix),
+    # verifies its signature against `jwksUrl`, and requires `iss` and `aud`
+    # to equal the values below. The identity it creates is ALWAYS a Viewer:
+    # the role is a constant in the rendered config (`role_attribute_path`
+    # is not taken from the token; `role_attribute_strict` and
+    # `allow_assign_grafana_admin = false` close the rest), and its login is
+    # `workload:<sub>`, a string no person's login has. It is created on
+    # first use (`auto_sign_up`).
+    #
+    # WHAT GATES IT is `audience`: a token with any other `aud` is not this
+    # path's and Grafana falls through to its normal sign-in. So the audience
+    # must be one only the workload's own exchange client may mint, and never
+    # the audience of a human sign-in client (`oauth.clientId` is refused).
+    # Nothing else widens: a person who holds such a token gets Viewer, which
+    # a person signed in through OIDC already is at the least.
+    workloadAuth:
+      enabled: false
+      # -- The token's `iss`, exactly as the issuer writes it.
+      issuer: ""
+      # -- https. The issuer's JWKS URL (its discovery document's
+      # `jwks_uri`). Grafana refuses a non-https one.
+      jwksUrl: ""
+      # -- The `aud` a workload token carries for Grafana.
+      audience: ""
 
 grafana:
   # State lives in the external database; what remains on disk is the
@@ -237,7 +266,13 @@ grafana:
       # No local login: the issuer is the only way in.
       disable_login_form: true
       oauth_auto_login: true
-      login_maximum_lifetime_duration: '{{ .Values.global.observabilityGrafana.oauth.sessionMaxLifetime }}'
+      # The `[auth.jwt]` section of `workloadAuth` is written by this leaf's
+      # template, and is empty unless the feature is on. Nothing in ini
+      # syntax ends a section but the next header, and a Helm values map
+      # cannot carry a section that is absent by default; the helper
+      # therefore opens `[auth.jwt]` and re-opens `[auth]`, which Grafana's
+      # ini reader merges. See `observability-grafana.workloadAuthIni`.
+      login_maximum_lifetime_duration: '{{ .Values.global.observabilityGrafana.oauth.sessionMaxLifetime }}{{ include "observability-grafana.workloadAuthIni" . }}'
     auth.generic_oauth:
       enabled: true
       name: '{{ .Values.global.observabilityGrafana.oauth.name }}'

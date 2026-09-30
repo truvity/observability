@@ -19,13 +19,13 @@ everything still looks green.
 | `pkg/statusbox` (Go, Pulumi) + `setup.sh` | The watcher outside every cluster: several Gatus instances on one immutable box behind a tunnel and a private network — the deadman, outside-in probes, public status pages per company, and the bridge from an internal alert to a status component. | released |
 | `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | released |
 | `charts/observability-grafana` | One Grafana as the read UI over several stores: a datasource set per store, OIDC sign-in, a database of its own, dashboards from git only. See [docs/grafana.md](docs/grafana.md). | released |
-| `charts/observability-mcp` | Read-only Model Context Protocol servers over the store, so an agent can read metrics and alerts: the stock upstream server on loopback, beside a proxy that validates the caller's access token and holds the only credential the store sees. See [docs/mcp.md](docs/mcp.md). | released |
+| `charts/observability-mcp` + `cmd/mcp-aggregator` | Read-only Model Context Protocol connectors so an agent can read the estate: one per Victoria store (metrics, logs and traces tools in one server, prefixed, allowlisted) and one for Grafana's dashboards. Each is the stock server(s) on loopback behind a proxy that validates the caller's access token and holds the only credential the store sees. See [docs/mcp.md](docs/mcp.md). | released |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module
-`github.com/truvity/observability`'s version. `cmd/alert-ingress` publishes
-alongside them, to `ghcr.io/truvity/observability/alert-ingress` at the
-same tag — `charts/alert-ingress`'s `image.tag` defaults to it, so an
+`github.com/truvity/observability`'s version. `cmd/alert-ingress` and `cmd/mcp-aggregator` publish
+alongside them, to `ghcr.io/truvity/observability/alert-ingress` and
+`.../mcp-aggregator` at the same tag — `charts/alert-ingress`'s `image.tag` defaults to it, so an
 install that sets nothing pulls the matching build.
 
 ## Who it is for

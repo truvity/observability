@@ -1,5 +1,5 @@
-# Every server off (the chart's default): nothing is rendered, and nothing
-# is refused for what an enabled server would need.
-servers:
-  metrics:
-    enabled: false
+# Nothing enabled (the chart's default): nothing is rendered, and nothing
+# is refused for what a connector would need.
+stores: []
+grafana:
+  enabled: false

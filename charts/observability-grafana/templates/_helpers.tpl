@@ -121,3 +121,61 @@ app.kubernetes.io/name: {{ .Chart.Name }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
+
+{{/*
+The `[auth.jwt]` section of `global.observabilityGrafana.workloadAuth`, or
+nothing.
+
+It is appended to a value INSIDE `[auth]` (see values.yaml), so it begins
+with a newline and two spaces of indentation (the ConfigMap is a literal
+block whose lines the subchart indents by two), opens `[auth.jwt]`, and ends
+by re-opening `[auth]` so the keys that sort after it land where they belong.
+Grafana's ini reader (gopkg.in/ini.v1) merges a repeated section.
+
+What each key does, and why it is this value:
+
+  header_name = Authorization   Grafana strips a leading "Bearer " from it
+                                (pkg/services/authn/clients/jwt.go), so the
+                                proxy's outbound side needs to inject nothing
+                                but the standard header. A request whose
+                                Authorization is not a JWT with a `sub`
+                                (a service-account token, Basic) is not this
+                                client's and falls through.
+  jwk_set_url                   the issuer's keys; https only.
+  expect_claims                 `iss` and `aud` must equal the values set.
+                                The audience is the gate.
+  username_attribute_path       the login is `workload:<sub>`: a workload has
+                                no email, and Grafana needs a login or email;
+                                the prefix keeps it from colliding with (and
+                                being linked to) a person's existing login.
+  role_attribute_path           a CONSTANT expression that yields Viewer
+                                (`sub && 'Viewer'`; `sub` is checked to be
+                                present by Grafana already). Not read from a
+                                claim, so no token can ask for more. It does
+                                not begin with a quote, which ini would strip.
+  role_attribute_strict         a role that evaluates to nothing is refused.
+  allow_assign_grafana_admin    false: the server-admin flag is never set.
+  auto_sign_up                  the identity is created on first use.
+  url_login, enable_login_token false: no `?auth_token=` and no session
+                                cookie; every request carries its own token.
+*/}}
+{{- define "observability-grafana.workloadAuthIni" -}}
+{{- $w := (.Values.global.observabilityGrafana).workloadAuth | default dict -}}
+{{- if $w.enabled }}
+  [auth.jwt]
+  enabled = true
+  header_name = Authorization
+  jwk_set_url = {{ $w.jwksUrl }}
+  cache_ttl = 60m
+  expect_claims = {{ dict "iss" $w.issuer "aud" $w.audience | toJson }}
+  username_attribute_path = join(':', ['workload', sub])
+  role_attribute_path = sub && 'Viewer'
+  role_attribute_strict = true
+  allow_assign_grafana_admin = false
+  skip_org_role_sync = false
+  auto_sign_up = true
+  url_login = false
+  enable_login_token = false
+  [auth]
+{{- end -}}
+{{- end -}}

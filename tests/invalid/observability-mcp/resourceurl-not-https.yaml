@@ -1,21 +1,21 @@
-# expect: /servers/metrics/resourceURL': 'http://mcp.example.com/metrics' does not match
-# An http resource identifier is not one a client will send a token to.
+# expect: at '/stores/0/resourceURL'
+# An http resource URL is refused by the schema.
 issuerURL: https://issuer.example.com
 proxy:
   image:
     tag: v0.0.1
-servers:
-  metrics:
-    enabled: true
-    resourceURL: http://mcp.example.com/metrics
+stores:
+  - name: primary
+    resourceURL: http://mcp.example.com/victoria/primary
+    vmauth: {url: "http://vmauth.monitoring.svc:8427"}
     outbound:
-      target: http://vmauth.observability.svc:8427
       tokenEndpoint: https://issuer.example.com/token
-      clientId: observability-mcp
-      audience: store-proxy
+      clientId: observability-mcp-primary
+      audience: primary-store
 networkPolicy:
   ingressFrom:
     - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}
   egress:
     issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]
     vmauth: [{podSelector: {matchLabels: {app.kubernetes.io/name: vmauth}}}]
+    grafana: [{podSelector: {matchLabels: {app.kubernetes.io/name: grafana}}}]

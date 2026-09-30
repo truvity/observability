@@ -105,6 +105,71 @@ A few consequences of the split:
   must repeat it; use `extraConfigmapMounts` and `extraSecretMounts` for
   your own.
 
+## Workload sign-in (opt-in)
+
+Off by default, and a workload, not a person: a service such as
+[observability-mcp](mcp.md)'s Grafana connector that reads dashboards with a
+token the access issuer mints for it, instead of a stored service-account
+token. `global.observabilityGrafana.workloadAuth`:
+
+```yaml
+workloadAuth:
+  enabled: true
+  issuer: https://issuer.example.org        # the token's `iss`, exactly
+  jwksUrl: https://issuer.example.org/keys  # https; the issuer's jwks_uri
+  audience: grafana-workload                # the gate; see below
+```
+
+It renders an `[auth.jwt]` section into `grafana.ini` (verified against
+Grafana 13.1.1's source and ini reader):
+
+```ini
+[auth.jwt]
+enabled = true
+header_name = Authorization
+jwk_set_url = <jwksUrl>
+cache_ttl = 60m
+expect_claims = {"aud":"<audience>","iss":"<issuer>"}
+username_attribute_path = join(':', ['workload', sub])
+role_attribute_path = sub && 'Viewer'
+role_attribute_strict = true
+allow_assign_grafana_admin = false
+skip_org_role_sync = false
+auto_sign_up = true
+url_login = false
+enable_login_token = false
+```
+
+- `header_name = Authorization`: Grafana strips a leading `Bearer ` from that
+  header, so the proxy's outbound side injects only the standard header. A
+  request whose `Authorization` is not a JWT with a `sub` (a service-account
+  token, Basic) is not this path's and falls through to normal handling.
+- **The role is a constant.** `role_attribute_path` is an expression that
+  yields `Viewer` and reads nothing from the token but the presence of
+  `sub`; `role_attribute_strict` refuses a role that evaluates to nothing,
+  `allow_assign_grafana_admin` is off, and there is no value to change the
+  role (a `role` key is refused by the schema). A token cannot ask for more.
+- **Its login is `workload:<sub>`**, a string no person's login has, so it
+  cannot be linked to an existing person's account (a workload has no
+  email, and Grafana needs a login or an email).
+- **What gates it is `audience`.** A token with any other `aud` is not this
+  path's. Set an audience only the workload's own exchange client can mint,
+  and never the audience of a human sign-in client: the chart refuses
+  `audience` equal to `oauth.clientId`. A person who did hold such a token
+  would be a Viewer, which a person signed in through OIDC already is at the
+  least; nothing widens.
+- `url_login` and `enable_login_token` are off: no `?auth_token=`, no session
+  cookie; every request carries its own token, and expiry is the token's.
+- Grafana fetches `jwksUrl` from the pod, so the pod needs egress to the
+  issuer.
+
+The section is written by the template of one existing `grafana.ini` value
+(the `[auth]` session lifetime), because a Helm values map cannot carry a
+section that is absent by default, and adding one would move every existing
+render. The template opens `[auth.jwt]` and re-opens `[auth]`, which
+Grafana's ini reader merges; with the feature off the render is byte for byte
+what it was. `tests/grafana_workload_auth_test.go` asserts both.
+
 ## Why it is not the security boundary
 
 Every datasource forwards the signed-in person's own token
@@ -208,6 +273,7 @@ Set `correlate: false` for plain datasources.
 | no `database.host` or `database.secretRef.name` | replicas cannot share state |
 | no `secretKeyRef.name` without `builtInKey: true` | the built-in signing key |
 | `use_refresh_token` or `role_attribute_strict` overridden off | described above |
+| `workloadAuth.enabled` without `issuer`, `jwksUrl` or `audience`; `jwksUrl` not https; a value with whitespace or a quote; `audience` equal to `oauth.clientId` | the JWT path would not start, or would be gated by a human client's audience |
 | an unknown key anywhere in `global.observabilityGrafana` | a typo that would apply nothing |
 
 Each has a fixture under `tests/invalid/observability-grafana/`, and

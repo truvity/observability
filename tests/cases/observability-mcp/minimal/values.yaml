@@ -1,19 +1,18 @@
-# The metrics server, the one implemented in this release, with only what
-# has no default: the issuer, the pinned proxy build, the resource URL, the
-# outbound exchange, and the peers the NetworkPolicy names.
+# One store, Grafana off: only what has no default. The issuer, the pinned
+# proxy build, the store's resource URL, its vmauth and the exchange client,
+# and the peers the NetworkPolicy names.
 issuerURL: https://issuer.example.com
 proxy:
   image:
     tag: v0.0.1
-servers:
-  metrics:
-    enabled: true
-    resourceURL: https://mcp.example.com/metrics
+stores:
+  - name: primary
+    resourceURL: https://mcp.example.com/victoria/primary
+    vmauth: {url: "http://vmauth.monitoring.svc:8427"}
     outbound:
-      target: http://vmauth.observability.svc:8427
       tokenEndpoint: https://issuer.example.com/token
-      clientId: observability-mcp
-      audience: store-proxy
+      clientId: observability-mcp-primary
+      audience: primary-store
 networkPolicy:
   ingressFrom:
     - namespaceSelector:
@@ -27,7 +26,7 @@ networkPolicy:
     vmauth:
       - namespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: observability
+            kubernetes.io/metadata.name: monitoring
         podSelector:
           matchLabels:
             app.kubernetes.io/name: vmauth

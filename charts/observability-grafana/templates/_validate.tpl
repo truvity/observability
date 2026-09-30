@@ -77,6 +77,19 @@ for the reason it is named for.
 {{- fail "observability-grafana: grafana.ini's [auth.generic_oauth] has `role_attribute_strict` false, so a person whose claims map to no role is given the default one instead of being refused. An unmapped viewer is a support ticket; an unmapped editor is an incident." -}}
 {{- end -}}
 
+{{- /* Workload sign-in (opt-in). */ -}}
+{{- $w := $c.workloadAuth | default dict -}}
+{{- if $w.enabled -}}
+{{- range $f := list "issuer" "jwksUrl" "audience" -}}
+{{- if not (index $w $f) -}}
+{{- fail (printf "observability-grafana: `global.observabilityGrafana.workloadAuth.%s` is empty while `workloadAuth.enabled` is true. The JWT path verifies a token's signature against `jwksUrl` and requires `iss` and `aud` to equal `issuer` and `audience`; with one missing Grafana would either refuse to start or accept a token it cannot place." $f) -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $w.audience $c.oauth.clientId -}}
+{{- fail (printf "observability-grafana: `workloadAuth.audience` (%q) is the same as `oauth.clientId`. The audience is what gates the workload path: it must be one only the workload's own exchange client can mint, never the audience of a human sign-in client, or every person's token would be accepted there." $w.audience) -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* Database and session key. */ -}}
 {{- if or (not $c.database.host) (not $c.database.secretRef.name) -}}
 {{- fail "observability-grafana: `global.observabilityGrafana.database.host` and `database.secretRef.name` are both required. State lives in an external PostgreSQL: with two replicas a SQLite file is either two databases or one file two processes write, and the console answers 500 `database is locked` on whichever request loses." -}}

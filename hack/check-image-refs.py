@@ -11,8 +11,9 @@ the one place the three files (.goreleaser.yaml, release.yaml, every
 chart's values.yaml) are compared, so nobody has to keep them in sync by
 hand, and a future chart or build can drift silently otherwise.
 
-Only a chart whose `image.repository` default looks like this
-repository's own release (ghcr.io/truvity/observability/...) is checked.
+Only an `image.repository` default that looks like this repository's own
+release (ghcr.io/truvity/observability/...) is checked, wherever in a
+chart's values it is.
 Most charts here wrap upstream software with no such default at all (see
 docs/reference.md) — a different, legitimate shape this script leaves
 alone.
@@ -49,6 +50,23 @@ def expected_images() -> tuple[str, set[str]]:
     return ko_docker_repo, images
 
 
+def image_repositories(node, path=""):
+    """Every `<...>.image.repository` string anywhere in a values tree.
+
+    A chart with one image keeps it at the top level (`image`); one that runs
+    several (observability-mcp's aggregator, beside stock servers that are
+    other people's) nests them. Only this repository's own prefix is ever
+    compared, so the others are walked past.
+    """
+    if isinstance(node, dict):
+        image = node.get("image")
+        if isinstance(image, dict) and isinstance(image.get("repository"), str):
+            yield (f"{path}.image" if path else "image"), image["repository"]
+        for key, value in node.items():
+            if key != "image":
+                yield from image_repositories(value, f"{path}.{key}" if path else key)
+
+
 def main() -> int:
     ko_docker_repo, expected = expected_images()
     failed = False
@@ -58,18 +76,17 @@ def main() -> int:
         if not chart_dir.is_dir() or not values_path.exists():
             continue
         values = yaml.safe_load(values_path.read_text()) or {}
-        image = values.get("image")
-        repository = image.get("repository") if isinstance(image, dict) else None
-        if not repository or not repository.startswith(OWN_IMAGE_PREFIX):
-            continue
-        if repository not in expected:
-            print(
-                f"::error::charts/{chart_dir.name}/values.yaml sets image.repository={repository!r}, "
-                f"which .goreleaser.yaml's kos (as ko-docker-repo {ko_docker_repo!r}) "
-                f"does not build: {sorted(expected) or '(no images built)'}",
-                file=sys.stderr,
-            )
-            failed = True
+        for where, repository in image_repositories(values):
+            if not repository.startswith(OWN_IMAGE_PREFIX):
+                continue
+            if repository not in expected:
+                print(
+                    f"::error::charts/{chart_dir.name}/values.yaml sets {where}.repository={repository!r}, "
+                    f"which .goreleaser.yaml's kos (as ko-docker-repo {ko_docker_repo!r}) "
+                    f"does not build: {sorted(expected) or '(no images built)'}",
+                    file=sys.stderr,
+                )
+                failed = True
 
     if failed:
         return 1

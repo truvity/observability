@@ -373,6 +373,15 @@ metrics-path-proof:
 multi-group-reader-proof:
     hack/multi-group-reader-proof.sh
 
+# REAL proof, with the three stock VictoriaMetrics MCP servers built from
+# their pinned tags and cmd/mcp-aggregator built from this tree, that every
+# tool observability-mcp exposes for a store reaches a path the store's
+# vmauth serves, and that the dropped tools do not. Needs go, git, helm,
+# python3 (PyYAML) and network access; not part of `check`, like the other
+# proofs. See hack/mcp-paths-proof.sh's own header.
+mcp-paths-proof:
+    hack/mcp-paths-proof.sh
+
 # Package every chart locally (the release workflow stamps the version
 # from the tag).
 package:

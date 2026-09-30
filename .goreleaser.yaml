@@ -3,11 +3,12 @@
 # then pushes every chart under charts/ to ghcr.io/truvity/charts at the
 # tag's version.
 #
-# alert-ingress is a Kubernetes-only HTTP service (see cmd/alert-ingress
-# and charts/alert-ingress) — no laptop CLI use case, so linux/amd64 and
-# linux/arm64 only, unlike a credential helper such as cloudflare's
-# r2broker or access-roster's accessctl, which also build darwin/windows
-# for a person's own machine.
+# alert-ingress (cmd/alert-ingress, charts/alert-ingress) and mcp-aggregator
+# (cmd/mcp-aggregator, charts/observability-mcp) are Kubernetes-only HTTP
+# services — no laptop CLI use case, so linux/amd64 and linux/arm64 only,
+# unlike a credential helper such as cloudflare's r2broker or
+# access-roster's accessctl, which also build darwin/windows for a
+# person's own machine.
 version: 2
 
 builds:
@@ -20,6 +21,15 @@ builds:
     ldflags:
       - -s -w
 
+  - id: mcp-aggregator
+    main: ./cmd/mcp-aggregator
+    binary: mcp-aggregator
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
 archives:
   # What an operator pulls to run the service outside a container —
   # access-roster's own "binaries" archive is the same shape for its
@@ -28,6 +38,10 @@ archives:
     ids: [alert-ingress]
     formats: [tar.gz]
     name_template: "alert-ingress_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: mcp-aggregator
+    ids: [mcp-aggregator]
+    formats: [tar.gz]
+    name_template: "mcp-aggregator_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 kos:
   # base_import_paths appends the cmd directory's basename, so with the
@@ -50,6 +64,25 @@ kos:
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.source: https://github.com/truvity/observability
 
+  # The aggregator's image: ghcr.io/truvity/observability/mcp-aggregator, what
+  # charts/observability-mcp's `aggregator.image.repository` names. Its tag
+  # is the release version, which the chart's appVersion is stamped with.
+  - id: mcp-aggregator
+    build: mcp-aggregator
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .IsSnapshot }}latest{{ end }}"
+    platforms: [linux/amd64, linux/arm64]
+    bare: true
+    preserve_import_paths: false
+    base_import_paths: true
+    base_image: gcr.io/distroless/static:nonroot
+    sbom: none
+    labels:
+      org.opencontainers.image.title: mcp-aggregator
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: https://github.com/truvity/observability
+
 changelog:
   sort: asc
   filters:
@@ -68,6 +101,8 @@ release:
     |---|---|
     | alert-ingress image | `ghcr.io/truvity/observability/alert-ingress:{{ .Version }}` |
     | alert-ingress chart | `oci://ghcr.io/truvity/charts/alert-ingress:{{ .Version }}` (image.tag defaults to it) |
+    | mcp-aggregator image | `ghcr.io/truvity/observability/mcp-aggregator:{{ .Version }}` |
+    | observability-mcp chart | `oci://ghcr.io/truvity/charts/observability-mcp:{{ .Version }}` (`aggregator.image.tag` defaults to it) |
     | Go | `go get github.com/truvity/observability@{{ .Tag }}` |
   # setup.sh is a release asset, not a build output: a box's cloud-init
   # (rendered by pkg/statusbox.CloudInit) downloads THIS exact file from
