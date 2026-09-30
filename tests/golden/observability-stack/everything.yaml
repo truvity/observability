@@ -328,7 +328,7 @@ metadata:
 data:
   config.yaml: |
     common:
-      clusterLabel: "cluster"
+      clusterLabel: "cell"
       multicluster: false
     dashboards:
       common:

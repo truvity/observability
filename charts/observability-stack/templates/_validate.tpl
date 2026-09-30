@@ -37,6 +37,7 @@ second debugging session.
 {{- include "observability-stack.validate.alertReaders" . -}}
 {{- include "observability-stack.validate.grafana" . -}}
 {{- include "observability-stack.validate.routeOverlap" . -}}
+{{- include "observability-stack.validate.k8sStackClusterLabel" . -}}
 {{- end -}}
 
 {{/*
@@ -1528,6 +1529,27 @@ checked: that is a choice, not an oversight.
 {{- $secretKey := index ($g.envValueFrom | default dict) "GF_SECURITY_SECRET_KEY" -}}
 {{- if and $secretKey (not (($secretKey.secretKeyRef).name)) -}}
 {{- fail "observability-stack: Grafana is enabled and `grafana.envValueFrom.GF_SECURITY_SECRET_KEY.secretKeyRef.name` is empty. That is the key Grafana signs sessions and encrypts datasource secrets with; name the Secret (and `key`) that holds it — it may be the same Secret as `grafana.admin.existingSecret`, so it needs a key, not a Secret of its own." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`tenancy.clusterLabel`, MIRROR of `victoria-metrics-k8s-stack.global.clusterLabel`.
+
+The vendored stack's sync job rewrites the `cluster` label in the default
+rules it fetches to this value. It is a subchart value, which Helm evaluates
+before any template here runs, so this chart cannot compute it from
+`tenancy.clusterLabel`; it is written in both places and checked. A
+disagreement means the recorded series carry a label the rest of the estate
+never stamps, and joins across clusters on a shared store.
+*/}}
+{{- define "observability-stack.validate.k8sStackClusterLabel" -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- if $vmks.enabled -}}
+{{- $got := toString (($vmks.global).clusterLabel | default "") -}}
+{{- $want := toString .Values.tenancy.clusterLabel -}}
+{{- if ne $got $want -}}
+{{- fail (printf "observability-stack: `tenancy.clusterLabel` is %q but `victoria-metrics-k8s-stack.global.clusterLabel` is %q. The vendored default rules join and aggregate on the second; every series in the stores carries the first. Left this way the recorded k8s-stack series carry no cluster identity, and on a shared store the joins match the same namespace and pod across clusters. Set `victoria-metrics-k8s-stack.global.clusterLabel: %s`." $want $got $want) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

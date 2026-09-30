@@ -280,6 +280,9 @@ selfAlerts:
 # Only the operator, so the golden stays about this chart. The stores'
 # own renders are exercised by the `single` case.
 victoria-metrics-k8s-stack:
+  # The MIRROR of `tenancy.clusterLabel: cell` above.
+  global:
+    clusterLabel: cell
   vmsingle:
     enabled: false
   # Dashboard syncing on, the way an estate that wants MAINTAINED

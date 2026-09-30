@@ -4,6 +4,46 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.14.2
+
+The vendored Kubernetes recording rules now join and aggregate on the label
+every series in these stores actually carries.
+
+- **Behaviour change: the recording rules the vendored
+  `victoria-metrics-k8s-stack` installs now carry `k8s_cluster_name`.**
+  Upstream's default rules (`k8s.rules.container_cpu_usage_seconds_total`,
+  `k8s.rules.container_memory_*`, `k8s.rules.container_cpu_limits` and
+  `_requests`, `k8s.rules.pod_owner`, and the alerting rules that join the
+  same way) join and aggregate on a label named `cluster`. No series here
+  has one: emitters stamp the cluster as `k8s_cluster_name`, and the tenancy
+  readers filter on it. So the recorded series carried no cluster identity
+  (a reader filtered on `k8s_cluster_name` could not see them, and a
+  per-cluster dashboard could not use them), and on a store several clusters
+  write to, a join on `(namespace, pod, cluster)` matched the same namespace
+  and pod across clusters, giving a duplicate-series error (HTTP 422) or
+  merged data. vmalert showed those groups healthy on a single-cluster
+  store, which is why nothing caught it. The chart now sets
+  `victoria-metrics-k8s-stack.global.clusterLabel` to `k8s_cluster_name`
+  (was upstream's `cluster`); the sync job rewrites the fetched rules to it
+  when it runs. After upgrading, the recorded series are written with the new
+  label: series recorded before the upgrade, which have no
+  `k8s_cluster_name`, stop receiving samples and go stale, and any query or
+  dashboard of your own that read them without it keeps working only until
+  they age out of retention. Every golden render of `observability-stack`
+  changes by that one line in the sync job's ConfigMap.
+- **New refusal: `tenancy.clusterLabel` and
+  `victoria-metrics-k8s-stack.global.clusterLabel` must be equal.** The
+  second is a subchart value and cannot be computed from the first, so it is
+  a mirror (docs/reference.md, "Why some values appear twice"). An install
+  that sets a non-default `tenancy.clusterLabel` must now set the vendored
+  one to the same name. There is no separate opt-out to the old `cluster`
+  label: it would put the recorded series back on a label nothing stamps.
+- **`hack/k8s-stack-cluster-label-proof.sh` (new, run by hand).** Runs the
+  vendored sync job's real image against the rendered config and a
+  throwaway API server, reads back the recording rule it applies, then
+  evaluates the rewritten and the upstream form on a real
+  victoria-metrics with two clusters that share a namespace and pod name.
+
 ## v0.14.1
 
 `pkg/rulecheck` parses every VMRule expression on the real VictoriaMetrics and
