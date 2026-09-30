@@ -387,3 +387,27 @@ func TestRenderGatusIsDeterministic(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, a, b)
 }
+
+// TestComponentIsNeverRendered: Component is a caller-side label; two
+// Catalogues that differ only in it must render identical bytes.
+func TestComponentIsNeverRendered(t *testing.T) {
+	plain := testCatalogue()
+	labelled := testCatalogue()
+
+	labelled.Companies = append([]Company(nil), plain.Companies...)
+	for i := range labelled.Companies {
+		hosts := append([]CompanyHost(nil), labelled.Companies[i].Hosts...)
+		for j := range hosts {
+			hosts[j].Component = "component-" + hosts[j].Env
+		}
+		labelled.Companies[i].Hosts = hosts
+	}
+
+	a, err := RenderGatus(plain)
+	require.NoError(t, err)
+	b, err := RenderGatus(labelled)
+	require.NoError(t, err)
+
+	assert.Equal(t, a, b)
+	assert.NotContains(t, b, "component-")
+}
