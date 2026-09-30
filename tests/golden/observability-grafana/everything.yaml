@@ -1,0 +1,509 @@
+---
+# Source: observability-grafana/charts/grafana/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+automountServiceAccountToken: false
+metadata:
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-grafana
+    app.kubernetes.io/version: "13.1.1"
+  name: observability-grafana
+  namespace: default
+
+---
+# Source: observability-grafana/charts/grafana/templates/configmap-dashboard-provider.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-grafana
+    app.kubernetes.io/version: "13.1.1"
+  name: observability-grafana-config-dashboards
+  namespace: default
+data:
+  provider.yaml: |-
+    apiVersion: 1
+    providers:
+      - name: 'sidecarProvider'
+        orgId: 1
+        type: file
+        disableDeletion: false
+        allowUiUpdates: false
+        updateIntervalSeconds: 60
+        options:
+          foldersFromFilesStructure: true
+          path: /tmp/dashboards
+
+---
+# Source: observability-grafana/charts/grafana/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-grafana
+  namespace: default
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-grafana
+    app.kubernetes.io/version: "13.1.1"
+data:
+  
+  plugins: victoriametrics-metrics-datasource,victoriametrics-logs-datasource
+  grafana.ini: |
+    [alerting]
+    enabled = false
+    [analytics]
+    check_for_updates = false
+    reporting_enabled = false
+    [auth]
+    disable_login_form = true
+    login_maximum_lifetime_duration = 12h
+    oauth_auto_login = true
+    [auth.generic_oauth]
+    api_url = https://issuer.example.org/userinfo
+    auth_url = https://issuer.example.org/authorize
+    client_id = grafana
+    enabled = true
+    groups_attribute_path = groups
+    name = Example
+    role_attribute_path = contains(groups[*], 'example:admin') && 'Admin' || 'Editor'
+    role_attribute_strict = true
+    scopes = openid profile email groups offline_access
+    token_url = https://issuer.example.org/token
+    use_pkce = true
+    use_refresh_token = true
+    [dashboards]
+    default_home_dashboard_path = /tmp/dashboards/Fleet/fleet-overview.json
+    [database]
+    ca_cert_path = /etc/ssl/private-ca/ca.crt
+    host = postgres.example.org:5432
+    locking_attempt_timeout_sec = 120
+    name = grafana
+    ssl_mode = verify-full
+    type = postgres
+    [log]
+    mode = console
+    [paths]
+    data = /var/lib/grafana/
+    logs = /var/log/grafana
+    plugins = /var/lib/grafana/plugins
+    provisioning = /etc/grafana/provisioning
+    [security]
+    cookie_samesite = lax
+    cookie_secure = true
+    [server]
+    domain = ''
+    root_url = https://grafana.example.org
+    [unified_alerting]
+    enabled = false
+    [unified_storage]
+    index_path = /var/lib/grafana-search/bleve
+
+---
+# Source: observability-grafana/templates/datasources.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-grafana-datasources-4d24ad13
+  namespace: default
+  labels:
+    app.kubernetes.io/name: observability-grafana
+    app.kubernetes.io/instance: observability-grafana
+    app.kubernetes.io/managed-by: Helm
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
+        tlsAuthWithCACert: true
+      name: Metrics (store-a)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
+      type: victoriametrics-metrics-datasource
+      uid: store-a-metrics
+      url: https://store-a.example.org/prometheus
+    - access: proxy
+      isDefault: true
+      jsonData:
+        httpMethod: POST
+        oauthPassThru: true
+        prometheusType: Prometheus
+        tlsAuthWithCACert: true
+      name: Prometheus (store-a)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
+      type: prometheus
+      uid: store-a-prom
+      url: https://store-a.example.org/prometheus
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
+        tlsAuthWithCACert: true
+      name: Logs (store-a)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
+      type: victoriametrics-logs-datasource
+      uid: store-a-logs
+      url: https://store-a.example.org
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
+        tlsAuthWithCACert: true
+      name: Traces (store-a)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
+      type: jaeger
+      uid: store-a-traces
+      url: https://store-a.example.org/select/jaeger
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
+        tlsAuthWithCACert: true
+      name: Metrics (store-b)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/other-ca/ca.crt}
+      type: victoriametrics-metrics-datasource
+      uid: store-b-metrics
+      url: https://store-b.example.org/prometheus
+    - access: proxy
+      jsonData:
+        httpMethod: POST
+        oauthPassThru: true
+        prometheusType: Prometheus
+        tlsAuthWithCACert: true
+      name: Prometheus (store-b)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/other-ca/ca.crt}
+      type: prometheus
+      uid: store-b-prom
+      url: https://store-b.example.org/prometheus
+    - access: proxy
+      jsonData:
+        httpHeaderName1: Authorization
+        tlsAuthWithCACert: true
+      name: Traces (store-b)
+      secureJsonData:
+        httpHeaderValue1: Bearer $__env{STORE_B_TRACES_TOKEN}
+        tlsCACert: $__file{/etc/ssl/other-ca/ca.crt}
+      type: jaeger
+      uid: store-b-traces
+      url: https://store-b.example.org/select/jaeger
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
+        tlsAuthWithCACert: true
+      name: Metrics (store-c)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
+      type: victoriametrics-metrics-datasource
+      uid: store-c-metrics
+      url: https://store-c.example.org/prometheus
+    - access: proxy
+      jsonData:
+        httpMethod: POST
+        oauthPassThru: true
+        prometheusType: Prometheus
+        tlsAuthWithCACert: true
+      name: Prometheus (store-c)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
+      type: prometheus
+      uid: store-c-prom
+      url: https://store-c.example.org/prometheus
+    - access: proxy
+      jsonData:
+        oauthPassThru: true
+        tlsAuthWithCACert: true
+      name: Logs (store-c)
+      secureJsonData:
+        tlsCACert: $__file{/etc/ssl/private-ca/ca.crt}
+      type: victoriametrics-logs-datasource
+      uid: store-c-logs
+      url: https://store-c.example.org
+    deleteDatasources:
+    - name: store-a-metrics
+      orgId: 1
+    - name: store-a-logs
+      orgId: 1
+
+---
+# Source: observability-grafana/charts/grafana/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: observability-grafana
+  namespace: "default"
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-grafana
+    app.kubernetes.io/version: "13.1.1"
+rules:
+  - apiGroups: [""] # "" indicates the core API group
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "watch", "list"]
+
+---
+# Source: observability-grafana/charts/grafana/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: observability-grafana
+  namespace: "default"
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-grafana
+    app.kubernetes.io/version: "13.1.1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: observability-grafana
+subjects:
+- kind: ServiceAccount
+  name: observability-grafana
+  namespace: default
+
+---
+# Source: observability-grafana/charts/grafana/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-grafana
+  namespace: default
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-grafana
+    app.kubernetes.io/version: "13.1.1"
+spec:
+  type: ClusterIP
+  ports:
+    - name: service
+      port: 80
+      protocol: TCP
+      targetPort: grafana
+  selector:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-grafana
+
+---
+# Source: observability-grafana/charts/grafana/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-grafana
+  namespace: default
+  labels:
+    helm.sh/chart: grafana-12.7.3
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: observability-grafana
+    app.kubernetes.io/version: "13.1.1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: observability-grafana
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: grafana-12.7.3
+        app.kubernetes.io/name: grafana
+        app.kubernetes.io/instance: observability-grafana
+        app.kubernetes.io/version: "13.1.1"
+      annotations:
+        checksum/config: 01668f1209f0796c56826e79df4b1634384c1824df8b8a4f6f44d373eb043ef1
+        checksum/sc-dashboard-provider-config: 3ce35d7ee68b54f23dc0322df2731ab35cc97102e4c1c146bd1aa47951c445ad
+        kubectl.kubernetes.io/default-container: grafana
+    spec:
+      
+      serviceAccountName: observability-grafana
+      automountServiceAccountToken: true
+      shareProcessNamespace: false
+      securityContext:
+        fsGroup: 472
+        runAsGroup: 472
+        runAsNonRoot: true
+        runAsUser: 472
+      enableServiceLinks: true
+      containers:
+        - name: grafana-sc-dashboard
+          image: "quay.io/kiwigrid/k8s-sidecar:2.8.1"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: METHOD
+              value: WATCH
+            - name: LABEL
+              value: "grafana_dashboard"
+            - name: LABEL_VALUE
+              value: "1"
+            - name: FOLDER
+              value: "/tmp/dashboards"
+            - name: RESOURCE
+              value: "configmap"
+            - name: NAMESPACE
+              value: "default"
+            - name: FOLDER_ANNOTATION
+              value: "k8s-sidecar-target-directory"
+            - name: REQ_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-user
+            - name: REQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-password
+            - name: REQ_URL
+              value: http://localhost:3000/api/admin/provisioning/dashboards/reload
+            - name: REQ_METHOD
+              value: POST
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: sc-dashboard-volume
+              mountPath: "/tmp/dashboards"
+        - name: grafana
+          image: "docker.io/grafana/grafana:13.1.1"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config
+              mountPath: "/etc/grafana/grafana.ini"
+              subPath: grafana.ini
+            - name: private-ca
+              mountPath: /etc/ssl/private-ca
+              subPath: 
+              readOnly: true
+            - name: storage
+              mountPath: "/var/lib/grafana"
+            - name: search
+              mountPath: "/var/lib/grafana-search"
+            - name: sc-dashboard-volume
+              mountPath: "/tmp/dashboards"
+            - name: sc-dashboard-provider
+              mountPath: "/etc/grafana/provisioning/dashboards/sc-dashboardproviders.yaml"
+              subPath: provider.yaml
+            - name: observability-grafana-datasources
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              subPath: datasources.yaml
+              readOnly: true
+          ports:
+            - name: grafana
+              containerPort: 3000
+              protocol: TCP
+            - name: gossip-tcp
+              containerPort: 9094
+              protocol: TCP
+            - name: gossip-udp
+              containerPort: 9094
+              protocol: UDP
+            - name: profiling
+              containerPort: 6060
+              protocol: TCP
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-user
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-password
+            - name: GF_PLUGINS_PREINSTALL_SYNC
+              valueFrom:
+                configMapKeyRef:
+                  name: observability-grafana
+                  key: plugins
+            - name: GF_PATHS_DATA
+              value: /var/lib/grafana/
+            - name: GF_PATHS_LOGS
+              value: /var/log/grafana
+            - name: GF_PATHS_PLUGINS
+              value: /var/lib/grafana/plugins
+            - name: GF_PATHS_PROVISIONING
+              value: /etc/grafana/provisioning
+            - name: GF_UNIFIED_STORAGE_INDEX_PATH
+              value: /var/lib/grafana-search/bleve
+            - name: "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET"
+              valueFrom:
+                secretKeyRef:
+                  key: 'client-secret'
+                  name: 'grafana-client'
+            - name: "GF_DATABASE_PASSWORD"
+              valueFrom:
+                secretKeyRef:
+                  key: 'password'
+                  name: 'grafana-pg-app'
+            - name: "GF_DATABASE_USER"
+              valueFrom:
+                secretKeyRef:
+                  key: 'username'
+                  name: 'grafana-pg-app'
+            - name: "GF_SECURITY_SECRET_KEY"
+              valueFrom:
+                secretKeyRef:
+                  key: 'secret_key'
+                  name: 'observability-grafana-no-secret-key'
+                  optional: true
+          livenessProbe:
+            failureThreshold: 10
+            httpGet:
+              path: /api/health
+              port: grafana
+            initialDelaySeconds: 60
+            timeoutSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: grafana
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      volumes:
+        - name: config
+          configMap:
+            name: observability-grafana
+        - name: private-ca
+          configMap:
+            name: private-ca
+        - name: storage
+          emptyDir: {}
+        - name: search
+          emptyDir: {}
+        - name: sc-dashboard-volume
+          emptyDir: {}
+        - name: sc-dashboard-provider
+          configMap:
+            name: observability-grafana-config-dashboards
+        - configMap:
+            name: 'observability-grafana-datasources-4d24ad13'
+          name: observability-grafana-datasources

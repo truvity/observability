@@ -1,0 +1,1 @@
+{{- include "observability-grafana.validate" . -}}

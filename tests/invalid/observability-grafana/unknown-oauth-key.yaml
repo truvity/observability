@@ -1,0 +1,17 @@
+# expect: additional properties 'clientID' not allowed
+# A typo inside oauth.
+global:
+  observabilityGrafana:
+    database:
+      host: pg:5432
+      secretRef: {name: grafana-pg-app}
+    oauth:
+      clientID: x
+      clientId: grafana
+      clientSecretRef: {name: grafana-client}
+      issuer: https://issuer.example.org
+      roleAttributePath: '''Editor'''
+    rootUrl: https://grafana.example.org
+    secretKeyRef: {name: grafana-secret-key}
+    stores:
+    - {default: true, name: store-a, url: 'https://store-a.example.org'}

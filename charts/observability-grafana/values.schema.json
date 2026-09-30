@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-grafana",
+  "description": "One Grafana over several observability stores. Strict: an unknown key fails the render rather than being silently ignored, because a typo here is a datasource or a sign-in setting that never applies and nothing says so. What the schema cannot say (exactly one default store, no duplicate uid, a mandatory client id) is a render-time refusal in templates/_validate.tpl.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "observabilityGrafana": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "stores": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "url"],
+                "properties": {
+                  "name": { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", "description": "A lowercase slug; the prefix of every datasource uid." },
+                  "url": { "type": "string", "pattern": "^https?://", "description": "The store's root URL." },
+                  "default": { "type": "boolean" },
+                  "caFile": { "type": "string" },
+                  "logs": { "type": "boolean" },
+                  "traces": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": { "type": "boolean" },
+                      "bearerEnv": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+                    }
+                  }
+                }
+              }
+            },
+            "renamedDatasources": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "caFile": { "type": "string" },
+            "rootUrl": { "type": "string" },
+            "oauth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "issuer": { "type": "string" },
+                "clientId": { "type": "string" },
+                "clientSecretRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "key": { "type": "string", "minLength": 1 }
+                  }
+                },
+                "roleAttributePath": { "type": "string" },
+                "scopes": { "type": "string" },
+                "groupsAttributePath": { "type": "string" },
+                "usePkce": { "type": "boolean" },
+                "sessionMaxLifetime": { "type": "string", "pattern": "^[0-9]+[smhd]$" }
+              }
+            },
+            "database": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "host": { "type": "string" },
+                "name": { "type": "string", "minLength": 1 },
+                "sslMode": { "type": "string", "enum": ["disable", "require", "verify-ca", "verify-full"] },
+                "caFile": { "type": "string" },
+                "secretRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "usernameKey": { "type": "string", "minLength": 1 },
+                    "passwordKey": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            },
+            "secretKeyRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "key": { "type": "string", "minLength": 1 },
+                "builtInKey": { "type": "boolean" }
+              }
+            },
+            "dashboards": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "home": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "grafana": {
+      "type": "object",
+      "description": "The Grafana subchart's own values (replicas, scheduling, mounts, images). Its own schema, if any, applies."
+    }
+  }
+}

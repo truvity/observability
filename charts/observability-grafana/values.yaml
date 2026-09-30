@@ -1,0 +1,233 @@
+# observability-grafana: one Grafana over several observability stores.
+#
+# TWO NAMESPACES OF VALUES, and the split is not a taste. Helm cannot hand
+# a parent chart's values to a subchart: the Grafana subchart sees its own
+# values and `global`, nothing else. Everything this chart computes for
+# Grafana (the datasources, the sign-in URLs, the database) is therefore
+# read by the subchart from `global.observabilityGrafana` -- the one place
+# both charts can see. docs/grafana.md has the whole argument.
+#
+#   global.observabilityGrafana   what this chart is FOR: the stores, the
+#                                 sign-in, the database, the home page.
+#   grafana                       the subchart's own values, for what is
+#                                 about the POD rather than the estate:
+#                                 replicas, scheduling, mounts, images.
+#                                 This file sets the defaults that make it
+#                                 a git-only, database-backed read UI.
+global:
+  observabilityGrafana:
+    # -- The stores to read, one Grafana for all of them. Each entry:
+    #
+    #   name     required. A lowercase slug; it becomes the uids
+    #            `<name>-prom`, `<name>-metrics`, `<name>-logs` and
+    #            `<name>-traces`, which dashboards and saved queries
+    #            reference, so it never changes once people rely on it.
+    #   url      required. The store's ROOT, e.g. https://store-a.example.
+    #            The chart appends `/prometheus` for metrics and
+    #            `/select/jaeger` for traces; the logs plugin appends its
+    #            own path, so it gets the root.
+    #   default  exactly one store carries `default: true`.
+    #   caFile   optional. A file INSIDE the pod holding the CA the store's
+    #            certificate chains to. Falls back to `caFile` below.
+    #   logs     optional bool, default true. Provision the logs datasource.
+    #   traces   optional: {enabled: bool (default true), bearerEnv: NAME}.
+    #            `bearerEnv` names an environment variable (supplied
+    #            through `grafana.envValueFrom`) whose value is sent as a
+    #            bearer token INSTEAD of the signed-in person's token. That
+    #            datasource is then not scoped per person.
+    stores: []
+    # -- Datasource NAMES that used to exist and no longer do. Provisioning
+    # matches an existing datasource by name but the database also insists
+    # on a unique uid, so a datasource renamed under the same uid makes a
+    # new pod insert a second row and crash-loop before it serves. Listing
+    # the old name deletes it first. Harmless once every database has been
+    # through it; refused if the name is one this chart provisions now.
+    renamedDatasources: []
+    # -- The CA every store's certificate chains to, as a file path in the
+    # pod (mount it through `grafana.extraConfigmapMounts`). Empty: the
+    # image's own public roots. A store's own `caFile` wins.
+    caFile: ""
+    # -- The public URL people open Grafana at. It is the sign-in redirect,
+    # so a wrong value is a sign-in that never comes back.
+    rootUrl: ""
+    oauth:
+      # -- Shown on the sign-in button.
+      name: SSO
+      # -- The OIDC issuer's base URL, https, no trailing path. The chart
+      # derives `/authorize`, `/token` and `/userinfo` from it.
+      issuer: ""
+      clientId: ""
+      # -- The Secret holding the client secret. Read from an environment
+      # variable, never written into values or the ConfigMap.
+      clientSecretRef:
+        name: ""
+        key: client-secret
+      # -- JMESPath over the userinfo claims that yields Admin, Editor or
+      # Viewer. Required, because the chart sets `role_attribute_strict`:
+      # a person who maps to no role is refused, not handed a default one.
+      roleAttributePath: ""
+      scopes: "openid profile email groups offline_access"
+      groupsAttributePath: groups
+      usePkce: true
+      # -- Grafana's own session, capped. Match the issuer's absolute
+      # session limit; Grafana's default is 30 days.
+      sessionMaxLifetime: 24h
+    database:
+      # -- host:port of an external PostgreSQL. Required: two replicas
+      # cannot share a SQLite file.
+      host: ""
+      name: grafana
+      sslMode: verify-full
+      # -- A CA file inside the pod for `verify-full`. Empty: public roots.
+      caFile: ""
+      # -- The Secret with the login. Read as environment variables so the
+      # password never lands in a ConfigMap.
+      secretRef:
+        name: ""
+        usernameKey: username
+        passwordKey: password
+    # -- The key Grafana signs sessions and encrypts stored secrets with.
+    secretKeyRef:
+      name: ""
+      key: secret_key
+      # -- Set true to knowingly run on Grafana's built-in key. Without it
+      # an empty `name` is refused.
+      builtInKey: false
+    dashboards:
+      home:
+        # -- Grafana's home page, as a file path in the sidecar's tree
+        # (its folder + the folder annotation's value + the ConfigMap key,
+        # e.g. /tmp/dashboards/Fleet/fleet-overview.json). Rendered only
+        # when set: a path to a dashboard that is not there breaks the
+        # home page, so the consumer decides.
+        path: ""
+
+grafana:
+  # State lives in the external database; what remains on disk is the
+  # plugin download, which the image redoes on start.
+  persistence:
+    enabled: false
+  # The VictoriaMetrics datasources are plugins (AGPL-3.0): installed by
+  # name at runtime, never vendored into anything here.
+  plugins:
+    - victoriametrics-metrics-datasource
+    - victoriametrics-logs-datasource
+  # A namespaced Role rather than the chart's ClusterRole, which would let
+  # Grafana's service account read every ConfigMap and Secret in the
+  # cluster. Valid because the sidecar searches only its own namespace.
+  rbac:
+    namespaced: true
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      # The release's own namespace (a tpl string, like the subchart's).
+      searchNamespace:
+        - "{{ .Release.Namespace }}"
+      resource: configmap
+      # File a dashboard into the subdirectory its ConfigMap's
+      # `k8s-sidecar-target-directory` annotation names; with
+      # `foldersFromFilesStructure` below that subdirectory becomes a
+      # Grafana folder. Neither alone is enough.
+      folderAnnotation: k8s-sidecar-target-directory
+      provider:
+        # GIT-ONLY: the UI may not save over what the repository says.
+        allowUiUpdates: false
+        # A dashboard removed from git is removed from Grafana.
+        disableDelete: false
+        foldersFromFilesStructure: true
+        # KEEP THIS ABOVE 10 (the chart refuses 10 or less). At 10 seconds
+        # or less Grafana stops polling and watches the filesystem, and a
+        # ConfigMap volume is updated by swapping a symlink, which raises
+        # no watch event: an edited dashboard would never load.
+        updateIntervalSeconds: 30
+  # The provisioned datasources are a ConfigMap of this chart's own
+  # (templates/datasources.yaml), named after a hash of its content so a
+  # change rolls the pods; the subchart mounts it here.
+  extraContainerVolumes:
+    - name: observability-grafana-datasources
+      configMap:
+        name: '{{ include "observability-grafana.datasourcesName" . }}'
+  extraVolumeMounts:
+    - name: observability-grafana-datasources
+      mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+      subPath: datasources.yaml
+      readOnly: true
+  # Credentials as environment references, so none is written to a
+  # ConfigMap. The names are tpl strings over global.observabilityGrafana.
+  envValueFrom:
+    GF_DATABASE_USER:
+      secretKeyRef:
+        name: '{{ .Values.global.observabilityGrafana.database.secretRef.name }}'
+        key: '{{ .Values.global.observabilityGrafana.database.secretRef.usernameKey }}'
+    GF_DATABASE_PASSWORD:
+      secretKeyRef:
+        name: '{{ .Values.global.observabilityGrafana.database.secretRef.name }}'
+        key: '{{ .Values.global.observabilityGrafana.database.secretRef.passwordKey }}'
+    GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+      secretKeyRef:
+        name: '{{ .Values.global.observabilityGrafana.oauth.clientSecretRef.name }}'
+        key: '{{ .Values.global.observabilityGrafana.oauth.clientSecretRef.key }}'
+    # `optional`, because an environment entry cannot be left out
+    # conditionally: with `builtInKey: true` the chart names no Secret and
+    # the variable is simply absent.
+    GF_SECURITY_SECRET_KEY:
+      secretKeyRef:
+        name: '{{ include "observability-grafana.secretKeyName" . }}'
+        key: '{{ .Values.global.observabilityGrafana.secretKeyRef.key }}'
+        optional: true
+  grafana.ini:
+    analytics:
+      # A monitoring system that phones home from inside a private estate
+      # is a data-egress question nobody asked.
+      check_for_updates: false
+      reporting_enabled: false
+    # Alerting is somebody else's job (vmalert and Alertmanager): a second
+    # engine is a second place to look at three in the morning.
+    unified_alerting:
+      enabled: false
+    alerting:
+      enabled: false
+    server:
+      root_url: '{{ .Values.global.observabilityGrafana.rootUrl }}'
+    security:
+      cookie_secure: '{{ hasPrefix "https://" .Values.global.observabilityGrafana.rootUrl }}'
+      cookie_samesite: lax
+    dashboards:
+      default_home_dashboard_path: '{{ .Values.global.observabilityGrafana.dashboards.home.path }}'
+    database:
+      type: postgres
+      host: '{{ .Values.global.observabilityGrafana.database.host }}'
+      name: '{{ .Values.global.observabilityGrafana.database.name }}'
+      ssl_mode: '{{ .Values.global.observabilityGrafana.database.sslMode }}'
+      ca_cert_path: '{{ .Values.global.observabilityGrafana.database.caFile }}'
+      # Grafana takes a database lock through its schema migration. The
+      # default of 0 means "do not wait", so the second replica of a
+      # rolling update finds it held and crash-loops.
+      locking_attempt_timeout_sec: 120
+    auth:
+      # No local login: the issuer is the only way in.
+      disable_login_form: true
+      oauth_auto_login: true
+      login_maximum_lifetime_duration: '{{ .Values.global.observabilityGrafana.oauth.sessionMaxLifetime }}'
+    auth.generic_oauth:
+      enabled: true
+      name: '{{ .Values.global.observabilityGrafana.oauth.name }}'
+      client_id: '{{ .Values.global.observabilityGrafana.oauth.clientId }}'
+      scopes: '{{ .Values.global.observabilityGrafana.oauth.scopes }}'
+      auth_url: '{{ trimSuffix "/" .Values.global.observabilityGrafana.oauth.issuer }}/authorize'
+      token_url: '{{ trimSuffix "/" .Values.global.observabilityGrafana.oauth.issuer }}/token'
+      api_url: '{{ trimSuffix "/" .Values.global.observabilityGrafana.oauth.issuer }}/userinfo'
+      groups_attribute_path: '{{ .Values.global.observabilityGrafana.oauth.groupsAttributePath }}'
+      # WITHOUT A MAPPING EVERYONE IS A VIEWER, and a Viewer in Grafana OSS
+      # has no Explore and no Connections.
+      role_attribute_path: '{{ .Values.global.observabilityGrafana.oauth.roleAttributePath }}'
+      # A person whose claims map to no role is refused, not handed the
+      # default one.
+      role_attribute_strict: true
+      use_pkce: '{{ .Values.global.observabilityGrafana.oauth.usePkce }}'
+      # WITHOUT THIS the session outlives the access token: Grafana keeps
+      # the person signed in while forwarding a token that expired an hour
+      # ago, the UI works and every query answers 401.
+      use_refresh_token: true

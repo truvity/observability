@@ -18,6 +18,7 @@ everything still looks green.
 | `charts/alert-ingress` + `cmd/alert-ingress` | Events born outside the cluster — a threat finding, a root sign-in, a key use, a budget — into the same router: signed notifications from an allow-listed topic, mapped by values, never dropped. | released |
 | `pkg/statusbox` (Go, Pulumi) + `setup.sh` | The watcher outside every cluster: several Gatus instances on one immutable box behind a tunnel and a private network — the deadman, outside-in probes, public status pages per company, and the bridge from an internal alert to a status component. | released |
 | `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | released |
+| `charts/observability-grafana` | One Grafana as the read UI over several stores: a datasource set per store, OIDC sign-in, a database of its own, dashboards from git only. See [docs/grafana.md](docs/grafana.md). | released |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module

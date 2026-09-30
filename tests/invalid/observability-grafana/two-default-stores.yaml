@@ -1,0 +1,17 @@
+# expect: 2 stores are marked
+# Two stores both claim the default.
+global:
+  observabilityGrafana:
+    database:
+      host: pg:5432
+      secretRef: {name: grafana-pg-app}
+    oauth:
+      clientId: grafana
+      clientSecretRef: {name: grafana-client}
+      issuer: https://issuer.example.org
+      roleAttributePath: '''Editor'''
+    rootUrl: https://grafana.example.org
+    secretKeyRef: {name: grafana-secret-key}
+    stores:
+    - {default: true, name: store-a, url: 'https://a.example.org'}
+    - {default: true, name: store-b, url: 'https://b.example.org'}

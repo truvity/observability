@@ -18,6 +18,39 @@ render through `RenderGatus` instead of keeping a parallel copy.
   used to prepend its own wording sees a comment-only difference and no
   difference in the parsed config.
 
+New chart `observability-grafana`: one Grafana as the read UI across several
+stores. Additive; no existing render changes.
+
+- **`charts/observability-grafana`** wraps the same `grafana` subchart
+  (12.7.3) that `observability-stack` vendors, for an estate whose Grafana
+  spans installs rather than sitting beside one. Per store it provisions
+  both a `victoriametrics-metrics-datasource` and a `prometheus`-typed
+  datasource on the same URL (community dashboards list only the latter),
+  logs and traces, with stable uids `<store>-prom`, `-metrics`, `-logs`,
+  `-traces` and `isDefault` on exactly one prometheus-typed row.
+  `renamedDatasources` renders `deleteDatasources`, so a renamed
+  datasource no longer crash-loops new pods on "data source with the same
+  uid already exists".
+- It also owns sign-in against an OIDC issuer (`use_refresh_token`,
+  `role_attribute_strict`, a required role mapping, the client secret from
+  a Secret), an external PostgreSQL, alerting and analytics off, and the
+  git-only dashboards sidecar and provider (`updateIntervalSeconds`
+  defaults to 30). The home dashboard path is rendered only when the
+  consumer sets it.
+- **Values live under `global.observabilityGrafana`**, not at the top
+  level: Helm hides a parent's values from a subchart, and the subchart
+  renders the datasource mount and the ini file. Pod-level settings
+  (replicas, scheduling, mounts, images) stay under `grafana`.
+  `docs/grafana.md` has the interface and the reasoning.
+- Refuses: a dashboard sidecar interval of 10 seconds or less, no or two
+  `default` stores, a duplicate datasource uid, a `renamedDatasources`
+  entry that is a current datasource name, a missing issuer, client id,
+  client secret, role mapping, root URL, database or session key
+  (`secretKeyRef.builtInKey: true` opts into the built-in one), and
+  `use_refresh_token` or `role_attribute_strict` overridden off.
+- The chart is added to the release workflow's list, so the tag publishes
+  it to `oci://ghcr.io/truvity/charts/observability-grafana`.
+
 ## v0.13.1
 
 A reader can now be selected by SEVERAL groups, so a role held under one
