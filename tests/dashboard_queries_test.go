@@ -681,7 +681,13 @@ func TestTheLabelGuardRejectsWhatItExistsFor(t *testing.T) {
 	bad = spec.unsatisfiable(d, `kubelet_running_pods{metrics_path="/metrics/cadvisor"}`)
 	assert.Len(t, bad, 1)
 	bad = spec.unsatisfiable(d, `container_cpu_usage_seconds_total{job="kubelet"}`)
-	assert.Len(t, bad, 1)
+	assert.Empty(t, bad, "cadvisor series are stored under job=kubelet")
+	bad = spec.unsatisfiable(d, `container_cpu_usage_seconds_total{job="kubelet", metrics_path="/metrics/cadvisor"}`)
+	assert.Empty(t, bad)
+	bad = spec.unsatisfiable(d, `container_cpu_usage_seconds_total{job="cadvisor"}`)
+	assert.Len(t, bad, 1, "job=cadvisor is the retired identity: no dashboard may ask for it")
+	bad = spec.unsatisfiable(d, `container_cpu_usage_seconds_total{job="kubelet", metrics_path="/metrics"}`)
+	assert.Len(t, bad, 1, "cadvisor series never carry the kubelet's own metrics_path")
 	bad = spec.unsatisfiable(d, `kube_pod_info{cluster="c"}`)
 	assert.Len(t, bad, 1, "a bare `cluster` label is carried by no job")
 	// Native labels, variables and negative matchers are not judged.
@@ -697,8 +703,9 @@ func TestTheLabelGuardRejectsWhatItExistsFor(t *testing.T) {
 func TestNodeJobLabelsAreWhatTheChartRenders(t *testing.T) {
 	spec := loadAvailableLabels(t)
 	type step struct {
-		Sources []string `yaml:"source_labels"`
-		Target  string   `yaml:"target_label"`
+		Sources     []string `yaml:"source_labels"`
+		Target      string   `yaml:"target_label"`
+		Replacement string   `yaml:"replacement"`
 	}
 	type job struct {
 		Name          string `yaml:"job_name"`
@@ -731,8 +738,16 @@ func TestNodeJobLabelsAreWhatTheChartRenders(t *testing.T) {
 					path = "/metrics" // the scrape default
 				}
 				gotPath := ""
+				// vmagent stamps `job` with the scrape's own name, then a
+				// relabel step may replace it: the cadvisor scrape is
+				// stored as job="kubelet" (the kube-prometheus
+				// convention) unless the opt-out is on.
+				gotJob := j.Name
 				for _, s := range append(append([]step{}, j.Relabel...), j.MetricRelabel...) {
 					carried[s.Target] = true
+					if s.Target == "job" && len(s.Sources) == 0 && s.Replacement != "" {
+						gotJob = s.Replacement
+					}
 					if s.Target == "metrics_path" && len(s.Sources) == 1 && s.Sources[0] == "__metrics_path__" {
 						gotPath = path
 					}
@@ -740,7 +755,11 @@ func TestNodeJobLabelsAreWhatTheChartRenders(t *testing.T) {
 				for _, l := range claim.Labels {
 					assert.Truef(t, carried[l], "%s: job %q: available-labels.yaml says its series carry %q, the rendered relabel configs never write it", g, j.Name, l)
 				}
-				assert.Equalf(t, claim.Values["job"], []string{j.Name}, "%s: job %q: fixed job value", g, j.Name)
+				wantJob := claim.Values["job"]
+				if strings.HasSuffix(g, "/cadvisor-own-job.yaml") {
+					wantJob = []string{j.Name} // the opt-out: the pre-0.13.0 identity
+				}
+				assert.Equalf(t, wantJob, []string{gotJob}, "%s: job %q: the stored job label", g, j.Name)
 				assert.Equalf(t, claim.Values["metrics_path"], []string{gotPath},
 					"%s: job %q: metrics_path is what __metrics_path__ holds at scrape time (%q)", g, j.Name, path)
 				checked++

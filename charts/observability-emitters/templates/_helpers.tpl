@@ -402,6 +402,26 @@ series is added.
   target_label: metrics_path
 {{- end -}}
 
+{{/*
+The cadvisor series' `job` label, the way kube-prometheus writes it.
+
+kube-prometheus scrapes cadvisor from the kubelet's own service, so every
+cadvisor series carries `job="kubelet", metrics_path="/metrics/cadvisor"`,
+and the kubernetes-mixin recording rules (`k8s.rules.container_*`) and
+dashboards select exactly that. Under a job of its own the rules could never
+match a series. The vmagent-internal `job_name` stays `cadvisor`, because
+vmagent needs unique names and this keeps the churn drop and the scrape's
+own logs and `/targets` page addressable; only the STORED label changes,
+by a relabel step (relabel_configs run after `job` is set from the name, so
+`replace` wins). The two node jobs stay distinguishable in the store by
+`metrics_path`, which the step above set, and `up` carries both.
+`metrics.scrape.cadvisorAsKubeletJob: false` leaves `job="cadvisor"`.
+*/}}
+{{- define "observability-emitters.cadvisorJobLabelRelabelConfig" -}}
+- target_label: job
+  replacement: kubelet
+{{- end -}}
+
 {{- define "observability-emitters.scrapeConfig.kubelet" -}}
 - job_name: kubelet
   scheme: https
@@ -435,6 +455,9 @@ series is added.
 {{ include "observability-emitters.nodeLabelRelabelConfigs" . | indent 4 }}
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
 {{ include "observability-emitters.nodeMetricsPathRelabelConfig" . | indent 4 }}
+{{- if .Values.metrics.scrape.cadvisorAsKubeletJob }}
+{{ include "observability-emitters.cadvisorJobLabelRelabelConfig" . | indent 4 }}
+{{- end }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
 {{- with (include "observability-emitters.scrapeConfig.cadvisorChurnDropMetricRelabelConfigs" .) }}

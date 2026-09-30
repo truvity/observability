@@ -256,6 +256,9 @@
             "cadvisor": {
               "type": "boolean"
             },
+            "cadvisorAsKubeletJob": {
+              "type": "boolean"
+            },
             "nodeLabels": {
               "type": "array",
               "items": {

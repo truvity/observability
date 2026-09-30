@@ -55,7 +55,11 @@ optionalSources:
   alertmanager: Alertmanager is optional; its job and metrics exist only where it is enabled
 
 # The two node jobs (metrics.scrape.kubelet, .cadvisor) are inline scrape
-# configs: `job` and `metrics_path` are fixed by the chart. `node` is
+# configs: `job` and `metrics_path` are fixed by the chart. BOTH store
+# `job="kubelet"` (0.13.0, the kube-prometheus convention the k8s-stack's
+# recording rules select on); the `name:` below is the vmagent scrape name,
+# and `metrics_path` is what tells the two apart. The cadvisor scrape gets
+# its stored `job` from cadvisorJobLabelRelabelConfig. `node` is
 # nodeLabelRelabelConfigs; `k8s_cluster_name` and
 # `deployment_environment_name` are tenancy.clusterScopedRelabelConfigs;
 # `k8s_namespace_name` is copied from the series' own `namespace` at
@@ -84,7 +88,7 @@ jobs:
     keep: [go_sched_latencies_seconds_bucket]
     labels: *nodeLabels
     values:
-      job: [cadvisor]
+      job: [kubelet]
       metrics_path: [/metrics/cadvisor]
 
   # Everything else is scraped from a PodMonitor or ServiceMonitor, under

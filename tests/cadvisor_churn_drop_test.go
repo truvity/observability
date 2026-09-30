@@ -193,7 +193,7 @@ func TestCadvisorChurnDropIDScopedToContainerLevel(t *testing.T) {
 	withTarget := func(extra map[string]string) map[string]string {
 		out := map[string]string{
 			"__name__": metricName,
-			"job":      "cadvisor",
+			"job":      "kubelet",
 			"instance": "node-1:10250",
 		}
 		for k, v := range extra {

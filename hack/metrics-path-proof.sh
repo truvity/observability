@@ -10,7 +10,21 @@
 # The chart's node jobs wrote no `metrics_path`, so the variable was empty
 # and every panel read "No data" with the series sitting in the store.
 #
-# Two containers' worth of real software, three cases:
+# The same run also proves the cadvisor series' `job` label (0.13.0): the
+# cadvisor scrape stores `job="kubelet", metrics_path="/metrics/cadvisor"`,
+# the kube-prometheus convention, so that
+#   - the kubernetes-mixin recording rule
+#     `node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate`
+#     (fetched verbatim from the source the k8s-stack's sync job pulls its
+#     default rules from, kube-prometheus's kubernetesControlPlane rule
+#     file; the stack chart vendors none of them, and its `cluster` label
+#     is renamed to the chart's `k8s_cluster_name` exactly as the stack
+#     does) returns data, and returns none in the control case (the
+#     `cadvisorAsKubeletJob: false` render, `job="cadvisor"`);
+#   - the kubelet dashboard's "Running Kubelets" query still counts one per
+#     node although `up{job="kubelet"}` now carries two `metrics_path`s.
+#
+# Two containers' worth of real software, four cases:
 #   fixture  - a python http.server answering GET /metrics (a kubelet
 #              series) and GET /metrics/cadvisor (a cadvisor series).
 #   vmagent  - the image charts/observability-emitters pins, scraping the
@@ -21,7 +35,9 @@
 #   vmsingle - the version charts/observability-stack pins.
 # Case "chart" is the render as it is. Case "control" is the same render
 # with the metrics_path step removed (what shipped before), and must show
-# the empty variable: a proof that cannot fail proves nothing.
+# the empty variable: a proof that cannot fail proves nothing. Case
+# "oldjob" is the opt-out render (`cadvisorAsKubeletJob: false`, byte for
+# byte the 0.12.x render): the recording rule must return nothing there.
 #
 # Needs Docker, curl, python3 (with PyYAML) and helm. Deliberately NOT part
 # of `check` or CI, like the other hack/*-proof.sh: a run-by-hand proof.
@@ -49,13 +65,48 @@ echo "vmagent $vmagent_tag (the chart's pin), victoria-metrics $vmsingle_tag (th
 
 helm template x "$root/charts/observability-emitters" \
   --values "$root/tests/cases/observability-emitters/minimal/values.yaml" > "$work/render.yaml"
+helm template x "$root/charts/observability-emitters" \
+  --values "$root/tests/cases/observability-emitters/minimal/values.yaml" \
+  --set metrics.scrape.cadvisorAsKubeletJob=false > "$work/render-oldjob.yaml"
+
+# The recording rule and the dashboard query the cases are judged by.
+rule_url=https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/kubernetesControlPlane-prometheusRule.yaml
+curl -fsS -m 60 "$rule_url" -o "$work/rules.yaml" || { echo "could not fetch $rule_url" >&2; exit 1; }
+rule_expr="$(python3 - "$work/rules.yaml" <<'PYEOF'
+import re, sys, yaml
+want = "node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate"
+for g in yaml.safe_load(open(sys.argv[1]))["spec"]["groups"]:
+    for r in g["rules"]:
+        if r.get("record") == want:
+            print(re.sub(r"\bcluster\b", "k8s_cluster_name", r["expr"]).strip())
+            sys.exit(0)
+sys.exit("rule not found")
+PYEOF
+)"
+echo "recording rule (upstream, cluster label renamed to k8s_cluster_name as the stack's sync job does):"
+echo "$rule_expr" | sed 's/^/  /'
+running_kubelets="$(python3 - "$root/charts/observability-dashboards/dashboards/kubelet.json" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+def walk(ps):
+    for p in ps:
+        yield p
+        yield from walk(p.get("panels", []))
+p = next(p for p in walk(d["panels"]) if p.get("title") == "Running Kubelets")
+print(p["targets"][0]["expr"].replace("$cluster", "example-cluster"))
+PYEOF
+)"
+echo "kubelet dashboard 'Running Kubelets': $running_kubelets"
 
 # The two node jobs, as rendered: everything but service discovery and TLS.
 python3 - "$work" <<'PYEOF'
 import sys, yaml, json
 work = sys.argv[1]
-agent = next(d for d in yaml.safe_load_all(open(work + "/render.yaml")) if d and d.get("kind") == "VMAgent")
-jobs = {j["job_name"]: j for j in yaml.safe_load(agent["spec"]["inlineScrapeConfig"])}
+def load(name):
+    agent = next(d for d in yaml.safe_load_all(open(work + "/" + name)) if d and d.get("kind") == "VMAgent")
+    return {j["job_name"]: j for j in yaml.safe_load(agent["spec"]["inlineScrapeConfig"])}
+jobs = load("render.yaml")
+oldjobs = load("render-oldjob.yaml")
 def fixture_job(j, strip):
     relabel = [s for s in j["relabel_configs"] if not (strip and s.get("target_label") == "metrics_path")]
     return {
@@ -66,8 +117,8 @@ def fixture_job(j, strip):
         "relabel_configs": relabel,
         "metric_relabel_configs": j["metric_relabel_configs"],
     }
-for case, strip in (("chart", False), ("control", True)):
-    cfg = {"scrape_configs": [fixture_job(jobs["kubelet"], strip), fixture_job(jobs["cadvisor"], strip)]}
+for case, strip, js in (("chart", False, jobs), ("control", True, jobs), ("oldjob", False, oldjobs)):
+    cfg = {"scrape_configs": [fixture_job(js["kubelet"], strip), fixture_job(js["cadvisor"], strip)]}
     yaml.safe_dump(cfg, open("%s/scrape-%s.yml" % (work, case), "w"), sort_keys=False)
 print("rendered relabel_configs of the kubelet job (chart case):")
 print(yaml.safe_dump(fixture_job(jobs["kubelet"], False)["relabel_configs"], sort_keys=False))
@@ -89,10 +140,12 @@ echo "  -> selector: $selector"
 cat > "$work/metrics.txt" <<'EOM'
 # TYPE kubelet_running_pods gauge
 kubelet_running_pods 7
+# TYPE kubelet_node_name gauge
+kubelet_node_name{node="node-a"} 1
 EOM
 cat > "$work/cadvisor.txt" <<'EOM'
 # TYPE container_cpu_usage_seconds_total counter
-container_cpu_usage_seconds_total{namespace="team-a",pod="web-0",container="app"} 12.5
+container_cpu_usage_seconds_total{namespace="team-a",pod="web-0",container="app",image="registry.example/app:1"} 12.5
 EOM
 cat > "$work/server.py" <<'EOM'
 import http.server
@@ -108,6 +161,10 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
+import threading
+# Two "nodes": the same fixture on two ports, so a count of kubelets can be
+# told from a count of scrape paths.
+threading.Thread(target=http.server.HTTPServer(("0.0.0.0", 8081), H).serve_forever, daemon=True).start()
 http.server.HTTPServer(("0.0.0.0", 8080), H).serve_forever()
 EOM
 
@@ -116,7 +173,7 @@ docker run -d --label metrics-path-proof --name mpp-fixture --network "$net" \
   -v "$work/metrics.txt:/fixture/metrics.txt:ro" -v "$work/cadvisor.txt:/fixture/cadvisor.txt:ro" \
   -v "$work/server.py:/server.py:ro" python:3-alpine python3 /server.py >/dev/null
 fixture_ip="$(docker inspect mpp-fixture --format "{{(index .NetworkSettings.Networks \"$net\").IPAddress}}")"
-echo "- targets: [\"$fixture_ip:8080\"]" > "$work/targets.yml"
+echo "- targets: [\"$fixture_ip:8080\", \"$fixture_ip:8081\"]" > "$work/targets.yml"
 
 qcurl() { docker run --rm --label metrics-path-proof --network "$net" curlimages/curl:latest -fsS "$@"; }
 
@@ -132,13 +189,19 @@ run_case() {
     "victoriametrics/vmagent:$vmagent_tag" -promscrape.config=/config/scrape.yml \
     -remoteWrite.url="http://$vm_ip:8428/api/v1/write" >/dev/null
   for _ in $(seq 1 40); do
-    n="$(qcurl -G "http://$vm_ip:8428/api/v1/series" --data-urlencode 'match[]={job=~"kubelet|cadvisor",__name__=~"up|kubelet_running_pods|container_cpu_usage_seconds_total"}' \
+    n="$(qcurl -G "http://$vm_ip:8428/api/v1/series" --data-urlencode 'match[]={job=~"kubelet|cadvisor",__name__=~"up|kubelet_running_pods|kubelet_node_name|container_cpu_usage_seconds_total"}' \
       | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]))' 2>/dev/null || echo 0)"
-    [ "$n" -ge 4 ] && break; sleep 1
+    [ "$n" -ge 10 ] && break; sleep 1
   done
+  # kube-state-metrics' pod row the recording rule joins on, and enough
+  # scrapes (2s interval) for irate() to have two samples. The store hides
+  # its newest 30s from queries (-search.latencyOffset), so wait that out.
+  printf 'kube_pod_info{k8s_cluster_name="example-cluster",namespace="team-a",pod="web-0",node="node-a"} 1\n' \
+    | docker run -i --rm --label metrics-path-proof --network "$net" curlimages/curl:latest -fsS --data-binary @- "http://$vm_ip:8428/api/v1/import/prometheus"
+  sleep 40
   echo
   echo "=== case $case: stored series (job, metrics_path, k8s_cluster_name) ==="
-  qcurl -G "http://$vm_ip:8428/api/v1/series" --data-urlencode 'match[]={job=~"kubelet|cadvisor",__name__=~"up|kubelet_running_pods|container_cpu_usage_seconds_total"}' \
+  qcurl -G "http://$vm_ip:8428/api/v1/series" --data-urlencode 'match[]={job=~"kubelet|cadvisor",__name__=~"up|kubelet_running_pods|kubelet_node_name|container_cpu_usage_seconds_total"}' \
     | python3 -c '
 import json,sys
 for s in sorted(json.load(sys.stdin)["data"], key=lambda s:(s["job"],s["__name__"])):
@@ -154,10 +217,43 @@ for s in sorted(json.load(sys.stdin)["data"], key=lambda s:(s["job"],s["__name__
       || { echo "FAIL: unexpected metrics_path values" >&2; fail=1; }
   fi
   if [ "$got" = "$want" ]; then echo "PASS: cluster variable = [$got]"; else echo "FAIL: cluster variable is [$got], wanted [$want]" >&2; fail=1; fi
+
+  [ "$case" = control ] && return 0
+  # `--data-urlencode` with -G issues an instant query at the store's "now".
+  echo "=== case $case: where container_cpu_usage_seconds_total is stored ==="
+  qcurl -G "http://$vm_ip:8428/api/v1/series" --data-urlencode 'match[]=container_cpu_usage_seconds_total' \
+    | python3 -c '
+import json,sys
+for s in json.load(sys.stdin)["data"]:
+    print("  container_cpu_usage_seconds_total job=%s metrics_path=%s instance=%s image=%s" % (s["job"], s.get("metrics_path"), s["instance"], s.get("image")))'
+  stored="$(qcurl -G "http://$vm_ip:8428/api/v1/series" --data-urlencode 'match[]=container_cpu_usage_seconds_total' \
+    | python3 -c 'import json,sys; print(",".join(sorted({s["job"]+"|"+s.get("metrics_path","") for s in json.load(sys.stdin)["data"]})))')"
+  echo "=== case $case: up per (job, metrics_path) ==="
+  qcurl -G "http://$vm_ip:8428/api/v1/query" --data-urlencode 'query=count by (job, metrics_path) (up)' \
+    | python3 -c '
+import json,sys
+for r in sorted(json.load(sys.stdin)["data"]["result"], key=lambda r: (r["metric"]["job"], r["metric"]["metrics_path"])):
+    print("  up job=%s metrics_path=%s count=%s" % (r["metric"]["job"], r["metric"]["metrics_path"], r["value"][1]))'
+  local rows
+  rows="$(qcurl -G "http://$vm_ip:8428/api/v1/query" --data-urlencode "query=$rule_expr" \
+    | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]["result"]))')"
+  echo "=== case $case: the upstream recording rule's expression returns $rows series ==="
+  running="$(qcurl -G "http://$vm_ip:8428/api/v1/query" --data-urlencode "query=$running_kubelets" \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]["result"]; print(r[0]["value"][1] if r else "none")')"
+  echo "=== case $case: Running Kubelets (two nodes in the fixture) = $running ==="
+  if [ "$case" = chart ]; then
+    [ "$stored" = "kubelet|/metrics/cadvisor" ] && echo "PASS: cadvisor series stored as job=kubelet, metrics_path=/metrics/cadvisor" || { echo "FAIL: stored as [$stored]" >&2; fail=1; }
+    [ "$rows" -ge 1 ] && echo "PASS: the recording rule returns data ($rows series; the two fixture nodes share one pod row, so they fold into one)" || { echo "FAIL: the recording rule returned $rows series" >&2; fail=1; }
+  else
+    [ "$stored" = "cadvisor|/metrics/cadvisor" ] && echo "PASS: control stores job=cadvisor" || { echo "FAIL: control stored as [$stored]" >&2; fail=1; }
+    [ "$rows" = 0 ] && echo "PASS: control: the recording rule returns nothing" || { echo "FAIL: control rule returned $rows series" >&2; fail=1; }
+  fi
+  [ "$running" = 2 ] && echo "PASS: Running Kubelets counts one per node (2), not one per scrape path" || { echo "FAIL: Running Kubelets = $running, wanted 2" >&2; fail=1; }
 }
 
 run_case chart "example-cluster"
 run_case control ""
+run_case oldjob "example-cluster"
 
 echo
 if [ "$fail" = 0 ]; then
