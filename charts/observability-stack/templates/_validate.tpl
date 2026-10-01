@@ -1054,8 +1054,34 @@ reach a webhook beside the normal route; a name that resolves to nothing
 is a route that reaches nobody, same as the severities check above.
 */ -}}
 {{- range $i, $a := $also -}}
+{{- $where := printf "notifications.also[%d]" $i -}}
+{{- if eq (toString $a.receiver) "slack" -}}
+{{- if hasKey $webhookNames "slack" -}}
+{{- fail (printf "observability-stack: %s.receiver is \"slack\" and notifications.webhook also has an entry named \"slack\". The entry could mean either, and a route whose meaning depends on which the chart picked is a route nobody can read. Rename the webhook entry." $where) -}}
+{{- end -}}
+{{- include "observability-stack.validate.slackDestination" (list $where $a.channel $a.workspace $slackWorkspaceNames) -}}
+{{- else -}}
+{{- if and $telegramConfigured (eq (toString $a.receiver) "telegram") -}}
+{{- fail (printf "observability-stack: %s.receiver is \"telegram\". `also` delivers to a webhook or to Slack, not to Telegram; a Telegram destination is a severity tier's, a catchAll's, or the Slack failure receiver." $where) -}}
+{{- end -}}
 {{- if not (hasKey $webhookNames $a.receiver) -}}
-{{- fail (printf "observability-stack: notifications.also[%d].receiver is %q, which is not the name of any notifications.webhook entry." $i (toString $a.receiver)) -}}
+{{- fail (printf "observability-stack: notifications.also[%d].receiver is %q, which is not the name of any notifications.webhook entry (and is not \"slack\")." $i (toString $a.receiver)) -}}
+{{- end -}}
+{{- range $k := list "channel" "workspace" "mention" -}}
+{{- if index $a $k -}}
+{{- fail (printf "observability-stack: %s sets `%s` but its receiver is %q, not `slack`. It picks a Slack destination; on a webhook it would be read by nothing." $where $k (toString $a.receiver)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+`notifications.alertmanagerUrl` is embedded in an Alertmanager template,
+so it must be an absolute http(s) URL with no trailing slash and none of
+the characters that would end the template string or open an action.
+*/ -}}
+{{- with $n.alertmanagerUrl -}}
+{{- if or (not (regexMatch "^https?://[^\\s/\"'`{}\\\\<>]" (toString .))) (regexMatch "[\\s\"'`{}\\\\<>]" (toString .)) (hasSuffix "/" (toString .)) -}}
+{{- fail (printf "observability-stack: notifications.alertmanagerUrl is %q. It must be an absolute http:// or https:// URL with a host, without a trailing slash and without whitespace, quotes, braces or backslashes: the chart appends `/#/silences/new?...` to it and embeds it in an Alertmanager message template." (toString .)) -}}
 {{- end -}}
 {{- end -}}
 {{- /*

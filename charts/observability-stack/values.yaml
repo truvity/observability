@@ -757,6 +757,17 @@ notifications:
   # vmalert at an Alertmanager it already runs — has no `notifications`
   # block at all, and still needs its alerts' source links to resolve.
   externalUrl: ""
+  # -- The externally reachable base URL of THIS Alertmanager's UI, no
+  # trailing slash (`https://alertmanager.example`). Set, it becomes the
+  # VMAlertmanager's `externalURL` and the base of the `Silence:` link in
+  # every message. Empty: the message carries NO `Silence:` line.
+  #
+  # There is deliberately no default. The only address the chart can guess
+  # is Alertmanager's own pod (`http://vmalertmanager-<release>-0:9093`),
+  # which nobody outside the cluster can open, and the Grafana base above
+  # is no better: the chart refuses Grafana-managed alerting, so Grafana
+  # has no silence page. A link that goes nowhere is worse than none.
+  alertmanagerUrl: ""
   # -- Prefixed to a firing alert's `runbook` annotation to build the
   # runbook link. Left empty, the message carries no runbook line at all
   # — never a link to a base URL with nothing after it, which reads as a
@@ -942,12 +953,18 @@ notifications:
   #
   # A per-tier value is a channel string (the tier's workspace is kept) or
   # `{channel, workspace, mention}`; anything omitted is taken from the tier.
-  # -- Which alerts ALSO reach a webhook receiver, beside their normal
-  # route — the status-page bridge. Matchers, not channels: an entry adds
-  # a delivery, it never replaces the one `severities`/`routes` already
-  # picked.
+  # -- Which alerts ALSO reach a webhook receiver or a Slack channel,
+  # beside their normal route. An entry adds a delivery, it never replaces
+  # the one `severities`/`routes` already picked. `match` is free-form.
+  # `receiver: slack` takes `channel` (required), `workspace` (required
+  # with two or more workspaces) and an optional `mention`, and shares the
+  # receiver a primary route renders for the same destination.
   also: []
   # - receiver: ""
+  # - receiver: slack
+  #   match: {k8s_cluster_name: my-cluster}
+  #   workspace: partner
+  #   channel: "#partner-alerts"
   #   match: {severity: critical}
 
 # Network policies.

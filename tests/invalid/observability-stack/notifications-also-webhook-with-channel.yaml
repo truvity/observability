@@ -1,0 +1,27 @@
+# expect: sets `channel` but its receiver is "status-page"
+# `channel` on a webhook entry would be read by nothing.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+      - {name: partner, appTokenSecret: {name: example-partner-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical", workspace: acme}
+    warning: {receiver: slack, channel: "#alerts", workspace: acme}
+  webhook:
+    - {name: status-page, urlSecret: {name: example-status-webhook, key: url}}
+  also:
+    - receiver: status-page
+      match: {severity: critical}
+      channel: "#mirror"

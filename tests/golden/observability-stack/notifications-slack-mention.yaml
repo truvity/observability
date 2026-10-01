@@ -2328,56 +2328,51 @@ spec:
           - channel: "#alerts"
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
               {{ end }}
-              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: slack-acme--alerts--here
         slack_configs:
           - channel: "#alerts"
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             text: |-
               {{ if eq .Status "firing" }}<!here> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
               {{ end }}
-              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: slack-acme--alerts-everything-else--channel
         slack_configs:
           - channel: "#alerts-everything-else"
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             text: |-
               {{ if eq .Status "firing" }}<!channel> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
               {{ end }}
-              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: slack-acme--example-app--channel
         slack_configs:
           - channel: "#example-app"
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             text: |-
               {{ if eq .Status "firing" }}<!channel> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
               {{ end }}
-              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: slack-acme--example-app-critical--here
         slack_configs:
           - channel: "#example-app-critical"
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}'
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             text: |-
               {{ if eq .Status "firing" }}<!here> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
               {{ end }}
-              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
     inhibit_rules:
       - source_matchers:
           - severity = "critical"

@@ -708,6 +708,10 @@
           "type": "string",
           "description": "The base of the Grafana link this chart puts in every Slack message. Required the moment a receiver kind is configured; without it every link in a notification points at nothing a person can open."
         },
+        "alertmanagerUrl": {
+          "type": "string",
+          "description": "The externally reachable base URL of THIS Alertmanager's UI, no trailing slash. Set, it is the VMAlertmanager `externalURL` and the base of the message's `Silence:` link. Empty (no default on purpose): the message carries no `Silence:` line, because the only address the chart could guess is the in-cluster pod, which nobody can open."
+        },
         "runbookBaseUrl": {
           "type": "string",
           "description": "Prefixed to a firing rule's `runbook` annotation to make the runbook link. Left empty, the chart renders no runbook line rather than a link to a base URL with nothing after it."
@@ -929,7 +933,7 @@
         },
         "also": {
           "type": "array",
-          "description": "Which alerts ALSO reach a webhook receiver, beside their normal route - the status-page bridge. Matchers, not channels: an entry is delivered in addition to, never instead of, the primary Slack route.",
+          "description": "Which alerts ALSO reach a webhook receiver or a Slack channel, beside their normal route. An entry is delivered in addition to, never instead of, the primary route.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -941,7 +945,17 @@
               "receiver": {
                 "type": "string",
                 "minLength": 1,
-                "description": "The name of an entry in `notifications.webhook`."
+                "description": "The name of an entry in `notifications.webhook`, or `slack` to deliver to a Slack channel (then `channel` is required)."
+              },
+              "channel": {
+                "type": "string",
+                "description": "With `receiver: slack`: the channel to post in."
+              },
+              "workspace": {
+                "$ref": "#/definitions/workspaceName"
+              },
+              "mention": {
+                "$ref": "#/definitions/slackMention"
               },
               "match": {
                 "type": "object",

@@ -2306,14 +2306,13 @@ spec:
             parse_mode: "HTML"
             send_resolved: true
             message: |-
-              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}
+              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}
               {{ range .Alerts }}
               {{ .Annotations.summary }}
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
               {{ end }}
-              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
       - name: telegram-n1000000000001-42
         telegram_configs:
           - bot_token_file: /etc/alertmanager/notifications-telegram/token
@@ -2322,14 +2321,13 @@ spec:
             parse_mode: "HTML"
             send_resolved: true
             message: |-
-              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}/{{ .CommonLabels.k8s_namespace_name }}
+              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}
               {{ range .Alerts }}
               {{ .Annotations.summary }}
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name }}
+              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
               {{ end }}
-              Silence: {{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
     inhibit_rules:
       - source_matchers:
           - severity = "critical"

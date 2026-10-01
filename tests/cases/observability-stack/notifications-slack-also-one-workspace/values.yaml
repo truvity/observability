@@ -1,0 +1,37 @@
+# One Slack workspace: an `also` entry delivering to Slack. `workspace` is
+# left out and means that one. The first entry mirrors a cluster to
+# `#mirror` beside the primary route; the second names the very channel the
+# critical tier already posts to, so it REUSES that receiver rather than
+# rendering a second one.
+# The cluster's DNS suffix is a neutral placeholder: a golden render is a
+# tracked file in a public repository.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+  also:
+    - receiver: slack
+      match: {k8s_cluster_name: my-cluster}
+      channel: "#mirror"
+    - receiver: slack
+      match: {severity: critical}
+      channel: "#alerts-critical"
