@@ -1016,6 +1016,8 @@ spec:
         fsGroup: 2000
         runAsNonRoot: true
         runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: observability-stack-victoria-metrics-operator
       containers:
         - name: operator
@@ -1139,6 +1141,8 @@ spec:
         fsGroup: 2000
         runAsNonRoot: true
         runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: vlogs
           securityContext:
@@ -1251,6 +1255,8 @@ spec:
         fsGroup: 2000
         runAsNonRoot: true
         runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: vtraces
           securityContext:
@@ -1356,6 +1362,14 @@ spec:
             observability.backup: metrics
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
           serviceAccountName: "observability-stack-backup-metrics"
           affinity:
             podAffinity:
@@ -1368,6 +1382,11 @@ spec:
           containers:
             - name: vmbackup
               image: "victoriametrics/vmbackup:v1.152.0"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               args:
                 # vmbackup takes an instant snapshot through the store's
                 # own API and uploads it. It is incremental BY
@@ -1435,6 +1454,14 @@ spec:
             observability.backup: metrics
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
           serviceAccountName: "observability-stack-backup-metrics"
           affinity:
             podAffinity:
@@ -1447,6 +1474,11 @@ spec:
           containers:
             - name: vmbackup
               image: "victoriametrics/vmbackup:v1.152.0"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               args:
                 # vmbackup takes an instant snapshot through the store's
                 # own API and uploads it. It is incremental BY
@@ -1519,6 +1551,14 @@ spec:
             observability.backup: logs
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
           serviceAccountName: "observability-stack-backup-logs"
           affinity:
             podAffinity:
@@ -1532,6 +1572,11 @@ spec:
           containers:
             - name: backup
               image: "rclone/rclone:1.73.0"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               env:
                 - name: STORE_URL
                   value: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
@@ -1632,6 +1677,14 @@ spec:
             observability.backup: traces
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
           serviceAccountName: "example-traces-backup"
           affinity:
             podAffinity:
@@ -1645,6 +1698,11 @@ spec:
           containers:
             - name: backup
               image: "rclone/rclone:1.73.0"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               env:
                 - name: STORE_URL
                   value: "http://observability-stack-vt-single-server.observability.svc:10428"
@@ -2558,6 +2616,18 @@ metadata:
 spec:
   replicaCount: 1
   evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   ruleSelector:
     matchExpressions:
       - key: observability.rule-type
@@ -2616,6 +2686,18 @@ metadata:
 spec:
   replicaCount: 1
   evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   ruleSelector:
     matchLabels:
       observability.rule-type: vlogs
@@ -2672,6 +2754,18 @@ metadata:
     app.kubernetes.io/part-of: observability-stack
 spec:
   replicaCount: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   resources:
     limits:
       memory: 256Mi
@@ -2772,6 +2866,18 @@ spec:
     repository: victoriametrics/vmauth
     tag: v1.152.0
   replicaCount: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   resources:
     limits:
       memory: 512Mi
@@ -2946,6 +3052,18 @@ spec:
       cpu: 500m
       memory: 8Gi
   retentionPeriod: 90d
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    runAsGroup: 65534
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile:
+      type: RuntimeDefault
   storage:
     accessModes:
     - ReadWriteOnce
@@ -3067,6 +3185,12 @@ spec:
     spec:
       serviceAccountName: observability-stack-victoria-metrics-k8s-stack-sync-job
       restartPolicy: OnFailure
+      securityContext: 
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: sync-job
           image: "ghcr.io/victoriametrics/sync-job:v0.0.17"
@@ -3092,6 +3216,11 @@ spec:
             - name: config
               mountPath: /etc/config
               readOnly: true
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
       volumes:
         - name: config
           configMap:

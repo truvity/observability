@@ -517,6 +517,9 @@
         },
         "podSecurityContext": {
           "type": "object"
+        },
+        "containerSecurityContext": {
+          "type": "object"
         }
       }
     },

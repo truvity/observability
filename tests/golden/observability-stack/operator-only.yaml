@@ -546,6 +546,8 @@ spec:
         fsGroup: 2000
         runAsNonRoot: true
         runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: observability-stack-victoria-metrics-operator
       containers:
         - name: operator

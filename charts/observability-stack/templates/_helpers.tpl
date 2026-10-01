@@ -782,3 +782,29 @@ existing values file meaning the same thing.
 {{- end -}}
 {{- toYaml $out -}}
 {{- end -}}
+
+{{/*
+The security context of a pod this chart renders through the
+VictoriaMetrics operator (VMAlert, VMAuth, VMAlertmanager) or as a Job, set
+to the Pod Security `restricted` profile. The operator inlines the pod and
+the container fields of one `securityContext`, so this single object covers
+the pod and every container the operator adds beside the main one (the
+config reloader included).
+
+65534 is the `nobody` user these images already treat as their own.
+`fsGroupChangePolicy: OnRootMismatch` keeps a volume that is already owned
+correctly from being walked again on every start.
+*/}}
+{{- define "observability-stack.restrictedSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: 65534
+runAsGroup: 65534
+fsGroup: 65534
+fsGroupChangePolicy: OnRootMismatch
+seccompProfile:
+  type: RuntimeDefault
+allowPrivilegeEscalation: false
+capabilities:
+  drop:
+    - ALL
+{{- end -}}

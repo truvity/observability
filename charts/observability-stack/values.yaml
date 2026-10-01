@@ -1879,7 +1879,28 @@ victoria-metrics-k8s-stack:
     # to render when the two disagree.
     clusterLabel: k8s_cluster_name
 
+  # -- The rule and dashboard sync Job: a static binary that talks to the
+  # API server and fetches over the network, so it needs no privilege, no
+  # capability and no particular user. Pod Security `restricted`.
+  syncJob:
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
   victoria-metrics-operator:
+    # -- The operator's own pod security context is non-root already; Pod
+    # Security `restricted` also wants a seccomp profile, which it leaves
+    # out. Merged with the subchart's defaults.
+    podSecurityContext:
+      seccompProfile:
+        type: RuntimeDefault
     # -- The CRDs are NOT this chart's to install.
     #
     # They are cluster-scoped and shared by every release in the cluster,
@@ -1982,6 +2003,26 @@ victoria-metrics-k8s-stack:
   vmsingle:
     enabled: true
     spec:
+      # -- Pod Security `restricted`. The operator inlines the pod and the
+      # container fields of this one object, so it covers the store and the
+      # containers the operator adds beside it. The image has no USER and
+      # ran as root with no security context at all; 65534 plus `fsGroup`
+      # makes the data volume writable for it, and `OnRootMismatch` walks
+      # an already-owned volume once rather than at every start (the first
+      # start after this default arrives walks the existing data).
+      # `backup.seLinuxLevel` still lands under `seLinuxOptions` here.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
       # -- Retention ALWAYS carries a unit. VictoriaMetrics reads a bare
       # number as MONTHS (`-retentionPeriod=90` is seven and a half
       # years), and the month suffix is a capital `M` — a lowercase `m`
@@ -2236,6 +2277,12 @@ victoria-metrics-k8s-stack:
 victoria-logs-single:
   enabled: true
   server:
+    # -- The subchart's own pod security context is non-root with an fsGroup
+    # and drops every capability already; Pod Security `restricted` also
+    # wants a seccomp profile, which it leaves out. Merged with its defaults.
+    podSecurityContext:
+      seccompProfile:
+        type: RuntimeDefault
     # -- WITH A UNIT, always: VictoriaLogs reads a bare number as months
     # too, and its own default is 7d — three months of logs is not what
     # an estate that wrote `90` expects, and neither is a week.
@@ -2315,6 +2362,10 @@ victoria-logs-single:
 victoria-traces-single:
   enabled: true
   server:
+    # -- See `victoria-logs-single.server.podSecurityContext`.
+    podSecurityContext:
+      seccompProfile:
+        type: RuntimeDefault
     # -- Traces are the shortest-lived of the three: they answer "what
     # happened in that request", which is a question people ask within
     # days, and they are the largest per unit of value.

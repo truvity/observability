@@ -209,6 +209,10 @@ spec:
       containers:
         - name: collector
           image: {{ printf "%s:%s" .Values.otlp.image.repository .Values.otlp.image.tag | quote }}
+          {{- with .Values.otlp.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           args:
             - --config=/etc/otelcol/config.yaml
           ports:

@@ -133,6 +133,8 @@ metadata:
     {{- include "observability-stack.labels" . | nindent 4 }}
 spec:
   replicaCount: {{ .Values.alertmanager.replicaCount }}
+  securityContext:
+    {{- include "observability-stack.restrictedSecurityContext" . | nindent 4 }}
   resources:
     {{- include "observability-stack.resources" .Values.alertmanager.resources | nindent 4 }}
   selectAllByDefault: false

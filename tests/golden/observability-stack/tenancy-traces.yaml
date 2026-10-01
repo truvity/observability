@@ -62,6 +62,8 @@ spec:
         fsGroup: 2000
         runAsNonRoot: true
         runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: vtraces
           securityContext:
@@ -177,6 +179,18 @@ spec:
     repository: victoriametrics/vmauth
     tag: v1.152.0
   replicaCount: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   resources:
     limits:
       memory: 512Mi
