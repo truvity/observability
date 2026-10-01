@@ -17431,6 +17431,306 @@ data:
               "values": false
             }
           }
+        },
+        {
+          "id": 37,
+          "type": "stat",
+          "title": "Postgres instances up",
+          "description": "Postgres instances whose exporter answers and reports up; with the tile beside it they add up to every instance the cluster scrapes. Zero where instances exist means none is reachable. n/a where the instance metrics are not scraped (the optional cnpg-instance-metrics source).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 3,
+            "w": 6,
+            "x": 0,
+            "y": 41
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "(count(cnpg_collector_up{k8s_cluster_name=~\"$cluster\"} == 1)) or (0 * count(cnpg_collector_up{k8s_cluster_name=~\"$cluster\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "n/a",
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "links": [
+                {
+                  "title": "Open the CloudNativePG instances dashboard",
+                  "url": "/d/truvity-obs-cnpg-cluster?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+                  "targetBlank": false
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 38,
+          "type": "stat",
+          "title": "Postgres instances not up",
+          "description": "Postgres instances that are scraped but report down: the pod is starting, failing, or its database does not answer. Open the instances dashboard and read Instance ready, then the pod's events.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 3,
+            "w": 6,
+            "x": 6,
+            "y": 41
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "(count(cnpg_collector_up{k8s_cluster_name=~\"$cluster\"} == 0)) or (0 * count(cnpg_collector_up{k8s_cluster_name=~\"$cluster\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "n/a",
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "links": [
+                {
+                  "title": "Open the CloudNativePG instances dashboard",
+                  "url": "/d/truvity-obs-cnpg-cluster?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+                  "targetBlank": false
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 39,
+          "type": "stat",
+          "title": "Postgres replication lag (max)",
+          "description": "The largest replication lag any scraped standby reports, in seconds. Near zero is healthy; a lag that grows means a standby cannot keep up and a failover would lose that much.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 3,
+            "w": 6,
+            "x": 12,
+            "y": 41
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "(max(cnpg_pg_replication_lag{k8s_cluster_name=~\"$cluster\"})) or (0 * count(cnpg_collector_up{k8s_cluster_name=~\"$cluster\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "n/a",
+              "decimals": 1,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 30
+                  },
+                  {
+                    "color": "red",
+                    "value": 300
+                  }
+                ]
+              },
+              "links": [
+                {
+                  "title": "Open the CloudNativePG instances dashboard",
+                  "url": "/d/truvity-obs-cnpg-cluster?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+                  "targetBlank": false
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 40,
+          "type": "stat",
+          "title": "Newest Postgres backup age",
+          "description": "Age of the newest successful backup across the scraped Postgres clusters, from the backup plugin's own timestamp. Past a day and a half means a scheduled backup was missed: read the Backup resources. n/a where no backup is reported.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 3,
+            "w": 6,
+            "x": 18,
+            "y": 41
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "(time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{k8s_cluster_name=~\"$cluster\"})) or (0 * count(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{k8s_cluster_name=~\"$cluster\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "n/a",
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 129600
+                  },
+                  {
+                    "color": "red",
+                    "value": 259200
+                  }
+                ]
+              },
+              "links": [
+                {
+                  "title": "Open the CloudNativePG instances dashboard",
+                  "url": "/d/truvity-obs-cnpg-cluster?var-datasource=${datasource:queryparam}&${cluster:queryparam}&${__url_time_range}",
+                  "targetBlank": false
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
         }
       ],
       "uid": "truvity-obs-fleet-overview"

@@ -24,9 +24,15 @@ cert-manager:
   queryCheck: true
   ref: v1.6.0
   upstream: cert-manager-mixin
-cnpg-operator:
-  deferred:
+cnpg-cluster:
+  file: cnpg-cluster.json
+  folder: platform
+  queryCheck: true
+  ref: cluster-v0.0.5
+  requires:
   - cnpg-instance-metrics
+  upstream: cloudnative-pg
+cnpg-operator:
   file: cnpg-operator.json
   folder: platform
   queryCheck: true
@@ -59,6 +65,8 @@ fleet-overview:
   file: fleet-overview.json
   folder: fleet
   queryCheck: true
+  requires:
+  - cnpg-instance-metrics
 k8s-views-global:
   file: k8s-views-global.json
   folder: kubernetes

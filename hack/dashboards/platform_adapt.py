@@ -6,8 +6,9 @@ Envoy Gateway). The rewrite is mechanical and driven by the source's
 `platform:` block; what it does, in order:
 
   1. strips the export scaffolding (`__inputs`, `__requires`, ids);
-  2. drops the rows and panels the block names, each with a reason, and
-     every text and alert-list panel;
+  2. drops the rows and panels the block names (by title or type, or by a
+     text their query mentions), each with a reason, and every text and
+     alert-list panel;
   3. renames the variables that collide with the contract's names
      (upstream's own `cluster` is usually an application's destination or an
      Envoy cluster, not an install) and drops the ones that do not apply;
@@ -374,6 +375,53 @@ def adapt(dashboard, spec, metric_available, extras=None):
         if not hit:
             raise SystemExit("%s: dropPanels matched nothing: %r" % (name, spec_drop))
 
+    # Panels whose query mentions a given text (a variable that is dropped
+    # with the row it belongs to, say) leave with it.
+    for spec_drop in cfg.get("dropPanelsReading", []):
+        hit = 0
+        for i, s in enumerate(sections):
+            keep = []
+            for p in s["children"]:
+                if any(spec_drop["contains"] in t.get("expr", "") for t in p.get("targets") or []):
+                    hit += 1
+                    report.drop(p.get("title") or "(untitled %s)" % p.get("type"), spec_drop["reason"])
+                    mark_lost(i, p)
+                else:
+                    keep.append(p)
+            s["children"] = keep
+        if not hit:
+            raise SystemExit("%s: dropPanelsReading matched nothing: %r" % (name, spec_drop))
+
+    # Untitled panels that sat under a text label upstream (the label is a
+    # text panel, dropped below) are dropped by section, or titled by the
+    # start of their query.
+    for spec_drop in cfg.get("dropUntitled", []):
+        hit = 0
+        for i, s in enumerate(sections):
+            rowtitle = s["row"].get("title") if s["row"] is not None else "top of dashboard"
+            if rowtitle != spec_drop["row"]:
+                continue
+            keep = []
+            for p in s["children"]:
+                if not p.get("title") and p.get("type") not in ("text", "alertlist", "news", "dashlist", "row"):
+                    hit += 1
+                    report.drop("(untitled %s)" % p.get("type"), spec_drop["reason"])
+                    mark_lost(i, p)
+                else:
+                    keep.append(p)
+            s["children"] = keep
+        if not hit:
+            raise SystemExit("%s: dropUntitled matched nothing: %r" % (name, spec_drop))
+    for rt in cfg.get("retitleByQuery", []):
+        hit = 0
+        for s in sections:
+            for p in s["children"]:
+                if not p.get("title") and any(t.get("expr", "").strip().startswith(rt["startswith"]) for t in p.get("targets") or []):
+                    p["title"] = rt["to"]
+                    hit += 1
+        if not hit:
+            raise SystemExit("%s: retitleByQuery matched nothing: %r" % (name, rt))
+
     # Text and alert-list panels answer no query and have nothing to describe.
     for i, s in enumerate(sections):
         keep = []
@@ -525,8 +573,11 @@ def adapt(dashboard, spec, metric_available, extras=None):
 
     # -- extras (authored panels added to the adapted dashboard) ---------------------
     if extras:
+        # `guardPanel`: the block authors a banner that must sit first (the
+        # "is the source scraped at all" stat), not at the foot.
+        target = sections[0] if cfg.get("guardPanel") else sections[-1]
         for p in extras(name):
-            sections[-1]["children"].append(p)
+            target["children"].append(p)
 
     # -- 8. panels ---------------------------------------------------------------------
     missing_desc = []
@@ -552,6 +603,39 @@ def adapt(dashboard, spec, metric_available, extras=None):
             p.pop("pluginVersion", None)
     if missing_desc:
         raise SystemExit("%s: panels with no description in hack/dashboards/platform_descriptions.py: %s" % (name, sorted(set(missing_desc))))
+
+    # Sections the block lays out by hand: dropping the text labels and the
+    # status lights leaves holes no re-spread can close sensibly. Each grid
+    # row is {h, titles}; the titles share the 24 columns equally, and every
+    # panel of the section must be placed.
+    for sec_title, rows in (cfg.get("grids") or {}).items():
+        sec = next((s for s in sections if (s["row"].get("title") if s["row"] is not None else "top of dashboard") == sec_title), None)
+        if sec is None:
+            raise SystemExit("%s: grids names a section that is not there: %r" % (name, sec_title))
+        by_title = {}
+        for p in sec["children"]:
+            if p.get("title") in by_title:
+                raise SystemExit("%s: grids %r: two panels titled %r" % (name, sec_title, p.get("title")))
+            by_title[p.get("title")] = p
+        placed = set()
+        y = 0
+        for gr in rows:
+            titles = gr["titles"]
+            w, x = 24 // len(titles), 0
+            for i, t in enumerate(titles):
+                if t not in by_title:
+                    raise SystemExit("%s: grids %r names a panel that is not there: %r" % (name, sec_title, t))
+                if t in placed:
+                    raise SystemExit("%s: grids %r places %r twice" % (name, sec_title, t))
+                placed.add(t)
+                ww = 24 - x if i == len(titles) - 1 else w
+                by_title[t]["gridPos"].update({"x": x, "y": y, "w": ww, "h": gr["h"]})
+                x += ww
+            y += gr["h"]
+        left = sorted(set(by_title) - placed)
+        if left:
+            raise SystemExit("%s: grids %r leaves panels unplaced: %s" % (name, sec_title, left))
+        lost.pop(sections.index(sec), None)
 
     relayout(sections, {s["_i"]: lost.get(s["_i"], set()) for s in sections})
     dashboard["panels"] = from_sections(sections)

@@ -4,6 +4,45 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-dashboards`: the CloudNativePG instance dashboards, as an
+opt-in metric source.
+
+- **New dashboard `cnpg-cluster`, OFF by default** (`dashboards.cnpg-cluster.enabled`).
+  It is the instance half of the upstream CloudNativePG cluster dashboard:
+  server health, connections, transactions, storage, WAL archiving,
+  replication lag, backups and checkpoints, 56 panels. It reads the
+  instance exporter (`:9187` on each Postgres pod), an optional source named
+  `cnpg-instance-metrics` that a default install does not scrape; turn the
+  dashboard on together with the Postgres cluster chart's `PodMonitor`.
+  Instances are selected by the exporter's own `cluster` label (the Postgres
+  cluster) and the collector's `k8s_cluster_name` (the install), never by a
+  fixed job. Its first panel, "Postgres instances reporting", reads `no data:
+  instance metrics not scraped` while the source is off, so absence is
+  visible, not a blank wall.
+- **Fleet overview: four Postgres tiles** on the CloudNativePG line
+  (instances up, instances not up, maximum replication lag, newest backup
+  age). They read the same optional source and show `n/a` until it is
+  scraped; they link to `cnpg-cluster`. Nothing else on the page moves, and
+  `cnpg-operator` (operator series only) is unchanged and still on.
+- **Allow-lists:** `hack/dashboards/available-metrics.yaml` gains the 42
+  exporter families the two dashboards read (41 `cnpg_*` and one
+  `barman_cloud_cloudnative_pg_io_*`), each taken from a live scrape and
+  each held only for a dashboard that declares `requires:
+  [cnpg-instance-metrics]`; `available-labels.yaml` gains the matching jobs.
+  `cnpg_pg_settings_setting` is kept for eight settings only
+  (`block_size`, `effective_cache_size`, `maintenance_work_mem`,
+  `max_connections`, `random_page_cost`, `seq_page_cost`, `shared_buffers`,
+  `work_mem`), and a test refuses a panel that selects another. The catalog
+  no longer records `deferred: [cnpg-instance-metrics]` on `cnpg-operator`.
+- Panels the store cannot serve are dropped at import with their reason
+  printed (the CPU panels need a recording rule no store holds; the whole
+  configuration table would read as the full configuration). The checkpoint
+  panels read the PostgreSQL 17 `pg_stat_checkpointer` names, so on an older
+  Postgres they are empty. No default moved and no existing dashboard
+  changed except the Fleet overview's added line.
+
 ## v0.23.0
 
 `observability-stack` notifications: links that work, and Slack for `also`.

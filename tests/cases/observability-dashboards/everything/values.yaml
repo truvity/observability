@@ -52,6 +52,8 @@ dashboards:
     enabled: true
   cnpg-operator:
     enabled: true
+  cnpg-cluster:
+    enabled: true
   nats-server:
     enabled: true
   nats-jetstream:

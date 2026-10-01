@@ -129,6 +129,9 @@ dashboards:
     folder: fleet
     tags: [observability-fleet]
     queryCheck: true
+    # Four CloudNativePG instance tiles read the optional instance exporter;
+    # they read n/a where it is not scraped.
+    requires: [cnpg-instance-metrics]
 
   # dotdc/grafana-dashboards-kubernetes, adapted (hack/dashboards.py,
   # adapt_k8s_views): the `cluster` label becomes `k8s_cluster_name`, and
@@ -272,11 +275,14 @@ dashboards:
         - {from: 'kube_pod_container_resource_limits_memory_bytes{', to: 'kube_pod_container_resource_limits{resource="memory",'}
         - {from: 'kube_pod_container_resource_requests_memory_bytes{', to: 'kube_pod_container_resource_requests{resource="memory",'}
 
-  # cloudnative-pg/grafana-dashboards' cluster dashboard is instance-centric:
-  # it reads cnpg_* series from each Postgres pod's :9187 exporter, and those
-  # are not scraped yet. Only its Operator row is kept (the operator's own
-  # controller-runtime series are); every other panel is dropped and recorded
-  # under `deferred`, to come back when the instance metrics ship.
+  # cloudnative-pg/grafana-dashboards' cluster dashboard reads two kinds of
+  # series: the operator's own controller-runtime series, and cnpg_* series
+  # from each Postgres pod's :9187 exporter. The exporter is an optional
+  # source (`cnpg-instance-metrics`: scraped only where the Postgres cluster
+  # chart's PodMonitor selects the instance pods), so the one upstream
+  # dashboard is imported twice: `cnpg-operator` keeps the Operator row and
+  # is on by default; `cnpg-cluster` keeps every other row, requires the
+  # optional source, and is off by default.
   - name: cnpg-operator
     upstream: cloudnative-pg
     url: https://raw.githubusercontent.com/cloudnative-pg/grafana-dashboards/{ref}/charts/cluster/grafana-dashboard.json
@@ -285,11 +291,10 @@ dashboards:
     folder: platform
     tags: [observability-platform, cnpg]
     queryCheck: true
-    deferred: [cnpg-instance-metrics]
     platform:
       anchor: 'controller_runtime_reconcile_total{job="cnpg-system/cnpg-cloudnative-pg"}'
       keepOnlyRows: [Operator]
-      keepOnlyReason: reads cnpg_* instance series (the :9187 exporter), not scraped yet; requires cnpg-instance-metrics
+      keepOnlyReason: reads the instance exporter's series (cnpg_*), an optional source; those rows are the cnpg-cluster dashboard
       dropVars: [namespace, cluster, instances]
       renameVars:
         operatorNamespace: {name: namespace, label: operator namespace}
@@ -309,6 +314,79 @@ dashboards:
         Backup Reconcile Errors: short
         Scheduled Backup Reconcile Errors: short
         Pooler Reconcile Errors: short
+
+  - name: cnpg-cluster
+    upstream: cloudnative-pg
+    url: https://raw.githubusercontent.com/cloudnative-pg/grafana-dashboards/{ref}/charts/cluster/grafana-dashboard.json
+    ref: cluster-v0.0.5
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, cnpg]
+    queryCheck: true
+    requires: [cnpg-instance-metrics]
+    platform:
+      anchor: 'cnpg_collector_up'
+      dropRows:
+        - {title: Operator, reason: the operator's own series are the cnpg-operator dashboard}
+      # Upstream's own `cluster` is the Postgres cluster, which the
+      # instance series carry as `cluster`; the contract's `cluster` is the
+      # install (`k8s_cluster_name`), so upstream's is renamed.
+      dropVars: [operatorNamespace]
+      dropPanelsReading:
+        - {contains: '$operatorNamespace', reason: the operator's own panels are the cnpg-operator dashboard}
+        - {contains: kube_node_labels, reason: 'reads the node zone through kube_node_labels, whose topology label is not known to be exported by the kube-state-metrics label allow-list'}
+      dropUntitled:
+        - {row: top of dashboard, reason: 'a status light whose label was a text panel upstream; the titled panels beside it read the same series'}
+      retitleByQuery:
+        - {startswith: 'min(kube_pod_container_status_ready{container="postgres"', to: Instance ready}
+        - {startswith: '1 - cnpg_pg_replication_in_recovery{', to: Replication status}
+        - {startswith: 'cnpg_pg_replication_streaming_replicas{', to: Streaming replicas}
+        - {startswith: 'sum by (pod) (cnpg_backends_total{', to: Connections}
+        - {startswith: '100 * sum by (pod) (cnpg_backends_total{', to: Connections used of the maximum}
+        - {startswith: 'max by (pod) (cnpg_pg_database_xid_age{', to: Transaction ID age}
+        - {startswith: 'cnpg_pg_postmaster_start_time{', to: Started}
+        - {startswith: 'cnpg_collector_postgres_version{', to: Postgres version}
+        - {startswith: 'cnpg_pg_settings_setting{name="max_connections"', to: Max connections}
+        - {startswith: 'max by (pod) (cnpg_pg_settings_setting{name="shared_buffers"', to: Shared buffers}
+        - {startswith: 'max by (pod) (cnpg_pg_settings_setting{name="effective_cache_size"', to: Effective cache size}
+        - {startswith: 'cnpg_pg_settings_setting{name="work_mem"', to: Work mem}
+        - {startswith: 'cnpg_pg_settings_setting{name="maintenance_work_mem"', to: Maintenance work mem}
+        - {startswith: 'cnpg_pg_settings_setting{name="random_page_cost"', to: Random page cost}
+        - {startswith: 'cnpg_pg_settings_setting{name="seq_page_cost"', to: Sequential page cost}
+      dropPanels:
+        - {title: Configurations, reason: 'lists every pg_settings row, and only 8 settings are kept (block_size, effective_cache_size, maintenance_work_mem, max_connections, random_page_cost, seq_page_cost, shared_buffers, work_mem), so the table would read as the whole configuration'}
+        - {title: CPU Utilisation, reason: reads a node_namespace_pod_container recording rule no store holds}
+        - {title: CPU Usage, reason: reads a node_namespace_pod_container recording rule no store holds}
+      replace:
+        # PostgreSQL 17 moved these counters from pg_stat_bgwriter to
+        # pg_stat_checkpointer; the exporter publishes the new names.
+        - {from: '{__name__=~"cnpg_pg_stat_(bgwriter|checkpointer)_checkpoints_req",', to: 'cnpg_pg_stat_checkpointer_checkpoints_req{'}
+        - {from: '{__name__=~"cnpg_pg_stat_(bgwriter|checkpointer)_checkpoints_timed",', to: 'cnpg_pg_stat_checkpointer_checkpoints_timed{'}
+        - {from: '{__name__=~"cnpg_pg_stat_(bgwriter_checkpoint|checkpointer)_write_time",', to: 'cnpg_pg_stat_checkpointer_write_time{'}
+        - {from: '{__name__=~"cnpg_pg_stat_(bgwriter_checkpoint|checkpointer)_sync_time",', to: 'cnpg_pg_stat_checkpointer_sync_time{'}
+      renameVars:
+        cluster: {name: pgcluster, label: postgres cluster}
+      varOverrides:
+        namespace:
+          query: 'label_values(cnpg_collector_up, namespace)'
+        pgcluster:
+          query: 'label_values(cnpg_collector_up{namespace=~"$namespace"}, cluster)'
+        instances:
+          query: 'label_values(cnpg_collector_up{namespace=~"$namespace",cluster=~"$pgcluster"}, pod)'
+      regexMatchVars: [namespace]
+      guardPanel: true
+      grids:
+        top of dashboard:
+          - {h: 3, titles: [Postgres instances reporting]}
+          - {h: 4, titles: [Last failover, TPS, Replication Lag, Write Lag, Flush Lag, Replay Lag]}
+          - {h: 5, titles: [Memory Utilisation, Volume Space Usage, Last Base Backup, Last archived WAL]}
+          - {h: 3, titles: [Version, Database Size, First Recoverability Point]}
+        Server Health:
+          - {h: 3, titles: [Instance ready, Replication status, Streaming replicas, Started, Postgres version]}
+          - {h: 6, titles: [Connections, Connections used of the maximum, Transaction ID age]}
+        Configuration:
+          - {h: 3, titles: [Max connections, Shared buffers, Effective cache size, Work mem]}
+          - {h: 3, titles: [Maintenance work mem, Random page cost, Sequential page cost]}
 
   # The prometheus-nats-exporter walkthrough dashboards, served by the
   # sidecar with -connz -routez -subz -varz -jsz=all. The cumulative varz
