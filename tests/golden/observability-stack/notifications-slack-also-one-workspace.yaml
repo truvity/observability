@@ -2309,9 +2309,11 @@ spec:
         - match:
             k8s_cluster_name: my-cluster
           receiver: slack-acme--mirror
+          continue: true
         - match:
             severity: critical
           receiver: slack-acme--alerts-critical
+          continue: true
     receivers:
       - name: notifications-none
       - name: slack-acme--alerts

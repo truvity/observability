@@ -31,6 +31,10 @@ must be done first, and whether a default moved. Newest first, one
   and an optional `mention`. It reuses the receiver a primary route renders
   for the same destination. Telegram stays refused; `channel`, `workspace`
   and `mention` on a webhook entry are refused.
+- **Behaviour change: `also` entries no longer stop at the first match.**
+  Every `also` route now renders `continue: true`, so an alert matching two
+  entries reaches both, beside its primary route. Before, the first matching
+  entry won and masked the rest.
 
 ## v0.22.0
 
