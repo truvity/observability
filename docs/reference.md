@@ -1188,6 +1188,34 @@ cannot rename a field, so its native spelling is the key and the gateway
 writes the same one on its log pipeline; the read side defaults to it.
 docs/safety.md has the two writer collisions and how each one is closed.
 
+## `charts/observability-dashboards`
+
+Dashboards for Grafana, rendered as one ConfigMap each. The contract every
+dashboard meets is in [dashboards.md](dashboards.md); this is only the values
+that choose which ship.
+
+### `dashboards.<name>.enabled`
+
+Every shipped dashboard has a key; the schema refuses an unknown name. Most
+default to `true`. Three read an OPTIONAL metric source, one a default
+install does not run, and are off:
+
+| Key | Default | Source it reads | What turns the source on |
+|---|---|---|---|
+| `dashboards.k8s-views-nodes` | `false` | node-exporter | `nodeExporter.enabled` in `charts/observability-emitters` |
+| `dashboards.node-exporter-full` | `true` | node-exporter | the same; empty panels until then |
+| `dashboards.cnpg-cluster` | `false` | `cnpg-instance-metrics`: the CloudNativePG instance exporter (`:9187` on each Postgres pod) | a scrape of the Postgres pods, which the Postgres cluster chart's `PodMonitor` (`monitoring.enablePodMonitor`) creates |
+
+`cnpg-cluster` selects instances by the exporter's own `cluster` label (the
+Postgres cluster) and the collector's `k8s_cluster_name` (the install), never
+by a fixed job. Its first panel, "Postgres instances reporting", reads
+`no data: instance metrics not scraped` while the source is off. The Fleet
+overview's four Postgres tiles (instances up, instances not up, maximum
+replication lag, newest backup age) read the same source and show `n/a`
+until it is scraped; they link to `cnpg-cluster`, so enable it with the
+source. The operator's own dashboard, `cnpg-operator`, does not depend on the
+instance exporter and stays on.
+
 ## `pkg/tenancy`
 
 `go get github.com/truvity/observability`

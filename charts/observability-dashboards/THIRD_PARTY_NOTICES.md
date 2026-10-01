@@ -180,6 +180,16 @@ ships a NOTICE file at the pinned ref.
 - Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
 - Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
 
+## cnpg-cluster
+
+- Upstream project: CloudNativePG Grafana dashboards
+- URL: https://github.com/cloudnative-pg/grafana-dashboards
+- Fetched from: https://raw.githubusercontent.com/cloudnative-pg/grafana-dashboards/cluster-v0.0.5/charts/cluster/grafana-dashboard.json
+- Pinned ref: `cluster-v0.0.5`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
 ## nats-server
 
 - Upstream project: prometheus-nats-exporter

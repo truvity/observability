@@ -203,12 +203,69 @@ sources:
       - certmanager_certificate_expiration_timestamp_seconds
       - certmanager_controller_sync_call_count
 
+  - name: CloudNativePG instances (PodMonitor on the Postgres pods, :9187)
+    onlyWith: cnpg-instance-metrics
+    note: >-
+      the optional source `cnpg-instance-metrics` (available-labels.yaml): the
+      instance exporter of each Postgres pod, scraped only where the Postgres
+      cluster chart's PodMonitor selects the pods. Exactly the families the
+      `cnpg-cluster` dashboard and the Fleet overview's Postgres tiles read,
+      each seen on a live scrape; the exporter publishes about fifty more that
+      no dashboard reads, and none of them is claimed. `cnpg_pg_settings_setting`
+      is kept for eight `name`s only (block_size, effective_cache_size,
+      maintenance_work_mem, max_connections, random_page_cost, seq_page_cost,
+      shared_buffers, work_mem): a panel may select no other. The backup
+      family is the barman-cloud plugin's.
+    names:
+      - cnpg_backends_max_tx_duration_seconds
+      - cnpg_backends_total
+      - cnpg_backends_waiting_total
+      - cnpg_collector_collection_duration_seconds
+      - cnpg_collector_first_recoverability_point
+      - cnpg_collector_last_available_backup_timestamp
+      - cnpg_collector_last_collection_error
+      - cnpg_collector_pg_wal
+      - cnpg_collector_pg_wal_archive_status
+      - cnpg_collector_postgres_version
+      - cnpg_collector_up
+      - cnpg_pg_database_size_bytes
+      - cnpg_pg_database_xid_age
+      - cnpg_pg_extensions_update_available
+      - cnpg_pg_postmaster_start_time
+      - cnpg_pg_replication_in_recovery
+      - cnpg_pg_replication_is_wal_receiver_up
+      - cnpg_pg_replication_lag
+      - cnpg_pg_replication_streaming_replicas
+      - cnpg_pg_settings_setting
+      - cnpg_pg_stat_archiver_archived_count
+      - cnpg_pg_stat_archiver_failed_count
+      - cnpg_pg_stat_archiver_seconds_since_last_archival
+      - cnpg_pg_stat_checkpointer_checkpoints_req
+      - cnpg_pg_stat_checkpointer_checkpoints_timed
+      - cnpg_pg_stat_checkpointer_sync_time
+      - cnpg_pg_stat_checkpointer_write_time
+      - cnpg_pg_stat_database_blks_hit
+      - cnpg_pg_stat_database_blks_read
+      - cnpg_pg_stat_database_deadlocks
+      - cnpg_pg_stat_database_temp_bytes
+      - cnpg_pg_stat_database_tup_deleted
+      - cnpg_pg_stat_database_tup_fetched
+      - cnpg_pg_stat_database_tup_inserted
+      - cnpg_pg_stat_database_tup_returned
+      - cnpg_pg_stat_database_tup_updated
+      - cnpg_pg_stat_database_xact_commit
+      - cnpg_pg_stat_database_xact_rollback
+      - cnpg_pg_stat_replication_flush_lag_seconds
+      - cnpg_pg_stat_replication_replay_lag_seconds
+      - cnpg_pg_stat_replication_write_lag_seconds
+      - barman_cloud_cloudnative_pg_io_last_available_backup_timestamp
+
   - name: CloudNativePG operator (PodMonitor, job cnpg-system/cnpg-cloudnative-pg)
     note: >-
       the operator's controller-runtime series only (covered by the
       controller_runtime_ and workqueue_ prefixes above). The cnpg_* families
-      come from each Postgres instance's exporter, which is not scraped yet:
-      that is what `cnpg-instance-metrics` in available-labels.yaml names.
+      come from each Postgres instance's exporter, an optional source: see
+      `cnpg-instance-metrics` below and in available-labels.yaml.
     names:
       - controller_runtime_reconcile_total
       - controller_runtime_reconcile_time_seconds_bucket
@@ -320,7 +377,7 @@ sources:
 # dashboard. Not read by the code; here so a reviewer sees the boundary.
 absent:
   - node-exporter (node_*) on an install that leaves `nodeExporter.enabled` off, and, even where it is on, the families its source above does not claim
-  - CloudNativePG instance metrics (cnpg_*, the :9187 exporter on each Postgres pod; only the operator's controller-runtime series are scraped)
+  - CloudNativePG instance metrics (cnpg_*, barman_cloud_*) on an install that does not scrape the instances, and, even where it does, the families its source above does not claim
   - NATS exporter families other than varz and jsz (nats_connz_*, nats_routez_*, nats_subz_* are scraped but no dashboard reads them; nats_healthz_* needs -healthz, not enabled)
   - Envoy families outside the proxies' scrape keep list
   - Karpenter (karpenter_*)

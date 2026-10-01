@@ -25,7 +25,10 @@ Design, stated so a reviewer can check it:
     (ArgoCD, cert-manager, NATS, Envoy, CloudNativePG; Kargo's are in the
     cluster row): "is it healthy?" and nothing else, each tile linking to the
     component's dashboard with datasource and cluster carried. A component a
-    cluster does not run reads "n/a".
+    cluster does not run reads "n/a". The CloudNativePG instance tiles (up,
+    not up, replication lag, newest backup) read the optional source
+    `cnpg-instance-metrics`, so they read "n/a" until the Postgres pods are
+    scraped.
 """
 
 DS = {"type": "prometheus", "uid": "${datasource}"}
@@ -50,6 +53,7 @@ UID_CERT_MANAGER = "truvity-obs-cert-manager"
 UID_NATS = "truvity-obs-nats-jetstream"
 UID_ENVOY = "truvity-obs-envoy-proxy"
 UID_CNPG = "truvity-obs-cnpg-operator"
+UID_CNPG_CLUSTER = "truvity-obs-cnpg-cluster"
 
 CNPG_JOB = "cnpg-system/cnpg-cloudnative-pg"
 
@@ -364,6 +368,7 @@ def build():
     to_nats = link_cluster("Open the NATS JetStream dashboard", UID_NATS)
     to_envoy = link_cluster("Open the Envoy proxy dashboard", UID_ENVOY)
     to_cnpg = link_cluster("Open the CloudNativePG operator dashboard", UID_CNPG)
+    to_pg = link_cluster("Open the CloudNativePG instances dashboard", UID_CNPG_CLUSTER)
 
     argo_up = 'up{%s,job=~"argocd-.*-metrics"}' % K
     line([
@@ -438,6 +443,28 @@ def build():
         ("CNPG operator down",
          "CloudNativePG operator metrics endpoints that stopped answering. With the operator down no Postgres cluster is reconciled: failovers and backups are not driven.",
          'count(%s == 0)' % cnpg_up, cnpg_up, {"link": to_cnpg}),
+    ], y)
+    y += 3
+
+    # The instance exporter is an optional source (cnpg-instance-metrics): a
+    # cluster that does not scrape the Postgres pods reads n/a on all four.
+    pg_up = 'cnpg_collector_up{%s}' % K
+    pg_backup = 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{%s}' % K
+    line([
+        ("Postgres instances up",
+         "Postgres instances whose exporter answers and reports up; with the tile beside it they add up to every instance the cluster scrapes. Zero where instances exist means none is reachable. n/a where the instance metrics are not scraped (the optional cnpg-instance-metrics source).",
+         'count(%s == 1)' % pg_up, pg_up, {"link": to_pg, "steps": [(None, RED), (1, GREEN)]}),
+        ("Postgres instances not up",
+         "Postgres instances that are scraped but report down: the pod is starting, failing, or its database does not answer. Open the instances dashboard and read Instance ready, then the pod's events.",
+         'count(%s == 0)' % pg_up, pg_up, {"link": to_pg}),
+        ("Postgres replication lag (max)",
+         "The largest replication lag any scraped standby reports, in seconds. Near zero is healthy; a lag that grows means a standby cannot keep up and a failover would lose that much.",
+         'max(cnpg_pg_replication_lag{%s})' % K, pg_up,
+         {"link": to_pg, "unit": "s", "decimals": 1, "steps": [(None, GREEN), (30, ORANGE), (300, RED)]}),
+        ("Newest Postgres backup age",
+         "Age of the newest successful backup across the scraped Postgres clusters, from the backup plugin's own timestamp. Past a day and a half means a scheduled backup was missed: read the Backup resources. n/a where no backup is reported.",
+         'time() - max(%s)' % pg_backup, pg_backup,
+         {"link": to_pg, "unit": "s", "decimals": 0, "steps": [(None, GREEN), (129600, ORANGE), (259200, RED)]}),
     ], y)
 
     def var_ds():

@@ -166,7 +166,7 @@ func TestAvailableMetricsAllowListMatchesTheSurvey(t *testing.T) {
 		"kube_configmap_info", "kube_secret_info", "kube_service_info", "kube_endpoint_info",
 		"kube_ingress_info", "kube_networkpolicy_labels", "kube_hpa_labels",
 		// later phases
-		"cnpg_collector_up", "cnpg_pg_replication_lag", // the instance exporter is not scraped
+		"cnpg_collector_up", "cnpg_pg_replication_lag", // the instance exporter is an optional source: held only for a dashboard that requires it
 		"karpenter_nodes_total",
 		// scraped by the platform jobs but read by no dashboard, and not claimed
 		"nats_connz_total", "nats_healthz_status", "wasm_cache_entries", "argocd_app_labels",
@@ -444,6 +444,59 @@ func TestNodeExporterFamiliesCountOnlyForADashboardThatRequiresThem(t *testing.T
 	}
 	// Enabling some other optional source does not unlock node-exporter.
 	assert.False(t, metricAvailableWith(src, "node_cpu_seconds_total", "alertmanager"))
+}
+
+// The CloudNativePG instance exporter is an optional source
+// (`cnpg-instance-metrics`): its families are held only where the Postgres
+// cluster chart's PodMonitor selects the pods, so they count for a dashboard
+// that declares `requires: [cnpg-instance-metrics]` and for no other.
+func TestCnpgInstanceFamiliesCountOnlyForADashboardThatRequiresThem(t *testing.T) {
+	src := loadAvailableMetrics(t)
+	for _, m := range []string{
+		"cnpg_collector_up", "cnpg_pg_replication_lag", "cnpg_pg_settings_setting",
+		"cnpg_pg_stat_database_xact_commit", "barman_cloud_cloudnative_pg_io_last_available_backup_timestamp",
+	} {
+		assert.Falsef(t, metricAvailable(src, m), "%s must be absent for a dashboard that does not require cnpg-instance-metrics", m)
+		assert.Truef(t, metricAvailableWith(src, m, "cnpg-instance-metrics"),
+			"%s is scraped with the instance source and must be on the list for a dashboard that requires it", m)
+	}
+	// Exporter families no shipped dashboard reads are not claimed, and an
+	// unrelated optional source does not unlock any of them.
+	assert.False(t, metricAvailableWith(src, "cnpg_pg_stat_bgwriter_buffers_alloc", "cnpg-instance-metrics"))
+	assert.False(t, metricAvailableWith(src, "cnpg_collector_up", "node-exporter"))
+	// The operator's own series stay on by default.
+	assert.True(t, metricAvailable(src, "controller_runtime_reconcile_total"))
+	// The two dashboards that read the source declare it.
+	req := requiredSources(t)
+	assert.Contains(t, req["cnpg-cluster"], "cnpg-instance-metrics")
+	assert.Contains(t, req["fleet-overview"], "cnpg-instance-metrics")
+	assert.NotContains(t, req["cnpg-operator"], "cnpg-instance-metrics")
+}
+
+// The scrape keeps cnpg_pg_settings_setting for eight settings only, so a
+// panel selecting any other (or none, which reads "every setting") is
+// reading rows the store never holds.
+func TestCnpgSettingsPanelsSelectOnlyTheKeptSettings(t *testing.T) {
+	kept := map[string]bool{
+		"block_size": true, "effective_cache_size": true, "maintenance_work_mem": true, "max_connections": true,
+		"random_page_cost": true, "seq_page_cost": true, "shared_buffers": true, "work_mem": true,
+	}
+	sel := regexp.MustCompile(`cnpg_pg_settings_setting\{([^}]*)\}`)
+	nameRe := regexp.MustCompile(`(?:^|[,\s])name="([^"]*)"`)
+	seen := 0
+	for name, e := range allDashboards(t) {
+		d := loadDashboard(t, dashboardsDir+"/"+e.File)
+		for _, q := range d.queries() {
+			for _, m := range sel.FindAllStringSubmatch(q.expr, -1) {
+				seen++
+				n := nameRe.FindStringSubmatch(m[1])
+				if assert.NotNilf(t, n, "%s: %s selects cnpg_pg_settings_setting with no name: %s", name, q.where, q.expr) {
+					assert.Truef(t, kept[n[1]], "%s: %s selects the setting %q, which the scrape does not keep", name, q.where, n[1])
+				}
+			}
+		}
+	}
+	require.NotZero(t, seen, "no dashboard reads cnpg_pg_settings_setting; this test would pass vacuously")
 }
 
 func TestOperationalDashboardPanelsAreDescribedAndHaveUnits(t *testing.T) {

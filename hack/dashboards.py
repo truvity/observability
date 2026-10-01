@@ -353,7 +353,7 @@ _SOURCES = None
 # outside this pattern (a label, a function) is never mistaken for a metric.
 _METRIC_RE = re.compile(
     r"(?<![A-Za-z0-9_:\"$.])"
-    r"((?:kube|kubelet|container|machine|node|kargo|argocd|certmanager|cnpg|nats|envoy|karpenter)_[A-Za-z0-9_:]*)"
+    r"((?:kube|kubelet|container|machine|node|kargo|argocd|certmanager|cnpg|nats|envoy|karpenter|barman)_[A-Za-z0-9_:]*)"
 )
 
 
@@ -597,7 +597,7 @@ def build_one(spec: dict, bundles: dict) -> None:
         rename_datasource_var(dashboard)
         adapt_k8s_views(dashboard, name, tuple(spec.get("requires", [])))
     elif spec.get("adapt") == "platform":
-        REPORTS[name] = platform_adapt.adapt(dashboard, spec, metric_available, platform_extras.extras)
+        REPORTS[name] = platform_adapt.adapt(dashboard, spec, lambda m, _o=tuple(spec.get("requires", [])): metric_available(m, _o), platform_extras.extras)
     elif spec.get("preRenamed"):
         # kubelet: already has `datasource` and `cluster` variables in the
         # right shape; only the label under `cluster` needs to change.

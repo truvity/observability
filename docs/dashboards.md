@@ -118,6 +118,16 @@ Rules they follow, on top of the six above:
   is judged, `job="node-exporter"`, `instance` and `node` the node's name,
   and no `k8s_namespace_name` (a node belongs to no namespace), for a
   dashboard that requires it.
+  The CloudNativePG instance exporter is the second optional source,
+  `cnpg-instance-metrics`: `available-metrics.yaml` lists exactly the 42
+  families the `cnpg-cluster` dashboard and the Fleet overview's Postgres
+  tiles read, each one seen on a live scrape and each held only for a
+  dashboard that says `requires: [cnpg-instance-metrics]`. The scrape keeps
+  `cnpg_pg_settings_setting` for eight settings only, and a test refuses a
+  panel that selects any other. A source's guard is its own: where it is not
+  scraped, the dashboard's first panel reads "no data: instance metrics not
+  scraped" and a Fleet tile reads `n/a`, so absence is visible instead of a
+  blank. `hack/dashboards/verify-live.sh` checks the list against a store.
 - **Adapted, not forked.** The Kubernetes views come from
   `dotdc/grafana-dashboards-kubernetes` (Apache-2.0), pinned by release
   in `hack/dashboards/sources.yaml`, with source and licence recorded in
@@ -142,6 +152,7 @@ in the change, never shipped empty.
 | `argocd` | `argocd-application-controller-metrics`, `argocd-server-metrics`, `argocd-repo-server-metrics` | argo-cd `examples/dashboard.json` |
 | `cert-manager` | `cert-manager`, `cainjector`, `webhook` | cert-manager mixin overview |
 | `cnpg-operator` | `cnpg-system/cnpg-cloudnative-pg` | `cloudnative-pg/grafana-dashboards`, operator row only |
+| `cnpg-cluster` | the Postgres pods' instance exporter (optional source `cnpg-instance-metrics`; off by default) | `cloudnative-pg/grafana-dashboards`, every row but the operator's |
 | `nats-server`, `nats-jetstream` | `nats/nats` | prometheus-nats-exporter walkthrough |
 | `envoy-gateway` | `envoy-gateway-system/envoy-gateway` | envoyproxy/gateway addons |
 | `envoy-proxy`, `envoy-clusters` | `envoy-gateway-system/envoy-proxy` | envoyproxy/gateway addons |
@@ -156,10 +167,25 @@ in the change, never shipped empty.
   ArgoCD application's destination is `destination`, an Envoy cluster is
   `envoy_cluster`, a route namespace is `route_namespace`. `cluster` always
   means the install.
-- **Deferred on purpose.** The CloudNativePG instance exporter is not scraped,
-  so `cnpg-operator` carries the operator's row only; the catalog records
-  `deferred: [cnpg-instance-metrics]`. The ApplicationSet controller and
-  Envoy's Wasm cache are not read either.
+- **One upstream dashboard, two imports.** The CloudNativePG cluster
+  dashboard (`cluster-v0.0.5`) reads the operator's series and the instance
+  exporter's. `cnpg-operator` keeps the operator row and is on by default;
+  `cnpg-cluster` keeps the rest, requires `cnpg-instance-metrics` and is off
+  by default (`dashboards.cnpg-cluster.enabled`). Of the 79 upstream panels
+  with queries (24 more are text captions and an alert list, never kept), 12
+  are the operator's and 67 the instances'. `cnpg-cluster` keeps 55 of the 67
+  and drops 12 at import, each with its reason printed: 8 status lights whose
+  caption was a text panel (the titled panels beside them read the same
+  series), the two CPU panels (a recording rule no store holds), the node
+  zone (a label the kube-state-metrics allow-list is not known to export) and
+  the whole-configuration table (only eight settings are kept). One authored
+  panel is added, the "Postgres instances reporting" banner, which is why the
+  dashboard has 56. Nothing is kept deferred.
+  Upstream's own `cluster` variable is the Postgres cluster, renamed
+  `pgcluster`; the contract's `cluster` stays the install. Checkpoint
+  panels read the PostgreSQL 17 `pg_stat_checkpointer` names the exporter
+  publishes. The ApplicationSet controller and Envoy's Wasm cache are not
+  read either.
 - **The Fleet overview** carries one line of tiles per component, health only,
   each linking to the component's dashboard with datasource and cluster
   carried across. A component a cluster does not run reads `n/a`.

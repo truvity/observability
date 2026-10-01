@@ -146,6 +146,15 @@ dashboards:
     enabled: true
   cnpg-operator:
     enabled: true
+  # -- OFF by default: it reads the CloudNativePG INSTANCE exporter (the
+  # :9187 endpoint of each Postgres pod), an optional metric source that is
+  # scraped only where the Postgres cluster chart's PodMonitor selects the
+  # pods. Without it every panel is empty and the first one says so ("no
+  # data: instance metrics not scraped"). Turn it on together with that
+  # PodMonitor. The Fleet overview's four Postgres tiles read the same source
+  # and show n/a until it is scraped; their link opens this dashboard.
+  cnpg-cluster:
+    enabled: false
   nats-server:
     enabled: true
   nats-jetstream:
