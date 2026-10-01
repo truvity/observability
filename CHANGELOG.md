@@ -45,6 +45,12 @@ opt-in metric source.
   Postgres they are empty. No default moved and no existing dashboard
   changed except the Fleet overview's added line.
 
+## v0.23.1
+
+- No change to any chart or render. v0.23.0 was tagged on the commit
+  before its release commit, so this patch carries only the `## v0.23.0`
+  heading in this file; the charts are byte-identical to v0.23.0.
+
 ## v0.23.0
 
 `observability-stack` notifications: links that work, and Slack for `also`.
