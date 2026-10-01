@@ -109,7 +109,9 @@ func TestTitleAndGrafanaLinkSurviveAnEmptyNamespace(t *testing.T) {
 			for _, c := range r.SlackConfigs {
 				seen++
 				title := c["title"].(string)
-				assert.Contains(t, title, "on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}", "%s/%s", g, r.Name)
+				wantTitle := "on {{ .CommonLabels.k8s_cluster_name }}" +
+					"{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}"
+				assert.Contains(t, title, wantTitle, "%s/%s", g, r.Name)
 				assert.NotContains(t, title, "}}/{{ .CommonLabels.k8s_namespace_name }}'", "%s/%s: unguarded namespace", g, r.Name)
 				text := c["text"].(string)
 				assert.Contains(t, text, "{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}", "%s/%s", g, r.Name)
