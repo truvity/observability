@@ -19,7 +19,7 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: {{ default .Chart.Name $r.name }}
+  name: {{ default (printf "%s-connectors" .Chart.Name) $r.name }}
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: {{ .Chart.Name }}

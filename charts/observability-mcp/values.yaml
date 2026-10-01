@@ -382,7 +382,7 @@ podDisruptionBudget:
 # "Exposing connectors through a Gateway".
 httpRoute:
   enabled: false
-  # -- Optional: the route's name; defaults to the chart's name.
+  # -- Optional: the route's name; defaults to `<chart>-connectors`.
   name: ""
   # -- Required while enabled. Passed through as written: group, kind, name,
   # namespace, sectionName (port too). Example, a ListenerSet:

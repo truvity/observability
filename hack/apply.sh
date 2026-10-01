@@ -38,7 +38,8 @@ crds_golden="$root/tests/golden/observability-crds/minimal.yaml"
 # Documents whose definitions this repository does not ship. They are
 # skipped BY GROUP and counted out loud: a silent skip is how a check ends
 # up proving less than its name claims.
-foreign_group="cert-manager.io"
+# cert-manager and the Gateway API (the opt-in observability-mcp HTTPRoute).
+foreign_groups="cert-manager.io gateway.networking.k8s.io"
 
 for tool in kind kubectl helm; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -114,7 +115,11 @@ for golden in "$root"/tests/golden/*/*.yaml; do
     [ -s "$doc" ] || continue
     grep -q '^kind:' "$doc" || continue
 
-    if grep -q "^apiVersion: $foreign_group/" "$doc"; then
+    foreign=0
+    for g in $foreign_groups; do
+      if grep -q "^apiVersion: $g/" "$doc"; then foreign=1; fi
+    done
+    if [ "$foreign" = 1 ]; then
       skipped=$((skipped + 1))
       continue
     fi
@@ -142,4 +147,4 @@ if [ "$failed" != 0 ]; then
   exit 1
 fi
 
-echo "apply check: $checked objects accepted by a real API server, $skipped skipped as $foreign_group (not shipped here)"
+echo "apply check: $checked objects accepted by a real API server, $skipped skipped as foreign groups (not shipped here)"
