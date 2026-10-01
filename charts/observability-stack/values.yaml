@@ -709,6 +709,135 @@ alertmanager:
     limits:
       memory: 256Mi
 
+# The alert console: karma (https://github.com/prymitive/karma), an alert
+# dashboard and silence proxy for Alertmanager. OFF by default.
+#
+# Why it exists: Alertmanager has no notion of a user. A silence's
+# `createdBy` is free text the caller types (prometheus/alertmanager#1196),
+# so on a bare Alertmanager anyone who can reach the UI can silence a page
+# in someone else's name. karma, with header authentication, REWRITES
+# `createdBy` to the authenticated user on every silence it proxies, and
+# enforces silence ACLs (karma docs/ACLs.md). The estate puts karma behind
+# an SSO gateway that sets identity headers, and keeps Alertmanager itself
+# reachable read-only. This chart renders karma; it does not render the
+# gateway, and it never trusts a header by itself: see
+# `karma.authentication`.
+karma:
+  enabled: false
+  image:
+    repository: ghcr.io/prymitive/karma
+    tag: v0.133
+  replicaCount: 1
+  # -- This release's own Alertmanager is ALWAYS the first server karma is
+  # given (name `alertmanager`, `proxy: true`, `readonly: false`, reached
+  # on its in-cluster Service), when `alertmanager` is enabled. Entries
+  # here are APPENDED to it, in karma's own `alertmanager.servers` shape
+  # and passed through untouched (`name` and `uri` are required, and a
+  # name may not be `alertmanager`):
+  #
+  #   - name: other
+  #     uri: http://alertmanager-other.monitoring.svc:9093
+  #     proxy: true
+  #
+  # With `alertmanager.enabled: false` (an estate whose Alertmanager is
+  # elsewhere) there is no own entry, and this list must name at least one.
+  alertmanagers: []
+  # -- Who karma believes. Header authentication only: karma does no
+  # authentication itself, a frontend service (an SSO gateway) sets a
+  # header on every request and karma takes the silence author from it.
+  # There is no basic-auth mode here, because its passwords would sit in
+  # a ConfigMap.
+  authentication:
+    # -- The explicit acknowledgement that karma runs with NO
+    # authentication: every silence is then created under whatever name
+    # the browser sends. The chart refuses `karma.enabled: true` with no
+    # `header.name` unless this is `true`, because a console that
+    # silences pages must not run anonymously by accident. Refused beside
+    # a `header.name`: the two contradict.
+    none: false
+    header:
+      # -- Name of the request header that carries the user (for example
+      # `X-Auth-Request-Email`). Set, karma refuses a request without it
+      # and forces every silence's author to the value it extracts.
+      #
+      # karma TRUSTS this header. It is only as good as the network path
+      # in front of it: `networkPolicy.karmaFrom` must admit the gateway
+      # and nothing else, or anyone who can reach the pod can claim any
+      # name.
+      name: ""
+      # -- Regex that extracts the user from the header value, with ONE
+      # capturing group; anchored by karma. Required when `name` is set.
+      valueRe: ^(.+)$
+      # -- Name of the header that carries the user's groups, if any.
+      groupName: ""
+      # -- Like `valueRe`, for the groups header. Required when
+      # `groupName` is set.
+      groupValueRe: ""
+      # -- Splits the groups header into group names, after
+      # `groupValueRe` is applied. Empty keeps karma's own default, a space.
+      groupValueSeparator: ""
+  authorization:
+    # -- Groups for the silence ACLs below, mapping the user names the
+    # authentication layer passes to a group name:
+    #
+    #   - name: admins
+    #     members: [alice@example.com, bob@example.com]
+    groups: []
+  # -- Silence ACLs, in karma's own format (docs/ACLs.md). `silences` is the
+  # list of rules, evaluated in order, first `allow` or `block` wins:
+  #
+  #   silences:
+  #     - action: block
+  #       reason: regex silences are not allowed
+  #       scope:
+  #         filters:
+  #           - name_re: .+
+  #             value_re: .+
+  #             isRegex: true
+  #     - action: allow
+  #       reason: admins may silence anything
+  #       scope:
+  #         groups: [admins]
+  #
+  # Rendered to a file beside karma's config. A rule's `scope.groups` must
+  # name a group declared above, and its `action` must be `allow`, `block`
+  # or `requireMatcher`; the rest passes through. Block regex silences
+  # FIRST (as above) or a user can bypass a matcher ACL with `pro[d]`.
+  acl:
+    silences: []
+  # -- Alert history: karma asks a Prometheus-compatible endpoint how often
+  # an alert fired in the last 24h. karma finds the endpoint from each
+  # alert's `generatorURL`, which is rarely reachable from the karma pod,
+  # so `uri` replaces it for every alert. Off by default.
+  #
+  # The endpoint must answer karma WITHOUT credentials: karma holds no
+  # secret here (a ConfigMap is not a place for one), and this chart's own
+  # proxy and stores require a bearer token or basic auth. Point it at a
+  # read-only endpoint the estate exposes for the purpose; for anything
+  # that needs a header, use `extraConfig` (`history.rewrite[].headers`)
+  # and accept that it is stored in a ConfigMap.
+  history:
+    enabled: false
+    # -- Base URL of the Prometheus-compatible API that holds the `ALERTS`
+    # series. Required when `enabled`.
+    uri: ""
+  # -- RAW karma configuration, deep-merged over everything above and
+  # last. UNVALIDATED: a key here can undo the authentication, the ACLs or
+  # the proxying above, and nothing in this chart checks it. Maps merge,
+  # lists replace. It is stored in a ConfigMap: never put a secret in it.
+  extraConfig: {}
+  # -- Requests and limits; judged by `resources.policy` like every other
+  # component.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # The one router. See docs/notifications.md for the design this
 # implements.
 #
@@ -768,6 +897,19 @@ notifications:
   # is no better: the chart refuses Grafana-managed alerting, so Grafana
   # has no silence page. A link that goes nowhere is worse than none.
   alertmanagerUrl: ""
+  # -- Which console the `Silence:` link opens, and which one a `View:`
+  # link is added for. `alertmanager` (the default) is the behaviour
+  # above, byte for byte. `karma` points the Slack message at karma
+  # (`karma.enabled`): the silence form opens prefilled with the alert's
+  # labels, and the author is the signed-in user, not free text. Needs
+  # `consoleUrl`. The Telegram message keeps the Alertmanager link.
+  console: alertmanager
+  # -- The externally reachable base URL of karma, no trailing slash
+  # (`https://karma.example.com`). Required by `console: karma`.
+  consoleUrl: ""
+  # -- How long the silence the `console: karma` link prefills lasts, in
+  # minutes. The person can change it in the form.
+  silenceMinutes: 60
   # -- Prefixed to a firing alert's `runbook` annotation to build the
   # runbook link. Left empty, the message carries no runbook line at all
   # — never a link to a base URL with nothing after it, which reads as a
@@ -981,6 +1123,14 @@ networkPolicy:
   # Entries are Kubernetes `NetworkPolicyPeer` objects and pass through
   # untouched.
   proxyFrom: []
+  # -- Who may reach karma (`karma.enabled`), on its one port. Empty means
+  # every pod in the release's own namespace, the same default as
+  # `proxyFrom`; an estate whose SSO gateway lives elsewhere names it here.
+  # karma TRUSTS the identity header (`karma.authentication.header`), so
+  # this list is the authentication boundary: admit the gateway and
+  # nothing else. A NetworkPolicyPeer list, passed through untouched.
+  # Egress is not restricted, like every other policy in this chart.
+  karmaFrom: []
   # -- Who may write to the stores directly, bypassing the proxy. The
   # collectors need this; nothing else does.
   writersFrom: []

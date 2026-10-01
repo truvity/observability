@@ -1,0 +1,38 @@
+# `notifications.console: karma`: the Slack message's Silence link opens
+# karma's silence form prefilled (`?m=`), and a View link opens karma
+# filtered to the alert group. Needs karma on, with header authentication.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+vmalert:
+  externalUrl: https://grafana.example
+
+notifications:
+  alertmanagerUrl: https://alertmanager.example
+  console: karma
+  consoleUrl: https://karma.example.com
+  silenceMinutes: 90
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+karma:
+  enabled: true
+  authentication:
+    header:
+      name: X-Auth-Request-Email

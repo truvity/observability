@@ -108,6 +108,8 @@ token is a token in git.
 | a leftover `slack.webhookSecret`; a `workspace` no entry declares; `workspace` left out with two or more declared; an empty channel; a `mention` on a non-Slack receiver or outside `here`/`channel`; a duplicate workspace name; a workspace with an empty secret name or key; `slack.failureReceiver` naming Slack or an unconfigured receiver | the Slack shapes that look wired up and deliver nowhere; see "Slack" |
 | a route matching on a label the collectors do not stamp (`tenant`, `env`, …) | matches nothing, pages nobody; the vocabulary is cluster × namespace |
 | `externalUrl` unset | every link dead |
+| `karma.enabled` with no `karma.authentication.header.name` and no `authentication.none: true`; `none` beside a header name; a header name with no `valueRe`; a groups header with no `groupValueRe`; groups with no header; an ACL naming an undeclared group or an unknown action; no Alertmanager for karma to read; `history.enabled` with no `uri` | an anonymous console that silences pages, or a config karma refuses at start; see "Console: karma" |
+| `notifications.console: karma` without `consoleUrl` or without `karma.enabled`; a `consoleUrl` that is not an absolute `http(s)://` URL without a trailing slash | a silence link that points at nothing |
 | `repeat_interval` on the deadman route longer than the far end's heartbeat | the far end alerts on healthy silence |
 | `notifications.mode` outside `route` or `evaluate-only` | an unknown mode, refused by the schema rather than falling back to a guess |
 | `notifications.mode: evaluate-only` with `alertmanager.enabled` true, or a receiver, severity, route, `also` bridge, `catchAll` or `drop` configured, or `alertmanager.notifierUrl` set | a channel or an Alertmanager configured beside a mode that mutes vmalert, which looks wired up and is never reached |
@@ -343,6 +345,93 @@ no better: the chart refuses Grafana-managed alerting, so Grafana has no
 silence page. `vmalert.externalUrl` is the Grafana base too, so it no
 longer feeds the VMAlertmanager's `externalURL`; it keeps its own use, the
 links vmalert puts on an alert's source.
+
+### Console: karma
+
+Alertmanager has no notion of a user. A silence's `createdBy` is free
+text the caller types (prometheus/alertmanager#1196), so on a bare
+Alertmanager anyone who can reach its UI can silence a page in someone
+else's name, and nothing says who did. [karma](https://github.com/prymitive/karma)
+closes that when it is the only way to silence: with header
+authentication it **rewrites `createdBy` to the authenticated user on
+every silence it proxies**, and it enforces silence ACLs (who may silence
+what, and whether a regex matcher is allowed).
+
+The chart renders karma (`karma.enabled`, off by default; see
+docs/reference.md) but not the gateway in front of it. The shape it is
+built for:
+
+- an SSO gateway in front of karma sets an identity header on every
+  request (`karma.authentication.header.name`, for example
+  `X-Auth-Request-Email`) and, optionally, a groups header;
+- `networkPolicy.karmaFrom` admits that gateway and nothing else, because
+  karma trusts the header it is sent: anyone who can reach the pod
+  directly can claim any name;
+- Alertmanager stays reachable read-only (GET) on its own host, so people
+  can look but only karma can write. The chart does not render that host.
+
+```yaml
+karma:
+  enabled: true
+  authentication:
+    header:
+      name: X-Auth-Request-Email
+      groupName: X-Auth-Request-Groups
+      groupValueRe: ^(.+)$
+      groupValueSeparator: ","
+  authorization:
+    groups:
+      - name: admins
+        members: [alice@example.com]
+  acl:
+    silences:
+      - action: block
+        reason: regex silences are not allowed
+        scope:
+          filters: [{name_re: .+, value_re: .+, isRegex: true}]
+      - action: allow
+        reason: admins may silence anything
+        scope: {groups: [admins]}
+networkPolicy:
+  karmaFrom:
+    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: gateway}}
+notifications:
+  console: karma
+  consoleUrl: https://karma.example.com
+```
+
+`console: karma` changes the Slack message (the Telegram one keeps the
+Alertmanager link):
+
+- `Silence:` opens karma's silence form prefilled: `?m=` is karma's own
+  base64 JSON, `{"am": [{"label": "alertmanager", "value": ["alertmanager"]}],
+  "m": [{"n": name, "r": false, "e": true, "v": [value]}, ...], "d": <minutes>,
+  "c": ""}`, one exact matcher per common label of the alert group, for
+  `notifications.silenceMinutes` (default 60). `am` is karma's option for
+  this release's Alertmanager, the name the chart gives it in karma's config;
+  karma resets the field if it does not match. Alertmanager's `base64encode`
+  is the URL-safe alphabet and karma decodes with the browser's `atob`, which
+  is not, so the template converts back before escaping the value. A label
+  value that is not ASCII reaches the form with its encoded bytes read one by one as Latin-1 characters
+  (a limit of `atob`), so the matcher must be corrected by hand.
+- `View:` opens karma filtered to the group, one `q=<label>%3D<value>` per
+  common label.
+- `Grafana:` is unchanged.
+
+`console: karma` is refused without `consoleUrl` or without
+`karma.enabled`, and `karma.enabled` is refused without
+`authentication.header.name` unless `authentication.none: true` says an
+anonymous console is meant. Header authentication needs `valueRe` (karma
+refuses to start without it), and a groups header needs `groupValueRe`.
+`karma.extraConfig` is merged last and is **not validated**.
+
+NetworkPolicy: karma gets its own policy (ingress on 8080 from
+`networkPolicy.karmaFrom`, defaulting to the release's namespace like
+`proxyFrom`). This chart restricts no egress anywhere, so there is none
+for karma. No policy selects the Alertmanager pods, so they already accept
+karma's traffic, and the chart does not add one: a first policy on those
+pods would default-deny everything else they receive, vmalert's alert
+pushes and the mesh port included.
 
 ### `also` to Slack
 

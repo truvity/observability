@@ -1,0 +1,26 @@
+# expect: but `karma.enabled` is true
+# operator-only runs no Alertmanager for karma to read.
+mode: operator-only
+vmalert:
+  enabled: false
+karma:
+  enabled: true
+  authentication:
+    none: true
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false
+metricsSelfScrape:
+  enabled: false
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  syncJob:
+    enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

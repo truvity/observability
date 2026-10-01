@@ -1,0 +1,192 @@
+{{- if .Values.karma.enabled }}
+{{- $root := . }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- $name := printf "%s-karma" $fullname | trunc 63 | trimSuffix "-" }}
+{{- $k := .Values.karma }}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml }}
+{{- /*
+karma, the alert console: one Deployment, a Service, a ServiceAccount and
+the ConfigMap with its configuration (docs/notifications.md, "Console:
+karma"). Every refusal about it lives in `observability-stack.validate.karma`.
+
+The config is built as a value and rendered with `toYaml`, never as text,
+so a user name, a regex or a group name cannot break out of its own line.
+Order of precedence: what this chart derives, then `karma.extraConfig` on
+top of it, unvalidated by design.
+*/}}
+{{- $servers := list }}
+{{- if $eff.alertmanager }}
+{{- $servers = append $servers (dict
+    "name" "alertmanager"
+    "uri" (printf "http://vmalertmanager-%s.%s.svc:9093" $fullname .Release.Namespace)
+    "proxy" true
+    "readonly" false) }}
+{{- end }}
+{{- range $s := ($k.alertmanagers | default list) }}
+{{- $servers = append $servers $s }}
+{{- end }}
+{{- $cfg := dict
+    "listen" (dict "port" 8080)
+    "alertmanager" (dict "servers" $servers) }}
+{{- $h := $k.authentication.header }}
+{{- if $h.name }}
+{{- $header := dict "name" $h.name "value_re" $h.valueRe }}
+{{- if $h.groupName }}
+{{- $_ := set $header "group_name" $h.groupName }}
+{{- $_ := set $header "group_value_re" $h.groupValueRe }}
+{{- if $h.groupValueSeparator }}
+{{- $_ := set $header "group_value_separator" $h.groupValueSeparator }}
+{{- end }}
+{{- end }}
+{{- $_ := set $cfg "authentication" (dict "header" $header) }}
+{{- end }}
+{{- $authz := dict }}
+{{- if $k.authorization.groups }}
+{{- $_ := set $authz "groups" $k.authorization.groups }}
+{{- end }}
+{{- if $k.acl.silences }}
+{{- $_ := set $authz "acl" (dict "silences" "/etc/karma/acl/silences.yaml") }}
+{{- end }}
+{{- if $authz }}
+{{- $_ := set $cfg "authorization" $authz }}
+{{- end }}
+{{- if $k.history.enabled }}
+{{- $_ := set $cfg "history" (dict "enabled" true "rewrite" (list (dict "source" "(.*)" "uri" $k.history.uri))) }}
+{{- end }}
+{{- $cfg = mergeOverwrite $cfg (deepCopy ($k.extraConfig | default dict)) }}
+{{- $configYaml := toYaml $cfg }}
+{{- $aclYaml := ternary (toYaml (dict "rules" $k.acl.silences)) "" (not (empty $k.acl.silences)) }}
+{{- $podLabels := dict
+    "app.kubernetes.io/name" "karma"
+    "app.kubernetes.io/instance" .Release.Name
+    "app.kubernetes.io/component" "karma" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: karma
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: karma
+data:
+  karma.yaml: |
+    {{- $configYaml | nindent 4 }}
+  {{- if $aclYaml }}
+  silences.yaml: |
+    {{- $aclYaml | nindent 4 }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: karma
+spec:
+  selector:
+    {{- toYaml $podLabels | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: karma
+spec:
+  replicas: {{ $k.replicaCount }}
+  selector:
+    matchLabels:
+      {{- toYaml $podLabels | nindent 6 }}
+  template:
+    metadata:
+      {{- /*
+      The pod does NOT carry `app.kubernetes.io/part-of`: the store
+      policies admit every pod of this release with that label (the
+      chart's own components), and karma is not one of them. It reads
+      Alertmanager, never a store.
+      */}}
+      labels:
+        {{- toYaml $podLabels | nindent 8 }}
+      annotations:
+        checksum/config: {{ printf "%s%s" $configYaml $aclYaml | sha256sum }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: karma
+          image: {{ printf "%s:%s" $k.image.repository $k.image.tag | quote }}
+          env:
+            - name: CONFIG_FILE
+              value: /etc/karma/karma.yaml
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- include "observability-stack.resources" $k.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/karma/karma.yaml
+              subPath: karma.yaml
+              readOnly: true
+            {{- if $aclYaml }}
+            - name: config
+              mountPath: /etc/karma/acl/silences.yaml
+              subPath: silences.yaml
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+      {{- with $k.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $k.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $k.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,29 @@
+# expect: which is already taken
+# An extra Alertmanager may not reuse the name of this release's own.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+karma:
+  enabled: true
+  authentication:
+    header:
+      name: X-Auth-Request-Email
+  alertmanagers:
+    - name: alertmanager
+      uri: http://other.example:9093

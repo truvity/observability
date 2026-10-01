@@ -1,0 +1,28 @@
+# expect: notifications.consoleUrl is
+# consoleUrl is held to the same shape as alertmanagerUrl.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+  console: karma
+  consoleUrl: https://karma.example.com/
+
+karma:
+  enabled: true
+  authentication:
+    header:
+      name: X-Auth-Request-Email

@@ -224,4 +224,48 @@ spec:
       ports:
         - protocol: TCP
           port: 8435
+{{- /*
+karma's own ingress, when karma is on. Empty `karmaFrom` means the
+release's namespace and nothing else, the same default as `proxyFrom`.
+karma TRUSTS the identity header it is sent (`karma.authentication.header`),
+so this list is the authentication boundary: it should name the gateway
+that sets the header, and nothing else.
+
+Ingress only, like every policy in this file (see the note on egress at
+the top): karma reaches Alertmanager on 9093 and, if `karma.history` is
+on, a Prometheus-compatible endpoint, and an egress policy naming those is
+one more thing to break when either moves.
+
+No policy in this chart selects the Alertmanager pods (the stores, vmalert
+and the proxy are selected; Alertmanager is not), so Alertmanager accepts
+karma's traffic already, and this chart does not introduce one: a first
+policy on those pods would default-deny everything else they receive,
+vmalert's alert pushes and the mesh port included.
+*/}}
+{{- if .Values.karma.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-karma
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: karma
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.karmaFrom }}
+        {{- toYaml .Values.networkPolicy.karmaFrom | nindent 8 }}
+        {{- else }}
+        - podSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8080
+{{- end }}
 {{- end }}
