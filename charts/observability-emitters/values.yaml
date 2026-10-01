@@ -81,6 +81,29 @@ tenancy:
   # `production`, `staging`, `development` and `test`; any plain name is
   # accepted. Required, and never a key — several clusters may share it.
   environment: ""
+  # -- OPT-IN (empty, the default, renders nothing): which COMPANY owns a
+  # workload, as `owner` on every series, OTLP log record and span — the
+  # label an Alertmanager route reads to send an alert to the right team's
+  # chat. A map of owner name to the namespaces it owns; a pattern is a
+  # namespace name, `*` standing for any run of namespace characters:
+  #
+  #   owners:
+  #     acme: [checkout, "payments-*"]
+  #     globex: ["globex-*"]
+  #
+  # Derived from the namespace the data came from, never from anything an
+  # application says (an `owner` it sends is removed first). `owner` is NOT
+  # a scoping key: no grant selects on it. Metrics get it from the metrics
+  # agent just before sending, so it is correct on kube-state-metrics,
+  # cAdvisor and kubelet series too; the OTLP gateway stamps logs and
+  # spans (and OTLP metrics) the same way. The container-log agent cannot
+  # stamp per namespace, so container logs carry no `owner`; see
+  # docs/tenancy-owner.md.
+  owners: {}
+  # -- The owner of everything no pattern matches, including cluster-scoped
+  # series with no namespace. Empty: such series carry no `owner` label.
+  # Refused unless `owners` is non-empty.
+  defaultOwner: ""
 
 # -- The credential every emitter writes with.
 #

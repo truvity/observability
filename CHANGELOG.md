@@ -6,6 +6,17 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+Feature (opt-in, default off; no existing render moves): an `owner` label for
+routing an alert to the owning company. `observability-emitters`
+`tenancy.owners` (owner to namespace patterns, optional `defaultOwner`) stamps
+`owner` on every series (the metrics agent's global relabeling, after the
+scrape-level rules, so kube-state-metrics and cAdvisor series are right) and
+on every OTLP log record, span and metric (the gateway). `platform-alerts`
+`ownerLabel` keeps it in the aggregating rules' `by (...)`;
+`observability-stack` `notifications.ownerLabel` lets a route `match` on it.
+Container logs from the log agent carry no `owner`; see
+`docs/tenancy-owner.md`.
+
 `observability-emitters`: documentation only, no render change. A change to
 a `kubeStateMetrics.customResources` preset is picked up live by
 kube-state-metrics' own config reload (since v2.8.0; the vendored subchart

@@ -19,6 +19,7 @@ instead.
 {{- define "observability-emitters.validate" -}}
 {{- include "observability-emitters.validate.enabled" . -}}
 {{- include "observability-emitters.validate.tenancy" . -}}
+{{- include "observability-emitters.validate.owners" . -}}
 {{- include "observability-emitters.validate.credentials" . -}}
 {{- include "observability-emitters.validate.remote" . -}}
 {{- include "observability-emitters.validate.destinations" . -}}
@@ -74,6 +75,65 @@ is stamped into the same places, even though no filter selects on it.
 {{- end -}}
 {{- if not (regexMatch $shape (toString $t.environment)) -}}
 {{- fail (printf "observability-emitters: `tenancy.environment` is %q, which is not a plain name (%s). It is stamped into the same places the cluster name is, and held to the same shape." (toString $t.environment) $shape) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The owner stamp (`tenancy.owners`, opt-in).
+
+An owner is stamped as a label value on every series and as a field on
+every OTLP signal, and routed on by Alertmanager, so both halves are held
+to a plain shape. A pattern is a namespace name where `*` stands for any
+run of namespace characters; anything else (`.`, `|`, `(`) would be read
+as regular expression by the relabel rules and widen an owner's reach, so
+it is refused, never escaped. Two owners claiming the SAME namespace is a
+misconfiguration that would be resolved silently by order, so it is
+refused wherever it can be seen: an identical pattern, or a literal
+namespace another owner's glob already covers. Two overlapping globs
+(`a*` and `*b`) cannot be told apart from two disjoint ones without
+enumerating namespaces; the alphabetically first owner wins there, which
+docs/tenancy-owner.md states.
+*/}}
+{{- define "observability-emitters.validate.owners" -}}
+{{- $t := .Values.tenancy -}}
+{{- $nameShape := "^[a-z0-9]([a-z0-9._-]{0,61}[a-z0-9])?$" -}}
+{{- $patShape := "^[a-z0-9*]([a-z0-9*-]{0,61}[a-z0-9*])?$" -}}
+{{- if and $t.defaultOwner (not $t.owners) -}}
+{{- fail "observability-emitters: `tenancy.defaultOwner` is set but `tenancy.owners` is empty. The owner stamp is off until at least one owner is declared, so the default would be written nowhere; declare the owners, or drop the default." -}}
+{{- end -}}
+{{- if $t.owners -}}
+{{- if and $t.defaultOwner (not (regexMatch $nameShape (toString $t.defaultOwner))) -}}
+{{- fail (printf "observability-emitters: `tenancy.defaultOwner` is %q, which is not a plain name (%s). It is stamped as a label value and matched by Alertmanager routes." (toString $t.defaultOwner) $nameShape) -}}
+{{- end -}}
+{{- range $owner, $patterns := $t.owners -}}
+{{- if not (regexMatch $nameShape (toString $owner)) -}}
+{{- fail (printf "observability-emitters: `tenancy.owners` has the owner %q, which is not a plain name (%s). The name is stamped as a label value on every series and matched by Alertmanager routes." (toString $owner) $nameShape) -}}
+{{- end -}}
+{{- if not $patterns -}}
+{{- fail (printf "observability-emitters: `tenancy.owners.%s` lists no namespace pattern. An owner that owns nothing stamps nothing, and looks configured; list the namespaces it owns or remove it." $owner) -}}
+{{- end -}}
+{{- range $p := $patterns -}}
+{{- if not (regexMatch $patShape (toString $p)) -}}
+{{- fail (printf "observability-emitters: `tenancy.owners.%s` has the pattern %q, which is not a namespace name or a glob of one (%s). Only lowercase letters, digits, `-` and `*` are accepted: a `.` or `|` would be read as a regular expression and widen the owner's reach, so it is refused rather than escaped. An empty pattern would match nothing, or with a careless rewrite everything." $owner (toString $p) $patShape) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $a, $pa := $t.owners -}}
+{{- range $b, $pb := $t.owners -}}
+{{- if ne $a $b -}}
+{{- range $p := $pa -}}
+{{- range $q := $pb -}}
+{{- if eq (toString $p) (toString $q) -}}
+{{- fail (printf "observability-emitters: the namespace pattern %q is listed under both `tenancy.owners.%s` and `tenancy.owners.%s`. A namespace has one owner; which one an alert is routed to must not depend on map order." (toString $p) $a $b) -}}
+{{- end -}}
+{{- if and (not (contains "*" (toString $q))) (regexMatch (printf "^%s$" (include "observability-emitters.owners.regex" (list $p))) (toString $q)) -}}
+{{- fail (printf "observability-emitters: the namespace %q under `tenancy.owners.%s` is also matched by the pattern %q under `tenancy.owners.%s`. A namespace has one owner; narrow the glob or drop the namespace." (toString $q) $b (toString $p) $a) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

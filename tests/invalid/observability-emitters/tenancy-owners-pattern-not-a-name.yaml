@@ -1,0 +1,66 @@
+# expect: not a namespace name or a glob
+# A regex metacharacter in a pattern would widen the owner's reach.
+# The cluster's DNS suffix is an input, and this file sets it to a neutral
+# placeholder: a golden render is a tracked file in a public repository,
+# and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The smallest values file that renders something worth installing.
+#
+# Everything here has no default that could be safe. A cluster name and a
+# tier cannot be guessed: a guess renders, runs, and produces telemetry
+# filed under a cluster that does not exist. A write credential cannot be
+# guessed either, and a destination list least of all.
+tenancy:
+  cluster: example-cluster
+  environment: development
+  owners:
+    acme: ["team-.*"]
+
+writeCredentials:
+  secretName: example-write-token
+
+metrics:
+  destinations:
+    - name: primary
+      url: https://metrics.example/api/v1/write
+
+otlp:
+  destinations:
+    metrics:
+      - name: primary
+        url: https://metrics.example
+    logs:
+      - name: primary
+        url: https://logs.example
+    traces:
+      - name: primary
+        url: https://traces.example
+
+victoria-logs-collector:
+  # The log agent takes its credential on each remote-write entry, because
+  # that is upstream's own shape — the other two emitters read
+  # `writeCredentials` directly. The file is re-read when it changes, so a
+  # rotation needs no restart.
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://logs.example
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    # The cluster and the tier reach the log store as two static fields
+    # under the exact conventional names — a mirror of `tenancy`, checked
+    # rather than trusted, because Helm cannot compute a subchart's values.
+    # The cluster joins the stream fields beside the agent's own
+    # `kubernetes.pod_namespace`, which is the namespace key on this path.
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+

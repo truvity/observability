@@ -208,6 +208,8 @@ charts take as Secret names, delivered through External Secrets.
   upgrade with its steps.
 - [docs/safety.md](docs/safety.md) — every refusal and every default, with
   the failure that earned it.
+- [docs/tenancy-owner.md](docs/tenancy-owner.md) — the opt-in `owner` label
+  that routes an alert to the owning company, and what it does not cover.
 - [docs/reference.md](docs/reference.md) — every value: default, type,
   what it does, when it is required.
 - [docs/doctrine.md](docs/doctrine.md) — what this repository owns, what

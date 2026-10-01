@@ -89,6 +89,75 @@ class they belong to is the default one.
 {{- end -}}
 
 {{/*
+The owner stamp (opt-in: `tenancy.owners`).
+
+`tenancy.owners` maps an owner to the namespace patterns it owns. A
+pattern is a namespace name where `*` stands for any run of namespace
+characters (`team-*`); this turns one into the RE2 fragment the relabel
+rules and the gateway's OTTL both anchor.
+*/}}
+{{- define "observability-emitters.owners.regex" -}}
+{{- $parts := list -}}
+{{- range $p := . -}}
+{{- $parts = append $parts (replace "*" "[a-z0-9-]*" (toString $p)) -}}
+{{- end -}}
+{{- printf "(?:%s)" (join "|" $parts) -}}
+{{- end -}}
+
+{{/*
+The owner stamp as the metrics agent's GLOBAL relabeling (`inlineRelabelConfig`,
+VictoriaMetrics' `-remoteWrite.relabelConfig`): applied to every series
+after scrape-level relabeling and immediately before it is sent. That is
+the one point where `k8s_namespace_name` is final: kube-state-metrics,
+cAdvisor and the kubelet each re-derive it from the OBJECT's namespace in
+their own metric relabeling, so a rule written earlier (in the scrape
+class) would read the exporter pod's namespace and be wrong for exactly
+the series that matter.
+
+Order: clear any `owner` the series arrived with (an application does not
+choose its owner), then one rule per owner that only fires while `owner`
+is still empty (the guard is the trailing `;` on the joined source), so
+the first owner in alphabetical order wins on an overlapping glob, then
+the default for whatever is still empty.
+*/}}
+{{- define "observability-emitters.owners.metricRelabelConfigs" -}}
+{{- $t := .Values.tenancy -}}
+- action: labeldrop
+  regex: owner
+{{- range $owner, $patterns := $t.owners }}
+- action: replace
+  source_labels: [k8s_namespace_name, owner]
+  separator: ";"
+  regex: {{ printf "%s;" (include "observability-emitters.owners.regex" $patterns) | quote }}
+  target_label: owner
+  replacement: {{ $owner | quote }}
+{{- end }}
+{{- if $t.defaultOwner }}
+- action: replace
+  source_labels: [owner]
+  regex: "^$"
+  target_label: owner
+  replacement: {{ $t.defaultOwner | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+The same stamp for the OTLP gateway, as OTTL statements on the resource,
+written after `k8sattributes` has resolved the namespace from the pod
+object. One statement per owner, each guarded on `owner` still being
+unset, then the default.
+*/}}
+{{- define "observability-emitters.owners.ottl" -}}
+{{- $t := .Values.tenancy -}}
+{{- range $owner, $patterns := $t.owners }}
+- set(attributes["owner"], {{ $owner | quote }}) where attributes["owner"] == nil and attributes["k8s.namespace.name"] != nil and IsMatch(attributes["k8s.namespace.name"], {{ printf "^%s$" (include "observability-emitters.owners.regex" $patterns) | quote }})
+{{- end }}
+{{- if $t.defaultOwner }}
+- set(attributes["owner"], {{ $t.defaultOwner | quote }}) where attributes["owner"] == nil
+{{- end }}
+{{- end -}}
+
+{{/*
 `remote`'s effective state: whether it is in use, and the one
 destination entry it expands into for a given signal (before that
 signal's own low-level list is consulted at all).
@@ -235,6 +304,9 @@ OTLP gateway below, this chart writes no volume for it.
         "action" "labeldrop"
         "regex" "exported_(k8s_cluster_name|k8s_namespace_name|deployment_environment_name)"))
 -}}
+{{- if $root.Values.tenancy.owners -}}
+{{- $_ := set $base "inlineRelabelConfig" (fromYamlArray (include "observability-emitters.owners.metricRelabelConfigs" $root)) -}}
+{{- end -}}
 {{- if not $v.queue.storageClassName -}}
 {{- $_ := unset (index $base "statefulStorage" "volumeClaimTemplate" "spec") "storageClassName" -}}
 {{- end -}}
@@ -553,6 +625,12 @@ processors:
         statements:
           - delete_key(attributes, "k8s.namespace.name")
           - delete_key(attributes, "kubernetes.pod_namespace")
+{{- if $t.owners }}
+          - delete_key(attributes, "owner")
+      - context: {{ ternary "datapoint" (ternary "log" "span" (eq $signal "log")) (eq $signal "metric") }}
+        statements:
+          - delete_key(attributes, "owner")
+{{- end }}
 {{- end }}
   k8sattributes:
     auth_type: serviceAccount
@@ -597,6 +675,9 @@ processors:
           # spelling is the log-path key and this writer yields to it.
           - set(attributes["kubernetes.pod_namespace"], attributes["k8s.namespace.name"]) where attributes["k8s.namespace.name"] != nil
 {{- end }}
+{{- if $t.owners }}
+{{- include "observability-emitters.owners.ottl" $root | trim | nindent 10 }}
+{{- end }}
 {{- end }}
   # Delta metrics and deduplication do not mix: the store keeps one sample
   # per interval, and dropping one sample of a delta series loses the
@@ -635,6 +716,9 @@ exporters:
         - k8s.cluster.name
         - k8s.namespace.name
         - deployment.environment.name
+{{- if $t.owners }}
+        - owner
+{{- end }}
 {{- end }}
 {{- range $d := $effLogsDestinations }}
   otlp_http/logs-{{ $d.name }}:

@@ -33,6 +33,11 @@
       "pattern": "^([a-zA-Z_][a-zA-Z0-9_]*)?$",
       "description": "The label naming the cluster on a shared metrics store; matched in every join. Empty disables it."
     },
+    "ownerLabel": {
+      "type": "string",
+      "pattern": "^([a-zA-Z_][a-zA-Z0-9_]*)?$",
+      "description": "OPT-IN. The label naming the owning company (observability-emitters tenancy.owners stamps `owner`); added to the by (...) of the aggregating rules so the alert keeps it. Empty changes nothing."
+    },
     "namespaceSelector": {
       "type": "string",
       "minLength": 1,

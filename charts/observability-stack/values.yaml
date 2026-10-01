@@ -775,6 +775,21 @@ notifications:
     - alertname
     - k8s_cluster_name
     - k8s_namespace_name
+  # -- OPT-IN (empty, the default, changes nothing): the label naming the
+  # company that owns an alert's workload, as stamped by
+  # `observability-emitters` `tenancy.owners` (`owner`). Set, a route's
+  # `match` may use it, so an alert reaches the owning company's Slack
+  # workspace without one route per namespace:
+  #
+  #   ownerLabel: owner
+  #   routes:
+  #     - match: {owner: globex}
+  #       critical: {channel: "#alerts-critical", workspace: globex}
+  #
+  # An alert only carries the label if its rule kept it; see
+  # `platform-alerts` `ownerLabel`. An alert without it falls through to
+  # the tier's own destination.
+  ownerLabel: ""
   # -- The one inhibit rule: a `critical` silences a `warning` that has
   # the same value for every label in `equal`, so a project already paged
   # for the loud version is not also sent the quiet one.
