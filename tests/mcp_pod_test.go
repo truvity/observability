@@ -273,8 +273,11 @@ func TestMCPNetworkPolicyReachesOnlyIssuerStoreAndDNS(t *testing.T) {
 
 			require.Len(t, d.Spec.Egress, 3, "egress is the issuer, the store's proxy (or Grafana) and DNS, and nothing else")
 			for i, r := range d.Spec.Egress {
-				require.NotEmpty(t, r.To, "egress rule %d has no peer (an empty `to` admits everything)", i)
 				require.NotEmpty(t, r.Ports, "egress rule %d has no port (an empty `ports` admits every port)", i)
+				if i == 2 {
+					continue // DNS: checked below, it may legitimately have no `to`
+				}
+				require.NotEmpty(t, r.To, "egress rule %d has no peer (an empty `to` admits everything)", i)
 				for _, p := range r.To {
 					if ib, ok := p["ipBlock"].(map[string]any); ok {
 						assert.NotContains(t, []any{"0.0.0.0/0", "::/0"}, ib["cidr"], "egress rule %d opens the world", i)
@@ -282,12 +285,17 @@ func TestMCPNetworkPolicyReachesOnlyIssuerStoreAndDNS(t *testing.T) {
 				}
 			}
 
-			// DNS is the last rule: kube-system on 53.
+			// DNS is the last rule, on 53 only. By default it has NO `to`
+			// (any destination): the resolver is not a kube-system pod on every
+			// cluster, so a namespace-scoped default blocks all DNS there. A
+			// consumer narrows it with networkPolicy.egress.dns, passed through.
 			dns := d.Spec.Egress[2]
-			require.Len(t, dns.To, 1)
-			assert.Equal(t, map[string]any{
-				"namespaceSelector": map[string]any{"matchLabels": map[string]any{"kubernetes.io/metadata.name": "kube-system"}},
-			}, dns.To[0])
+			if strings.HasPrefix(name, "dns-narrowed.yaml/") {
+				assert.Equal(t, []map[string]any{{"ipBlock": map[string]any{"cidr": "10.96.0.0/16"}}}, dns.To)
+			} else {
+				assert.Empty(t, dns.To, "default DNS egress must not be restricted to a destination (kube-system or otherwise)")
+			}
+			assert.NotContains(t, fmt.Sprint(dns.To), "kube-system", "DNS egress must never default to kube-system")
 			for _, p := range dns.Ports {
 				assert.Equal(t, 53, p.Port)
 			}

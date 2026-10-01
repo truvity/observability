@@ -4,6 +4,23 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-mcp` and `alert-ingress`: the NetworkPolicy's DNS egress rule
+no longer names the `kube-system` namespace. A new optional key,
+`networkPolicy.egress.dns`, takes NetworkPolicy peers (passed through
+verbatim) to narrow it again.
+
+- **Behaviour change**: the DNS egress rule (UDP and TCP 53) now has no `to`,
+  so it admits port 53 to any destination, where it used to admit only pods in
+  `kube-system`. The old default blocked every lookup on clusters whose
+  resolver is not a `kube-system` pod (managed Kubernetes, node-local DNS), so
+  the pods could not resolve the issuer or Alertmanager. A consumer that wants
+  the old scope sets `networkPolicy.egress.dns` to
+  `[{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]`,
+  or to the resolver's service CIDR as an `ipBlock`. Every other egress rule is
+  unchanged.
+
 ## v0.22.0
 
 `observability-mcp`: an opt-in HTTPRoute for the connectors, shipped with

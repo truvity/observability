@@ -42,16 +42,24 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $amPort | int }}
-    # 2. Cluster DNS, or rule 1 above cannot even be resolved.
+    # 2. DNS, or rule 1 above cannot even be resolved. With no
+    # `networkPolicy.egress.dns` this is port 53 to ANY destination (no `to`):
+    # the cluster resolver is not a kube-system pod on every cluster.
+    {{- with .Values.networkPolicy.egress.dns }}
     - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
+        {{- toYaml . | nindent 8 }}
       ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+    {{- else }}
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
     {{- if .Values.networkPolicy.allowCloudHTTPS }}
     # 3. The cloud provider itself, for signature verification and
     # subscription confirmation. See the comment above this block.

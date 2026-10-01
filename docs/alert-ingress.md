@@ -137,6 +137,12 @@ way to know the path itself died.
   CIDR block, so that last rule is honest about being "HTTPS, to
   anywhere" rather than a hostname pin this layer cannot express; the
   actual pin is the one in the binary, above.
+- The DNS rule (UDP and TCP 53) has no destination by default: it admits
+  port 53 to any address, because a rule naming the `kube-system` namespace
+  blocks every lookup on a cluster whose resolver is not a pod there
+  (managed Kubernetes, node-local DNS). Narrow it with
+  `networkPolicy.egress.dns`, a list of NetworkPolicy peers passed through
+  verbatim, such as the resolver's service CIDR as an `ipBlock`.
 - It runs as a non-root static binary from `scratch`.
 
 ## Proof, before release

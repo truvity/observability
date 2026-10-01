@@ -1,0 +1,24 @@
+# The smallest values file that renders. `image` is left out entirely —
+# proving the chart's own default (values.yaml: the image the release
+# workflow builds and pushes, tagged at .Chart.AppVersion) is what an
+# install with no override actually gets.
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+topics:
+  - "<the security-alerts topic ARN>"
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
+  # DNS narrowed to the resolver's service CIDR.
+  egress:
+    dns:
+      - ipBlock:
+          cidr: 10.96.0.0/16

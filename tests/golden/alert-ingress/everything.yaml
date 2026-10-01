@@ -27,12 +27,10 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-    # 2. Cluster DNS, or rule 1 above cannot even be resolved.
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
+    # 2. DNS, or rule 1 above cannot even be resolved. With no
+    # `networkPolicy.egress.dns` this is port 53 to ANY destination (no `to`):
+    # the cluster resolver is not a kube-system pod on every cluster.
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP

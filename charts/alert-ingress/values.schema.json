@@ -148,6 +148,17 @@
           "items": { "$ref": "#/definitions/networkPolicyPeer" },
           "description": "Refused empty while `enabled` (templates/_validate.tpl): otherwise this NetworkPolicy would allow egress to nothing at all, indistinguishable at a glance from one that was actually wired up."
         },
+        "egress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dns": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/networkPolicyPeer" },
+              "description": "Optional. Narrows the DNS egress rule (UDP+TCP 53) to these NetworkPolicy peers. Empty (the default): port 53 to any destination."
+            }
+          }
+        },
         "allowCloudHTTPS": { "type": "boolean" }
       }
     }

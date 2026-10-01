@@ -298,16 +298,24 @@ spec:
         - protocol: TCP
           port: {{ .podPort | default (include "observability-mcp.urlPort" .target) }}
     {{- end }}
-    # 3. Cluster DNS.
+    # 3. DNS. With no `networkPolicy.egress.dns` peers this is port 53 to ANY
+    # destination (no `to`): the cluster resolver is not a kube-system pod on
+    # every cluster, and a rule naming one namespace blocks DNS where it is not.
+    {{- with $root.Values.networkPolicy.egress.dns }}
     - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
+        {{- toYaml . | nindent 8 }}
       ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+    {{- else }}
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
 {{- end }}
 {{- if $root.Values.podDisruptionBudget.enabled }}
 ---
