@@ -10,6 +10,14 @@ must be done first, and whether a default moved. Newest first, one
 except the two node-level DaemonSets, meets the Pod Security `restricted`
 profile.
 
+- **Behaviour change: default renders gain a `securityContext` on every pod.**
+  Every existing golden moves, by security-context stanzas only. To restore
+  the previous output for the VMSingle set
+  `victoria-metrics-k8s-stack.vmsingle.spec.securityContext: null`, for the
+  VMAgent set `metrics.spec.securityContext` to the value you want, for the
+  subcharts and the gateway override their `podSecurityContext` /
+  `otlp.podSecurityContext`. The VMAlert, VMAuth, VMAlertmanager and the
+  backup Jobs have no opt-out: their context is part of the profile.
 - **The VictoriaMetrics-operator objects set a `securityContext`.** The
   VMAlert, VMAuth and VMAlertmanager the stack renders and the VMAgent the
   emitters render now run as `65534` with `fsGroup: 65534`
