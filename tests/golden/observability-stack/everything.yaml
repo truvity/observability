@@ -2784,6 +2784,7 @@ spec:
             customer_facing: "true"
             severity: critical
           receiver: status-page
+          continue: true
     receivers:
       - name: notifications-none
       - name: slack-acme--alerts

@@ -350,8 +350,10 @@ An `also` entry with `receiver: slack` takes `channel` (required),
 `workspace` (required with two or more workspaces, as for a tier) and an
 optional `mention`. It reuses the receiver a primary route renders for
 the same (workspace, channel, mention), so a destination named twice is
-one receiver. `match` stays free-form. Routes are not `continue`d past
-each other: an alert is delivered by the first matching `also` entry.
+one receiver. `match` stays free-form. Every `also` route renders
+`continue: true`, so each entry adds its delivery independently: an alert
+matching two entries (a cluster mirror and a status-page webhook, say)
+reaches both, beside its primary route.
 
 What differs from Slack, on purpose:
 

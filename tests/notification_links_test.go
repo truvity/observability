@@ -152,3 +152,38 @@ func TestAlsoSlackReusesAPrimaryReceiver(t *testing.T) {
 	}
 	assert.Equal(t, []string{"slack-partner--partner-alerts", "slack-acme--alerts-critical--here"}, also)
 }
+
+func TestEveryAlsoRouteContinues(t *testing.T) {
+	// An alert matching two `also` entries must reach both receivers, and
+	// the primary tree: only `continue: true` on every one of them does it.
+	_, cfg := renderedLinksAM(t, "golden/observability-stack/notifications-slack-also-two-workspaces.yaml")
+	var also int
+	for _, r := range cfg.Route.Routes {
+		if rcv, _ := r["receiver"].(string); strings.HasPrefix(rcv, "slack-") {
+			also++
+			assert.Equal(t, true, r["continue"], "also route to %s", rcv)
+		}
+	}
+	assert.Equal(t, 2, also)
+
+	goldens, err := filepath.Glob("golden/observability-stack/*.yaml")
+	require.NoError(t, err)
+	for _, g := range goldens {
+		_, c := renderedLinksAM(t, g)
+		routes := c.Route.Routes
+		for i, r := range routes {
+			if after := wrapperIndex(routes); after >= 0 && i > after {
+				assert.Equal(t, true, r["continue"], "%s: also route %d", g, i)
+			}
+		}
+	}
+}
+
+func wrapperIndex(routes []map[string]any) int {
+	for i, r := range routes {
+		if m, ok := r["match"].(map[string]any); ok && len(m) == 0 && r["routes"] != nil {
+			return i
+		}
+	}
+	return -1
+}

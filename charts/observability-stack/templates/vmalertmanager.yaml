@@ -307,6 +307,7 @@ spec:
           {{- else }}
           receiver: {{ $a.receiver }}
           {{- end }}
+          continue: true
         {{- end }}
     receivers:
       - name: notifications-none
