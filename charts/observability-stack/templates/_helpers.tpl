@@ -583,7 +583,7 @@ anything renders from it.
 {{- $workspace = (index $workspaces 0).name -}}
 {{- end -}}
 workspace: {{ $workspace | quote }}
-channel: {{ $channel | quote }}
+channel: {{ $channel | default "" | quote }}
 mention: {{ $mention | quote }}
 {{- end -}}
 

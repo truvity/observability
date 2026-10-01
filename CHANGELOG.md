@@ -4,6 +4,34 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack` notifications: links that work, and Slack for `also`.
+
+- **Behaviour change: the `Silence:` line disappears unless
+  `notifications.alertmanagerUrl` is set.** The new value (default empty) is
+  the externally reachable base URL of this Alertmanager's UI, no trailing
+  slash. Set, it is the silence link's base; empty, the message (Slack and
+  Telegram) carries no silence line. There is no default on purpose: the
+  link used to be built on Alertmanager's own pod address, which nobody can
+  open, and the Grafana base is no substitute because the chart refuses
+  Grafana-managed alerting, so Grafana has no silence page. A set value is
+  refused unless it is an absolute `http(s)://` URL without a trailing slash.
+  The silence filter no longer ends in a stray `%2C` before `%7D`.
+- **Behaviour change: the VMAlertmanager's `spec.externalURL` no longer comes
+  from `vmalert.externalUrl`.** That value is the Grafana base, a different
+  fact; `spec.externalURL` is now rendered only from
+  `notifications.alertmanagerUrl`. `vmalert.externalUrl` keeps its own use,
+  vmalert's `-external.url`.
+- The title no longer reads `on my-cluster/` for an alert with no namespace:
+  it is `on my-cluster` then, and `on my-cluster/my-namespace` otherwise. The
+  Grafana link omits `&var-namespace=` the same way.
+- `notifications.also[]` may deliver to Slack: `receiver: slack` with
+  `channel` (required), `workspace` (required with two or more workspaces)
+  and an optional `mention`. It reuses the receiver a primary route renders
+  for the same destination. Telegram stays refused; `channel`, `workspace`
+  and `mention` on a webhook entry are refused.
+
 ## v0.22.0
 
 Feature (opt-in, default off; no existing render moves): an `owner` label for

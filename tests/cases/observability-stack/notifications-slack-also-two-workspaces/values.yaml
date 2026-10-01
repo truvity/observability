@@ -1,0 +1,41 @@
+# Two Slack workspaces: an `also` entry must name its `workspace`. Every
+# alert of one cluster is mirrored to a channel in the second workspace,
+# without a mention, while the primary route still pages in the first. A
+# second entry with a mention shows the mention is part of the receiver.
+# The cluster's DNS suffix is a neutral placeholder: a golden render is a
+# tracked file in a public repository.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+      - name: partner
+        appTokenSecret: {name: example-partner-slack-bot, key: token}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical", workspace: acme, mention: here}
+    warning: {receiver: slack, channel: "#alerts", workspace: acme}
+  also:
+    - receiver: slack
+      match: {k8s_cluster_name: my-cluster}
+      workspace: partner
+      channel: "#partner-alerts"
+    - receiver: slack
+      match: {severity: critical}
+      workspace: acme
+      channel: "#alerts-critical"
+      mention: here

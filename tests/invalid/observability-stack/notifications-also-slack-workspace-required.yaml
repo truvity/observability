@@ -1,0 +1,25 @@
+# expect: sends to Slack without a `workspace`, and notifications.slack.workspaces declares 2
+# Two workspaces and an `also` entry that names none.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+      - {name: partner, appTokenSecret: {name: example-partner-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical", workspace: acme}
+    warning: {receiver: slack, channel: "#alerts", workspace: acme}
+  also:
+    - receiver: slack
+      match: {k8s_cluster_name: my-cluster}
+      channel: "#mirror"

@@ -54,6 +54,17 @@ declared workspace (the refusal for two or more is in _validate.tpl).
 {{- $target := include "observability-stack.notifications.slackTarget" (list $ $catchAll "") | fromYaml }}
 {{- $_ := set $slackTargets (include "observability-stack.notifications.slackReceiver" $target) $target }}
 {{- end }}
+{{- /*
+An `also` entry that delivers to Slack resolves to the same kind of
+destination a tier does, so it shares the receiver a primary route
+already renders for the same (workspace, channel, mention).
+*/}}
+{{- range $a := $also }}
+{{- if eq $a.receiver "slack" }}
+{{- $target := include "observability-stack.notifications.slackTarget" (list $ $a "") | fromYaml }}
+{{- $_ := set $slackTargets (include "observability-stack.notifications.slackReceiver" $target) $target }}
+{{- end }}
+{{- end }}
 {{- range $r := $routes }}
 {{- range $tier := list "critical" "warning" }}
 {{- $override := index $r $tier }}
@@ -130,7 +141,13 @@ spec:
   kinds"). Not a value: nothing here could usefully turn it back on.
   */}}
   disableSelfServiceScrape: true
-  {{- with .Values.vmalert.externalUrl }}
+  {{- /*
+  This Alertmanager's own externally reachable base URL, and only that:
+  `notifications.alertmanagerUrl`. It is NOT `vmalert.externalUrl`, which
+  is the Grafana base and a different fact. Unset, Alertmanager keeps its
+  default (the pod address), and the message carries no silence link.
+  */}}
+  {{- with $n.alertmanagerUrl }}
   externalURL: {{ . | quote }}
   {{- end }}
   {{- if or $watchdog.secretName $slackWorkspaces ($telegram.botTokenSecret).name $webhooks }}
@@ -285,7 +302,11 @@ spec:
         {{- range $a := $also }}
         - match:
             {{- toYaml $a.match | nindent 12 }}
+          {{- if eq $a.receiver "slack" }}
+          receiver: {{ include "observability-stack.notifications.slackReceiver" (include "observability-stack.notifications.slackTarget" (list $ $a "") | fromYaml) }}
+          {{- else }}
           receiver: {{ $a.receiver }}
+          {{- end }}
         {{- end }}
     receivers:
       - name: notifications-none
@@ -310,16 +331,22 @@ spec:
           - channel: {{ $target.channel | quote }}
             app_token_file: {{ printf "/etc/alertmanager/notifications-slack-%s/%s" $target.workspace (include "observability-stack.notifications.workspaceKey" (list $slackWorkspaces $target.workspace)) }}
             send_resolved: true
-            title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}'
+            title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
             text: |-
               {{ $mentionPrefix }}{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }}
               {{- if $n.runbookBaseUrl }}
               {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
               {{- end }}
-              Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}&var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}
+              Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
-              Silence: {{ "{{" }} .ExternalURL {{ "}}" }}/#/silences/new?filter=%7B{{ "{{" }} range .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} .Name {{ "}}" }}%3D%22{{ "{{" }} .Value {{ "}}" }}%22%2C{{ "{{" }} end {{ "}}" }}%7D
+              {{- /*
+              Only with `notifications.alertmanagerUrl`: a link to the
+              pod address nobody can open is worse than no link.
+              */}}
+              {{- if $n.alertmanagerUrl }}
+              Silence: {{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} $p.Name {{ "}}" }}%3D%22{{ "{{" }} $p.Value {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D
+              {{- end }}
       {{- end }}
       {{- range $name, $target := $telegramTargets }}
       - name: {{ $name }}
@@ -364,16 +391,22 @@ spec:
             alert name fails the whole delivery.
             */}}
             message: |-
-              <b>{{ "{{" }} .Status | toUpper {{ "}}" }}</b> {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}
+              <b>{{ "{{" }} .Status | toUpper {{ "}}" }}</b> {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}
               {{ "{{" }} range .Alerts {{ "}}" }}
               {{ "{{" }} .Annotations.summary {{ "}}" }}
               {{- if $n.runbookBaseUrl }}
               {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
               {{- end }}
-              Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}
+              Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
-              Silence: {{ "{{" }} .ExternalURL {{ "}}" }}/#/silences/new?filter=%7B{{ "{{" }} range .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} .Name {{ "}}" }}%3D%22{{ "{{" }} .Value {{ "}}" }}%22%2C{{ "{{" }} end {{ "}}" }}%7D
+              {{- /*
+              Only with `notifications.alertmanagerUrl`: a link to the
+              pod address nobody can open is worse than no link.
+              */}}
+              {{- if $n.alertmanagerUrl }}
+              Silence: {{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} $p.Name {{ "}}" }}%3D%22{{ "{{" }} $p.Value {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D
+              {{- end }}
             {{- end }}
       {{- end }}
       {{- range $w := $webhooks }}

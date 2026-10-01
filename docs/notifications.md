@@ -56,11 +56,19 @@ notifications:
       critical: "#example-app"
       warning:  "#example-app"
 
-  # Which alerts also reach a webhook receiver — the status-page
-  # bridge. Matchers, not channels.
+  # Which alerts also reach a webhook receiver or a Slack channel,
+  # beside their normal route.
   also:
     - receiver: status-page
       match: {severity: critical, customer_facing: "true"}
+    - receiver: slack              # mirror one cluster to a second workspace
+      match: {k8s_cluster_name: my-cluster}
+      workspace: partner
+      channel: "#partner-alerts"
+
+  # Where THIS Alertmanager's UI is reachable from outside the cluster.
+  # Set, the message carries a `Silence:` link on it; empty, no link.
+  alertmanagerUrl: https://alertmanager.example
 ```
 
 The chart renders from this an Alertmanager configuration with:
@@ -79,7 +87,8 @@ The chart renders from this an Alertmanager configuration with:
 - the Slack template: the cluster and the namespace in the title, the
   alert's `summary`, a link to the runbook from `runbookBaseUrl` +
   `runbook` annotation, a link to Grafana built from `externalUrl` and
-  the alert's labels, and the silence link;
+  the alert's labels, and the silence link (only when
+  `alertmanagerUrl` is set, below);
 - the `Watchdog` route to the deadman receiver, when one is configured
   (`deadman.urlSecret`), with `repeat_interval` equal to the heartbeat
   interval the far end expects.
@@ -319,6 +328,31 @@ notifications:
     chatIdSecret: {name: example-telegram-bot, key: chat_id}
 ```
 
+### The silence link and `alertmanagerUrl`
+
+`notifications.alertmanagerUrl` is the externally reachable base URL of
+this Alertmanager's UI, with no trailing slash. Set, it is the
+VMAlertmanager's `externalURL` and the base of the message's `Silence:`
+link; the filter is built from the alert group's common labels. Empty,
+the message has no `Silence:` line.
+
+There is no default on purpose. The only address the chart can guess is
+Alertmanager's own pod (`http://vmalertmanager-<release>-0:9093`), which
+nobody outside the cluster can open. The Grafana base (`externalUrl`) is
+no better: the chart refuses Grafana-managed alerting, so Grafana has no
+silence page. `vmalert.externalUrl` is the Grafana base too, so it no
+longer feeds the VMAlertmanager's `externalURL`; it keeps its own use, the
+links vmalert puts on an alert's source.
+
+### `also` to Slack
+
+An `also` entry with `receiver: slack` takes `channel` (required),
+`workspace` (required with two or more workspaces, as for a tier) and an
+optional `mention`. It reuses the receiver a primary route renders for
+the same (workspace, channel, mention), so a destination named twice is
+one receiver. `match` stays free-form. Routes are not `continue`d past
+each other: an alert is delivered by the first matching `also` entry.
+
 What differs from Slack, on purpose:
 
 - a Telegram tier has no `channel`, and a route cannot override one: a
@@ -326,7 +360,7 @@ What differs from Slack, on purpose:
   it would be read by nothing, and it is refused. Send a project to a
   different chat by giving it a Slack tier, or, for a whole tier, with
   that tier's own `chatId`/`messageThreadId`;
-- `also` stays webhook-only: it is the status-page bridge.
+- `also` does not deliver to Telegram: it names a webhook or `slack`.
 
 Compatibility: before 0.10.0 `telegram` was not a keyword, so an
 install could have a `notifications.webhook` entry NAMED `telegram` (a
