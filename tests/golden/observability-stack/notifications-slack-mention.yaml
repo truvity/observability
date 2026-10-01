@@ -2373,8 +2373,7 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ range .Alerts }}{{ .Annotations.summary }}
-              <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
       - name: slack-acme--alerts--here
         slack_configs:
@@ -2384,8 +2383,7 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ if eq .Status "firing" }}<!here> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }}
-              <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
+              {{ if eq .Status "firing" }}<!here> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
       - name: slack-acme--alerts-everything-else--channel
         slack_configs:
@@ -2395,8 +2393,7 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ if eq .Status "firing" }}<!channel> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }}
-              <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
+              {{ if eq .Status "firing" }}<!channel> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
       - name: slack-acme--example-app--channel
         slack_configs:
@@ -2406,8 +2403,7 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ if eq .Status "firing" }}<!channel> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }}
-              <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
+              {{ if eq .Status "firing" }}<!channel> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
       - name: slack-acme--example-app-critical--here
         slack_configs:
@@ -2417,8 +2413,7 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ if eq .Status "firing" }}<!here> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }}
-              <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
+              {{ if eq .Status "firing" }}<!here> {{ end }}{{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
     inhibit_rules:
       - source_matchers:

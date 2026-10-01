@@ -2885,10 +2885,9 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://alerts.example.com/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ range .Alerts }}{{ .Annotations.summary }}
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
       - name: slack-acme--alerts-critical
         slack_configs:
@@ -2898,10 +2897,9 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://alerts.example.com/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ range .Alerts }}{{ .Annotations.summary }}
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
       - name: slack-acme--alerts-example-cluster
         slack_configs:
@@ -2911,10 +2909,9 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://alerts.example.com/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ range .Alerts }}{{ .Annotations.summary }}
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
       - name: slack-acme--example-app
         slack_configs:
@@ -2924,10 +2921,9 @@ spec:
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://alerts.example.com/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
-              {{ range .Alerts }}{{ .Annotations.summary }}
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
               {{ end }}
-              <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
       - name: status-page
         webhook_configs:

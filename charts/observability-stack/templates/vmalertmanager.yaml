@@ -339,17 +339,20 @@ spec:
             title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
             title_link: '{{ if eq $console "karma" }}{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}{{ else }}{{ $externalUrl }}/?var-cluster={{ "{{" }} .CommonLabels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}&var-namespace={{ "{{" }} .CommonLabels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ end }}'
             text: |-
-              {{ $mentionPrefix }}{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }}
+              {{ $mentionPrefix }}{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }} · <{{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}|Grafana>
               {{- if $n.runbookBaseUrl }}
               {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
               {{- end }}
+              {{ "{{" }} end {{ "}}" }}
               {{- /*
-              ONE line of named mrkdwn links, `<url|Name>`, in place of
-              raw URLs (a karma `?m=` value is long base64). Only the
-              links that exist in this mode are on it: Silence
-              (`console: karma`, or `alertmanagerUrl` set), View
-              (`console: karma`), Grafana (always).
+              Named mrkdwn links, `<url|Name>`, in place of raw URLs (a
+              karma `?m=` value is long base64). Grafana is per alert
+              (`.Labels`), so it is on the alert's own summary line.
+              Silence and View are about the GROUP (`.CommonLabels`), so
+              they are ONE line after the alert loop, joined by ` · `:
+              Silence and View with `console: karma`, Silence with
+              `alertmanagerUrl`, nothing with neither.
 
               Escaping follows Slack's "Escaping text" rules
               (https://docs.slack.dev/messaging/formatting-message-text/#escaping):
@@ -360,10 +363,6 @@ spec:
               `urlquery` (which escapes both); the Alertmanager silence
               filter also turns `urlquery`'s `+` back into `%20`.
 
-              The line sits inside the alert loop, so `$` is the
-              notification data: Silence and View are about the GROUP
-              (`$.CommonLabels`), Grafana about this alert (`.Labels`).
-
               `console: karma`: `?m=` is karma's own base64 JSON (see
               docs/notifications.md, "Console: karma"). Alertmanager's
               `base64encode` is the URL-safe alphabet and the karma UI
@@ -371,8 +370,9 @@ spec:
               characters that differ are put back before the whole value
               is URL-escaped.
               */}}
-              {{ if eq $console "karma" }}<{{ $n.consoleUrl }}/?m={{ `{{ $m := list }}{{ range $.CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" ` }}{{ $silenceMinutes }}{{ ` "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}` }}|Silence> · <{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := $.CommonLabels.SortedPairs }}{{ if $i }}&amp;q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}|View> · {{ else if $n.alertmanagerUrl }}<{{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := $.CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} urlquery $p.Name {{ "}}" }}%3D%22{{ "{{" }} urlquery $p.Value | reReplaceAll "\\+" "%20" {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D|Silence> · {{ end }}<{{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}|Grafana>
-              {{ "{{" }} end {{ "}}" }}
+              {{- if or (eq $console "karma") $n.alertmanagerUrl }}
+              {{ if eq $console "karma" }}<{{ $n.consoleUrl }}/?m={{ `{{ $m := list }}{{ range .CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" ` }}{{ $silenceMinutes }}{{ ` "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}` }}|Silence> · <{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&amp;q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}|View>{{ else if $n.alertmanagerUrl }}<{{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} urlquery $p.Name {{ "}}" }}%3D%22{{ "{{" }} urlquery $p.Value | reReplaceAll "\\+" "%20" {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D|Silence>{{ end }}
+              {{- end }}
       {{- end }}
       {{- range $name, $target := $telegramTargets }}
       - name: {{ $name }}
