@@ -125,7 +125,9 @@ func TestTitleAndGrafanaLinkSurviveAnEmptyNamespace(t *testing.T) {
 				text := c["text"].(string)
 				assert.Contains(t, text, "{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}", "%s/%s", g, r.Name)
 				if tl := c["title_link"].(string); !strings.HasPrefix(tl, "https://karma.") {
-					assert.Contains(t, tl, "{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}", "%s/%s", g, r.Name)
+					assert.Contains(t, tl,
+						"{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}",
+						"%s/%s", g, r.Name)
 				}
 			}
 		}
