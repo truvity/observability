@@ -11,6 +11,11 @@ must be done first, and whether a default moved. Newest first, one
 - **No change at the default.** `alertmanager.replicaCount` stays `1`, and
   every golden render is byte-identical to before, except the `everything`
   case, which already set `replicaCount: 2`.
+- **Behaviour change: an Alertmanager pair renders differently.** Only
+  installs with `alertmanager.replicaCount` above 1 move (the `everything`
+  golden): the pod safeguards and per-replica notifiers and karma servers
+  below. The opt-out is `replicaCount: 1`; the budget, affinity and spread
+  are each overridable.
 - `alertmanager.replicaCount` above 1 now renders, on the VMAlertmanager, a
   `podDisruptionBudget` (`maxUnavailable: 1`), preferred pod anti-affinity
   on `kubernetes.io/hostname`, and a topology spread on
