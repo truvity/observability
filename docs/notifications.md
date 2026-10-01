@@ -332,17 +332,20 @@ notifications:
 
 ### Named links in Slack
 
-The Slack message ends each alert with ONE line of named mrkdwn links,
-separated by ` · `, instead of raw URLs:
+Slack links are named mrkdwn links instead of raw URLs. Grafana is about
+one alert, so it ends that alert's summary line; Silence and View are about
+the alert group, so they are ONE line after the alerts, separated by ` · `:
 
 ```
-<https://alertmanager.example/#/silences/new?filter=...|Silence> · <https://grafana.example/?var-cluster=...|Grafana>
+disk almost full · <https://grafana.example/?var-cluster=...|Grafana>
+disk almost full · <https://grafana.example/?var-cluster=...|Grafana>
+
+<https://alertmanager.example/#/silences/new?filter=...|Silence>
 ```
 
-Only the links that exist in the mode are on it: `Silence`, `View`,
-`Grafana` with `console: karma`; `Silence`, `Grafana` with
-`alertmanagerUrl`; `Grafana` alone with neither. The message title is
-a link too (Alertmanager's `title_link`): the `View` URL with
+The group line has `Silence` and `View` with `console: karma`, `Silence`
+with `alertmanagerUrl`, and is absent with neither. The message title is a
+link too (Alertmanager's `title_link`): the `View` URL with
 `console: karma`, the Grafana URL otherwise. The Telegram message is
 unchanged.
 

@@ -49,11 +49,12 @@ profile.
 
 - **Behaviour change: Slack links render as named links.** The raw
   `Grafana:`, `Silence:` and `View:` lines of the Slack message are
-  replaced by ONE line of named mrkdwn links, `<url|Silence> · <url|View>
-  · <url|Grafana>`, with only the links that exist in the mode
-  (`console: karma`: Silence, View, Grafana; `alertmanagerUrl`: Silence,
-  Grafana; neither: Grafana). The line is now per alert, inside the alert
-  loop. Every default Slack golden changes; the Telegram message does not.
+  replaced by named mrkdwn links. `<url|Grafana>` ends each alert's summary
+  line (it is about that alert); Silence and View are about the alert group,
+  so they are ONE line after the alerts, `<url|Silence> · <url|View>`
+  (`console: karma`), `<url|Silence>` (`alertmanagerUrl`), or absent
+  (neither). Every default Slack golden changes; the Telegram message does
+  not.
 - The Slack title is a link: `title_link` is the View URL with
   `console: karma`, the Grafana URL otherwise.
 - Escaping: `&` inside a link is written `&amp;` (Slack's "Escaping

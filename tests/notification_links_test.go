@@ -147,30 +147,39 @@ func slackConfigsOf(t *testing.T, golden string) []map[string]any {
 	return out
 }
 
-// Slack gets ONE line of named mrkdwn links, only the ones that exist in
-// the mode, and a title that is itself a link.
-func TestSlackLinksAreNamedAndOnOneLine(t *testing.T) {
+// Slack gets named mrkdwn links and a title that is itself a link: Grafana
+// on each alert's own line (it is about that alert), and ONE line of group
+// links, Silence and View, after the alerts, only the ones the mode has.
+func TestSlackLinksAreNamedAndGroupLinksAppearOnce(t *testing.T) {
 	labels := amKV{"alertname": "A", "k8s_cluster_name": "c1", "k8s_namespace_name": "ns"}
+	other := amKV{"alertname": "A", "k8s_cluster_name": "c1", "k8s_namespace_name": "ns", "pod": "p2"}
+	const grafana = "https://grafana.example/?var-cluster=c1&var-namespace=ns"
 	cases := []struct {
 		golden    string
-		names     []string
+		group     []string
 		titleLink string
 	}{
-		{"golden/observability-stack/notifications-karma-console.yaml", []string{"Silence", "View", "Grafana"}, "https://karma.example.com/?q="},
-		{"golden/observability-stack/notifications-silence-link.yaml", []string{"Silence", "Grafana"}, "https://grafana.example/?var-cluster=c1&var-namespace=ns"},
-		{"golden/observability-stack/notifications-slack-one-workspace.yaml", []string{"Grafana"}, "https://grafana.example/?var-cluster=c1&var-namespace=ns"},
+		{"golden/observability-stack/notifications-karma-console.yaml", []string{"Silence", "View"}, "https://karma.example.com/?q="},
+		{"golden/observability-stack/notifications-silence-link.yaml", []string{"Silence"}, grafana},
+		{"golden/observability-stack/notifications-slack-one-workspace.yaml", nil, grafana},
 	}
 	for _, tc := range cases {
 		for _, c := range slackConfigsOf(t, tc.golden) {
-			data := amData{Status: "firing", CommonLabels: labels,
-				Alerts: []amAlert{{Labels: labels, Annotations: amKV{"summary": "s"}}}}
+			data := amData{Status: "firing", CommonLabels: labels, Alerts: []amAlert{
+				{Labels: labels, Annotations: amKV{"summary": "s1"}},
+				{Labels: other, Annotations: amKV{"summary": "s2"}},
+			}}
 			out := executeSlackText(t, c["text"].(string), data)
-			names, urls := slackLinks(t, out)
-			assert.Equal(t, tc.names, names, tc.golden)
+			set := slackLinks(t, out)
+			assert.Equal(t, tc.group, set.Group, tc.golden)
+			assert.Equal(t, []string{grafana, grafana}, set.Grafana, "%s: one Grafana link per alert", tc.golden)
+			assert.Equal(t, len(tc.group), strings.Count(out, "|Silence>")+strings.Count(out, "|View>"),
+				"%s: group links appear once per message, not once per alert", tc.golden)
+			assert.Equal(t, 2, strings.Count(out, "|Grafana>"), tc.golden)
 			assert.NotContains(t, out, "Grafana: ", tc.golden)
 			assert.NotContains(t, out, "Silence: ", tc.golden)
-			assert.Equal(t, "https://grafana.example/?var-cluster=c1&var-namespace=ns", urls["Grafana"], tc.golden)
 			assert.Contains(t, out, "?var-cluster=c1&amp;var-namespace=ns|Grafana>", "& is written &amp; inside the link")
+			assert.Contains(t, out, "s1 · <https://grafana.example/", "Grafana is on the alert's own line")
 
 			tl, ok := c["title_link"].(string)
 			require.True(t, ok, "%s: title_link is set", tc.golden)
@@ -181,10 +190,10 @@ func TestSlackLinksAreNamedAndOnOneLine(t *testing.T) {
 			assert.True(t, strings.HasPrefix(buf.String(), tc.titleLink), "%s: %s", tc.golden, buf.String())
 			assert.NotContains(t, buf.String(), "&amp;", "title_link is a plain URL field, not mrkdwn")
 			// The View URL when karma, else the Grafana one.
-			if slices.Contains(tc.names, "View") {
-				assert.Equal(t, urls["View"], buf.String())
+			if slices.Contains(tc.group, "View") {
+				assert.Equal(t, set.GroupURLs["View"], buf.String())
 			} else {
-				assert.Equal(t, urls["Grafana"], buf.String())
+				assert.Equal(t, grafana, buf.String())
 			}
 
 			// Alertmanager's default `mrkdwn_in` includes `text`; the chart
@@ -206,19 +215,14 @@ func TestSlackLinksSurviveHostileLabelValues(t *testing.T) {
 		for _, c := range slackConfigsOf(t, golden) {
 			out := executeSlackText(t, c["text"].(string), amData{Status: "firing", CommonLabels: labels,
 				Alerts: []amAlert{{Labels: labels, Annotations: amKV{"summary": "s"}}}})
-			_, urls := slackLinks(t, out)
-			var line string
-			for _, l := range strings.Split(out, "\n") {
-				if strings.HasPrefix(l, "<") {
-					line = l
-				}
-			}
-			// Exactly the separators of the links themselves: two `|` per
-			// two-link line is one per link, and every `>` closes a link.
-			assert.Equal(t, strings.Count(line, "<"), strings.Count(line, "|"), line)
-			assert.Equal(t, strings.Count(line, "<"), strings.Count(line, ">"), line)
-			assert.Equal(t, "https://grafana.example/?var-cluster=c%7C1%3E&var-namespace=n+s%26p%3Eq%7Cr", urls["Grafana"], golden)
-			if sil := urls["Silence"]; strings.Contains(sil, "#/silences/") {
+			set := slackLinks(t, out)
+			// Exactly the separators of the links themselves: one `|` and
+			// one closing `>` per link.
+			assert.Equal(t, strings.Count(out, "<"), strings.Count(out, "|"), out)
+			assert.Equal(t, strings.Count(out, "<"), strings.Count(out, ">"), out)
+			require.Len(t, set.Grafana, 1)
+			assert.Equal(t, "https://grafana.example/?var-cluster=c%7C1%3E&var-namespace=n+s%26p%3Eq%7Cr", set.Grafana[0], golden)
+			if sil := set.GroupURLs["Silence"]; strings.Contains(sil, "#/silences/") {
 				assert.NotContains(t, sil, "+", "a space in a silence filter is %20, not +")
 				assert.Contains(t, sil, "n%20s%26p%3Eq%7Cr")
 				assert.Contains(t, sil, "x%22y%2Bz%20w")
