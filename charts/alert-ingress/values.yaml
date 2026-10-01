@@ -128,6 +128,26 @@ networkPolicy:
   #         matchLabels:
   #           app.kubernetes.io/name: vmalertmanager
   alertmanagerPeer: []
+  egress:
+    # -- Optional. NetworkPolicy peers the pods may send DNS (UDP+TCP 53) to,
+    # passed through verbatim. Empty (the default): port 53 to ANY destination,
+    # which works on every cluster. Do not assume the resolver is a kube-system
+    # pod: on managed Kubernetes or with node-local DNS it may be a node
+    # address or a service IP outside any namespace, and a rule naming one
+    # namespace then blocks all DNS. Narrow it only to where YOUR resolver is,
+    # for example its service CIDR:
+    #
+    #   dns:
+    #     - ipBlock:
+    #         cidr: <resolver service CIDR>
+    #
+    # or, on a cluster whose resolver runs in kube-system:
+    #
+    #   dns:
+    #     - namespaceSelector:
+    #         matchLabels:
+    #           kubernetes.io/metadata.name: kube-system
+    dns: []
   # -- Egress on 443 to anywhere, needed for the two outbound calls this
   # service makes to the cloud provider itself: fetching the signing
   # certificate that Verify checks every message against, and the one GET

@@ -363,6 +363,25 @@ networkPolicy:
     # set (the Service port is not the pod port when the Service maps one to
     # the other).
     grafana: []
+    # -- Optional. NetworkPolicy peers the pods may send DNS (UDP+TCP 53) to,
+    # passed through verbatim. Empty (the default): port 53 to ANY destination,
+    # which works on every cluster. Do not assume the resolver is a kube-system
+    # pod: on managed Kubernetes or with node-local DNS it may be a node
+    # address or a service IP outside any namespace, and a rule naming one
+    # namespace then blocks all DNS. Narrow it only to where YOUR resolver is,
+    # for example its service CIDR:
+    #
+    #   dns:
+    #     - ipBlock:
+    #         cidr: <resolver service CIDR>
+    #
+    # or, on a cluster whose resolver runs in kube-system:
+    #
+    #   dns:
+    #     - namespaceSelector:
+    #         matchLabels:
+    #           kubernetes.io/metadata.name: kube-system
+    dns: []
 
 # -- Optional. Refused with fewer than two replicas: a budget of one
 # available on a single replica blocks every node drain.

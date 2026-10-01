@@ -387,6 +387,16 @@ admin port), so it is not ready until every allowlisted tool was found. The
 stock servers' own health endpoints are on loopback, which the kubelet
 cannot reach.
 
+**DNS egress.** The DNS rule (UDP and TCP 53) has no destination by default:
+it admits port 53 to any address. A rule naming the `kube-system` namespace
+only works where the cluster resolver is a pod in that namespace; on managed
+Kubernetes whose resolver is not a pod there, or with node-local DNS, it
+blocks every lookup, and the proxy then cannot resolve the issuer to fetch
+its keys. To narrow the rule, set `networkPolicy.egress.dns` to a list of
+NetworkPolicy peers (passed through verbatim), for example the resolver's
+service CIDR as an `ipBlock`, or the `kube-system` namespace on a cluster
+whose resolver runs there.
+
 **The Service-port trap.** The egress port is derived from `vmauth.url` or
 `grafana.url`, which name a **Service** (for example `grafana.monitoring.svc:80`),
 but a NetworkPolicy matches the **pod's** port, after the Service has

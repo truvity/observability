@@ -1,0 +1,36 @@
+# One store, Grafana off: only what has no default. The issuer, the pinned
+# proxy build, the store's resource URL, its vmauth and the exchange client,
+# and the peers the NetworkPolicy names.
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+stores:
+  - name: primary
+    resourceURL: https://mcp.example.com/victoria/primary
+    vmauth: {url: "http://vmauth.monitoring.svc:8427"}
+    outbound:
+      tokenEndpoint: https://issuer.example.com/token
+      clientId: observability-mcp-primary
+      audience: primary-store
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway
+  egress:
+    # DNS narrowed to the resolver's service CIDR.
+    dns:
+      - ipBlock:
+          cidr: 10.96.0.0/16
+    issuer:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: issuer
+    vmauth:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: monitoring
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: vmauth

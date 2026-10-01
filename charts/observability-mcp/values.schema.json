@@ -185,7 +185,8 @@
           "properties": {
             "issuer": { "$ref": "#/definitions/peers" },
             "vmauth": { "$ref": "#/definitions/peers" },
-            "grafana": { "$ref": "#/definitions/peers" }
+            "grafana": { "$ref": "#/definitions/peers" },
+            "dns": { "$ref": "#/definitions/peers" }
           }
         }
       }

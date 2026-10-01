@@ -47,12 +47,10 @@ spec:
       ports:
         - protocol: TCP
           port: 8427
-    # 3. Cluster DNS.
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
+    # 3. DNS. With no `networkPolicy.egress.dns` peers this is port 53 to ANY
+    # destination (no `to`): the cluster resolver is not a kube-system pod on
+    # every cluster, and a rule naming one namespace blocks DNS where it is not.
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
