@@ -15,10 +15,13 @@
 package tests
 
 import (
+	"bytes"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,17 +78,17 @@ func TestSilenceLinkIsAReachableURLOrAbsent(t *testing.T) {
 				assert.NotContains(t, m, ".ExternalURL", "%s/%s: the pod address is never a link", g, r.Name)
 				if ext == "" {
 					without++
-					assert.NotContains(t, m, "Silence:", "%s/%s: no alertmanagerUrl, so no silence line", g, r.Name)
+					assert.NotContains(t, m, "Silence", "%s/%s: no alertmanagerUrl, so no silence link", g, r.Name)
 					continue
 				}
 				withURL++
-				if strings.Contains(m, "Silence: https://karma.") {
+				if strings.Contains(m, "<https://karma.") {
 					// `notifications.console: karma`: karma's own link, held
 					// to karma's type in karma_test.go.
 					assert.Contains(t, m, "/?m=", "%s/%s", g, r.Name)
 					continue
 				}
-				assert.Contains(t, m, "Silence: "+ext+"/#/silences/new?filter=%7B", "%s/%s", g, r.Name)
+				assert.Contains(t, m, "<"+ext+"/#/silences/new?filter=%7B", "%s/%s", g, r.Name)
 				assert.NotContains(t, m, "%2C%7D", "%s/%s: no trailing separator before the closing brace", g, r.Name)
 			}
 		}
@@ -120,11 +123,106 @@ func TestTitleAndGrafanaLinkSurviveAnEmptyNamespace(t *testing.T) {
 				assert.Contains(t, title, wantTitle, "%s/%s", g, r.Name)
 				assert.NotContains(t, title, "}}/{{ .CommonLabels.k8s_namespace_name }}'", "%s/%s: unguarded namespace", g, r.Name)
 				text := c["text"].(string)
-				assert.Contains(t, text, "{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}", "%s/%s", g, r.Name)
+				assert.Contains(t, text, "{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}", "%s/%s", g, r.Name)
+				if tl := c["title_link"].(string); !strings.HasPrefix(tl, "https://karma.") {
+					assert.Contains(t, tl, "{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}", "%s/%s", g, r.Name)
+				}
 			}
 		}
 	}
 	assert.NotZero(t, seen)
+}
+
+// slackConfigs are the rendered Slack configs of a golden.
+func slackConfigsOf(t *testing.T, golden string) []map[string]any {
+	t.Helper()
+	_, cfg := renderedLinksAM(t, golden)
+	var out []map[string]any
+	for _, r := range cfg.Receivers {
+		out = append(out, r.SlackConfigs...)
+	}
+	require.NotEmpty(t, out, golden)
+	return out
+}
+
+// Slack gets ONE line of named mrkdwn links, only the ones that exist in
+// the mode, and a title that is itself a link.
+func TestSlackLinksAreNamedAndOnOneLine(t *testing.T) {
+	labels := amKV{"alertname": "A", "k8s_cluster_name": "c1", "k8s_namespace_name": "ns"}
+	cases := []struct {
+		golden    string
+		names     []string
+		titleLink string
+	}{
+		{"golden/observability-stack/notifications-karma-console.yaml", []string{"Silence", "View", "Grafana"}, "https://karma.example.com/?q="},
+		{"golden/observability-stack/notifications-silence-link.yaml", []string{"Silence", "Grafana"}, "https://grafana.example/?var-cluster=c1&var-namespace=ns"},
+		{"golden/observability-stack/notifications-slack-one-workspace.yaml", []string{"Grafana"}, "https://grafana.example/?var-cluster=c1&var-namespace=ns"},
+	}
+	for _, tc := range cases {
+		for _, c := range slackConfigsOf(t, tc.golden) {
+			data := amData{Status: "firing", CommonLabels: labels,
+				Alerts: []amAlert{{Labels: labels, Annotations: amKV{"summary": "s"}}}}
+			out := executeSlackText(t, c["text"].(string), data)
+			names, urls := slackLinks(t, out)
+			assert.Equal(t, tc.names, names, tc.golden)
+			assert.NotContains(t, out, "Grafana: ", tc.golden)
+			assert.NotContains(t, out, "Silence: ", tc.golden)
+			assert.Equal(t, "https://grafana.example/?var-cluster=c1&var-namespace=ns", urls["Grafana"], tc.golden)
+			assert.Contains(t, out, "?var-cluster=c1&amp;var-namespace=ns|Grafana>", "& is written &amp; inside the link")
+
+			tl, ok := c["title_link"].(string)
+			require.True(t, ok, "%s: title_link is set", tc.golden)
+			tpl, err := template.New("tl").Funcs(amFuncs).Parse(tl)
+			require.NoError(t, err)
+			var buf bytes.Buffer
+			require.NoError(t, tpl.Execute(&buf, data))
+			assert.True(t, strings.HasPrefix(buf.String(), tc.titleLink), "%s: %s", tc.golden, buf.String())
+			assert.NotContains(t, buf.String(), "&amp;", "title_link is a plain URL field, not mrkdwn")
+			// The View URL when karma, else the Grafana one.
+			if slices.Contains(tc.names, "View") {
+				assert.Equal(t, urls["View"], buf.String())
+			} else {
+				assert.Equal(t, urls["Grafana"], buf.String())
+			}
+
+			// Alertmanager's default `mrkdwn_in` includes `text`; the chart
+			// must not override it away.
+			if in, ok := c["mrkdwn_in"]; ok {
+				assert.Contains(t, in, "text")
+			}
+		}
+	}
+}
+
+// A label value is user data: a `|` or `>` in one must not end the link.
+func TestSlackLinksSurviveHostileLabelValues(t *testing.T) {
+	labels := amKV{"alertname": "A|B>C", "k8s_cluster_name": "c|1>", "k8s_namespace_name": "n s&p>q|r", "pod": "x\"y+z w"}
+	for _, golden := range []string{
+		"golden/observability-stack/notifications-karma-console.yaml",
+		"golden/observability-stack/notifications-silence-link.yaml",
+	} {
+		for _, c := range slackConfigsOf(t, golden) {
+			out := executeSlackText(t, c["text"].(string), amData{Status: "firing", CommonLabels: labels,
+				Alerts: []amAlert{{Labels: labels, Annotations: amKV{"summary": "s"}}}})
+			_, urls := slackLinks(t, out)
+			var line string
+			for _, l := range strings.Split(out, "\n") {
+				if strings.HasPrefix(l, "<") {
+					line = l
+				}
+			}
+			// Exactly the separators of the links themselves: two `|` per
+			// two-link line is one per link, and every `>` closes a link.
+			assert.Equal(t, strings.Count(line, "<"), strings.Count(line, "|"), line)
+			assert.Equal(t, strings.Count(line, "<"), strings.Count(line, ">"), line)
+			assert.Equal(t, "https://grafana.example/?var-cluster=c%7C1%3E&var-namespace=n+s%26p%3Eq%7Cr", urls["Grafana"], golden)
+			if sil := urls["Silence"]; strings.Contains(sil, "#/silences/") {
+				assert.NotContains(t, sil, "+", "a space in a silence filter is %20, not +")
+				assert.Contains(t, sil, "n%20s%26p%3Eq%7Cr")
+				assert.Contains(t, sil, "x%22y%2Bz%20w")
+			}
+		}
+	}
 }
 
 func linksReceiverNames(cfg linksAMConfig) []string {

@@ -337,33 +337,42 @@ spec:
             app_token_file: {{ printf "/etc/alertmanager/notifications-slack-%s/%s" $target.workspace (include "observability-stack.notifications.workspaceKey" (list $slackWorkspaces $target.workspace)) }}
             send_resolved: true
             title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
+            title_link: '{{ if eq $console "karma" }}{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}{{ else }}{{ $externalUrl }}/?var-cluster={{ "{{" }} .CommonLabels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}&var-namespace={{ "{{" }} .CommonLabels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ end }}'
             text: |-
               {{ $mentionPrefix }}{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }}
               {{- if $n.runbookBaseUrl }}
               {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
               {{ "{{" }} end {{ "}}" }}
               {{- end }}
-              Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}
-              {{ "{{" }} end {{ "}}" }}
               {{- /*
-              Only with `notifications.alertmanagerUrl`: a link to the
-              pod address nobody can open is worse than no link.
+              ONE line of named mrkdwn links, `<url|Name>`, in place of
+              raw URLs (a karma `?m=` value is long base64). Only the
+              links that exist in this mode are on it: Silence
+              (`console: karma`, or `alertmanagerUrl` set), View
+              (`console: karma`), Grafana (always).
 
-              `notifications.console: karma` replaces the Silence link
-              with one that opens karma's silence form, prefilled
-              (`?m=` is karma's own base64 JSON, see docs/notifications.md,
-              "Console: karma"), and adds a `View:` link filtered to this
-              alert group. Alertmanager's `base64encode` is the URL-safe
-              alphabet and the karma UI decodes with `atob`, the standard
-              one, so the two characters that differ are put back before
-              the whole value is URL-escaped.
+              Escaping follows Slack's "Escaping text" rules
+              (https://docs.slack.dev/messaging/formatting-message-text/#escaping):
+              `&`, `<`, `>` are written `&amp;`, `&lt;`, `&gt;` and Slack
+              decodes them back, so the `&` between query parameters is
+              written `&amp;`. A raw `|` or `>` would end the link early,
+              so every label-derived part of a URL passes through
+              `urlquery` (which escapes both); the Alertmanager silence
+              filter also turns `urlquery`'s `+` back into `%20`.
+
+              The line sits inside the alert loop, so `$` is the
+              notification data: Silence and View are about the GROUP
+              (`$.CommonLabels`), Grafana about this alert (`.Labels`).
+
+              `console: karma`: `?m=` is karma's own base64 JSON (see
+              docs/notifications.md, "Console: karma"). Alertmanager's
+              `base64encode` is the URL-safe alphabet and the karma UI
+              decodes with `atob`, the standard one, so the two
+              characters that differ are put back before the whole value
+              is URL-escaped.
               */}}
-              {{- if eq $console "karma" }}
-              Silence: {{ $n.consoleUrl }}/?m={{ `{{ $m := list }}{{ range .CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" ` }}{{ $silenceMinutes }}{{ ` "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}` }}
-              View: {{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}
-              {{- else if $n.alertmanagerUrl }}
-              Silence: {{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} $p.Name {{ "}}" }}%3D%22{{ "{{" }} $p.Value {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D
-              {{- end }}
+              {{ if eq $console "karma" }}<{{ $n.consoleUrl }}/?m={{ `{{ $m := list }}{{ range $.CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" ` }}{{ $silenceMinutes }}{{ ` "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}` }}|Silence> · <{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := $.CommonLabels.SortedPairs }}{{ if $i }}&amp;q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}|View> · {{ else if $n.alertmanagerUrl }}<{{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := $.CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} urlquery $p.Name {{ "}}" }}%3D%22{{ "{{" }} urlquery $p.Value | reReplaceAll "\\+" "%20" {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D|Silence> · {{ end }}<{{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}|Grafana>
+              {{ "{{" }} end {{ "}}" }}
       {{- end }}
       {{- range $name, $target := $telegramTargets }}
       - name: {{ $name }}
