@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.21.0
 
 `observability-mcp`: a private CA for the outbound target, and the pod port
 for the NetworkPolicy. Both are new optional keys; no existing render moves.
