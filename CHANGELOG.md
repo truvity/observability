@@ -4,6 +4,33 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`: karma as an optional console, and Slack links that
+open it.
+
+- **New component `karma`, OFF by default** (`karma.enabled`). Alertmanager
+  takes a silence's author as free text; karma, behind an SSO gateway that
+  sets an identity header, rewrites it to the signed-in user on every
+  silence it proxies and enforces silence ACLs. Renders a Deployment, a
+  Service, a ServiceAccount and a ConfigMap (karma config, plus the ACL
+  file), image `ghcr.io/prymitive/karma:v0.133`. This release's own
+  Alertmanager is karma's first server (`proxy: true`);
+  `karma.alertmanagers` appends more. `karma.enabled` is refused without
+  `karma.authentication.header.name`, unless `karma.authentication.none:
+  true` acknowledges an anonymous console. `karma.extraConfig` is merged
+  last and is not validated. A default install renders nothing new.
+- **New `networkPolicy.karmaFrom`**: who may reach karma (ingress on 8080,
+  default the release's namespace). No egress policy, like every other
+  policy here. No policy selects the Alertmanager pods, so none is added
+  for karma's traffic.
+- **New `notifications.console`** (`alertmanager`, the default, or
+  `karma`), `notifications.consoleUrl` and `notifications.silenceMinutes`
+  (default 60). With `console: karma` the Slack `Silence:` link opens
+  karma's silence form prefilled with the alert's labels and a `View:` link
+  opens karma filtered to the alert group; the Telegram message is
+  unchanged. With the default, every existing render is byte-identical.
+
 ## v0.24.0
 
 `observability-dashboards`: the CloudNativePG instance dashboards, as an

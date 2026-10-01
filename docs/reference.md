@@ -384,6 +384,30 @@ consumer used to fill in by hand — is gone. `notifications` (below)
 renders the routing tree instead, and the chart refuses
 `alertmanager.enabled` with none of it configured.
 
+### `karma` — the alert console
+
+OFF by default. karma ([prymitive/karma](https://github.com/prymitive/karma)) is an alert dashboard and silence proxy for Alertmanager. Alertmanager takes a silence's `createdBy` as free text; karma with header authentication rewrites it to the signed-in user and enforces silence ACLs. See docs/notifications.md, "Console: karma", for why and for the shape of the deployment.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `karma.enabled` | bool | `false` | Renders one Deployment, a Service, a ServiceAccount and a ConfigMap with karma's config file (and its ACL file). Refused without `karma.authentication.header.name`, unless `karma.authentication.none: true`. Refused in `mode: operator-only`. |
+| `karma.image.repository` / `.tag` | string | `ghcr.io/prymitive/karma` / `v0.133` | The official image. |
+| `karma.replicaCount` | int | `1` | |
+| `karma.alertmanagers` | list | `[]` | EXTRA Alertmanager servers, in karma's `alertmanager.servers` shape, passed through; `name` and `uri` required, names unique. This release's own Alertmanager is always the first server (`name: alertmanager`, `proxy: true`, `readonly: false`, on its in-cluster Service, port 9093) when `alertmanager` is enabled. With it disabled this list must name one. |
+| `karma.authentication.none` | bool | `false` | The explicit acknowledgement of an anonymous console. Refused beside a `header.name`. |
+| `karma.authentication.header.name` | string | `""` | The request header that carries the user (for example `X-Auth-Request-Email`). Set, karma refuses a request without it and forces every silence's author to the value it extracts. karma TRUSTS this header: `networkPolicy.karmaFrom` is the boundary. |
+| `karma.authentication.header.valueRe` | string | `^(.+)$` | Extracts the user, one capturing group. Required when `name` is set. |
+| `karma.authentication.header.groupName` | string | `""` | The header that carries the user's groups. |
+| `karma.authentication.header.groupValueRe` | string | `""` | Like `valueRe`, for groups. Required when `groupName` is set. |
+| `karma.authentication.header.groupValueSeparator` | string | `""` | Splits the groups header; empty keeps karma's default, a space. |
+| `karma.authorization.groups` | list of `{name, members}` | `[]` | Groups for the ACLs. Needs `header.name`. |
+| `karma.acl.silences` | list | `[]` | karma's silence ACL rules (karma docs/ACLs.md), rendered to the ACL file. `action` must be `allow`, `block` or `requireMatcher`; `scope.groups` must name a declared group. Block regex silences first. |
+| `karma.history.enabled` | bool | `false` | Alert history (how often an alert fired in 24h). |
+| `karma.history.uri` | string | `""` | Prometheus-compatible endpoint holding `ALERTS`, used for every alert in place of its `generatorURL`. Required when enabled. It must answer without credentials: this chart's proxy and stores need a token, and a ConfigMap is no place for one. |
+| `karma.extraConfig` | object | `{}` | RAW karma config, deep-merged over everything above, last. **Unvalidated**: it can undo the authentication, the ACLs and the proxying. Maps merge, lists replace. Stored in a ConfigMap: no secrets. |
+| `karma.resources` | object | 50m CPU request, no CPU limit / 128Mi | Judged by `resources.policy` like every other component. |
+| `karma.nodeSelector` / `.tolerations` / `.affinity` | | `{}` / `[]` / `{}` | |
+
 ### `notifications`
 
 The one router. See docs/notifications.md for the design and
@@ -393,6 +417,9 @@ docs/safety.md for the failure it closes; this is the value list.
 |---|---|---|---|
 | `notifications.externalUrl` | string | `vmalert.externalUrl` | The base of the Grafana link in every Slack message. The same fact as `vmalert.externalUrl` — set this one only when it needs to differ; the chart refuses if both are set and disagree. Required (one or the other) the moment a receiver kind is configured. |
 | `notifications.alertmanagerUrl` | string | `""` | The externally reachable base URL of THIS Alertmanager's UI, no trailing slash. Set, it is the VMAlertmanager `externalURL` and the base of the `Silence:` link. Empty: the message has **no `Silence:` line**. No default on purpose: the pod address is unreachable and the Grafana base has no silence page (the chart refuses Grafana-managed alerting). Must be an absolute `http(s)://` URL without a trailing slash. `vmalert.externalUrl` no longer feeds `externalURL`. |
+| `notifications.console` | `alertmanager` \| `karma` | `alertmanager` | Which console the Slack message's `Silence:` link opens. `alertmanager` is today's link, byte for byte. `karma` opens karma's silence form prefilled with the alert's labels and adds a `View:` link filtered to the alert group. Needs `consoleUrl` and `karma.enabled`. The Telegram message keeps the Alertmanager link. |
+| `notifications.consoleUrl` | string | `""` | The externally reachable base URL of karma, no trailing slash, same URL shape as `alertmanagerUrl`. Required by `console: karma`. |
+| `notifications.silenceMinutes` | int | `60` | How long the silence a `console: karma` link prefills lasts. |
 | `notifications.runbookBaseUrl` | string | `""` | Prefixed to a firing alert's `runbook` annotation. Empty renders no runbook line at all. |
 | `notifications.groupWait` | duration | `30s` | |
 | `notifications.groupInterval` | duration | `5m` | |
@@ -430,6 +457,7 @@ an estate whose alerts carry other labels.
 |---|---|---|---|
 | `networkPolicy.enabled` | bool | `true` | One policy per store, one for vmalert's own pods, plus one for the proxy. A policy that selects a pod is a default-deny for it. |
 | `networkPolicy.proxyFrom` | list | `[]` | Who may reach the proxy, as `NetworkPolicyPeer` objects. Empty means the release's own namespace. |
+| `networkPolicy.karmaFrom` | list | `[]` | Who may reach karma, as `NetworkPolicyPeer` objects. Empty means the release's own namespace. karma trusts its identity header, so admit the SSO gateway and nothing else. Ingress only: no policy in this chart restricts egress. |
 | `networkPolicy.writersFrom` | list | `[]` | Who may write to a store directly. The collectors need this; nothing else does. |
 | `networkPolicy.scrapeFrom` | list | `[]` | Who may scrape a store's metrics port, the proxy's or vmalert's own `/metrics`, or any of their config-reloader sidecars' `reloader-http` (8435) directly, as `NetworkPolicyPeer` objects. Empty means the metrics agent `charts/observability-emitters` renders (`app.kubernetes.io/name: vmagent`) in the release's own namespace. Non-empty REPLACES that default everywhere it is read, the same way `proxyFrom` replaces its own. |
 | `networkPolicy.clientsFrom[]` | list of `{stores?, from}` | `[]` | 0.11.0. Other in-cluster clients of the stores — a prober, a hand-made job, a collector the chart does not know — each admitted on the stores it names (`metrics`/`logs`/`traces`; omitted means all three) and no others, as one extra ingress rule per entry. `from` is `NetworkPolicyPeer` objects, passed through. **Refused:** an empty `from` (in a NetworkPolicy that admits every source) and a peer named by `ipBlock` alone. Admission is not authentication: see `storeCredentials`. |

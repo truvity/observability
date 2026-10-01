@@ -79,6 +79,12 @@ func TestSilenceLinkIsAReachableURLOrAbsent(t *testing.T) {
 					continue
 				}
 				withURL++
+				if strings.Contains(m, "Silence: https://karma.") {
+					// `notifications.console: karma`: karma's own link, held
+					// to karma's type in karma_test.go.
+					assert.Contains(t, m, "/?m=", "%s/%s", g, r.Name)
+					continue
+				}
 				assert.Contains(t, m, "Silence: "+ext+"/#/silences/new?filter=%7B", "%s/%s", g, r.Name)
 				assert.NotContains(t, m, "%2C%7D", "%s/%s: no trailing separator before the closing brace", g, r.Name)
 			}

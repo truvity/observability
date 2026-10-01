@@ -712,6 +712,20 @@
           "type": "string",
           "description": "The externally reachable base URL of THIS Alertmanager's UI, no trailing slash. Set, it is the VMAlertmanager `externalURL` and the base of the message's `Silence:` link. Empty (no default on purpose): the message carries no `Silence:` line, because the only address the chart could guess is the in-cluster pod, which nobody can open."
         },
+        "console": {
+          "type": "string",
+          "enum": ["alertmanager", "karma"],
+          "description": "Which console the Slack message's `Silence:` link opens. `alertmanager` (default): today's link, byte for byte. `karma`: a link that opens karma's silence form prefilled with the alert's labels, plus a `View:` link filtered to the alert group; needs `consoleUrl` and `karma.enabled`."
+        },
+        "consoleUrl": {
+          "type": "string",
+          "description": "The externally reachable base URL of karma, no trailing slash. Required by `console: karma`."
+        },
+        "silenceMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How long the silence a `console: karma` link prefills lasts, in minutes."
+        },
         "runbookBaseUrl": {
           "type": "string",
           "description": "Prefixed to a firing rule's `runbook` annotation to make the runbook link. Left empty, the chart renders no runbook line rather than a link to a base URL with nothing after it."
@@ -969,6 +983,139 @@
         }
       }
     },
+    "karma": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "karma, an alert console and silence proxy for Alertmanager. Off by default. With header authentication it rewrites every silence's author to the signed-in user and enforces silence ACLs. See docs/notifications.md, \"Console: karma\".",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "alertmanagers": {
+          "type": "array",
+          "description": "Extra Alertmanager servers, appended after this release's own, in karma's `alertmanager.servers` shape; passed through untouched. `name` and `uri` are required.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "authentication": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "none": {
+              "type": "boolean",
+              "description": "Explicit acknowledgement that karma runs with no authentication. Required to enable karma without `header.name`."
+            },
+            "header": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "valueRe": {
+                  "type": "string"
+                },
+                "groupName": {
+                  "type": "string"
+                },
+                "groupValueRe": {
+                  "type": "string"
+                },
+                "groupValueSeparator": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "authorization": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "members"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "members": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "acl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "silences": {
+              "type": "array",
+              "description": "karma silence ACL rules (docs/ACLs.md in karma), passed through.",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "history": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "uri": {
+              "type": "string"
+            }
+          }
+        },
+        "extraConfig": {
+          "type": "object",
+          "description": "Raw karma configuration, deep-merged last. Unvalidated."
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "nodeSelector": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array"
+        },
+        "affinity": {
+          "type": "object"
+        }
+      }
+    },
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
@@ -985,6 +1132,13 @@
             "type": "object"
           },
           "description": "Kubernetes NetworkPolicyPeer objects; passed through untouched."
+        },
+        "karmaFrom": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Kubernetes NetworkPolicyPeer objects; passed through untouched. Who may reach karma. Empty means the release's own namespace. karma trusts its identity header, so this list is the authentication boundary."
         },
         "writersFrom": {
           "type": "array",

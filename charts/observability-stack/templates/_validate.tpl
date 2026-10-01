@@ -33,6 +33,7 @@ second debugging session.
 {{- include "observability-stack.validate.clientsFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
+{{- include "observability-stack.validate.karma" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
 {{- include "observability-stack.validate.writers" . -}}
 {{- include "observability-stack.validate.alertReaders" . -}}
@@ -97,6 +98,9 @@ a fetched VMRule, no Grafana for a fetched dashboard.
 {{- end -}}
 {{- if .Values.alertmanager.enabled -}}
 {{- fail "observability-stack: `mode` is \"operator-only\" but `alertmanager.enabled` is true. With vmalert refused above, nothing here would ever call it — set `alertmanager.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
+{{- if .Values.karma.enabled -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `karma.enabled` is true. karma is a console for an Alertmanager, and this mode runs none — set `karma.enabled: false`, or drop `mode` back to \"full\"." -}}
 {{- end -}}
 {{- if (.Values.grafana).enabled -}}
 {{- fail "observability-stack: `mode` is \"operator-only\" but `grafana.enabled` is true. There is no datasource here for it to read — set `grafana.enabled: false`, or drop `mode` back to \"full\"." -}}
@@ -254,6 +258,9 @@ where the reason above does not reach:
     (dict "key" "grafana.resources" "value" (.Values.grafana).resources)
     (dict "key" "backup.resources" "value" .Values.backup.resources)
 -}}
+{{- if .Values.karma.enabled -}}
+{{- $sites = append $sites (dict "key" "karma.resources" "value" .Values.karma.resources) -}}
+{{- end -}}
 {{- $policy := (.Values.resources).policy | default "burstable" -}}
 {{- range $site := $sites -}}
 {{- $r := $site.value | default dict -}}
@@ -275,7 +282,7 @@ written when those carried a default CPU limit keeps meaning "no limit".
 */ -}}
 {{- range $side, $m := dict "requests" $requests "limits" $limits -}}
 {{- range $res, $q := $m -}}
-{{- if and (kindIs "invalid" $q) (not (has $site.key (list "vmauth.resources" "vmalert.resources" "alertmanager.resources"))) -}}
+{{- if and (kindIs "invalid" $q) (not (has $site.key (list "vmauth.resources" "vmalert.resources" "alertmanager.resources" "karma.resources"))) -}}
 {{- fail (printf "observability-stack: %s.%s.%s is null. Helm deletes a null from this chart's own values, but passes it through unchanged to a vendored subchart's, and the API server then reads it as a quantity of 0 and refuses the object. A default on this component cannot be removed through values: under `resources.policy: burstable`, give it a whole number of cores well above the request instead (the node's core count leaves it effectively unthrottled)." $site.key $side (toString $res)) -}}
 {{- end -}}
 {{- end -}}
@@ -1689,6 +1696,117 @@ never stamps, and joins across clusters on a shared store.
 {{- $want := toString .Values.tenancy.clusterLabel -}}
 {{- if ne $got $want -}}
 {{- fail (printf "observability-stack: `tenancy.clusterLabel` is %q but `victoria-metrics-k8s-stack.global.clusterLabel` is %q. The vendored default rules join and aggregate on the second; every series in the stores carries the first. Left this way the recorded k8s-stack series carry no cluster identity, and on a shared store the joins match the same namespace and pod across clusters. Set `victoria-metrics-k8s-stack.global.clusterLabel: %s`." $want $got $want) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+karma, the alert console, and the notification links that point at it.
+
+The point of karma here is the AUTHOR of a silence: Alertmanager takes
+`createdBy` as free text, and karma with header authentication rewrites it
+to the signed-in user and applies silence ACLs. Every refusal below is a
+way for that to quietly not be true.
+
+- no `authentication.header.name` and no `authentication.none`: a console
+  that silences pages would run anonymously by accident;
+- a header name with no `valueRe`, or a groups header with no
+  `groupValueRe`: karma refuses to start (its own rule), and the Pod would
+  crash-loop instead of this render failing;
+- ACL rules and groups karma cannot honour: a rule naming a group that is
+  not declared protects nothing, and groups with no header authentication
+  never match a user;
+- `notifications.console: karma` with no `consoleUrl`, or with karma off:
+  a message whose silence link points at nothing.
+*/}}
+{{- define "observability-stack.validate.karma" -}}
+{{- $n := .Values.notifications | default dict -}}
+{{- $console := $n.console | default "alertmanager" -}}
+{{- if not (has $console (list "alertmanager" "karma")) -}}
+{{- fail (printf "observability-stack: notifications.console is %q, which is neither \"alertmanager\" nor \"karma\"." (toString $console)) -}}
+{{- end -}}
+{{- /*
+`consoleUrl` is embedded in an Alertmanager template exactly like
+`alertmanagerUrl` is, so it is held to the same shape.
+*/ -}}
+{{- with $n.consoleUrl -}}
+{{- if or (not (regexMatch "^https?://[^\\s/\"'`{}\\\\<>]" (toString .))) (regexMatch "[\\s\"'`{}\\\\<>]" (toString .)) (hasSuffix "/" (toString .)) -}}
+{{- fail (printf "observability-stack: notifications.consoleUrl is %q. It must be an absolute http:// or https:// URL with a host, without a trailing slash and without whitespace, quotes, braces or backslashes: the chart appends `/?m=...` to it and embeds it in an Alertmanager message template." (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $console "karma" -}}
+{{- if not $n.consoleUrl -}}
+{{- fail "observability-stack: notifications.console is \"karma\" but notifications.consoleUrl is empty. The Silence and View links are built on karma's external base URL (for example https://karma.example.com), and the chart cannot guess it." -}}
+{{- end -}}
+{{- if not .Values.karma.enabled -}}
+{{- fail "observability-stack: notifications.console is \"karma\" but karma.enabled is false. The message would link to a console this release does not run. Set `karma.enabled: true`, or leave `notifications.console` at \"alertmanager\"." -}}
+{{- end -}}
+{{- end -}}
+{{- if .Values.karma.enabled -}}
+{{- $k := .Values.karma -}}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- $h := $k.authentication.header -}}
+{{- if and $k.authentication.none $h.name -}}
+{{- fail "observability-stack: karma.authentication.none is true and karma.authentication.header.name is set. They contradict: one says karma runs anonymously, the other that it trusts a header. Keep one." -}}
+{{- end -}}
+{{- if and (not $k.authentication.none) (not $h.name) -}}
+{{- fail "observability-stack: karma.enabled is true with no karma.authentication.header.name. A console that silences pages must not run anonymously by accident: without authentication karma creates every silence under whatever name the browser sends, which is the free-text `createdBy` problem it is here to solve. Set `karma.authentication.header.name` to the header your SSO gateway sets (for example X-Auth-Request-Email), or acknowledge an anonymous console with `karma.authentication.none: true`." -}}
+{{- end -}}
+{{- if $h.name -}}
+{{- if not (regexMatch "^[A-Za-z0-9-]+$" (toString $h.name)) -}}
+{{- fail (printf "observability-stack: karma.authentication.header.name is %q. It must be an HTTP header name: letters, digits and dashes." (toString $h.name)) -}}
+{{- end -}}
+{{- if not $h.valueRe -}}
+{{- fail "observability-stack: karma.authentication.header.name is set but karma.authentication.header.valueRe is empty. karma requires `value_re` whenever a header name is set, and refuses to start without it. The default is ^(.+)$." -}}
+{{- end -}}
+{{- end -}}
+{{- if and $h.groupName (not $h.groupValueRe) -}}
+{{- fail "observability-stack: karma.authentication.header.groupName is set but karma.authentication.header.groupValueRe is empty. karma requires `group_value_re` whenever a groups header name is set, and refuses to start without it." -}}
+{{- end -}}
+{{- if and (or $h.groupValueRe $h.groupValueSeparator) (not $h.groupName) -}}
+{{- fail "observability-stack: karma.authentication.header.groupValueRe or groupValueSeparator is set without groupName. karma would read no groups header, and the value would do nothing." -}}
+{{- end -}}
+{{- if and $k.authorization.groups (not $h.name) -}}
+{{- fail "observability-stack: karma.authorization.groups is set without karma.authentication.header.name. Groups map the user names the authentication layer passes, and with no header authentication there are none: no ACL scoped to a group would ever match." -}}
+{{- end -}}
+{{- $groupNames := dict -}}
+{{- range $g := $k.authorization.groups -}}
+{{- if or (not $g.name) (not $g.members) -}}
+{{- fail "observability-stack: every karma.authorization.groups entry needs a `name` and a non-empty `members` list." -}}
+{{- end -}}
+{{- if hasKey $groupNames $g.name -}}
+{{- fail (printf "observability-stack: karma.authorization.groups declares %q twice." (toString $g.name)) -}}
+{{- end -}}
+{{- $_ := set $groupNames $g.name true -}}
+{{- end -}}
+{{- range $i, $r := $k.acl.silences -}}
+{{- if not (has (toString $r.action) (list "allow" "block" "requireMatcher")) -}}
+{{- fail (printf "observability-stack: karma.acl.silences[%d].action is %q. karma knows allow, block and requireMatcher." $i (toString $r.action)) -}}
+{{- end -}}
+{{- range $g := (($r.scope).groups | default list) -}}
+{{- if not (hasKey $groupNames $g) -}}
+{{- fail (printf "observability-stack: karma.acl.silences[%d].scope.groups names %q, which karma.authorization.groups does not declare. A rule scoped to an unknown group applies to nobody." $i (toString $g)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $names := dict -}}
+{{- if $eff.alertmanager -}}
+{{- $_ := set $names "alertmanager" true -}}
+{{- end -}}
+{{- range $i, $s := ($k.alertmanagers | default list) -}}
+{{- if or (not $s.name) (not $s.uri) -}}
+{{- fail (printf "observability-stack: karma.alertmanagers[%d] needs a `name` and a `uri`." $i) -}}
+{{- end -}}
+{{- if hasKey $names $s.name -}}
+{{- fail (printf "observability-stack: karma.alertmanagers[%d].name is %q, which is already taken. This release's own Alertmanager is named \"alertmanager\" and every name must be unique." $i (toString $s.name)) -}}
+{{- end -}}
+{{- $_ := set $names $s.name true -}}
+{{- end -}}
+{{- if not $names -}}
+{{- fail "observability-stack: karma.enabled is true but karma has no Alertmanager to read: alertmanager.enabled is false and karma.alertmanagers is empty. Name the Alertmanager the estate runs in karma.alertmanagers." -}}
+{{- end -}}
+{{- if and $k.history.enabled (not $k.history.uri) -}}
+{{- fail "observability-stack: karma.history.enabled is true but karma.history.uri is empty. karma needs the Prometheus-compatible endpoint that holds the ALERTS series." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

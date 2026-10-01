@@ -35,6 +35,8 @@ one fact (see the refusal in _validate.tpl), and a consumer who already
 set the vmalert one gets a working Grafana link in Slack for free.
 */}}
 {{- $externalUrl := $n.externalUrl | default .Values.vmalert.externalUrl }}
+{{- $console := $n.console | default "alertmanager" }}
+{{- $silenceMinutes := $n.silenceMinutes | default 60 | int }}
 {{- /*
 Slack destinations: one receiver per distinct (workspace, channel, mention) any
 severity tier, the catch-all or a route's per-tier override resolves to.
@@ -344,8 +346,20 @@ spec:
               {{- /*
               Only with `notifications.alertmanagerUrl`: a link to the
               pod address nobody can open is worse than no link.
+
+              `notifications.console: karma` replaces the Silence link
+              with one that opens karma's silence form, prefilled
+              (`?m=` is karma's own base64 JSON, see docs/notifications.md,
+              "Console: karma"), and adds a `View:` link filtered to this
+              alert group. Alertmanager's `base64encode` is the URL-safe
+              alphabet and the karma UI decodes with `atob`, the standard
+              one, so the two characters that differ are put back before
+              the whole value is URL-escaped.
               */}}
-              {{- if $n.alertmanagerUrl }}
+              {{- if eq $console "karma" }}
+              Silence: {{ $n.consoleUrl }}/?m={{ `{{ $m := list }}{{ range .CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" ` }}{{ $silenceMinutes }}{{ ` "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}` }}
+              View: {{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}
+              {{- else if $n.alertmanagerUrl }}
               Silence: {{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} $p.Name {{ "}}" }}%3D%22{{ "{{" }} $p.Value {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D
               {{- end }}
       {{- end }}
