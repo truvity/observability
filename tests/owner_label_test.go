@@ -86,7 +86,10 @@ func TestOwnerStampMetricsNoDefault(t *testing.T) {
 	assert.Equal(t, "acme", got)
 }
 
-var ottlOwner = regexp.MustCompile(`set\(attributes\["owner"\], "([^"]+)"\) where attributes\["owner"\] == nil(?: and attributes\["k8s.namespace.name"\] != nil and IsMatch\(attributes\["k8s.namespace.name"\], "([^"]+)"\))?`)
+var ottlOwner = regexp.MustCompile(
+	`set\(attributes\["owner"\], "([^"]+)"\) where attributes\["owner"\] == nil` +
+		`(?: and attributes\["k8s.namespace.name"\] != nil` +
+		` and IsMatch\(attributes\["k8s.namespace.name"\], "([^"]+)"\))?`)
 
 // The gateway's OTTL, for each of the three signals, resolves the same
 // owners the metric rules do (evaluated here in Go, first match wins, then
