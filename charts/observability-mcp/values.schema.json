@@ -197,6 +197,33 @@
         "enabled": { "type": "boolean" },
         "minAvailable": { "type": "integer", "minimum": 1 }
       }
+    },
+    "httpRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "name": { "type": "string", "pattern": "^([a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?)?$" },
+        "parentRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "group": { "type": "string" },
+              "kind": { "type": "string" },
+              "name": { "type": "string", "minLength": 1 },
+              "namespace": { "type": "string" },
+              "sectionName": { "type": "string" },
+              "port": { "type": "integer" }
+            }
+          }
+        },
+        "hostnames": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
     }
   }
 }

@@ -86,6 +86,7 @@ collide.
 | `networkPolicy.egress.{issuer,vmauth,grafana}` | `[]` | Where the issuer, the stores' vmauth and Grafana are reached. Required for what is enabled. |
 | `networkPolicy.metricsFrom` | `[]` | Optional: who may scrape the aggregator's `/metrics` (port 9090). |
 | `podDisruptionBudget.enabled` | `false` | Refused with fewer than two replicas. |
+| `httpRoute.*` | disabled | Optional HTTPRoute for the connectors; see "Exposing connectors through a Gateway". |
 
 ### A store
 
@@ -332,6 +333,47 @@ audience: the Grafana chart's `workloadAuth.audience` and this chart's
 `grafana.outbound.audience`; and registers an exchange client
 (`grafana.outbound.clientId`) in the issuer's policy that may mint it.
 
+## Exposing connectors through a Gateway
+
+The chart can render the Gateway API route for its connectors: set
+`httpRoute.enabled` and name the Gateway or ListenerSet in `httpRoute.parentRefs`
+(passed through as written: group, kind, name, namespace, sectionName).
+
+```yaml
+httpRoute:
+  enabled: true
+  parentRefs:
+    - {group: gateway.networking.k8s.io, kind: ListenerSet, name: mcp, namespace: gateway}
+  hostnames: [mcp.example.com]
+```
+
+One `HTTPRoute` is rendered in the release namespace (named `observability-mcp`
+unless `httpRoute.name` says otherwise). For each enabled connector, a store or
+Grafana, it routes two PathPrefix matches to the connector's Service on the
+proxy port: the resourceURL's path, and
+`/.well-known/oauth-protected-resource<path>` (RFC 9728 puts the well-known
+segment before the resource path). One more Exact rule sends the bare
+`/.well-known/oauth-protected-resource` to the Grafana connector when it is
+enabled, else to the FIRST store: on a host shared by several connectors that
+document can name only one. The gateway does not rewrite paths; the proxy maps
+its whole resource path onto its upstream. `/healthz` and `/readyz` are not
+routed. There is no request timeout (`timeouts.request: 0s`): MCP holds a
+response open as a server-sent event stream and a default route timeout would
+cut every long tool call.
+
+Paths come from each `resourceURL` with scheme and host stripped. The chart
+refuses a resourceURL with no path, two connectors at one path, and, when
+`hostnames` is set, a resourceURL on a host not listed there.
+
+**The route ships with the Services on purpose.** A route that is applied by a
+different release, earlier than the Services it names, resolves to
+`BackendNotFound`; a Gateway API health check reads that as Degraded, and the
+Degraded route degrades its owner (and, under sync-wave health gating, every
+wave behind it, including the one that would create the Services). Rendering
+the route in the same release as the Services means both appear in one sync and
+the route is never without its backends. The Gateway, ListenerSet, certificate
+and DNS stay with whoever owns the edge; only the route moves here.
+
 ## Network
 
 Ingress: the peers in `networkPolicy.ingressFrom`, on the proxy's MCP port;
@@ -409,6 +451,7 @@ only with a `caBundle`, `OUTBOUND_CA_FILE`.
 | `grafana.url` empty; `upstreams.grafana.enabledTools` empty | Nothing to forward to; mcp-grafana would enable everything, writes included. |
 | `networkPolicy.ingressFrom`, `egress.issuer`, `egress.vmauth` (with a store) or `egress.grafana` (with Grafana) empty | A rule that admits, or reaches, nobody looks like a scoped one. |
 | `podDisruptionBudget.enabled` with fewer than two replicas | A budget of one on one replica blocks every drain. |
+| `httpRoute.enabled` with no `parentRefs`, a connector resourceURL with no path or at another's path, or on a host not in `httpRoute.hostnames` | A route that attaches nowhere, takes the whole host, cannot tell connectors apart, or does not match the URL clients use. |
 
 An unknown key fails the schema (a leftover 0.16 `servers:` among them).
 Each refusal has a fixture under `tests/invalid/observability-mcp/`.
