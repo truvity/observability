@@ -1,0 +1,356 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    vmalert: platform
+spec:
+  groups:
+    - name: platform-alerts.backups
+      interval: 30s
+      rules:
+        # A CronJob that has not SUCCEEDED within its schedule plus slack.
+        # This is the rule that matters: a CronJob which stops being
+        # scheduled at all never produces a failed Job, so a rule watching
+        # failures reports healthy while nothing runs. Measured healthy
+        # range for a daily job: age resets below 24h on every run.
+        - alert: CronJobNotSucceeding
+          expr: >-
+            time() - max by (k8s_cluster_name, owner, namespace, cronjob) (
+              kube_cronjob_status_last_successful_time{namespace=~"example-.*"}
+            ) > 50h
+            unless on (k8s_cluster_name, namespace, cronjob)
+              kube_cronjob_spec_suspend{namespace=~"example-.*"} == 1
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded within 50h"
+            description: >-
+              No successful run in 50h. A job that has stopped being
+              scheduled produces no failures at all, so this is the only rule that
+              can see it. Check that the CronJob exists, is not suspended, and that
+              its last Job completed.
+            runbook_url: "https://runbooks.example.com/CronJobNotSucceeding"
+        # A Job that failed outright — but only the NEWEST Job of each
+        # CronJob. `failedJobsHistoryLimit` keeps failed Job objects
+        # around long after a later run of the same CronJob has
+        # succeeded, and `kube_job_status_failed` never expires that
+        # memory on its own: reading it directly fires forever on a
+        # failure a later run already fixed. "Newest" is decided by
+        # `kube_job_created` — every Job object carries it from the
+        # instant it exists, unlike `kube_job_status_start_time`, which
+        # stays unset until a pod actually runs and so cannot outrank an
+        # older failure while the new run is merely pending. See
+        # docs/safety.md.
+        #
+        # Scoped to Jobs owned by a CronJob
+        # (`kube_job_owner{owner_kind="CronJob"}`): a standalone Job has
+        # no schedule and so no later run to supersede it, and this
+        # rule's whole intent — see its name — is backup CronJobs. A
+        # standalone Job that fails no longer raises THIS alert.
+        - alert: BackupJobFailed
+          expr: >-
+            WITH (
+              cronjob_jobs = (
+                kube_job_created{namespace=~"example-.*"}
+                * on (k8s_cluster_name, namespace, job_name) group_left(owner_name)
+                kube_job_owner{namespace=~"example-.*", owner_kind="CronJob"}
+              ),
+              newest_per_cronjob = max by (k8s_cluster_name, namespace, owner_name) (cronjob_jobs),
+              suspended_cronjobs = label_replace(
+                kube_cronjob_spec_suspend{namespace=~"example-.*"} == 1,
+                "owner_name", "$1", "cronjob", "(.+)"
+              )
+            )
+            max by (k8s_cluster_name, owner, namespace, job_name) (
+              kube_job_status_failed{namespace=~"example-.*"}
+              and on (k8s_cluster_name, namespace, job_name) (
+                cronjob_jobs == on (k8s_cluster_name, namespace, owner_name) group_left() newest_per_cronjob
+                unless on (k8s_cluster_name, namespace, owner_name) suspended_cronjobs
+              )
+            ) > 0
+          labels:
+            env: example
+            severity: info
+            tenant: example
+          annotations:
+            summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed"
+            description: >-
+              The Job reported a failed pod. If it is a backup, treat the last
+              successful run as the real recovery point until this is resolved.
+            runbook_url: "https://runbooks.example.com/BackupJobFailed"
+    - name: platform-alerts.write-path
+      interval: 30s
+      rules:
+        # The write-path deadman for metrics.
+        #
+        # An alert on a store's read-only FLAG cannot fire in its own
+        # headline case: that sample is written INTO the store that is
+        # refusing writes. Reads keep working when writes do not, so
+        # watching the rows counter stop is the only rule that sees it.
+        #
+        # `or vector(0)` makes the rule fire for both shapes of the
+        # failure: the counter stops moving, and the counter disappears
+        # because the store is gone.
+        - alert: WritePathDead
+          expr: >-
+            (sum(rate(example_rows_inserted_total[10m])) or vector(0)) == 0
+          for: 20m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+            store: "metrics"
+          annotations:
+            summary: "No rows written to the metrics store for 20m"
+            description: >-
+              example_rows_inserted_total has not advanced in 20m. The store may be
+              read-only, out of disk, or gone; reads can keep working throughout, so
+              nothing else will report this.
+            runbook_url: "https://runbooks.example.com/WritePathDead"
+        # The write-path deadman for logs.
+        #
+        # An alert on a store's read-only FLAG cannot fire in its own
+        # headline case: that sample is written INTO the store that is
+        # refusing writes. Reads keep working when writes do not, so
+        # watching the rows counter stop is the only rule that sees it.
+        #
+        # `or vector(0)` makes the rule fire for both shapes of the
+        # failure: the counter stops moving, and the counter disappears
+        # because the store is gone.
+        - alert: WritePathDead
+          expr: >-
+            (sum(rate(example_log_rows_ingested_total[10m])) or vector(0)) == 0
+          for: 20m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+            store: "logs"
+          annotations:
+            summary: "No rows written to the logs store for 20m"
+            description: >-
+              example_log_rows_ingested_total has not advanced in 20m. The store may be
+              read-only, out of disk, or gone; reads can keep working throughout, so
+              nothing else will report this.
+            runbook_url: "https://runbooks.example.com/WritePathDead"
+    - name: platform-alerts.volumes
+      interval: 30s
+      rules:
+        # A mounted filesystem far smaller than the claim that satisfied it
+        # cannot legitimately happen: it means the real volume is not
+        # mounted and the pod is writing to the node's root filesystem
+        # while reporting 1/1 Running. Measured healthy range is 0.95-0.99
+        # of the claim (filesystem overhead); the threshold sits well below
+        # it so overhead can never reach it and a wrong mount always does.
+        - alert: VolumeSmallerThanClaimed
+          expr: >-
+            kubelet_volume_stats_capacity_bytes{namespace=~"example-.*"}
+            / on (k8s_cluster_name, namespace, persistentvolumeclaim)
+            kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=~"example-.*"}
+            < 0.25
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is mounted on a filesystem far smaller than it claimed"
+            description: >-
+              The mounted filesystem is under 0.25 of the claim. The
+              volume is probably not mounted at all and the pod is writing to the
+              node's root filesystem. Data written since it started is not on the
+              volume.
+            runbook_url: "https://runbooks.example.com/VolumeSmallerThanClaimed"
+    - name: platform-alerts.store-limits
+      interval: 30s
+      rules:
+        # Read from the store's OWN exported limit, never a constant
+        # written here: a guessed constant is how a rule never fires or
+        # always does. Fires while there is still headroom to act.
+        - alert: StoreApproachingReadOnly
+          expr: >-
+            example_free_disk_space_bytes / example_free_disk_space_limit_bytes < 3
+          labels:
+            env: example
+            severity: critical
+            tenant: example
+            store: "metrics"
+          annotations:
+            summary: "The metrics store is approaching its read-only limit"
+            description: >-
+              Free space is under 3x the limit at which this store stops
+              accepting writes. It is still serving reads and will keep doing so
+              after it stops writing, so nothing else will report this.
+            runbook_url: "https://runbooks.example.com/StoreApproachingReadOnly"
+    - name: platform-alerts.kargo
+      interval: 30s
+      rules:
+        # A Kargo Stage stuck on a promotion error.
+        #
+        # `kargo_stage_condition` is a gauge kube-state-metrics' own
+        # customResourceState feature exports from the Stage's own
+        # `.status.conditions`: 1 while the condition named by `type` and
+        # `reason` is True, 0 while it is False or Unknown. This chart
+        # does not configure that feature — see docs/kube-state-metrics.md
+        # for the config that produces it.
+        - alert: KargoStagePromotionErrored
+          expr: >-
+            kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
+          for: 20m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "Kargo Stage {{ $labels.namespace }}/{{ $labels.stage }} has not recovered from a promotion error"
+            description: >-
+              The Stage's Ready condition has read LastPromotionErrored for 20m.
+              Re-promote the Freight from the Kargo UI or CLI once the underlying
+              failure is fixed; the Stage will not retry itself.
+            runbook_url: "https://runbooks.example.com/KargoStagePromotionErrored"
+        # The same failure, corroborated by the Promotion object itself.
+        #
+        # `kargo_promotion_phase` is a StateSet over Pending, Running,
+        # Succeeded, Failed, Errored and Aborted: 1 on the Promotion's
+        # current phase, 0 on every other. Joining on (namespace, stage)
+        # against the Stage condition above is what tells an Errored
+        # promotion whose Stage has already recovered (a retry that
+        # succeeded since) apart from one still stuck.
+        - alert: KargoPromotionErrored
+          expr: >-
+            kargo_promotion_phase{phase="Errored"} == 1
+            and on (k8s_cluster_name, namespace, stage) kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
+          for: 20m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "Kargo Promotion {{ $labels.namespace }}/{{ $labels.promotion }} errored and its Stage has not recovered"
+            description: >-
+              The Promotion has sat in the Errored phase for 20m and its
+              Stage still reads LastPromotionErrored. Re-promote the Freight from
+              the Kargo UI or CLI once the underlying failure is fixed.
+            runbook_url: "https://runbooks.example.com/KargoPromotionErrored"
+        # The deadman for the two rules above.
+        #
+        # Same shape as the write-path deadman: a rule that reads
+        # `kargo_stage_condition` or `kargo_promotion_phase` cannot itself
+        # notice those series going away, because it evaluates to nothing
+        # rather than to a value it could compare. Either kube-state-metrics'
+        # `customResourceState` config for Kargo's CRDs was never applied,
+        # was edited away, or the whole scrape went dark — every case the
+        # two rules above go silent right along with it.
+        - alert: KargoStateMetricsAbsent
+          expr: >-
+            absent(kargo_stage_condition{type="Ready"}) or absent(kargo_promotion_phase)
+          for: 45m
+          labels:
+            env: example
+            severity: info
+            tenant: example
+          annotations:
+            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for 45m"
+            description: >-
+              Neither kargo_stage_condition{type="Ready"} nor
+              kargo_promotion_phase has been seen in 45m, so
+              KargoStagePromotionErrored and KargoPromotionErrored cannot fire
+              even if a promotion is stuck. Check kube-state-metrics'
+              customResourceState config against docs/kube-state-metrics.md, and
+              that the scrape itself is still up.
+            runbook_url: "https://runbooks.example.com/KargoStateMetricsAbsent"
+    - name: platform-alerts.pending-pods
+      interval: 30s
+      rules:
+        # A pod the scheduler has declared unschedulable for `for`.
+        #
+        # `kube_pod_status_unschedulable` is 1 while the pod's PodScheduled
+        # condition is False with reason Unschedulable and has no series
+        # otherwise, so `== 1` only states what the series already means
+        # (it keeps the rule right if a kube-state-metrics version emits 0
+        # instead of omitting). On a cluster that adds nodes on demand this
+        # is the signal that provisioning did not happen: the pod is what
+        # the provisioner reacts to, and it is still waiting.
+        - alert: PodUnschedulable
+          expr: >-
+            max by (k8s_cluster_name, owner, namespace, pod) (
+              kube_pod_status_unschedulable{namespace=~"example-.*"} == 1
+            )
+          for: 10m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been unschedulable for 10m"
+            description: >-
+              The scheduler has not been able to place this pod for 10m.
+              On a cluster that provisions nodes on demand that means no node was
+              added for it (a provisioning failure, a quota or capacity limit, or
+              a request no node type can satisfy); on any cluster it can also be
+              an affinity, taint or quota the pod can never meet. The pod's
+              events name the scheduler's reason.
+            runbook_url: "https://runbooks.example.com/PodUnschedulable"
+    - name: platform-alerts.node-claims
+      interval: 30s
+      rules:
+        # A NodeClaim whose Launched, Registered or Initialized condition is
+        # not True for `for`.
+        #
+        # `nodeclaim_status_condition` is a gauge kube-state-metrics'
+        # customResourceState exports from each NodeClaim's
+        # `.status.conditions`: 1 while the condition is True, 0 while it is
+        # False or Unknown. A claim that is still being created has no
+        # condition yet and so no series: the rule sees it only once
+        # Karpenter has written the condition, which is when it starts to
+        # count as not-True. Ready is left out on purpose: it is the
+        # conjunction of these three, so it would only repeat them.
+        - alert: NodeClaimNotReady
+          expr: >-
+            max by (k8s_cluster_name, owner, nodeclaim, nodepool, type) (
+              nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} == 0
+            )
+          for: 10m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "NodeClaim {{ $labels.nodeclaim }} ({{ $labels.nodepool }}) has not reached {{ $labels.type }} for 10m"
+            description: >-
+              Karpenter created this NodeClaim but its {{ $labels.type }}
+              condition has not become True in 10m. Launched means the
+              instance was created, Registered that it joined the cluster as a
+              node, Initialized that it is ready for pods. Karpenter deletes a
+              claim that has not registered after 15 minutes and tries again, so
+              an alert that clears by itself is a retry. `kubectl describe
+              nodeclaim` shows the condition's reason and message.
+            runbook_url: "https://runbooks.example.com/NodeClaimNotReady"
+        # The deadman for the rule above: the series not being exported at
+        # all (the preset never applied, or the scrape is dark) reads as
+        # healthy to a rule that compares its values.
+        - alert: NodeClaimMetricsAbsent
+          expr: >-
+            absent(nodeclaim_status_condition{type="Launched"})
+          for: 30m
+          labels:
+            env: example
+            severity: warning
+            tenant: example
+          annotations:
+            summary: "kube-state-metrics has not exported NodeClaim conditions for 30m"
+            description: >-
+              nodeclaim_status_condition{type="Launched"} has not been seen in
+              30m, so NodeClaimNotReady cannot fire even if a
+              node is failing to come up. Check that
+              `kubeStateMetrics.customResources.nodeClaims` is on in
+              observability-emitters and that the scrape is up. On a cluster
+              that can have no NodeClaims at all this alert is expected.
+            runbook_url: "https://runbooks.example.com/NodeClaimMetricsAbsent"

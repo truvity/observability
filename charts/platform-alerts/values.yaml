@@ -45,6 +45,20 @@ interval: 1m
 # names its clusters some other way and does not want the label matched).
 clusterLabel: k8s_cluster_name
 
+# -- OPT-IN (empty, the default, changes nothing): the label that names the
+# company that owns a workload, as stamped by `observability-emitters`
+# `tenancy.owners` (`owner`). A rule that aggregates (`max by (...)`) keeps
+# only the labels it lists, so without this the alert would reach
+# Alertmanager without the label a route on `owner` needs. Set, it joins
+# the `by (...)` of every aggregating rule that is about a namespaced
+# object (CronJobNotSucceeding, BackupJobFailed, PodUnschedulable) and of
+# NodeClaimNotReady (whose series carry only the default owner). Rules
+# that do not aggregate (the kube_* comparisons, the Kargo rules) already
+# keep every label of their left side. The store rules (WritePathDead,
+# StoreApproachingReadOnly) are about a store, not a namespace, and carry
+# no owner: put `owner` in `commonLabels` for them if the estate wants one.
+ownerLabel: ""
+
 # -- Only consider objects in namespaces matching this regular expression.
 # `.*` is every namespace; an estate that runs these rules for the platform
 # alone narrows it here.

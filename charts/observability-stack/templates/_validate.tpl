@@ -1043,8 +1043,8 @@ looking exactly like a route that works.
 {{- end -}}
 {{- end -}}
 {{- range $k, $_ := ($r.match | default dict) -}}
-{{- if not (has $k (list "k8s_cluster_name" "k8s_namespace_name")) -}}
-{{- fail (printf "observability-stack: notifications.routes[%d].match has key %q. The collectors this chart's rules run against stamp exactly two dimensions on every alert — k8s_cluster_name and k8s_namespace_name — so a route on anything else (tenant, env, team, …) matches nothing any rule actually carries." $i (toString $k)) -}}
+{{- if not (has $k (concat (list "k8s_cluster_name" "k8s_namespace_name") (without (list (toString ($n.ownerLabel | default ""))) ""))) -}}
+{{- fail (printf "observability-stack: notifications.routes[%d].match has key %q. The collectors this chart's rules run against stamp exactly two dimensions on every alert — k8s_cluster_name and k8s_namespace_name — so a route on anything else (tenant, env, team, …) matches nothing any rule actually carries. A route on the owning company needs `notifications.ownerLabel` set to the label the emitters stamp (`tenancy.owners` in observability-emitters)." $i (toString $k)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

@@ -41,6 +41,17 @@ expressions byte for byte.
 */ -}}
 {{- $c := "" -}}
 {{- if .Values.clusterLabel -}}{{- $c = printf "%s, " .Values.clusterLabel -}}{{- end -}}
+{{- /*
+`ownerLabel` (opt-in, empty renders the previous expressions byte for
+byte): an aggregation keeps only the labels in its `by (...)`, so a rule
+that aggregates drops the `owner` label the alert would be routed on.
+`$b` is `$c` plus that label, and is used in the aggregating `by (...)`
+lists only; the `on (...)` matches keep `$c`, because both sides of a join
+carry the same owner (it is derived from the same namespace) and matching
+on it would add nothing but a way to fail.
+*/ -}}
+{{- $b := $c -}}
+{{- if .Values.ownerLabel -}}{{- $b = printf "%s%s, " $c .Values.ownerLabel -}}{{- end -}}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:
@@ -80,7 +91,7 @@ spec:
         # range for a daily job: age resets below 24h on every run.
         - alert: CronJobNotSucceeding
           expr: >-
-            time() - max by ({{ $c }}namespace, cronjob) (
+            time() - max by ({{ $b }}namespace, cronjob) (
               kube_cronjob_status_last_successful_time{namespace=~"{{ $ns }}"}
             ) > {{ $g.maxSuccessAge }}
             {{- if $ignoreSuspended }}
@@ -130,7 +141,7 @@ spec:
               )
               {{- end }}
             )
-            max by ({{ $c }}namespace, job_name) (
+            max by ({{ $b }}namespace, job_name) (
               kube_job_status_failed{namespace=~"{{ $ns }}"}
               and on ({{ $c }}namespace, job_name) (
                 cronjob_jobs == on ({{ $c }}namespace, owner_name) group_left() newest_per_cronjob
@@ -331,7 +342,7 @@ spec:
         # the provisioner reacts to, and it is still waiting.
         - alert: PodUnschedulable
           expr: >-
-            max by ({{ $c }}namespace, pod) (
+            max by ({{ $b }}namespace, pod) (
               kube_pod_status_unschedulable{namespace=~"{{ $pns }}"} == 1
             )
           for: {{ $g.for }}
@@ -367,7 +378,7 @@ spec:
         # conjunction of these three, so it would only repeat them.
         - alert: NodeClaimNotReady
           expr: >-
-            max by ({{ $c }}nodeclaim, nodepool, type) (
+            max by ({{ $b }}nodeclaim, nodepool, type) (
               nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} == 0
             )
           for: {{ $g.for }}

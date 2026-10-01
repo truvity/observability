@@ -2066,3 +2066,15 @@ here so the next person to write a backup job reads it.
 No rule fires on a store's read-only flag, on a "backup succeeded" gauge
 alone, or on anything else whose absence is indistinguishable from health.
 Every rule in this chart can see its own failure case.
+
+## An alert routed to the wrong company
+
+`tenancy.owners` stamps the label an Alertmanager route reads to pick a
+company's chat, so a wrong owner is a disclosure, not a cosmetic error.
+Refused at render: an owner or pattern that is not a plain name (a `.` or
+`|` would be read as a regular expression and widen the owner's reach), an
+owner with no pattern, a namespace claimed by two owners (identical
+pattern, or a literal one a glob already covers), a `defaultOwner` with no
+owners, and a route on `owner` while `notifications.ownerLabel` is unset. An
+`owner` an application sends itself is removed before the namespace-derived
+one is written, on every path. See docs/tenancy-owner.md.

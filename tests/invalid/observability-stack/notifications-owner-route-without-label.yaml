@@ -1,0 +1,23 @@
+# expect: A route on the owning company needs
+# A route on `owner` with `notifications.ownerLabel` unset matches nothing
+# a rule carries and pages nobody; refused.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+  routes:
+    - match: {owner: example-owner}
+      critical: "#alerts-example-tenant"

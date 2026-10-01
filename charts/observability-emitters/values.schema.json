@@ -146,6 +146,20 @@
         "environment": {
           "type": "string",
           "description": "The environment tier, the value of deployment.environment.name (production, staging, development, test, or any plain name). Descriptive, never a key. Required; blank is refused at render."
+        },
+        "owners": {
+          "type": "object",
+          "description": "OPT-IN. Owner name to the namespace patterns (`*` globs) it owns, stamped as `owner` on every series, OTLP log record and span so Alertmanager can route by company. Empty renders nothing. Names and patterns are shape-checked at render.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "defaultOwner": {
+          "type": "string",
+          "description": "The owner of everything no pattern matches. Empty: unmatched series carry no `owner`. Refused unless `owners` is non-empty."
         }
       }
     },
