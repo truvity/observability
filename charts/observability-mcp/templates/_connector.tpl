@@ -202,6 +202,11 @@ spec:
             - name: sa-token
               mountPath: /var/run/observability-mcp
               readOnly: true
+            {{- if .caBundle }}
+            - name: outbound-ca
+              mountPath: {{ dir (include "observability-mcp.outboundCAFile" .) }}
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir:
@@ -219,6 +224,23 @@ spec:
                   audience: {{ $root.Values.serviceAccountToken.audience | quote }}
                   expirationSeconds: {{ $root.Values.serviceAccountToken.expirationSeconds }}
                   path: sa-token
+        {{- if .caBundle }}
+        {{- /* The one key, under a fixed file name: OUTBOUND_CA_FILE names it. */}}
+        - name: outbound-ca
+          {{- if .caBundle.configMap }}
+          configMap:
+            name: {{ .caBundle.configMap.name | quote }}
+            items:
+              - key: {{ .caBundle.configMap.key | quote }}
+                path: {{ base (include "observability-mcp.outboundCAFile" .) }}
+          {{- else }}
+          secret:
+            secretName: {{ .caBundle.secret.name | quote }}
+            items:
+              - key: {{ .caBundle.secret.key | quote }}
+                path: {{ base (include "observability-mcp.outboundCAFile" .) }}
+          {{- end }}
+        {{- end }}
 {{- if $root.Values.networkPolicy.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -261,18 +283,20 @@ spec:
         {{- end }}
     {{- if $isStore }}
     # 2. The store's vmauth.
+    {{- /* The port is the one the POD listens on: `vmauth.podPort` when set, else the URL's (right only when the URL names the pod, or the Service port equals the pod port). */}}
     - to:
         {{- toYaml $root.Values.networkPolicy.egress.vmauth | nindent 8 }}
       ports:
         - protocol: TCP
-          port: {{ include "observability-mcp.urlPort" .target }}
+          port: {{ .podPort | default (include "observability-mcp.urlPort" .target) }}
     {{- else }}
     # 2. Grafana.
+    {{- /* The port is the one the POD listens on: `grafana.podPort` when set, else the URL's (the Service port, not the pod's when the Service maps one to the other). */}}
     - to:
         {{- toYaml $root.Values.networkPolicy.egress.grafana | nindent 8 }}
       ports:
         - protocol: TCP
-          port: {{ include "observability-mcp.urlPort" .target }}
+          port: {{ .podPort | default (include "observability-mcp.urlPort" .target) }}
     {{- end }}
     # 3. Cluster DNS.
     - to:

@@ -246,6 +246,16 @@ upstreams:
 #                 host, no path; the proxy's outbound side forwards there.
 #                 `metricsPath` overrides `upstreams.victoriametrics.
 #                 entrypointPath` (the stack's `/prometheus`).
+#                 `caBundle` optional: {configMap: {name, key}} OR
+#                 {secret: {name, key}} (exactly one), a PEM bundle for a
+#                 private CA that signs an https `url`. Mounted read-only
+#                 into the proxy and given to it as `OUTBOUND_CA_FILE`
+#                 (appended to the system roots, used for this target
+#                 only). Refused with an http url. Needs the resource-proxy
+#                 release that adds OUTBOUND_CA_FILE.
+#                 `podPort` optional integer: the port vmauth's POD
+#                 listens on, for the NetworkPolicy's egress rule. READ
+#                 THE TRAP below.
 #   outbound      required: {tokenEndpoint, clientId, audience}. How this
 #                 workload gets the token the store's vmauth accepts: an
 #                 RFC 8693 exchange of the pod's ServiceAccount token at
@@ -263,6 +273,15 @@ upstreams:
 #
 # What the store's vmauth must admit for the connector's principal, and
 # which tools need what, is in docs/mcp.md.
+#
+# THE SERVICE-PORT TRAP. The egress port is derived from `vmauth.url`, which
+# names a SERVICE (say `vmauth.monitoring.svc:8427`), but a NetworkPolicy
+# matches the POD's port after the Service has translated it. When the
+# Service maps port 80 to pod port 8427, the derived port (80) matches
+# nothing and every tool call times out with a policy that looks right.
+# Set `podPort` whenever the Service port differs from the pod's. For a
+# cross-cluster https url there is no pod peer: `networkPolicy.egress.vmauth`
+# is an `ipBlock`, and the port is the URL's (leave `podPort` unset).
 #
 #   stores:
 #     - name: primary
@@ -290,6 +309,22 @@ grafana:
   # -- Grafana's URL as the pod reaches it: scheme and host, no path. The
   # proxy's outbound side forwards there. Required while enabled.
   url: ""
+  # -- Optional: a PEM CA bundle for a private CA that signs an https `url`,
+  # from exactly one of {configMap: {name, key}} or {secret: {name, key}}.
+  # Mounted read-only into the proxy and wired to `OUTBOUND_CA_FILE`
+  # (appended to the system roots, used for Grafana only). Refused with an
+  # http `url`. Needs the resource-proxy release that adds OUTBOUND_CA_FILE.
+  caBundle: {}
+  # -- Optional integer: the port Grafana's POD listens on (e.g. 3000), for
+  # the NetworkPolicy's egress rule. THE SERVICE-PORT TRAP: the egress port
+  # is derived from `url`, which names a SERVICE (e.g. port 80), but a
+  # NetworkPolicy matches the POD's port after the Service translated it.
+  # Unset, the URL's port is used, which is right only when the Service
+  # port equals the pod port; otherwise every tool call times out behind a
+  # policy that looks right. For a cross-cluster https url there is no pod
+  # peer: `networkPolicy.egress.grafana` is an `ipBlock` and the port is
+  # the URL's (leave this unset).
+  # podPort: 3000
   # -- Required while enabled. `audience` is what Grafana's `workloadAuth`
   # expects; it must not be the audience of any human sign-in client.
   outbound:
@@ -320,10 +355,13 @@ networkPolicy:
     # come from `issuerURL` and each connector's `outbound.tokenEndpoint`.
     issuer: []
     # -- Peers the stores' vmauth are reached at. The port comes from each
-    # store's `vmauth.url`.
+    # store's `vmauth.url`, or its `vmauth.podPort` when set (the Service
+    # port is not the pod port when the Service maps one to the other).
     vmauth: []
     # -- Peers Grafana is reached at. Required while the Grafana connector is
-    # enabled. The port comes from `grafana.url`.
+    # enabled. The port comes from `grafana.url`, or `grafana.podPort` when
+    # set (the Service port is not the pod port when the Service maps one to
+    # the other).
     grafana: []
 
 # -- Optional. Refused with fewer than two replicas: a budget of one

@@ -36,6 +36,11 @@ type mcpContainer struct {
 	Resources struct {
 		Limits map[string]string `yaml:"limits"`
 	} `yaml:"resources"`
+	VolumeMounts []struct {
+		Name      string `yaml:"name"`
+		MountPath string `yaml:"mountPath"`
+		ReadOnly  bool   `yaml:"readOnly"`
+	} `yaml:"volumeMounts"`
 }
 
 type mcpDoc struct {
@@ -48,6 +53,17 @@ type mcpDoc struct {
 		Template struct {
 			Spec struct {
 				Containers []mcpContainer `yaml:"containers"`
+				Volumes    []struct {
+					Name      string `yaml:"name"`
+					ConfigMap *struct {
+						Name  string                       `yaml:"name"`
+						Items []struct{ Key, Path string } `yaml:"items"`
+					} `yaml:"configMap"`
+					Secret *struct {
+						SecretName string                       `yaml:"secretName"`
+						Items      []struct{ Key, Path string } `yaml:"items"`
+					} `yaml:"secret"`
+				} `yaml:"volumes"`
 			} `yaml:"spec"`
 		} `yaml:"template"`
 		PolicyTypes []string `yaml:"policyTypes"`
@@ -309,5 +325,90 @@ func TestMCPObjectsAreNamedPerConnector(t *testing.T) {
 			seen[key] = true
 			assert.True(t, strings.HasPrefix(d.Metadata.Name, "observability-mcp-"), "%s: %s is not named observability-mcp-<connector>", g, key)
 		}
+	}
+}
+
+// A private CA for the outbound target is mounted, read-only, into the proxy
+// and named by OUTBOUND_CA_FILE, only for a connector that sets `caBundle`;
+// every other connector's pod carries neither the volume nor the variable.
+func TestMCPProxyMountsCABundleOnlyWhenSet(t *testing.T) {
+	// connector -> {volume source kind, source name, key}
+	want := map[string][3]string{
+		"private-ca.yaml/observability-mcp-private": {"configMap", "private-ca", "ca.crt"},
+		"private-ca.yaml/observability-mcp-grafana": {"secret", "grafana-ca", "tls.crt"},
+	}
+	var withBundle int
+	for name, d := range mcpDocs(t, "Deployment") {
+		var proxy mcpContainer
+		for _, c := range d.Spec.Template.Spec.Containers {
+			if c.Name == "proxy" {
+				proxy = c
+			}
+		}
+		var vol *int
+		for i, v := range d.Spec.Template.Spec.Volumes {
+			if v.Name == "outbound-ca" {
+				i := i
+				vol = &i
+			}
+		}
+		file, hasEnv := proxy.env("OUTBOUND_CA_FILE")
+		var mount string
+		for _, m := range proxy.VolumeMounts {
+			if m.Name == "outbound-ca" {
+				mount = m.MountPath
+				assert.True(t, m.ReadOnly, "%s: the CA bundle is mounted writable", name)
+			}
+		}
+		w, set := want[name]
+		if !set {
+			assert.False(t, hasEnv, "%s: OUTBOUND_CA_FILE without a caBundle", name)
+			assert.Nil(t, vol, "%s: a CA volume without a caBundle", name)
+			assert.Empty(t, mount, "%s: a CA mount without a caBundle", name)
+			continue
+		}
+		withBundle++
+		require.True(t, hasEnv, "%s: caBundle set but no OUTBOUND_CA_FILE", name)
+		require.NotNil(t, vol, "%s: caBundle set but no volume", name)
+		require.NotEmpty(t, mount, "%s: caBundle set but the proxy does not mount it", name)
+		assert.Equal(t, mount+"/ca.pem", file, "%s: OUTBOUND_CA_FILE is not the mounted file", name)
+		v := d.Spec.Template.Spec.Volumes[*vol]
+		switch w[0] {
+		case "configMap":
+			require.NotNil(t, v.ConfigMap)
+			assert.Nil(t, v.Secret)
+			assert.Equal(t, w[1], v.ConfigMap.Name)
+			require.Len(t, v.ConfigMap.Items, 1)
+			assert.Equal(t, w[2], v.ConfigMap.Items[0].Key)
+			assert.Equal(t, "ca.pem", v.ConfigMap.Items[0].Path)
+		case "secret":
+			require.NotNil(t, v.Secret)
+			assert.Nil(t, v.ConfigMap)
+			assert.Equal(t, w[1], v.Secret.SecretName)
+			require.Len(t, v.Secret.Items, 1)
+			assert.Equal(t, w[2], v.Secret.Items[0].Key)
+			assert.Equal(t, "ca.pem", v.Secret.Items[0].Path)
+		}
+	}
+	assert.Equal(t, len(want), withBundle, "a connector with a caBundle is missing from the goldens")
+}
+
+// The egress rule to a connector's target uses `podPort` when set (the Service
+// port in the URL is not the port a NetworkPolicy matches), and the URL's port
+// when not.
+func TestMCPNetworkPolicyUsesPodPortWhenSet(t *testing.T) {
+	want := map[string]int{
+		"private-ca.yaml/observability-mcp-private": 8428, // vmauth.podPort; the URL says 8427
+		"private-ca.yaml/observability-mcp-plain":   8427, // no podPort: the URL's
+		"private-ca.yaml/observability-mcp-grafana": 3000, // grafana.podPort; the URL says 80
+		"everything.yaml/observability-mcp-grafana": 3000, // no podPort: the URL's
+	}
+	policies := mcpDocs(t, "NetworkPolicy")
+	for name, port := range want {
+		d, ok := policies[name]
+		require.True(t, ok, "no NetworkPolicy %s", name)
+		require.Len(t, d.Spec.Egress, 3)
+		require.Len(t, d.Spec.Egress[1].Ports, 1)
+		assert.Equal(t, port, d.Spec.Egress[1].Ports[0].Port, name)
 	}
 }

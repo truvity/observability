@@ -4,6 +4,7 @@
       "resourceURL" $s.resourceURL "scope" ($s.scope | default "openid")
       "target" $s.vmauth.url
       "tokenEndpoint" $s.outbound.tokenEndpoint "clientId" $s.outbound.clientId "audience" $s.outbound.audience
+      "caBundle" (($s.vmauth).caBundle) "podPort" (($s.vmauth).podPort)
       "replicaCount" ($s.replicaCount | default 1) }}
 {{ include "observability-mcp.connector" $ctx }}
 {{- end }}
@@ -13,6 +14,7 @@
       "resourceURL" $g.resourceURL "scope" ($g.scope | default "openid")
       "target" $g.url
       "tokenEndpoint" $g.outbound.tokenEndpoint "clientId" $g.outbound.clientId "audience" $g.outbound.audience
+      "caBundle" $g.caBundle "podPort" $g.podPort
       "replicaCount" ($g.replicaCount | default 1) }}
 {{ include "observability-mcp.connector" $ctx }}
 {{- end }}

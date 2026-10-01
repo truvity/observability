@@ -1,0 +1,47 @@
+# A private CA for the outbound target, and the pod port a NetworkPolicy
+# needs when the Service maps a different port to it: one store with its CA
+# in a ConfigMap and a pod port, Grafana with its CA in a Secret and a pod
+# port, and a second store with neither (its render is unchanged).
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+stores:
+  - name: private
+    resourceURL: https://mcp.example.com/victoria/private
+    vmauth:
+      url: https://vmauth.monitoring.svc:8427
+      caBundle:
+        configMap: {name: private-ca, key: ca.crt}
+      podPort: 8428
+    outbound:
+      tokenEndpoint: https://issuer.example.com/token
+      clientId: observability-mcp-private
+      audience: private-store
+  - name: plain
+    resourceURL: https://mcp.example.com/victoria/plain
+    vmauth: {url: "http://vmauth.monitoring.svc:8427"}
+    outbound:
+      tokenEndpoint: https://issuer.example.com/token
+      clientId: observability-mcp-plain
+      audience: plain-store
+grafana:
+  enabled: true
+  resourceURL: https://mcp.example.com/grafana
+  url: https://grafana.monitoring.svc:80
+  caBundle:
+    secret: {name: grafana-ca, key: tls.crt}
+  podPort: 3000
+  outbound:
+    tokenEndpoint: https://issuer.example.com/token
+    clientId: observability-mcp-grafana
+    audience: grafana-workload
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway
+  egress:
+    issuer: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: issuer}}}]
+    vmauth: [{podSelector: {matchLabels: {app.kubernetes.io/name: vmauth}}}]
+    grafana: [{podSelector: {matchLabels: {app.kubernetes.io/name: grafana}}}]
