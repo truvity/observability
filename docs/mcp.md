@@ -347,7 +347,7 @@ httpRoute:
   hostnames: [mcp.example.com]
 ```
 
-One `HTTPRoute` is rendered in the release namespace (named `observability-mcp`
+One `HTTPRoute` is rendered in the release namespace (named `observability-mcp-connectors`
 unless `httpRoute.name` says otherwise). For each enabled connector, a store or
 Grafana, it routes two PathPrefix matches to the connector's Service on the
 proxy port: the resourceURL's path, and

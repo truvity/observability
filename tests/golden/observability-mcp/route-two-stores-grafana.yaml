@@ -1022,7 +1022,7 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: observability-mcp
+  name: observability-mcp-connectors
   namespace: default
   labels:
     app.kubernetes.io/name: observability-mcp

@@ -19,7 +19,7 @@ render moves.
   `/.well-known/oauth-protected-resource` to the Grafana connector when
   enabled, else the first store. No request timeout (`timeouts.request: 0s`),
   because MCP holds responses open as server-sent event streams. The name
-  defaults to the chart's name; set `httpRoute.name` to change it.
+  is `observability-mcp-connectors`; set `httpRoute.name` to change it.
 - Refused at render: `httpRoute.enabled` with no `parentRefs`, a resourceURL
   with no path (PathPrefix `/` would take the whole host), two connectors at
   one path, and, when `hostnames` is set, a resourceURL on another host.
