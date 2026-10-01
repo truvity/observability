@@ -371,13 +371,18 @@ rule with it. An install with no rules yet shows none of this.
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `alertmanager.enabled` | bool | `null` (0.9.0) | Renders the `VMAlertmanager`. Null resolves through `mode` — see `vmauth.enabled`'s own row. |
-| `alertmanager.replicaCount` | int | `1` | |
+| `alertmanager.replicaCount` | int | `1` | Above 1 the replicas form one mesh (the operator joins them on 9094) and the chart renders the pair safeguards below. 1 renders none of them. |
+| `alertmanager.podDisruptionBudget` | object | `{}` | Only when `replicaCount` > 1. Empty renders `maxUnavailable: 1`. Set, replaces it. |
+| `alertmanager.affinity` | object | `{}` | Only when `replicaCount` > 1. Empty renders preferred pod anti-affinity on `kubernetes.io/hostname` against the replicas. Set, replaces it. |
+| `alertmanager.topologySpreadConstraints` | list | `[]` | Only when `replicaCount` > 1. Empty renders `maxSkew: 1` on `topology.kubernetes.io/zone`, `ScheduleAnyway`. Set, replaces it. |
 | `alertmanager.notifierUrl` | string | `""` | An Alertmanager the estate already runs, for when `enabled` is false. **One of the two is required**: a vmalert with no notifier sends every alert nowhere. |
 | `alertmanager.watchdog.secretName` | string | `""` | The Secret holding the deadman receiver's URL. Empty renders no Watchdog PUSH route — the `Watchdog` VMRule itself is `vmalert.watchdog.enabled`'s to gate, independent of this, and renders regardless (it is also readable PULLED, through `tenancy.alertReaders`). |
 | `alertmanager.watchdog.key` | string | `url` | The key inside it. Read with `url_file` from a mounted volume, never interpolated into the rendered config. |
 | `alertmanager.watchdog.repeatInterval` | duration | `5m` | How often the heartbeat repeats. The outside watcher's timeout must be comfortably longer. |
 | `alertmanager.watchdog.timeout` | duration | unset | The far end's OWN timeout for a missing heartbeat, stated here rather than read from it. Set, the chart refuses a `repeatInterval` that would not land comfortably inside it. |
 | `alertmanager.resources` | object | 1 CPU request, no CPU limit / 256Mi | Not measured on the install the other defaults came from; only the limit was dropped. |
+
+**Alertmanager pair.** With `replicaCount` above 1, both vmalerts get one `notifiers` entry per replica (`vmalertmanager-<release>-<i>.vmalertmanager-<release>.<ns>.svc:9093`) so each alert reaches every instance and the mesh dedups it; this follows the vmalert "HA" section ("The same alert will be sent to all configured notifiers", <https://docs.victoriametrics.com/victoriametrics/vmalert/#high-availability>). A set `alertmanager.notifierUrl` keeps priority. karma gets one server per replica, all with `cluster: alertmanager`, as karma documents for an HA cluster (<https://github.com/prymitive/karma/blob/main/docs/CONFIGURATION.md>). The chart adds NO NetworkPolicy for the Alertmanager pods (the first policy selecting a pod default-denies it); if you add one, admit 9094 TCP and UDP between the replicas and 9093 from vmalert and karma, or the pair splits and pages twice.
 
 `alertmanager.config` — the free-form Alertmanager routing tree a
 consumer used to fill in by hand — is gone. `notifications` (below)

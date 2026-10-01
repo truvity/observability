@@ -4,6 +4,30 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`: an Alertmanager pair is safe to run.
+
+- **No change at the default.** `alertmanager.replicaCount` stays `1`, and
+  every golden render is byte-identical to before, except the `everything`
+  case, which already set `replicaCount: 2`.
+- `alertmanager.replicaCount` above 1 now renders, on the VMAlertmanager, a
+  `podDisruptionBudget` (`maxUnavailable: 1`), preferred pod anti-affinity
+  on `kubernetes.io/hostname`, and a topology spread on
+  `topology.kubernetes.io/zone` (`ScheduleAnyway`). Override them with
+  `alertmanager.podDisruptionBudget`, `alertmanager.affinity` and
+  `alertmanager.topologySpreadConstraints`.
+- Both vmalerts then send to every replica (one `notifiers` entry per pod,
+  through the operator's headless Service) instead of one load-balanced
+  URL; the replicas dedup through the mesh. `alertmanager.notifierUrl`, when
+  set, still wins.
+- karma lists each replica as a server with the same `cluster` value
+  (`alertmanager-0`, `alertmanager-1`, ...), as its documentation asks for
+  an HA cluster. Those names are reserved against `karma.alertmanagers`.
+- No NetworkPolicy is added for the Alertmanager pods: the first policy
+  selecting them would default-deny them. None rendered here blocks the
+  mesh (9094 TCP and UDP).
+
 ## v0.26.0
 
 `observability-stack`: named links in Slack notifications.

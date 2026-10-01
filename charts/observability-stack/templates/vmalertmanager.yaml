@@ -133,6 +133,43 @@ metadata:
     {{- include "observability-stack.labels" . | nindent 4 }}
 spec:
   replicaCount: {{ .Values.alertmanager.replicaCount }}
+  {{- if gt (int .Values.alertmanager.replicaCount) 1 }}
+  {{- /*
+  A PAIR (docs/notifications.md, "Alertmanager pair"). The operator runs
+  the replicas as a StatefulSet and joins them into one gossip mesh on
+  9094, so a notification is sent once however many replicas received
+  the alert. What the mesh cannot do is keep both replicas on one node:
+  that is spread and a budget, below. Every default is overridable.
+  */}}
+  {{- $am := .Values.alertmanager }}
+  {{- $amSelector := dict "app.kubernetes.io/name" "vmalertmanager" "app.kubernetes.io/instance" $fullname }}
+  podDisruptionBudget:
+    {{- toYaml ($am.podDisruptionBudget | default (dict "maxUnavailable" 1)) | nindent 4 }}
+  affinity:
+    {{- if $am.affinity }}
+    {{- toYaml $am.affinity | nindent 4 }}
+    {{- else }}
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                {{- toYaml $amSelector | nindent 16 }}
+    {{- end }}
+  topologySpreadConstraints:
+    {{- if $am.topologySpreadConstraints }}
+    {{- toYaml $am.topologySpreadConstraints | nindent 4 }}
+    {{- else }}
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          {{- toYaml $amSelector | nindent 10 }}
+    {{- end }}
+  {{- end }}
   securityContext:
     {{- include "observability-stack.restrictedSecurityContext" . | nindent 4 }}
   resources:

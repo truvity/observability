@@ -666,6 +666,15 @@
           "type": "integer",
           "minimum": 1
         },
+        "podDisruptionBudget": {
+          "type": "object"
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "topologySpreadConstraints": {
+          "type": "array"
+        },
         "notifierUrl": {
           "type": "string"
         },

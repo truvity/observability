@@ -14,6 +14,15 @@ write instead. An error message that only says "invalid value" is a
 second debugging session.
 */}}
 
+{{- /*
+Alertmanager pair and NetworkPolicy (alertmanager.replicaCount > 1): NO
+policy in this chart selects the Alertmanager pods, and none is added for
+the pair, because the first policy that selects a pod default-denies it.
+The mesh (9094, TCP and UDP, pod to pod) is therefore not blocked by any
+policy rendered here. A consumer who adds their own policy to those pods
+must admit 9094/TCP and 9094/UDP between the replicas, 9093/TCP from
+vmalert and karma, or the pair splits and pages twice.
+*/ -}}
 {{- define "observability-stack.validate" -}}
 {{- include "observability-stack.validate.mode" . -}}
 {{- include "observability-stack.validate.ha" . -}}
@@ -1792,6 +1801,12 @@ way for that to quietly not be true.
 {{- $names := dict -}}
 {{- if $eff.alertmanager -}}
 {{- $_ := set $names "alertmanager" true -}}
+{{- /* An Alertmanager pair names its replicas alertmanager-0, -1, ... */ -}}
+{{- if gt (int $.Values.alertmanager.replicaCount) 1 -}}
+{{- range $r := until (int $.Values.alertmanager.replicaCount) -}}
+{{- $_ := set $names (printf "alertmanager-%d" $r) true -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- range $i, $s := ($k.alertmanagers | default list) -}}
 {{- if or (not $s.name) (not $s.uri) -}}
