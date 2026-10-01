@@ -67,7 +67,7 @@ notifications:
       channel: "#partner-alerts"
 
   # Where THIS Alertmanager's UI is reachable from outside the cluster.
-  # Set, the message carries a `Silence:` link on it; empty, no link.
+  # Set, the message carries a `Silence` link on it; empty, no link.
   alertmanagerUrl: https://alertmanager.example
 ```
 
@@ -330,13 +330,40 @@ notifications:
     chatIdSecret: {name: example-telegram-bot, key: chat_id}
 ```
 
+### Named links in Slack
+
+The Slack message ends each alert with ONE line of named mrkdwn links,
+separated by ` · `, instead of raw URLs:
+
+```
+<https://alertmanager.example/#/silences/new?filter=...|Silence> · <https://grafana.example/?var-cluster=...|Grafana>
+```
+
+Only the links that exist in the mode are on it: `Silence`, `View`,
+`Grafana` with `console: karma`; `Silence`, `Grafana` with
+`alertmanagerUrl`; `Grafana` alone with neither. The message title is
+a link too (Alertmanager's `title_link`): the `View` URL with
+`console: karma`, the Grafana URL otherwise. The Telegram message is
+unchanged.
+
+Escaping follows Slack's "Escaping text" rules
+(<https://docs.slack.dev/messaging/formatting-message-text/#escaping>):
+`&`, `<` and `>` are written `&amp;`, `&lt;`, `&gt;` and Slack decodes
+them back, so the `&` between query parameters inside a link is written
+`&amp;` (the `title_link` field is a plain URL, not mrkdwn, and keeps `&`).
+A raw `|` or `>` would end the link early, so every label-derived part of
+a URL goes through `urlquery`, which escapes both; the Alertmanager
+silence filter turns `urlquery`'s `+` back into `%20`. The chart does not
+set `mrkdwn_in`, so Alertmanager's default (`fallback`, `pretext`,
+`text`) applies and `text` is rendered as mrkdwn.
+
 ### The silence link and `alertmanagerUrl`
 
 `notifications.alertmanagerUrl` is the externally reachable base URL of
 this Alertmanager's UI, with no trailing slash. Set, it is the
-VMAlertmanager's `externalURL` and the base of the message's `Silence:`
+VMAlertmanager's `externalURL` and the base of the message's `Silence`
 link; the filter is built from the alert group's common labels. Empty,
-the message has no `Silence:` line.
+the message has no `Silence` link.
 
 There is no default on purpose. The only address the chart can guess is
 Alertmanager's own pod (`http://vmalertmanager-<release>-0:9093`), which
@@ -403,7 +430,7 @@ notifications:
 `console: karma` changes the Slack message (the Telegram one keeps the
 Alertmanager link):
 
-- `Silence:` opens karma's silence form prefilled: `?m=` is karma's own
+- `Silence` opens karma's silence form prefilled: `?m=` is karma's own
   base64 JSON, `{"am": [{"label": "alertmanager", "value": ["alertmanager"]}],
   "m": [{"n": name, "r": false, "e": true, "v": [value]}, ...], "d": <minutes>,
   "c": ""}`, one exact matcher per common label of the alert group, for
@@ -414,9 +441,9 @@ Alertmanager link):
   is not, so the template converts back before escaping the value. A label
   value that is not ASCII reaches the form with its encoded bytes read one by one as Latin-1 characters
   (a limit of `atob`), so the matcher must be corrected by hand.
-- `View:` opens karma filtered to the group, one `q=<label>%3D<value>` per
+- `View` opens karma filtered to the group, one `q=<label>%3D<value>` per
   common label.
-- `Grafana:` is unchanged.
+- `Grafana` is unchanged.
 
 `console: karma` is refused without `consoleUrl` or without
 `karma.enabled`, and `karma.enabled` is refused without

@@ -2527,24 +2527,22 @@ spec:
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
+            title_link: 'https://karma.example.com/?q={{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}'
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
+              <https://karma.example.com/?m={{ $m := list }}{{ range $.CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" 90 "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}|Silence> · <https://karma.example.com/?q={{ range $i, $p := $.CommonLabels.SortedPairs }}{{ if $i }}&amp;q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}|View> · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
-              Silence: https://karma.example.com/?m={{ $m := list }}{{ range .CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" 90 "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}
-              View: https://karma.example.com/?q={{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}
       - name: slack-acme--alerts-critical
         slack_configs:
           - channel: "#alerts-critical"
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
             title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
+            title_link: 'https://karma.example.com/?q={{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}'
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
+              <https://karma.example.com/?m={{ $m := list }}{{ range $.CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" 90 "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}|Silence> · <https://karma.example.com/?q={{ range $i, $p := $.CommonLabels.SortedPairs }}{{ if $i }}&amp;q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}|View> · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
-              Silence: https://karma.example.com/?m={{ $m := list }}{{ range .CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" 90 "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}
-              View: https://karma.example.com/?q={{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}
     inhibit_rules:
       - source_matchers:
           - severity = "critical"

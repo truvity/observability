@@ -45,6 +45,22 @@ profile.
   `otlp.containerSecurityContext` (no escalation, no capabilities) on the
   container. `otlp.podSecurityContext` keeps its `fsGroup: 10001`.
 
+`observability-stack`: named links in Slack notifications.
+
+- **Behaviour change: Slack links render as named links.** The raw
+  `Grafana:`, `Silence:` and `View:` lines of the Slack message are
+  replaced by ONE line of named mrkdwn links, `<url|Silence> · <url|View>
+  · <url|Grafana>`, with only the links that exist in the mode
+  (`console: karma`: Silence, View, Grafana; `alertmanagerUrl`: Silence,
+  Grafana; neither: Grafana). The line is now per alert, inside the alert
+  loop. Every default Slack golden changes; the Telegram message does not.
+- The Slack title is a link: `title_link` is the View URL with
+  `console: karma`, the Grafana URL otherwise.
+- Escaping: `&` inside a link is written `&amp;` (Slack's "Escaping
+  text" rules). The Grafana URL's cluster and namespace and the
+  Alertmanager silence filter's names and values now pass through
+  `urlquery`, so a `|` or `>` in a label value cannot end the link.
+
 ## v0.25.0
 
 `observability-stack`: karma as an optional console, and Slack links that

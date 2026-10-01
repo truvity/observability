@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/url"
 	"regexp"
 	"sort"
@@ -141,13 +142,38 @@ func executeSlackText(t *testing.T, text string, data amData) string {
 	return buf.String()
 }
 
-func lineWithPrefix(out, prefix string) string {
+var mrkdwnLink = regexp.MustCompile(`<([^|>]*)\|([^>]*)>`)
+
+// slackLinks reads the one line of named mrkdwn links out of an executed
+// Slack text: the names in order, and each link's URL as Slack shows it
+// (Slack decodes `&amp;` back to `&`, so the test does too). It asserts
+// the rule the chart exists to keep: nothing inside `<...>` but one `|`.
+func slackLinks(t *testing.T, out string) ([]string, map[string]string) {
+	t.Helper()
+	var names []string
+	urls := map[string]string{}
 	for _, l := range strings.Split(out, "\n") {
-		if strings.HasPrefix(l, prefix) {
-			return strings.TrimPrefix(l, prefix)
+		if !strings.HasPrefix(l, "<") {
+			continue
 		}
+		ms := mrkdwnLink.FindAllStringSubmatch(l, -1)
+		require.NotEmpty(t, ms, l)
+		for _, m := range ms {
+			assert.NotContains(t, m[1], "<", l)
+			assert.NotRegexp(t, `&(?:[^a]|a[^m]|am[^p]|amp[^;])`, m[1], "a raw & inside a link: %s", l)
+			names = append(names, m[2])
+			urls[m[2]] = html.UnescapeString(m[1])
+		}
+		assert.Equal(t, strings.Join(names, " · "), mrkdwnLinksJoined(l), "links are separated by ' · ' and nothing else is on the line")
+		return names, urls
 	}
-	return ""
+	t.Fatalf("no named-link line in %q", out)
+	return nil, nil
+}
+
+// mrkdwnLinksJoined is the line with every `<url|Name>` replaced by its name.
+func mrkdwnLinksJoined(line string) string {
+	return mrkdwnLink.ReplaceAllString(line, "$2")
 }
 
 // karmaServerName reads the name karma knows this release's Alertmanager
@@ -195,7 +221,9 @@ func TestKarmaSilenceLinkOpensKarmasFormPrefilled(t *testing.T) {
 				CommonLabels: labels,
 				Alerts:       []amAlert{{Labels: labels, Annotations: amKV{"summary": "s"}}},
 			})
-			link := lineWithPrefix(out, "Silence: ")
+			linkNames, links := slackLinks(t, out)
+			assert.Equal(t, []string{"Silence", "View", "Grafana"}, linkNames)
+			link := links["Silence"]
 			require.NotEmpty(t, link, out)
 			require.True(t, strings.HasPrefix(link, "https://karma.example.com/?m="), link)
 			assert.NotContains(t, link, " ")
@@ -252,14 +280,17 @@ func TestKarmaViewLinkFiltersToTheAlertGroup(t *testing.T) {
 	for _, text := range karmaSlackTexts(t, golden) {
 		out := executeSlackText(t, text, amData{Status: "firing", CommonLabels: labels,
 			Alerts: []amAlert{{Labels: labels, Annotations: amKV{"summary": "s"}}}})
-		link := lineWithPrefix(out, "View: ")
+		linkNames, links := slackLinks(t, out)
+		assert.Equal(t, []string{"Silence", "View", "Grafana"}, linkNames)
+		link := links["View"]
+		assert.Contains(t, out, "&amp;q=", "Slack's escaping: & is written &amp; inside the link")
 		require.True(t, strings.HasPrefix(link, "https://karma.example.com/?q="), link)
 		u, err := url.Parse(link)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"alertname=Disk???", "k8s_cluster_name=my-cluster", "pod=a b&c=d"}, u.Query()["q"], link)
 		assert.Contains(t, link, "%3D", "the = between a label and its value is escaped")
 		// The Grafana link is untouched.
-		assert.Contains(t, out, "Grafana: https://grafana.example/?var-cluster=")
+		assert.True(t, strings.HasPrefix(links["Grafana"], "https://grafana.example/?var-cluster="), links["Grafana"])
 	}
 }
 
@@ -268,8 +299,9 @@ func TestConsoleAlertmanagerKeepsTheSilenceLink(t *testing.T) {
 	// today's, with no karma link and no View line. (The goldens being
 	// byte-identical to master proves the rest.)
 	for _, text := range karmaSlackTexts(t, "golden/observability-stack/notifications-silence-link.yaml") {
-		assert.Contains(t, text, "Silence: https://alertmanager.example/#/silences/new?filter=%7B")
-		assert.NotContains(t, text, "View:")
+		assert.Contains(t, text, "<https://alertmanager.example/#/silences/new?filter=%7B")
+		assert.Contains(t, text, "|Silence> · <")
+		assert.NotContains(t, text, "|View>")
 		assert.NotContains(t, text, "?m=")
 	}
 }
