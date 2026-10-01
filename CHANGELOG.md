@@ -6,6 +6,25 @@ must be done first, and whether a default moved. Newest first, one
 
 ## v0.26.0
 
+`observability-stack`: named links in Slack notifications.
+
+- **Behaviour change: Slack links render as named links.** The raw
+  `Grafana:`, `Silence:` and `View:` lines of the Slack message are
+  replaced by named mrkdwn links. `<url|Grafana>` ends each alert's summary
+  line (it is about that alert); Silence and View are about the alert group,
+  so they are ONE line after the alerts, `<url|Silence> · <url|View>`
+  (`console: karma`), `<url|Silence>` (`alertmanagerUrl`), or absent
+  (neither). Every default Slack golden changes; the Telegram message does
+  not.
+- The Slack title is a link: `title_link` is the View URL with
+  `console: karma`, the Grafana URL otherwise.
+- Escaping: `&` inside a link is written `&amp;` (Slack's "Escaping
+  text" rules). The Grafana URL's cluster and namespace and the
+  Alertmanager silence filter's names and values now pass through
+  `urlquery`, so a `|` or `>` in a label value cannot end the link.
+
+## v0.25.1
+
 `observability-stack`, `observability-emitters`: every pod the charts create,
 except the two node-level DaemonSets, meets the Pod Security `restricted`
 profile.
@@ -44,23 +63,6 @@ profile.
   user), a `RuntimeDefault` profile on the pod and a new
   `otlp.containerSecurityContext` (no escalation, no capabilities) on the
   container. `otlp.podSecurityContext` keeps its `fsGroup: 10001`.
-
-`observability-stack`: named links in Slack notifications.
-
-- **Behaviour change: Slack links render as named links.** The raw
-  `Grafana:`, `Silence:` and `View:` lines of the Slack message are
-  replaced by named mrkdwn links. `<url|Grafana>` ends each alert's summary
-  line (it is about that alert); Silence and View are about the alert group,
-  so they are ONE line after the alerts, `<url|Silence> · <url|View>`
-  (`console: karma`), `<url|Silence>` (`alertmanagerUrl`), or absent
-  (neither). Every default Slack golden changes; the Telegram message does
-  not.
-- The Slack title is a link: `title_link` is the View URL with
-  `console: karma`, the Grafana URL otherwise.
-- Escaping: `&` inside a link is written `&amp;` (Slack's "Escaping
-  text" rules). The Grafana URL's cluster and namespace and the
-  Alertmanager silence filter's names and values now pass through
-  `urlquery`, so a `|` or `>` in a label value cannot end the link.
 
 ## v0.25.0
 
