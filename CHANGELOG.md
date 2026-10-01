@@ -4,6 +4,14 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-emitters`: documentation only, no render change. A change to
+a `kubeStateMetrics.customResources` preset is picked up live by
+kube-state-metrics' own config reload (since v2.8.0; the vendored subchart
+runs v2.19.1), with no pod restart; `docs/kube-state-metrics.md` says how to
+check, and a new test pins the no-`subPath` mount the reload depends on.
+
 ## v0.21.1
 
 Published by the automatic patch workflow; it carries two new opt-in options (an HTTPRoute for the connectors and configurable DNS egress) and a behaviour change to the default DNS egress rule.
