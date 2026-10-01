@@ -21,11 +21,13 @@ opt-in metric source.
   fixed job. Its first panel, "Postgres instances reporting", reads `no data:
   instance metrics not scraped` while the source is off, so absence is
   visible, not a blank wall.
-- **Fleet overview: four Postgres tiles** on the CloudNativePG line
+- **Behaviour change: the default Fleet overview gains four Postgres tiles** on the CloudNativePG line
   (instances up, instances not up, maximum replication lag, newest backup
   age). They read the same optional source and show `n/a` until it is
-  scraped; they link to `cnpg-cluster`. Nothing else on the page moves, and
-  `cnpg-operator` (operator series only) is unchanged and still on.
+  scraped; they link to `cnpg-cluster`. There is no value to hide them: the
+  dashboard is a fixed file, so a default install now renders one more line of
+  tiles reading `n/a`. Nothing else on the page moves, and `cnpg-operator`
+  (operator series only) is unchanged and still on.
 - **Allow-lists:** `hack/dashboards/available-metrics.yaml` gains the 42
   exporter families the two dashboards read (41 `cnpg_*` and one
   `barman_cloud_cloudnative_pg_io_*`), each taken from a live scrape and
