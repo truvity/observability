@@ -1,0 +1,74 @@
+{{- if and .Values.httpRoute.enabled (or .Values.stores .Values.grafana.enabled) }}
+{{- /* Refusals first: see observability-mcp.validate.httpRoute. */ -}}
+{{- include "observability-mcp.validate.httpRoute" . -}}
+{{- $r := .Values.httpRoute }}
+{{- $conns := include "observability-mcp.routeConnectors" . | fromJsonArray }}
+# One HTTPRoute for the connectors, shipped WITH their Services on purpose: a
+# route whose backends arrive later reads BackendNotFound and degrades
+# whatever owns it (docs/mcp.md, "Exposing connectors through a Gateway").
+#
+# Per connector: its resource path and the path-suffixed protected-resource
+# metadata (RFC 9728 puts the well-known segment BEFORE the resource path),
+# both to the connector's Service. The bare metadata document goes to ONE
+# connector: Grafana when enabled, else the first store.
+#
+# NO REQUEST TIMEOUT: MCP's streamable HTTP holds a response open as a
+# server-sent event stream; a gateway's default route timeout would cut every
+# long tool call. `timeouts.request: 0s` is how Gateway API v1 says "none".
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ default .Chart.Name $r.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- with $r.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $r.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- toYaml $r.parentRefs | nindent 4 }}
+  {{- with $r.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $c := $conns }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ $c.path }}
+        - path:
+            type: PathPrefix
+            value: /.well-known/oauth-protected-resource{{ $c.path }}
+      timeouts:
+        request: 0s
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: {{ $c.service }}
+          port: {{ include "observability-mcp.proxyPort" $ }}
+          weight: 1
+    {{- end }}
+    # The bare document, on a host shared by every connector: ONE backend.
+    {{- $first := first $conns }}
+    - matches:
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource
+      timeouts:
+        request: 0s
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: {{ $first.service }}
+          port: {{ include "observability-mcp.proxyPort" $ }}
+          weight: 1
+{{- end }}

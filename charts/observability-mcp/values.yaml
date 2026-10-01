@@ -369,3 +369,27 @@ networkPolicy:
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
+
+# -- Optional: ONE gateway.networking.k8s.io/v1 HTTPRoute for the enabled
+# connectors, in the release namespace. Off by default; a consumer that
+# routes some other way renders nothing new. Per connector (each store and
+# Grafana): a PathPrefix rule for its resourceURL path and one for
+# `/.well-known/oauth-protected-resource<path>`, both to its Service; plus
+# one Exact rule for the bare `/.well-known/oauth-protected-resource` to
+# the Grafana connector when enabled, else the FIRST store. No request
+# timeout (`timeouts.request: 0s`): MCP holds responses open as SSE streams.
+# Shipping the route with the Services is deliberate: see docs/mcp.md,
+# "Exposing connectors through a Gateway".
+httpRoute:
+  enabled: false
+  # -- Optional: the route's name; defaults to the chart's name.
+  name: ""
+  # -- Required while enabled. Passed through as written: group, kind, name,
+  # namespace, sectionName (port too). Example, a ListenerSet:
+  #   - {group: gateway.networking.k8s.io, kind: ListenerSet, name: mcp, namespace: gateway}
+  parentRefs: []
+  # -- Optional. When set, every connector's resourceURL host must be one of
+  # these (the route would otherwise not match the URL clients are told to use).
+  hostnames: []
+  annotations: {}
+  labels: {}

@@ -1,0 +1,61 @@
+# The opt-in HTTPRoute with one store: the store's path, its metadata path,
+# and the bare metadata document (no Grafana, so the store answers it).
+# The smallest estate: one store holding its clusters, and a Grafana that
+# reads it.
+issuerURL: https://issuer.example.com
+proxy:
+  image:
+    tag: v0.0.1
+stores:
+  - name: primary
+    resourceURL: https://mcp.example.com/victoria/primary
+    clusters: [alpha, beta, gamma]
+    vmauth: {url: "http://vmauth.monitoring.svc:8427"}
+    outbound:
+      tokenEndpoint: https://issuer.example.com/token
+      clientId: observability-mcp-primary
+      audience: primary-store
+grafana:
+  enabled: true
+  resourceURL: https://mcp.example.com/grafana
+  url: http://grafana.monitoring.svc:80
+  outbound:
+    tokenEndpoint: https://issuer.example.com/token
+    clientId: observability-mcp-grafana
+    audience: grafana-workload
+networkPolicy:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway
+  metricsFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+  egress:
+    issuer:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: issuer
+    vmauth:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: monitoring
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: vmauth
+    grafana:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: monitoring
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: grafana
+httpRoute:
+  enabled: true
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: ListenerSet
+      name: mcp
+      namespace: gateway
+  hostnames: [mcp.example.com]

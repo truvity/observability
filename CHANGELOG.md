@@ -4,6 +4,29 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-mcp`: an opt-in HTTPRoute for the connectors, shipped with
+their Services. A new optional key; the default is off and no existing
+render moves.
+
+- `httpRoute` (`enabled`, `parentRefs`, `hostnames`, `name`, `annotations`,
+  `labels`) renders ONE `gateway.networking.k8s.io/v1` HTTPRoute in the
+  release namespace. Per enabled connector (each store, and Grafana) it has a
+  PathPrefix rule for the resourceURL's path and one for
+  `/.well-known/oauth-protected-resource<path>`, both to that connector's
+  Service on the proxy port; plus one Exact rule for the bare
+  `/.well-known/oauth-protected-resource` to the Grafana connector when
+  enabled, else the first store. No request timeout (`timeouts.request: 0s`),
+  because MCP holds responses open as server-sent event streams. The name
+  defaults to the chart's name; set `httpRoute.name` to change it.
+- Refused at render: `httpRoute.enabled` with no `parentRefs`, a resourceURL
+  with no path (PathPrefix `/` would take the whole host), two connectors at
+  one path, and, when `hostnames` is set, a resourceURL on another host.
+- Why the route belongs here and not in a separate gateway release: a route
+  applied before its Services exist reads `BackendNotFound` and degrades
+  whatever owns it. See docs/mcp.md, "Exposing connectors through a Gateway".
+
 ## v0.21.0
 
 `observability-mcp`: a private CA for the outbound target, and the pod port
