@@ -70,12 +70,12 @@ is complete.
 {{- fail (printf "observability-mcp: two stores are named %q. Each renders `observability-mcp-%s`; the second would replace the first." $s.name $s.name) -}}
 {{- end -}}
 {{- $_ := set $names $s.name true -}}
-{{- include "observability-mcp.validate.connector" (dict "root" $ "label" (printf "stores[%s]" $s.name) "resourceURL" $s.resourceURL "outbound" ($s.outbound | default dict) "replicaCount" ($s.replicaCount | default 1) "urls" $urls) -}}
+{{- include "observability-mcp.validate.connector" (dict "root" $ "label" (printf "stores[%s]" $s.name) "resourceURL" $s.resourceURL "caBundle" ($s.vmauth).caBundle "url" ($s.vmauth).url "outbound" ($s.outbound | default dict) "replicaCount" ($s.replicaCount | default 1) "urls" $urls) -}}
 {{- include "observability-mcp.validate.store" (dict "root" $ "s" $s) -}}
 {{- end -}}
 {{- if .Values.grafana.enabled -}}
 {{- $g := .Values.grafana -}}
-{{- include "observability-mcp.validate.connector" (dict "root" $ "label" "grafana" "resourceURL" $g.resourceURL "outbound" ($g.outbound | default dict) "replicaCount" ($g.replicaCount | default 1) "urls" $urls) -}}
+{{- include "observability-mcp.validate.connector" (dict "root" $ "label" "grafana" "resourceURL" $g.resourceURL "caBundle" $g.caBundle "url" $g.url "outbound" ($g.outbound | default dict) "replicaCount" ($g.replicaCount | default 1) "urls" $urls) -}}
 {{- if not $g.url -}}
 {{- fail "observability-mcp: `grafana.url` is empty. It is where the proxy's outbound side forwards the Grafana calls; the stock mcp-grafana is given no other address." -}}
 {{- end -}}
@@ -84,6 +84,7 @@ is complete.
 
 {{- define "observability-mcp.validate.connector" -}}
 {{- $l := .label -}}
+{{- include "observability-mcp.validate.caBundle" (dict "label" $l "caBundle" .caBundle "url" .url) -}}
 {{- if not .resourceURL -}}
 {{- fail (printf "observability-mcp: `%s` has no `resourceURL`. It is the connector's RFC 8707 resource identifier: the proxy requires every token's `aud` to equal it, and publishes it in its protected-resource metadata. Empty, no client could ever obtain a token the connector accepts." $l) -}}
 {{- end -}}
@@ -98,6 +99,29 @@ is complete.
 {{- end -}}
 {{- if and .root.Values.podDisruptionBudget.enabled (lt (int .replicaCount) 2) -}}
 {{- fail (printf "observability-mcp: `podDisruptionBudget.enabled` is true but `%s` has replicaCount %d. A budget of one available on a single replica blocks every node drain. Run two replicas, or leave the budget off." $l (int .replicaCount)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+A private CA bundle for the outbound target: exactly one source, and only
+for an https target (an http one never reads it, so it would be a bundle
+that silently does nothing).
+*/}}
+{{- define "observability-mcp.validate.caBundle" -}}
+{{- if .caBundle -}}
+{{- if and .caBundle.configMap .caBundle.secret -}}
+{{- fail (printf "observability-mcp: `%s` sets `caBundle.configMap` AND `caBundle.secret`. Name exactly one source for the CA bundle." .label) -}}
+{{- end -}}
+{{- if not (or .caBundle.configMap .caBundle.secret) -}}
+{{- fail (printf "observability-mcp: `%s.caBundle` names neither a `configMap` nor a `secret`. Name exactly one, as {name, key}." .label) -}}
+{{- end -}}
+{{- $src := .caBundle.configMap | default .caBundle.secret -}}
+{{- if not (and $src.name $src.key) -}}
+{{- fail (printf "observability-mcp: `%s.caBundle` needs both `name` and `key`." .label) -}}
+{{- end -}}
+{{- if not (hasPrefix "https://" (.url | default "")) -}}
+{{- fail (printf "observability-mcp: `%s` sets `caBundle` but its URL is not https. The bundle is only used to verify a TLS server; with an http URL it would do nothing. Use an https URL, or drop `caBundle`." .label) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

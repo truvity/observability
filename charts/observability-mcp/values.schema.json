@@ -47,6 +47,24 @@
         "audience": { "type": "string" }
       }
     },
+    "caBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A PEM CA bundle for a private CA, from exactly one of a ConfigMap or a Secret key.",
+      "properties": {
+        "configMap": { "$ref": "#/definitions/keyRef" },
+        "secret": { "$ref": "#/definitions/keyRef" }
+      }
+    },
+    "keyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "key": { "type": "string", "minLength": 1 }
+      }
+    },
+    "podPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
     "resourceURL": {
       "type": "string",
       "pattern": "^(https://[^\\s#]+)?$",
@@ -77,7 +95,9 @@
           "additionalProperties": false,
           "properties": {
             "url": { "type": "string", "description": "A base URL: scheme and host, no path. Empty or a path is refused at render time." },
-            "metricsPath": { "type": "string", "pattern": "^(/[A-Za-z0-9._~-]+)*$" }
+            "metricsPath": { "type": "string", "pattern": "^(/[A-Za-z0-9._~-]+)*$" },
+            "caBundle": { "$ref": "#/definitions/caBundle" },
+            "podPort": { "$ref": "#/definitions/podPort" }
           }
         },
         "outbound": { "$ref": "#/definitions/outbound" }
@@ -147,6 +167,8 @@
         "scope": { "type": "string", "pattern": "^[^\\s\"\\\\]+$" },
         "replicaCount": { "type": "integer", "minimum": 1 },
         "url": { "type": "string", "pattern": "^(https?://[^\\s/]+)?$", "description": "A base URL: scheme and host, no path." },
+        "caBundle": { "$ref": "#/definitions/caBundle" },
+        "podPort": { "$ref": "#/definitions/podPort" },
         "outbound": { "$ref": "#/definitions/outbound" }
       }
     },

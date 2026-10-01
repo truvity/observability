@@ -4,6 +4,26 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-mcp`: a private CA for the outbound target, and the pod port
+for the NetworkPolicy. Both are new optional keys; no existing render moves.
+
+- A store's `vmauth.caBundle` (and `grafana.caBundle`) takes
+  `{configMap: {name, key}}` or `{secret: {name, key}}`, exactly one, a PEM
+  bundle for a private CA that signs an https target. The chart mounts it
+  read-only into the proxy and sets `OUTBOUND_CA_FILE` to it; a connector
+  without `caBundle` renders neither. It needs the resource-proxy release that
+  adds `OUTBOUND_CA_FILE`. Both sources at once, neither, or `caBundle` on an
+  http URL is refused at render.
+- `vmauth.podPort` and `grafana.podPort` (integer, 1-65535) set the port of the
+  NetworkPolicy's egress rule to the target. The port was always derived from
+  the URL, which names a Service, while a NetworkPolicy matches the pod's port:
+  a Service on 80 in front of a pod on 3000 rendered a rule for 80 that matched
+  nothing, and every tool call timed out. Unset, the behaviour is unchanged;
+  the trap, and the `ipBlock` case for a cross-cluster https URL, are
+  documented in `values.yaml` and `docs/mcp.md`.
+
 ## v0.20.0
 
 `observability-stack`, `observability-emitters`: CPU requests sized from

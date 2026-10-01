@@ -100,11 +100,12 @@ stores:
       clientId: observability-mcp-primary
       audience: primary-store
     # optional: scope, signals: {metrics, logs, traces}, metricsMetadata,
-    #           instructions, replicaCount, vmauth.metricsPath
+    #           instructions, replicaCount, vmauth.metricsPath,
+    #           vmauth.caBundle, vmauth.podPort
 ```
 
 The same chart renders one store and Grafana, or N stores and Grafana
-(`tests/cases/observability-mcp/single-store`, `two-stores`, `everything`),
+(`tests/cases/observability-mcp/single-store`, `two-stores`, `everything`, `private-ca`),
 and a store alone (`minimal`).
 
 ### What the consumer must set, per connector
@@ -337,12 +338,24 @@ Ingress: the peers in `networkPolicy.ingressFrom`, on the proxy's MCP port;
 and, for a store and only when `networkPolicy.metricsFrom` is set, those
 peers on the aggregator's admin port (9090). Egress, and nothing else: the
 issuer (ports from `issuerURL` and `outbound.tokenEndpoint`), the store's
-vmauth or Grafana (the port from `vmauth.url` / `grafana.url`), and cluster
+vmauth or Grafana (the port from `vmauth.url` / `grafana.url`, or `vmauth.podPort` / `grafana.podPort` when set; see the Service-port trap below), and cluster
 DNS. The kubelet's probes are not subject to the policy: a store pod's
 readiness is the proxy's `/readyz` **and** the aggregator's `/readyz` (on the
 admin port), so it is not ready until every allowlisted tool was found. The
 stock servers' own health endpoints are on loopback, which the kubelet
 cannot reach.
+
+**The Service-port trap.** The egress port is derived from `vmauth.url` or
+`grafana.url`, which name a **Service** (for example `grafana.monitoring.svc:80`),
+but a NetworkPolicy matches the **pod's** port, after the Service has
+translated it. A Service on 80 in front of a pod on 3000 therefore renders an
+egress rule for 80 that matches nothing, and every tool call times out behind
+a policy that looks right. Set `grafana.podPort` (or `stores[].vmauth.podPort`)
+to the port the pod listens on: the egress rule then uses it. Unset, the
+URL's port is used, which is right only when the Service port equals the pod
+port, or the URL names the pod directly. For a cross-cluster https URL there
+is no pod peer: the egress peer in `networkPolicy.egress.{vmauth,grafana}` is
+an `ipBlock`, the port is the URL's, and `podPort` stays unset.
 
 The aggregator's admin port is the pod's only port besides the proxy's, and
 it serves health and metrics, not MCP; `tests/mcp_pod_test.go` asserts
@@ -360,13 +373,24 @@ The chart fixes the contract it expects of `resource-proxy`; every name is
 written once, in `templates/_helpers.tpl` (`observability-mcp.proxyEnv`):
 `LISTEN`, `UPSTREAM`, `ISSUER_URL`, `RESOURCE_URL`, `SCOPE`,
 `OUTBOUND_LISTEN`, `OUTBOUND_TARGET`, `OUTBOUND_SA_TOKEN_FILE`,
-`OUTBOUND_TOKEN_ENDPOINT`, `OUTBOUND_CLIENT_ID`, `OUTBOUND_AUDIENCE`.
+`OUTBOUND_TOKEN_ENDPOINT`, `OUTBOUND_CLIENT_ID`, `OUTBOUND_AUDIENCE`, and,
+only with a `caBundle`, `OUTBOUND_CA_FILE`.
 
 - **Path mapping.** `UPSTREAM` is `http://127.0.0.1:8081/mcp` and clients
   connect to the resource URL (for example
   `https://mcp.example.com/victoria/primary`), so the proxy maps the whole
   resource path onto `UPSTREAM`'s path.
 - **The outbound side replaces `Authorization`.**
+- **A private CA for the outbound target.** When a connector sets `caBundle`
+  (`stores[].vmauth.caBundle`, `grafana.caBundle`), the chart mounts the PEM
+  bundle read-only into the proxy container at
+  `/etc/observability-mcp/outbound-ca/ca.pem` and sets
+  `OUTBOUND_CA_FILE` to it. The proxy appends the bundle to the system roots
+  and uses the result for `OUTBOUND_TARGET` only (not for the issuer). A
+  connector without `caBundle` gets neither the mount nor the variable. This
+  needs the resource-proxy release that adds `OUTBOUND_CA_FILE`; an older proxy
+  ignores the variable and fails the TLS handshake with an unknown-authority
+  error.
 
 ## Refusals
 
@@ -378,6 +402,8 @@ written once, in `templates/_helpers.tpl` (`observability-mcp.proxyEnv`):
 | a connector with `resourceURL` empty, or the same as another's | No client could get a token with the right `aud`; one URL is one resource. |
 | a connector with `outbound.{tokenEndpoint,clientId,audience}` empty | The servers would call with no credential. |
 | a store with no `vmauth.url`, or one with a path | Nothing to read; a path would be dropped. |
+| `caBundle` with both `configMap` and `secret`, with neither, or on an http URL | One source only; a bundle for an http target would silently do nothing. |
+| `podPort` outside 1-65535 | Not a port. |
 | a store with every signal off; a cluster that is not a plain label value | Nothing to expose; the list only fills the instructions. |
 | an allowlist that is empty or would produce a tool name over 64 characters | The aggregator refuses it at start; here it is refused at render. |
 | `grafana.url` empty; `upstreams.grafana.enabledTools` empty | Nothing to forward to; mcp-grafana would enable everything, writes included. |

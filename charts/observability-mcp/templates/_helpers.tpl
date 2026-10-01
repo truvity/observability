@@ -65,6 +65,7 @@ nothing of the MCP surface (the kubelet cannot probe a loopback listener).
 {{- define "observability-mcp.outboundListen" -}}127.0.0.1:8429{{- end -}}
 {{- define "observability-mcp.proxyPort" -}}8080{{- end -}}
 {{- define "observability-mcp.adminPort" -}}9090{{- end -}}
+{{- define "observability-mcp.outboundCAFile" -}}/etc/observability-mcp/outbound-ca/ca.pem{{- end -}}
 {{- define "observability-mcp.tokenFile" -}}/var/run/observability-mcp/sa-token{{- end -}}
 {{- define "observability-mcp.signalPort" -}}
 {{- index (dict "metrics" "8082" "logs" "8083" "traces" "8084") . -}}
@@ -102,6 +103,8 @@ written, so a rename in that image is a one-line change here.
   OUTBOUND_TARGET           the store's vmauth (or Grafana)
   OUTBOUND_SA_TOKEN_FILE, OUTBOUND_TOKEN_ENDPOINT,
   OUTBOUND_CLIENT_ID, OUTBOUND_AUDIENCE  how it gets the token it injects
+  OUTBOUND_CA_FILE          only with a `caBundle`: a PEM bundle appended to
+                            the system roots, used for OUTBOUND_TARGET only
 
 The context is (dict "root" $ "resourceURL" "scope" "target" "tokenEndpoint"
 "clientId" "audience").
@@ -129,6 +132,10 @@ The context is (dict "root" $ "resourceURL" "scope" "target" "tokenEndpoint"
   value: {{ .clientId | quote }}
 - name: OUTBOUND_AUDIENCE
   value: {{ .audience | quote }}
+{{- if .caBundle }}
+- name: OUTBOUND_CA_FILE
+  value: {{ include "observability-mcp.outboundCAFile" . | quote }}
+{{- end }}
 {{- end -}}
 
 {{/*
