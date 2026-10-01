@@ -256,6 +256,21 @@ not) and renders the ConfigMap `create: false` points at itself, from
 is on). A hand-written `kube-state-metrics.customResourceState.config`
 is therefore refused rather than silently unused — see "Refusals" below.
 
+**Changing a preset needs no restart.** kube-state-metrics has watched its
+`--custom-resource-state-config-file` and reloaded it on change since
+v2.8.0 (the vendored subchart 7.5.3 runs v2.19.1), so flipping a preset
+on or off re-renders the ConfigMap, the kubelet propagates the new file
+into the running pod (typically within a minute), and kube-state-metrics
+reloads it in place; the Deployment's pod template does not change and the
+pod is not replaced. This relies on the subchart mounting the ConfigMap as
+a directory volume WITHOUT `subPath` (a `subPath` mount is never updated
+by the kubelet); `tests/kubestatemetrics_reload_test.go` pins that. To
+check, look for the new series (for example `nodeclaim_status_condition`)
+within a couple of minutes, or read
+`kube_state_metrics_last_config_reload_successful` and
+`kube_state_metrics_last_config_reload_success_timestamp_seconds`. Restart
+the Deployment only if they do not appear.
+
 What follows is the config this chart's own preset renders, kept here
 because it is still the reference for reading it against a live cluster
 (the field-path caution two paragraphs down applies to the preset's
