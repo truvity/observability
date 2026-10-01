@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.23.0
 
 `observability-stack` notifications: links that work, and Slack for `also`.
 
