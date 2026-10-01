@@ -112,7 +112,21 @@ spec:
       {{- include "observability-stack.targetAuth" $root | nindent 6 }}
   {{- if not $evaluateOnly }}
   notifiers:
+    {{- if and $observabilityStackEffective.alertmanager (not $root.Values.alertmanager.notifierUrl) (gt (int $root.Values.alertmanager.replicaCount) 1) }}
+    {{- /*
+    An Alertmanager pair: vmalert sends every alert to EVERY instance,
+    through the per-pod DNS name of the operator's headless Service, and
+    the instances dedup through the mesh. One load-balanced URL would hand
+    an alert to one replica only, and a replica restart would lose it.
+    https://docs.victoriametrics.com/victoriametrics/vmalert/#high-availability
+    ("The same alert will be sent to all configured notifiers").
+    */}}
+    {{- range $i := until (int $root.Values.alertmanager.replicaCount) }}
+    - url: {{ printf "http://vmalertmanager-%s-%d.vmalertmanager-%s.%s.svc:9093" $fullname $i $fullname $.Release.Namespace | quote }}
+    {{- end }}
+    {{- else }}
     - url: {{ $notifier | quote }}
+    {{- end }}
   {{- end }}
   {{- with $root.Values.vmalert.externalLabels }}
   externalLabels:

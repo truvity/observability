@@ -673,7 +673,23 @@ alertmanager:
   # resolves an unset value; an explicit `true`/`false` pins it, and an
   # explicit `true` beside `mode: operator-only` is refused.
   enabled: null
+  # -- Above 1 the replicas form one Alertmanager mesh (the operator joins
+  # them on 9094) and the chart renders, for the pair: a PodDisruptionBudget
+  # (`podDisruptionBudget`), preferred hostname anti-affinity (`affinity`),
+  # a zone spread (`topologySpreadConstraints`), one vmalert notifier per
+  # replica and one karma server per replica. 1 renders none of these.
   replicaCount: 1
+  # -- Only read when `replicaCount` > 1. Empty: `{maxUnavailable: 1}`.
+  # Passed through as the VMAlertmanager `podDisruptionBudget`.
+  podDisruptionBudget: {}
+  # -- Only read when `replicaCount` > 1. Empty: preferred pod
+  # anti-affinity on `kubernetes.io/hostname` against the replicas' own
+  # labels. Set, replaces it whole.
+  affinity: {}
+  # -- Only read when `replicaCount` > 1. Empty: one constraint, `maxSkew: 1`
+  # on `topology.kubernetes.io/zone`, `whenUnsatisfiable: ScheduleAnyway`,
+  # against the replicas' own labels. Set, replaces it whole.
+  topologySpreadConstraints: []
   # -- An Alertmanager the estate already runs, when `enabled` is false.
   # A vmalert with no notifier evaluates every rule and sends the result
   # nowhere, which is indistinguishable from an estate with no problems,

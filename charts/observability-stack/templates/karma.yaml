@@ -15,7 +15,25 @@ Order of precedence: what this chart derives, then `karma.extraConfig` on
 top of it, unvalidated by design.
 */}}
 {{- $servers := list }}
-{{- if $eff.alertmanager }}
+{{- if and $eff.alertmanager (gt (int .Values.alertmanager.replicaCount) 1) }}
+{{- /*
+An Alertmanager pair: one server per replica, all with the same `cluster`
+value. karma's documentation says to give every member of one HA cluster
+the same `cluster` name, and it then dedups the alerts they all hold
+(labelled with each member that saw them) and shows one cluster in its UI:
+https://github.com/prymitive/karma/blob/main/docs/CONFIGURATION.md
+The Service alone would show whichever replica DNS returned. Silences
+created through any member replicate through the mesh.
+*/}}
+{{- range $i := until (int .Values.alertmanager.replicaCount) }}
+{{- $servers = append $servers (dict
+    "name" (printf "alertmanager-%d" $i)
+    "cluster" "alertmanager"
+    "uri" (printf "http://vmalertmanager-%s-%d.vmalertmanager-%s.%s.svc:9093" $fullname $i $fullname $.Release.Namespace)
+    "proxy" true
+    "readonly" false) }}
+{{- end }}
+{{- else if $eff.alertmanager }}
 {{- $servers = append $servers (dict
     "name" "alertmanager"
     "uri" (printf "http://vmalertmanager-%s.%s.svc:9093" $fullname .Release.Namespace)

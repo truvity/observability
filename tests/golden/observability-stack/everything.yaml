@@ -2672,7 +2672,8 @@ spec:
         name: "example-store-credentials"
         key: "pass"
   notifiers:
-    - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
+    - url: "http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.observability.svc:9093"
+    - url: "http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.observability.svc:9093"
   externalLabels:
     cluster: example
   extraArgs:
@@ -2744,7 +2745,8 @@ spec:
         name: "example-store-credentials"
         key: "pass"
   notifiers:
-    - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
+    - url: "http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.observability.svc:9093"
+    - url: "http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.observability.svc:9093"
   externalLabels:
     cluster: example
   extraArgs:
@@ -2765,6 +2767,26 @@ metadata:
     app.kubernetes.io/part-of: observability-stack
 spec:
   replicaCount: 2
+  podDisruptionBudget:
+    maxUnavailable: 1
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: observability-stack
+                app.kubernetes.io/name: vmalertmanager
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: observability-stack
+          app.kubernetes.io/name: vmalertmanager
   securityContext:
     runAsNonRoot: true
     runAsUser: 65534
