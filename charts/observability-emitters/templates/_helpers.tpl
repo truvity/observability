@@ -295,6 +295,15 @@ OTLP gateway below, this chart writes no volume for it.
         "resources" (dict "requests" (dict "storage" $v.queue.size)))))
     "overrideHonorLabels" true
     "disableSelfServiceScrape" true
+    "securityContext" (dict
+        "runAsNonRoot" true
+        "runAsUser" 65534
+        "runAsGroup" 65534
+        "fsGroup" 65534
+        "fsGroupChangePolicy" "OnRootMismatch"
+        "seccompProfile" (dict "type" "RuntimeDefault")
+        "allowPrivilegeEscalation" false
+        "capabilities" (dict "drop" (list "ALL")))
     "remoteWrite" $rw
     "scrapeClasses" (list (dict
         "name" "tenancy"

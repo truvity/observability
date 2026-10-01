@@ -4,6 +4,39 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`, `observability-emitters`: every pod the charts create,
+except the two node-level DaemonSets, meets the Pod Security `restricted`
+profile.
+
+- **The VictoriaMetrics-operator objects set a `securityContext`.** The
+  VMAlert, VMAuth and VMAlertmanager the stack renders and the VMAgent the
+  emitters render now run as `65534` with `fsGroup: 65534`
+  (`fsGroupChangePolicy: OnRootMismatch`), a `RuntimeDefault` seccomp profile,
+  no privilege escalation and every capability dropped. The operator inlines
+  the pod and container fields of that one object, so it also covers the
+  config reloader and its init container. The default for the VMSingle is
+  `victoria-metrics-k8s-stack.vmsingle.spec.securityContext`, with the same
+  contents; `backup.seLinuxLevel` still merges into it. **The first start
+  after the upgrade changes the ownership of the existing metrics volume**
+  (it was written by root); that is one pass over the data, not one per start.
+  The VMAgent takes the same default from the chart and `metrics.spec` still
+  overrides it.
+- **Seccomp on the subcharts' pods.** `victoria-logs-single.server`,
+  `victoria-traces-single.server` and the operator's `podSecurityContext`
+  gain `seccompProfile: RuntimeDefault` beside the non-root user they already
+  set. `victoria-metrics-k8s-stack.syncJob` runs as `65534` with the profile
+  and no capabilities.
+- **The backup CronJobs run as `65534`** with `fsGroup: 65534`, the profile and
+  no capabilities on every container (`backup.seLinuxLevel` is unchanged). The
+  credential-process tools init container copies with `cp -R` instead of
+  `cp -a`, because a non-root user cannot preserve ownership.
+- **The OTLP gateway** sets `runAsNonRoot`, `runAsUser: 10001` (the image's own
+  user), a `RuntimeDefault` profile on the pod and a new
+  `otlp.containerSecurityContext` (no escalation, no capabilities) on the
+  container. `otlp.podSecurityContext` keeps its `fsGroup: 10001`.
+
 ## v0.25.0
 
 `observability-stack`: karma as an optional console, and Slack links that

@@ -186,16 +186,23 @@ spec:
             observability.backup: metrics
         spec:
           restartPolicy: Never
-          {{- if $root.Values.backup.seLinuxLevel }}
-          # Same MCS categories as the store this job reads a snapshot
-          # from — see `backup.seLinuxLevel`'s own doc comment in
-          # values.yaml. A mismatch here is a "permission denied" reading
-          # a snapshot that vmbackup/rclone already proved it could
-          # create.
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+            {{- if $root.Values.backup.seLinuxLevel }}
+            # Same MCS categories as the store this job reads a snapshot
+            # from — see `backup.seLinuxLevel`'s own doc comment in
+            # values.yaml. A mismatch here is a "permission denied" reading
+            # a snapshot that vmbackup/rclone already proved it could
+            # create.
             seLinuxOptions:
               level: {{ $root.Values.backup.seLinuxLevel | quote }}
-          {{- end }}
+            {{- end }}
           {{- if $ambientOrProcess }}
           serviceAccountName: {{ index $storeSA "metrics" | quote }}
           {{- end }}
@@ -224,12 +231,18 @@ spec:
           initContainers:
             - name: backup-tools
               image: {{ printf "%s:%s" $root.Values.backup.auth.credentialProcess.toolsImage.repository $root.Values.backup.auth.credentialProcess.toolsImage.tag | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               command:
                 - /bin/sh
                 - -euc
                 - |
                   mkdir -p /var/run/backup-tools
-                  cp -a {{ $root.Values.backup.auth.credentialProcess.toolsImage.sourcePath }}/. /var/run/backup-tools/
+                  # -R, not -a: the copy runs as a non-root user, which cannot preserve ownership.
+                  cp -R {{ $root.Values.backup.auth.credentialProcess.toolsImage.sourcePath }}/. /var/run/backup-tools/
               volumeMounts:
                 - name: backup-tools
                   mountPath: /var/run/backup-tools
@@ -237,6 +250,11 @@ spec:
           containers:
             - name: vmbackup
               image: {{ printf "%s:%s" $root.Values.backup.metrics.image.repository $root.Values.backup.metrics.image.tag | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               args:
                 # vmbackup takes an instant snapshot through the store's
                 # own API and uploads it. It is incremental BY
@@ -367,14 +385,21 @@ spec:
             observability.backup: {{ $store }}
         spec:
           restartPolicy: Never
-          {{- if $root.Values.backup.seLinuxLevel }}
-          # Same MCS categories as the store this job reads a snapshot
-          # from — see `backup.seLinuxLevel`'s own doc comment in
-          # values.yaml.
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+            {{- if $root.Values.backup.seLinuxLevel }}
+            # Same MCS categories as the store this job reads a snapshot
+            # from — see `backup.seLinuxLevel`'s own doc comment in
+            # values.yaml.
             seLinuxOptions:
               level: {{ $root.Values.backup.seLinuxLevel | quote }}
-          {{- end }}
+            {{- end }}
           {{- if $ambientOrProcess }}
           serviceAccountName: {{ index $storeSA $store | quote }}
           {{- end }}
@@ -403,6 +428,11 @@ spec:
           containers:
             - name: backup
               image: {{ printf "%s:%s" $root.Values.backup.image.repository $root.Values.backup.image.tag | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
               env:
                 - name: STORE_URL
                   value: {{ $url | quote }}

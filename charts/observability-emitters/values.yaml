@@ -491,6 +491,22 @@ otlp:
   # cannot create its queue directory and exits at startup.
   podSecurityContext:
     fsGroup: 10001
+    # The collector image runs as this user already; naming it is what lets
+    # the kubelet verify `runAsNonRoot`, which Pod Security `restricted`
+    # requires.
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  # -- Container security context for the gateway (Pod Security
+  # `restricted`): no privilege escalation, no capabilities. The queue
+  # volume is the only writable path it needs.
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   # -- Where the gateway may run. Empty means wherever the scheduler puts
   # it, which is correct on an untainted cluster and wrong on one where the
   # only nodes a workload should use carry a taint: the gateway then lands

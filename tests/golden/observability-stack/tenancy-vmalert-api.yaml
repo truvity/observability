@@ -189,6 +189,18 @@ metadata:
 spec:
   replicaCount: 1
   evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   ruleSelector:
     matchExpressions:
       - key: observability.rule-type
@@ -247,6 +259,18 @@ metadata:
 spec:
   replicaCount: 1
   evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   ruleSelector:
     matchLabels:
       observability.rule-type: vlogs
@@ -303,6 +327,18 @@ metadata:
     app.kubernetes.io/part-of: observability-stack
 spec:
   replicaCount: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   resources:
     limits:
       memory: 256Mi
@@ -403,6 +439,18 @@ spec:
     repository: victoriametrics/vmauth
     tag: v1.152.0
   replicaCount: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   resources:
     limits:
       memory: 512Mi

@@ -59,6 +59,8 @@ metadata:
 spec:
   replicaCount: 1
   evaluationInterval: {{ $root.Values.interval }}
+  securityContext:
+    {{- include "observability-stack.restrictedSecurityContext" $root | nindent 4 }}
   {{- /*
     The two alerters speak different query languages, and a rule loaded by
     the wrong one is fatal rather than ignored: vmalert parses every rule
