@@ -173,6 +173,7 @@ dashboards:
   # panels). Without it every panel is empty and the first says "n/a". Turn
   # it on together with that ServiceMonitor.
   keycloak:
+    enabled: false
   # -- OFF by default: it reads the OpenBAO server's own metrics
   # (`vault_*`), an optional source scraped only where the server's telemetry
   # is on and charts/openbao-ops' `serverMetrics` PodMonitor is applied (see
