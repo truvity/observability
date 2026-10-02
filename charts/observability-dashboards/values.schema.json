@@ -76,7 +76,8 @@
         "envoy-gateway",
         "envoy-proxy",
         "envoy-clusters",
-        "kargo"
+        "kargo",
+        "keycloak"
       ],
       "properties": {
         "fleet-overview": { "$ref": "#/definitions/dashboardEntry" },
@@ -103,7 +104,8 @@
         "envoy-gateway": { "$ref": "#/definitions/dashboardEntry" },
         "envoy-proxy": { "$ref": "#/definitions/dashboardEntry" },
         "envoy-clusters": { "$ref": "#/definitions/dashboardEntry" },
-        "kargo": { "$ref": "#/definitions/dashboardEntry" }
+        "kargo": { "$ref": "#/definitions/dashboardEntry" },
+        "keycloak": { "$ref": "#/definitions/dashboardEntry" }
       }
     },
     "home": {

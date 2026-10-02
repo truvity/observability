@@ -98,6 +98,13 @@ kargo:
   file: kargo.json
   folder: platform
   queryCheck: true
+keycloak:
+  authored: true
+  file: keycloak.json
+  folder: platform
+  queryCheck: true
+  requires:
+  - keycloak-metrics
 kubelet:
   file: kubelet.json
   folder: infrastructure
