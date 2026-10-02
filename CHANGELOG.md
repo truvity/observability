@@ -6,6 +6,12 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **Behaviour change: smctl's cache directory moves to `/cache/maps`.** In installs with
+  `sourcemaps.smctl.enabled`, the rendered `cache.dir` is now `/cache/maps`
+  inside the same emptyDir, so the config checksum changes and the sourcemaps
+  pod rolls once. No opt-out is needed: the cache is only a cache and smctl
+  empties it at every start anyway.
+
 - fix(observability-rum): `smctl serve` no longer crash-loops at start with
   `reset cache dir: unlinkat //cache: read-only file system`. smctl empties
   its cache directory by removing and recreating it, which fails on the
