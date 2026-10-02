@@ -3,6 +3,8 @@
 {{- $root := . }}
 {{- $fullname := include "observability-stack.fullname" . }}
 {{- $metrics := include "observability-stack.metrics.url" . }}
+{{- $ha := include "observability-stack.ha.primary" . }}
+{{- $haPeer := (include "observability-stack.ha" . | fromYaml).peer }}
 {{- $notifier := .Values.alertmanager.notifierUrl | default (printf "http://vmalertmanager-%s.%s.svc:9093" $fullname .Release.Namespace) }}
 {{- /*
 `notifications.mode: evaluate-only` — docs/notifications.md, "Evaluate,
@@ -44,20 +46,61 @@ Both carry the same three settings for the same three reasons:
                                written in the other query language. Both
                                are set here, explicitly, because the two
                                alerters in this release must not overlap.
+
+`ha` (the primary of a pair): one vmalert per store replica, so four, not
+two. Each alerter of the peer set reads the PEER's store and keeps its
+`remoteWrite`/`remoteRead` state there, and everything else about it is
+the primary's twin: the same rule selector (so the same rules), the same
+`evaluationInterval`, the same `externalLabels` and every Alertmanager
+notified. The choice is per replica rather than every alerter against the
+primary through the proxy for three reasons. A store that is down must not
+take its alerting with it: an alerter reading through `first_available`
+would evaluate against the other replica anyway, so two of them would
+evaluate the same data and a lost replica would be invisible. Alert state
+(`ALERTS_FOR_STATE`) and recording-rule output then land in the store the
+rules read, so whichever replica answers a read has both. And no vmalert
+ever writes into the other half of the pair, which would put the same
+sample into one store from two sources. No `replica` external label is
+added, deliberately: Alertmanager groups and dedups by labels, so two
+alerters firing the same rule with the same labels page once, and a label
+that differed between them would page twice. Rules over data only one
+replica has (before the other was seeded) fire from that replica alone,
+and either firing is enough.
 */}}
 {{- range $kind := list "metrics" "logs" }}
 {{- $isLogs := eq $kind "logs" }}
 {{- if or (not $isLogs) $root.Values.vmalert.logs.enabled }}
+{{- range $role := (ternary (list "primary" "peer") (list "primary") (eq $ha "true")) }}
+{{- $isPeer := eq $role "peer" }}
+{{- $storeMetrics := ternary $haPeer.metrics $metrics $isPeer }}
+{{- $storeLogs := ternary $haPeer.logs (include "observability-stack.logs.url" $root) $isPeer }}
 ---
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMAlert
 metadata:
-  name: {{ printf "%s-%s" $fullname $kind }}
+  name: {{ printf "%s-%s" $fullname $kind }}{{ if $isPeer }}-peer{{ end }}
   labels:
     {{- include "observability-stack.labels" $root | nindent 4 }}
     observability.rule-type: {{ ternary "vlogs" "prometheus" $isLogs }}
 spec:
   replicaCount: 1
+  {{- if $ha }}
+  {{- /*
+  The two alerters of a kind share a pod label to spread on. Soft, for the
+  same reason the proxy's spread is: the pair exists to survive a zone, and
+  a hard constraint would leave the survivor unschedulable.
+  */}}
+  podMetadata:
+    labels:
+      observability.vmalert: {{ $kind }}
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          observability.vmalert: {{ $kind }}
+  {{- end }}
   evaluationInterval: {{ $root.Values.interval }}
   securityContext:
     {{- include "observability-stack.restrictedSecurityContext" $root | nindent 4 }}
@@ -99,15 +142,15 @@ spec:
   resources:
     {{- include "observability-stack.resources" $root.Values.vmalert.resources | nindent 4 }}
   datasource:
-    url: {{ ternary (include "observability-stack.logs.url" $root) $metrics $isLogs | quote }}
+    url: {{ ternary $storeLogs $storeMetrics $isLogs | quote }}
     basicAuth:
       {{- include "observability-stack.targetAuth" $root | nindent 6 }}
   remoteWrite:
-    url: {{ $metrics | quote }}
+    url: {{ $storeMetrics | quote }}
     basicAuth:
       {{- include "observability-stack.targetAuth" $root | nindent 6 }}
   remoteRead:
-    url: {{ $metrics | quote }}
+    url: {{ $storeMetrics | quote }}
     basicAuth:
       {{- include "observability-stack.targetAuth" $root | nindent 6 }}
   {{- if not $evaluateOnly }}
@@ -165,6 +208,7 @@ spec:
   extraArgs:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

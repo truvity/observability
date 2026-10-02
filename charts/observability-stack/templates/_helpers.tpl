@@ -153,6 +153,15 @@ its default port 8080 — templates/vmalert.yaml names the metrics CR
 {{- end -}}
 
 {{/*
+The same, for the vmalert that evaluates the PEER's metrics store (`ha`
+only, templates/vmalert.yaml): the operator names its Service from the CR,
+"<fullname>-metrics-peer".
+*/}}
+{{- define "observability-stack.vmalert.metrics.peerUrl" -}}
+{{- printf "http://vmalert-%s-metrics-peer.%s.svc:8080" (include "observability-stack.fullname" .) .Release.Namespace -}}
+{{- end -}}
+
+{{/*
 The read routes, per store.
 
 Every path is named. The tempting shapes — `/.*`, or `/api/v1/.*` — are
@@ -717,10 +726,79 @@ Returns the four resolved booleans as a YAML mapping; parse it with
 */}}
 {{- define "observability-stack.effectiveEnabled" -}}
 {{- $full := eq (.Values.mode | default "full") "full" -}}
+{{- /* `mode: replica` runs the stores, so it scrapes them; the other three are the primary release's. */ -}}
+{{- $stores := or $full (eq (.Values.mode | default "full") "replica") -}}
 vmauth: {{ if kindIs "invalid" .Values.vmauth.enabled }}{{ $full }}{{ else }}{{ .Values.vmauth.enabled }}{{ end }}
 vmalert: {{ if kindIs "invalid" .Values.vmalert.enabled }}{{ $full }}{{ else }}{{ .Values.vmalert.enabled }}{{ end }}
 alertmanager: {{ if kindIs "invalid" .Values.alertmanager.enabled }}{{ $full }}{{ else }}{{ .Values.alertmanager.enabled }}{{ end }}
-metricsSelfScrape: {{ if kindIs "invalid" .Values.metricsSelfScrape.enabled }}{{ $full }}{{ else }}{{ .Values.metricsSelfScrape.enabled }}{{ end }}
+metricsSelfScrape: {{ if kindIs "invalid" .Values.metricsSelfScrape.enabled }}{{ $stores }}{{ else }}{{ .Values.metricsSelfScrape.enabled }}{{ end }}
+{{- end -}}
+
+{{/*
+The pair (docs/high-availability.md).
+
+`ha` is the switch. The PRIMARY is `mode: full` with `ha: true`: it owns the
+proxy, the vmalerts and everything else, and knows the other release's
+stores by address (`pair.peer`). A REPLICA is `mode: replica`: the three
+stores and nothing else. `observability-stack.ha.primary` is "true" on the
+first and empty on every other install, so a template can gate on it.
+*/}}
+{{- define "observability-stack.ha.primary" -}}
+{{- if and (include "observability-stack.ha" . | fromYaml).enabled (eq (.Values.mode | default "full") "full") -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+`ha`, normalised. The key has two spellings (values.yaml, `ha`): the
+boolean this chart shipped first, which still only asks for two zones, and
+the object, which is the pair. Returned as YAML with every field present:
+`enabled` (the pair is on: only the object with `enabled: true`),
+`legacy` (the boolean was true), `name`, `replica`, `peer.{metrics,logs,
+traces}`. Parse with `fromYaml`.
+*/}}
+{{- define "observability-stack.ha" -}}
+{{- $ha := .Values.ha -}}
+{{- $out := dict "enabled" false "legacy" false "name" "observability" "replica" "" "peer" (dict "metrics" "" "logs" "" "traces" "") -}}
+{{- if kindIs "map" $ha -}}
+{{- $_ := set $out "enabled" ($ha.enabled | default false) -}}
+{{- $_ := set $out "name" ($ha.name | default "observability") -}}
+{{- $_ := set $out "replica" ($ha.replica | default "") -}}
+{{- $peer := $ha.peer | default dict -}}
+{{- $_ := set $out "peer" (dict "metrics" ($peer.metrics | default "") "logs" ($peer.logs | default "") "traces" ($peer.traces | default "")) -}}
+{{- else -}}
+{{- $_ := set $out "legacy" (eq (toString $ha) "true") -}}
+{{- end -}}
+{{- toYaml $out -}}
+{{- end -}}
+
+{{/*
+This release's replica label: `pair.replica`, else `a` on the primary and
+`b` on a replica. The other half of the pair is the other letter.
+*/}}
+{{- define "observability-stack.pair.replica" -}}
+{{- (include "observability-stack.ha" . | fromYaml).replica | default (ternary "b" "a" (eq (.Values.mode | default "full") "replica")) -}}
+{{- end -}}
+
+{{- define "observability-stack.pair.otherReplica" -}}
+{{- ternary "b" "a" (eq (include "observability-stack.pair.replica" .) "a") -}}
+{{- end -}}
+
+{{/*
+A store's address list for a read route: this release's own first, the
+peer's second, only under `ha`. Rendered as the lines of a `static:` block,
+so the single install keeps its one `url:` line, byte for byte.
+Arguments: (root, this release's url, the peer's url).
+*/}}
+{{- define "observability-stack.staticTarget" -}}
+{{- $root := index . 0 -}}
+{{- $own := index . 1 -}}
+{{- $peer := index . 2 -}}
+{{- if and (include "observability-stack.ha.primary" $root) $peer -}}
+urls:
+  - {{ $own | quote }}
+  - {{ $peer | quote }}
+{{- else -}}
+url: {{ $own | quote }}
+{{- end -}}
 {{- end -}}
 
 {{/*

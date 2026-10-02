@@ -4,6 +4,46 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`: HA mode. A pair of stores across zones, as two
+releases of one chart: a primary, and a stores-only `mode: replica`. The
+single install is the default and every existing render is unchanged; none
+of this applies until you opt in. See docs/high-availability.md.
+
+- **`mode: replica`** renders only the three stores (the VMSingle, the log
+  store, the trace store), their NetworkPolicies and scrape objects. No
+  proxy, vmalert, Alertmanager, karma, Grafana, backup or operator: the
+  primary's operator reconciles the replica's VMSingle. It is a contract like
+  `operator-only` and refuses, naming the key, a component left on, the
+  operator or the sync Job not turned off, `backup.enabled: true` (two
+  releases would erase each other's snapshots), `tenancy.*`, and `ha` that is
+  not enabled.
+- **`ha` accepts an object.** `ha: {enabled: true, name, replica, peer:
+  {metrics, logs, traces}}`. The boolean `ha: true` is the legacy switch and
+  keeps doing what it did (accepted, refused with fewer than two `zones`),
+  so no existing values file changes meaning. `ha: null` is now the default
+  (it was `false`; both mean the single install).
+- **On the primary, `ha.enabled`**: every read route carries both stores
+  (`static.urls`, this release first) with `first_available` and the existing
+  retry codes; `vmauth.replicaCount` must be 2 or more, spread over zones
+  with a PodDisruptionBudget; one vmalert per store replica (a `-peer` twin
+  of each, same rules, interval, labels and notifiers, state kept in its own
+  store) so four instead of two; a PodDisruptionBudget per store pair; the
+  store scrape carries `observability_replica`. Writers are not fanned out by
+  the proxy.
+- **Refused without a zone spread.** Under `ha.enabled` each store must carry
+  the shared `observability.pair` pod label and a `DoNotSchedule`
+  `topologySpreadConstraints` over `topology.kubernetes.io/zone` on it: a
+  zonal volume pins a replica to its zone. A zone loss keeps that replica
+  down until the zone returns.
+- **Two opt-in store alerts.** `selfAlerts.storeMemory` (a store container's
+  working set above 80% of its memory limit for 15m; either mode) and
+  `selfAlerts.divergence` (rows-ingested rate ratio between replica `a` and
+  `b`, a tolerance with a conservative default threshold of 0.25: measure a
+  week first). Both default off and render without `selfAlerts.enabled`.
+- Store resource defaults are unchanged; a replica takes the same ones.
+
 ## v0.35.1
 
 `platform-alerts`: the `*Absent` guards fire per cluster, and one dashboard

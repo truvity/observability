@@ -1,0 +1,96 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The REPLICA half of a pair: the three stores and nothing else. No proxy,
+# no vmalert, no Alertmanager, no Grafana, no backup, and no operator: the
+# primary release's operator reconciles this release's VMSingle. Every
+# component the mode does not run is turned off below the way
+# `operator-only` asks for, and the render refuses if one is left on.
+mode: replica
+ha:
+  enabled: true
+zones:
+  - example-1a
+  - example-1b
+
+vmauth:
+  enabled: false
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false
+  # Each release alerts for its own pods.
+  storeMemory:
+    enabled: true
+
+tenancy:
+  principals: []
+  writers: []
+  alertReaders: []
+
+# The stores' half of the pair (docs/high-availability.md): the shared pod
+# label, the REQUIRED zone spread over it and, on the two vendored scrape
+# objects, this release's replica label. These are subchart values, which
+# Helm evaluates before any template, so the chart checks them instead of
+# writing them.
+victoria-metrics-k8s-stack:
+  victoria-metrics-operator:
+    enabled: false
+  syncJob:
+    enabled: false
+  vmsingle:
+    spec:
+      podMetadata:
+        labels:
+          observability.pair: observability-metrics
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              observability.pair: observability-metrics
+
+victoria-logs-single:
+  server:
+    podLabels:
+      observability.pair: observability-logs
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            observability.pair: observability-logs
+    serviceMonitor:
+      relabelings:
+        - action: replace
+          targetLabel: observability_replica
+          replacement: b
+
+victoria-traces-single:
+  server:
+    podLabels:
+      observability.pair: observability-traces
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            observability.pair: observability-traces
+    serviceMonitor:
+      relabelings:
+        - action: replace
+          targetLabel: observability_replica
+          replacement: b

@@ -42,8 +42,19 @@ admitted here, by the labels the Grafana chart gives its own pods.
 {{- if and (not $observabilityStackEffective.vmauth) ($root.Values.grafana).enabled }}
 {{- $grafanaDirect = list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" (($root.Values.grafana).nameOverride | default "grafana") "app.kubernetes.io/instance" $root.Release.Name))) }}
 {{- end }}
+{{- /*
+`mode: replica`: the proxy and the vmalerts that read this release's stores
+belong to the PRIMARY release, whose names this release cannot know (a
+parent chart renders one release at a time), so the proxy is admitted by
+its name alone, the way the vmalerts already are. This is the one place a
+store admits a pod it does not name by release; the namespace is the
+boundary, and `-httpAuth` on the store is the other half.
+*/}}
+{{- $isReplica := eq ($root.Values.mode | default "full") "replica" }}
+{{- $vmauthMatch := dict "app.kubernetes.io/name" "vmauth" }}
+{{- if not $isReplica }}{{- $_ := set $vmauthMatch "app.kubernetes.io/instance" $fullname }}{{- end }}
 {{- $peers := concat
-    (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmauth" "app.kubernetes.io/instance" $fullname))))
+    (list (dict "podSelector" (dict "matchLabels" $vmauthMatch)))
     (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "vmalert"))))
     (list (dict "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/part-of" "observability-stack" "app.kubernetes.io/instance" $root.Release.Name))))
     ($root.Values.networkPolicy.scrapeFrom | default $scrapeDefault)
@@ -92,6 +103,7 @@ spec:
     {{- end }}
     {{- end }}
 {{- end }}
+{{- if not $isReplica }}
 ---
 {{- /*
 vmalert's own ingress, the same belt-and-braces the stores get: nothing
@@ -267,5 +279,6 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+{{- end }}
 {{- end }}
 {{- end }}

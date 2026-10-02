@@ -62,4 +62,17 @@ spec:
       interval: {{ $root.Values.interval }}
       basicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+      {{- if (include "observability-stack.ha" $root | fromYaml).enabled }}
+      {{- /*
+      A pair: the divergence alert compares the two stores' own counters,
+      so every sample of this store's scrape carries which replica it is
+      (docs/high-availability.md). The log and trace stores' scrape objects
+      are the vendored charts', and carry the same label through their own
+      `serviceMonitor.relabelings` (refused when missing).
+      */}}
+      relabelings:
+        - action: replace
+          targetLabel: observability_replica
+          replacement: {{ include "observability-stack.pair.replica" $root | quote }}
+      {{- end }}
 {{- end }}

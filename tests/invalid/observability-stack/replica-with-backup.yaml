@@ -1,0 +1,16 @@
+# expect: Only the primary backs up
+# Two releases backing up to one prefix take turns erasing each other's
+# snapshots.
+mode: replica
+ha:
+  enabled: true
+zones:
+  - example-1a
+  - example-1b
+victoria-metrics-k8s-stack:
+  victoria-metrics-operator:
+    enabled: false
+  syncJob:
+    enabled: false
+backup:
+  enabled: true

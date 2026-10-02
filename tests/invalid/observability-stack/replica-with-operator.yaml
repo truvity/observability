@@ -1,0 +1,8 @@
+# expect: A second operator would fight it
+# The primary release runs the operator that reconciles this VMSingle.
+ha:
+  enabled: true
+zones:
+  - example-1a
+  - example-1b
+mode: replica

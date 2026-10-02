@@ -1,6 +1,7 @@
 {{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml }}
 {{- if $observabilityStackEffective.vmauth }}
 {{- $root := . }}
+{{- $haPeer := (include "observability-stack.ha" . | fromYaml).peer }}
 {{- $fullname := include "observability-stack.fullname" . }}
 {{- $labels := dict "cluster" .Values.tenancy.clusterLabel "namespace" .Values.tenancy.namespaceLabel }}
 {{- /*
@@ -147,7 +148,7 @@ spec:
   targetRefs:
     {{- if $hasMetrics }}
     - static:
-        url: {{ $metrics | quote }}
+        {{- include "observability-stack.staticTarget" (list $root $metrics $haPeer.metrics) | nindent 8 }}
       paths:
         {{- if $p.metricsQueryOnly }}
         {{- include "observability-stack.readPaths.metrics.queryOnly" $root | nindent 8 }}
@@ -168,14 +169,14 @@ spec:
     _validate.tpl requires here too. No basic auth: vmalert has none.
     */}}
     - static:
-        url: {{ include "observability-stack.vmalert.metrics.url" $root | quote }}
+        {{- include "observability-stack.staticTarget" (list $root (include "observability-stack.vmalert.metrics.url" $root) (ternary (include "observability-stack.vmalert.metrics.peerUrl" $root) "" (include "observability-stack.ha.primary" $root | eq "true"))) | nindent 8 }}
       paths:
         {{- include "observability-stack.readPaths.vmalertAPI" $root | nindent 8 }}
       drop_src_path_prefix_parts: 1
     {{- end }}
     {{- if $hasLogs }}
     - static:
-        url: {{ $logs | quote }}
+        {{- include "observability-stack.staticTarget" (list $root $logs $haPeer.logs) | nindent 8 }}
       paths:
         {{- include "observability-stack.readPaths.logs" $root | nindent 8 }}
       query_args:
@@ -198,7 +199,7 @@ spec:
     fixed to remove.
     */}}
     - static:
-        url: {{ $traces | quote }}
+        {{- include "observability-stack.staticTarget" (list $root $traces $haPeer.traces) | nindent 8 }}
       paths:
         {{- include "observability-stack.readPaths.traces" $root | nindent 8 }}
       targetRefBasicAuth:
@@ -300,7 +301,7 @@ spec:
   retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
   targetRefs:
     - static:
-        url: {{ include "observability-stack.vmalert.metrics.url" $root | quote }}
+        {{- include "observability-stack.staticTarget" (list $root (include "observability-stack.vmalert.metrics.url" $root) (ternary (include "observability-stack.vmalert.metrics.peerUrl" $root) "" (include "observability-stack.ha.primary" $root | eq "true"))) | nindent 8 }}
       paths:
         {{- include "observability-stack.readPaths.alerts" $root | nindent 8 }}
     {{- if $r.alertmanager }}

@@ -23,6 +23,27 @@ spec:
     repository: {{ .Values.vmauth.image.repository }}
     tag: {{ .Values.vmauth.image.tag }}
   replicaCount: {{ .Values.vmauth.replicaCount }}
+  {{- if include "observability-stack.ha.primary" . }}
+  {{- /*
+  `ha`: the proxy is the one component both halves of the pair are read
+  through, so it is the one that must not share a fate with either. Two or
+  more replicas (`vmauth.replicaCount`, refused below two), spread over
+  zones SOFTLY -- the proxy is stateless and a zone loss must leave a pod
+  schedulable in the surviving zone, which a hard constraint with
+  `maxSkew: 1` would refuse -- and a PodDisruptionBudget so a node drain
+  takes one at a time.
+  */}}
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmauth
+          app.kubernetes.io/instance: {{ include "observability-stack.fullname" . }}
+  podDisruptionBudget:
+    maxUnavailable: 1
+  {{- end }}
   securityContext:
     {{- include "observability-stack.restrictedSecurityContext" . | nindent 4 }}
   resources:

@@ -1,0 +1,42 @@
+{{- /*
+The pair's PodDisruptionBudgets (`ha` on the primary).
+
+One per store, selecting the store pods of BOTH releases by the shared
+`observability.pair` label (`pair.name`, written into each store's pod
+labels in values, and refused when missing -- see
+`observability-stack.validate.pairSpread`). `maxUnavailable: 1` over a pair
+of two means a node drain or a rolling upgrade takes one replica at a time
+and refuses to take the second while the first is still down.
+
+The budget lives in the primary release alone on purpose. A per-release
+budget would select one pod and say nothing about the other, and two
+budgets selecting the same pods are refused by the eviction API. It guards
+VOLUNTARY disruption only: a zone loss takes a replica down regardless, and
+the replica stays down until the zone returns, because its volume is
+zonal (docs/high-availability.md).
+*/ -}}
+{{- if include "observability-stack.ha.primary" . }}
+{{- $root := . }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" }}
+{{- $on := dict
+    "metrics" (and $vmks.enabled ($vmks.vmsingle).enabled)
+    "logs" (index .Values "victoria-logs-single").enabled
+    "traces" (index .Values "victoria-traces-single").enabled }}
+{{- range $store := list "metrics" "logs" "traces" }}
+{{- if index $on $store }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ printf "%s-%s-pair" $fullname $store | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      observability.pair: {{ printf "%s-%s" (include "observability-stack.ha" $root | fromYaml).name $store }}
+{{- end }}
+{{- end }}
+{{- end }}

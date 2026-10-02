@@ -1,0 +1,15 @@
+# expect: is set on a `mode: replica` release
+# The replica is read by the primary; it names nobody.
+mode: replica
+ha:
+  enabled: true
+  peer:
+    metrics: http://peer-metrics.example.svc:8428
+zones:
+  - example-1a
+  - example-1b
+victoria-metrics-k8s-stack:
+  victoria-metrics-operator:
+    enabled: false
+  syncJob:
+    enabled: false

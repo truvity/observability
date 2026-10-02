@@ -210,6 +210,10 @@ charts take as Secret names, delivered through External Secrets.
   the failure that earned it.
 - [docs/tenancy-owner.md](docs/tenancy-owner.md) — the opt-in `owner` label
   that routes an alert to the owning company, and what it does not cover.
+- [docs/high-availability.md](docs/high-availability.md) — the pair: a
+  stores-only `mode: replica` release beside a primary with `ha.enabled`,
+  reads over both, a vmalert per replica, and the runbook for replacing a
+  replica.
 - [docs/reference.md](docs/reference.md) — every value: default, type,
   what it does, when it is required.
 - [docs/doctrine.md](docs/doctrine.md) — what this repository owns, what

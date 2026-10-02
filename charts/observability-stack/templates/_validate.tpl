@@ -67,8 +67,11 @@ proxy that was never going to exist, with nothing in this file saying so.
 */}}
 {{- define "observability-stack.validate.mode" -}}
 {{- $mode := .Values.mode | default "full" -}}
-{{- if not (has $mode (list "full" "operator-only")) -}}
-{{- fail (printf "observability-stack: `mode` is %q, which is neither \"full\" nor \"operator-only\"." (toString $mode)) -}}
+{{- if not (has $mode (list "full" "operator-only" "replica")) -}}
+{{- fail (printf "observability-stack: `mode` is %q, which is none of \"full\", \"operator-only\" or \"replica\"." (toString $mode)) -}}
+{{- end -}}
+{{- if eq $mode "replica" -}}
+{{- include "observability-stack.validate.replica" . -}}
 {{- end -}}
 {{- if eq $mode "operator-only" -}}
 {{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
@@ -136,18 +139,202 @@ a fetched VMRule, no Grafana for a fetched dashboard.
 {{- end -}}
 
 {{/*
-Zone redundancy.
+`mode: replica` -- the second half of a pair, a CONTRACT like
+operator-only: it runs the three stores and nothing else, and refuses
+every setting that says otherwise instead of quietly ignoring it.
+*/}}
+{{- define "observability-stack.validate.replica" -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- if not (include "observability-stack.ha" . | fromYaml).enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `ha.enabled` is not true. A replica is the second half of a pair and exists only beside a primary release (`mode: full` with `ha: {enabled: true, peer: ...}`); on its own it is a store with no proxy, no alerting and no backup. Set `ha: {enabled: true}` and `zones`, or run `mode: full`. (The boolean `ha: true` is the legacy switch and does not turn the pair on.)" -}}
+{{- end -}}
+{{- if not $vmks.enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `victoria-metrics-k8s-stack.enabled` is false. The metrics store is a VMSingle that subchart renders; leave it on." -}}
+{{- end -}}
+{{- if (index $vmks "victoria-metrics-operator").enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `victoria-metrics-k8s-stack.victoria-metrics-operator.enabled` is true. The primary release runs the operator, and it reconciles this release's VMSingle (it watches the namespace). A second operator would fight it over every object, so set `victoria-metrics-k8s-stack.victoria-metrics-operator.enabled: false`." -}}
+{{- end -}}
+{{- if ne ($vmks.syncJob).enabled false -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `victoria-metrics-k8s-stack.syncJob.enabled` is not false. That Job fetches rules and dashboards from upstream and applies them directly, on its own switch and defaulting to true upstream: in a replica there is no vmalert or Grafana for it to feed, and the primary already ran it. Set `victoria-metrics-k8s-stack.syncJob.enabled: false`." -}}
+{{- end -}}
+{{- if not ($vmks.vmsingle).enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `victoria-metrics-k8s-stack.vmsingle.enabled` is false. A replica holds the same stores as the primary; with the metrics store off the pair would have a log and a trace replica and one metrics store." -}}
+{{- end -}}
+{{- if .Values.vmauth.enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `vmauth.enabled` is true. The proxy belongs to the primary release, which reads this release's stores through `ha.peer`; a second proxy would be a second, unaudited way in. Leave it unset or false." -}}
+{{- end -}}
+{{- if .Values.vmalert.enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `vmalert.enabled` is true. The primary release renders one vmalert per store replica, this one's included, so identical rules are evaluated against each store by the same chart values. A vmalert here would evaluate every rule a second time. Leave it unset or false." -}}
+{{- end -}}
+{{- if .Values.alertmanager.enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `alertmanager.enabled` is true. The Alertmanager pair belongs to the primary release. Leave it unset or false." -}}
+{{- end -}}
+{{- if .Values.karma.enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `karma.enabled` is true. karma is a console for the primary's Alertmanager. Set `karma.enabled: false`." -}}
+{{- end -}}
+{{- if (.Values.grafana).enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `grafana.enabled` is true. Grafana reads through the primary's proxy. Set `grafana.enabled: false`." -}}
+{{- end -}}
+{{- if .Values.backup.enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `backup.enabled` is true. Only the primary backs up: both releases would write the same bucket prefix, and a backup deletes everything under its prefix that is not in its own source, so two of them take turns erasing each other's snapshots. Set `backup.enabled: false` here." -}}
+{{- end -}}
+{{- if .Values.selfAlerts.enabled -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `selfAlerts.enabled` is true. Every rule it holds watches a component this mode does not run, or is the primary's own. `selfAlerts.storeMemory.enabled` is the one rule a replica can carry, and it has its own switch." -}}
+{{- end -}}
+{{- if .Values.tenancy.principals -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.principals` is set. There is no proxy here for a reader's grant to reach; grants live on the primary. Clear it." -}}
+{{- end -}}
+{{- if .Values.tenancy.writers -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.writers` is set. There is no proxy here for a writer's token to authenticate against. Clear it." -}}
+{{- end -}}
+{{- if .Values.tenancy.alertReaders -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.alertReaders` is set. There is no vmalert here for it to read. Clear it." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Zone redundancy, and the pair.
 
 None of the three stores replicates across a zone in a way that survives
 one, so `ha` means two independent installs with the writers holding the
 redundancy. With fewer than two zones there is nothing to be redundant
 across, and an install labelled highly available is one nobody looks at
 again.
+
+What `ha` then requires is what makes the second install a pair rather
+than a second install: on the primary, the other release's store
+addresses, a proxy that prefers this release and has more than one pod; on
+both, the stores' own zone spread on the shared pair label and the replica
+label on their scrape. The last two are values of the vendored charts,
+which Helm evaluates before any template, so this chart cannot write them
+and refuses instead (the rule for every mirror here).
 */}}
 {{- define "observability-stack.validate.ha" -}}
-{{- if .Values.ha -}}
+{{- $mode := .Values.mode | default "full" -}}
+{{- $haCfg := include "observability-stack.ha" . | fromYaml -}}
+{{- if or $haCfg.enabled $haCfg.legacy -}}
 {{- if lt (len .Values.zones) 2 -}}
-{{- fail (printf "observability-stack: `ha` is true with %d zone(s). No store here replicates across a zone: high availability means two independent installs and writers that send to both, so it needs at least two entries in `zones`. Set `ha: false` for a single-zone install — it is the supported shape, not a lesser one." (len .Values.zones)) -}}
+{{- fail (printf "observability-stack: `ha` is enabled with %d zone(s). No store here replicates across a zone: high availability means two independent installs and writers that send to both, so it needs at least two entries in `zones`. Set `ha: false` for a single-zone install — it is the supported shape, not a lesser one." (len .Values.zones)) -}}
+{{- end -}}
+{{- end -}}
+{{- if $haCfg.enabled -}}
+{{- if eq $mode "operator-only" -}}
+{{- fail "observability-stack: `ha.enabled` is true with `mode: operator-only`. An operator-only install has no store to pair." -}}
+{{- end -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- $logs := index .Values "victoria-logs-single" -}}
+{{- $traces := index .Values "victoria-traces-single" -}}
+{{- $peer := $haCfg.peer -}}
+{{- if eq $mode "full" -}}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- if not $eff.vmauth -}}
+{{- fail "observability-stack: `ha.enabled` is true on the primary but the proxy is off. The pair is read through `vmauth` (`first_available` over both stores); with it off nothing fails over and the second store is never read." -}}
+{{- end -}}
+{{- if ne .Values.vmauth.loadBalancingPolicy "first_available" -}}
+{{- fail (printf "observability-stack: `ha.enabled` is true but `vmauth.loadBalancingPolicy` is %q. A read must go to this release's store and fall over to the peer only when it fails: `least_loaded` sends half of every dashboard to a store that may be empty or still catching up. Set `first_available`." (toString .Values.vmauth.loadBalancingPolicy)) -}}
+{{- end -}}
+{{- if lt (int .Values.vmauth.replicaCount) 2 -}}
+{{- fail (printf "observability-stack: `ha.enabled` is true but `vmauth.replicaCount` is %d. The proxy is what both stores are read through; one pod takes every read and every cross-cluster write with its zone. Set it to 2 or more." (int .Values.vmauth.replicaCount)) -}}
+{{- end -}}
+{{- if and ($vmks.enabled) ($vmks.vmsingle).enabled (not $peer.metrics) -}}
+{{- fail "observability-stack: `ha.enabled` is true but `ha.peer.metrics` is empty. The proxy needs the other release's metrics store (`http://<service>.<namespace>.svc:8428`) to fall over to, and the second vmalert needs it to evaluate against." -}}
+{{- end -}}
+{{- if and $logs.enabled (not $peer.logs) -}}
+{{- fail "observability-stack: `ha.enabled` is true but `ha.peer.logs` is empty. Name the other release's log store (`http://<service>.<namespace>.svc:9428`), or turn the log store off in both releases." -}}
+{{- end -}}
+{{- if and $traces.enabled (not $peer.traces) -}}
+{{- fail "observability-stack: `ha.enabled` is true but `ha.peer.traces` is empty. Name the other release's trace store (`http://<service>.<namespace>.svc:10428`), or turn the trace store off in both releases." -}}
+{{- end -}}
+{{- if and (not $logs.enabled) $peer.logs -}}
+{{- fail "observability-stack: `ha.peer.logs` is set but the log store is off here. Both releases of a pair run the same stores; turn it off in both and clear the address." -}}
+{{- end -}}
+{{- if and (not $traces.enabled) $peer.traces -}}
+{{- fail "observability-stack: `ha.peer.traces` is set but the trace store is off here. Both releases of a pair run the same stores; turn it off in both and clear the address." -}}
+{{- end -}}
+{{- else -}}
+{{- if or $peer.metrics $peer.logs $peer.traces -}}
+{{- fail "observability-stack: `ha.peer` is set on a `mode: replica` release. The replica is read by the primary, which names it; the replica names nobody. Clear it." -}}
+{{- end -}}
+{{- end -}}
+{{- /* The same spread and the same label on every enabled store, either role. */ -}}
+{{- if and $vmks.enabled ($vmks.vmsingle).enabled -}}
+{{- include "observability-stack.validate.pairSpread" (list . "metrics" "victoria-metrics-k8s-stack.vmsingle.spec" (($vmks.vmsingle).spec | default dict).podMetadata (($vmks.vmsingle).spec | default dict).topologySpreadConstraints) -}}
+{{- end -}}
+{{- if $logs.enabled -}}
+{{- include "observability-stack.validate.pairSpread" (list . "logs" "victoria-logs-single.server" ($logs.server | default dict).podLabels ($logs.server | default dict).topologySpreadConstraints) -}}
+{{- include "observability-stack.validate.pairReplicaLabel" (list . "victoria-logs-single.server.serviceMonitor" (($logs.server | default dict).serviceMonitor | default dict)) -}}
+{{- end -}}
+{{- if $traces.enabled -}}
+{{- include "observability-stack.validate.pairSpread" (list . "traces" "victoria-traces-single.server" ($traces.server | default dict).podLabels ($traces.server | default dict).topologySpreadConstraints) -}}
+{{- include "observability-stack.validate.pairReplicaLabel" (list . "victoria-traces-single.server.serviceMonitor" (($traces.server | default dict).serviceMonitor | default dict)) -}}
+{{- end -}}
+{{- else -}}
+{{- if or $haCfg.peer.metrics $haCfg.peer.logs $haCfg.peer.traces -}}
+{{- fail "observability-stack: `ha.peer` is set but `ha.enabled` is not true. Nothing would read it; set `ha: true` (with `zones`), or clear `ha.peer`." -}}
+{{- end -}}
+{{- if .Values.selfAlerts.divergence.enabled -}}
+{{- fail "observability-stack: `selfAlerts.divergence.enabled` is true but `ha.enabled` is not. The rule compares the two stores of a pair; a single install has one." -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.selfAlerts.divergence.enabled $haCfg.enabled (ne $mode "full") -}}
+{{- fail "observability-stack: `selfAlerts.divergence.enabled` is true on a `mode: replica` release. The rule compares both stores and lives on the primary." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+One store's half of the pair's zone spread, as the vendored chart's own
+values carry it: a pod label `observability.pair: <pair.name>-<store>` and a
+`topologySpreadConstraints` entry across `topology.kubernetes.io/zone`,
+`DoNotSchedule`, selecting that label. Both are REQUIRED, and a hard
+constraint on purpose: a zonal volume pins a replica to its zone, so a
+spread that merely prefers lets the two replicas of a pair land in one
+zone, which is the single-zone install with a second pod to pay for.
+Arguments: (root, store, where, pod labels, constraints).
+*/}}
+{{- define "observability-stack.validate.pairSpread" -}}
+{{- $root := index . 0 -}}
+{{- $store := index . 1 -}}
+{{- $where := index . 2 -}}
+{{- $podMeta := index . 3 | default dict -}}
+{{- $constraints := index . 4 | default list -}}
+{{- /* A VMSingle names its pod labels under `podMetadata.labels`; the two StatefulSets' `podLabels` are the labels themselves. */ -}}
+{{- $labels := ternary ($podMeta.labels | default dict) $podMeta (hasKey $podMeta "labels") -}}
+{{- $want := printf "%s-%s" (include "observability-stack.ha" $root | fromYaml).name $store -}}
+{{- if ne (index $labels "observability.pair" | default "") $want -}}
+{{- fail (printf "observability-stack: `ha.enabled` is true but the %s store's pod label `observability.pair` is %q, not %q. Set `observability.pair: %s` under `%s` (`podMetadata.labels` for the VMSingle, `podLabels` for the two StatefulSets): the pair's zone spread and PodDisruptionBudget select on it, and the same value must be on both releases' pods. docs/high-availability.md has the block to paste." $store (index $labels "observability.pair" | default "") $want $want $where) -}}
+{{- end -}}
+{{- $ok := false -}}
+{{- range $c := $constraints -}}
+{{- $sel := ($c.labelSelector | default dict).matchLabels | default dict -}}
+{{- if and (eq ($c.topologyKey | default "") "topology.kubernetes.io/zone") (eq ($c.whenUnsatisfiable | default "") "DoNotSchedule") (eq (index $sel "observability.pair" | default "") $want) -}}
+{{- $ok = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $ok -}}
+{{- fail (printf "observability-stack: `ha.enabled` is true but `%s.topologySpreadConstraints` has no entry that spreads the %s store over zones. Add one with `topologyKey: topology.kubernetes.io/zone`, `whenUnsatisfiable: DoNotSchedule` and `labelSelector.matchLabels: {observability.pair: %s}`. It is required, not advisory: a zonal volume pins a replica to its zone, so a spread that only prefers can leave both replicas of the pair in one zone. docs/high-availability.md has the block to paste." $where $store $want) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+A pair's replica label on a vendored store's own ServiceMonitor, which is
+the only way a label reaches that scrape: `observability_replica` with this
+release's letter, in `serviceMonitor.relabelings`. The divergence alert
+tells the two stores apart by it. Arguments: (root, where, serviceMonitor).
+*/}}
+{{- define "observability-stack.validate.pairReplicaLabel" -}}
+{{- $root := index . 0 -}}
+{{- $where := index . 1 -}}
+{{- $sm := index . 2 -}}
+{{- if $sm.enabled -}}
+{{- $want := include "observability-stack.pair.replica" $root -}}
+{{- $ok := false -}}
+{{- range $r := ($sm.relabelings | default list) -}}
+{{- if and (eq ($r.targetLabel | default "") "observability_replica") (eq ($r.replacement | default "") $want) -}}
+{{- $ok = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $ok -}}
+{{- fail (printf "observability-stack: `ha.enabled` is true but `%s.relabelings` has no entry setting `observability_replica` to %q. The store's own scrape has to say which replica it is, or the divergence alert cannot tell the pair apart: add `{action: replace, targetLabel: observability_replica, replacement: %s}`. docs/high-availability.md has the block to paste." $where $want $want) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

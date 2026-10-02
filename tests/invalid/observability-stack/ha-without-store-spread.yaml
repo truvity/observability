@@ -1,0 +1,30 @@
+# expect: has no entry that spreads the metrics store over zones
+# The zone spread is required, not advisory: a zonal volume pins a replica
+# to its zone, so a pair that is only preferred to spread can sit in one.
+# The pod label is right here; the constraint is what is missing.
+ha:
+  enabled: true
+  peer:
+    metrics: http://peer-metrics.example.svc:8428
+    logs: http://peer-logs.example.svc:9428
+    traces: http://peer-traces.example.svc:10428
+zones:
+  - example-1a
+  - example-1b
+vmauth:
+  replicaCount: 2
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      podMetadata:
+        labels:
+          observability.pair: observability-metrics

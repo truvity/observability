@@ -1,0 +1,5 @@
+# expect: `ha.peer` is set but `ha.enabled` is not true
+# A peer nothing reads.
+ha:
+  peer:
+    metrics: http://peer-metrics.example.svc:8428
