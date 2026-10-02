@@ -27,6 +27,30 @@ const unmappedBodyLimit = 4000
 var templateFuncs = template.FuncMap{
 	"num":     toNumber,
 	"atLeast": atLeast,
+	"reFind":  reFind,
+}
+
+// reFind returns the first capture group of the first match of the RE2
+// pattern in text (the whole match if the pattern has no group), or "" when
+// nothing matches. It is how a label is pulled out of a plain-text message:
+// `{{ reFind "Budget Name: (\\S+)" ._sns.Message }}`. A miss is an empty
+// string rather than an error, so a publisher that rewords its text degrades
+// a label instead of turning the alert into CloudEventUnmapped.
+func reFind(pattern, text string) (string, error) {
+	re, err := compileCached(pattern)
+	if err != nil {
+		return "", fmt.Errorf("reFind pattern: %w", err)
+	}
+
+	m := re.FindStringSubmatch(text)
+	switch {
+	case m == nil:
+		return "", nil
+	case len(m) > 1:
+		return m[1], nil
+	default:
+		return m[0], nil
+	}
 }
 
 // toNumber converts a JSON number, an integer, or a numeric string to a
