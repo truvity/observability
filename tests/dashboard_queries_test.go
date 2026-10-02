@@ -884,11 +884,6 @@ func TestNodeJobLabelsAreWhatTheChartRenders(t *testing.T) {
 			var jobs []job
 			require.NoError(t, yaml.Unmarshal([]byte(agent.Spec.InlineScrapeConfig), &jobs))
 			for _, j := range jobs {
-				// An HTTP probe (`metrics.scrape.probes`) is not a node job: it
-				// keeps only its `up` series, which no dashboard selects on.
-				if strings.HasPrefix(j.Name, "http-probe-") {
-					continue
-				}
 				var claim *labelJob
 				for i := range spec.Jobs {
 					if spec.Jobs[i].Name == j.Name {

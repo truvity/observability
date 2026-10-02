@@ -1,4 +1,32 @@
 ---
+# Source: observability-emitters/templates/blackbox.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-emitters-blackbox-exporter
+  labels:
+    app.kubernetes.io/name: observability-emitters-blackbox-exporter
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: observability-emitters-blackbox-exporter
+      app.kubernetes.io/instance: observability-emitters
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+              app.kubernetes.io/instance: observability-emitters
+      ports:
+        - port: 9115
+          protocol: TCP
+
+---
 # Source: observability-emitters/charts/victoria-logs-collector/templates/serviceaccount.yaml
 apiVersion: v1
 kind: ServiceAccount
@@ -16,6 +44,19 @@ metadata:
 automountServiceAccountToken: true
 
 ---
+# Source: observability-emitters/templates/blackbox.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-emitters-blackbox-exporter
+  labels:
+    app.kubernetes.io/name: observability-emitters-blackbox-exporter
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+automountServiceAccountToken: false
+
+---
 # Source: observability-emitters/templates/gateway.yaml
 apiVersion: v1
 kind: ServiceAccount
@@ -26,6 +67,35 @@ metadata:
     app.kubernetes.io/instance: observability-emitters
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: observability-emitters
+
+---
+# Source: observability-emitters/templates/blackbox.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-emitters-blackbox-exporter
+  labels:
+    app.kubernetes.io/name: observability-emitters-blackbox-exporter
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+data:
+  blackbox.yml: |
+    modules:
+      http_2xx:
+        http:
+          follow_redirects: false
+          method: GET
+          preferred_ip_protocol: ip4
+          valid_status_codes: []
+        prober: http
+        timeout: 5s
+      http_2xx_post:
+        http:
+          method: POST
+          preferred_ip_protocol: ip4
+        prober: http
+        timeout: 5s
 
 ---
 # Source: observability-emitters/templates/gateway.yaml
@@ -363,6 +433,28 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
+# Source: observability-emitters/templates/blackbox.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-emitters-blackbox-exporter
+  labels:
+    app.kubernetes.io/name: observability-emitters-blackbox-exporter
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: observability-emitters-blackbox-exporter
+    app.kubernetes.io/instance: observability-emitters
+  ports:
+    - name: http
+      port: 9115
+      targetPort: http
+      protocol: TCP
+
+---
 # Source: observability-emitters/templates/gateway.yaml
 apiVersion: v1
 kind: Service
@@ -501,6 +593,80 @@ spec:
           hostPath:
             path: /var/lib/vl-collector
         
+
+---
+# Source: observability-emitters/templates/blackbox.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-emitters-blackbox-exporter
+  labels:
+    app.kubernetes.io/name: observability-emitters-blackbox-exporter
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: observability-emitters-blackbox-exporter
+      app.kubernetes.io/instance: observability-emitters
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: observability-emitters-blackbox-exporter
+        app.kubernetes.io/instance: observability-emitters
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/part-of: observability-emitters
+      annotations:
+        observability-emitters/config-checksum: 66e2936cd5c7bfe874839e5499e43b7943902561579131ed374b8b5aba2e0d25
+    spec:
+      serviceAccountName: observability-emitters-blackbox-exporter
+      automountServiceAccountToken: false
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: blackbox-exporter
+          image: "prom/blackbox-exporter:v0.28.0"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          args:
+            - --config.file=/etc/blackbox/blackbox.yml
+            - --web.listen-address=:9115
+          ports:
+            - name: http
+              containerPort: 9115
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/blackbox
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: observability-emitters-blackbox-exporter
 
 ---
 # Source: observability-emitters/templates/gateway.yaml
@@ -744,37 +910,6 @@ spec:
           regex: (.+);.+
           target_label: id
           replacement: ""
-    - job_name: "http-probe-example-status"
-      scheme: https
-      honor_labels: false
-      metrics_path: "/health"
-      static_configs:
-        - targets: ["status.example.com"]
-          labels:
-            probe: "example-status"
-      relabel_configs:
-        - target_label: job
-          replacement: http-probe
-        - target_label: k8s_cluster_name
-          replacement: "example-cluster"
-        - target_label: deployment_environment_name
-          replacement: "development"
-    - job_name: "http-probe-example-api"
-      scheme: http
-      honor_labels: false
-      metrics_path: "/healthz"
-      scrape_interval: 2m
-      static_configs:
-        - targets: ["api.example.com:8080"]
-          labels:
-            probe: "example-api"
-      relabel_configs:
-        - target_label: job
-          replacement: http-probe
-        - target_label: k8s_cluster_name
-          replacement: "example-cluster"
-        - target_label: deployment_environment_name
-          replacement: "development"
   overrideHonorLabels: true
   remoteWrite:
   - bearerTokenSecret:
@@ -826,3 +961,54 @@ spec:
         resources:
           requests:
             storage: 10Gi
+
+---
+# Source: observability-emitters/templates/probes.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMProbe
+metadata:
+  name: observability-emitters-example-status
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  jobName: http-probe
+  module: "http_2xx"
+  vmProberSpec:
+    url: "observability-emitters-blackbox-exporter.default.svc:9115"
+    scheme: http
+    path: /probe
+  targets:
+    staticConfig:
+      targets:
+        - "https://status.example.com/health"
+      labels:
+        probe: "example-status"
+
+---
+# Source: observability-emitters/templates/probes.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMProbe
+metadata:
+  name: observability-emitters-example-api
+  labels:
+    app.kubernetes.io/name: observability-emitters
+    app.kubernetes.io/instance: observability-emitters
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-emitters
+spec:
+  jobName: http-probe
+  module: "http_2xx_post"
+  interval: 2m
+  vmProberSpec:
+    url: "observability-emitters-blackbox-exporter.default.svc:9115"
+    scheme: http
+    path: /probe
+  targets:
+    staticConfig:
+      targets:
+        - "http://api.example.com:8080/healthz"
+      labels:
+        probe: "example-api"

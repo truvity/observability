@@ -1,0 +1,62 @@
+# expect: which is not a key of `blackboxExporter.modules`
+# An unknown module is answered 400 by the exporter: no `probe_success`
+# series is written, so the alert on it never fires.
+
+blackboxExporter:
+  enabled: true
+  modules:
+    http_2xx_post:
+      http:
+        method: POST
+        preferred_ip_protocol: ip4
+      prober: http
+      timeout: 5s
+  networkPolicy:
+    enabled: true
+global:
+  cluster:
+    dnsDomain: cluster.example.
+metrics:
+  destinations:
+  - name: primary
+    url: https://metrics.example/api/v1/write
+  scrape:
+    probes:
+    - module: http_nope
+      name: example-status
+      url: https://status.example.com/health
+    - interval: 2m
+      module: http_2xx_post
+      name: example-api
+      url: http://api.example.com:8080/healthz
+otlp:
+  destinations:
+    logs:
+    - name: primary
+      url: https://logs.example
+    metrics:
+    - name: primary
+      url: https://metrics.example
+    traces:
+    - name: primary
+      url: https://traces.example
+tenancy:
+  cluster: example-cluster
+  environment: development
+victoria-logs-collector:
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+  extraVolumeMounts:
+  - mountPath: /etc/observability-write-token
+    name: write-token
+    readOnly: true
+  extraVolumes:
+  - name: write-token
+    secret:
+      secretName: example-write-token
+  remoteWrite:
+  - bearerTokenFile: /etc/observability-write-token/token
+    maxDiskUsagePerURL: 5GB
+    url: https://logs.example
+writeCredentials:
+  secretName: example-write-token
