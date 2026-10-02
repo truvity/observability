@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.41.0
 
 - **`observability-emitters`: external OTLP ingest, `otlp.external`** (off by
   default; no existing render moves). The gateway collector accepts OTLP from
