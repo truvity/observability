@@ -93,6 +93,11 @@ The chart renders from this an Alertmanager configuration with:
   (`deadman.urlSecret`), with `repeat_interval` equal to the heartbeat
   interval the far end expects.
 
+A deadman whose far end wants a bearer token (a Gatus `external-endpoints`
+entry does: `Authorization: Bearer <token>`) sets `alertmanager.watchdog.tokenKey`
+to a second key of the SAME Secret; it is read with `credentials_file`,
+like the URL. It is unset by default, which renders the receiver exactly as before.
+
 The receiver secret is **mounted**, never templated: the Slack bot
 token arrives as a file the way the watchdog URL already does, and the
 rendered configuration names the file. A manifest that contains a

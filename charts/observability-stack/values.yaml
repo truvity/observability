@@ -718,6 +718,11 @@ alertmanager:
     # the chart trusts whoever set `repeatInterval` to have set it
     # sanely — which is what it always did before this existed.
     # timeout: 15m
+    # -- The key, in the SAME Secret, of a bearer token the far end wants
+    # in `Authorization: Bearer <token>`. Read with `credentials_file`
+    # from the mounted Secret, like the URL. Unset (default), the heartbeat
+    # is posted without an Authorization header, as before.
+    tokenKey: ""
   resources:
     requests:
       cpu: "1"

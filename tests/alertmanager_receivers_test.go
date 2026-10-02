@@ -38,7 +38,7 @@ func TestEveryReceiverCredentialIsAMountedFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, goldens)
 
-	var files, telegram, slack int
+	var files, telegram, slack, bearers int
 
 	for _, g := range goldens {
 		for _, doc := range renderedDocs(t, g) {
@@ -77,6 +77,17 @@ func TestEveryReceiverCredentialIsAMountedFile(t *testing.T) {
 						continue
 					}
 					for _, c := range v.([]any) {
+						// A bearer for a receiver's far end is a mounted file too.
+						if cred, ok := dig(c.(map[string]any), "http_config", "authorization", "credentials_file").(string); ok {
+							files++
+							bearers++
+							vol, mounted := mounts[path.Dir(cred)]
+							if assert.Truef(t, mounted,
+								"%s: receiver %v reads credentials_file=%s, but no volume is mounted at %s", g, r["name"], cred, path.Dir(cred)) {
+								assert.Truef(t, secretVolumes[vol],
+									"%s: receiver %v reads credentials_file from volume %q, which is not a Secret", g, r["name"], vol)
+							}
+						}
 						for key, val := range c.(map[string]any) {
 							assert.Falsef(t, inlineCredentialKeys[key],
 								"%s: receiver %v has an inline %q — a credential in the rendered config, and so in the release's manifest",
@@ -112,5 +123,6 @@ func TestEveryReceiverCredentialIsAMountedFile(t *testing.T) {
 	// A check that found nothing to check proves nothing.
 	require.Positive(t, files, "no *_file receiver keys found in any golden; this test would pass vacuously")
 	require.Positive(t, telegram, "no telegram_configs found in any golden; the Telegram cases are missing")
+	require.Positive(t, bearers, "no http_config.authorization.credentials_file found in any golden; the watchdog-bearer case is missing")
 	require.Positive(t, slack, "no slack_configs found in any golden; the Slack cases are missing")
 }

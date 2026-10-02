@@ -563,6 +563,10 @@
               },
               "tokenSecret": {
                 "$ref": "#/definitions/secretRef"
+              },
+              "alertmanager": {
+                "type": "boolean",
+                "description": "Also admit this reader to this install's Alertmanager `/api/v2/alerts` (exact path), so it can ask whether an alert (the Watchdog) is ACTIVE in the router, not only evaluated by vmalert. Off by default. vmauth matches paths, not methods: `POST /api/v2/alerts` on that path CREATES alerts, so the edge in front of vmauth must admit GET only (a Gateway route with `method: GET`); this chart cannot enforce it. Needs `alertmanager.enabled`."
               }
             }
           }
@@ -691,6 +695,10 @@
             },
             "repeatInterval": {
               "$ref": "#/definitions/duration"
+            },
+            "tokenKey": {
+              "type": "string",
+              "description": "The key, in the same Secret as the URL, of a bearer token sent as `Authorization: Bearer <token>` (Alertmanager `http_config.authorization.credentials_file`). Empty: no Authorization header."
             },
             "timeout": {
               "$ref": "#/definitions/duration",
