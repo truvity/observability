@@ -324,6 +324,85 @@ spec:
               customResourceState config against docs/kube-state-metrics.md, and
               that the scrape itself is still up.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KargoStateMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
+    {{- /*
+    The controller's own series (the controller's ServiceMonitor, job
+    `controllerJob`), as opposed to the kube-state-metrics Stage and Promotion
+    series above. Each rule is its own switch and is off by default, so a
+    consumer that already turned the group on renders exactly what it did.
+    */}}
+    {{- $kc := $g.controllerAbsent }}
+    {{- $kr := $g.reconcileErrors }}
+    {{- $kq := $g.workqueueDepth }}
+    {{- $kjob := $g.controllerJob }}
+    {{- $komit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    {{- if $kc.enabled }}
+        # No Kargo controller is reporting.
+        #
+        # Nothing promotes while the controller is down, and the Stage and
+        # Promotion series above are written by kube-state-metrics from the
+        # objects, so they stay green. `absent(up == 1)` covers both a
+        # controller whose scrape reads 0 and one that is not scraped at
+        # all.
+        - alert: KargoControllerAbsent
+          expr: >-
+            absent(up{job="{{ $kjob }}"} == 1)
+          for: {{ $kc.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $kc.severity) | nindent 12 }}
+          annotations:
+            summary: "No Kargo controller has answered its metrics scrape for {{ $kc.for }}"
+            description: >-
+              up{job="{{ $kjob }}"} has not been 1 in {{ $kc.for }}: the Kargo
+              controller is down, crash-looping or no longer scraped, so no
+              Promotion is being executed. Check the controller's pod and its
+              ServiceMonitor.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KargoControllerAbsent")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if $kr.enabled }}
+        # Reconciles that ended in an error, per controller loop.
+        #
+        # `controller_runtime_reconcile_errors_total` is pre-initialised at 0
+        # for every loop, so `increase` sees the first error too. `for` equal
+        # to the window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: KargoControllerReconcileErrors
+          expr: >-
+            sum by ({{ $b }}controller) (
+              increase(controller_runtime_reconcile_errors_total{job="{{ $kjob }}"}[{{ $kr.window }}])
+            ) > 0
+          for: {{ $kr.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $kr.severity "omit" $komit) | nindent 12 }}
+          annotations:
+            summary: "Kargo controller loop {{`{{ $labels.controller }}`}} keeps failing to reconcile"
+            description: >-
+              The {{`{{ $labels.controller }}`}} loop of the Kargo controller has
+              recorded reconcile errors for {{ $kr.for }}. The objects it
+              owns are not converging: read the controller's log for the
+              resource and the error.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KargoControllerReconcileErrors")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if $kq.enabled }}
+        # A work queue that does not drain.
+        #
+        # `workqueue_depth` is the items waiting. A queue is rarely empty
+        # for an instant, so only depth above zero for the whole `for` counts:
+        # the controller is slower than the changes arriving, or stuck.
+        - alert: KargoControllerWorkqueueStuck
+          expr: >-
+            max by ({{ $b }}name) (workqueue_depth{job="{{ $kjob }}"}) > 0
+          for: {{ $kq.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $kq.severity "omit" $komit) | nindent 12 }}
+          annotations:
+            summary: "Kargo work queue {{`{{ $labels.name }}`}} has not drained for {{ $kq.for }}"
+            description: >-
+              The work queue {{`{{ $labels.name }}`}} of the Kargo controller has
+              held items for {{ $kq.for }}: reconciles are slower than changes
+              arrive, or a worker is stuck. Compare with the controller's CPU
+              and its reconcile errors.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KargoControllerWorkqueueStuck")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
     {{- end }}
     {{- if .Values.groups.probes.enabled }}
     {{- $g := .Values.groups.probes }}
@@ -713,4 +792,456 @@ spec:
               applied and the brokers' metrics port is reachable from the
               agent.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NATSMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if .Values.groups.argocd.enabled }}
+    {{- $g := .Values.groups.argocd }}
+    {{- $job := $g.job }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    - name: platform-alerts.argocd
+      interval: {{ .Values.interval }}
+      rules:
+        # An Application whose sync ended in Failed or Error.
+        #
+        # `argocd_app_sync_total` is a counter per Application and phase. The
+        # Failed series of an Application that never failed does not exist
+        # until its first failure, and plain `increase` skips a series' first
+        # sample, so the first failure would go unseen: `increase_pure`
+        # counts from zero. It stays true for `syncFailed.window` after the
+        # last failure.
+        - alert: ArgoCDAppSyncFailed
+          expr: >-
+            sum by ({{ $b }}name, project, dest_server, phase) (
+              increase_pure(argocd_app_sync_total{job=~"{{ $job }}", phase=~"Failed|Error"}[{{ $g.syncFailed.window }}])
+            ) > 0
+          for: {{ $g.syncFailed.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Argo CD application {{`{{ $labels.name }}`}} ended a sync as {{`{{ $labels.phase }}`}}"
+            description: >-
+              A sync of application {{`{{ $labels.name }}`}} (project
+              {{`{{ $labels.project }}`}}, destination {{`{{ $labels.dest_server }}`}})
+              ended in {{`{{ $labels.phase }}`}} within the last
+              {{ $g.syncFailed.window }}. Open the application and read the
+              sync result: a manifest the cluster refused, a hook that
+              failed, or a resource that never became healthy.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ArgoCDAppSyncFailed")) }}{{ . | nindent 12 }}{{- end }}
+        # An Application whose health is Degraded, Missing or Unknown.
+        #
+        # `argocd_app_info` is a gauge of 1 per Application, carrying its
+        # health in `health_status`. Progressing is left out on purpose: a
+        # rollout is Progressing, and one that never finishes is caught by
+        # Degraded when its resources time out.
+        - alert: ArgoCDAppUnhealthy
+          expr: >-
+            max by ({{ $b }}name, project, dest_server, health_status) (
+              argocd_app_info{job=~"{{ $job }}", health_status=~"Degraded|Missing|Unknown"}
+            )
+          for: {{ $g.unhealthyFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Argo CD application {{`{{ $labels.name }}`}} has been {{`{{ $labels.health_status }}`}} for {{ $g.unhealthyFor }}"
+            description: >-
+              Application {{`{{ $labels.name }}`}} (project {{`{{ $labels.project }}`}},
+              destination {{`{{ $labels.dest_server }}`}}) reports health
+              {{`{{ $labels.health_status }}`}}. Open it and read the resource that
+              is not healthy: a crash-looping workload, a missing object, or a
+              cluster Argo CD cannot read (see ArgoCDClusterConnectionLost).
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ArgoCDAppUnhealthy")) }}{{ . | nindent 12 }}{{- end }}
+        # An Application whose live state has differed from Git for too long.
+        #
+        # An application that does not self-heal and does not prune is
+        # OutOfSync by design (a resource kept on purpose): leave `outOfSyncFor`
+        # long, or switch the rule off with `outOfSync.enabled: false`.
+        {{- if $g.outOfSync.enabled }}
+        - alert: ArgoCDAppOutOfSync
+          expr: >-
+            max by ({{ $b }}name, project, dest_server) (
+              argocd_app_info{job=~"{{ $job }}", sync_status="OutOfSync"}
+            )
+          for: {{ $g.outOfSync.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Argo CD application {{`{{ $labels.name }}`}} has been OutOfSync for {{ $g.outOfSync.for }}"
+            description: >-
+              Application {{`{{ $labels.name }}`}} (project {{`{{ $labels.project }}`}},
+              destination {{`{{ $labels.dest_server }}`}}) differs from Git and
+              nothing has reconciled it for {{ $g.outOfSync.for }}. Check that
+              automated sync is on, or sync it by hand, and read the diff.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ArgoCDAppOutOfSync")) }}{{ . | nindent 12 }}{{- end }}
+        {{- end }}
+        # A destination cluster the application controller cannot reach.
+        #
+        # `argocd_cluster_connection_status` is 1 while the controller's
+        # connection to the cluster works and 0 while it does not. With the
+        # connection down every application on that cluster is stale, and
+        # none of the app-level alerts can say so.
+        - alert: ArgoCDClusterConnectionLost
+          expr: >-
+            min by ({{ $b }}server) (argocd_cluster_connection_status{job=~"{{ $job }}"}) < 1
+          for: {{ $g.clusterLostFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Argo CD cannot reach the cluster {{`{{ $labels.server }}`}}"
+            description: >-
+              The application controller has had no working connection to
+              {{`{{ $labels.server }}`}} for {{ $g.clusterLostFor }}: its
+              applications are no longer reconciled. Check the cluster's API
+              endpoint, the credentials Argo CD holds for it, and the network
+              path from the controller.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ArgoCDClusterConnectionLost")) }}{{ . | nindent 12 }}{{- end }}
+        # The repo server failing to fetch from Git.
+        #
+        # `argocd_git_fetch_fail_total` is born at the first failure of a
+        # repository, hence `increase_pure`. At least `gitFetch.minFailures`
+        # within the window, so one dropped connection does not fire: Argo CD
+        # retries every few minutes, and a repository that is really
+        # unreachable fails on every attempt.
+        - alert: ArgoCDGitFetchFailing
+          expr: >-
+            sum by ({{ $b }}repo) (
+              increase_pure(argocd_git_fetch_fail_total{job=~"{{ $job }}"}[{{ $g.gitFetch.window }}])
+            ) >= {{ $g.gitFetch.minFailures }}
+          for: {{ $g.gitFetch.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "The Argo CD repo server cannot fetch {{`{{ $labels.repo }}`}}"
+            description: >-
+              At least {{ $g.gitFetch.minFailures }} Git fetches of
+              {{`{{ $labels.repo }}`}} failed within {{ $g.gitFetch.window }}, for
+              {{ $g.gitFetch.for }}. Applications that track it cannot see new
+              commits or render manifests. Check the repository's address and
+              credentials, the Git host, and the repo server's log.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ArgoCDGitFetchFailing")) }}{{ . | nindent 12 }}{{- end }}
+        # The deadman for every rule above: no Application is reported at all
+        # (the application controller down, its ServiceMonitor gone, the
+        # scrape blocked) reads as healthy to rules that compare values.
+        - alert: ArgoCDMetricsAbsent
+          expr: >-
+            absent(argocd_app_info{job=~"{{ $job }}"})
+          for: {{ $g.absentFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity) | nindent 12 }}
+          annotations:
+            summary: "Argo CD has reported no applications for {{ $g.absentFor }}"
+            description: >-
+              argocd_app_info{job=~"{{ $job }}"} has not been seen in
+              {{ $g.absentFor }}, so none of the Argo CD rules can fire. The
+              application controller is down or its metrics endpoint is not
+              scraped: check its pod and the ServiceMonitor the chart renders
+              (`controller.metrics.serviceMonitor.enabled`).
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ArgoCDMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if .Values.groups.eso.enabled }}
+    {{- $g := .Values.groups.eso }}
+    {{- $gns := $g.namespace }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    - name: platform-alerts.eso
+      interval: {{ .Values.interval }}
+      rules:
+        # The admission webhook is down.
+        #
+        # Both validating webhooks of External Secrets Operator
+        # (ExternalSecret and SecretStore validation) fail closed
+        # (`failurePolicy: Fail`): while the webhook pod does not answer,
+        # the API server refuses every create and update of an ExternalSecret,
+        # SecretStore and ClusterSecretStore, which blocks every deploy that
+        # carries one. Highest severity in the group.
+        - alert: ESOWebhookDown
+          expr: >-
+            max by ({{ $b }}pod) (up{namespace="{{ $gns }}", job=~"{{ $g.webhookJob }}"}) == 0
+          for: {{ $g.webhookDownFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "The External Secrets webhook {{`{{ $labels.pod }}`}} has not answered its scrape for {{ $g.webhookDownFor }}"
+            description: >-
+              The webhook pod {{`{{ $labels.pod }}`}} does not answer. The
+              webhooks fail closed, so writes of ExternalSecrets, SecretStores
+              and ClusterSecretStores are being refused cluster-wide. Check the
+              pod in namespace {{ $gns }}, its events and its log; as a last
+              resort the webhook configurations can be set to ignore failures.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOWebhookDown")) }}{{ . | nindent 12 }}{{- end }}
+        # No webhook is reporting at all: the pod is gone or no longer scraped.
+        # The same outage as above, which `== 0` cannot see once the series is
+        # stale.
+        - alert: ESOWebhookAbsent
+          expr: >-
+            absent(up{namespace="{{ $gns }}", job=~"{{ $g.webhookJob }}"})
+          for: {{ $g.webhookDownFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
+          annotations:
+            summary: "No External Secrets webhook has been scraped for {{ $g.webhookDownFor }}"
+            description: >-
+              up{namespace="{{ $gns }}", job=~"{{ $g.webhookJob }}"} has not
+              been seen in {{ $g.webhookDownFor }}: the webhook Deployment is
+              gone or not scraped. If it is gone the webhooks fail closed and
+              writes of ExternalSecrets and SecretStores are refused.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOWebhookAbsent")) }}{{ . | nindent 12 }}{{- end }}
+        # An ExternalSecret that is not Ready.
+        #
+        # `externalsecret_status_condition` is 1 on the series of the
+        # condition the ExternalSecret currently has. The series' own
+        # `namespace` is the ExternalSecret's, which collides with the scrape's
+        # and survives as `exported_namespace` under `honor_labels: false`,
+        # which is how this chart's emitters scrape.
+        - alert: ESOExternalSecretNotReady
+          expr: >-
+            max by ({{ $b }}exported_namespace, name) (
+              externalsecret_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: {{ $g.notReadyFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "ExternalSecret {{`{{ $labels.exported_namespace }}`}}/{{`{{ $labels.name }}`}} has not been Ready for {{ $g.notReadyFor }}"
+            description: >-
+              The ExternalSecret is not syncing: the Kubernetes Secret it
+              owns is stale or was never created. `kubectl describe
+              externalsecret` shows the reason: a missing remote key, a store
+              that denies the read, or a template that does not render.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOExternalSecretNotReady")) }}{{ . | nindent 12 }}{{- end }}
+        # A SecretStore that is not Ready.
+        #
+        # A store that cannot validate its provider silently stales every
+        # ExternalSecret that reads it.
+        - alert: ESOSecretStoreNotReady
+          expr: >-
+            max by ({{ $b }}exported_namespace, name) (
+              secretstore_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: {{ $g.storeNotReadyFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "SecretStore {{`{{ $labels.exported_namespace }}`}}/{{`{{ $labels.name }}`}} has not been Ready for {{ $g.storeNotReadyFor }}"
+            description: >-
+              The store cannot validate its provider, so every ExternalSecret
+              that reads it goes stale. `kubectl describe secretstore` shows
+              why: unreachable provider, rejected credentials or a bad
+              configuration.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOSecretStoreNotReady")) }}{{ . | nindent 12 }}{{- end }}
+        # A ClusterSecretStore that is not Ready.
+        - alert: ESOClusterSecretStoreNotReady
+          expr: >-
+            max by ({{ $b }}name) (
+              clustersecretstore_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: {{ $g.storeNotReadyFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "ClusterSecretStore {{`{{ $labels.name }}`}} has not been Ready for {{ $g.storeNotReadyFor }}"
+            description: >-
+              The cluster-wide store cannot validate its provider, so every
+              ExternalSecret that reads it, in any namespace, goes stale.
+              `kubectl describe clustersecretstore` shows why.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOClusterSecretStoreNotReady")) }}{{ . | nindent 12 }}{{- end }}
+        # Reconciles that ended in an error, per controller.
+        #
+        # controller-runtime pre-initialises the counter at 0 for every
+        # controller, so `increase` sees the first error. `for` equal to the
+        # window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: ESOReconcileErrors
+          expr: >-
+            sum by ({{ $b }}controller) (
+              increase(controller_runtime_reconcile_errors_total{namespace="{{ $gns }}"}[{{ $g.reconcileErrors.window }}])
+            ) > 0
+          for: {{ $g.reconcileErrors.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "External Secrets controller {{`{{ $labels.controller }}`}} keeps failing to reconcile"
+            description: >-
+              The {{`{{ $labels.controller }}`}} controller has recorded reconcile
+              errors for {{ $g.reconcileErrors.for }}. Read the operator's log
+              for the object and the error; the not-Ready alerts name the
+              objects that are affected.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOReconcileErrors")) }}{{ . | nindent 12 }}{{- end }}
+        # Calls to the secret provider's API that fail.
+        #
+        # `externalsecret_provider_api_calls_count` carries `provider`, `call`
+        # and `status` (`success` or `error`). Same shape as the rule above:
+        # the errors must keep arriving for `for`.
+        - alert: ESOProviderAPIErrors
+          expr: >-
+            sum by ({{ $b }}provider) (
+              increase(externalsecret_provider_api_calls_count{status="error"}[{{ $g.providerErrors.window }}])
+            ) > 0
+          for: {{ $g.providerErrors.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Calls to the {{`{{ $labels.provider }}`}} secret provider keep failing"
+            description: >-
+              API calls to the provider {{`{{ $labels.provider }}`}} have kept
+              failing for {{ $g.providerErrors.for }}: the provider is
+              unreachable or throttling, or has rejected the operator's
+              credentials. ExternalSecrets that read from it go stale.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOProviderAPIErrors")) }}{{ . | nindent 12 }}{{- end }}
+        # A work queue that does not drain.
+        - alert: ESOWorkqueueStuck
+          expr: >-
+            max by ({{ $b }}name) (workqueue_depth{namespace="{{ $gns }}"}) > 0
+          for: {{ $g.workqueueFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "External Secrets work queue {{`{{ $labels.name }}`}} has not drained for {{ $g.workqueueFor }}"
+            description: >-
+              The queue {{`{{ $labels.name }}`}} has held items for
+              {{ $g.workqueueFor }}: secret delivery is delayed. The operator is
+              slower than the changes arriving, or a worker is stuck.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOWorkqueueStuck")) }}{{ . | nindent 12 }}{{- end }}
+        # The deadman for the rules above: nothing in the operator's
+        # namespace is scraped (the chart's `serviceMonitor.enabled` is off,
+        # the pods are gone, the scrape is blocked).
+        - alert: ESOMetricsAbsent
+          expr: >-
+            absent(up{namespace="{{ $gns }}"})
+          for: {{ $g.absentFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity) | nindent 12 }}
+          annotations:
+            summary: "No External Secrets target has been scraped for {{ $g.absentFor }}"
+            description: >-
+              up{namespace="{{ $gns }}"} has not been seen in {{ $g.absentFor }},
+              so none of the External Secrets rules can fire. Check that the
+              operator chart's `serviceMonitor.enabled` is on and the pods are
+              running.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if .Values.groups.ack.enabled }}
+    {{- $g := .Values.groups.ack }}
+    {{- $gns := $g.namespace }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    - name: platform-alerts.ack
+      interval: {{ .Values.interval }}
+      rules:
+        # An AWS Controllers for Kubernetes controller that does not answer.
+        #
+        # ACK controllers are what makes AWS resources converge on their
+        # Kubernetes objects, and a down controller is silent otherwise: the
+        # objects stay as they were.
+        - alert: ACKControllerDown
+          expr: >-
+            max by ({{ $b }}namespace, pod) (up{namespace=~"{{ $gns }}"}) == 0
+          for: {{ $g.downFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "The ACK controller {{`{{ $labels.pod }}`}} in {{`{{ $labels.namespace }}`}} has not answered its scrape for {{ $g.downFor }}"
+            description: >-
+              The controller does not answer its metrics scrape: it is down,
+              crash-looping or not ready. AWS resources it owns are not being
+              created, updated or deleted. Check the pod in
+              {{`{{ $labels.namespace }}`}}, its events and its log.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ACKControllerDown")) }}{{ . | nindent 12 }}{{- end }}
+        # A controller that is not reporting at all.
+        {{- if $g.expectedNamespaces }}
+        #
+        # One `absent` per controller namespace named in `expectedNamespaces`:
+        # an alert for the one that is missing, with its `namespace` label
+        # taken from the selector.
+        - alert: ACKControllerAbsent
+          expr: >-
+            {{- range $i, $n := $g.expectedNamespaces }}
+            {{- if $i }}
+            or
+            {{- end }}
+            absent(up{namespace="{{ $n }}"})
+            {{- end }}
+        {{- else }}
+        #
+        # With no `expectedNamespaces`, this can only say that no ACK
+        # controller reports at all; name the controllers' namespaces to catch
+        # one of several missing.
+        - alert: ACKControllerAbsent
+          expr: >-
+            absent(up{namespace=~"{{ $gns }}"})
+        {{- end }}
+          for: {{ $g.absentFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
+          annotations:
+            summary: "An ACK controller has not been scraped for {{ $g.absentFor }}"
+            description: >-
+              No `up` series has been seen for an ACK controller in
+              {{ $g.absentFor }}: its Deployment is gone, its pod is not
+              scheduled, or the PodMonitor is no longer applied. AWS resources
+              it owns are not being reconciled.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ACKControllerAbsent")) }}{{ . | nindent 12 }}{{- end }}
+        # Reconciles that ended in an error and will be retried.
+        #
+        # controller-runtime pre-initialises the counter at 0 for every
+        # controller, so `increase` sees the first error. `for` equal to the
+        # window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: ACKReconcileErrors
+          expr: >-
+            sum by ({{ $b }}namespace, controller) (
+              increase(controller_runtime_reconcile_errors_total{namespace=~"{{ $gns }}"}[{{ $g.reconcileErrors.window }}])
+            ) > 0
+          for: {{ $g.reconcileErrors.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "ACK controller {{`{{ $labels.namespace }}`}} keeps failing to reconcile {{`{{ $labels.controller }}`}}"
+            description: >-
+              The controller in {{`{{ $labels.namespace }}`}} has recorded reconcile
+              errors on {{`{{ $labels.controller }}`}} for {{ $g.reconcileErrors.for }}.
+              The resources are retried and may be failing on AWS permissions,
+              throttling or a bad spec: the controller's log names the
+              resource.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ACKReconcileErrors")) }}{{ . | nindent 12 }}{{- end }}
+        # Terminal reconcile errors: a resource that needs a human.
+        #
+        # A terminal error is one the controller will not retry (an invalid
+        # spec, a name that is taken). The counter only moves when the error
+        # is first found, so the alert lasts `window` and then clears with the
+        # resource still broken: the Terminal condition on the object is what
+        # stays.
+        - alert: ACKTerminalReconcileErrors
+          expr: >-
+            sum by ({{ $b }}namespace, controller) (
+              increase(controller_runtime_terminal_reconcile_errors_total{namespace=~"{{ $gns }}"}[{{ $g.terminalErrors.window }}])
+            ) > 0
+          for: {{ $g.terminalErrors.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "ACK controller {{`{{ $labels.namespace }}`}} hit a terminal error on {{`{{ $labels.controller }}`}}"
+            description: >-
+              A resource of kind {{`{{ $labels.controller }}`}} reached a terminal
+              error in {{`{{ $labels.namespace }}`}} within the last
+              {{ $g.terminalErrors.window }}. The controller will not retry it:
+              `kubectl get` the resources of that kind and read the
+              `ACK.Terminal` condition's message.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ACKTerminalReconcileErrors")) }}{{ . | nindent 12 }}{{- end }}
+        # A controller that panicked in a reconcile.
+        #
+        # controller-runtime recovers the panic and counts it; the object is
+        # retried, and the bug is the controller's.
+        - alert: ACKReconcilePanics
+          expr: >-
+            sum by ({{ $b }}namespace, controller) (
+              increase(controller_runtime_reconcile_panics_total{namespace=~"{{ $gns }}"}[{{ $g.panics.window }}])
+            ) > 0
+          for: {{ $g.panics.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "ACK controller {{`{{ $labels.namespace }}`}} panicked while reconciling {{`{{ $labels.controller }}`}}"
+            description: >-
+              The controller in {{`{{ $labels.namespace }}`}} recovered from a
+              panic reconciling {{`{{ $labels.controller }}`}} within the last
+              {{ $g.panics.window }}. It is a defect in that controller version:
+              find the resource in the log and check for a newer release.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ACKReconcilePanics")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}

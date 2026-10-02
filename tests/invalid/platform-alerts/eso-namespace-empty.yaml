@@ -1,0 +1,7 @@
+# expect: at '/groups/eso/namespace'
+# An empty namespace selector renders namespace="", which matches only series
+# with no namespace: every rule that reads it would be silent.
+groups:
+  eso:
+    enabled: true
+    namespace: ""

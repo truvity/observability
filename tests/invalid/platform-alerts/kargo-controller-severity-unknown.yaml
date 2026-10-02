@@ -1,0 +1,9 @@
+# expect: at '/groups/kargo/controllerAbsent/severity'
+# The controller deadman carries this severity: one the routing tree has no
+# branch for fires into nowhere, which is no deadman.
+groups:
+  kargo:
+    enabled: true
+    controllerAbsent:
+      enabled: true
+      severity: urgent

@@ -1,0 +1,7 @@
+# expect: at '/groups/eso/reconcileErrors/window'
+# A range vector that is not a duration is an expression vmalert refuses.
+groups:
+  eso:
+    enabled: true
+    reconcileErrors:
+      window: lately

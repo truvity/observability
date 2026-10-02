@@ -16,6 +16,33 @@
       "enum": ["critical", "warning", "info"],
       "description": "The severity label the Alertmanager routing tree reads."
     },
+    "ruleSwitch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "for": { "$ref": "#/definitions/duration" },
+        "severity": { "$ref": "#/definitions/severity" }
+      }
+    },
+    "windowedRuleSwitch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "window": { "$ref": "#/definitions/duration" },
+        "for": { "$ref": "#/definitions/duration" },
+        "severity": { "$ref": "#/definitions/severity" }
+      }
+    },
+    "windowedRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "window": { "$ref": "#/definitions/duration" },
+        "for": { "$ref": "#/definitions/duration" }
+      }
+    },
     "labelMap": {
       "type": "object",
       "additionalProperties": { "type": "string" }
@@ -81,7 +108,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack"],
       "properties": {
         "backups": {
           "type": "object",
@@ -147,7 +174,12 @@
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" },
             "absentFor": { "$ref": "#/definitions/duration" },
-            "absentSeverity": { "$ref": "#/definitions/severity" }
+            "absentSeverity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" },
+            "controllerJob": { "type": "string", "minLength": 1 },
+            "controllerAbsent": { "$ref": "#/definitions/ruleSwitch" },
+            "reconcileErrors": { "$ref": "#/definitions/windowedRuleSwitch" },
+            "workqueueDepth": { "$ref": "#/definitions/ruleSwitch" }
           }
         },
         "probes": {
@@ -251,6 +283,82 @@
               }
             },
             "absentFor": { "$ref": "#/definitions/duration" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "argocd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "job": { "type": "string", "minLength": 1 },
+            "severity": { "$ref": "#/definitions/severity" },
+            "warningSeverity": { "$ref": "#/definitions/severity" },
+            "syncFailed": { "$ref": "#/definitions/windowedRule" },
+            "unhealthyFor": { "$ref": "#/definitions/duration" },
+            "outOfSync": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "for": { "$ref": "#/definitions/duration" }
+              }
+            },
+            "clusterLostFor": { "$ref": "#/definitions/duration" },
+            "gitFetch": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "window": { "$ref": "#/definitions/duration" },
+                "minFailures": { "type": "integer", "minimum": 1 },
+                "for": { "$ref": "#/definitions/duration" }
+              }
+            },
+            "absentFor": { "$ref": "#/definitions/duration" },
+            "absentSeverity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "eso": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespace": { "type": "string", "minLength": 1 },
+            "webhookJob": { "type": "string", "minLength": 1 },
+            "severity": { "$ref": "#/definitions/severity" },
+            "warningSeverity": { "$ref": "#/definitions/severity" },
+            "webhookDownFor": { "$ref": "#/definitions/duration" },
+            "notReadyFor": { "$ref": "#/definitions/duration" },
+            "storeNotReadyFor": { "$ref": "#/definitions/duration" },
+            "reconcileErrors": { "$ref": "#/definitions/windowedRule" },
+            "providerErrors": { "$ref": "#/definitions/windowedRule" },
+            "workqueueFor": { "$ref": "#/definitions/duration" },
+            "absentFor": { "$ref": "#/definitions/duration" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "ack": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespace": { "type": "string", "minLength": 1 },
+            "expectedNamespaces": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+              "uniqueItems": true
+            },
+            "severity": { "$ref": "#/definitions/severity" },
+            "warningSeverity": { "$ref": "#/definitions/severity" },
+            "downFor": { "$ref": "#/definitions/duration" },
+            "absentFor": { "$ref": "#/definitions/duration" },
+            "reconcileErrors": { "$ref": "#/definitions/windowedRule" },
+            "terminalErrors": { "$ref": "#/definitions/windowedRule" },
+            "panics": { "$ref": "#/definitions/windowedRule" },
             "keepClusterLabel": { "type": "boolean" }
           }
         }

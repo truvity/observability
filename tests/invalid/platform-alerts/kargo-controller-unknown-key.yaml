@@ -1,0 +1,8 @@
+# expect: additional properties 'workqueue' not allowed
+# The key is `workqueueDepth`; a near miss must fail the render rather than be
+# ignored, or the rule it meant to switch on never renders.
+groups:
+  kargo:
+    enabled: true
+    workqueue:
+      enabled: true

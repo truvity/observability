@@ -1,0 +1,7 @@
+# expect: at '/groups/argocd/gitFetch/minFailures'
+# A threshold of zero fires on every rule evaluation against an idle repository.
+groups:
+  argocd:
+    enabled: true
+    gitFetch:
+      minFailures: 0

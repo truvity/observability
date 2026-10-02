@@ -1,0 +1,8 @@
+# expect: at '/groups/ack/expectedNamespaces/0'
+# An entry is rendered into an equality matcher; anything but a DNS label is a
+# namespace that cannot exist, so its absent rule would fire forever.
+groups:
+  ack:
+    enabled: true
+    expectedNamespaces:
+      - Not_A_Namespace

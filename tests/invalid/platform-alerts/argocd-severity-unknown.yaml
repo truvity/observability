@@ -1,0 +1,7 @@
+# expect: at '/groups/argocd/severity'
+# A severity the routing tree has no branch for is an alert that fires into
+# nowhere.
+groups:
+  argocd:
+    enabled: true
+    severity: urgent

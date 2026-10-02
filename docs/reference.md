@@ -130,6 +130,18 @@ docs/kube-state-metrics.md for a worked config.
 Alerts: `KargoStagePromotionErrored`, `KargoPromotionErrored`,
 `KargoStateMetricsAbsent`.
 
+Three more read the controller's OWN series (its ServiceMonitor), not
+kube-state-metrics'. Each is its own switch and **off by default**, so a group
+that was already on renders what it did:
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `controllerJob` | string | `kargo-controller-metrics` | The scrape job of the controller (the Service name its ServiceMonitor scrapes through). |
+| `controllerAbsent.enabled` / `.for` / `.severity` | bool / duration / enum | `false` / `5m` / `critical` | `KargoControllerAbsent`: `absent(up{job="<controllerJob>"} == 1)`, which covers a controller whose scrape reads 0 and one that is not scraped at all. Nothing promotes while it is down, and the Stage and Promotion series stay green. |
+| `reconcileErrors.enabled` / `.window` / `.for` / `.severity` | bool / duration / duration / enum | `false` / `15m` / `15m` / `warning` | `KargoControllerReconcileErrors`: `increase(controller_runtime_reconcile_errors_total)` per controller loop above zero. `for` equal to `window` means one isolated error never fires: errors must keep arriving. |
+| `workqueueDepth.enabled` / `.for` / `.severity` | bool / duration / enum | `false` / `30m` / `warning` | `KargoControllerWorkqueueStuck`: `workqueue_depth` above zero for the whole `for`. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`, for the rules that aggregate (the two rules above; the first two alerts of the group never aggregate). |
+
 ### `groups.pendingPods`
 
 Off by default. On a cluster whose nodes are provisioned on demand
@@ -228,6 +240,84 @@ peers x `cluster.pool_size`; a healthy 3-broker cluster reads 8, not 2),
 kube-state-metrics: the broker has no limit metric of its own),
 `NATSMetricsAbsent`. There is no authorization or auth-callout error
 metric in the exporter, so there is no rule for it.
+
+### `groups.argocd`
+
+Off by default. For Argo CD's own metrics endpoints (the chart's per-component
+ServiceMonitors, job `argocd-*-metrics`). The metric names are the ones Argo CD
+exports; the rules are this chart's own.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `job` | string (regex) | `argocd-.*-metrics` | Over the `job` of the endpoints. |
+| `severity` | enum | `critical` | `ArgoCDClusterConnectionLost`: with the connection down every application on that cluster is stale. |
+| `warningSeverity` | enum | `warning` | The application alerts and the Git alert. |
+| `syncFailed.window` / `.for` | duration | `10m` / `1m` | How far back a Failed or Error sync stays visible, and the hold. |
+| `unhealthyFor` | duration | `15m` | An application Degraded, Missing or Unknown for this long. Progressing is not counted. |
+| `outOfSync.enabled` / `.for` | bool / duration | `true` / `30m` | `false` drops `ArgoCDAppOutOfSync`, for an estate where applications are OutOfSync by design (no self-heal, no prune). |
+| `clusterLostFor` | duration | `5m` | A destination cluster the controller cannot reach. |
+| `gitFetch.window` / `.minFailures` / `.for` | duration / int / duration | `10m` / `3` / `5m` | Failed fetches of one repository within the window that count: one dropped connection does not. |
+| `absentFor` / `absentSeverity` | duration / enum | `15m` / `warning` | The deadman: no application reported at all. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the deadman. |
+
+Alerts: `ArgoCDAppSyncFailed` (`increase_pure` over `argocd_app_sync_total`:
+the Failed series of an application that never failed is born at its first
+failure, and plain `increase` skips a series' first sample),
+`ArgoCDAppUnhealthy`, `ArgoCDAppOutOfSync`, `ArgoCDClusterConnectionLost`,
+`ArgoCDGitFetchFailing`, `ArgoCDMetricsAbsent`.
+
+### `groups.eso`
+
+Off by default. For External Secrets Operator with its chart's
+`serviceMonitor.enabled: true` (three ServiceMonitors: controller, webhook,
+cert controller). An object's own `namespace` label collides with the scrape's
+and survives as `exported_namespace` under `honor_labels: false`, which
+`observability-emitters` forces; the not-Ready alerts group by it.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `namespace` | string | `external-secrets` | Where the operator runs: selects the target's own `namespace`, which keeps another controller's workqueue and reconcile series out. |
+| `webhookJob` | string (regex) | `external-secrets-webhook.*` | The webhook's `job`. |
+| `severity` | enum | `critical` | The webhook alerts: both validating webhooks fail closed, so while it is down every write of an ExternalSecret, SecretStore or ClusterSecretStore is refused. |
+| `warningSeverity` | enum | `warning` | Everything else. |
+| `webhookDownFor` | duration | `5m` | Hold of the two webhook alerts. |
+| `notReadyFor` / `storeNotReadyFor` | duration | `15m` / `10m` | An ExternalSecret, and a SecretStore or ClusterSecretStore, with Ready False. |
+| `reconcileErrors.window` / `.for` | duration | `15m` / `15m` | `for` equal to `window` means one isolated error never fires: errors must keep arriving. |
+| `providerErrors.window` / `.for` | duration | `10m` / `10m` | The same shape, over `externalsecret_provider_api_calls_count{status="error"}`. |
+| `workqueueFor` | duration | `30m` | A work queue above zero for the whole hold. |
+| `absentFor` | duration | `15m` | Nothing in `namespace` scraped. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the `absent` alerts. |
+
+Alerts: `ESOWebhookDown`, `ESOWebhookAbsent`, `ESOExternalSecretNotReady`,
+`ESOSecretStoreNotReady`, `ESOClusterSecretStoreNotReady`,
+`ESOReconcileErrors`, `ESOProviderAPIErrors`, `ESOWorkqueueStuck`,
+`ESOMetricsAbsent`.
+
+### `groups.ack`
+
+Off by default. For AWS Controllers for Kubernetes: one controller Deployment
+per AWS service, each in its own namespace, scraped by a PodMonitor (the job
+is `<namespace>/<PodMonitor>`, so the rules select by namespace). The
+controllers expose controller-runtime's metrics only; `ack_outbound_api_requests_total`
+has no result label, so AWS throttling cannot be alerted on.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `namespace` | string (regex) | `ack-.*` | The controllers' namespaces. |
+| `expectedNamespaces[]` | list of namespaces | `[]` | Namespaces that MUST report: one `absent` each, so a missing controller among several is seen. Empty renders one `absent` over `namespace`, which only sees all of them gone. |
+| `severity` | enum | `critical` | A controller that is down or missing: AWS resources it owns stop converging, silently. |
+| `warningSeverity` | enum | `warning` | The error and panic alerts. |
+| `downFor` / `absentFor` | duration | `5m` / `10m` | |
+| `reconcileErrors.window` / `.for` | duration | `15m` / `15m` | `for` equal to `window`: errors must keep arriving. |
+| `terminalErrors.window` / `.for` | duration | `1h` / `1m` | A terminal error is counted once, when found, so the alert lasts `window` after it and then clears with the resource still broken: the `ACK.Terminal` condition on the object is what stays. |
+| `panics.window` / `.for` | duration | `15m` / `1m` | |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the `absent` alert. |
+
+Alerts: `ACKControllerDown`, `ACKControllerAbsent`, `ACKReconcileErrors`,
+`ACKTerminalReconcileErrors`, `ACKReconcilePanics`.
 
 ## `charts/observability-stack`
 

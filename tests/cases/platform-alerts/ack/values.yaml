@@ -1,0 +1,14 @@
+# The ack group alone, at its own defaults: no expected namespaces, so the
+# controller deadman is one `absent` over the namespace selector.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  ack:
+    enabled: true
+runbookBaseUrl: https://runbooks.example.com/

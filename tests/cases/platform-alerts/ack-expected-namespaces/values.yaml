@@ -1,0 +1,18 @@
+# The ack group with the controllers' namespaces named: one `absent` each, so
+# a missing controller among several is seen. Placeholders, not an estate's.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  ack:
+    enabled: true
+    namespace: example-ack-.*
+    expectedNamespaces:
+      - example-ack-one
+      - example-ack-two
+runbookBaseUrl: https://runbooks.example.com/
