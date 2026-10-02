@@ -303,5 +303,19 @@ spec:
         url: {{ include "observability-stack.vmalert.metrics.url" $root | quote }}
       paths:
         {{- include "observability-stack.readPaths.alerts" $root | nindent 8 }}
+    {{- if $r.alertmanager }}
+    {{- /*
+    The router's own view of the same question: is the alert ACTIVE in
+    Alertmanager, not only firing in vmalert. Exact path, the listing
+    only. vmauth cannot match a method, and `POST /api/v2/alerts` on this
+    path creates alerts, so the edge in front of vmauth must admit GET
+    only (values.schema.json says so); nothing else of Alertmanager's API
+    is routed (no silences, no status, no receivers).
+    */}}
+    - static:
+        url: {{ printf "http://vmalertmanager-%s.%s.svc:9093" $fullname $root.Release.Namespace | quote }}
+      paths:
+        - /api/v2/alerts
+    {{- end }}
 {{- end }}
 {{- end }}

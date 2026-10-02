@@ -1106,6 +1106,9 @@ estate has stated one: the heartbeat has to land comfortably inside it, or
 a single delayed delivery reads as the estate being down.
 */ -}}
 {{- $watchdog := .Values.alertmanager.watchdog -}}
+{{- if and $watchdog.tokenKey (not $watchdog.secretName) -}}
+{{- fail "observability-stack: alertmanager.watchdog.tokenKey is set but alertmanager.watchdog.secretName is empty. The token qualifies the deadman receiver, which only exists with a Secret to read its URL from; set secretName, or remove tokenKey." -}}
+{{- end -}}
 {{- if and $watchdog.secretName $watchdog.timeout -}}
 {{- $repeatS := include "observability-stack.durationSeconds" $watchdog.repeatInterval | int64 -}}
 {{- $timeoutS := include "observability-stack.durationSeconds" $watchdog.timeout | int64 -}}
@@ -1453,6 +1456,11 @@ is the same failure the trace refusal exists to prevent.
 {{- end -}}
 {{- if and $t.alertReaders (not $observabilityStackEffective.vmalert) -}}
 {{- fail "observability-stack: `tenancy.alertReaders` is set but `vmalert.enabled` is false. There is no vmalert for this route to read." -}}
+{{- end -}}
+{{- range $r := $t.alertReaders -}}
+{{- if and $r.alertmanager (not $observabilityStackEffective.alertmanager) -}}
+{{- fail (printf "observability-stack: `tenancy.alertReaders` entry %q sets `alertmanager: true` but `alertmanager.enabled` is false. There is no Alertmanager for this route to read." $r.name) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

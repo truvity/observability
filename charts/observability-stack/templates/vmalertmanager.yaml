@@ -483,6 +483,17 @@ spec:
         webhook_configs:
           - url_file: /etc/alertmanager/watchdog/{{ $watchdog.key }}
             send_resolved: false
+            {{- if $watchdog.tokenKey }}
+            http_config:
+              {{- /*
+              A far end that wants a bearer (Gatus's external
+              endpoints do) gets it from the SAME Secret, read with
+              `credentials_file`, never interpolated into the config.
+              */}}
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/watchdog/{{ $watchdog.tokenKey }}
+            {{- end }}
       {{- end }}
     {{- /*
     One inhibit rule: a critical on a cluster+namespace silences the
