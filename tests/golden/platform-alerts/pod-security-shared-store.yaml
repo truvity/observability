@@ -1,0 +1,61 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts-logs
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.rule-type: vlogs
+spec:
+  groups:
+    - name: platform-alerts.pod-security
+      type: vlogs
+      interval: 1m
+      rules:
+        # A controller (ReplicaSet, StatefulSet, Job, DaemonSet) whose pod
+        # create was refused by Pod Security admission.
+        #
+        # Evidence is the Kubernetes Event the controller records, which
+        # `observability-emitters` ships to the log store (`otlp.events`,
+        # the `k8s_events` receiver; fields `k8s.event.reason`,
+        # `k8s.namespace.name`, `k8s.object.kind` / `.name` are the involved
+        # object, here the controller). It is the only trace of the
+        # rejection: kube-state-metrics exports no Event series, and the
+        # Pod never exists, so nothing metric-shaped can see it. A bare Pod
+        # create gets the error straight back and leaves no Event, so this
+        # covers controllers, which is where it matters.
+        #
+        # `warn`-mode violations ("would violate") are not Events and are
+        # not matched: only `enforce` makes the message "violates
+        # PodSecurity". The window is longer than an eval because the
+        # controller's Events are rate-limited on retry (about one per five
+        # minutes once it backs off) and a rejection must not blink out
+        # between two of them.
+        - alert: PodSecurityAdmissionRejected
+          expr: >-
+            _time:15m k8s.event.reason:="FailedCreate" "violates PodSecurity"
+            | rename k8s.cluster.name as k8s_cluster_name, k8s.namespace.name as namespace, k8s.object.kind as owner_kind, k8s.object.name as owner_name
+            | stats by (k8s_cluster_name, namespace, owner_kind, owner_name, owner) count() as rejections
+          for: 0s
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Pod Security admission rejected pods of {{ $labels.owner_kind }} {{ $labels.namespace }}/{{ $labels.owner_name }}"
+            description: >-
+              {{ $labels.owner_kind }} {{ $labels.namespace }}/{{ $labels.owner_name }}
+              could not create a pod in the last 15m: the namespace
+              enforces a Pod Security level the pod template does not meet, so
+              the workload is not running (or not at full strength). The Event's
+              message names every violated control; `kubectl -n {{ $labels.namespace }}
+              describe {{ $labels.owner_kind }} {{ $labels.owner_name }}` shows it
+              ("violates PodSecurity ...: <control> (<container> must set ...)").
+              Fix it in the workload by giving it a restricted securityContext
+              (runAsNonRoot, allowPrivilegeEscalation=false, capabilities
+              drop ALL, seccompProfile RuntimeDefault), or, if the workload
+              needs more, give the namespace a reasoned, lower level in the
+              cluster configuration. Clears by itself 15m after
+              the last rejection.

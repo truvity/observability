@@ -52,6 +52,15 @@ on it would add nothing but a way to fail.
 */ -}}
 {{- $b := $c -}}
 {{- if .Values.ownerLabel -}}{{- $b = printf "%s%s, " $c .Values.ownerLabel -}}{{- end -}}
+{{- /*
+The metrics VMRule renders when at least one group other than `podSecurity`
+is on. `podSecurity` is LogsQL and has an object of its own below: one
+VMRule cannot serve both alerters, because the metrics vmalert takes every
+rule NOT marked `observability.rule-type: vlogs` and the logs one only
+those that are.
+*/ -}}
+{{- $metricsGroups := without $enabled "podSecurity" -}}
+{{- if $metricsGroups }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:
@@ -1257,3 +1266,75 @@ spec:
               find the resource in the log and check for a newer release.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ACKReconcilePanics")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
+{{- end }}
+{{- if .Values.groups.podSecurity.enabled }}
+{{- $g := .Values.groups.podSecurity }}
+{{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+{{- $by := list }}
+{{- if .Values.clusterLabel }}{{- $by = append $by .Values.clusterLabel }}{{- end }}
+{{- $by = concat $by (list "namespace" "owner_kind" "owner_name") }}
+{{- if .Values.ownerLabel }}{{- $by = append $by .Values.ownerLabel }}{{- end }}
+{{- $renames := list }}
+{{- if .Values.clusterLabel }}{{- $renames = append $renames (printf "k8s.cluster.name as %s" .Values.clusterLabel) }}{{- end }}
+{{- $renames = concat $renames (list "k8s.namespace.name as namespace" "k8s.object.kind as owner_kind" "k8s.object.name as owner_name") }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ printf "%s-logs" (include "platform-alerts.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- toYaml (merge (dict "observability.rule-type" "vlogs") .Values.ruleLabels) | nindent 4 }}
+spec:
+  groups:
+    - name: platform-alerts.pod-security
+      type: vlogs
+      interval: {{ .Values.interval }}
+      rules:
+        # A controller (ReplicaSet, StatefulSet, Job, DaemonSet) whose pod
+        # create was refused by Pod Security admission.
+        #
+        # Evidence is the Kubernetes Event the controller records, which
+        # `observability-emitters` ships to the log store (`otlp.events`,
+        # the `k8s_events` receiver; fields `k8s.event.reason`,
+        # `k8s.namespace.name`, `k8s.object.kind` / `.name` are the involved
+        # object, here the controller). It is the only trace of the
+        # rejection: kube-state-metrics exports no Event series, and the
+        # Pod never exists, so nothing metric-shaped can see it. A bare Pod
+        # create gets the error straight back and leaves no Event, so this
+        # covers controllers, which is where it matters.
+        #
+        # `warn`-mode violations ("would violate") are not Events and are
+        # not matched: only `enforce` makes the message "violates
+        # PodSecurity". The window is longer than an eval because the
+        # controller's Events are rate-limited on retry (about one per five
+        # minutes once it backs off) and a rejection must not blink out
+        # between two of them.
+        - alert: PodSecurityAdmissionRejected
+          expr: >-
+            _time:{{ $g.window }} k8s.event.reason:="FailedCreate" "violates PodSecurity"
+            | rename {{ join ", " $renames }}
+            | stats by ({{ join ", " $by }}) count() as rejections
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Pod Security admission rejected pods of {{`{{ $labels.owner_kind }}`}} {{`{{ $labels.namespace }}`}}/{{`{{ $labels.owner_name }}`}}"
+            description: >-
+              {{`{{ $labels.owner_kind }}`}} {{`{{ $labels.namespace }}`}}/{{`{{ $labels.owner_name }}`}}
+              could not create a pod in the last {{ $g.window }}: the namespace
+              enforces a Pod Security level the pod template does not meet, so
+              the workload is not running (or not at full strength). The Event's
+              message names every violated control; `kubectl -n {{`{{ $labels.namespace }}`}}
+              describe {{`{{ $labels.owner_kind }}`}} {{`{{ $labels.owner_name }}`}}` shows it
+              ("violates PodSecurity ...: <control> (<container> must set ...)").
+              Fix it in the workload by giving it a restricted securityContext
+              (runAsNonRoot, allowPrivilegeEscalation=false, capabilities
+              drop ALL, seccompProfile RuntimeDefault), or, if the workload
+              needs more, give the namespace a reasoned, lower level in the
+              cluster configuration. Clears by itself {{ $g.window }} after
+              the last rejection.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "PodSecurityAdmissionRejected")) }}{{ . | nindent 12 }}{{- end }}
+{{- end }}

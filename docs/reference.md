@@ -193,6 +193,23 @@ Alerts: `max by (probe) (probe_success{probe=~"<probe>"}) == 0` and, with
 
 The deadman `<alertName>Absent` is per cluster and probe: a probe that reported within `absentLookback` and no longer does fires with that cluster's label and the probe's name; no probe at all fires through the whole-store `absent()`.
 
+### `groups.podSecurity`
+
+Off by default. One LogsQL alert, `PodSecurityAdmissionRejected`, over the
+Kubernetes Events in the log store (`observability-emitters` `otlp.events`):
+reason `FailedCreate` and "violates PodSecurity" in the message, grouped by
+cluster, namespace and the controller named in the Event. Renders a second
+VMRule, `<release>-platform-alerts-logs`, carrying
+`observability.rule-type: vlogs`, so only a logs vmalert evaluates it.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | bool | `false` | Render the group. |
+| `window` | duration | `15m` | Look-back. Longer than an evaluation because a backed-off controller emits an Event about every five minutes. |
+| `for` | duration | `0s` | Hold time. |
+| `severity` | string | `warning` | Severity label. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
+
 ### `groups.nodeClaims`
 
 Off by default. For a cluster whose nodes Karpenter provisions (including

@@ -4,6 +4,26 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.38.0
+
+`platform-alerts`: an alert for Pod Security admission rejections.
+
+- New group `groups.podSecurity` (off by default) with one alert,
+  `PodSecurityAdmissionRejected`: a ReplicaSet, StatefulSet, Job or
+  DaemonSet whose pod create was refused by Pod Security `enforce` records a
+  `FailedCreate` Event "violates PodSecurity ...", and the workload does not
+  start. No pod exists, so no metric sees it; the alert reads the Events
+  `observability-emitters` already ships to the log store (`otlp.events`),
+  and fires per cluster, namespace and owning controller (`warning`,
+  `for: 0s`, 15m look-back). `keepClusterLabel` keeps each Event's own
+  cluster on a store that holds several, as for `pendingPods`.
+- It is LogsQL, so it renders a second VMRule, `<release>-platform-alerts-logs`,
+  marked `observability.rule-type: vlogs` (the label the logs vmalert selects
+  on; the metrics vmalert ignores it). Nothing changes for an install that
+  leaves the group off: the existing VMRule renders byte for byte as before.
+  Enable it only where a logs vmalert runs. `warn`-mode violations are not
+  Events and are not matched.
+
 ## v0.37.0
 
 `observability-emitters`: write every signal to both halves of an HA store

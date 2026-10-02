@@ -1,0 +1,19 @@
+# Pod Security admission rejections on a log store that holds several
+# clusters, evaluated by the vmalert of one of them: only the LogsQL group
+# is on, so no metrics VMRule renders, and each Event keeps its own cluster.
+commonLabels:
+  k8s_cluster_name: kernel
+  team: platform
+ownerLabel: owner
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  podSecurity:
+    enabled: true
+    keepClusterLabel: true

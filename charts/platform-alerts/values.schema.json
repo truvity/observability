@@ -109,7 +109,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity"],
       "properties": {
         "backups": {
           "type": "object",
@@ -338,6 +338,18 @@
             "providerErrors": { "$ref": "#/definitions/windowedRule" },
             "workqueueFor": { "$ref": "#/definitions/duration" },
             "absentFor": { "$ref": "#/definitions/duration" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "podSecurity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/severity" },
             "keepClusterLabel": { "type": "boolean" }
           }
         },
