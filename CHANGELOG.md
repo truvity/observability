@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.43.1
 
 - **Behaviour change: smctl's cache directory moves to `/cache/maps`.** In installs with
   `sourcemaps.smctl.enabled`, the rendered `cache.dir` is now `/cache/maps`
