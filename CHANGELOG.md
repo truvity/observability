@@ -6,7 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## v0.35.1
 
-`platform-alerts`: the `*Absent` guards fire per cluster.
+`platform-alerts`: the `*Absent` guards fire per cluster, and one dashboard
+loses two panels that could never show data.
 
 - **Behaviour change: every `*Absent` alert is now per cluster, not only when
   every cluster is missing the series.** A bare `absent(...)` is true only
@@ -29,6 +30,11 @@ must be done first, and whether a default moved. Newest first, one
   passed; the guard reads a day of the series on each evaluation. `clusterLabel: ""`
   renders the bare `absent()` byte for byte. Proof against a real
   VictoriaMetrics: `just platform-alerts-absent-proof`.
+- **Behaviour change: the External Secrets dashboard drops its two webhook
+  latency panels** ("Webhook latency [5m]" and the "webhook latency" panel in
+  the webhook row). They read `controller_runtime_webhook_latency_seconds_bucket`,
+  which no External Secrets Operator version in use exports, so they could
+  never show data. The other webhook panels stay.
 
 ## v0.35.0
 
