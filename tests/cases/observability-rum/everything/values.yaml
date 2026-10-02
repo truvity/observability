@@ -37,7 +37,7 @@ global:
           - https://back-office.example
           - https://back-office.example:8443
         sourcemaps:
-          repository: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/internal/back-office-maps
+          repository: ecr.example.com/internal/back-office-maps
           minifiedPathPrefixes:
             - https://back-office.example/static/
     sourcemaps:
@@ -46,7 +46,7 @@ global:
         ttl: 2h
       smctl:
         enabled: true
-        repositoryTemplate: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/sourcemaps/{app}
+        repositoryTemplate: ecr.example.com/sourcemaps/{app}
         auth:
           mode: ecr
         cache:
