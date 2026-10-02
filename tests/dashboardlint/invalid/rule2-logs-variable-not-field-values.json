@@ -1,0 +1,16 @@
+{
+  "title": "Example logs ($cluster)",
+  "templating": {
+    "list": [
+      {"name": "datasource", "type": "datasource", "query": "victoriametrics-logs-datasource", "current": {"text": "", "value": ""}},
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": {"type": "victoriametrics-logs-datasource", "uid": "$datasource"},
+        "query": {"query": "k8s.cluster.name:*"},
+        "current": {"text": "", "value": ""}
+      }
+    ]
+  },
+  "panels": []
+}

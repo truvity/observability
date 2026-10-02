@@ -16,6 +16,12 @@ import (
 func TestShippedDashboardsPassEveryRule(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "..", "charts", "observability-dashboards", "dashboards", "*.json"))
 	require.NoError(t, err)
+	// charts/observability-rum ships its own (log-store) dashboards under the
+	// same contract.
+	rum, err := filepath.Glob(filepath.Join("..", "..", "charts", "observability-rum", "dashboards", "*.json"))
+	require.NoError(t, err)
+	require.NotEmpty(t, rum, "no observability-rum dashboards found; this test would pass vacuously")
+	files = append(files, rum...)
 	require.NotEmpty(t, files, "no shipped dashboards found; this test would pass vacuously")
 
 	for _, f := range files {
@@ -69,4 +75,25 @@ func TestNativeNamespaceLabelSpellingPasses(t *testing.T) {
 	findings, err := dashboardlint.LintFile(path)
 	require.NoError(t, err)
 	assert.Empty(t, findings)
+}
+
+// The VictoriaLogs datasource has no label_values(): its variable query is a
+// "field values" query, which lists what the chosen store holds for one
+// field. It satisfies rules 2 and 3 the same way, and a variable that merely
+// carries a LogsQL filter does not.
+func TestLogsFieldValuesVariablesPass(t *testing.T) {
+	path := filepath.Join("..", "..", "tests", "dashboardlint", "valid", "logs-field-values.json")
+	findings, err := dashboardlint.LintFile(path)
+	require.NoError(t, err)
+	assert.Empty(t, findings)
+
+	findings, err = dashboardlint.LintFile(filepath.Join("..", "..", "tests", "dashboardlint", "invalid", "rule2-logs-variable-not-field-values.json"))
+	require.NoError(t, err)
+	var gotRule bool
+	for _, f := range findings {
+		if f.Rule == 2 {
+			gotRule = true
+		}
+	}
+	assert.True(t, gotRule, "a logs `cluster` variable that is only a filter must fail rule 2, got: %v", findings)
 }

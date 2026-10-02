@@ -1,0 +1,13 @@
+# expect: is not an http(s) URL
+global:
+  observabilityRum:
+    otlp:
+      endpoint: "otlp-gateway:4318"
+    apps:
+      - name: shop
+        apiKeySecret:
+          name: shop-rum-key
+          key: key
+        allowedOrigins:
+          - https://shop.example
+

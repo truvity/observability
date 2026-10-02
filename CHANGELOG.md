@@ -4,6 +4,52 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+New chart `observability-rum`: browser telemetry through Grafana Faro and a
+self-hosted Alloy, with "issues" built on the log store instead of an error
+tracker (see docs/frontend.md). Nothing existing renders differently.
+
+- **`charts/observability-rum`** wraps the official `grafana/alloy` chart
+  (1.13.0, Apache-2.0, pinned and vendored as an archive). `apps[]`
+  (`global.observabilityRum.apps`) renders one `faro.receiver` per app, each on
+  its own port with its own API key (read from a Secret by name), exact origin
+  list, `global` rate limit and payload cap (default 256KiB, at most 1MiB),
+  `sourcemaps.download` off. The app is stamped by the receiver that accepted
+  the request (`service.name`, `app`, `telemetry.source`, and the environment
+  when set); the payload's own app attributes are deleted. Output goes to the
+  OTLP gateway named by `otlp.endpoint`, never to a store. A ClusterIP Service
+  has one named port per app; the gateway route is the estate's
+  (docs/frontend.md has the same-origin shape).
+- Every exception row gets `error.fingerprint`, computed in Alloy: the first
+  16 hex of sha256 over the app, the exception type, the message with URLs,
+  quoted strings, UUIDs, hex and numbers normalised, and the first
+  own-code frame (`file:function`, after symbolication, no line or column). It
+  is a log record attribute, never a stream field. `error.message` is the
+  normalised message, `error.frame` the frame.
+- Privacy defaults: query strings and fragments are removed from every
+  absolute URL in every attribute and span attribute, the SDK's user block is
+  dropped, the anonymous session id is kept.
+- Optional source maps: `sourcemaps.sync` copies an object-store prefix
+  read-only into a volume served to Alloy, with credentials from the pod's
+  ServiceAccount only; otherwise Alloy reads `sourcemaps.directory`.
+- Alerts (LogsQL, `observability.rule-type: vlogs`): `FrontendNewIssue`,
+  `FrontendIssueRegressed` and `FrontendErrorRateHigh`, with windows and
+  thresholds as values and at most `rules.maxFingerprints` fingerprints firing
+  per evaluation. Optional recording rules for p75 web vitals
+  (`rules.recording.webVitals`, off); the logs vmalert supports recording
+  rules.
+- Two dashboards, "Frontend Issues" and "Frontend Overview", shipped as
+  ConfigMaps by the chart (`dashboards.*`).
+- Refusals, each with a fixture: an empty OTLP endpoint, a wildcard or empty
+  `allowedOrigins`, `sourcemaps.download: true`, a `per_app` rate limit, an
+  app with no key Secret, a payload limit above 1MiB, a repeated app name or
+  port, `alloy.rbac.create: true`, a replaced Alloy configuration, and more
+  (docs/safety.md).
+- `dashboardlint` accepts the VictoriaLogs datasource's field-values variable
+  query where rules 2 and 3 ask for `label_values()`. The default
+  `just dashboard-lint` also lints `charts/observability-rum/dashboards/`.
+
 ## v0.38.0
 
 `platform-alerts`: an alert for Pod Security admission rejections.
@@ -23,6 +69,7 @@ must be done first, and whether a default moved. Newest first, one
   leaves the group off: the existing VMRule renders byte for byte as before.
   Enable it only where a logs vmalert runs. `warn`-mode violations are not
   Events and are not matched.
+
 
 ## v0.37.0
 

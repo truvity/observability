@@ -1,0 +1,16 @@
+# expect: `per_app`
+global:
+  observabilityRum:
+    otlp:
+      endpoint: "http://otlp-gateway.example.svc:4318"
+    defaults:
+      rateLimit:
+        strategy: per_app
+    apps:
+      - name: shop
+        apiKeySecret:
+          name: shop-rum-key
+          key: key
+        allowedOrigins:
+          - https://shop.example
+

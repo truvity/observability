@@ -20,6 +20,7 @@ everything still looks green.
 | `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | released |
 | `charts/observability-grafana` | One Grafana as the read UI over several stores: a datasource set per store, OIDC sign-in, a database of its own, dashboards from git only. See [docs/grafana.md](docs/grafana.md). | released |
 | `charts/observability-mcp` + `cmd/mcp-aggregator` | Read-only Model Context Protocol connectors so an agent can read the estate: one per Victoria store (metrics, logs and traces tools in one server, prefixed, allowlisted) and one for Grafana's dashboards. Each is the stock server(s) on loopback behind a proxy that validates the caller's access token and holds the only credential the store sees. See [docs/mcp.md](docs/mcp.md). | released |
+| `charts/observability-rum` | Browser telemetry for an estate's web apps: Grafana Faro receivers on a self-hosted Alloy, one per app and stamping its own identity, writing to the OTLP gateway with an error fingerprint on every exception so "issues" are built on the log store, with alerts for new and regressed issues and two dashboards. See [docs/frontend.md](docs/frontend.md). | unreleased |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module
@@ -221,7 +222,8 @@ charts take as Secret names, delivered through External Secrets.
 - [docs/notifications.md](docs/notifications.md),
   [docs/alert-ingress.md](docs/alert-ingress.md),
   [docs/statusbox.md](docs/statusbox.md),
-  [docs/dashboards.md](docs/dashboards.md) — one design page per
+  [docs/dashboards.md](docs/dashboards.md),
+  [docs/frontend.md](docs/frontend.md) — one design page per
   piece: the values it takes, what it renders, what it refuses, how it
   is proven.
 - [docs/emitting.md](docs/emitting.md) — for whoever wires a service's
@@ -250,7 +252,11 @@ boundary; [docs/safety.md](docs/safety.md) lists what is deliberately
 absent because of it.
 
 Grafana and its VictoriaMetrics data source plugin are AGPL-3.0; they are
-referenced by name and never vendored here.
+referenced by name and never vendored here. Grafana Alloy (Apache-2.0) is the
+exception that proves the rule's reason: `charts/observability-rum` vendors the
+unmodified upstream chart as an archive, pinned, with the Apache-2.0 text in
+[LICENSES/](LICENSES/Apache-2.0.txt) and the dependency recorded in its
+`Chart.yaml`.
 
 ## Status
 

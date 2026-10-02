@@ -1865,6 +1865,62 @@ with every pod healthy. And because every replica watching the same Events
 would ingest all of them, the chart renders a leader-election lease
 whenever the receiver is on: only the holder reads.
 
+## The refusals: `observability-rum`
+
+Thirty-four, each with a fixture under `tests/invalid/observability-rum/`. The
+chart is a **public write endpoint**: anyone on the internet can post to it, so
+the refusals are about what bounds that, not about convenience. The design,
+and the whole of "what bounds a public write endpoint", is
+[frontend.md](frontend.md).
+
+| Refused | The failure it prevents |
+|---|---|
+| `allowedOrigins` empty, missing, containing `*`, or not an exact origin | A wildcard lets any site's page post to the receiver with a browser's blessing; an empty list is an app with no origin. |
+| `rateLimit.strategy` other than `global` | Alloy's `per_app` keys its buckets on the app name **in the payload**, which the sender chooses: a client that varies it gets a fresh bucket per request, and the limit limits nothing. One receiver per app makes `global` a per-app limit. |
+| `sourcemaps.download: true` | The receiver would fetch a source map from a URL the **browser** names: a server-side request an anonymous poster steers, and maps that must be public. |
+| An app with no `apiKeySecret` name or key | A receiver with no key accepts anyone; the key is public and rotatable, and still the one check that separates an app's bundle from a stray script. |
+| A payload limit above 1MiB, or not a size | Alloy buffers a whole request in memory, and its limit is already only a soft one (below). |
+| A repeated app name or port; port `12345`; a name that is not a short slug | The name is the identity the receiver stamps, and one receiver owns one port. |
+| An empty or non-http(s) `otlp.endpoint` | Browser data accepted and sent nowhere. |
+| `alloy.rbac.create: true` | The subchart's default Role reads every Secret and pod in the namespace, and a ClusterRole besides; the receivers need `get` on their own keys. The chart renders that Role itself, by name. |
+| `alloy.alloy.configMap.content` replaced or `create: false` | A hand-written configuration silently drops the app stamping, the privacy rules and the fingerprint. |
+| `networkPolicy.enabled` with no `ingressFrom` | The first policy that selects a pod default-denies it; with no peer listed the gateway reaches nothing. |
+| `sourcemaps.sync` without a bucket or region; a prefix with a slash at either end | A sync that copies nothing leaves every stack minified. |
+| Every alert switched off while `rules.enabled`; a malformed window; `maxFingerprints` outside 1-100 | A VMRule with no groups is refused by the operator; the cap is what keeps one bad release from being one notification per error. |
+
+### What bounds a public write endpoint, which is less than the settings say
+
+Read from Alloy v1.20.0's `faro.receiver` source, not assumed:
+
+- `max_allowed_payload_size` is compared with the request's `Content-Length`
+  **after** the whole body has been read and decoded; a chunked upload has no
+  `Content-Length` and passes, and a gzip body is inflated without a cap.
+- The API key is checked **after** the decode, so an unauthenticated request
+  still costs the decode.
+- The rate limit is checked **before** the key, so an unauthenticated flood
+  spends the bucket legitimate browsers need.
+
+So the guards the chart *can* provide are a memory limit, Alloy's
+`memory_limiter` (refuse past 80% instead of being killed), two replicas with
+a budget, and one receiver per app. The ones it cannot are a **request body
+limit and a request rate limit in front of the route**, at the edge or the
+gateway, which are the estate's. The ceiling of a forged request that gets
+through is junk rows in one app's space: the receiver stamps the app, the
+gateway stamps the cluster and namespace, and nothing in a payload can change
+either.
+
+A present-but-empty key in an app's Secret turns the key check off, and
+nothing in the chart can see it; keep the Secret's value non-empty. A
+**missing** Secret or key is caught: the receiver does not start.
+
+### The fingerprint is a field, never a stream field
+
+`error.fingerprint` is a log *record* attribute. The gateway's stream fields
+are a short fixed list (cluster, namespace, `service.name`); one value per
+error there would mint a stream per error and take the store with it, the
+failure the emitters were built around. `tests/observability_rum_test.go`
+fails if any `error.*` attribute is ever written as a resource attribute.
+
 ## The Enterprise boundary
 
 The VictoriaMetrics family ships a community edition (Apache 2.0) and an
