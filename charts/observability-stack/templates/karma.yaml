@@ -71,6 +71,9 @@ created through any member replicate through the mesh.
 {{- if $k.history.enabled }}
 {{- $_ := set $cfg "history" (dict "enabled" true "rewrite" (list (dict "source" "(.*)" "uri" $k.history.uri))) }}
 {{- end }}
+{{- if $k.filters.default }}
+{{- $_ := set $cfg "filters" (dict "default" $k.filters.default) }}
+{{- end }}
 {{- $cfg = mergeOverwrite $cfg (deepCopy ($k.extraConfig | default dict)) }}
 {{- $configYaml := toYaml $cfg }}
 {{- $aclYaml := ternary (toYaml (dict "rules" $k.acl.silences)) "" (not (empty $k.acl.silences)) }}

@@ -1125,6 +1125,20 @@
             }
           }
         },
+        "filters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "type": "array",
+              "description": "Filters karma applies when the UI opens with no `?q=` (karma `filters.default`). Default hides the chart's Watchdog alert; a set list replaces it, `[]` applies none.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
         "extraConfig": {
           "type": "object",
           "description": "Raw karma configuration, deep-merged last. Unvalidated."

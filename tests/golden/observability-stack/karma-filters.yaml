@@ -207,7 +207,12 @@ spec:
     - Ingress
   ingress:
     - from:
-        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gateway
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: oauth2-proxy
       ports:
         - protocol: TCP
           port: 8080
@@ -394,21 +399,65 @@ data:
   karma.yaml: |
     alertmanager:
       servers:
-      - cluster: alertmanager
-        name: alertmanager-0
+      - name: alertmanager
         proxy: true
         readonly: false
-        uri: http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.default.svc:9093
-      - cluster: alertmanager
-        name: alertmanager-1
-        proxy: true
-        readonly: false
-        uri: http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.default.svc:9093
+        uri: http://vmalertmanager-observability-stack.default.svc:9093
+      - name: other
+        readonly: true
+        uri: http://alertmanager.other.svc:9093
+    authentication:
+      header:
+        group_name: X-Auth-Request-Groups
+        group_value_re: ^(.+)$
+        group_value_separator: ','
+        name: X-Auth-Request-Email
+        value_re: ^(.+)$
+    authorization:
+      acl:
+        silences: /etc/karma/acl/silences.yaml
+      groups:
+      - members:
+        - alice@example.com
+        - bob@example.com
+        name: admins
+      - members:
+        - carol@example.com
+        name: users
     filters:
       default:
-      - alertname!=Watchdog
+      - '@state=active'
+      - severity=critical
+    history:
+      enabled: true
+      rewrite:
+      - source: (.*)
+        uri: http://prometheus.example.svc:9090
     listen:
       port: 8080
+  silences.yaml: |
+    rules:
+    - action: block
+      reason: regex silences are not allowed, use concrete label names and values
+      scope:
+        filters:
+        - isRegex: true
+          name_re: .+
+          value_re: .+
+    - action: allow
+      reason: admins may silence anything
+      scope:
+        groups:
+        - admins
+    - action: requireMatcher
+      matchers:
+        required:
+        - name: k8s_cluster_name
+          value_re: .+
+      reason: users must name a cluster
+      scope:
+        groups:
+        - users
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/role.yaml
@@ -1179,7 +1228,7 @@ spec:
         app.kubernetes.io/instance: observability-stack
         app.kubernetes.io/name: karma
       annotations:
-        checksum/config: 493797fe758fa18b6f2a1250c1ef6717f60bf352f340b69b045f3e05f0f3abe5
+        checksum/config: 3336cd045eb32cf2fd6757bde6b75fa4e5de8dfa59ff23ced62c210d63fd291d
     spec:
       serviceAccountName: observability-stack-karma
       automountServiceAccountToken: false
@@ -1225,6 +1274,10 @@ spec:
             - name: config
               mountPath: /etc/karma/karma.yaml
               subPath: karma.yaml
+              readOnly: true
+            - name: config
+              mountPath: /etc/karma/acl/silences.yaml
+              subPath: silences.yaml
               readOnly: true
       volumes:
         - name: config
@@ -2372,8 +2425,7 @@ spec:
         name: "observability-store-credentials"
         key: "password"
   notifiers:
-    - url: "http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.default.svc:9093"
-    - url: "http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.default.svc:9093"
+    - url: "http://vmalertmanager-observability-stack.default.svc:9093"
   extraArgs:
     external.url: https://grafana.example
 
@@ -2442,8 +2494,7 @@ spec:
         name: "observability-store-credentials"
         key: "password"
   notifiers:
-    - url: "http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.default.svc:9093"
-    - url: "http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.default.svc:9093"
+    - url: "http://vmalertmanager-observability-stack.default.svc:9093"
   extraArgs:
     external.url: https://grafana.example
     rule.defaultRuleType: vlogs
@@ -2461,29 +2512,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: observability-stack
 spec:
-  replicaCount: 2
-  podDisruptionBudget:
-    maxUnavailable: 1
-  affinity:
-    podAntiAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          podAffinityTerm:
-            topologyKey: kubernetes.io/hostname
-            labelSelector:
-              matchLabels:
-                app.kubernetes.io/instance: observability-stack
-                app.kubernetes.io/name: vmalertmanager
-  topologySpreadConstraints:
-    - maxSkew: 1
-      topologyKey: topology.kubernetes.io/zone
-      whenUnsatisfiable: ScheduleAnyway
-      labelSelector:
-        matchLabels:
-          app.kubernetes.io/instance: observability-stack
-          app.kubernetes.io/name: vmalertmanager
-  extraArgs:
-    cluster.reconnect-timeout: "5m"
+  replicaCount: 1
   securityContext:
     runAsNonRoot: true
     runAsUser: 65534
@@ -2504,6 +2533,7 @@ spec:
       memory: 256Mi
   selectAllByDefault: false
   disableSelfServiceScrape: true
+  externalURL: "https://alertmanager.example"
   volumes:
     - name: notifications-slack-acme
       secret:
@@ -2559,6 +2589,7 @@ spec:
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
+              <https://alertmanager.example/#/silences/new?filter=%7B{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}%2C{{ end }}{{ urlquery $p.Name }}%3D%22{{ urlquery $p.Value | reReplaceAll "\\+" "%20" }}%22{{ end }}%7D|Silence>
       - name: slack-acme--alerts-critical
         slack_configs:
           - channel: "#alerts-critical"
@@ -2569,6 +2600,7 @@ spec:
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
+              <https://alertmanager.example/#/silences/new?filter=%7B{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}%2C{{ end }}{{ urlquery $p.Name }}%3D%22{{ urlquery $p.Value | reReplaceAll "\\+" "%20" }}%22{{ end }}%7D|Silence>
     inhibit_rules:
       - source_matchers:
           - severity = "critical"

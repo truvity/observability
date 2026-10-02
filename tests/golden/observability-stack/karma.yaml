@@ -424,6 +424,9 @@ data:
       - members:
         - carol@example.com
         name: users
+    filters:
+      default:
+      - alertname!=Watchdog
     history:
       enabled: true
       rewrite:
@@ -1224,7 +1227,7 @@ spec:
         app.kubernetes.io/instance: observability-stack
         app.kubernetes.io/name: karma
       annotations:
-        checksum/config: 95207821de7fa5fa3404531b1338833da9f1d1903b8834fdec227a66c385ed3f
+        checksum/config: 3b3b06981a0ddcc044892e15c0dc2f990cc72fadabf11741896448e0de272aae
     spec:
       serviceAccountName: observability-stack-karma
       automountServiceAccountToken: false
