@@ -14,8 +14,29 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
+
+const (
+	// certCacheMax bounds how many parsed certificates the Verifier keeps.
+	// The cache key is a URL taken from inside a message, and the host pin
+	// admits every region's signing host and any path under it, so without
+	// a bound a sender could grow the map by varying the path. The real
+	// estate needs one entry per region a topic lives in.
+	certCacheMax = 32
+
+	// certCacheTTL is how long a parsed key is trusted before it is
+	// fetched again, so a rotated certificate is picked up without a
+	// restart.
+	certCacheTTL = 6 * time.Hour
+)
+
+// certEntry is one cached public key and when it stops being trusted.
+type certEntry struct {
+	key     *rsa.PublicKey
+	expires time.Time
+}
 
 // Envelope is the notification wrapper every message arrives in. Every
 // field the signature covers is read from here and nowhere else: a value
@@ -158,8 +179,15 @@ type Verifier struct {
 	// certCache holds a certificate's already-parsed public key by its
 	// URL. Signing certificates are long-lived, and fetching one fresh
 	// for every message would mean every request this service answers
-	// costs the provider an extra GET for no reason.
-	certCache map[string]*rsa.PublicKey
+	// costs the provider an extra GET for no reason. Guarded by certMu:
+	// every request is its own goroutine and they all land here. Only a
+	// certificate fetched from a host that passed allowedHost is ever
+	// stored, and at most certCacheMax of them.
+	certMu    sync.Mutex
+	certCache map[string]certEntry
+
+	// now is time.Now, replaceable in tests.
+	now func() time.Time
 }
 
 // NewVerifier returns a Verifier using client, or a five-second default
@@ -170,19 +198,22 @@ func NewVerifier(client *http.Client) *Verifier {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 
-	return &Verifier{HTTPClient: client, allowedHost: isSigningHost, certCache: map[string]*rsa.PublicKey{}}
+	return &Verifier{HTTPClient: client, allowedHost: isSigningHost, certCache: map[string]certEntry{}, now: time.Now}
 }
 
 // publicKey returns the RSA public key from the certificate at certURL,
 // fetching it only if certURL's host passes v.allowedHost.
 func (v *Verifier) publicKey(certURL string) (*rsa.PublicKey, error) {
-	if key, ok := v.certCache[certURL]; ok {
-		return key, nil
-	}
-
+	// The host pin comes first, even for a cache hit: nothing off the
+	// pinned host is ever stored, so this costs nothing and keeps the
+	// invariant local to this function.
 	u, err := v.checkURL(certURL)
 	if err != nil {
 		return nil, fmt.Errorf("signing certificate URL refused: %w", err)
+	}
+
+	if key, ok := v.cachedKey(certURL); ok {
+		return key, nil
 	}
 
 	resp, err := v.HTTPClient.Get(u.String())
@@ -215,9 +246,55 @@ func (v *Verifier) publicKey(certURL string) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("signing certificate at %s does not carry an RSA key", certURL)
 	}
 
-	v.certCache[certURL] = key
+	v.storeKey(certURL, key)
 
 	return key, nil
+}
+
+// cachedKey returns an unexpired cached key for certURL.
+func (v *Verifier) cachedKey(certURL string) (*rsa.PublicKey, bool) {
+	v.certMu.Lock()
+	defer v.certMu.Unlock()
+
+	e, ok := v.certCache[certURL]
+	if !ok {
+		return nil, false
+	}
+
+	if !v.now().Before(e.expires) {
+		delete(v.certCache, certURL)
+		return nil, false
+	}
+
+	return e.key, true
+}
+
+// storeKey caches key under certURL, first dropping expired entries and,
+// if the cache is still full, one arbitrary entry: a refetch of a
+// certificate is cheap, an unbounded map is not.
+func (v *Verifier) storeKey(certURL string, key *rsa.PublicKey) {
+	v.certMu.Lock()
+	defer v.certMu.Unlock()
+
+	now := v.now()
+
+	if _, replacing := v.certCache[certURL]; !replacing && len(v.certCache) >= certCacheMax {
+		for k, e := range v.certCache {
+			if !now.Before(e.expires) {
+				delete(v.certCache, k)
+			}
+		}
+
+		for k := range v.certCache {
+			if len(v.certCache) < certCacheMax {
+				break
+			}
+
+			delete(v.certCache, k)
+		}
+	}
+
+	v.certCache[certURL] = certEntry{key: key, expires: now.Add(certCacheTTL)}
 }
 
 // Verify checks e's signature against the certificate at its own

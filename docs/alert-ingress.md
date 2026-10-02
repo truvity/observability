@@ -39,18 +39,24 @@ topics:
   - "<the security-alerts topic ARN>"
   - "<the budgets topic ARN>"
 
-# Mapping rules, in order; the first whose `match` holds is applied.
-# `match` is a set of JSON-path equalities against the message body.
-# `alert` fields are Go templates over the parsed body.
+# Mapping rules, in order; the first whose `match` and `matchRegex` hold
+# is applied. `match` is a set of JSON-path equalities against the message
+# body; `matchRegex` is a set of RE2 patterns searched in the text at a
+# path. The signed envelope is under `_sns` (see "What a mapping can read").
+# `alert` fields are Go templates over the same data.
 mappings:
   - name: guardduty
     match: {"detail-type": "GuardDuty Finding"}
     alert:
       alertname: CloudSecurityFinding
-      severity: '{{ if ge .detail.severity 7.0 }}critical{{ else }}warning{{ end }}'
+      severity: '{{ if atLeast .detail.severity 7 }}critical{{ else }}warning{{ end }}'
       labels:
         source: guardduty
         k8s_cluster_name: cloud            # so the routing tree has a key to route on
+        account: '{{ .account }}'          # what tells two findings apart: Alertmanager
+        region: '{{ .region }}'            # de-duplicates on the whole label set
+        finding_type: '{{ .detail.type }}'
+        finding_id: '{{ .detail.id }}'
       annotations:
         summary: '{{ .detail.title }}'
         runbook: cloud-security-finding
@@ -58,8 +64,13 @@ mappings:
     match: {"detail-type": "AWS Console Sign In via CloudTrail", "detail.userIdentity.type": "Root"}
     alert: {alertname: RootConsoleLogin, severity: critical, labels: {source: cloudtrail, k8s_cluster_name: cloud}}
   - name: budget
-    match: {"Message.budgetName": "*"}
-    alert: {alertname: BudgetThresholdCrossed, severity: warning, labels: {source: budgets, k8s_cluster_name: cloud}}
+    match: {"_sns.TopicArn": "arn:aws:sns:eu-west-1:111122223333:example-budgets"}
+    matchRegex: {"_sns.Message": "Budget Name: "}   # plain text, not JSON
+    alert:
+      alertname: BudgetThresholdCrossed
+      severity: warning
+      labels: {source: budgets, k8s_cluster_name: cloud}
+      annotations: {summary: '{{ ._sns.Subject }}'}
 
 # The heartbeat: a scheduled event the estate publishes through the same
 # path, and the rule that fires when it stops arriving.
@@ -73,12 +84,44 @@ key the tree groups and routes on, and `cloud` (or whatever the estate
 names it) is how those alerts get their own channel without a second
 tree. The chart documents this rather than inventing a second label.
 
+## What a mapping can read
+
+`match`, `matchRegex` and every `alert` template see one object: the
+message's own JSON (the envelope's `Message` field, parsed one level;
+empty when the text is not a JSON object) plus the signed envelope under
+`_sns`:
+
+| Path | Value |
+|---|---|
+| `_sns.TopicArn` | the topic the message was published to |
+| `_sns.Subject` | the subject, empty if the publisher set none |
+| `_sns.Message` | the raw `Message` text, whatever it is |
+| `_sns.MessageId`, `_sns.Type` | the envelope's own fields |
+
+`_sns` is written after the body is parsed, so a message cannot forge it by
+carrying a key of that name. That is what makes plain-text publishers
+(budget notifications, alarm notifications on a custody topic) matchable:
+select the topic with `match: {"_sns.TopicArn": ...}` and the text with
+`matchRegex: {"_sns.Message": "..."}`. Patterns are RE2, searched
+(unanchored) in the text, and compiled when the configuration loads; one
+that does not compile is refused at start.
+
+Labels are templates, so they are how distinct findings stay distinct: a
+GuardDuty finding's `account`, `region`, `detail.type` and `detail.id` in
+the labels make two findings two alerts, where a fixed label set would
+collapse them into one that Alertmanager de-duplicates. Template helpers
+beyond Go's builtins: `atLeast VALUE THRESHOLD` (numeric `>=`; int, float
+or numeric string; an absent value is false, a non-numeric one fails the
+render and the message becomes `CloudEventUnmapped`) and `num VALUE`.
+
 ## What it does with a message, in order
 
 1. **Verify the signature.** Every message carries one; the certificate
    is fetched only from a URL under the provider's own signing domain
    (`sns.<region>.amazonaws.com`), pinned by pattern in the binary. A
-   message that fails is counted `rejected` and answered 403.
+   message that fails is counted `rejected` and answered 403. Parsed
+   certificates are cached in a bounded, mutex-guarded map (32 entries,
+   6 hours), and only ever from the pinned host.
 2. **Confirm a subscription** only if its topic is on the allow-list;
    otherwise count `rejected` and answer 403. Confirmation is the one
    outbound request the service makes.
@@ -91,6 +134,9 @@ tree. The chart documents this rather than inventing a second label.
    now + `resolveAfter` (default 1h): cloud events do not resolve, so
    the alert expires rather than lingering.
 6. **Count** it: `alert_ingress_messages_total{outcome=received|mapped|unmapped|rejected,mapping=…}`.
+   Every 403 is also counted in `alert_ingress_rejected_total{reason}`, where
+   `reason` is one of `malformed`, `signature`, `unknown_topic`,
+   `confirmation`, `unsupported_type`.
 
 ## Its own deadman
 
@@ -106,7 +152,13 @@ absent_over_time(alert_ingress_messages_total{mapping="heartbeat"}[2 × interval
 ```
 
 That rule fires through the router like any other, and it is the only
-way to know the path itself died.
+way to know the path itself died. A second rule,
+`AlertIngressMessagesRejected` (warning), fires when
+`sum by (reason) (rate(alert_ingress_rejected_total[5m]))` stays above
+`rules.rejectedMessages.ratePerSecond` (0.05) for 15m: either something that
+is not the provider is posting to the public route, or a real topic is being
+turned away. Each group is switched off with `rules.heartbeat.enabled` and
+`rules.rejectedMessages.enabled`.
 
 ## Refusals
 
@@ -120,9 +172,22 @@ way to know the path itself died.
 
 ## Security properties, stated
 
-- The service accepts only signed messages from one provider's signing
-  domain and confirms only allow-listed topics. An attacker who can
-  reach the public route can make it count `rejected`.
+- The protection is the signature and the topic allow-list, nothing
+  else. The service accepts only signed messages from one provider's
+  signing domain and accepts (and confirms) only allow-listed topics, on
+  every message Type. An attacker who can reach the public route can make
+  it count `rejected`, and nothing more.
+- Publish only `POST /` of the webhook port, and rate-limit it at the edge:
+  the service does no rate limiting of its own, and each unsigned request
+  that carries a certificate URL on the signing domain costs one outbound
+  fetch until the certificate is cached. The chart renders no route; the
+  estate's gateway route must match the method and path `POST /` (or the path
+  the topic subscribes to) and nothing broader. With the default single
+  port, a route matching a path prefix would also reach `/metrics` and
+  `/healthz`; set `service.metricsPort` to serve them on a second port that
+  the chart's Service does not expose, so no route can reach them. A
+  bounded certificate cache (32 entries) and a 1 MiB body cap bound what
+  an anonymous sender can make the process hold.
 - It holds no credential to the cloud. Confirmation is a GET to a URL
   the provider supplied inside a signed message — the only outbound
   request that changes anything in the cloud. Verifying a signature makes

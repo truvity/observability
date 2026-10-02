@@ -27,10 +27,7 @@ spec:
     # 2. DNS, or rule 1 above cannot even be resolved. With no
     # `networkPolicy.egress.dns` this is port 53 to ANY destination (no `to`):
     # the cluster resolver is not a kube-system pod on every cluster.
-    - to:
-        - ipBlock:
-            cidr: 10.96.0.0/16
-      ports:
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
@@ -71,7 +68,7 @@ data:
     alertmanager:
       url: "http://vmalertmanager-observability-stack.observability.svc:9093"
     topics:
-      - <the security-alerts topic ARN>
+      - arn:aws:sns:eu-west-1:111122223333:example
     mappings:
       []
     heartbeat:
@@ -128,7 +125,7 @@ spec:
         # ConfigMap edit lands on disk and the running process keeps the
         # configuration it read at startup — a values change that
         # applied, synced, and did nothing.
-        alert-ingress/config-checksum: 2c08e880737f3985314a55b8e4bfa7c9631feb5018fb29fbf98b984f5551c3ad
+        alert-ingress/config-checksum: 26e5566b75cb3104e3ec01988ff7e8d3d3a398e5ede1b6bf1cc7ed6a9faa96ec
     spec:
       serviceAccountName: alert-ingress
       automountServiceAccountToken: false
@@ -145,9 +142,15 @@ spec:
           args:
             - --config=/etc/alert-ingress/config.yaml
             - "--listen-addr=:8080"
+            - "--metrics-addr=:9091"
           ports:
             - name: http
               containerPort: 8080
+              protocol: TCP
+            # Not in the Service: nothing routed to this chart's Service can
+            # reach /metrics or /healthz.
+            - name: metrics
+              containerPort: 9091
               protocol: TCP
           # A static binary FROM SCRATCH has no shell for exec probes and
           # needs none: /healthz answers before the configuration is even
@@ -156,11 +159,11 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: metrics
           readinessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: metrics
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -198,7 +201,7 @@ spec:
       app.kubernetes.io/name: alert-ingress
       app.kubernetes.io/instance: alert-ingress
   podMetricsEndpoints:
-    - port: http
+    - port: metrics
       path: /metrics
 
 ---
@@ -243,28 +246,3 @@ spec:
               Deployment is not running at all — from outside, every one
               of those looks like an estate that is simply quiet, which is
               the entire reason this rule exists.
-    - name: alert-ingress.rejected
-      interval: 1m
-      rules:
-        # Every refusal is counted with its reason (signature, unknown_topic,
-        # malformed, confirmation, unsupported_type). A burst of one or two is
-        # a scanner finding the public route; a SUSTAINED rate is either an
-        # attacker working at it, or the estate's own topic misconfigured
-        # (a new topic nobody allow-listed, a changed signing region) so that
-        # real alerts are being turned away.
-        - alert: AlertIngressMessagesRejected
-          expr: >-
-            sum by (reason) (rate(alert_ingress_rejected_total[5m])) > 0.05
-          for: 15m
-          labels:
-            severity: warning
-          annotations:
-            summary: "alert-ingress is rejecting messages ({{ $labels.reason }})"
-            description: >-
-              Messages refused with a 403 for reason
-              `{{ $labels.reason }}` at {{ $value | humanize }}/s,
-              above 0.05/s for 15m. `signature`
-              and `malformed` mean something that is not the cloud provider is
-              posting to the public route; `unknown_topic` usually means a
-              topic that was never added to `topics`, so its real alerts are
-              being dropped.

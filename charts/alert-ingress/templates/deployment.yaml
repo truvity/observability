@@ -72,10 +72,20 @@ spec:
           args:
             - --config=/etc/alert-ingress/config.yaml
             - {{ printf "--listen-addr=:%d" (.Values.service.port | int) | quote }}
+            {{- if .Values.service.metricsPort }}
+            - {{ printf "--metrics-addr=:%d" (.Values.service.metricsPort | int) | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+            {{- if .Values.service.metricsPort }}
+            # Not in the Service: nothing routed to this chart's Service can
+            # reach /metrics or /healthz.
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+            {{- end }}
           # A static binary FROM SCRATCH has no shell for exec probes and
           # needs none: /healthz answers before the configuration is even
           # re-read, so a probe here can only ever report "the process is
@@ -83,11 +93,11 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: {{ ternary "metrics" "http" (ne (.Values.service.metricsPort | int) 0) }}
           readinessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: {{ ternary "metrics" "http" (ne (.Values.service.metricsPort | int) 0) }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -116,6 +126,6 @@ spec:
     matchLabels:
       {{- include "alert-ingress.selectorLabels" . | nindent 6 }}
   podMetricsEndpoints:
-    - port: http
+    - port: {{ ternary "metrics" "http" (ne (.Values.service.metricsPort | int) 0) }}
       path: /metrics
 {{- end }}

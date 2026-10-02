@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"go.yaml.in/yaml/v3"
@@ -54,7 +55,12 @@ type AlertSpec struct {
 type Mapping struct {
 	Name  string            `yaml:"name"`
 	Match map[string]string `yaml:"match"`
-	Alert AlertSpec         `yaml:"alert"`
+	// MatchRegex is a set of RE2 patterns, each searched (unanchored) in
+	// the text at a path. It is how a plain-text message is matched: use
+	// `_sns.Message` or `_sns.Subject`. Every pattern here AND every
+	// equality in Match must hold.
+	MatchRegex map[string]string `yaml:"matchRegex"`
+	Alert      AlertSpec         `yaml:"alert"`
 }
 
 // Heartbeat recognises the estate's own scheduled proof-of-life message.
@@ -132,6 +138,12 @@ func (c Config) Validate() error {
 	}
 
 	for i, m := range c.Mappings {
+		for path, pattern := range m.MatchRegex {
+			if _, err := regexp.Compile(pattern); err != nil {
+				return fmt.Errorf("mappings[%d] (%s) matchRegex %q: %w", i, m.Name, path, err)
+			}
+		}
+
 		if m.Alert.Alertname == "" {
 			return fmt.Errorf("mappings[%d] (%s) has no alert.alertname", i, m.Name)
 		}

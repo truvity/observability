@@ -1,0 +1,17 @@
+# expect: `service.metricsPort` equals `service.port`
+# Two listeners cannot bind one port. See templates/_validate.tpl#validate.ports.
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics:
+  - "arn:aws:sns:eu-west-1:111122223333:example"
+service:
+  port: 8080
+  metricsPort: 8080
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

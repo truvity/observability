@@ -48,34 +48,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	raw, err := io.ReadAll(io.LimitReader(r.Body, requestBodyLimit))
 	if err != nil {
-		s.reject(w, "", fmt.Sprintf("reading request body: %s", err))
+		s.reject(w, "", ReasonMalformed, fmt.Sprintf("reading request body: %s", err))
 		return
 	}
 
 	var env Envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
-		s.reject(w, "", fmt.Sprintf("request body is not the envelope this service expects: %s", err))
+		s.reject(w, "", ReasonMalformed, fmt.Sprintf("request body is not the envelope this service expects: %s", err))
 		return
 	}
 
 	// 1. Verify the signature. Everything below trusts the envelope's
 	// own fields, so nothing above this line may.
 	if err := s.Verifier.Verify(env); err != nil {
-		s.reject(w, env.TopicArn, fmt.Sprintf("signature: %s", err))
+		s.reject(w, env.TopicArn, ReasonSignature, fmt.Sprintf("signature: %s", err))
 		return
 	}
 
 	// 2. Confirm only an allow-listed topic. An endpoint that confirms
 	// anything can be subscribed to anyone's topic and fed alerts.
 	if !s.topicAllowed(env.TopicArn) {
-		s.reject(w, env.TopicArn, fmt.Sprintf("topic %q is not on the allow-list", env.TopicArn))
+		s.reject(w, env.TopicArn, ReasonTopic, fmt.Sprintf("topic %q is not on the allow-list", env.TopicArn))
 		return
 	}
 
 	switch env.Type {
 	case "SubscriptionConfirmation":
 		if err := s.Verifier.Confirm(env); err != nil {
-			s.reject(w, env.TopicArn, fmt.Sprintf("confirmation: %s", err))
+			s.reject(w, env.TopicArn, ReasonConfirmation, fmt.Sprintf("confirmation: %s", err))
 			return
 		}
 
@@ -92,11 +92,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// delivering, through no fault of this service, with nothing
 		// anywhere saying so. Refusing it loudly is what makes that
 		// visible instead.
-		s.reject(w, env.TopicArn, fmt.Sprintf("message Type %q is neither Notification nor SubscriptionConfirmation", env.Type))
+		s.reject(w, env.TopicArn, ReasonType, fmt.Sprintf("message Type %q is neither Notification nor SubscriptionConfirmation", env.Type))
 		return
 	}
 
-	body := parseBody(env.Message)
+	// Mappings and templates see the parsed body plus the signed envelope
+	// fields under `_sns`; see envelopeKey.
+	body := buildInput(env)
 
 	// The heartbeat is recognised before the ordinary mapping rules, and
 	// is never turned into an alert — see Heartbeat's own comment in
@@ -110,7 +112,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Match against the mapping rules, in order; the first hit wins.
 	for _, m := range s.Config.Mappings {
-		if matches(m.Match, body) {
+		if matchesMapping(m, body) {
 			s.post(w, m.Name, "mapped", m.Alert, body, env.Message)
 			return
 		}
@@ -174,8 +176,9 @@ func (s *Server) deliver(w http.ResponseWriter, mappingName, outcome string, lab
 // them a shape an attacker who can merely reach the public route could
 // produce, and every one of them counted rather than merely logged: a
 // spike here is the thing that should be noticed.
-func (s *Server) reject(w http.ResponseWriter, topic, reason string) {
+func (s *Server) reject(w http.ResponseWriter, topic, reasonLabel, reason string) {
 	s.Logger.Warn("rejected", "topic", topic, "reason", reason)
 	s.Metrics.Messages.WithLabelValues("rejected", "").Inc()
+	s.Metrics.Rejected.WithLabelValues(reasonLabel).Inc()
 	http.Error(w, "refused", http.StatusForbidden)
 }

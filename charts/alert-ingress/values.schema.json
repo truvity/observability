@@ -14,7 +14,7 @@
     "matchRule": {
       "type": "object",
       "additionalProperties": { "type": "string" },
-      "description": "JSON-path equalities against the message's own body. A value of \"*\" tests presence only."
+      "description": "JSON-path equalities against the message's own body, plus the SNS envelope under `_sns` (TopicArn, Subject, Message, MessageId, Type). A value of \"*\" tests presence only."
     },
     "alertSpec": {
       "type": "object",
@@ -83,6 +83,33 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
+        },
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "0 (the default) serves /healthz and /metrics on `port`. Non-zero serves them only on this separate port, which the Service does not expose. Must differ from `port`."
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heartbeat": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "rejectedMessages": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "ratePerSecond": { "type": "number", "minimum": 0 },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" }
+          }
         }
       }
     },
@@ -120,6 +147,11 @@
             "description": "Labels the `mapping` dimension of alert_ingress_messages_total."
           },
           "match": { "$ref": "#/definitions/matchRule" },
+          "matchRegex": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "RE2 patterns, each searched in the text at a path (use `_sns.Message` or `_sns.Subject` for plain-text publishers). All of `match` and `matchRegex` must hold."
+          },
           "alert": { "$ref": "#/definitions/alertSpec" }
         }
       }

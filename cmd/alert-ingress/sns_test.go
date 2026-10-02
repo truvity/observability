@@ -16,10 +16,12 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -190,4 +192,93 @@ func TestIsSigningHost(t *testing.T) {
 			assert.Equalf(t, c.want, isSigningHost(c.host), "isSigningHost(%q)", c.host)
 		})
 	}
+}
+
+// TestVerifierIsSafeForConcurrentUse is the regression for the unlocked
+// certificate cache: every request is its own goroutine, and a plain map
+// written from several of them is a fatal "concurrent map writes". Run
+// under -race, it also fails on any unsynchronised read.
+func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
+	fixture := newSigningFixture(t)
+	v := fixture.verifier()
+
+	const workers = 16
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+
+		go func(i int) {
+			defer wg.Done()
+
+			for j := 0; j < 20; j++ {
+				env := Envelope{
+					Type:      "Notification",
+					MessageID: fmt.Sprintf("id-%d-%d", i, j),
+					TopicArn:  "arn:aws:sns:eu-west-1:111122223333:example",
+					Message:   `{"k":"v"}`,
+					Timestamp: "2026-01-01T00:00:00.000Z",
+				}
+				env = fixture.sign(t, env)
+				// A different path per goroutine makes each its own cache key.
+				env.SigningCertURL = fmt.Sprintf("%s/cert-%d.pem", fixture.server.URL, i)
+
+				// The signature covers the canonical string, not the URL, so
+				// changing the path leaves it valid.
+				assert.NoError(t, v.Verify(env))
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+// TestCertCacheIsBounded proves a sender cannot grow the cache by varying
+// the certificate path: the host pin admits any path on the signing host.
+func TestCertCacheIsBounded(t *testing.T) {
+	fixture := newSigningFixture(t)
+	v := fixture.verifier()
+
+	for i := 0; i < certCacheMax*3; i++ {
+		_, err := v.publicKey(fmt.Sprintf("%s/cert-%d.pem", fixture.server.URL, i))
+		require.NoError(t, err)
+	}
+
+	v.certMu.Lock()
+	defer v.certMu.Unlock()
+
+	assert.LessOrEqual(t, len(v.certCache), certCacheMax)
+}
+
+// TestOffHostCertificateIsNeverCached proves only a certificate from the
+// pinned host reaches the cache: a refused URL is neither fetched nor
+// stored.
+func TestOffHostCertificateIsNeverCached(t *testing.T) {
+	v := NewVerifier(nil)
+
+	_, err := v.publicKey("https://attacker.example/sns.eu-west-1.amazonaws.com/cert.pem")
+	require.Error(t, err)
+
+	assert.Empty(t, v.certCache)
+}
+
+// TestCertCacheEntryExpires proves a cached key is refetched after its TTL.
+func TestCertCacheEntryExpires(t *testing.T) {
+	fixture := newSigningFixture(t)
+	v := fixture.verifier()
+
+	now := time.Now()
+	v.now = func() time.Time { return now }
+
+	u := fixture.server.URL + "/cert.pem"
+	_, err := v.publicKey(u)
+	require.NoError(t, err)
+
+	_, ok := v.cachedKey(u)
+	assert.True(t, ok)
+
+	now = now.Add(certCacheTTL + time.Second)
+	_, ok = v.cachedKey(u)
+	assert.False(t, ok, "an entry past its TTL must be refetched")
 }

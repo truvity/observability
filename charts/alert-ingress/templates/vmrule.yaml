@@ -11,6 +11,9 @@ forgot to wire up the scheduled ping gets a firing rule from day one
 rather than a false sense that the path works.
 */}}
 {{- $window := include "alert-ingress.doubleDuration" .Values.heartbeat.interval -}}
+{{- $hb := .Values.rules.heartbeat.enabled -}}
+{{- $rej := .Values.rules.rejectedMessages -}}
+{{- if or $hb $rej.enabled }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:
@@ -19,6 +22,7 @@ metadata:
     {{- include "alert-ingress.labels" . | nindent 4 }}
 spec:
   groups:
+    {{- if $hb }}
     - name: alert-ingress.heartbeat
       # Evaluated far more often than the heartbeat interval itself: the
       # window this rule watches is what makes it tolerant of a single
@@ -49,3 +53,32 @@ spec:
               Deployment is not running at all — from outside, every one
               of those looks like an estate that is simply quiet, which is
               the entire reason this rule exists.
+    {{- end }}
+    {{- if $rej.enabled }}
+    - name: alert-ingress.rejected
+      interval: 1m
+      rules:
+        # Every refusal is counted with its reason (signature, unknown_topic,
+        # malformed, confirmation, unsupported_type). A burst of one or two is
+        # a scanner finding the public route; a SUSTAINED rate is either an
+        # attacker working at it, or the estate's own topic misconfigured
+        # (a new topic nobody allow-listed, a changed signing region) so that
+        # real alerts are being turned away.
+        - alert: AlertIngressMessagesRejected
+          expr: >-
+            sum by (reason) (rate(alert_ingress_rejected_total[{{ $rej.window }}])) > {{ $rej.ratePerSecond }}
+          for: {{ $rej.for }}
+          labels:
+            severity: warning
+          annotations:
+            summary: "alert-ingress is rejecting messages ({{ "{{ $labels.reason }}" }})"
+            description: >-
+              Messages refused with a 403 for reason
+              `{{ "{{ $labels.reason }}" }}` at {{ "{{ $value | humanize }}" }}/s,
+              above {{ $rej.ratePerSecond }}/s for {{ $rej.for }}. `signature`
+              and `malformed` mean something that is not the cloud provider is
+              posting to the public route; `unknown_topic` usually means a
+              topic that was never added to `topics`, so its real alerts are
+              being dropped.
+    {{- end }}
+{{- end }}
