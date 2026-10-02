@@ -1,0 +1,32 @@
+{
+  "title": "Example logs ($cluster)",
+  "templating": {
+    "list": [
+      {"name": "datasource", "type": "datasource", "query": "victoriametrics-logs-datasource", "current": {"text": "", "value": ""}},
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": {"type": "victoriametrics-logs-datasource", "uid": "$datasource"},
+        "query": {"type": "fieldValue", "field": "k8s.cluster.name", "query": "*", "limit": 100},
+        "current": {"text": "", "value": ""}
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": {"type": "victoriametrics-logs-datasource", "uid": "$datasource"},
+        "query": {"type": "fieldValue", "field": "kubernetes.pod_namespace", "query": "k8s.cluster.name:\"$cluster\"", "limit": 100},
+        "current": {"text": "", "value": ""}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Errors",
+      "type": "timeseries",
+      "datasource": {"type": "victoriametrics-logs-datasource", "uid": "$datasource"},
+      "targets": [
+        {"expr": "k8s.cluster.name:\"$cluster\" namespace:\"$namespace\" error | stats count() as n", "queryType": "statsRange"}
+      ]
+    }
+  ]
+}

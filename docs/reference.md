@@ -1475,6 +1475,88 @@ until it is scraped; they link to `cnpg-cluster`, so enable it with the
 source. The operator's own dashboard, `cnpg-operator`, does not depend on the
 instance exporter and stays on.
 
+## `charts/observability-rum`
+
+Browser telemetry through Grafana Faro and Alloy; the design is
+[frontend.md](frontend.md). Everything the Alloy configuration is generated
+from lives under **`global.observabilityRum`** (Helm cannot give a subchart its
+parent's values; the Alloy subchart's `tpl` can read `global`), so a value
+below with no prefix is `global.observabilityRum.<value>`. The subchart's own
+keys stay under `alloy:`.
+
+### `otlp`, `apps[]`, `defaults`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `otlp.endpoint` | string | `""` | **Required.** The estate's OTLP/HTTP gateway, base URL (`/v1/logs` and `/v1/traces` are appended). Empty or not http(s) is refused. The chart writes nowhere else. |
+| `apps[].name` | string | | **Required.** A slug of at most 15 characters, unique. Also the Service port name, the Alloy component label and the `app` every query groups by. |
+| `apps[].apiKeySecret` | `{name, key}` | | **Required.** A Secret in the release namespace holding the app's public key (`x-api-key`). The Role may `get` these Secrets by name. The value must be non-empty. |
+| `apps[].allowedOrigins` | list | | **Required**, non-empty. Exact origins (`https://app.example`); a `*`, a path or a trailing slash is refused. |
+| `apps[].port` | int | `firstPort` + position | The receiver's port, 1024–65535, not `12345`, unique. Set it explicitly once a route points at it. |
+| `apps[].environment` | string | unset | Stamped as `deployment.environment.name`; the client's own is deleted. |
+| `apps[].serviceName` | string | `<name>-browser` | Stamped as `service.name`. |
+| `apps[].maxPayloadSize` | size | `defaults.maxPayloadSize` | `KiB` or `MiB`, at most `1MiB`. A soft limit (docs/frontend.md). |
+| `apps[].rateLimit` | `{rate, burst}` | `defaults.rateLimit` | Requests per second and burst of this receiver; both positive. |
+| `apps[].sampling.traces` | number | `1` | Share (0, 1] of browser traces kept in Alloy. Session sampling belongs to the SDK. |
+| `apps[].sourcemaps.minifiedPathPrefixes` | list | each origin + `/` | URL prefixes the browser reports scripts under. |
+| `defaults.maxPayloadSize` | size | `256KiB` | Alloy's own default is 5MiB. |
+| `defaults.rateLimit.strategy` | string | `global` | Only `global` is accepted; `per_app` is refused. |
+| `defaults.rateLimit.rate` / `.burst` | number | `20` / `40` | Per receiver, per replica. |
+| `defaults.firstPort` | int | `12347` | |
+
+### `privacy`, `sourcemaps`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `privacy.stripUrlQueryAndFragment` | bool | `true` | Removes `?query` and `#fragment` from every absolute URL in every attribute and span attribute. |
+| `privacy.dropUserAttributes` | bool | `true` | Deletes `user_*` on logs and `user.*` / `enduser.*` on spans. The anonymous session id stays. |
+| `sourcemaps.download` | bool | `false` | **Refused when true.** The receiver would fetch a map from a URL the browser names. |
+| `sourcemaps.directory` | path | `/sourcemaps` | Where Alloy reads maps from when `sync` is off: `<directory>/<app>/<release>/<path>.map`. Mounted by the estate. |
+| `sourcemaps.cache.missRetry` | duration | `1m` | How soon a map not found is looked for again. |
+| `sourcemaps.cache.ttl` | duration | `1h` | How long an unused parsed map stays in memory. |
+| `sourcemaps.sync.enabled` | bool | `false` | Renders the sync Deployment, Service, ServiceAccount and NetworkPolicy; Alloy then reads over HTTP. |
+| `sourcemaps.sync.bucket` / `.region` | string | `""` | **Required with `enabled`** (`region` or `endpointUrl`). Read-only; credentials from the ServiceAccount, never a value. |
+| `sourcemaps.sync.prefix` | string | `""` | Key prefix; no slash at either end. Layout `<prefix>/<app>/<release>/<path>.map`. |
+| `sourcemaps.sync.endpointUrl` | URL | `""` | An S3-compatible store that is not AWS. |
+| `sourcemaps.sync.interval` | duration | `5m` | |
+| `sourcemaps.sync.replicas` | int | `1` | |
+| `sourcemaps.sync.serviceAccount.annotations` | map | `{}` | e.g. an IRSA role annotation. Pod Identity needs none. |
+| `sourcemaps.sync.syncImage` / `.serveImage` | `{repository, tag, digest}` | the AWS CLI / busybox | Pinned by tag. |
+| `sourcemaps.sync.resources` | object | 10m / 32Mi requests, 256Mi limit | Both containers. |
+
+### `rules`, `dashboards`, `networkPolicy`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `rules.enabled` | bool | `true` | Renders the VMRule (`observability.rule-type: vlogs`, groups `type: vlogs`). |
+| `rules.interval` | duration | `1m` | Every group's evaluation interval. |
+| `rules.extraLabels` | map | `{}` | Added to every alert. |
+| `rules.maxFingerprints` | int | `10` | At most this many fingerprints fire per issue rule per evaluation (1–100), highest volume first. |
+| `rules.newIssue.{enabled, window, history, for}` | | `true`, `15m`, `90d`, `0m` | `FrontendNewIssue`: seen in `window`, never in `history` before it. Keep `history` at the store's retention. |
+| `rules.regressed.{enabled, window, quietFor, history, for}` | | `true`, `15m`, `7d`, `90d`, `0m` | `FrontendIssueRegressed`: seen in `window`, quiet for `quietFor`, seen earlier in `history`. |
+| `rules.errorRate.{enabled, window, perSession, minSessions, perMinute, for}` | | `true`, `10m`, `0.5`, `20`, `0`, `10m` | `FrontendErrorRateHigh`, once per basis (`per-session`: exceptions per session with at least `minSessions`; `per-minute`: exceptions per minute). A threshold of 0 turns its basis off. |
+| `rules.recording.webVitals.{enabled, window}` | | `false`, `5m` | Records `frontend:web_vitals_{lcp,inp,cls}_p75` through the logs vmalert's `remoteWrite`. |
+| `dashboards.enabled` | bool | `true` | Renders the two dashboards as ConfigMaps for Grafana's sidecar. |
+| `dashboards.namespace` | string | release namespace | Where the sidecar looks. |
+| `dashboards.folder` | string | `Frontend` | The sidecar's folder annotation. |
+| `dashboards.datasources.logs` / `.traces` | string | `victorialogs` / `victoriatraces` | The UIDs this Grafana was provisioned with. Required while the dashboards are on. |
+| `networkPolicy.enabled` | bool | `false` | An ingress NetworkPolicy on the Alloy pods. The first policy default-denies, so `ingressFrom` is required with it. |
+| `networkPolicy.ingressFrom` / `.metricsFrom` | list | `[]` | `from` peers for the app ports / `:12345`. |
+
+### The Alloy subchart
+
+`alloy:` is the pinned `grafana/alloy` chart's own values; the defaults here
+make it a stateless receiver: `fullnameOverride: observability-rum` (a fixed
+name for the Service, the ServiceAccount a cloud identity binds, and the Role
+binding), a Deployment of two replicas with a PodDisruptionBudget and a zone
+spread, a read-only root filesystem and non-root user, `rbac.create: false`
+(**refused when true**) and `crds.create: false`, and its ServiceMonitor on.
+`alloy.alloy.configMap.content` is the generated configuration and is refused
+when replaced.
+
+The Service `<fullname>-faro` has one named port per app, name = the app's
+name, for the gateway's route to reference.
+
 ## `pkg/tenancy`
 
 `go get github.com/truvity/observability`
@@ -1543,4 +1625,5 @@ produces no diff.
 | `observability-emitters` | `oci://ghcr.io/truvity/charts/observability-emitters` |
 | `observability-stack` | `oci://ghcr.io/truvity/charts/observability-stack` |
 | `platform-alerts` | `oci://ghcr.io/truvity/charts/platform-alerts` |
+| `observability-rum` | `oci://ghcr.io/truvity/charts/observability-rum` |
 | `pkg/tenancy` | `github.com/truvity/observability` |

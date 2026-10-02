@@ -1,0 +1,31 @@
+{{- if .Values.dashboards.enabled }}
+{{- /*
+One ConfigMap per dashboard, labelled for Grafana's dashboard sidecar, held
+to the same contract as charts/observability-dashboards (docs/dashboards.md;
+`just dashboard-lint` lints dashboards/*.json). Two placeholders are the
+Grafana's own datasource UIDs. The sidecar reads the namespace it is told to
+watch: `dashboards.namespace` puts these there.
+*/ -}}
+{{- $full := include "observability-rum.fullname" . -}}
+{{- $ns := .Values.dashboards.namespace | default .Release.Namespace -}}
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+{{- $name := base $path | trimSuffix ".json" }}
+{{- $content := $.Files.Get $path | replace "__LOGS_DATASOURCE_UID__" $.Values.dashboards.datasources.logs | replace "__TRACES_DATASOURCE_UID__" $.Values.dashboards.datasources.traces }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-{{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "observability-rum.labels" $ | nindent 4 }}
+    grafana_dashboard: "1"
+  annotations:
+    # The k8s-sidecar folder convention; inert unless that Grafana sets
+    # `sidecar.dashboards.folderAnnotation` (see charts/observability-dashboards).
+    k8s-sidecar-target-directory: {{ $.Values.dashboards.folder | quote }}
+data:
+  {{ $name }}.json: |
+    {{- $content | nindent 4 }}
+{{- end }}
+{{- end }}

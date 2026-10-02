@@ -1,0 +1,11 @@
+# expect: is not a size like 256KiB or 1MiB
+global:
+  observabilityRum:
+    otlp:
+      endpoint: "http://otlp-gateway.example.svc:4318"
+    apps:
+      - name: shop
+        apiKeySecret: {name: shop-rum-key, key: key}
+        allowedOrigins: ["https://shop.example"]
+        maxPayloadSize: 5MB
+

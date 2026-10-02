@@ -1,0 +1,299 @@
+# observability-rum: browser telemetry for an estate's web apps.
+#
+# TWO NAMESPACES OF VALUES, for the reason charts/observability-grafana
+# gives and docs/frontend.md repeats: Helm cannot hand a parent chart's
+# values to a subchart. The Alloy subchart renders its configuration file
+# from `alloy.alloy.configMap.content` with `tpl`, and in that context the
+# parent's values do not exist but `global` does. Everything this chart
+# computes for Alloy (one receiver per app, the pipeline, the fingerprint)
+# is therefore read from `global.observabilityRum`, the one place both
+# charts can see.
+#
+#   global.observabilityRum   what this chart is FOR: the apps, the OTLP
+#                             gateway, privacy, source maps.
+#   alloy                     the Alloy subchart's own values, for what is
+#                             about the POD: replicas, resources, scheduling.
+#   rules / dashboards / networkPolicy
+#                             what only this chart renders.
+global:
+  observabilityRum:
+    # -- Where everything goes: the estate's OTLP gateway. This chart NEVER
+    # writes to a store. OTLP over HTTP, the base URL without a signal path
+    # (the exporter appends /v1/logs and /v1/traces), e.g.
+    # http://<gateway-service>.<namespace>.svc:4318 . Empty is refused:
+    # an endpoint nobody chose is browser data going nowhere.
+    otlp:
+      endpoint: ""
+
+    # -- One entry per web app; each becomes one `faro.receiver` on its own
+    # port with its own key, origin list and rate limit. The identity of an
+    # app is WHICH RECEIVER accepted the request, never what the payload says:
+    # the receiver stamps `service.name` and `app` itself and the payload's
+    # own app attributes are deleted.
+    #
+    #   name           required. Lowercase slug, at most 15 characters (it is
+    #                  also the Service port name). Unique.
+    #   apiKeySecret   required: {name, key}. A Secret in THIS namespace
+    #                  holding the app's key; the browser sends it as
+    #                  `x-api-key`. It is a PUBLIC identifier shipped in the
+    #                  bundle (a tripwire you can rotate, not authentication);
+    #                  it must be non-empty, because an empty key turns the
+    #                  check off. The chart renders a Role that may `get` only
+    #                  these Secrets, by name.
+    #   allowedOrigins required, non-empty list of exact origins
+    #                  (https://app.example). No `*`, no wildcard, no paths.
+    #                  With the same-origin route this is the app's own origin.
+    #   port           optional. Default: firstPort + the entry's position.
+    #                  Set it explicitly once a route points at it.
+    #   environment    optional. When set, stamped as
+    #                  `deployment.environment.name`, overwriting the client's.
+    #   serviceName    optional. Default `<name>-browser`.
+    #   maxPayloadSize optional, e.g. 128KiB. Never above 1MiB.
+    #   rateLimit      optional {rate, burst}: requests per second and burst
+    #                  for this receiver, strategy global.
+    #   sampling       optional {traces: 0..1}: keep this share of browser
+    #                  traces here. Session sampling belongs to the SDK.
+    #   sourcemaps     optional {minifiedPathPrefixes: [...]}: URL prefixes the
+    #                  browser reports scripts under. Default: each allowed
+    #                  origin followed by "/".
+    apps: []
+
+    defaults:
+      # -- Per receiver. Alloy's own default is 5MiB; a browser batch is a
+      # few KiB. NOTE the limit is compared with the request's
+      # Content-Length AFTER the body has been read (docs/frontend.md,
+      # "What bounds a public write endpoint"): put a body limit at the edge.
+      maxPayloadSize: 256KiB
+      # -- Per receiver, token bucket, strategy global. Alloy's limiter is
+      # per replica, so the fleet's ceiling is rate x replicas.
+      rateLimit:
+        # -- Only `global` is accepted (refused otherwise): `per_app` keys its
+        # buckets on an app name the sender chooses.
+        strategy: global
+        rate: 20
+        burst: 40
+      # -- Port of the first app; the next ones follow in list order.
+      firstPort: 12347
+
+    privacy:
+      # -- Remove `?query` and `#fragment` from every absolute URL in every
+      # attribute (page URL, error messages, stack frames, captured requests)
+      # and from span attributes. A query string is where tokens, emails and
+      # search terms live. Relative URLs in free text are not touched.
+      stripUrlQueryAndFragment: true
+      # -- Delete everything the SDK's user block carries (`user_*`: id,
+      # email, username, attributes) and `user.*`/`enduser.*` on spans. The
+      # anonymous session id is kept: it is what counts sessions.
+      dropUserAttributes: true
+
+    sourcemaps:
+      # -- Refused when true. Alloy's own default is to fetch a map from the
+      # URL the browser reports; this chart never lets it.
+      download: false
+      # -- Where Alloy reads maps from when `sync` is off: a directory INSIDE
+      # the Alloy pod, one subdirectory per app, then the release, then the
+      # script's path: <directory>/<app>/<release>/assets/index.js.map .
+      # Mount it yourself (alloy.alloy.mounts.extra and
+      # alloy.controller.volumes.extra). Ignored when `sync.enabled`.
+      directory: /sourcemaps
+      cache:
+        # -- A map not found is cached as a miss; this is how soon it is
+        # looked for again (a release whose maps are still syncing).
+        missRetry: 1m
+        # -- How long an unused parsed map stays in memory.
+        ttl: 1h
+      # -- A READ-ONLY copy of an object-store prefix, served to Alloy over
+      # HTTP inside the cluster by its own small Deployment. Off by default.
+      # Credentials come from the pod's ServiceAccount (Pod Identity or
+      # IRSA, set through `serviceAccount.annotations`); the chart accepts
+      # no static keys. Bucket layout: <prefix>/<app>/<release>/<path>.map .
+      sync:
+        enabled: false
+        bucket: ""
+        # -- Key prefix inside the bucket, without a leading or trailing
+        # slash. Empty: the bucket root.
+        prefix: ""
+        region: ""
+        # -- For an S3-compatible store that is not AWS. Empty: AWS.
+        endpointUrl: ""
+        interval: 5m
+        replicas: 1
+        serviceAccount:
+          # -- Annotations on the sync pod's ServiceAccount, e.g. an IRSA
+          # role annotation. Pod Identity needs none (it binds by name).
+          annotations: {}
+        # -- Pinned by tag; set `digest` to pin harder.
+        syncImage:
+          repository: public.ecr.aws/aws-cli/aws-cli
+          tag: 2.34.0
+        serveImage:
+          repository: docker.io/library/busybox
+          tag: 1.37.0
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 256Mi
+
+# -- Alerts, LogsQL, evaluated by the LOGS vmalert (the VMRule carries
+# `observability.rule-type: vlogs` and its groups `type: vlogs`). Every
+# window and threshold is a value; docs/frontend.md says what each costs.
+rules:
+  enabled: true
+  # -- Labels added to every alert (e.g. an owner), beside `severity`.
+  extraLabels: {}
+  # -- The evaluation interval of every group.
+  interval: 1m
+  # -- At most this many fingerprints can fire per rule per evaluation,
+  # highest volume first. A deploy that introduces fifty new errors pages
+  # ten and shows the rest on the dashboard; without a cap one bad release
+  # is fifty notifications.
+  maxFingerprints: 10
+  newIssue:
+    enabled: true
+    # -- A fingerprint is new when seen within this window and never in
+    # `history` before it.
+    window: 15m
+    history: 90d
+    # -- Keep `history` at the store's retention: older sightings cannot
+    # be read.
+    for: 0m
+  regressed:
+    enabled: true
+    window: 15m
+    # -- Seen now, seen before `history`... and quiet for this long.
+    quietFor: 7d
+    history: 90d
+    for: 0m
+  errorRate:
+    enabled: true
+    window: 10m
+    # -- Exceptions per session in the window. 0 turns the per-session
+    # alert off.
+    perSession: 0.5
+    # -- Below this many sessions the per-session ratio is noise and the
+    # alert is silent.
+    minSessions: 20
+    # -- Exceptions per minute in the window. 0 turns the alert off.
+    perMinute: 0
+    for: 10m
+  # -- Recording rules: p75 of the Core Web Vitals per cluster and app,
+  # written by the LOGS vmalert to the metrics store as
+  # `frontend:web_vitals_{lcp,inp,cls}_p75` (labels `k8s_cluster_name`,
+  # `app`, and `stats_result`, the statistic's name). Off by default: the
+  # dashboards compute p75 from the log rows at query time and do not need
+  # them; turn them on for long ranges, where that gets slow, or to alert on
+  # a vital. They need the logs vmalert to carry a `remoteWrite`, which
+  # charts/observability-stack's always does.
+  recording:
+    webVitals:
+      enabled: false
+      # -- The window each evaluation takes the percentile over.
+      window: 5m
+
+# -- The two dashboards ("Frontend Issues", "Frontend Overview"), as
+# ConfigMaps for Grafana's dashboard sidecar, under the same contract as
+# charts/observability-dashboards (docs/dashboards.md).
+dashboards:
+  enabled: true
+  # -- The namespace the ConfigMaps go to; empty: the release namespace. Set
+  # it to the namespace Grafana's sidecar watches.
+  namespace: ""
+  # -- The Grafana folder, through the sidecar's folder annotation (inert
+  # unless that Grafana sets it, see charts/observability-dashboards).
+  folder: Frontend
+  # -- The datasource UIDs this Grafana was provisioned with; the logs one
+  # drives both dashboards, the traces one the "open trace" link.
+  datasources:
+    logs: victorialogs
+    traces: victoriatraces
+
+# -- A NetworkPolicy selecting the Alloy pods. The FIRST policy that selects
+# a pod default-denies it, so when this is on the peers below are the whole
+# allow-list and an empty list is refused. Ingress only: the pods need the
+# Kubernetes API (their Secrets), the OTLP gateway and DNS, whose addresses
+# differ per cluster; restrict egress in the estate's own policy.
+networkPolicy:
+  enabled: false
+  # -- Peers allowed to reach the app ports: the gateway's pods that route
+  # browser traffic. NetworkPolicy `from` entries, verbatim.
+  ingressFrom: []
+  # -- Peers allowed to scrape :12345 (the metrics agent). Empty: the same
+  # peers as `ingressFrom` are NOT implied; nothing scrapes.
+  metricsFrom: []
+
+# -- The Alloy subchart (pinned in Chart.yaml). Everything here is the
+# subchart's own key; what is not set keeps the subchart's default.
+alloy:
+  # The names are fixed on purpose: a Service, a ServiceAccount a Pod
+  # Identity association binds by name, and a Role binding all need a name
+  # that does not move with the release. `fullnameOverride` is the one
+  # place it is chosen; the chart's own objects follow it.
+  fullnameOverride: observability-rum
+
+  # The subchart's CRDs (PodLogs and friends) and its default Role (it can
+  # read every Secret and every pod in the namespace) are not needed to
+  # receive browser telemetry. This chart renders its own Role: `get` on
+  # the named app-key Secrets and nothing else.
+  crds:
+    create: false
+  rbac:
+    create: false
+
+  serviceAccount:
+    create: true
+    # Mounted: `remote.kubernetes.secret` reads the app keys through the API.
+    automountServiceAccountToken: true
+
+  # A stateless receiver, so a Deployment (the subchart's default is a
+  # DaemonSet for log collection) and two replicas that survive a node.
+  controller:
+    type: deployment
+    replicas: 2
+    podDisruptionBudget:
+      enabled: true
+      maxUnavailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: alloy
+    volumes:
+      extra:
+        - name: storage
+          emptyDir: {}
+
+  alloy:
+    configMap:
+      create: true
+      # Rendered by the subchart with `tpl`, from `global.observabilityRum`.
+      content: '{{ include "observability-rum.alloyConfig" . }}'
+    enableReporting: false
+    storagePath: /tmp/alloy
+    mounts:
+      extra:
+        - name: storage
+          mountPath: /tmp/alloy
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+  # Scraped: faro_receiver_* and the exporter's counters are on :12345.
+  serviceMonitor:
+    enabled: true

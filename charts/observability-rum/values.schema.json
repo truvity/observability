@@ -1,0 +1,413 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-rum",
+  "description": "Browser telemetry through Grafana Faro and Alloy. Strict: an unknown key fails the render rather than being silently ignored, because in a public write endpoint a typo is a limit that never applies. What the schema cannot say (a wildcard origin, a duplicate port, a payload above the cap, an empty gateway endpoint) is a render-time refusal in templates/_validate.tpl, each with a fixture under tests/invalid/observability-rum/.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "observabilityRum": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "otlp": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "endpoint": {
+                  "type": "string",
+                  "description": "The estate's OTLP/HTTP gateway, base URL. Required (refused when empty)."
+                }
+              }
+            },
+            "apps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "apiKeySecret": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "key": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "allowedOrigins": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "port": {
+                    "type": "integer"
+                  },
+                  "environment": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]*$"
+                  },
+                  "serviceName": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]+$"
+                  },
+                  "maxPayloadSize": {
+                    "type": "string"
+                  },
+                  "rateLimit": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "rate": {
+                        "type": "number"
+                      },
+                      "burst": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "sampling": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "traces": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "sourcemaps": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "minifiedPathPrefixes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^https?://[^\\s\"`]+$"
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            },
+            "defaults": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "maxPayloadSize": {
+                  "type": "string"
+                },
+                "rateLimit": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "strategy": {
+                      "type": "string"
+                    },
+                    "rate": {
+                      "type": "number"
+                    },
+                    "burst": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "firstPort": {
+                  "type": "integer"
+                }
+              }
+            },
+            "privacy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "stripUrlQueryAndFragment": {
+                  "type": "boolean"
+                },
+                "dropUserAttributes": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "sourcemaps": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "download": {
+                  "type": "boolean"
+                },
+                "directory": {
+                  "type": "string"
+                },
+                "cache": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "missRetry": {
+                      "type": "string",
+                      "pattern": "^[1-9][0-9]*[smh]$"
+                    },
+                    "ttl": {
+                      "type": "string",
+                      "pattern": "^[1-9][0-9]*[smh]$"
+                    }
+                  }
+                },
+                "sync": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "bucket": {
+                      "type": "string",
+                      "pattern": "^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+                    },
+                    "prefix": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9._/-]*$"
+                    },
+                    "region": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9-]*$"
+                    },
+                    "endpointUrl": {
+                      "type": "string",
+                      "pattern": "^$|^https?://[A-Za-z0-9._:/-]+$"
+                    },
+                    "interval": {
+                      "type": "string"
+                    },
+                    "replicas": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "serviceAccount": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "annotations": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "syncImage": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "repository": {
+                          "type": "string"
+                        },
+                        "tag": {
+                          "type": "string"
+                        },
+                        "digest": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "serveImage": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "repository": {
+                          "type": "string"
+                        },
+                        "tag": {
+                          "type": "string"
+                        },
+                        "digest": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "resources": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extraLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "interval": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*[smh]$"
+        },
+        "maxFingerprints": {
+          "type": "integer"
+        },
+        "newIssue": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "window": {
+              "type": "string"
+            },
+            "history": {
+              "type": "string"
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+[smhd]$"
+            }
+          }
+        },
+        "regressed": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "window": {
+              "type": "string"
+            },
+            "quietFor": {
+              "type": "string"
+            },
+            "history": {
+              "type": "string"
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+[smhd]$"
+            }
+          }
+        },
+        "errorRate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "window": {
+              "type": "string"
+            },
+            "perSession": {
+              "type": "number"
+            },
+            "minSessions": {
+              "type": "integer"
+            },
+            "perMinute": {
+              "type": "number"
+            },
+            "for": {
+              "type": "string",
+              "pattern": "^[0-9]+[smhd]$"
+            }
+          }
+        },
+        "recording": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "webVitals": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "window": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "dashboards": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "datasources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "logs": {
+              "type": "string"
+            },
+            "traces": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "ingressFrom": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "metricsFrom": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "alloy": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The Alloy subchart's own values (pinned in Chart.yaml)."
+    }
+  }
+}

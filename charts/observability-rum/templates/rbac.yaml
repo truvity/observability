@@ -1,0 +1,45 @@
+{{- /*
+The one permission the receivers need from the Kubernetes API: read their
+own app keys. `get` on those Secrets by NAME, in this namespace, bound to
+the Alloy ServiceAccount. The subchart's own Role (every Secret and pod in
+the namespace, plus a ClusterRole) is off; `alloy.rbac.create: true` is
+refused.
+*/ -}}
+{{- include "observability-rum.validate" . -}}
+{{- $full := include "observability-rum.fullname" . -}}
+{{- $apps := include "observability-rum.apps" . | fromYamlArray -}}
+{{- $names := list -}}
+{{- range $a := $apps -}}
+{{- $names = append $names $a.secretName -}}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $full }}-app-keys
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-rum.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      {{- range $names | uniq | sortAlpha }}
+      - {{ . | quote }}
+      {{- end }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $full }}-app-keys
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-rum.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $full }}-app-keys
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.alloy.serviceAccount.name | default $full }}
+    namespace: {{ .Release.Namespace }}

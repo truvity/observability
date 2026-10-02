@@ -1,0 +1,41 @@
+# Everything off that can be: no alerts, no dashboards, the privacy rules
+# turned off (a choice, documented), receivers reading maps from a directory
+# the estate mounts itself.
+global:
+  observabilityRum:
+    otlp:
+      endpoint: http://otlp-gateway.example.svc:4318
+    privacy:
+      stripUrlQueryAndFragment: false
+      dropUserAttributes: false
+    sourcemaps:
+      directory: /maps
+    apps:
+      - name: docs
+        apiKeySecret:
+          name: docs-rum-key
+          key: key
+        allowedOrigins:
+          - https://docs.example
+
+rules:
+  enabled: false
+dashboards:
+  enabled: false
+alloy:
+  alloy:
+    mounts:
+      extra:
+        - name: storage
+          mountPath: /tmp/alloy
+        - name: maps
+          mountPath: /maps
+          readOnly: true
+  controller:
+    volumes:
+      extra:
+        - name: storage
+          emptyDir: {}
+        - name: maps
+          persistentVolumeClaim:
+            claimName: web-sourcemaps

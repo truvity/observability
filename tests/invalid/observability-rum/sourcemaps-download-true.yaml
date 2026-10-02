@@ -1,0 +1,15 @@
+# expect: sourcemaps.download: true` is refused
+global:
+  observabilityRum:
+    otlp:
+      endpoint: "http://otlp-gateway.example.svc:4318"
+    sourcemaps:
+      download: true
+    apps:
+      - name: shop
+        apiKeySecret:
+          name: shop-rum-key
+          key: key
+        allowedOrigins:
+          - https://shop.example
+

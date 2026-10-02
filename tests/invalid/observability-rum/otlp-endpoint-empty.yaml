@@ -1,0 +1,13 @@
+# expect: otlp.endpoint` is empty
+global:
+  observabilityRum:
+    otlp:
+      endpoint: ""
+    apps:
+      - name: shop
+        apiKeySecret:
+          name: shop-rum-key
+          key: key
+        allowedOrigins:
+          - https://shop.example
+

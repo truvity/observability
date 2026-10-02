@@ -1,0 +1,99 @@
+# Every knob: two apps (the second with all its overrides), the source-map
+# sync, the policy, tuned alerts, dashboards in another namespace.
+global:
+  observabilityRum:
+    otlp:
+      endpoint: https://otlp-gateway.example.svc:4318
+    defaults:
+      maxPayloadSize: 128KiB
+      rateLimit:
+        rate: 10
+        burst: 20
+      firstPort: 12400
+    privacy:
+      stripUrlQueryAndFragment: true
+      dropUserAttributes: true
+    apps:
+      - name: shop
+        apiKeySecret:
+          name: shop-rum-key
+          key: key
+        allowedOrigins:
+          - https://shop.example
+      - name: back-office
+        port: 12500
+        environment: staging
+        serviceName: back-office-web
+        maxPayloadSize: 512KiB
+        rateLimit:
+          rate: 5
+          burst: 10
+        sampling:
+          traces: 0.25
+        apiKeySecret:
+          name: back-office-rum-key
+          key: api-key
+        allowedOrigins:
+          - https://back-office.example
+          - https://back-office.example:8443
+        sourcemaps:
+          minifiedPathPrefixes:
+            - https://back-office.example/static/
+    sourcemaps:
+      cache:
+        missRetry: 30s
+        ttl: 2h
+      sync:
+        enabled: true
+        bucket: example-sourcemaps
+        prefix: web
+        region: eu-west-1
+        interval: 2m
+        serviceAccount:
+          annotations:
+            example.com/role: sourcemaps-reader
+
+rules:
+  extraLabels:
+    owner: web
+  interval: 30s
+  maxFingerprints: 5
+  newIssue:
+    window: 30m
+    history: 30d
+    for: 5m
+  regressed:
+    window: 30m
+    quietFor: 3d
+    history: 30d
+  errorRate:
+    window: 15m
+    perSession: 1
+    minSessions: 50
+    perMinute: 30
+    for: 15m
+  recording:
+    webVitals:
+      enabled: true
+      window: 10m
+
+dashboards:
+  folder: Web
+  datasources:
+    logs: logs-main
+    traces: traces-main
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway-system
+  metricsFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+
+alloy:
+  controller:
+    replicas: 3

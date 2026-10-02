@@ -30,7 +30,7 @@ jobs:
       # (see .goreleaser.yaml) and cuts the GitHub release + changelog; every chart below is then
       # packaged at the tag's version and pushed to
       # oci://ghcr.io/truvity/charts/<name>.
-      charts: '["observability-crds", "observability-emitters", "observability-stack", "platform-alerts", "alert-ingress", "observability-dashboards", "observability-grafana", "observability-mcp"]'
+      charts: '["observability-crds", "observability-emitters", "observability-stack", "platform-alerts", "alert-ingress", "observability-dashboards", "observability-grafana", "observability-mcp", "observability-rum"]'
       # ko names each image after its cmd directory
       # (base_import_paths in .goreleaser.yaml), so this nests them as
       # ghcr.io/truvity/observability/alert-ingress and

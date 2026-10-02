@@ -1,0 +1,2 @@
+{{- /* Renders nothing; runs every refusal (see _validate.tpl). */ -}}
+{{- include "observability-rum.validate" . -}}

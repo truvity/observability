@@ -57,6 +57,22 @@ func (v variable) queryText() string {
 	return ""
 }
 
+// fieldValues reports whether the variable is the VictoriaLogs datasource's
+// own "field values" query: {"type": "fieldValue", "field": "<name>", ...}.
+// It is that datasource's label-values query: it lists what the chosen
+// store actually holds for one field, so it satisfies rules 2 and 3 where a
+// metrics datasource would write label_values().
+func (v variable) fieldValues() bool {
+	var obj struct {
+		Type  string `json:"type"`
+		Field string `json:"field"`
+	}
+	if err := json.Unmarshal(v.Query, &obj); err != nil {
+		return false
+	}
+	return obj.Type == "fieldValue" && obj.Field != ""
+}
+
 func (v variable) datasourceRef() string {
 	var s string
 	if err := json.Unmarshal(v.Datasource, &s); err == nil {
@@ -249,9 +265,9 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 		if q == "" {
 			q = clusterVar.Definition
 		}
-		if !labelValuesCall.MatchString(q) {
-			add(2, "the `cluster` variable's query %q is not a label_values() call — the list must come from what the chosen install actually holds, never a "+
-				"hardcoded set", q)
+		if !labelValuesCall.MatchString(q) && !clusterVar.fieldValues() {
+			add(2, "the `cluster` variable's query %q is not a label_values() call (or a VictoriaLogs field-values query) — the list must come from what the chosen "+
+				"install actually holds, never a hardcoded set", q)
 		}
 	}
 	if hasCluster {
@@ -296,8 +312,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 				add(3, "the `namespace` variable's query %q does not reference $cluster — it is not chained off `cluster`, so it lists every namespace on every install "+
 					"rather than the chosen cluster's own", q)
 			}
-			if !labelValuesCall.MatchString(q) {
-				add(3, "the `namespace` variable's query %q is not a label_values() call", q)
+			if !labelValuesCall.MatchString(q) && !nsVar.fieldValues() {
+				add(3, "the `namespace` variable's query %q is not a label_values() call (or a VictoriaLogs field-values query)", q)
 			}
 		}
 	}

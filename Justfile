@@ -2,7 +2,7 @@
 # check workflow (truvity/ci-workflows) runs each one as its own job, so a
 # laptop and CI run the same thing.
 
-charts := "observability-crds observability-emitters observability-stack platform-alerts alert-ingress observability-dashboards observability-grafana observability-mcp"
+charts := "observability-crds observability-emitters observability-stack platform-alerts alert-ingress observability-dashboards observability-grafana observability-mcp observability-rum"
 
 # The parent workspace would otherwise interfere with this standalone
 # module.
@@ -95,7 +95,7 @@ dashboard-lint *files:
     set -euo pipefail
     files=({{ files }})
     if [ ${#files[@]} -eq 0 ]; then
-      files=(charts/observability-dashboards/dashboards/*.json)
+      files=(charts/observability-dashboards/dashboards/*.json charts/observability-rum/dashboards/*.json)
     fi
     go run ./cmd/dashboardlint "${files[@]}"
 

@@ -1,0 +1,27 @@
+{{- /*
+One ClusterIP Service with one NAMED port per app, named after the app: the
+gateway's route for an app's own `/faro/collect` points at this Service's
+port of that name. There is no public host and no Ingress here; how the
+traffic arrives is the estate's gateway (docs/frontend.md). The subchart's
+own Service stays, for :12345 (metrics, readiness).
+*/ -}}
+{{- $full := include "observability-rum.fullname" . -}}
+{{- $apps := include "observability-rum.apps" . | fromYamlArray }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-faro
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-rum.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "observability-rum.alloySelector" . | nindent 4 }}
+  ports:
+    {{- range $a := $apps }}
+    - name: {{ $a.name }}
+      port: {{ $a.port }}
+      targetPort: {{ $a.port }}
+      protocol: TCP
+    {{- end }}

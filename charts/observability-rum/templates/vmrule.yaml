@@ -1,0 +1,180 @@
+{{- $r := .Values.rules -}}
+{{- if $r.enabled }}
+{{- /*
+Issues, built on the log store. Every rule is LogsQL for the LOGS vmalert:
+the VMRule carries `observability.rule-type: vlogs` (which alerter loads it)
+and each group `type: vlogs` (which language the operator parses it as); see
+docs/reference.md. They read what the pipeline wrote: resource attributes
+`telemetry.source`, `app`, and `k8s.cluster.name` (the gateway's), record
+attributes `kind`, `session_id` and `error.fingerprint`.
+
+The shape every issue rule shares: one `stats` that counts a fingerprint
+inside several windows at once (`count() if (_time:...)`), a `filter` that
+keeps the fingerprints whose windows say "new" or "back", `sort ... limit`
+to cap how many can fire per evaluation, and a final single-function `stats`
+so each alert is ONE series (a stats with several functions is one series
+per function, which would page twice per fingerprint).
+
+CARDINALITY. Alert labels are `cluster`, `app` and `fingerprint`, and
+fingerprints are the one unbounded thing here, so each issue rule keeps at
+most `rules.maxFingerprints` per evaluation, highest volume first. The rest
+are not lost: they are on the dashboard.
+*/ -}}
+{{- $full := include "observability-rum.fullname" . -}}
+{{- $scope := "telemetry.source:faro" -}}
+{{- $ni := $r.newIssue -}}
+{{- $rg := $r.regressed -}}
+{{- $er := $r.errorRate -}}
+{{- $by := "k8s.cluster.name, app, error.fingerprint" -}}
+{{- $out := "rename k8s.cluster.name as cluster, error.fingerprint as fingerprint | stats by (cluster, app, fingerprint)" -}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ $full }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-rum.labels" . | nindent 4 }}
+    observability.rule-type: vlogs
+spec:
+  groups:
+    {{- if or $ni.enabled $rg.enabled }}
+    - name: observability-rum.issues
+      type: vlogs
+      interval: {{ $r.interval }}
+      rules:
+        {{- if $ni.enabled }}
+        # A fingerprint seen inside `window` and never before it within
+        # `history`. It resolves by itself once the fingerprint has history
+        # older than `window`, so it stays up about one window.
+        - alert: FrontendNewIssue
+          expr: >-
+            _time:{{ $ni.history }} {{ $scope }} kind:exception error.fingerprint:*
+            | stats by ({{ $by }})
+              count() if (_time:{{ $ni.window }}) as recent,
+              count() if (_time:{{ $ni.history }} offset {{ $ni.window }}) as earlier
+            | filter recent:>0 earlier:0
+            | sort by (recent desc) limit {{ $r.maxFingerprints }}
+            | {{ $out }} max(recent) as hits
+          for: {{ $ni.for }}
+          labels:
+            severity: warning
+            {{- with $r.extraLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "New frontend issue in {{ "{{ $labels.app }}" }} ({{ "{{ $labels.fingerprint }}" }})"
+            description: >-
+              A browser error with fingerprint {{ "{{ $labels.fingerprint }}" }} appeared
+              in {{ "{{ $labels.app }}" }} on {{ "{{ $labels.cluster }}" }} ({{ "{{ $value }}" }} events in the
+              last {{ $ni.window }}) and has no sighting in the previous {{ $ni.history }}.
+              Open the "Frontend Issues" dashboard and filter on the fingerprint for
+              the message, the stack, the release and a link to the trace. At most
+              {{ $r.maxFingerprints }} fingerprints can fire per evaluation, highest volume first.
+        {{- end }}
+        {{- if $rg.enabled }}
+        # A fingerprint seen inside `window`, silent for `quietFor` before
+        # that, and seen at least once earlier within `history`: a fix that
+        # did not hold, or a bug that came back with a release.
+        - alert: FrontendIssueRegressed
+          expr: >-
+            _time:{{ $rg.history }} {{ $scope }} kind:exception error.fingerprint:*
+            | stats by ({{ $by }})
+              count() if (_time:{{ $rg.window }}) as recent,
+              count() if (_time:{{ $rg.quietFor }} offset {{ $rg.window }}) as quiet,
+              count() if (_time:{{ $rg.history }} offset {{ $rg.quietFor }}) as older
+            | filter recent:>0 quiet:0 older:>0
+            | sort by (recent desc) limit {{ $r.maxFingerprints }}
+            | {{ $out }} max(recent) as hits
+          for: {{ $rg.for }}
+          labels:
+            severity: warning
+            {{- with $r.extraLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "Frontend issue regressed in {{ "{{ $labels.app }}" }} ({{ "{{ $labels.fingerprint }}" }})"
+            description: >-
+              Fingerprint {{ "{{ $labels.fingerprint }}" }} is back in {{ "{{ $labels.app }}" }} on
+              {{ "{{ $labels.cluster }}" }} ({{ "{{ $value }}" }} events in the last {{ $rg.window }}) after
+              at least {{ $rg.quietFor }} without one. At most {{ $r.maxFingerprints }}
+              fingerprints can fire per evaluation, highest volume first.
+        {{- end }}
+    {{- end }}
+    {{- if and $er.enabled (or (gt (float64 $er.perSession) 0.0) (gt (float64 $er.perMinute) 0.0)) }}
+    - name: observability-rum.error-rate
+      type: vlogs
+      interval: {{ $r.interval }}
+      rules:
+        {{- if gt (float64 $er.perSession) 0.0 }}
+        # Exceptions per session over `window`. Sessions are counted over
+        # every kind of event, so an error storm in a few sessions and a
+        # broken page that every session hits both show; below
+        # `minSessions` the ratio is noise and the alert is silent.
+        - alert: FrontendErrorRateHigh
+          expr: >-
+            _time:{{ $er.window }} {{ $scope }}
+            | stats by (k8s.cluster.name, app)
+              count() if (kind:exception) as exceptions,
+              count_uniq(session_id) as sessions
+            | filter sessions:>={{ $er.minSessions }}
+            | math exceptions / sessions as per_session
+            | filter per_session:>{{ $er.perSession }}
+            | rename k8s.cluster.name as cluster
+            | stats by (cluster, app) max(per_session) as per_session
+          for: {{ $er.for }}
+          labels:
+            severity: warning
+            basis: per-session
+            {{- with $r.extraLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "High frontend error rate in {{ "{{ $labels.app }}" }}"
+            description: >-
+              {{ "{{ $labels.app }}" }} on {{ "{{ $labels.cluster }}" }} averages {{ "{{ $value | printf \"%.2f\" }}" }}
+              exceptions per session over {{ $er.window }} (threshold
+              {{ $er.perSession }}, with at least {{ $er.minSessions }} sessions).
+        {{- end }}
+        {{- if gt (float64 $er.perMinute) 0.0 }}
+        # Exceptions per minute over `window`, whatever the traffic.
+        - alert: FrontendErrorRateHigh
+          expr: >-
+            _time:{{ $er.window }} {{ $scope }} kind:exception
+            | stats by (k8s.cluster.name, app) count() as exceptions
+            | math exceptions / {{ include "observability-rum.minutes" $er.window }} as per_minute
+            | filter per_minute:>{{ $er.perMinute }}
+            | rename k8s.cluster.name as cluster
+            | stats by (cluster, app) max(per_minute) as per_minute
+          for: {{ $er.for }}
+          labels:
+            severity: warning
+            basis: per-minute
+            {{- with $r.extraLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          annotations:
+            summary: "High frontend error rate in {{ "{{ $labels.app }}" }}"
+            description: >-
+              {{ "{{ $labels.app }}" }} on {{ "{{ $labels.cluster }}" }} raises {{ "{{ $value | printf \"%.1f\" }}" }}
+              exceptions per minute over {{ $er.window }} (threshold {{ $er.perMinute }}).
+        {{- end }}
+    {{- end }}
+    {{- if $r.recording.webVitals.enabled }}
+    # p75 of the web vitals, recorded to the metrics store by the logs
+    # vmalert (verified: a `type: vlogs` group takes `record:` rules and
+    # writes through the alerter's remoteWrite). The `_time` filter is
+    # explicit: vmalert adds none, and the rule would see nothing else.
+    - name: observability-rum.web-vitals
+      type: vlogs
+      interval: {{ $r.interval }}
+      rules:
+        {{- range $v := list "lcp" "inp" "cls" }}
+        - record: frontend:web_vitals_{{ $v }}_p75
+          expr: >-
+            _time:{{ $r.recording.webVitals.window }} {{ $scope }} kind:measurement type:web-vitals value_{{ $v }}:*
+            | stats by (k8s.cluster.name, app) quantile(0.75, value_{{ $v }}) as {{ $v }}
+            | rename k8s.cluster.name as k8s_cluster_name
+            | stats by (k8s_cluster_name, app) max({{ $v }}) as {{ $v }}
+        {{- end }}
+    {{- end }}
+{{- end }}

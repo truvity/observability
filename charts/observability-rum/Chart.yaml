@@ -1,0 +1,31 @@
+apiVersion: v2
+name: observability-rum
+description: >-
+  Browser telemetry for an estate's web apps: Grafana Faro receivers on a
+  self-hosted Alloy, one per app, each stamping the app's identity itself,
+  forwarding to the estate's OTLP gateway with an error fingerprint on every
+  exception so issues can be built on the log store.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - frontend
+  - real-user-monitoring
+  - faro
+  - alloy
+  - observability
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability
+# Grafana Alloy (Apache-2.0), pinned to an exact version and vendored as an
+# archive in charts/, like every other dependency in this repository. The
+# chart wraps it, it does not reimplement it: what this chart adds is the
+# per-app receivers, the pipeline behind them, the error fingerprint, the
+# alerts and the dashboards. Moving the pin is `just vendor
+# observability-rum` and a read of the golden diff.
+dependencies:
+  - name: alloy
+    version: 1.13.0
+    repository: https://grafana.github.io/helm-charts
