@@ -524,6 +524,18 @@ dashboards:
     tags: [observability-platform, kargo]
     queryCheck: true
 
+  # Authored: no upstream project ships a Keycloak dashboard
+  # (hack/dashboards/keycloak.py). Reads the optional source
+  # `keycloak-metrics`: the install's own /metrics, scraped only where
+  # truvity/keycloak's chart turns its ServiceMonitor on. Off by default.
+  - name: keycloak
+    authored: true
+    generator: hack/dashboards/keycloak.py
+    folder: platform
+    tags: [observability-platform, keycloak]
+    queryCheck: true
+    requires: [keycloak-metrics]
+
 # Third-party provenance. Every fetched dashboard names its `upstream`
 # here; hack/dashboards.py renders THIRD_PARTY_NOTICES.md from this and the
 # per-dashboard `url`/`ref`, and tests/third_party_notices_test.go fails a

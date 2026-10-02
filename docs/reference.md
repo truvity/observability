@@ -1283,6 +1283,7 @@ install does not run, and are off:
 | `dashboards.k8s-views-nodes` | `false` | node-exporter | `nodeExporter.enabled` in `charts/observability-emitters` |
 | `dashboards.node-exporter-full` | `true` | node-exporter | the same; empty panels until then |
 | `dashboards.cnpg-cluster` | `false` | `cnpg-instance-metrics`: the CloudNativePG instance exporter (`:9187` on each Postgres pod) | a scrape of the Postgres pods, which the Postgres cluster chart's `PodMonitor` (`monitoring.enablePodMonitor`) creates |
+| `dashboards.keycloak` | `false` | `keycloak-metrics`: Keycloak's own `/metrics` (management port of `{install}-service`) | the Keycloak chart's `serviceMonitor` (and `metrics.httpHistograms` for the latency panels) |
 
 `cnpg-cluster` selects instances by the exporter's own `cluster` label (the
 Postgres cluster) and the collector's `k8s_cluster_name` (the install), never

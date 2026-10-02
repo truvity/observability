@@ -167,6 +167,13 @@ dashboards:
     enabled: true
   kargo:
     enabled: true
+  # -- OFF by default: it reads Keycloak's own metrics, an optional source
+  # (`keycloak-metrics`) scraped only where truvity/keycloak's chart turns
+  # its `serviceMonitor` on (and `metrics.httpHistograms` for the latency
+  # panels). Without it every panel is empty and the first says "n/a". Turn
+  # it on together with that ServiceMonitor.
+  keycloak:
+    enabled: false
 
 # -- The estate's own dashboards, held to the same lint as the shipped
 # set. Each entry is rendered as its own ConfigMap, unmodified except for

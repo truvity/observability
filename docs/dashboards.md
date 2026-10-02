@@ -157,6 +157,7 @@ in the change, never shipped empty.
 | `envoy-gateway` | `envoy-gateway-system/envoy-gateway` | envoyproxy/gateway addons |
 | `envoy-proxy`, `envoy-clusters` | `envoy-gateway-system/envoy-proxy` | envoyproxy/gateway addons |
 | `kargo` | `kargo-controller-metrics` | authored (`authored: true`) |
+| `keycloak` | the install's own `/metrics`: `{install}-service` through the Keycloak chart's ServiceMonitor (optional source `keycloak-metrics`; off by default) | authored (`authored: true`) |
 
 - **Job names follow the converters.** A ServiceMonitor's `job` is its
   Service name; a PodMonitor's is `<namespace>/<PodMonitor name>`. With
@@ -192,7 +193,7 @@ in the change, never shipped empty.
 
 ## Third-party dashboards
 
-Every dashboard except `fleet-overview` and `kargo` (both authored here) is an
+Every dashboard except `fleet-overview`, `kargo` and `keycloak` (all authored here) is an
 upstream project's work, modified to the contract above. Apache-2.0 requires the licence text, a
 modification notice and the attribution to travel with it, so
 `THIRD_PARTY_NOTICES.md` lists each one (upstream, URL, pinned ref, SPDX

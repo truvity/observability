@@ -33411,6 +33411,1626 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: observability-dashboards-keycloak
+  namespace: grafana
+  labels:
+    app.kubernetes.io/name: observability-dashboards
+    app.kubernetes.io/instance: observability-dashboards
+    app.kubernetes.io/managed-by: Helm
+    grafana_dashboard: "1"
+  annotations:
+    # The k8s-sidecar (quay.io/kiwigrid/k8s-sidecar) convention for filing
+    # a dashboard into a Grafana subfolder rather than the sidecar's flat
+    # default. INERT without the consuming Grafana's own chart setting
+    # BOTH `sidecar.dashboards.folderAnnotation: k8s-sidecar-target-directory`
+    # (so the sidecar reads this annotation at all) AND
+    # `sidecar.dashboards.provider.foldersFromFilesStructure: true` (so
+    # Grafana turns the resulting on-disk subdirectory into a folder) —
+    # see values.yaml's own comment on `folders`. charts/observability-stack
+    # does not set either as of this chart's first release.
+    k8s-sidecar-target-directory: "Platform-Set"
+data:
+  keycloak.json: |
+    {
+      "title": "Keycloak ($cluster)",
+      "description": "Keycloak: availability, request rate and latency, logins, sessions, the JVM and the database pool, from the install's own metrics (truvity/keycloak serviceMonitor).",
+      "editable": false,
+      "graphTooltip": 1,
+      "refresh": "1m",
+      "schemaVersion": 39,
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "timezone": "",
+      "annotations": {
+        "list": []
+      },
+      "links": [
+        {
+          "type": "dashboards",
+          "title": "Fleet overview",
+          "tags": [
+            "observability-fleet"
+          ],
+          "asDropdown": true,
+          "includeVars": true,
+          "keepTime": true,
+          "icon": "external link",
+          "tooltip": "The home page: is anything wrong, and where?",
+          "targetBlank": false,
+          "url": ""
+        },
+        {
+          "type": "dashboards",
+          "title": "Kubernetes views",
+          "tags": [
+            "observability-kubernetes"
+          ],
+          "asDropdown": true,
+          "includeVars": true,
+          "keepTime": true,
+          "icon": "external link",
+          "tooltip": "Cluster, namespace and pod drill-down views",
+          "targetBlank": false,
+          "url": ""
+        },
+        {
+          "type": "dashboards",
+          "title": "Store dashboards",
+          "tags": [
+            "observability-stores"
+          ],
+          "asDropdown": true,
+          "includeVars": true,
+          "keepTime": true,
+          "icon": "external link",
+          "tooltip": "The observability stack's own health",
+          "targetBlank": false,
+          "url": ""
+        },
+        {
+          "type": "dashboards",
+          "title": "Platform dashboards",
+          "tags": [
+            "observability-platform"
+          ],
+          "asDropdown": true,
+          "includeVars": true,
+          "keepTime": true,
+          "icon": "external link",
+          "tooltip": "ArgoCD, cert-manager, CloudNativePG, NATS, Envoy Gateway and Kargo",
+          "targetBlank": false,
+          "url": ""
+        }
+      ],
+      "tags": [
+        "observability-platform",
+        "keycloak"
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "label": "datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "current": {
+              "selected": true,
+              "text": "example-metrics",
+              "value": "example-metrics"
+            },
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "options": [],
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false
+          },
+          {
+            "name": "cluster",
+            "label": "cluster",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "definition": "label_values(agroal_active_count, k8s_cluster_name)",
+            "query": {
+              "query": "label_values(agroal_active_count, k8s_cluster_name)",
+              "refId": "cluster-Variable-Query"
+            },
+            "current": {},
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "options": [],
+            "refresh": 2,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1
+          },
+          {
+            "name": "namespace",
+            "label": "namespace",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "definition": "label_values(agroal_active_count{k8s_cluster_name=~\"$cluster\"}, namespace)",
+            "query": {
+              "query": "label_values(agroal_active_count{k8s_cluster_name=~\"$cluster\"}, namespace)",
+              "refId": "namespace-Variable-Query"
+            },
+            "current": {},
+            "hide": 0,
+            "includeAll": true,
+            "multi": true,
+            "options": [],
+            "refresh": 2,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "allValue": ".*"
+          },
+          {
+            "name": "service",
+            "label": "service",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "definition": "label_values(agroal_active_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}, service)",
+            "query": {
+              "query": "label_values(agroal_active_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}, service)",
+              "refId": "service-Variable-Query"
+            },
+            "current": {},
+            "hide": 0,
+            "includeAll": true,
+            "multi": true,
+            "options": [],
+            "refresh": 2,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "allValue": ".*"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "row",
+          "title": "Availability",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "panels": []
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Pods up",
+          "description": "Keycloak pods answering the metrics scrape. Zero means the server is down or no longer scraped: the first panel to read when sign-in fails. n/a where the Keycloak ServiceMonitor is off.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 0,
+            "y": 1
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "count(up{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"} == 1) or vector(0)",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "n/a",
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Login failure ratio (1h)",
+          "description": "Share of login attempts that failed in the last hour. Wrong passwords are user errors, so a few percent is normal; a ratio above half is a credential run, a broken identity provider or user store, or a client sending bad credentials. Compare with the failures by error below.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 4,
+            "y": 1
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "(sum(increase(keycloak_user_events_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",event=\"login\",error!=\"\"}[1h])) / sum(increase(keycloak_user_events_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",event=\"login\"}[1h]))) or vector(0)",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "n/a",
+              "decimals": 1,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.2
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.5
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "5xx ratio (5m)",
+          "description": "Share of HTTP responses that were server errors over the last five minutes. Should be zero: read the server log and the database panels.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 8,
+            "y": 1
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "(sum(rate(http_server_requests_seconds_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",status=~\"5..\"}[5m])) / sum(rate(http_server_requests_seconds_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[5m]))) or vector(0)",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "n/a",
+              "decimals": 2,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.01
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.05
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Request p99 (5m)",
+          "description": "99th percentile of the request duration over five minutes. Password hashing is deliberately slow, so seconds are a warning, not an incident. no data: set the chart's metrics.httpHistograms to fill it.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 12,
+            "y": 1
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[5m])))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "no data: set the chart's metrics.httpHistograms",
+              "decimals": 2,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 2
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Heap after GC (max)",
+          "description": "The fullest pod's heap still in use after its last garbage collection. A JVM rests near its maximum between collections by design; this is the value that shows real pressure. Above 90 percent an out-of-memory restart follows.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 16,
+            "y": 1
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "max(jvm_memory_usage_after_gc_percent{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",area=\"heap\"}) or vector(0)",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "n/a",
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.75
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 7,
+          "type": "stat",
+          "title": "DB requests waiting",
+          "description": "Requests waiting for a database connection across the pods. Zero is healthy; a count that stays above zero means the pool is exhausted and requests queue behind the database.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 20,
+            "y": 1
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(agroal_awaiting_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}) or vector(0)",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "n/a",
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "value",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Pods up over time",
+          "description": "Scrape targets that answered, per pod. A gap is a restart or a pod that stopped answering; two pods dipping together is the whole install.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 0,
+            "y": 5
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod) (up{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"})",
+              "legendFormat": "{{pod}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 9,
+          "type": "row",
+          "title": "Requests",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 11
+          },
+          "panels": []
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Request rate by status",
+          "description": "HTTP requests per second by response status class. 5xx is a server fault; a wall of 4xx is clients sending bad requests or credentials.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 12
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (status) (rate(http_server_requests_seconds_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[$__rate_interval]))",
+              "legendFormat": "{{status}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "500"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "503"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "Request duration p50, p95, p99",
+          "description": "Request duration percentiles over all endpoints. Compare the tail with the database pool and the JVM below. no data: set the chart's metrics.httpHistograms to fill it.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 12
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_requests_seconds_bucket{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "range": true,
+              "instant": false,
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "range": true,
+              "instant": false,
+              "refId": "C"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Request rate by endpoint",
+          "description": "HTTP requests per second by URI template, the busiest ten. Shows what the traffic is: token, authentication, userinfo or the admin API.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 20
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "topk(10, sum by (uri) (rate(http_server_requests_seconds_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[$__rate_interval])))",
+              "legendFormat": "{{uri}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 13,
+          "type": "timeseries",
+          "title": "Mean request duration by endpoint",
+          "description": "Average duration per URI template, the slowest ten (sum over count, so it needs no histogram). A slow token or login endpoint points at hashing or the database.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 20
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "topk(10, sum by (uri) (rate(http_server_requests_seconds_sum{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[$__rate_interval])) / sum by (uri) (rate(http_server_requests_seconds_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[$__rate_interval])))",
+              "legendFormat": "{{uri}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 14,
+          "type": "row",
+          "title": "Logins",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 28
+          },
+          "panels": []
+        },
+        {
+          "id": 15,
+          "type": "timeseries",
+          "title": "Logins by outcome",
+          "description": "Login attempts per second, successful and failed, per realm. A failure line that rises with no rise in successes is an attack or a broken integration.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 29
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (realm) (rate(keycloak_user_events_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",event=\"login\",error=\"\"}[$__rate_interval]))",
+              "legendFormat": "{{realm}} success",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (realm) (rate(keycloak_user_events_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",event=\"login\",error!=\"\"}[$__rate_interval]))",
+              "legendFormat": "{{realm}} failure",
+              "range": true,
+              "instant": false,
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 16,
+          "type": "timeseries",
+          "title": "Login failures by error",
+          "description": "Failed logins per second by Keycloak's error: invalid_user_credentials is a wrong password, user_not_found an unknown name, user_temporarily_disabled a brute-force lock. Anything else is the server or an identity provider.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 29
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (error) (rate(keycloak_user_events_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",event=\"login\",error!=\"\"}[$__rate_interval]))",
+              "legendFormat": "{{error}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 17,
+          "type": "timeseries",
+          "title": "User events by type",
+          "description": "Every user event Keycloak counts, per second: login, logout, token exchange, refresh, registration, credential updates. Errors included.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 37
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (event) (rate(keycloak_user_events_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"}[$__rate_interval]))",
+              "legendFormat": "{{event}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 18,
+          "type": "timeseries",
+          "title": "Sessions",
+          "description": "Entries in the embedded session caches (approximate, without backup copies), summed over the pods: one per user or client session, online and offline. A climb that never falls is sessions that are not expiring.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 37
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (cache) (vendor_statistics_approximate_entries_unique{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",cache=~\"sessions|clientSessions|offlineSessions|offlineClientSessions\"})",
+              "legendFormat": "{{cache}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 19,
+          "type": "row",
+          "title": "JVM",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 45
+          },
+          "panels": []
+        },
+        {
+          "id": 20,
+          "type": "timeseries",
+          "title": "Heap used against its maximum",
+          "description": "Heap in use and the heap maximum, per pod. Used climbs to the maximum between collections by design; read the next panel for pressure.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 46
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod) (jvm_memory_used_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",area=\"heap\"})",
+              "legendFormat": "{{pod}} used",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod) (jvm_memory_max_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",area=\"heap\"})",
+              "legendFormat": "{{pod}} max",
+              "range": true,
+              "instant": false,
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 21,
+          "type": "timeseries",
+          "title": "Heap after GC",
+          "description": "Share of the long-lived heap in use after the last collection, per pod. A floor that rises over days is a leak; above 90 percent the pod is about to run out.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 46
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "max by (pod) (jvm_memory_usage_after_gc_percent{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",area=\"heap\"})",
+              "legendFormat": "{{pod}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 22,
+          "type": "row",
+          "title": "Database pool",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 54
+          },
+          "panels": []
+        },
+        {
+          "id": 23,
+          "type": "timeseries",
+          "title": "Connections in use and free",
+          "description": "Connections in use and available in the Agroal pool, per pod. Active at the pool's size with none available is an exhausted pool.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 55
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod) (agroal_active_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"})",
+              "legendFormat": "{{pod}} active",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod) (agroal_available_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"})",
+              "legendFormat": "{{pod}} available",
+              "range": true,
+              "instant": false,
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 24,
+          "type": "timeseries",
+          "title": "Requests waiting for a connection",
+          "description": "Requests blocked on a database connection, per pod. Should sit at zero; a sustained value is the cause of slow logins, not a symptom.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 55
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum by (pod) (agroal_awaiting_count{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\"})",
+              "legendFormat": "{{pod}}",
+              "range": true,
+              "instant": false,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "no data",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "links": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        }
+      ],
+      "uid": "truvity-obs-keycloak"
+    }
+    
+
+---
+# Source: observability-dashboards/templates/dashboards.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: observability-dashboards-kubelet
   namespace: grafana
   labels:
