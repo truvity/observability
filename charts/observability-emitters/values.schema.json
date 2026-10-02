@@ -274,6 +274,30 @@
             "cadvisorAsKubeletJob": {
               "type": "boolean"
             },
+            "probes": {
+              "type": "array",
+              "description": "HTTP probes: a scrape of a URL this cluster does not run, kept for its `up` series. See values.yaml `metrics.scrape.probes`.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "url"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+                  },
+                  "url": {
+                    "type": "string",
+                    "pattern": "^https?://[^/?#@\\s]+(/[^?#\\s]*)?$",
+                    "description": "scheme://host[:port][/path]: no user info, no query, no fragment."
+                  },
+                  "interval": {
+                    "type": "string",
+                    "pattern": "^[0-9]+(ms|s|m|h)$"
+                  }
+                }
+              }
+            },
             "nodeLabels": {
               "type": "array",
               "items": {

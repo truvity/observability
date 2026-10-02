@@ -1,0 +1,34 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.probes
+      interval: 1m
+      rules:
+        # An HTTP probe that is not answering 200 from this cluster.
+        #
+        # `up{job="http-probe"}` is the emitters chart's probe series: 1
+        # while the URL answers 200, 0 for a refused connection, a TLS
+        # failure or any other status. `max by (probe)` so a probe that
+        # resolves to several targets is down only when all are.
+        - alert: ExampleStatusDown
+          expr: >-
+            max by (k8s_cluster_name, probe) (up{job="http-probe", probe=~"example-status"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "HTTP probe {{ $labels.probe }} has not answered 200 for 5m"
+            description: >-
+              The probe {{ $labels.probe }} (charts/observability-emitters
+              `metrics.scrape.probes`) has read up == 0 for 5m: the URL
+              refused the connection, failed TLS or answered something other
+              than 200 from this cluster's own egress.

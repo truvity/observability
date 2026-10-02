@@ -1,0 +1,17 @@
+# The probes group, on, with the alert named for what it watches.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  kargo:
+    enabled: false
+  probes:
+    enabled: true
+    alertName: ExampleStatusDown
+    probe: example-status
+    severity: critical

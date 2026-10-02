@@ -202,6 +202,26 @@ groups:
     # below the rules it is the deadman for.
     absentSeverity: warning
 
+  # HTTP probes (charts/observability-emitters `metrics.scrape.probes`).
+  #
+  # Off by default: it reads `up{job="http-probe"}`, which exists only
+  # where that emitter value lists a probe. One alert per probe, stamped
+  # with this cluster's identity like every other group. `alertName`
+  # exists so an estate that probes exactly one thing can name the alert
+  # after it; every probe selected by `probe` shares that name.
+  probes:
+    enabled: false
+    # -- The alert's name.
+    alertName: HTTPProbeDown
+    # -- A regular expression over the probe's `probe` label (its name in
+    # `metrics.scrape.probes`). Anchored by the matcher itself.
+    probe: ".+"
+    # -- How long a probe must read `up == 0` before firing. The agent
+    # scrapes once a minute by default; several misses in a row is a real
+    # outage, one is a blip.
+    for: 5m
+    severity: warning
+
   # Pods the scheduler cannot place.
   #
   # The incident class: on a cluster whose nodes are provisioned on demand

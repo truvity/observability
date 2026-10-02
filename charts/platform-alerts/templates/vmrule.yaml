@@ -325,6 +325,32 @@ spec:
               that the scrape itself is still up.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KargoStateMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
+    {{- if .Values.groups.probes.enabled }}
+    {{- $g := .Values.groups.probes }}
+    - name: platform-alerts.probes
+      interval: {{ .Values.interval }}
+      rules:
+        # An HTTP probe that is not answering 200 from this cluster.
+        #
+        # `up{job="http-probe"}` is the emitters chart's probe series: 1
+        # while the URL answers 200, 0 for a refused connection, a TLS
+        # failure or any other status. `max by (probe)` so a probe that
+        # resolves to several targets is down only when all are.
+        - alert: {{ $g.alertName }}
+          expr: >-
+            max by ({{ $b }}probe) (up{job="http-probe", probe=~"{{ $g.probe }}"}) == 0
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
+          annotations:
+            summary: "HTTP probe {{`{{ $labels.probe }}`}} has not answered 200 for {{ $g.for }}"
+            description: >-
+              The probe {{`{{ $labels.probe }}`}} (charts/observability-emitters
+              `metrics.scrape.probes`) has read up == 0 for {{ $g.for }}: the URL
+              refused the connection, failed TLS or answered something other
+              than 200 from this cluster's own egress.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" $g.alertName)) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
     {{- if .Values.groups.pendingPods.enabled }}
     {{- $g := .Values.groups.pendingPods }}
     {{- $pns := default $ns $g.namespaceSelector }}
