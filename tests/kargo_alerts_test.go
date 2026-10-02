@@ -213,7 +213,7 @@ func TestKargoPromotionErroredFiresWhenBothAgree(t *testing.T) {
 // for longer than the default 30m.
 func TestKargoStateMetricsAbsentFiresOnAbsence(t *testing.T) {
 	expr, hold := kargoRule(t, "KargoStateMetricsAbsent")
-	assert.Equal(t, `absent(kargo_stage_condition{type="Ready"}) or absent(kargo_promotion_phase)`, expr)
+	assert.Equal(t, absentGuard(`kargo_stage_condition{type="Ready"}`, "")+` or `+absentGuard(`kargo_promotion_phase`, ""), expr)
 	require.Equal(t, 30*time.Minute, hold, "the documented default")
 
 	// "active" here means the deadman's own condition — both series

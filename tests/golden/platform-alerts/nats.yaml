@@ -210,14 +210,14 @@ spec:
         # reads as healthy to rules that compare values.
         - alert: NATSMetricsAbsent
           expr: >-
-            absent(up{job="nats/nats"})
+            (group by (k8s_cluster_name) (max_over_time(up{job="nats/nats"}[1d])) unless group by (k8s_cluster_name) (up{job="nats/nats"})) or (absent(up{job="nats/nats"}) unless on() group(max_over_time(up{job="nats/nats"}[1d])))
           for: 30m
           labels:
             severity: warning
           annotations:
-            summary: "No NATS exporter has been scraped for 30m"
+            summary: "No NATS exporter has been scraped for 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
-              up{job="nats/nats"} has not been seen in 30m, so none of the
+              up{job="nats/nats"} has not been seen in 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so none of the
               NATS rules can fire. Check that the NATS chart's PodMonitor is
               applied and the brokers' metrics port is reachable from the
               agent.

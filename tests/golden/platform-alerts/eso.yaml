@@ -41,15 +41,15 @@ spec:
         # stale.
         - alert: ESOWebhookAbsent
           expr: >-
-            absent(up{namespace="external-secrets", job=~"external-secrets-webhook.*"})
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}[1d])) unless group by (k8s_cluster_name) (up{namespace="external-secrets", job=~"external-secrets-webhook.*"})) or (absent(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}) unless on() group(max_over_time(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}[1d])))
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "No External Secrets webhook has been scraped for 5m"
+            summary: "No External Secrets webhook has been scraped for 5m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
               up{namespace="external-secrets", job=~"external-secrets-webhook.*"} has not
-              been seen in 5m: the webhook Deployment is
+              been seen in 5m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}: the webhook Deployment is
               gone or not scraped. If it is gone the webhooks fail closed and
               writes of ExternalSecrets and SecretStores are refused.
             runbook_url: "https://runbooks.example.com/ESOWebhookAbsent"
@@ -174,14 +174,14 @@ spec:
         # the pods are gone, the scrape is blocked).
         - alert: ESOMetricsAbsent
           expr: >-
-            absent(up{namespace="external-secrets"})
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="external-secrets"}[1d])) unless group by (k8s_cluster_name) (up{namespace="external-secrets"})) or (absent(up{namespace="external-secrets"}) unless on() group(max_over_time(up{namespace="external-secrets"}[1d])))
           for: 15m
           labels:
             severity: warning
           annotations:
-            summary: "No External Secrets target has been scraped for 15m"
+            summary: "No External Secrets target has been scraped for 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
-              up{namespace="external-secrets"} has not been seen in 15m,
+              up{namespace="external-secrets"} has not been seen in 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }},
               so none of the External Secrets rules can fire. Check that the
               operator chart's `serviceMonitor.enabled` is on and the pods are
               running.

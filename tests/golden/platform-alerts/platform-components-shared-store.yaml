@@ -69,16 +69,15 @@ spec:
         # two rules above go silent right along with it.
         - alert: KargoStateMetricsAbsent
           expr: >-
-            absent(kargo_stage_condition{type="Ready"}) or absent(kargo_promotion_phase)
+            (group by (k8s_cluster_name) (max_over_time(kargo_stage_condition{type="Ready"}[1d])) unless group by (k8s_cluster_name) (kargo_stage_condition{type="Ready"})) or (absent(kargo_stage_condition{type="Ready"}) unless on() group(max_over_time(kargo_stage_condition{type="Ready"}[1d]))) or (group by (k8s_cluster_name) (max_over_time(kargo_promotion_phase[1d])) unless group by (k8s_cluster_name) (kargo_promotion_phase)) or (absent(kargo_promotion_phase) unless on() group(max_over_time(kargo_promotion_phase[1d])))
           for: 30m
           labels:
-            k8s_cluster_name: example
             severity: warning
           annotations:
-            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for 30m"
+            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
-              Neither kargo_stage_condition{type="Ready"} nor
-              kargo_promotion_phase has been seen in 30m, so
+              kargo_stage_condition{type="Ready"} or
+              kargo_promotion_phase has not been seen in 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so
               KargoStagePromotionErrored and KargoPromotionErrored cannot fire
               even if a promotion is stuck. Check kube-state-metrics'
               customResourceState config against docs/kube-state-metrics.md, and
@@ -93,15 +92,14 @@ spec:
         # all.
         - alert: KargoControllerAbsent
           expr: >-
-            absent(up{job="example-kargo-controller"} == 1)
+            (group by (k8s_cluster_name) (max_over_time(up{job="example-kargo-controller"}[1d])) unless group by (k8s_cluster_name) (up{job="example-kargo-controller"} == 1)) or (absent(up{job="example-kargo-controller"} == 1) unless on() group(max_over_time(up{job="example-kargo-controller"}[1d])))
           for: 7m
           labels:
-            k8s_cluster_name: example
             severity: warning
           annotations:
-            summary: "No Kargo controller has answered its metrics scrape for 7m"
+            summary: "No Kargo controller has answered its metrics scrape for 7m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
-              up{job="example-kargo-controller"} has not been 1 in 7m: the Kargo
+              up{job="example-kargo-controller"} has not been 1 in 7m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}: the Kargo
               controller is down, crash-looping or no longer scraped, so no
               Promotion is being executed. Check the controller's pod and its
               ServiceMonitor.
@@ -254,16 +252,15 @@ spec:
         # scrape blocked) reads as healthy to rules that compare values.
         - alert: ArgoCDMetricsAbsent
           expr: >-
-            absent(argocd_app_info{job=~"example-argocd-.*"})
+            (group by (k8s_cluster_name) (max_over_time(argocd_app_info{job=~"example-argocd-.*"}[1d])) unless group by (k8s_cluster_name) (argocd_app_info{job=~"example-argocd-.*"})) or (absent(argocd_app_info{job=~"example-argocd-.*"}) unless on() group(max_over_time(argocd_app_info{job=~"example-argocd-.*"}[1d])))
           for: 25m
           labels:
-            k8s_cluster_name: example
             severity: info
           annotations:
-            summary: "Argo CD has reported no applications for 25m"
+            summary: "Argo CD has reported no applications for 25m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
               argocd_app_info{job=~"example-argocd-.*"} has not been seen in
-              25m, so none of the Argo CD rules can fire. The
+              25m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so none of the Argo CD rules can fire. The
               application controller is down or its metrics endpoint is not
               scraped: check its pod and the ServiceMonitor the chart renders
               (`controller.metrics.serviceMonitor.enabled`).
@@ -299,16 +296,15 @@ spec:
         # stale.
         - alert: ESOWebhookAbsent
           expr: >-
-            absent(up{namespace="example-secrets", job=~"example-webhook-.*"})
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="example-secrets", job=~"example-webhook-.*"}[1d])) unless group by (k8s_cluster_name) (up{namespace="example-secrets", job=~"example-webhook-.*"})) or (absent(up{namespace="example-secrets", job=~"example-webhook-.*"}) unless on() group(max_over_time(up{namespace="example-secrets", job=~"example-webhook-.*"}[1d])))
           for: 7m
           labels:
-            k8s_cluster_name: example
             severity: warning
           annotations:
-            summary: "No External Secrets webhook has been scraped for 7m"
+            summary: "No External Secrets webhook has been scraped for 7m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
               up{namespace="example-secrets", job=~"example-webhook-.*"} has not
-              been seen in 7m: the webhook Deployment is
+              been seen in 7m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}: the webhook Deployment is
               gone or not scraped. If it is gone the webhooks fail closed and
               writes of ExternalSecrets and SecretStores are refused.
             runbook_url: "https://runbooks.example.com/ESOWebhookAbsent"
@@ -433,15 +429,14 @@ spec:
         # the pods are gone, the scrape is blocked).
         - alert: ESOMetricsAbsent
           expr: >-
-            absent(up{namespace="example-secrets"})
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="example-secrets"}[1d])) unless group by (k8s_cluster_name) (up{namespace="example-secrets"})) or (absent(up{namespace="example-secrets"}) unless on() group(max_over_time(up{namespace="example-secrets"}[1d])))
           for: 25m
           labels:
-            k8s_cluster_name: example
             severity: info
           annotations:
-            summary: "No External Secrets target has been scraped for 25m"
+            summary: "No External Secrets target has been scraped for 25m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
-              up{namespace="example-secrets"} has not been seen in 25m,
+              up{namespace="example-secrets"} has not been seen in 25m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }},
               so none of the External Secrets rules can fire. Check that the
               operator chart's `serviceMonitor.enabled` is on and the pods are
               running.
@@ -470,21 +465,22 @@ spec:
             runbook_url: "https://runbooks.example.com/ACKControllerDown"
         # A controller that is not reporting at all.
         #
-        # With no `expectedNamespaces`, this can only say that no ACK
-        # controller reports at all; name the controllers' namespaces to catch
-        # one of several missing.
+        # With no `expectedNamespaces`, a controller that reported within
+        # `absentLookback` and no longer does fires per cluster and per
+        # namespace; "no ACK controller reports at all" fires through the
+        # whole-store `absent()`. Name the controllers' namespaces
+        # (`expectedNamespaces`) to also catch one that never came up.
         - alert: ACKControllerAbsent
           expr: >-
-            absent(up{namespace=~"example-ack-.*"})
+            (group by (k8s_cluster_name, namespace) (max_over_time(up{namespace=~"example-ack-.*"}[1d])) unless group by (k8s_cluster_name, namespace) (up{namespace=~"example-ack-.*"})) or (absent(up{namespace=~"example-ack-.*"}) unless on() group(max_over_time(up{namespace=~"example-ack-.*"}[1d])))
           for: 20m
           labels:
-            k8s_cluster_name: example
             severity: warning
           annotations:
-            summary: "An ACK controller has not been scraped for 20m"
+            summary: "An ACK controller has not been scraped for 20m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
               No `up` series has been seen for an ACK controller in
-              20m: its Deployment is gone, its pod is not
+              20m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}: its Deployment is gone, its pod is not
               scheduled, or the PodMonitor is no longer applied. AWS resources
               it owns are not being reconciled.
             runbook_url: "https://runbooks.example.com/ACKControllerAbsent"

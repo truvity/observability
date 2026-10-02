@@ -287,6 +287,15 @@ platform-alerts-suspended-proof:
 platform-alerts-cluster-proof:
     hack/platform-alerts-cluster-proof.sh
 
+# REAL proof, against a real victoria-metrics binary, that every `*Absent`
+# guard of platform-alerts is per cluster: series present on clusters a and b
+# stays quiet, series gone on b only fires for b, series that never existed
+# fires without a cluster label. See hack/platform-alerts-absent-proof.sh's
+# own header. Needs Docker, curl, python3 (PyYAML) and helm; not part of
+# `check` or CI, like the proofs above.
+platform-alerts-absent-proof:
+    hack/platform-alerts-absent-proof.sh
+
 # REAL proof that the vendored k8s-stack's default recording rules carry
 # `k8s_cluster_name`: the real sync job image rewrites the fetched rules,
 # and on a real victoria-metrics two clusters sharing a namespace and pod

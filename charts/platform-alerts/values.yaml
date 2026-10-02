@@ -45,6 +45,18 @@ interval: 1m
 # names its clusters some other way and does not want the label matched).
 clusterLabel: k8s_cluster_name
 
+# -- How far back an "absent" guard (every `*Absent` alert: Kargo state and
+# controller, probes, NodeClaims, NATS, Argo CD, External Secrets, ACK)
+# looks for a series that is no longer there. A store can hold several
+# clusters' series, and a bare `absent()` is true only when the series is
+# missing from EVERY cluster; with a `clusterLabel` each guard instead fires
+# for a cluster (and, for ACK and probes, a namespace or probe) that HAD the
+# series within this window and does not now, alongside the whole-store
+# `absent()` that catches "never existed / everything gone". A cluster or
+# controller removed on purpose therefore stops alerting once the window has
+# passed.
+absentLookback: 1d
+
 # -- OPT-IN (empty, the default, changes nothing): the label that names the
 # company that owns a workload, as stamped by `observability-emitters`
 # `tenancy.owners` (`owner`). A rule that aggregates (`max by (...)`) keeps
@@ -418,7 +430,7 @@ groups:
     absentFor: 30m
     # -- Keep the series' own `clusterLabel` on the alert (see
     # `pendingPods.keepClusterLabel`). Not applied to NATSMetricsAbsent,
-    # whose `absent()` result carries no series labels.
+    # which always keeps its own cluster label (`absentLookback`).
     keepClusterLabel: false
 
   # Argo CD (the application controller's, repo server's and API server's
@@ -467,7 +479,8 @@ groups:
     # -- Severity of the deadman.
     absentSeverity: warning
     # -- Keep the series' own `clusterLabel` on the alerts (see
-    # `pendingPods.keepClusterLabel`). Not applied to the deadman.
+    # `pendingPods.keepClusterLabel`). Not applied to the deadman, which always keeps its own cluster label
+    # (`absentLookback`).
     keepClusterLabel: false
 
   # External Secrets Operator (the chart's `serviceMonitor.enabled`: three
@@ -510,7 +523,8 @@ groups:
     # `ESOMetricsAbsent`.
     absentFor: 15m
     # -- Keep the series' own `clusterLabel` on the alerts (see
-    # `pendingPods.keepClusterLabel`). Not applied to the `absent` alerts.
+    # `pendingPods.keepClusterLabel`). Not applied to the `absent` alerts, which always keep their own cluster
+    # label (`absentLookback`).
     keepClusterLabel: false
 
   # AWS Controllers for Kubernetes (one controller Deployment per AWS
@@ -549,5 +563,6 @@ groups:
       window: 15m
       for: 1m
     # -- Keep the series' own `clusterLabel` on the alerts (see
-    # `pendingPods.keepClusterLabel`). Not applied to the `absent` alert.
+    # `pendingPods.keepClusterLabel`). Not applied to the `absent` alert, which always keeps its own cluster
+    # label (`absentLookback`).
     keepClusterLabel: false

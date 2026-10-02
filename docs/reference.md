@@ -33,6 +33,7 @@ be a copy that goes stale at the first bump, and the render cannot.
 | `commonLabels` | map | `{}` | Labels added to every rule. The Alertmanager routing tree reads these. `severity` always wins over a common label of the same name. |
 | `runbookBaseUrl` | string | `""` | Base for each alert's `runbook_url`; the alert name is appended. Empty renders no annotation at all rather than a blank one. |
 | `interval` | duration | `1m` | How often vmalert evaluates these groups. |
+| `absentLookback` | duration | `1d` | How far back a `*Absent` guard looks for a series that is no longer there. A bare `absent()` is true only when the series is missing from EVERY cluster in the store, so one cluster losing a controller was silent. With a `clusterLabel`, each guard instead fires for a cluster (ACK: and namespace; probes: and probe) that HAD the series within this window and does not now, and keeps the whole-store `absent()` for "never existed / everything gone" (silenced while the per-cluster side can still see the series, so one outage is one alert). The per-cluster alert carries that cluster's own `clusterLabel` value, whatever `keepClusterLabel` says (the common label would stamp every cluster with the store's); the whole-store one has none. A cluster, controller or probe removed on purpose stops alerting once the window has passed. `clusterLabel: ""` renders the bare `absent()` byte for byte. |
 | `namespaceSelector` | regex | `".*"` | Objects in namespaces that do not match are ignored by the Kubernetes-object rules. |
 | `clusterLabel` | string | `k8s_cluster_name` | 0.11.3. The label naming the cluster on a store that holds several; every join and per-object aggregation in the backup, volume and Kargo rules matches on it, because two clusters can share a namespace or object name and a join without it fails with a duplicate-series 422 (the rule never fires) or pairs series across clusters. Equal to `observability-stack`'s `tenancy.clusterLabel`. Absent on both sides (a single-cluster store) it still matches. `""` renders the 0.11.2 expressions byte for byte. |
 | `ownerLabel` | string | `""` | **Opt-in.** The label naming the owning company (`owner`, as `observability-emitters` `tenancy.owners` stamps it); added to the `by (...)` of the aggregating rules about a namespaced object and of `NodeClaimNotReady`, so the alert keeps it. `""` renders the previous expressions byte for byte. See docs/tenancy-owner.md. |
@@ -128,7 +129,7 @@ docs/kube-state-metrics.md for a worked config.
 | `absentSeverity` | enum | `warning` | Severity of `KargoStateMetricsAbsent`. |
 
 Alerts: `KargoStagePromotionErrored`, `KargoPromotionErrored`,
-`KargoStateMetricsAbsent`.
+`KargoStateMetricsAbsent` (per cluster, see `absentLookback`).
 
 Three more read the controller's OWN series (its ServiceMonitor), not
 kube-state-metrics'. Each is its own switch and **off by default**, so a group
@@ -137,7 +138,7 @@ that was already on renders what it did:
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `controllerJob` | string | `kargo-controller-metrics` | The scrape job of the controller (the Service name its ServiceMonitor scrapes through). |
-| `controllerAbsent.enabled` / `.for` / `.severity` | bool / duration / enum | `false` / `5m` / `critical` | `KargoControllerAbsent`: `absent(up{job="<controllerJob>"} == 1)`, which covers a controller whose scrape reads 0 and one that is not scraped at all. Nothing promotes while it is down, and the Stage and Promotion series stay green. |
+| `controllerAbsent.enabled` / `.for` / `.severity` | bool / duration / enum | `false` / `5m` / `critical` | `KargoControllerAbsent`: absent per cluster (see `absentLookback`) of `up{job="<controllerJob>"} == 1`, which covers a controller whose scrape reads 0 and one that is not scraped at all, on one cluster or on all of them. Nothing promotes while it is down, and the Stage and Promotion series stay green. |
 | `reconcileErrors.enabled` / `.window` / `.for` / `.severity` | bool / duration / duration / enum | `false` / `15m` / `15m` / `warning` | `KargoControllerReconcileErrors`: `increase(controller_runtime_reconcile_errors_total)` per controller loop above zero. `for` equal to `window` means one isolated error never fires: errors must keep arriving. |
 | `workqueueDepth.enabled` / `.for` / `.severity` | bool / duration / enum | `false` / `30m` / `warning` | `KargoControllerWorkqueueStuck`: `workqueue_depth` above zero for the whole `for`. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`, for the rules that aggregate (the two rules above; the first two alerts of the group never aggregate). |
@@ -189,6 +190,8 @@ Off by default. Reads the blackbox exporter's series for the probes of
 
 Alerts: `max by (probe) (probe_success{probe=~"<probe>"}) == 0` and, with
 `certExpiry`, `min by (probe) (probe_ssl_earliest_cert_expiry{probe=~"<probe>"}) - time() < withinDays * 86400`.
+
+The deadman `<alertName>Absent` is per cluster and probe: a probe that reported within `absentLookback` and no longer does fires with that cluster's label and the probe's name; no probe at all fires through the whole-store `absent()`.
 
 ### `groups.nodeClaims`
 
@@ -259,7 +262,7 @@ exports; the rules are this chart's own.
 | `clusterLostFor` | duration | `5m` | A destination cluster the controller cannot reach. |
 | `gitFetch.window` / `.minFailures` / `.for` | duration / int / duration | `10m` / `3` / `5m` | Failed fetches of one repository within the window that count: one dropped connection does not. |
 | `absentFor` / `absentSeverity` | duration / enum | `15m` / `warning` | The deadman: no application reported at all. |
-| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the deadman. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the deadman, which always keeps its own cluster label (see `absentLookback`). |
 
 Alerts: `ArgoCDAppSyncFailed` (`increase_pure` over `argocd_app_sync_total`:
 the Failed series of an application that never failed is born at its first
@@ -288,7 +291,7 @@ and survives as `exported_namespace` under `honor_labels: false`, which
 | `providerErrors.window` / `.for` | duration | `10m` / `10m` | The same shape, over `externalsecret_provider_api_calls_count{status="error"}`. |
 | `workqueueFor` | duration | `30m` | A work queue above zero for the whole hold. |
 | `absentFor` | duration | `15m` | Nothing in `namespace` scraped. |
-| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the `absent` alerts. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the `absent` alerts, which always keep their own cluster label (see `absentLookback`). |
 
 Alerts: `ESOWebhookDown`, `ESOWebhookAbsent`, `ESOExternalSecretNotReady`,
 `ESOSecretStoreNotReady`, `ESOClusterSecretStoreNotReady`,
@@ -307,14 +310,14 @@ has no result label, so AWS throttling cannot be alerted on.
 |---|---|---|---|
 | `enabled` | bool | `false` | Renders the group. |
 | `namespace` | string (regex) | `ack-.*` | The controllers' namespaces. |
-| `expectedNamespaces[]` | list of namespaces | `[]` | Namespaces that MUST report: one `absent` each, so a missing controller among several is seen. Empty renders one `absent` over `namespace`, which only sees all of them gone. |
+| `expectedNamespaces[]` | list of namespaces | `[]` | Namespaces that MUST report: one clause each. A cluster that reported any of them within `absentLookback` must report all of them, so a controller missing on one cluster is seen as an alert for that cluster and namespace, including one that never ran there. Empty renders one guard over `namespace`, per cluster and namespace, which sees a controller that vanished within the lookback but not one that never came up. |
 | `severity` | enum | `critical` | A controller that is down or missing: AWS resources it owns stop converging, silently. |
 | `warningSeverity` | enum | `warning` | The error and panic alerts. |
 | `downFor` / `absentFor` | duration | `5m` / `10m` | |
 | `reconcileErrors.window` / `.for` | duration | `15m` / `15m` | `for` equal to `window`: errors must keep arriving. |
 | `terminalErrors.window` / `.for` | duration | `1h` / `1m` | A terminal error is counted once, when found, so the alert lasts `window` after it and then clears with the resource still broken: the `ACK.Terminal` condition on the object is what stays. |
 | `panics.window` / `.for` | duration | `15m` / `1m` | |
-| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the `absent` alert. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`; not applied to the `absent` alert, which always keeps its own cluster label (see `absentLookback`). |
 
 Alerts: `ACKControllerDown`, `ACKControllerAbsent`, `ACKReconcileErrors`,
 `ACKTerminalReconcileErrors`, `ACKReconcilePanics`.

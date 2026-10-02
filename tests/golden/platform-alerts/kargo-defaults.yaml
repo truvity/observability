@@ -65,15 +65,15 @@ spec:
         # two rules above go silent right along with it.
         - alert: KargoStateMetricsAbsent
           expr: >-
-            absent(kargo_stage_condition{type="Ready"}) or absent(kargo_promotion_phase)
+            (group by (k8s_cluster_name) (max_over_time(kargo_stage_condition{type="Ready"}[1d])) unless group by (k8s_cluster_name) (kargo_stage_condition{type="Ready"})) or (absent(kargo_stage_condition{type="Ready"}) unless on() group(max_over_time(kargo_stage_condition{type="Ready"}[1d]))) or (group by (k8s_cluster_name) (max_over_time(kargo_promotion_phase[1d])) unless group by (k8s_cluster_name) (kargo_promotion_phase)) or (absent(kargo_promotion_phase) unless on() group(max_over_time(kargo_promotion_phase[1d])))
           for: 30m
           labels:
             severity: warning
           annotations:
-            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for 30m"
+            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
-              Neither kargo_stage_condition{type="Ready"} nor
-              kargo_promotion_phase has been seen in 30m, so
+              kargo_stage_condition{type="Ready"} or
+              kargo_promotion_phase has not been seen in 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so
               KargoStagePromotionErrored and KargoPromotionErrored cannot fire
               even if a promotion is stuck. Check kube-state-metrics'
               customResourceState config against docs/kube-state-metrics.md, and

@@ -61,11 +61,13 @@ var exempt = map[string]string{
 	// Sums one store's own rows counter across that store's processes; a
 	// per-cluster split would also break the `or vector(0)` deadman.
 	"platform-alerts.write-path / WritePathDead": "sums one store's own counter",
-	// Whole-estate deadman: absent() of a series name, `or`ed. It joins
-	// nothing, and absent() cannot be made per cluster without a list of
-	// clusters to expect; on a shared store it reports only when NO
-	// cluster exports the series.
-	"platform-alerts.kargo / KargoStateMetricsAbsent": "absent() deadman, no join",
+	// Absent guards (every `*Absent` alert): per cluster by construction,
+	// each clause groups by the cluster label, and the whole-store fallback
+	// is `absent(...) unless on() group(...)`, an `on()` that is empty on
+	// purpose: "no cluster has the series" is the one question that must
+	// not be asked per cluster. hack/platform-alerts-absent-proof.sh
+	// evaluates them against a real VictoriaMetrics.
+	"platform-alerts.kargo / KargoStateMetricsAbsent": "absent guard: per-cluster groups plus a deliberate empty on()",
 	// Two metrics of the same store, matched one-to-one on every label,
 	// cluster included.
 	"platform-alerts.store-limits / StoreApproachingReadOnly": "one-to-one on all labels",
