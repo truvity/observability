@@ -234,6 +234,14 @@ statusbox-ca-proof:
 gatus-boot-proof:
     hack/gatus-boot-proof.sh
 
+# REAL proof, in Docker, of the deadman group (Catalogue.Deadman) on the
+# real Gatus image against a mock read API and a mock chat API: three
+# checks, a page after two failures with the bot token in the header,
+# resolved on recovery. About ten minutes. Needs Docker, curl, python3 and
+# go; deliberately NOT part of `check` or CI.
+gatus-deadman-proof:
+    hack/gatus-deadman-proof.sh
+
 # REAL proof, against a real victoria-metrics binary, that
 # `charts/platform-alerts`' BackupJobFailed rule now fires on only the
 # NEWEST Job of each CronJob — the fix for a CronJob's

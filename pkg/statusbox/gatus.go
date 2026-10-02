@@ -39,6 +39,7 @@ package statusbox
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -77,6 +78,23 @@ const (
 	// to be wrong in — early rather than late.
 	alertsPresentCondition = "len([BODY].data.alerts) > 0"
 	alertsAbsentCondition  = "len([BODY].data.alerts) == 0"
+
+	// deadmanInterval / deadmanFailureThreshold: every deadman check runs
+	// every two minutes and pages after two consecutive failures, so a
+	// single slow answer never pages and a real outage does within about
+	// four minutes.
+	deadmanInterval         = "2m"
+	deadmanFailureThreshold = 2
+
+	// alertmanagerWatchdogPath is Alertmanager's own active-alerts
+	// listing, narrowed server-side to the Watchdog and to alerts that
+	// are neither silenced nor inhibited: "the heartbeat is ACTIVE in the
+	// router", which vmalert's own listing cannot say.
+	alertmanagerWatchdogPath = "/api/v2/alerts"
+
+	// alertmanagerAlertsPresentCondition: Alertmanager answers a JSON
+	// array of alerts; its first element exists when the filter matched.
+	alertmanagerAlertsPresentCondition = "[BODY][0].labels.alertname == Watchdog"
 
 	companyProbeInterval = "1m"
 	opsProbeInterval     = "2m"
@@ -123,6 +141,12 @@ type (
 		// red/green, it just notifies nobody yet, which RenderGatus makes
 		// visible with a leading YAML comment rather than a silent gap.
 		Providers DeadmanProviders
+
+		// Deadman is the SEPARATE alert path of the deadman group: its own
+		// channel, its own credential, never shared with Providers (which
+		// the company signals use). Zero value: the deadman endpoint keeps
+		// using Providers, as before. See DeadmanChecks.
+		Deadman DeadmanChecks
 
 		// InternalChecks are internal infrastructure alerts pulled from
 		// the alerting pipeline but NEVER forwarded as alerts — they are
@@ -246,6 +270,56 @@ type (
 		PagerDutyKey string
 	}
 
+	// DeadmanChecks is the deadman group: the checks that say the
+	// alerting path itself is alive, and the one channel they page.
+	//
+	// What it renders, all in the "platform" group, every DeadmanInterval
+	// (two minutes), alerting after two consecutive failures and again
+	// when resolved:
+	//
+	//   - deadman: the Watchdog is present in vmalert (always rendered);
+	//   - alertmanager-watchdog: the Watchdog is ACTIVE in Alertmanager
+	//     (when AlertmanagerWatchdog), read from AlertsRead.Host's
+	//     `/api/v2/alerts`;
+	//   - one check per NotFiring entry: that alert is NOT firing in
+	//     vmalert (SlackNotificationsFailing, say).
+	//
+	// All pull; nothing here is pushed to the box.
+	DeadmanChecks struct {
+		// Post is where the deadman pages. Nil: the checks still render
+		// and still show red/green, they just page nobody (a second
+		// instance of the same page, which must not page twice).
+		Post *ChatPost
+		// AlertmanagerWatchdog adds the Alertmanager check.
+		AlertmanagerWatchdog bool
+		// NotFiring are alerts that must NOT be firing in vmalert.
+		NotFiring []NotFiringCheck
+	}
+
+	// ChatPost is a Gatus `custom` alerting provider shaped for a chat
+	// API that takes `Authorization: Bearer <token>` and a JSON body of
+	// {"channel", "text"} (Slack's chat.postMessage). Gatus's own slack
+	// provider only takes an incoming-webhook URL; a bot token needs this.
+	ChatPost struct {
+		// URL is the API endpoint, e.g. https://slack.com/api/chat.postMessage.
+		URL string
+		// TokenEnvKey is the Secrets.AlertURLs key whose value is the bot
+		// token (${ALERT_URL_<KEY>}).
+		TokenEnvKey string
+		// Channel is the channel the body names. A chat API answers 200
+		// even for a refusal ("not_in_channel"), which Gatus cannot see:
+		// the bot must already be in the channel.
+		Channel string
+	}
+
+	// NotFiringCheck is an alert that must not be firing in vmalert.
+	NotFiringCheck struct {
+		// Name is the Gatus endpoint name.
+		Name string
+		// AlertName is the alerting rule name, matched exactly.
+		AlertName string
+	}
+
 	// InternalCheck is one internal infrastructure alert to display on the
 	// status page but never forward as an alert. It reads the alerting
 	// pipeline's /api/v1/alerts and shows red when a specific alert is
@@ -301,12 +375,27 @@ type (
 	}
 
 	gatusAlertRef struct {
-		Type string `yaml:"type"`
+		Type        string `yaml:"type"`
+		Description string `yaml:"description,omitempty"`
+		// FailureThreshold is written only when set (the deadman group's);
+		// an ordinary probe keeps Gatus's own default of 3.
+		FailureThreshold int `yaml:"failure-threshold,omitempty"`
+		// SendOnResolved: a page that never says it is over leaves a red
+		// message nobody can close.
+		SendOnResolved bool `yaml:"send-on-resolved,omitempty"`
 	}
 
 	gatusAlerting struct {
 		Slack     *gatusSlackAlerting     `yaml:"slack,omitempty"`
+		Custom    *gatusCustomAlerting    `yaml:"custom,omitempty"`
 		PagerDuty *gatusPagerDutyAlerting `yaml:"pagerduty,omitempty"`
+	}
+
+	gatusCustomAlerting struct {
+		URL     string            `yaml:"url"`
+		Method  string            `yaml:"method"`
+		Body    string            `yaml:"body"`
+		Headers map[string]string `yaml:"headers"`
 	}
 
 	gatusSlackAlerting struct {
@@ -360,15 +449,26 @@ func RenderGatus(c Catalogue) (string, error) {
 	var alerting *gatusAlerting
 
 	if c.Providers.SlackKey != "" {
-		alerts = append(alerts, gatusAlertRef{Type: "slack"})
+		alerts = append(alerts, gatusAlertRef{Type: "slack", SendOnResolved: true})
 		alerting = ensureAlerting(alerting)
 		alerting.Slack = &gatusSlackAlerting{WebhookURL: alertVar(c.Providers.SlackKey)}
 	}
 
 	if c.Providers.PagerDutyKey != "" {
-		alerts = append(alerts, gatusAlertRef{Type: "pagerduty"})
+		alerts = append(alerts, gatusAlertRef{Type: "pagerduty", SendOnResolved: true})
 		alerting = ensureAlerting(alerting)
 		alerting.PagerDuty = &gatusPagerDutyAlerting{IntegrationKey: alertVar(c.Providers.PagerDutyKey)}
+	}
+
+	deadmanAlerts := alerts
+
+	if c.Deadman.Post != nil {
+		var err error
+
+		deadmanAlerts, alerting, err = deadmanAlerting(c.Deadman, alerting)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	endpoints := make([]gatusEndpoint, 0, len(c.PlatformHosts)+2*len(c.Companies)+len(c.InternalChecks)+1)
@@ -423,15 +523,45 @@ func RenderGatus(c Catalogue) (string, error) {
 		})
 	}
 
+	deadmanInt := alertsReadInterval
+	if c.Deadman.Post != nil || c.Deadman.AlertmanagerWatchdog || len(c.Deadman.NotFiring) > 0 {
+		deadmanInt = deadmanInterval
+	}
+
 	endpoints = append(endpoints, gatusEndpoint{
 		Name:       "deadman",
 		Group:      "platform",
 		URL:        alertsReadURL(c.AlertsRead.Host, `{alertname="Watchdog"}`),
 		Headers:    authHeader,
-		Interval:   alertsReadInterval,
+		Interval:   deadmanInt,
 		Conditions: []string{statusCondition, alertsPresentCondition},
-		Alerts:     alerts,
+		Alerts:     deadmanAlerts,
 	})
+
+	if c.Deadman.AlertmanagerWatchdog {
+		endpoints = append(endpoints, gatusEndpoint{
+			Name:       "alertmanager-watchdog",
+			Group:      "platform",
+			URL:        alertmanagerWatchdogURL(c.AlertsRead.Host),
+			Headers:    authHeader,
+			Interval:   deadmanInterval,
+			Conditions: []string{statusCondition, alertmanagerAlertsPresentCondition},
+			Alerts:     deadmanAlerts,
+		})
+	}
+
+	for _, check := range c.Deadman.NotFiring {
+		endpoints = append(endpoints, gatusEndpoint{
+			Name:  check.Name,
+			Group: "platform",
+			URL: alertsReadURL(c.AlertsRead.Host,
+				fmt.Sprintf(`{alertname=%q}`, check.AlertName)),
+			Headers:    authHeader,
+			Interval:   deadmanInterval,
+			Conditions: []string{statusCondition, alertsAbsentCondition},
+			Alerts:     deadmanAlerts,
+		})
+	}
 
 	var security *gatusSecurity
 	if c.Security != nil {
@@ -458,7 +588,7 @@ func RenderGatus(c Catalogue) (string, error) {
 		return "", err
 	}
 
-	if len(alerts) == 0 {
+	if len(alerts) == 0 && c.Deadman.Post == nil {
 		out = "# statusbox: no alert providers configured (Catalogue.Providers is empty) " +
 			"— nobody is notified if the deadman or a company's own signal goes red.\n" + out
 	}
@@ -559,3 +689,81 @@ func marshalGatusConfig(cfg gatusConfig) (string, error) {
 
 	return string(out), nil
 }
+
+// alertmanagerWatchdogURL is Alertmanager's own listing of the ACTIVE
+// Watchdog: filtered by name, and neither silenced nor inhibited, so a
+// silence or an inhibition that swallowed the heartbeat turns the check
+// red too.
+func alertmanagerWatchdogURL(host string) string {
+	u := url.URL{Scheme: "https", Host: host, Path: alertmanagerWatchdogPath}
+	q := u.Query()
+	q.Set("filter", `alertname="Watchdog"`)
+	q.Set("active", "true")
+	q.Set("silenced", "false")
+	q.Set("inhibited", "false")
+	u.RawQuery = q.Encode()
+
+	return u.String()
+}
+
+// deadmanAlerting adds the deadman's own `custom` provider to alerting
+// and returns the alert refs the deadman group's endpoints carry: one
+// `custom` ref that fires after deadmanFailureThreshold failures and says
+// when it resolves. It refuses a post that would render a provider Gatus
+// refuses or one that leaks a credential.
+func deadmanAlerting(d DeadmanChecks, alerting *gatusAlerting) ([]gatusAlertRef, *gatusAlerting, error) {
+	p := d.Post
+
+	if u, err := url.Parse(p.URL); err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" {
+		return nil, nil, fmt.Errorf("statusbox: RenderGatus: Deadman.Post.URL %q must be an https URL with no user info and no query", p.URL)
+	}
+
+	if !alertKeyRE.MatchString(p.TokenEnvKey) {
+		return nil, nil, fmt.Errorf("statusbox: RenderGatus: Deadman.Post.TokenEnvKey %q is not a valid Secrets.AlertURLs key", p.TokenEnvKey)
+	}
+
+	if !postChannelRE.MatchString(p.Channel) {
+		return nil, nil, fmt.Errorf("statusbox: RenderGatus: Deadman.Post.Channel %q must be a channel name or id "+
+			"(letters, digits, '-', '_', optional leading '#')", p.Channel)
+	}
+
+	seen := map[string]bool{"deadman": true, "alertmanager-watchdog": d.AlertmanagerWatchdog}
+	for _, n := range d.NotFiring {
+		if !heartbeatLikeNameRE.MatchString(n.Name) || seen[n.Name] {
+			return nil, nil, fmt.Errorf("statusbox: RenderGatus: Deadman.NotFiring name %q is empty, not lower-case letters, digits and hyphens, or a duplicate", n.Name)
+		}
+
+		seen[n.Name] = true
+
+		if n.AlertName == "" {
+			return nil, nil, fmt.Errorf("statusbox: RenderGatus: Deadman.NotFiring %q has no AlertName", n.Name)
+		}
+	}
+
+	if alerting == nil {
+		alerting = &gatusAlerting{}
+	}
+
+	alerting.Custom = &gatusCustomAlerting{
+		URL:    p.URL,
+		Method: "POST",
+		Body: fmt.Sprintf(`{"channel":%q,"text":"[ALERT_TRIGGERED_OR_RESOLVED]: [ENDPOINT_GROUP]/[ENDPOINT_NAME] - [ALERT_DESCRIPTION]"}`,
+			p.Channel),
+		Headers: map[string]string{
+			"Authorization": "Bearer " + alertVar(p.TokenEnvKey),
+			"Content-Type":  "application/json; charset=utf-8",
+		},
+	}
+
+	return []gatusAlertRef{{
+		Type:             "custom",
+		Description:      "the alerting path may be down: this check has failed twice in a row",
+		FailureThreshold: deadmanFailureThreshold,
+		SendOnResolved:   true,
+	}}, alerting, nil
+}
+
+var (
+	postChannelRE       = regexp.MustCompile(`^#?[A-Za-z0-9][A-Za-z0-9_-]*$`)
+	heartbeatLikeNameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+)

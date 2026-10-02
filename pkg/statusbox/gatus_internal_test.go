@@ -455,3 +455,131 @@ func TestComponentIsNeverRendered(t *testing.T) {
 	assert.Equal(t, a, b)
 	assert.NotContains(t, b, "component-")
 }
+
+func deadmanCatalogue() Catalogue {
+	c := testCatalogue()
+	c.Providers = DeadmanProviders{SlackKey: "company_slack"}
+	c.Deadman = DeadmanChecks{
+		Post:                 &ChatPost{URL: "https://chat.example/api/chat.postMessage", TokenEnvKey: "deadman_token", Channel: "#deadman"},
+		AlertmanagerWatchdog: true,
+		NotFiring:            []NotFiringCheck{{Name: "slack-notifications", AlertName: "SlackNotificationsFailing"}},
+	}
+
+	return c
+}
+
+// TestDeadmanGroupRendersThreeChecksOnItsOwnProvider: the three checks run
+// every two minutes, page after two failures, say when resolved, and page
+// ONLY through the deadman's own provider: the company signals keep the
+// shared Providers and never reach the deadman channel.
+func TestDeadmanGroupRendersThreeChecksOnItsOwnProvider(t *testing.T) {
+	out, err := RenderGatus(deadmanCatalogue())
+	require.NoError(t, err)
+
+	var parsed gatusConfig
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
+
+	byName := map[string]gatusEndpoint{}
+	for _, e := range parsed.Endpoints {
+		byName[e.Name] = e
+	}
+
+	custom := []gatusAlertRef{{
+		Type:             "custom",
+		Description:      "the alerting path may be down: this check has failed twice in a row",
+		FailureThreshold: 2,
+		SendOnResolved:   true,
+	}}
+
+	for _, name := range []string{"deadman", "alertmanager-watchdog", "slack-notifications"} {
+		e, ok := byName[name]
+		require.Truef(t, ok, "%s must be rendered", name)
+		assert.Equal(t, "2m", e.Interval, name)
+		assert.Equal(t, custom, e.Alerts, name)
+		assert.Equal(t, "Bearer ${ALERT_URL_TOK}", e.Headers["Authorization"], name)
+	}
+
+	assert.Contains(t, byName["alertmanager-watchdog"].URL, "/api/v2/alerts?")
+	assert.Contains(t, byName["alertmanager-watchdog"].URL, "silenced=false")
+	assert.Contains(t, byName["alertmanager-watchdog"].Conditions, alertmanagerAlertsPresentCondition)
+	assert.Contains(t, byName["slack-notifications"].Conditions, alertsAbsentCondition)
+	assert.Contains(t, byName["slack-notifications"].URL, "SlackNotificationsFailing")
+
+	// The company signal keeps the shared provider and is NOT the deadman's.
+	acme := byName["acme-customer-facing"]
+	require.Len(t, acme.Alerts, 1)
+	assert.Equal(t, "slack", acme.Alerts[0].Type)
+
+	require.NotNil(t, parsed.Alerting.Custom)
+	assert.Equal(t, "POST", parsed.Alerting.Custom.Method)
+	assert.Equal(t, "Bearer ${ALERT_URL_DEADMAN_TOKEN}", parsed.Alerting.Custom.Headers["Authorization"])
+	assert.Contains(t, parsed.Alerting.Custom.Body, `"channel":"#deadman"`)
+	assert.Contains(t, parsed.Alerting.Custom.Body, "[ALERT_TRIGGERED_OR_RESOLVED]")
+	assert.Equal(t, "${ALERT_URL_COMPANY_SLACK}", parsed.Alerting.Slack.WebhookURL)
+	assert.NotContains(t, out, "nobody is notified")
+}
+
+func TestDeadmanAloneNeedsNoProviders(t *testing.T) {
+	c := deadmanCatalogue()
+	c.Providers = DeadmanProviders{}
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	var parsed gatusConfig
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
+	assert.Nil(t, parsed.Alerting.Slack)
+	assert.NotNil(t, parsed.Alerting.Custom)
+
+	for _, e := range parsed.Endpoints {
+		if strings.HasSuffix(e.Name, "-customer-facing") {
+			assert.Empty(t, e.Alerts, "no Providers: a company signal pages nobody, and never the deadman channel")
+		}
+	}
+}
+
+func TestDeadmanRefusals(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mut  func(*Catalogue)
+		want string
+	}{
+		"http url":               {func(c *Catalogue) { c.Deadman.Post.URL = "http://chat.example/x" }, "https URL"},
+		"query in url":           {func(c *Catalogue) { c.Deadman.Post.URL = "https://chat.example/x?t=1" }, "no query"},
+		"bad token key":          {func(c *Catalogue) { c.Deadman.Post.TokenEnvKey = "a-b" }, "TokenEnvKey"},
+		"channel with a quote":   {func(c *Catalogue) { c.Deadman.Post.Channel = `a"b` }, "Channel"},
+		"duplicate check name":   {func(c *Catalogue) { c.Deadman.NotFiring[0].Name = "deadman" }, "duplicate"},
+		"check without an alert": {func(c *Catalogue) { c.Deadman.NotFiring[0].AlertName = "" }, "no AlertName"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := deadmanCatalogue()
+			tc.mut(&c)
+
+			_, err := RenderGatus(c)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+// TestDeadmanChecksWithoutAPostStillRenderButPageNobody: the second
+// instance of a page shows the same checks and must not page twice.
+func TestDeadmanChecksWithoutAPostStillRenderButPageNobody(t *testing.T) {
+	c := deadmanCatalogue()
+	c.Deadman.Post = nil
+	c.Providers = DeadmanProviders{}
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	var parsed gatusConfig
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
+	assert.Nil(t, parsed.Alerting)
+
+	names := map[string]bool{}
+	for _, e := range parsed.Endpoints {
+		names[e.Name] = true
+		assert.Empty(t, e.Alerts, e.Name)
+	}
+
+	assert.True(t, names["deadman"] && names["alertmanager-watchdog"] && names["slack-notifications"])
+}

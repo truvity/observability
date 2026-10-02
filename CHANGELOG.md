@@ -33,6 +33,30 @@ must be done first, and whether a default moved. Newest first, one
   selecting them would default-deny them. None rendered here blocks the
   mesh (9094 TCP and UDP).
 
+`observability-stack`, `observability-emitters`, `platform-alerts`,
+`pkg/statusbox`: a deadman that watches the router and pages on its own
+channel, and an outside probe.
+
+- **`alertmanager.watchdog.tokenKey`** (default empty): a key of the same
+  Secret whose value is sent as `Authorization: Bearer <token>` with the
+  heartbeat, read with `credentials_file`. Default renders unchanged.
+- **`tenancy.alertReaders[].alertmanager`** (default `false`): also routes
+  the reader to Alertmanager's `/api/v2/alerts` (exact path). vmauth cannot
+  match a method and `POST` on that path creates alerts, so the edge in front
+  must admit GET only. Refused without `alertmanager.enabled`.
+- **`metrics.scrape.probes`** (emitters, default empty): HTTP probes as
+  scrapes of a URL, kept for `up{job="http-probe"}`; **`groups.probes`**
+  (platform-alerts, default off): the alert on `up == 0`, with a settable
+  `alertName`.
+- **`statusbox.Catalogue.Deadman`**: the deadman group (vmalert Watchdog,
+  Alertmanager Watchdog, and not-firing checks) on its own `custom`
+  provider and the two-failure threshold; `Providers` no longer reaches
+  it. **Behaviour change:** every alert ref the library renders now carries
+  `send-on-resolved: true`; with no `Providers` and no `Deadman` nothing
+  changes.
+- `hack/gatus-deadman-proof.sh` (`just gatus-deadman-proof`) proves the
+  group on the real Gatus image.
+
 ## v0.26.0
 
 `observability-stack`: named links in Slack notifications.
