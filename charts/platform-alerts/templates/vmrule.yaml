@@ -310,15 +310,15 @@ spec:
         # two rules above go silent right along with it.
         - alert: KargoStateMetricsAbsent
           expr: >-
-            absent(kargo_stage_condition{type="Ready"}) or absent(kargo_promotion_phase)
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" `kargo_stage_condition{type="Ready"}`) }} or {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" `kargo_promotion_phase`) }}
           for: {{ $g.absentFor }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for {{ $g.absentFor }}"
+            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
-              Neither kargo_stage_condition{type="Ready"} nor
-              kargo_promotion_phase has been seen in {{ $g.absentFor }}, so
+              kargo_stage_condition{type="Ready"} or
+              kargo_promotion_phase has not been seen in {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}, so
               KargoStagePromotionErrored and KargoPromotionErrored cannot fire
               even if a promotion is stuck. Check kube-state-metrics'
               customResourceState config against docs/kube-state-metrics.md, and
@@ -345,14 +345,14 @@ spec:
         # all.
         - alert: KargoControllerAbsent
           expr: >-
-            absent(up{job="{{ $kjob }}"} == 1)
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf `up{job="%s"}` $kjob) "cur" " == 1") }}
           for: {{ $kc.for }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $kc.severity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $kc.severity "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "No Kargo controller has answered its metrics scrape for {{ $kc.for }}"
+            summary: "No Kargo controller has answered its metrics scrape for {{ $kc.for }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
-              up{job="{{ $kjob }}"} has not been 1 in {{ $kc.for }}: the Kargo
+              up{job="{{ $kjob }}"} has not been 1 in {{ $kc.for }}{{ include "platform-alerts.onCluster" $ }}: the Kargo
               controller is down, crash-looping or no longer scraped, so no
               Promotion is being executed. Check the controller's pod and its
               ServiceMonitor.
@@ -452,15 +452,15 @@ spec:
         # one, which is what a single-probe estate wants.
         - alert: {{ $g.alertName }}Absent
           expr: >-
-            absent(probe_success{probe=~"{{ $g.probe }}"})
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf `probe_success{probe=~"%s"}` $g.probe) "by" (list "probe")) }}
           for: {{ $g.absentFor }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" (default $g.severity $g.absentSeverity)) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" (default $g.severity $g.absentSeverity) "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "No probe_success series for {{ $g.probe }} for {{ $g.absentFor }}"
+            summary: "No probe_success series for {{ $g.probe }} for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
               probe_success{probe=~"{{ $g.probe }}"} has not been seen in
-              {{ $g.absentFor }}, so {{ $g.alertName }} cannot fire even if the
+              {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}, so {{ $g.alertName }} cannot fire even if the
               URL is down. Check the blackbox exporter and the VMProbe
               (charts/observability-emitters `metrics.scrape.probes`), that the
               agent's scrape of the probe is up, and that its series carry the
@@ -561,15 +561,15 @@ spec:
         # healthy to a rule that compares its values.
         - alert: NodeClaimMetricsAbsent
           expr: >-
-            absent(nodeclaim_status_condition{type="Launched"})
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" `nodeclaim_status_condition{type="Launched"}`) }}
           for: {{ $g.absentFor }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "kube-state-metrics has not exported NodeClaim conditions for {{ $g.absentFor }}"
+            summary: "kube-state-metrics has not exported NodeClaim conditions for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
               nodeclaim_status_condition{type="Launched"} has not been seen in
-              {{ $g.absentFor }}, so NodeClaimNotReady cannot fire even if a
+              {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}, so NodeClaimNotReady cannot fire even if a
               node is failing to come up. Check that
               `kubeStateMetrics.customResources.nodeClaims` is on in
               observability-emitters and that the scrape is up. On a cluster
@@ -780,14 +780,14 @@ spec:
         # reads as healthy to rules that compare values.
         - alert: NATSMetricsAbsent
           expr: >-
-            absent(up{job="{{ $job }}"})
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf `up{job="%s"}` $job)) }}
           for: {{ $g.absentFor }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "No NATS exporter has been scraped for {{ $g.absentFor }}"
+            summary: "No NATS exporter has been scraped for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
-              up{job="{{ $job }}"} has not been seen in {{ $g.absentFor }}, so none of the
+              up{job="{{ $job }}"} has not been seen in {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}, so none of the
               NATS rules can fire. Check that the NATS chart's PodMonitor is
               applied and the brokers' metrics port is reachable from the
               agent.
@@ -922,15 +922,15 @@ spec:
         # scrape blocked) reads as healthy to rules that compare values.
         - alert: ArgoCDMetricsAbsent
           expr: >-
-            absent(argocd_app_info{job=~"{{ $job }}"})
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf `argocd_app_info{job=~"%s"}` $job)) }}
           for: {{ $g.absentFor }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "Argo CD has reported no applications for {{ $g.absentFor }}"
+            summary: "Argo CD has reported no applications for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
               argocd_app_info{job=~"{{ $job }}"} has not been seen in
-              {{ $g.absentFor }}, so none of the Argo CD rules can fire. The
+              {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}, so none of the Argo CD rules can fire. The
               application controller is down or its metrics endpoint is not
               scraped: check its pod and the ServiceMonitor the chart renders
               (`controller.metrics.serviceMonitor.enabled`).
@@ -971,15 +971,15 @@ spec:
         # stale.
         - alert: ESOWebhookAbsent
           expr: >-
-            absent(up{namespace="{{ $gns }}", job=~"{{ $g.webhookJob }}"})
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf `up{namespace="%s", job=~"%s"}` $gns $g.webhookJob)) }}
           for: {{ $g.webhookDownFor }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "No External Secrets webhook has been scraped for {{ $g.webhookDownFor }}"
+            summary: "No External Secrets webhook has been scraped for {{ $g.webhookDownFor }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
               up{namespace="{{ $gns }}", job=~"{{ $g.webhookJob }}"} has not
-              been seen in {{ $g.webhookDownFor }}: the webhook Deployment is
+              been seen in {{ $g.webhookDownFor }}{{ include "platform-alerts.onCluster" $ }}: the webhook Deployment is
               gone or not scraped. If it is gone the webhooks fail closed and
               writes of ExternalSecrets and SecretStores are refused.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ESOWebhookAbsent")) }}{{ . | nindent 12 }}{{- end }}
@@ -1104,14 +1104,14 @@ spec:
         # the pods are gone, the scrape is blocked).
         - alert: ESOMetricsAbsent
           expr: >-
-            absent(up{namespace="{{ $gns }}"})
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf `up{namespace="%s"}` $gns)) }}
           for: {{ $g.absentFor }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "No External Secrets target has been scraped for {{ $g.absentFor }}"
+            summary: "No External Secrets target has been scraped for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
-              up{namespace="{{ $gns }}"} has not been seen in {{ $g.absentFor }},
+              up{namespace="{{ $gns }}"} has not been seen in {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }},
               so none of the External Secrets rules can fire. Check that the
               operator chart's `serviceMonitor.enabled` is on and the pods are
               running.
@@ -1146,34 +1146,46 @@ spec:
         # A controller that is not reporting at all.
         {{- if $g.expectedNamespaces }}
         #
-        # One `absent` per controller namespace named in `expectedNamespaces`:
-        # an alert for the one that is missing, with its `namespace` label
-        # taken from the selector.
+        # One clause per controller namespace named in `expectedNamespaces`.
+        # With a `clusterLabel`, a cluster that reported ANY of the listed
+        # namespaces within `absentLookback` must report every one: the
+        # alert is per cluster and per missing controller (`namespace` is the
+        # missing one), so one cluster losing a controller is not hidden by
+        # the same controller running on another. A listed namespace that
+        # nothing reports at all, and that no cluster reported within the
+        # lookback, still fires on its own (the whole-store `absent()`).
         - alert: ACKControllerAbsent
           expr: >-
+            {{- $union := join "|" $g.expectedNamespaces }}
             {{- range $i, $n := $g.expectedNamespaces }}
             {{- if $i }}
             or
             {{- end }}
+            {{- if $.Values.clusterLabel }}
+            (label_replace(group by ({{ $.Values.clusterLabel }}) (max_over_time(up{namespace=~"{{ $union }}"}[{{ $.Values.absentLookback }}])), "namespace", "{{ $n }}", "", "") unless group by ({{ $.Values.clusterLabel }}, namespace) (up{namespace="{{ $n }}"})) or (absent(up{namespace="{{ $n }}"}) unless on() group(max_over_time(up{namespace=~"{{ $union }}"}[{{ $.Values.absentLookback }}])))
+            {{- else }}
             absent(up{namespace="{{ $n }}"})
+            {{- end }}
             {{- end }}
         {{- else }}
         #
-        # With no `expectedNamespaces`, this can only say that no ACK
-        # controller reports at all; name the controllers' namespaces to catch
-        # one of several missing.
+        # With no `expectedNamespaces`, a controller that reported within
+        # `absentLookback` and no longer does fires per cluster and per
+        # namespace; "no ACK controller reports at all" fires through the
+        # whole-store `absent()`. Name the controllers' namespaces
+        # (`expectedNamespaces`) to also catch one that never came up.
         - alert: ACKControllerAbsent
           expr: >-
-            absent(up{namespace=~"{{ $gns }}"})
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf `up{namespace=~"%s"}` $gns) "by" (list "namespace")) }}
         {{- end }}
           for: {{ $g.absentFor }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $.Values.clusterLabel) | nindent 12 }}
           annotations:
-            summary: "An ACK controller has not been scraped for {{ $g.absentFor }}"
+            summary: "An ACK controller has not been scraped for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
             description: >-
               No `up` series has been seen for an ACK controller in
-              {{ $g.absentFor }}: its Deployment is gone, its pod is not
+              {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}: its Deployment is gone, its pod is not
               scheduled, or the PodMonitor is no longer applied. AWS resources
               it owns are not being reconciled.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ACKControllerAbsent")) }}{{ . | nindent 12 }}{{- end }}

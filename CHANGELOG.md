@@ -4,6 +4,32 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.35.1
+
+`platform-alerts`: the `*Absent` guards fire per cluster.
+
+- **Behaviour change: every `*Absent` alert is now per cluster, not only when
+  every cluster is missing the series.** A bare `absent(...)` is true only
+  when no series matches in the whole store, so on a store that holds several
+  clusters a controller, exporter or probe vanishing from ONE cluster was
+  silent. With a `clusterLabel` (the default), `KargoStateMetricsAbsent`,
+  `KargoControllerAbsent`, the probes group's `<alertName>Absent`,
+  `NodeClaimMetricsAbsent`, `NATSMetricsAbsent`, `ArgoCDMetricsAbsent`,
+  `ESOWebhookAbsent`, `ESOMetricsAbsent` and `ACKControllerAbsent` now fire
+  for a cluster that HAD the series within the new `absentLookback` (default
+  `1d`) and does not now, and keep the whole-store `absent()` for "never
+  existed / everything gone", so a fresh install with no data still alerts.
+  The ACK and probe guards are also per namespace and per probe, and with
+  `expectedNamespaces` a cluster that reports any listed controller must
+  report them all. The per-cluster alert carries that cluster's own
+  `clusterLabel` value (the whole-store one carries none), whatever
+  `keepClusterLabel` says and whether or not `commonLabels` names a cluster:
+  the common label would stamp every cluster with the store's. A cluster,
+  controller or probe removed on purpose stops alerting once the lookback has
+  passed; the guard reads a day of the series on each evaluation. `clusterLabel: ""`
+  renders the bare `absent()` byte for byte. Proof against a real
+  VictoriaMetrics: `just platform-alerts-absent-proof`.
+
 ## v0.35.0
 
 `observability-mcp`: zero-gap rolling updates, and spread for connectors that

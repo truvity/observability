@@ -93,7 +93,7 @@ func TestNodeClaimAlertsRenderTheirExpressions(t *testing.T) {
 		` nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} == 0 )`
 	want := map[string]struct{ expr, hold string }{
 		"NodeClaimNotReady":      {notReady, "10m"},
-		"NodeClaimMetricsAbsent": {`absent(nodeclaim_status_condition{type="Launched"})`, "30m"},
+		"NodeClaimMetricsAbsent": {absentGuard(`nodeclaim_status_condition{type="Launched"}`, ""), "30m"},
 	}
 	got := map[string]bool{}
 	for _, doc := range splitDocs(t, "golden/platform-alerts/node-claims.yaml") {

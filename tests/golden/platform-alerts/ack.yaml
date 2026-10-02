@@ -34,20 +34,22 @@ spec:
             runbook_url: "https://runbooks.example.com/ACKControllerDown"
         # A controller that is not reporting at all.
         #
-        # With no `expectedNamespaces`, this can only say that no ACK
-        # controller reports at all; name the controllers' namespaces to catch
-        # one of several missing.
+        # With no `expectedNamespaces`, a controller that reported within
+        # `absentLookback` and no longer does fires per cluster and per
+        # namespace; "no ACK controller reports at all" fires through the
+        # whole-store `absent()`. Name the controllers' namespaces
+        # (`expectedNamespaces`) to also catch one that never came up.
         - alert: ACKControllerAbsent
           expr: >-
-            absent(up{namespace=~"ack-.*"})
+            (group by (k8s_cluster_name, namespace) (max_over_time(up{namespace=~"ack-.*"}[1d])) unless group by (k8s_cluster_name, namespace) (up{namespace=~"ack-.*"})) or (absent(up{namespace=~"ack-.*"}) unless on() group(max_over_time(up{namespace=~"ack-.*"}[1d])))
           for: 10m
           labels:
             severity: critical
           annotations:
-            summary: "An ACK controller has not been scraped for 10m"
+            summary: "An ACK controller has not been scraped for 10m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
               No `up` series has been seen for an ACK controller in
-              10m: its Deployment is gone, its pod is not
+              10m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}: its Deployment is gone, its pod is not
               scheduled, or the PodMonitor is no longer applied. AWS resources
               it owns are not being reconciled.
             runbook_url: "https://runbooks.example.com/ACKControllerAbsent"

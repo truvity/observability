@@ -47,16 +47,15 @@ spec:
         # healthy to a rule that compares its values.
         - alert: NodeClaimMetricsAbsent
           expr: >-
-            absent(nodeclaim_status_condition{type="Launched"})
+            (group by (k8s_cluster_name) (max_over_time(nodeclaim_status_condition{type="Launched"}[1d])) unless group by (k8s_cluster_name) (nodeclaim_status_condition{type="Launched"})) or (absent(nodeclaim_status_condition{type="Launched"}) unless on() group(max_over_time(nodeclaim_status_condition{type="Launched"}[1d])))
           for: 30m
           labels:
-            k8s_cluster_name: kernel
             severity: warning
           annotations:
-            summary: "kube-state-metrics has not exported NodeClaim conditions for 30m"
+            summary: "kube-state-metrics has not exported NodeClaim conditions for 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
               nodeclaim_status_condition{type="Launched"} has not been seen in
-              30m, so NodeClaimNotReady cannot fire even if a
+              30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so NodeClaimNotReady cannot fire even if a
               node is failing to come up. Check that
               `kubeStateMetrics.customResources.nodeClaims` is on in
               observability-emitters and that the scrape is up. On a cluster

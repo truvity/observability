@@ -34,22 +34,27 @@ spec:
             runbook_url: "https://runbooks.example.com/ACKControllerDown"
         # A controller that is not reporting at all.
         #
-        # One `absent` per controller namespace named in `expectedNamespaces`:
-        # an alert for the one that is missing, with its `namespace` label
-        # taken from the selector.
+        # One clause per controller namespace named in `expectedNamespaces`.
+        # With a `clusterLabel`, a cluster that reported ANY of the listed
+        # namespaces within `absentLookback` must report every one: the
+        # alert is per cluster and per missing controller (`namespace` is the
+        # missing one), so one cluster losing a controller is not hidden by
+        # the same controller running on another. A listed namespace that
+        # nothing reports at all, and that no cluster reported within the
+        # lookback, still fires on its own (the whole-store `absent()`).
         - alert: ACKControllerAbsent
           expr: >-
-            absent(up{namespace="example-ack-one"})
+            (label_replace(group by (k8s_cluster_name) (max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])), "namespace", "example-ack-one", "", "") unless group by (k8s_cluster_name, namespace) (up{namespace="example-ack-one"})) or (absent(up{namespace="example-ack-one"}) unless on() group(max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])))
             or
-            absent(up{namespace="example-ack-two"})
+            (label_replace(group by (k8s_cluster_name) (max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])), "namespace", "example-ack-two", "", "") unless group by (k8s_cluster_name, namespace) (up{namespace="example-ack-two"})) or (absent(up{namespace="example-ack-two"}) unless on() group(max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])))
           for: 10m
           labels:
             severity: critical
           annotations:
-            summary: "An ACK controller has not been scraped for 10m"
+            summary: "An ACK controller has not been scraped for 10m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
               No `up` series has been seen for an ACK controller in
-              10m: its Deployment is gone, its pod is not
+              10m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}: its Deployment is gone, its pod is not
               scheduled, or the PodMonitor is no longer applied. AWS resources
               it owns are not being reconciled.
             runbook_url: "https://runbooks.example.com/ACKControllerAbsent"

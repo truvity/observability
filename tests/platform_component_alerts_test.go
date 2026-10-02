@@ -68,6 +68,16 @@ func labelsOf(t *testing.T, golden, group, alert string) map[string]string {
 	return nil
 }
 
+// absentGuard is the expression `platform-alerts.absentGuard` renders for a
+// non-empty clusterLabel and the default `absentLookback` of 1d: per cluster
+// (and per `by` label) a series that was there within the lookback and is
+// not now, or the whole-store absent() when it never existed in the window.
+func absentGuard(sel, cur string, by ...string) string {
+	l := strings.Join(append([]string{"k8s_cluster_name"}, by...), ", ")
+	return `(group by (` + l + `) (max_over_time(` + sel + `[1d])) unless group by (` + l + `) (` + sel + cur + `)) or ` +
+		`(absent(` + sel + cur + `) unless on() group(max_over_time(` + sel + `[1d])))`
+}
+
 func TestArgoCDAlertsRenderTheirExpressions(t *testing.T) {
 	const c = "k8s_cluster_name"
 	want := map[string]alertRow{
@@ -80,7 +90,7 @@ func TestArgoCDAlertsRenderTheirExpressions(t *testing.T) {
 		"ArgoCDClusterConnectionLost": {`min by (` + c + `, server) (argocd_cluster_connection_status{job=~"argocd-.*-metrics"}) < 1`, "5m", "critical"},
 		"ArgoCDGitFetchFailing": {`sum by (` + c + `, repo) (` +
 			` increase_pure(argocd_git_fetch_fail_total{job=~"argocd-.*-metrics"}[10m]) ) >= 3`, "5m", "warning"},
-		"ArgoCDMetricsAbsent": {`absent(argocd_app_info{job=~"argocd-.*-metrics"})`, "15m", "warning"},
+		"ArgoCDMetricsAbsent": {absentGuard(`argocd_app_info{job=~"argocd-.*-metrics"}`, ""), "15m", "warning"},
 	}
 	assert.Equal(t, want, groupAlerts(t, "golden/platform-alerts/argocd.yaml", "platform-alerts.argocd"))
 }
@@ -89,7 +99,7 @@ func TestESOAlertsRenderTheirExpressions(t *testing.T) {
 	const c = "k8s_cluster_name"
 	want := map[string]alertRow{
 		"ESOWebhookDown":   {`max by (` + c + `, pod) (up{namespace="external-secrets", job=~"external-secrets-webhook.*"}) == 0`, "5m", "critical"},
-		"ESOWebhookAbsent": {`absent(up{namespace="external-secrets", job=~"external-secrets-webhook.*"})`, "5m", "critical"},
+		"ESOWebhookAbsent": {absentGuard(`up{namespace="external-secrets", job=~"external-secrets-webhook.*"}`, ""), "5m", "critical"},
 		"ESOExternalSecretNotReady": {`max by (` + c + `, exported_namespace, name) (` +
 			` externalsecret_status_condition{condition="Ready", status="False"} ) == 1`, "15m", "warning"},
 		"ESOSecretStoreNotReady": {`max by (` + c + `, exported_namespace, name) (` +
@@ -101,7 +111,7 @@ func TestESOAlertsRenderTheirExpressions(t *testing.T) {
 		"ESOProviderAPIErrors": {`sum by (` + c + `, provider) (` +
 			` increase(externalsecret_provider_api_calls_count{status="error"}[10m]) ) > 0`, "10m", "warning"},
 		"ESOWorkqueueStuck": {`max by (` + c + `, name) (workqueue_depth{namespace="external-secrets"}) > 0`, "30m", "warning"},
-		"ESOMetricsAbsent":  {`absent(up{namespace="external-secrets"})`, "15m", "warning"},
+		"ESOMetricsAbsent":  {absentGuard(`up{namespace="external-secrets"}`, ""), "15m", "warning"},
 	}
 	assert.Equal(t, want, groupAlerts(t, "golden/platform-alerts/eso.yaml", "platform-alerts.eso"))
 }
@@ -110,7 +120,7 @@ func TestACKAlertsRenderTheirExpressions(t *testing.T) {
 	const c = "k8s_cluster_name"
 	want := map[string]alertRow{
 		"ACKControllerDown":   {`max by (` + c + `, namespace, pod) (up{namespace=~"ack-.*"}) == 0`, "5m", "critical"},
-		"ACKControllerAbsent": {`absent(up{namespace=~"ack-.*"})`, "10m", "critical"},
+		"ACKControllerAbsent": {absentGuard(`up{namespace=~"ack-.*"}`, "", "namespace"), "10m", "critical"},
 		"ACKReconcileErrors": {`sum by (` + c + `, namespace, controller) (` +
 			` increase(controller_runtime_reconcile_errors_total{namespace=~"ack-.*"}[15m]) ) > 0`, "15m", "warning"},
 		"ACKTerminalReconcileErrors": {`sum by (` + c + `, namespace, controller) (` +
@@ -124,7 +134,13 @@ func TestACKAlertsRenderTheirExpressions(t *testing.T) {
 	// each, so a missing controller among several is seen; the down and error
 	// rules still read the selector.
 	named := groupAlerts(t, "golden/platform-alerts/ack-expected-namespaces.yaml", "platform-alerts.ack")
-	assert.Equal(t, `absent(up{namespace="example-ack-one"}) or absent(up{namespace="example-ack-two"})`, named["ACKControllerAbsent"].expr)
+	const union = `up{namespace=~"example-ack-one|example-ack-two"}`
+	clause := func(ns string) string {
+		return `(label_replace(group by (k8s_cluster_name) (max_over_time(` + union + `[1d])), "namespace", "` + ns + `", "", "") ` +
+			`unless group by (k8s_cluster_name, namespace) (up{namespace="` + ns + `"})) or ` +
+			`(absent(up{namespace="` + ns + `"}) unless on() group(max_over_time(` + union + `[1d])))`
+	}
+	assert.Equal(t, clause("example-ack-one")+` or `+clause("example-ack-two"), strings.Join(strings.Fields(named["ACKControllerAbsent"].expr), " "))
 	assert.Contains(t, named["ACKControllerDown"].expr, `namespace=~"example-ack-.*"`)
 }
 
@@ -139,7 +155,7 @@ func TestKargoControllerRulesAreOffUntilSwitchedOn(t *testing.T) {
 
 	got := groupAlerts(t, "golden/platform-alerts/kargo-controller.yaml", "platform-alerts.kargo")
 	assert.Len(t, got, 6)
-	assert.Equal(t, alertRow{`absent(up{job="kargo-controller-metrics"} == 1)`, "5m", "critical"}, got["KargoControllerAbsent"])
+	assert.Equal(t, alertRow{absentGuard(`up{job="kargo-controller-metrics"}`, " == 1"), "5m", "critical"}, got["KargoControllerAbsent"])
 	assert.Equal(t, alertRow{`sum by (` + c + `, controller) (` +
 		` increase(controller_runtime_reconcile_errors_total{job="kargo-controller-metrics"}[15m]) ) > 0`, "15m", "warning"},
 		got["KargoControllerReconcileErrors"])
@@ -148,8 +164,10 @@ func TestKargoControllerRulesAreOffUntilSwitchedOn(t *testing.T) {
 }
 
 // With `keepClusterLabel` the series' own cluster label survives on every
-// rule that aggregates by it, and the common label is left off; an `absent`
-// rule has no series label, so it keeps the common one. Every value in this
+// rule that aggregates by it, and the common label is left off. The `absent`
+// guards are per cluster and keep their own cluster label too, whatever
+// `keepClusterLabel` says: the common label would stamp every cluster with
+// the store's. Every value in this
 // case is off its default, so the golden also shows each one reaches the rule.
 func TestPlatformComponentAlertsKeepTheSeriesClusterLabel(t *testing.T) {
 	const g = "golden/platform-alerts/platform-components-shared-store.yaml"
@@ -161,17 +179,13 @@ func TestPlatformComponentAlertsKeepTheSeriesClusterLabel(t *testing.T) {
 		{"platform-alerts.ack", "ACKControllerDown"},
 		{"platform-alerts.ack", "ACKReconcileErrors"},
 		{"platform-alerts.kargo", "KargoControllerReconcileErrors"},
-	} {
-		assert.NotContains(t, labelsOf(t, g, tc.group, tc.alert), "k8s_cluster_name", tc.alert)
-	}
-	for _, tc := range []struct{ group, alert string }{
 		{"platform-alerts.argocd", "ArgoCDMetricsAbsent"},
 		{"platform-alerts.eso", "ESOWebhookAbsent"},
 		{"platform-alerts.eso", "ESOMetricsAbsent"},
 		{"platform-alerts.ack", "ACKControllerAbsent"},
 		{"platform-alerts.kargo", "KargoControllerAbsent"},
 	} {
-		assert.Equal(t, "example", labelsOf(t, g, tc.group, tc.alert)["k8s_cluster_name"], tc.alert)
+		assert.NotContains(t, labelsOf(t, g, tc.group, tc.alert), "k8s_cluster_name", tc.alert)
 	}
 
 	ack := groupAlerts(t, g, "platform-alerts.ack")

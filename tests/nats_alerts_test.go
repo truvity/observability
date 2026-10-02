@@ -44,7 +44,7 @@ func TestNATSAlertsRenderTheirExpressions(t *testing.T) {
 			`max by (` + c + `, pod) (container_memory_working_set_bytes{namespace="nats", container="nats"}) /` +
 				` max by (` + c + `, pod) (kube_pod_container_resource_limits{namespace="nats", container="nats", resource="memory"}) > 0.9`, "10m", "warning"},
 		"NATSMetricsAbsent": {
-			`absent(up{job="nats/nats"})`, "30m", "warning"},
+			absentGuard(`up{job="nats/nats"}`, ""), "30m", "warning"},
 	}
 
 	got := map[string]bool{}

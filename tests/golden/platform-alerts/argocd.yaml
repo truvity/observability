@@ -133,15 +133,15 @@ spec:
         # scrape blocked) reads as healthy to rules that compare values.
         - alert: ArgoCDMetricsAbsent
           expr: >-
-            absent(argocd_app_info{job=~"argocd-.*-metrics"})
+            (group by (k8s_cluster_name) (max_over_time(argocd_app_info{job=~"argocd-.*-metrics"}[1d])) unless group by (k8s_cluster_name) (argocd_app_info{job=~"argocd-.*-metrics"})) or (absent(argocd_app_info{job=~"argocd-.*-metrics"}) unless on() group(max_over_time(argocd_app_info{job=~"argocd-.*-metrics"}[1d])))
           for: 15m
           labels:
             severity: warning
           annotations:
-            summary: "Argo CD has reported no applications for 15m"
+            summary: "Argo CD has reported no applications for 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
             description: >-
               argocd_app_info{job=~"argocd-.*-metrics"} has not been seen in
-              15m, so none of the Argo CD rules can fire. The
+              15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so none of the Argo CD rules can fire. The
               application controller is down or its metrics endpoint is not
               scraped: check its pod and the ServiceMonitor the chart renders
               (`controller.metrics.serviceMonitor.enabled`).
