@@ -161,7 +161,19 @@
             "summary": { "type": "string", "pattern": "^[^{}]*$", "description": "Plain text replacing the alert's summary. No template braces. Empty keeps the generated summary." },
             "description": { "type": "string", "pattern": "^[^{}]*$", "description": "Plain text replacing the alert's description. No template braces. Empty keeps the generated description." },
             "for": { "$ref": "#/definitions/duration" },
-            "severity": { "$ref": "#/definitions/severity" }
+            "severity": { "$ref": "#/definitions/severity" },
+            "certExpiry": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "alertName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+                "withinDays": { "type": "integer", "minimum": 1 },
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            }
           }
         },
         "pendingPods": {

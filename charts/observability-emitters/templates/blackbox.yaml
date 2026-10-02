@@ -1,0 +1,136 @@
+{{- if .Values.blackboxExporter.enabled }}
+{{- $full := include "observability-emitters.blackbox.fullname" . }}
+{{- $config := include "observability-emitters.blackbox.config" . }}
+{{- $bb := .Values.blackboxExporter }}
+{{- /*
+The blackbox exporter that answers the HTTP probes.
+
+The upstream image as one stateless Deployment, with its own
+ServiceAccount (no token mounted: it never talks to the API server). The
+exporter is what makes a probe a probe: it fetches the URL itself and
+reports the outcome as `probe_*` series, so a target that answers with
+JSON is never parsed as Prometheus text. The metrics agent reaches it
+through a `VMProbe` per probe (probes.yaml).
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.blackbox.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.blackbox.labels" . | nindent 4 }}
+data:
+  blackbox.yml: |
+    {{- $config | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.blackbox.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "observability-emitters.blackbox.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $bb.port }}
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.blackbox.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $bb.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "observability-emitters.blackbox.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "observability-emitters.blackbox.labels" . | nindent 8 }}
+      annotations:
+        {{- /* A module edit restarts the pod: the exporter reads its file once. */}}
+        observability-emitters/config-checksum: {{ $config | sha256sum }}
+    spec:
+      serviceAccountName: {{ $full }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml $bb.podSecurityContext | nindent 8 }}
+      {{- with $bb.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $bb.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: blackbox-exporter
+          image: {{ printf "%s:%s" $bb.image.repository $bb.image.tag | quote }}
+          {{- with $bb.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          args:
+            - --config.file=/etc/blackbox/blackbox.yml
+            - --web.listen-address=:{{ $bb.port }}
+          ports:
+            - name: http
+              containerPort: {{ $bb.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+          resources:
+            {{- toYaml $bb.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/blackbox
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $full }}
+{{- if $bb.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.blackbox.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "observability-emitters.blackbox.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+              app.kubernetes.io/instance: {{ include "observability-emitters.fullname" . }}
+      ports:
+        - port: {{ $bb.port }}
+          protocol: TCP
+{{- end }}
+{{- end }}
