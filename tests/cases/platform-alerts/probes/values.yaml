@@ -15,3 +15,5 @@ groups:
     alertName: ExampleStatusDown
     probe: example-status
     severity: critical
+    summary: The example page or its CDN is unreachable from this cluster
+    description: The probe has read up == 0; either the page or the third party in front of it is down.

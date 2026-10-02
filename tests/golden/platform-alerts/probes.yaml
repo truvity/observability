@@ -26,9 +26,5 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "HTTP probe {{ $labels.probe }} has not answered 200 for 5m"
-            description: >-
-              The probe {{ $labels.probe }} (charts/observability-emitters
-              `metrics.scrape.probes`) has read up == 0 for 5m: the URL
-              refused the connection, failed TLS or answered something other
-              than 200 from this cluster's own egress.
+            summary: "The example page or its CDN is unreachable from this cluster"
+            description: "The probe has read up == 0; either the page or the third party in front of it is down."
