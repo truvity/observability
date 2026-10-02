@@ -1,0 +1,634 @@
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-metrics-store
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: observability-stack-victoria-metrics-k8s-stack
+      app.kubernetes.io/name: vmsingle
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmauth
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmalert
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/part-of: observability-stack
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 8428
+
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-logs-store
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: victoria-logs-single
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmauth
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmalert
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/part-of: observability-stack
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 9428
+
+---
+# Source: observability-stack/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-stack-traces-store
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: vt-single
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmauth
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmalert
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: observability-stack
+              app.kubernetes.io/part-of: observability-stack
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmagent
+      ports:
+        - protocol: TCP
+          port: 10428
+
+---
+# Source: observability-stack/charts/victoria-logs-single/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels: 
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-logs-single
+    app.kubernetes.io/version: v1.52.0
+    helm.sh/chart: victoria-logs-single-0.13.9
+  name: observability-stack-victoria-logs-single-server
+  namespace: observability
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: http
+      port: 9428
+      protocol: TCP
+      targetPort: http
+  selector: 
+    app: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/name: victoria-logs-single
+
+---
+# Source: observability-stack/charts/victoria-traces-single/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels: 
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: vt-single
+    app.kubernetes.io/version: v0.11.0
+    helm.sh/chart: victoria-traces-single-0.1.11
+  name: observability-stack-vt-single-server
+  namespace: observability
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: http
+      port: 10428
+      protocol: TCP
+      targetPort: http
+  selector: 
+    app: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/name: vt-single
+
+---
+# Source: observability-stack/charts/victoria-logs-single/templates/server.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: observability-stack-victoria-logs-single-server
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-logs-single
+    app.kubernetes.io/version: v1.52.0
+    helm.sh/chart: victoria-logs-single-0.13.9
+spec:
+  podManagementPolicy: OrderedReady
+  updateStrategy: {}
+  replicas: 1
+  serviceName: observability-stack-victoria-logs-single-server
+  selector:
+    matchLabels: 
+      app: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: victoria-logs-single
+  template:
+    metadata:
+      labels: 
+        app: server
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: observability-stack
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: victoria-logs-single
+        observability.pair: observability-logs
+    spec:
+      securityContext: 
+        fsGroup: 2000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vlogs
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          image: victoriametrics/victoria-logs:v1.52.0
+          imagePullPolicy: IfNotPresent
+          args: 
+            - --envflag.enable
+            - --envflag.prefix=VM_
+            - --http.shutdownDelay=15s
+            - --httpListenAddr=:9428
+            - --loggerFormat=json
+            - --retention.maxDiskUsagePercent=80
+            - --retentionPeriod=90d
+            - --storage.minFreeDiskSpaceBytes=10GiB
+            - --storageDataPath=/storage
+          env: 
+            - name: VM_httpAuth_username
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: observability-store-credentials
+            - name: VM_httpAuth_password
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: observability-store-credentials
+          ports:
+            - name: http
+              containerPort: 9428
+          readinessProbe: 
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe: 
+            failureThreshold: 10
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          resources: 
+            limits:
+              memory: 4Gi
+            requests:
+              cpu: 250m
+              memory: 4Gi
+          volumeMounts:
+            - name: server-volume
+              mountPath: /storage
+            
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              observability.pair: observability-logs
+          maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+      terminationGracePeriodSeconds: 60
+      volumes:
+        
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: server-volume
+      spec:
+        accessModes: 
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 200Gi
+
+---
+# Source: observability-stack/charts/victoria-traces-single/templates/server.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: observability-stack-vt-single-server
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: vt-single
+    app.kubernetes.io/version: v0.11.0
+    helm.sh/chart: victoria-traces-single-0.1.11
+spec:
+  podManagementPolicy: OrderedReady
+  updateStrategy: {}
+  replicas: 1
+  serviceName: observability-stack-vt-single-server
+  selector:
+    matchLabels: 
+      app: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: vt-single
+  template:
+    metadata:
+      labels: 
+        app: server
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: observability-stack
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: vt-single
+        observability.pair: observability-traces
+    spec:
+      securityContext: 
+        fsGroup: 2000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vtraces
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          image: victoriametrics/victoria-traces:v0.11.0
+          imagePullPolicy: IfNotPresent
+          args: 
+            - --envflag.enable
+            - --envflag.prefix=VM_
+            - --http.shutdownDelay=15s
+            - --httpListenAddr=:10428
+            - --loggerFormat=json
+            - --retention.maxDiskUsagePercent=80
+            - --retentionPeriod=30d
+            - --servicegraph.enableTask=false
+            - --storage.minFreeDiskSpaceBytes=10GiB
+            - --storageDataPath=/storage
+          env: 
+            - name: VM_httpAuth_username
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: observability-store-credentials
+            - name: VM_httpAuth_password
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: observability-store-credentials
+          ports:
+            - name: http
+              containerPort: 10428
+          readinessProbe: 
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe: 
+            failureThreshold: 10
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          resources: 
+            limits:
+              memory: 2Gi
+            requests:
+              cpu: 100m
+              memory: 2Gi
+          volumeMounts:
+            - name: server-volume
+              mountPath: /storage
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              observability.pair: observability-traces
+          maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+      terminationGracePeriodSeconds: 60
+      volumes:
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: server-volume
+      spec:
+        accessModes: 
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi
+
+---
+# Source: observability-stack/charts/victoria-logs-single/templates/monitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels: 
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-logs-single
+    app.kubernetes.io/version: v1.52.0
+    helm.sh/chart: victoria-logs-single-0.13.9
+  name: observability-stack-victoria-logs-single-server
+spec:
+  namespaceSelector:
+    matchNames:
+      - observability
+  selector:
+    matchLabels: 
+      app.kubernetes.io/component: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: victoria-logs-single
+  endpoints:
+    -
+      path: /metrics
+      port: http
+      basicAuth: 
+        password:
+          key: password
+          name: observability-store-credentials
+        username:
+          key: username
+          name: observability-store-credentials
+      relabelings: 
+        - action: replace
+          replacement: b
+          targetLabel: observability_replica
+
+---
+# Source: observability-stack/charts/victoria-traces-single/templates/monitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels: 
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: vt-single
+    app.kubernetes.io/version: v0.11.0
+    helm.sh/chart: victoria-traces-single-0.1.11
+  name: observability-stack-vt-single-server
+spec:
+  namespaceSelector:
+    matchNames:
+      - observability
+  selector:
+    matchLabels: 
+      app.kubernetes.io/component: server
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/name: vt-single
+  endpoints:
+    -
+      port: http
+      basicAuth: 
+        password:
+          key: password
+          name: observability-store-credentials
+        username:
+          key: username
+          name: observability-store-credentials
+      relabelings: 
+        - action: replace
+          replacement: b
+          targetLabel: observability_replica
+
+---
+# Source: observability-stack/templates/selfscrape.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: observability-stack-metrics-selfscrape
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - observability
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmsingle
+      app.kubernetes.io/instance: observability-stack-victoria-metrics-k8s-stack
+  endpoints:
+    - targetPort: 8428
+      path: /metrics
+      interval: 30s
+      basicAuth:
+        username:
+          name: "observability-store-credentials"
+          key: "username"
+        password:
+          name: "observability-store-credentials"
+          key: "password"
+      relabelings:
+        - action: replace
+          targetLabel: observability_replica
+          replacement: "b"
+
+---
+# Source: observability-stack/templates/selfalerts-ha.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-store-alerts
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  groups:
+    - name: observability-stack.stores
+      interval: 30s
+      rules:
+        # StoreMemoryNearLimit. The working set of a store container is
+        # the number the kernel's OOM killer reads, and a store killed
+        # under its limit restarts with a cold cache; on a pair it also
+        # leaves a gap the writers' queues have to refill.
+        #
+        # Healthy range: under 0.8 of the limit. The
+        # stores fill the cache they are allowed, so a working set that
+        # stays above it is a limit that is too small.
+        - alert: StoreMemoryNearLimit
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (container_memory_working_set_bytes{namespace="observability", container!="", pod=~"^(vmsingle-observability-stack-victoria-metrics-k8s-stack-.+|observability-stack-victoria-logs-single-server-[0-9]+|observability-stack-vt-single-server-[0-9]+)$"})
+            /
+            max by (k8s_cluster_name, namespace, pod, container) (kube_pod_container_resource_limits{namespace="observability", resource="memory", pod=~"^(vmsingle-observability-stack-victoria-metrics-k8s-stack-.+|observability-stack-victoria-logs-single-server-[0-9]+|observability-stack-vt-single-server-[0-9]+)$"})
+            > 0.8
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "A store container is above 80% of its memory limit"
+            description: >-
+              {{ $labels.pod }} ({{ $labels.container }}) has been above
+              0.8 of its memory limit for 15m.
+              Raise the store's memory request and limit (they are equal), or
+              look for a query or a cardinality burst that is holding it.
+
+---
+# Source: observability-stack/charts/victoria-metrics-k8s-stack/templates/victoria-metrics-operator/vmsingle/vmsingle.yml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMSingle
+metadata:
+  name: observability-stack-victoria-metrics-k8s-stack
+  namespace: observability
+  labels: 
+    app.kubernetes.io/component: vmsingle
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: victoria-metrics-k8s-stack
+    app.kubernetes.io/version: v1.152.0
+    helm.sh/chart: victoria-metrics-k8s-stack-0.93.0
+spec: 
+  disableSelfServiceScrape: true
+  extraArgs:
+    dedup.minScrapeInterval: 30s
+    envflag.enable: "true"
+    envflag.prefix: VM_
+    storage.maxDailySeries: "0"
+    storage.maxHourlySeries: "0"
+    storage.minFreeDiskSpaceBytes: 10GiB
+  extraEnvs:
+  - name: VM_httpAuth_username
+    valueFrom:
+      secretKeyRef:
+        key: username
+        name: observability-store-credentials
+  - name: VM_httpAuth_password
+    valueFrom:
+      secretKeyRef:
+        key: password
+        name: observability-store-credentials
+  image:
+    tag: v1.152.0
+  podMetadata:
+    labels:
+      observability.pair: observability-metrics
+  port: "8428"
+  replicaCount: 1
+  resources:
+    limits:
+      memory: 8Gi
+    requests:
+      cpu: 500m
+      memory: 8Gi
+  retentionPeriod: 90d
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    runAsGroup: 65534
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  storage:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 100Gi
+  topologySpreadConstraints:
+  - labelSelector:
+      matchLabels:
+        observability.pair: observability-metrics
+    maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule

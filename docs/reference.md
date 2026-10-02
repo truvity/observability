@@ -341,9 +341,13 @@ values.yaml, listed here, and enforced rather than remembered.
 |---|---|---|---|
 | `nameOverride` | string | `""` | Replaces the chart name in the names this chart renders. |
 | `fullnameOverride` | string | `""` | Replaces them entirely. |
-| `mode` | enum | `full` | `full` or `operator-only`. `operator-only` renders nothing but the vendored VictoriaMetrics operator and its own webhook/CRD prerequisites — no stores, no proxy, no vmalert, no Grafana, no backups, no rules/dashboards sync — for a cluster that holds no store but still runs `charts/observability-emitters`, whose `VMAgent` needs an operator to reconcile it. Since 0.9.0 it turns `vmauth.enabled`, `vmalert.enabled`, `alertmanager.enabled` and `metricsSelfScrape.enabled` off ITSELF when each is left at its `null` default (an explicit `true` beside `operator-only` is still refused — see each value's own row below). `backup`/`selfAlerts`/`tenancy.{principals,writers,alertReaders}` need no change either way: they default off/empty already. What STILL needs an explicit `false`, and is still refused if left on: the three stores' own `enabled`, `grafana.enabled` and `victoria-metrics-k8s-stack.syncJob.enabled` — each is a REAL Helm subchart's own value, which this chart cannot compute from `mode` (Helm coalesces a subchart's values before any template runs). See docs/target-state.md. |
-| `ha` | bool | `false` | Zone-redundant mode. Accepted today, behaviour in a later release. **Refused with fewer than two `zones`.** |
-| `zones` | list | `[]` | Zone names, at least two when `ha` is true. Labels, not addresses. |
+| `mode` | enum | `full` | `full`, `operator-only` or `replica`. `replica` is the second half of a high-availability pair: the three stores, their NetworkPolicies and scrape objects, and nothing else (no proxy, no vmalert, no Alertmanager, no karma, no Grafana, no backup, no operator). A CONTRACT like `operator-only`: it refuses `ha` without `enabled: true`, a vmauth/vmalert/Alertmanager/karma/Grafana/`backup`/`selfAlerts` left on, `victoria-metrics-k8s-stack.victoria-metrics-operator.enabled` true, `victoria-metrics-k8s-stack.syncJob.enabled` anything but `false`, and `tenancy.{principals,writers,alertReaders}` set. See [high-availability.md](high-availability.md). `operator-only` renders nothing but the vendored VictoriaMetrics operator and its own webhook/CRD prerequisites — no stores, no proxy, no vmalert, no Grafana, no backups, no rules/dashboards sync — for a cluster that holds no store but still runs `charts/observability-emitters`, whose `VMAgent` needs an operator to reconcile it. Since 0.9.0 it turns `vmauth.enabled`, `vmalert.enabled`, `alertmanager.enabled` and `metricsSelfScrape.enabled` off ITSELF when each is left at its `null` default (an explicit `true` beside `operator-only` is still refused — see each value's own row below). `backup`/`selfAlerts`/`tenancy.{principals,writers,alertReaders}` need no change either way: they default off/empty already. What STILL needs an explicit `false`, and is still refused if left on: the three stores' own `enabled`, `grafana.enabled` and `victoria-metrics-k8s-stack.syncJob.enabled` — each is a REAL Helm subchart's own value, which this chart cannot compute from `mode` (Helm coalesces a subchart's values before any template runs). See docs/target-state.md. |
+| `ha` | null / bool / object | `null` | Zone-redundant mode, see [high-availability.md](high-availability.md). `null` or `false`: the single install, byte-identical to before this key meant anything. `true` (the boolean): the legacy switch, which only asks for two zones and turns nothing on. An object with `enabled: true`: this release is half of a pair (the keys below). **Refused with fewer than two `zones`** in both of the last two forms. |
+| `ha.enabled` | bool | `false` | The pair is on. On the primary (`mode: full`): the proxy's read routes carry both stores' addresses with `first_available`, `vmauth.replicaCount` must be at least 2 (spread over zones, with a PodDisruptionBudget), one vmalert per store replica is rendered, a PodDisruptionBudget per store pair, and the stores' zone spread and replica label are required. On a replica (`mode: replica`): only the spread and label requirements. |
+| `ha.name` | name | `observability` | The pair's shared label: every store pod carries `observability.pair: <name>-<store>` (`<name>-metrics`, `<name>-logs`, `<name>-traces`), and the zone spread and the pair's PodDisruptionBudget select on it. Written into each store's own values too (a subchart's values are not computable from here), and refused when it is missing or differs. Same value in both releases. |
+| `ha.replica` | `""`/`a`/`b` | `""` | This release's `observability_replica` label on the stores' own scrape. Empty means `a` on the primary and `b` on a replica. Must differ between the two releases. |
+| `ha.peer.metrics` / `.logs` / `.traces` | URL | `""` | The OTHER release's stores (`http://<service>.<namespace>.svc:<port>`). Required on the primary for every enabled store, refused on a replica, refused when set for a store that is off. The credentials are this release's `storeCredentials`: a pair shares one Secret. |
+| `zones` | list | `[]` | Zone names, at least two when `ha` is true or `ha.enabled` is true. Labels, not addresses. |
 | `interval` | duration | `30s` | The one interval: both vmalerts' evaluation interval, and — through its mirror — the metrics store's `-dedup.minScrapeInterval`. Mirror: `victoria-metrics-k8s-stack.vmsingle.spec.extraArgs['dedup.minScrapeInterval']`. |
 | `resources.policy` | `burstable`/`guaranteed` | `burstable` | 0.11.0; `burstable` is the default. How every component's `resources` are judged (vmauth, both vmalerts, Alertmanager, the operator, the three stores, Grafana, the backup jobs). `burstable`: both requests required; `requests.cpu` may be fractional and below the limit; `limits.cpu` may be absent, and a set one is still whole; memory stays request == limit with a limit required. `guaranteed`: requests equal limits, whole-number CPU; the component defaults carry no CPU limit, so choosing it means writing each component's own `resources`. It changes what is accepted, not what is rendered. See docs/safety.md, "Resources", and "The single-operator estate" below. |
 
@@ -354,11 +358,11 @@ values.yaml, listed here, and enforced rather than remembered.
 | `vmauth.enabled` | bool | `null` (0.9.0) | Renders the `VMAuth` and its `VMUser` objects. Null resolves through `mode`: `true` under `full`, `false` under `operator-only` — set explicitly to pin it either way. |
 | `vmauth.image.repository` | string | `victoriametrics/vmauth` | |
 | `vmauth.image.tag` | string | `v1.152.0` | **Refused below v1.152.0.** `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0, where claim matching was introduced, through v1.151.x matched claim values unanchored (GHSA-f99m-22fh-qw96). The operator's own default tag is older than both, so it is set here. |
-| `vmauth.replicaCount` | int | `1` | |
+| `vmauth.replicaCount` | int | `1` | **At least 2 when `ha.enabled`** (refused otherwise): the proxy is what both stores are read through, and one pod takes every read with its zone. Under `ha.enabled` the pods carry a soft zone spread (`ScheduleAnyway`, so a zone loss leaves a pod schedulable) and a PodDisruptionBudget (`maxUnavailable: 1`). |
 | `vmauth.resources` | object | 100m CPU request, no CPU limit / 512Mi | CPU request from measured p95 x 1.5 with headroom; memory request == limit. |
 | `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | A rejected token that logs nothing is an access problem nobody can diagnose. Note the trade: with this flag vmauth also returns the offending token in the 401 body. |
 | `vmauth.deniedPaths` | list | `["/internal/.*", "/-/reload"]` | Paths no user may be routed to. Checked against every route the chart renders; a match fails the render. |
-| `vmauth.loadBalancingPolicy` | enum | `first_available` | A read balanced onto a replica still replaying its buffer returns a gap, and a gap reads as an outage. |
+| `vmauth.loadBalancingPolicy` | enum | `first_available` | A read balanced onto a replica still replaying its buffer returns a gap, and a gap reads as an outage. **Refused as anything else under `ha.enabled`**: reads go to this release's stores and fall over to the peer only on failure. |
 | `vmauth.retryStatusCodes` | list | `[500, 502, 503]` | What a backend returns while it is coming back. |
 
 ### `tenancy`
@@ -471,6 +475,16 @@ Who needs the credential:
 Both carry `remoteWrite` **and** `remoteRead` against the metrics store;
 neither is configurable, because each has exactly one correct value and the
 wrong one is silent. See docs/safety.md.
+
+Under `ha.enabled` (the primary of a pair) each gets a `-peer` twin, four in
+all: the twin reads the PEER's store as its datasource and keeps its
+`remoteWrite`/`remoteRead` state in the PEER's metrics store, so each store
+holds the recording rules and alert state of the alerter that reads it. The
+twin has the same rule selector, `evaluationInterval`, `externalLabels` and
+notifiers as its original and **no replica label is added**: Alertmanager
+groups by labels, so one alert from two evaluators pages once. The pair
+shares a pod label and a soft zone spread. Not configurable. See
+[high-availability.md](high-availability.md).
 
 **Which rules each one loads is decided by a label, and a LogsQL rule that
 does not carry it is never evaluated.**
@@ -984,6 +998,21 @@ store.
 | `selfAlerts.writer.droppedPacketsMetric` | string | `""` | **WriterDroppingPackets**, same `writer` block. **NOT DEFAULTED.** |
 | `selfAlerts.proxyConcurrency.limitedRequestsMetric` / `.window` / `.for` / `.severity` | string / duration / duration / severity | `""` / `5m` / `5m` / `warning` | **ProxyAtConcurrencyLimit**: vmauth refusing requests over its own concurrency cap. **NOT DEFAULTED** even though a live measurement found `vmauth_concurrent_requests_limit_reached_total` present on the store — the one counter with actual evidence behind it, still held to the same "no default" rule as the rest. |
 
+#### `selfAlerts.storeMemory`, `selfAlerts.divergence` (HA)
+
+Two more rules in their own `VMRule` (`templates/selfalerts-ha.yaml`), each on
+its own switch and **not** gated by `selfAlerts.enabled`. Both default off.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `selfAlerts.storeMemory.enabled` | bool | `false` | **StoreMemoryNearLimit**, either mode. The working set of each store container of THIS release (`container_memory_working_set_bytes`) over its memory limit (`kube_pod_container_resource_limits`), grouped by the cluster label. Needs cAdvisor and kube-state-metrics series in the store the vmalert reads. Set it in the replica release too: each release alerts for its own pods. |
+| `selfAlerts.storeMemory.ratio` / `.for` / `.severity` | number / duration / severity | `0.8` / `15m` / `warning` | Fire above that fraction of the limit for that long. |
+| `selfAlerts.divergence.enabled` | bool | `false` | **MetricStoreReplicaDivergence**, **LogStoreReplicaDivergence**, **TraceStoreReplicaDivergence**, per enabled store: `abs(1 - rate(a) / rate(b)) > threshold` over `window`, on the stores' rows-ingested counters selected by `observability_replica`. Refused unless `ha.enabled` on a `mode: full` release. **Measure a week first** (see `threshold`). |
+| `selfAlerts.divergence.window` / `.for` / `.severity` | duration / duration / severity | `1h` / `30m` / `warning` | |
+| `selfAlerts.divergence.threshold` | number (0, 1] | `0.25` | A tolerance, never an equality: the counters are scraped at different instants and a writer replaying a queue skews one side for minutes. A conservative starting value, not a measured one: watch the ratio for a week of a healthy pair, then set it just above the worst healthy value. |
+| `selfAlerts.divergence.metrics.metric` / `.matchers` | string | `vm_rows_inserted_total` / `type="promremotewrite"` | The metrics store's insert counter and extra label matchers. |
+| `selfAlerts.divergence.logs.metric` / `.traces.metric` | string | `vl_rows_ingested_total` / `vt_rows_ingested_total` | The log and trace stores' counters. |
+
 ### The upstream charts
 
 Their own values, pinned in `Chart.yaml` and vendored under the chart's
@@ -1002,7 +1031,10 @@ through.
 | `…vmsingle.spec.extraArgs['dedup.minScrapeInterval']` | `30s` | MIRROR of `interval`. |
 | `…vmsingle.spec.extraArgs['storage.minFreeDiskSpaceBytes']` | `10GiB` | The metrics store's only disk guard — it has no `-retention.max*` flags. Upstream's default is 100MB, which is reached with the disk already full. |
 | `…vmsingle.spec.extraArgs['storage.maxHourlySeries' / 'maxDailySeries']` | `0` | Cardinality caps, off. A guessed cap silently drops every NEW series while the old ones keep ingesting, which looks exactly like an exporter that stopped. Set them from a measured active-series count. |
-| `…vmsingle.spec.resources` | 500m CPU request, no CPU limit / 8Gi | Measured p95 about 70m, max about 185m; the request leaves room for merges and heavy queries. Unset is not neutral: the operator's own default is `1200m`. The other stores: `victoria-logs-single.server.resources` 250m, `victoria-traces-single.server.resources` 100m, the operator 50m, all with no CPU limit. |
+| `…vmsingle.spec.resources` | 500m CPU request, no CPU limit / 8Gi | Measured p95 about 70m, max about 185m; the request leaves room for merges and heavy queries. Unset is not neutral: the operator's own default is `1200m`. The other stores: `victoria-logs-single.server.resources` 250m, `victoria-traces-single.server.resources` 100m, the operator 50m, all with no CPU limit. These ARE the explicit store requests and limits, and a replica release takes the same defaults: the two halves of a pair should carry equal ones (size one replica for the pair's peak, not for half of it), and a per-cluster right-sizing belongs in the values file of the estate that owns the cluster. |
+| `…vmsingle.spec.podMetadata.labels['observability.pair']`, `victoria-logs-single.server.podLabels['observability.pair']`, `victoria-traces-single.server.podLabels['observability.pair']` | unset | **Required under `ha.enabled`, either role**: `<ha.name>-metrics`, `-logs`, `-traces`. MIRROR of `ha.name`; refused when missing or different. Both releases' store pods carry the same value. |
+| `…vmsingle.spec.topologySpreadConstraints`, `victoria-logs-single.server.topologySpreadConstraints`, `victoria-traces-single.server.topologySpreadConstraints` | `[]` | **Required under `ha.enabled`, either role**: an entry with `topologyKey: topology.kubernetes.io/zone`, `whenUnsatisfiable: DoNotSchedule` and `labelSelector.matchLabels: {observability.pair: <ha.name>-<store>}`. Required, not advisory: a zonal volume pins a replica to its zone, so a spread that only prefers can leave the pair in one zone. A zone loss keeps that replica down until the zone returns. |
+| `victoria-logs-single.server.serviceMonitor.relabelings`, `victoria-traces-single.server.serviceMonitor.relabelings` | `[]` | **Required under `ha.enabled`, either role, while the ServiceMonitor is on**: an entry `{action: replace, targetLabel: observability_replica, replacement: <this release's replica>}`. The metrics store's own scrape (`templates/selfscrape.yaml`) gets the label from this chart. |
 | `…vmsingle.spec.extraEnvs` | the credential pair | MIRROR of `storeCredentials`. |
 | `…vmsingle.spec.securityContext.seLinuxOptions.level` | unset | MIRROR of `backup.seLinuxLevel`, only required while it is set. See `backup.seLinuxLevel`, above. |
 | `victoria-logs-single.server.retentionPeriod` | `90d` | With a unit; the store's own default is `7d`. |

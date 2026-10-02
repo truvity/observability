@@ -1,0 +1,128 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The PRIMARY half of a high-availability pair: today's install, plus the
+# other release's stores. The peer is a second release of this chart with
+# `mode: replica` (the `replica` case); `ha` as an OBJECT is what turns the
+# pair on, the boolean `ha: true` of the `everything` case is the legacy
+# switch and renders what it always did.
+ha:
+  enabled: true
+  peer:
+    metrics: http://vmsingle-replica-victoria-metrics-k8s-stack.observability.svc:8428
+    logs: http://replica-victoria-logs-single-server.observability.svc:9428
+    traces: http://replica-vt-single-server.observability.svc:10428
+zones:
+  - example-1a
+  - example-1b
+
+vmauth:
+  # Two or more behind `first_available`: the proxy is what both stores are
+  # read through.
+  replicaCount: 2
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  allowUnfilteredAlertReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+      vmalertAPI: true
+  writers:
+    - name: metrics-agent
+      tokenSecret:
+        name: example-writer-token
+        key: token
+      destinations: [metrics, logs, traces]
+  alertReaders:
+    - name: status
+      tokenSecret:
+        name: example-alerts-token
+        key: token
+
+vmalert:
+  externalUrl: https://alerts.example.com
+
+alertmanager:
+  replicaCount: 2
+  watchdog:
+    secretName: example-watchdog-receiver
+    key: url
+
+notifications:
+  externalUrl: https://alerts.example.com
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+selfAlerts:
+  # The two store alerts of an HA pair. The divergence threshold is a
+  # starting value: measure a week of a healthy pair before trusting it.
+  storeMemory:
+    enabled: true
+  divergence:
+    enabled: true
+
+# The stores' half of the pair (docs/high-availability.md): the shared pod
+# label, the REQUIRED zone spread over it and, on the two vendored scrape
+# objects, this release's replica label. These are subchart values, which
+# Helm evaluates before any template, so the chart checks them instead of
+# writing them.
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      podMetadata:
+        labels:
+          observability.pair: observability-metrics
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              observability.pair: observability-metrics
+
+victoria-logs-single:
+  server:
+    podLabels:
+      observability.pair: observability-logs
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            observability.pair: observability-logs
+    serviceMonitor:
+      relabelings:
+        - action: replace
+          targetLabel: observability_replica
+          replacement: a
+
+victoria-traces-single:
+  server:
+    podLabels:
+      observability.pair: observability-traces
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            observability.pair: observability-traces
+    serviceMonitor:
+      relabelings:
+        - action: replace
+          targetLabel: observability_replica
+          replacement: a

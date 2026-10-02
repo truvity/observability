@@ -1,0 +1,3 @@
+# expect: `ha.enabled` is not true
+# A replica exists only beside a primary.
+mode: replica

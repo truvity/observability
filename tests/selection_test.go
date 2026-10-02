@@ -20,6 +20,7 @@ package tests
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -150,18 +151,36 @@ func TestNoRuleReachesTwoAlerters(t *testing.T) {
 					"alongside a selector; the two together are what nobody can reason about", g, name)
 			}
 
+			// A twin must select exactly what its original does: identical
+			// rules on both replicas of a pair, or the pair is two opinions.
+			for name, a := range alerters {
+				if twin, ok := alerters[strings.TrimSuffix(name, "-peer")]; ok && name != twin.Metadata.Name {
+					assert.Equalf(t, twin.Spec.RuleSelector, a.Spec.RuleSelector,
+						"%s: %s selects different rules from %s", g, name, twin.Metadata.Name)
+				}
+			}
+
 			// Only a pair can overlap, and the overlap is the defect.
 			if len(alerters) < 2 {
 				return
 			}
 
 			for _, shape := range ruleShapes {
-				var takers []string
+				// An HA pair renders a "-peer" twin of each alerter, reading the
+				// other replica's store with the same rules on purpose. The twin
+				// counts as its original: the defect here is two DIFFERENT
+				// query languages selecting one rule.
+				takerSet := map[string]bool{}
 
 				for name, a := range alerters {
 					if a.Spec.RuleSelector != nil && a.Spec.RuleSelector.selects(shape.labels) {
-						takers = append(takers, name)
+						takerSet[strings.TrimSuffix(name, "-peer")] = true
 					}
+				}
+
+				var takers []string
+				for name := range takerSet {
+					takers = append(takers, name)
 				}
 
 				assert.LessOrEqualf(t, len(takers), 1, "%s: %s is selected by %v. vmalert EXITS on a "+

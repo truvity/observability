@@ -29,7 +29,22 @@
 nameOverride: ""
 fullnameOverride: ""
 
-# -- "full" (the default) or "operator-only".
+# -- "full" (the default), "operator-only" or "replica".
+#
+# "replica" is the second half of a high-availability pair
+# (docs/high-availability.md): the three stores and nothing else. It
+# renders the metrics store's VMSingle (the vendored k8s-stack with its
+# operator off renders exactly that, and the operator of the PRIMARY release
+# reconciles it), the log store, the trace store, their NetworkPolicies and
+# their self-scrape objects. No vmauth, no vmalert, no Alertmanager, no
+# karma, no Grafana, no backups: the primary release owns all of those and
+# reads and evaluates this release's stores through the peer addresses it
+# is given (`ha.peer`). Like operator-only it is a CONTRACT: it refuses
+# `ha` without `enabled: true`, every component it does not run still switched on,
+# `backup.enabled: true` (two releases backing up to one prefix delete each
+# other's objects), the operator, the vendored sync Job and the
+# `tenancy.*` lists, and says which. "full" with `ha: {enabled: true, peer:
+# ...}` is the primary half.
 #
 # "operator-only" runs NOTHING but the vendored VictoriaMetrics operator
 # and its own CRD prerequisites (never this chart's CRDs — those are
@@ -72,16 +87,69 @@ mode: full
 #
 # No store here replicates across a zone in a way that survives one, so
 # high availability means two independent installs with the writers
-# holding the redundancy (docs/doctrine.md). This flag is the switch for
-# that shape; it is accepted today and the behaviour lands in a later
-# release. It refuses to render with fewer than two zones, because a
-# "highly available" install with one zone is the single-zone install with
-# a label that stops anyone looking.
-ha: false
+# holding the redundancy (docs/doctrine.md). The two installs are two
+# releases of this chart: the PRIMARY (`mode: full`, `ha.enabled: true`,
+# `ha.peer` naming the other one's stores) and a REPLICA (`mode: replica`,
+# `ha.enabled: true`) that runs the three stores and nothing else. See
+# docs/high-availability.md.
+#
+# One key, three spellings:
+#
+#   ha: null | false   the single install (null is the default): renders exactly what
+#                      it always did.
+#   ha: true           the BOOLEAN is the switch this chart shipped before
+#                      the behaviour existed, and it keeps meaning what it
+#                      meant: accepted, refused with fewer than two zones,
+#                      and nothing else. It does NOT turn the pair on.
+#   ha: {enabled: true, ...}
+#                      the pair. The object takes:
+#
+#     enabled          true.
+#     name             the label that ties the two releases' store pods
+#                      together (default `observability`): every store pod
+#                      of the pair carries `observability.pair:
+#                      <name>-<store>` (`<name>-metrics`, `-logs`,
+#                      `-traces`); the zone spread and the pair's
+#                      PodDisruptionBudget select on it. The pod label and the
+#                      spread are written in each store's own values
+#                      (`victoria-metrics-k8s-stack.vmsingle.spec.
+#                      podMetadata.labels` and `.topologySpreadConstraints`,
+#                      `victoria-logs-single.server.podLabels` and
+#                      `.topologySpreadConstraints`, the same two under
+#                      `victoria-traces-single.server`), because Helm
+#                      evaluates a subchart's values before any template; the
+#                      render refuses when they are missing or disagree with
+#                      this name. docs/high-availability.md has the block to
+#                      paste. One name per pair; both releases carry it.
+#     replica          this release's label on the stores' own scrape,
+#                      `observability_replica`: `a` or `b`. Empty means `a`
+#                      for `mode: full` and `b` for `mode: replica`. The
+#                      divergence alert tells the two stores apart by it,
+#                      so the two releases of a pair must differ.
+#     peer             the OTHER release's stores, as base URLs the proxy
+#                      and the peer vmalerts can reach
+#                      (`http://<service>.<namespace>.svc:<port>`):
+#                      `{metrics, logs, traces}`. Required on the primary
+#                      for every store that is enabled, refused on a
+#                      replica. Their credentials are this release's own
+#                      `storeCredentials`: the two releases of a pair share
+#                      one Secret.
+#
+# What the object turns on, on the primary: the proxy's read routes carry
+# both stores' addresses with `first_available` (this release's stores
+# first); the proxy runs at least two replicas spread over zones with a
+# PodDisruptionBudget; one vmalert per store replica evaluates identical
+# rules against its own store; a PodDisruptionBudget per store pair; and the
+# pair is refused unless the stores' own values carry the required zone
+# spread. Both forms refuse fewer than two zones, because a "highly
+# available" install with one zone is the single-zone install with a label
+# that stops anyone looking.
+ha: null
 
 # -- The zones this install spans. Names only — they are labels, not
 # addresses, and they are matched against whatever the estate's nodes
-# carry. Required, with at least two entries, when `ha` is true.
+# carry. Required, with at least two entries, when `ha` is true or an
+# object with `enabled: true`.
 zones: []
 
 # -- The one interval.
@@ -183,6 +251,11 @@ vmauth:
     # The operator's own default image tag is older than both, so this is
     # set explicitly rather than left to it.
     tag: v1.152.0
+  # -- One proxy pod, unless `ha.enabled`: then at least two, which the render
+  # enforces, spread over zones softly and covered by a
+  # PodDisruptionBudget (`maxUnavailable: 1`). The proxy is stateless; a
+  # single pod would take every read and every cross-cluster write with its
+  # zone and defeat the pair behind it.
   replicaCount: 1
   # -- CPU request from measurement, no CPU limit, memory request == limit.
   # See `resources.policy` and `resources` on each store below.
@@ -1868,6 +1941,69 @@ selfAlerts:
     window: 15m
     for: 1m
     severity: warning
+
+  # StoreMemoryNearLimit. Works in BOTH modes, and renders without
+  # `selfAlerts.enabled` (its own switch, like `slackDelivery`): a store
+  # that is OOM-killed under its memory limit comes back with a cold cache
+  # and, on a pair, a gap its writers must refill, and the first anyone
+  # hears of it is the restart. The working set of each store container of
+  # THIS release against its own memory limit, from cAdvisor's
+  # `container_memory_working_set_bytes` and kube-state-metrics'
+  # `kube_pod_container_resource_limits`: both standard names, so unlike
+  # the rest of this block there is no metric to confirm. A store whose pod
+  # carries no limit has no series on the right-hand side and never fires,
+  # which is the right answer (the chart refuses a store with no memory
+  # limit anyway, see `resources.policy`). Set it in the replica release
+  # too: each release alerts for its own pods. Opt in: the rule needs
+  # cAdvisor and kube-state-metrics series in the store the vmalert reads.
+  #
+  # Healthy range: well under `ratio`. VictoriaMetrics and its siblings
+  # fill the page cache they are allowed, so a working set that creeps
+  # toward the limit and stays is a store that needs a bigger limit, not a
+  # leak.
+  storeMemory:
+    enabled: false
+    # -- Fire above this fraction of the container's memory limit.
+    ratio: 0.8
+    for: 15m
+    severity: warning
+
+  # StoreReplicaDivergence (`ha.enabled` on the primary only). The two stores of a
+  # pair take the same writes, so over a window their ingest rates are the
+  # same, give or take the writers' queues draining after a restart. This
+  # compares the rows-ingested RATE of replica `a` against replica `b`
+  # (`observability_replica`, the label the stores' self-scrape carries in
+  # a pair) and fires when the ratio leaves 1 +/- `threshold`. It is a
+  # tolerance, never an equality: the two counters are scraped at different
+  # instants and a writer that replays a queue skews one side for minutes.
+  #
+  # MEASURE A WEEK FIRST. `threshold` is a conservative guess (a quarter),
+  # not a measured one: run with `enabled: false` or watch
+  # `abs(1 - rate(a) / rate(b))` in Grafana for a week of a healthy pair,
+  # then set the threshold just above its worst healthy value. A tight
+  # threshold pages on every restart; a loose one misses a writer that has
+  # lost one destination, which is the failure this rule exists for.
+  #
+  # The metric names are the stores' own counters (the log and trace names
+  # were seen on a live store, the metrics one is VictoriaMetrics'
+  # documented insert counter); the metrics rule reads
+  # `type="promremotewrite"` rows, the path the collectors write on. A
+  # store that is down has no series and fires nothing here: a store down
+  # is `up == 0`'s job, not this rule's.
+  divergence:
+    enabled: false
+    window: 1h
+    threshold: 0.25
+    for: 30m
+    severity: warning
+    metrics:
+      metric: vm_rows_inserted_total
+      # -- Extra label matchers on the metrics counter, inside the braces.
+      matchers: 'type="promremotewrite"'
+    logs:
+      metric: vl_rows_ingested_total
+    traces:
+      metric: vt_rows_ingested_total
 
 # -- The metrics store's own scrape object, this chart's — the vendored
 # `victoria-metrics-k8s-stack` has no equivalent to

@@ -284,13 +284,35 @@
       "type": "string",
       "enum": [
         "full",
-        "operator-only"
+        "operator-only",
+        "replica"
       ],
-      "description": "\"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs — see charts/observability-crds) — no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, the three stores, and tenancy.principals/writers/alertReaders left empty) — the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
+      "description": "\"replica\": the second half of a high-availability pair — the three stores and nothing else; a CONTRACT like operator-only (docs/high-availability.md). \"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs — see charts/observability-crds) — no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, the three stores, and tenancy.principals/writers/alertReaders left empty) — the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
     },
     "ha": {
-      "type": "boolean",
-      "description": "Zone-redundant mode. Refused with fewer than two zones."
+      "description": "Zone-redundant mode (docs/high-availability.md). Unset (null) or `false`: the single install. `true`: the legacy boolean, accepted and refused with fewer than two zones, nothing else. An object with `enabled: true`: this release is one half of a pair.",
+      "oneOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "name": { "$ref": "#/definitions/name" },
+            "replica": { "type": "string", "enum": ["", "a", "b"] },
+            "peer": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metrics": { "type": "string", "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$" },
+                "logs": { "type": "string", "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$" },
+                "traces": { "type": "string", "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$" }
+              }
+            }
+          }
+        }
+      ]
     },
     "zones": {
       "type": "array",
@@ -1549,6 +1571,45 @@
             "window": { "$ref": "#/definitions/duration" },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "storeMemory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "ratio": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "divergence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "window": { "$ref": "#/definitions/duration" },
+            "threshold": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" },
+            "metrics": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metric": { "type": "string", "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*$" },
+                "matchers": { "type": "string" }
+              }
+            },
+            "logs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "metric": { "type": "string", "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*$" } }
+            },
+            "traces": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "metric": { "type": "string", "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*$" } }
+            }
           }
         }
       }
