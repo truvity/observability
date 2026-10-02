@@ -162,6 +162,8 @@
             "description": { "type": "string", "pattern": "^[^{}]*$", "description": "Plain text replacing the alert's description. No template braces. Empty keeps the generated description." },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" },
+            "absentFor": { "$ref": "#/definitions/duration" },
+            "absentSeverity": { "type": "string", "enum": ["", "critical", "warning", "info"], "description": "Severity of the deadman. Empty takes `severity`." },
             "certExpiry": {
               "type": "object",
               "additionalProperties": false,

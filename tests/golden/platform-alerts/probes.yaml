@@ -30,6 +30,31 @@ spec:
           annotations:
             summary: "The example page or its CDN is unreachable from this cluster"
             description: "The probe has read up == 0; either the page or the third party in front of it is down."
+        # The deadman for the rule above.
+        #
+        # `probe_success == 0` evaluates to nothing, not to a value, when
+        # the series does not exist: a probe whose series never reached the
+        # store (the exporter down, the VMProbe not selected, the series
+        # filed under labels the store's readers do not see) makes
+        # ExampleStatusDown silent while the probe is not working at all.
+        # `absent()` is true exactly then. With the default selector it
+        # fires only when NO probe reports; name a probe (`probe`) to watch
+        # one, which is what a single-probe estate wants.
+        - alert: ExampleStatusDownAbsent
+          expr: >-
+            absent(probe_success{probe=~"example-status"})
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No probe_success series for example-status for 15m"
+            description: >-
+              probe_success{probe=~"example-status"} has not been seen in
+              15m, so ExampleStatusDown cannot fire even if the
+              URL is down. Check the blackbox exporter and the VMProbe
+              (charts/observability-emitters `metrics.scrape.probes`), that the
+              agent's scrape of the probe is up, and that its series carry the
+              cluster's tenancy labels.
         # The TLS certificate a probe saw expires within `withinDays`.
         # `probe_ssl_earliest_cert_expiry` is a Unix time and exists only
         # for an https target; the earliest certificate of the chain.

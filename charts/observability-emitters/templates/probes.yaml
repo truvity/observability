@@ -4,9 +4,16 @@
 One HTTP probe: a VMProbe the metrics agent turns into a scrape of the
 blackbox exporter's `/probe?module=<module>&target=<url>`. The series are
 the exporter's own `probe_*` ones, so the target's body is never parsed.
-They are stamped with this cluster's identity by the agent's default
-scrape class (the same one every other scrape object gets), `probe` carries
-the name and `job` is `http-probe` for every probe.
+`probe` carries the name and `job` is `http-probe` for every probe.
+
+The cluster's identity is stamped HERE, as the probe's own target
+relabeling, and not left to the agent's default scrape class: the operator
+does not apply a scrape class to a VMProbe unless it names one, so the
+series of a probe that relied on the default arrived with no
+`k8s_cluster_name` at all, were stored, and were invisible to every reader
+scoped by that label. The rules are the cluster-scoped stamp (cluster and
+tier) plus the namespace of this release, which is where the exporter runs
+and what the owner rules key on.
 */}}
 ---
 apiVersion: operator.victoriametrics.com/v1beta1
@@ -31,5 +38,9 @@ spec:
         - {{ $p.url | quote }}
       labels:
         probe: {{ $p.name | quote }}
+      relabelingConfigs:
+        {{- include "observability-emitters.tenancy.clusterScopedRelabelConfigs" $ | nindent 8 }}
+        - target_label: k8s_namespace_name
+          replacement: {{ $.Release.Namespace | quote }}
 {{- end }}
 {{- end }}

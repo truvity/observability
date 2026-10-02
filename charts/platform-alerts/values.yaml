@@ -227,6 +227,14 @@ groups:
     # outage, one is a blip.
     for: 5m
     severity: warning
+    # -- The deadman, `<alertName>Absent`: fires when no `probe_success`
+    # series matching `probe` has been seen for this long. The rule above
+    # is silent when its series is missing (`== 0` has nothing to compare),
+    # which is the case where a probe is not working at all.
+    absentFor: 15m
+    # -- Severity of the deadman. Empty (default) takes `severity`, the
+    # probe rule's own.
+    absentSeverity: ""
     # -- A second, optional alert on the TLS certificate a probe saw
     # (`probe_ssl_earliest_cert_expiry`, https targets only), for the same
     # probes selected by `probe`. Off by default.
