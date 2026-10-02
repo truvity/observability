@@ -8,6 +8,7 @@ matches docs/alert-ingress.md#refusals exactly:
   - a mapping with no `alertname`/`severity` -> validate.mappings
   - `heartbeat.match` empty               -> validate.heartbeat
   - `networkPolicy.alertmanagerPeer` empty while enabled -> validate.networkPolicy
+  - `service.metricsPort` equal to `service.port` -> validate.ports
 
 `mappings` itself being EMPTY is deliberately absent from this list. The
 design page calls it out for the same reason a `stores: []` platform-alerts
@@ -27,6 +28,7 @@ values.yaml rather than blocked here.
 {{- include "alert-ingress.validate.mappings" . -}}
 {{- include "alert-ingress.validate.heartbeat" . -}}
 {{- include "alert-ingress.validate.networkPolicy" . -}}
+{{- include "alert-ingress.validate.ports" . -}}
 {{- end -}}
 
 {{/*
@@ -103,5 +105,17 @@ pod, from an estate that is simply quiet.
 {{- define "alert-ingress.validate.networkPolicy" -}}
 {{- if and .Values.networkPolicy.enabled (not .Values.networkPolicy.alertmanagerPeer) -}}
 {{- fail "alert-ingress: `networkPolicy.enabled` is true but `networkPolicy.alertmanagerPeer` is empty, so the rendered NetworkPolicy would allow egress to Alertmanager from NOWHERE. Every alert this service tries to post would fail, be logged, and never be counted — a silent delivery failure that looks, from outside the pod, exactly like a quiet estate. Set it to a peer selecting Alertmanager's own pods, or set `networkPolicy.enabled: false` if this cluster's CNI does not enforce NetworkPolicy at all." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+A metrics port that is the webhook port.
+
+Two listeners cannot bind one port, so the process would exit at start and
+the Deployment would crash-loop. Refused at render time instead.
+*/}}
+{{- define "alert-ingress.validate.ports" -}}
+{{- if and .Values.service.metricsPort (eq (.Values.service.metricsPort | int) (.Values.service.port | int)) -}}
+{{- fail "alert-ingress: `service.metricsPort` equals `service.port`. Set `metricsPort` to a different port to serve /metrics and /healthz separately, or 0 to serve them on `port` as before." -}}
 {{- end -}}
 {{- end -}}

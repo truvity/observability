@@ -3,8 +3,86 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
+	"sync"
 )
+
+// envelopeKey is the one top-level key under which a message's SNS
+// envelope is exposed to mappings: `_sns.TopicArn`, `_sns.Subject`,
+// `_sns.Message` (the raw text of the Message field, whatever it is),
+// `_sns.MessageId` and `_sns.Type`. It is set AFTER the message is
+// parsed and overwrites whatever the message itself put there, so a
+// publisher cannot forge it: the envelope fields are covered by the
+// signature, the body keys are only the publisher's say-so. The leading
+// underscore keeps it clear of every key a provider's own event schema
+// uses, so existing mappings are unaffected.
+const envelopeKey = "_sns"
+
+// buildInput is what mappings, the heartbeat and templates are matched
+// and rendered against: the parsed Message body (empty for plain text)
+// plus the envelope under envelopeKey.
+func buildInput(env Envelope) map[string]any {
+	body := parseBody(env.Message)
+	if body == nil {
+		body = map[string]any{}
+	}
+
+	body[envelopeKey] = map[string]any{
+		"TopicArn":  env.TopicArn,
+		"Subject":   env.Subject,
+		"Message":   env.Message,
+		"MessageId": env.MessageID,
+		"Type":      env.Type,
+	}
+
+	return body
+}
+
+// regexCache holds compiled matchRegex patterns. The patterns come from
+// the operator's own configuration, so the set is fixed and small.
+var regexCache sync.Map
+
+func compileCached(pattern string) (*regexp.Regexp, error) {
+	if re, ok := regexCache.Load(pattern); ok {
+		return re.(*regexp.Regexp), nil
+	}
+
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	regexCache.Store(pattern, re)
+
+	return re, nil
+}
+
+// matchesRegex reports whether every pattern in rule finds a match
+// (unanchored, RE2) in the value at its path. A path that is absent never
+// matches. Go's regexp is linear-time, so a pattern cannot be made to
+// backtrack catastrophically against a hostile message.
+func matchesRegex(rule map[string]string, body map[string]any) bool {
+	for path, pattern := range rule {
+		got, ok := lookup(body, path)
+		if !ok {
+			return false
+		}
+
+		re, err := compileCached(pattern)
+		if err != nil || !re.MatchString(fmt.Sprintf("%v", got)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// matchesMapping is the whole of a mapping's condition: every `match`
+// equality and every `matchRegex` pattern must hold.
+func matchesMapping(m Mapping, body map[string]any) bool {
+	return matches(m.Match, body) && matchesRegex(m.MatchRegex, body)
+}
 
 // parseBody decodes the notification's real content. The provider's
 // envelope carries the event as a JSON STRING in `Message`; this is that

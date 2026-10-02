@@ -44,12 +44,20 @@ resources:
     cpu: 200m
     memory: 128Mi
 
-# -- The one port: the webhook, `/healthz` and `/metrics` together. One
-# container, one thing to reach it on — a second port would be a second
-# thing the NetworkPolicy and the estate's edge route both have to agree
-# about.
+# -- Ports. `port` serves the SNS webhook, and (with `metricsPort` 0, the
+# default) `/healthz` and `/metrics` as well: one container, one port, the
+# original layout, so an existing install renders exactly as before.
+#
+# Set `metricsPort` to a second port and `/healthz` and `/metrics` are served
+# ONLY there. The webhook port then answers nothing but the webhook, the
+# Service exposes only `port`, and a gateway route to this Service can never
+# reach `/metrics`. The probes and the PodMonitor follow the metrics port.
+#
+# Either way, publish only `POST /` of the webhook port at the edge, and
+# rate-limit it there (see docs/alert-ingress.md, "Security properties").
 service:
   port: 8080
+  metricsPort: 0
 
 # -- Render a PodMonitor for the port above. Refused false only as an
 # explicit, loud choice: the counters this service exports are its own
@@ -88,13 +96,36 @@ topics: []
 #       match: {"detail-type": "GuardDuty Finding"}
 #       alert:
 #         alertname: CloudSecurityFinding
-#         severity: '{{ if ge .detail.severity 7.0 }}critical{{ else }}warning{{ end }}'
+#         severity: '{{ if atLeast .detail.severity 7 }}critical{{ else }}warning{{ end }}'
 #         labels:
 #           source: guardduty
 #           k8s_cluster_name: cloud   # the routing key, not a real cluster
+#           # Distinct findings must stay distinct alerts: Alertmanager
+#           # de-duplicates on the full label set, so put what tells two
+#           # findings apart in labels.
+#           account: '{{ .account }}'
+#           region: '{{ .region }}'
+#           finding_type: '{{ .detail.type }}'
+#           finding_id: '{{ .detail.id }}'
 #         annotations:
 #           summary: '{{ .detail.title }}'
 #           runbook: cloud-security-finding
+#     - name: budget
+#       match: {"_sns.TopicArn": "arn:aws:sns:eu-west-1:111122223333:example-budgets"}
+#       matchRegex: {"_sns.Message": "Budget Name: "}
+#       alert:
+#         alertname: BudgetThresholdCrossed
+#         severity: warning
+#         labels:
+#           source: budgets
+#           k8s_cluster_name: cloud
+#         annotations:
+#           summary: '{{ ._sns.Subject }}'
+#
+# Template helpers beyond the Go builtins: `atLeast VALUE THRESHOLD` (numeric
+# >=, accepts a JSON number or a numeric string; an absent field is false,
+# a non-numeric one fails the render and the message becomes
+# CloudEventUnmapped) and `num VALUE`.
 mappings: []
 
 # -- The estate's own scheduled proof-of-life message, published through
@@ -108,6 +139,25 @@ mappings: []
 heartbeat:
   match: {}
   interval: 15m
+
+# -- The rules rendered beside the Deployment, one VMRule. Each group can be
+# switched off; with both off no VMRule is rendered.
+rules:
+  heartbeat:
+    # -- AlertIngressHeartbeatMissing: the path's own deadman, see `heartbeat`.
+    enabled: true
+  rejectedMessages:
+    # -- AlertIngressMessagesRejected (warning): messages refused with a 403
+    # (bad signature, unknown topic, malformed body, ...) at a sustained rate.
+    # Anyone who can reach a public route can cause some, so the threshold is a
+    # rate, not "any"; raise it if the edge sees internet noise.
+    enabled: true
+    # -- Rejections per second, summed per `reason`, above which it fires.
+    ratePerSecond: 0.05
+    # -- Rate window.
+    window: 5m
+    # -- How long the rate must stay above the threshold.
+    for: 15m
 
 # -- How long after `startsAt` an alert's `endsAt` is set. Cloud events do
 # not resolve themselves — nothing tells this service a GuardDuty finding

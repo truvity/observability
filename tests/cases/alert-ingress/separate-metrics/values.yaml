@@ -1,0 +1,26 @@
+# /metrics and /healthz on their own port: the Service exposes only the
+# webhook port, the probes and the PodMonitor use the metrics port, and the
+# rejected-message rule is off while the heartbeat rule stays.
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+topics:
+  - "arn:aws:sns:eu-west-1:111122223333:example"
+
+service:
+  port: 8080
+  metricsPort: 9091
+
+rules:
+  rejectedMessages:
+    enabled: false
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

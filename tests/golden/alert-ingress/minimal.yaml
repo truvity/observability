@@ -240,3 +240,28 @@ spec:
               Deployment is not running at all — from outside, every one
               of those looks like an estate that is simply quiet, which is
               the entire reason this rule exists.
+    - name: alert-ingress.rejected
+      interval: 1m
+      rules:
+        # Every refusal is counted with its reason (signature, unknown_topic,
+        # malformed, confirmation, unsupported_type). A burst of one or two is
+        # a scanner finding the public route; a SUSTAINED rate is either an
+        # attacker working at it, or the estate's own topic misconfigured
+        # (a new topic nobody allow-listed, a changed signing region) so that
+        # real alerts are being turned away.
+        - alert: AlertIngressMessagesRejected
+          expr: >-
+            sum by (reason) (rate(alert_ingress_rejected_total[5m])) > 0.05
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "alert-ingress is rejecting messages ({{ $labels.reason }})"
+            description: >-
+              Messages refused with a 403 for reason
+              `{{ $labels.reason }}` at {{ $value | humanize }}/s,
+              above 0.05/s for 15m. `signature`
+              and `malformed` mean something that is not the cloud provider is
+              posting to the public route; `unknown_topic` usually means a
+              topic that was never added to `topics`, so its real alerts are
+              being dropped.

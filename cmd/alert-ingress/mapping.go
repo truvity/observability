@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"text/template"
 )
 
@@ -14,13 +17,75 @@ import (
 // enough that it never is the incident.
 const unmappedBodyLimit = 4000
 
+// templateFuncs are the helpers every template field may call, beyond
+// text/template's own builtins. They exist because the builtin `ge` is
+// strict about types: `ge .detail.severity 7` is an error (a JSON number
+// is a float64, the literal 7 an int), `ge .detail.severity 7.0` works
+// only until a publisher sends the number as a string, and a missing
+// field is an error rather than "no". `atLeast` is the numeric threshold
+// the severity field needs without any of those traps.
+var templateFuncs = template.FuncMap{
+	"num":     toNumber,
+	"atLeast": atLeast,
+}
+
+// toNumber converts a JSON number, an integer, or a numeric string to a
+// float64. Anything else is an error, which sends the message down the
+// CloudEventUnmapped path rather than silently picking a severity.
+func toNumber(v any) (float64, error) {
+	switch n := v.(type) {
+	case float64:
+		return n, nil
+	case float32:
+		return float64(n), nil
+	case int:
+		return float64(n), nil
+	case int64:
+		return float64(n), nil
+	case json.Number:
+		return n.Float64()
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil {
+			return 0, fmt.Errorf("%q is not a number", n)
+		}
+
+		return f, nil
+	default:
+		return 0, fmt.Errorf("%v (%T) is not a number", v, v)
+	}
+}
+
+// atLeast reports whether value is a number greater than or equal to
+// threshold: `{{ if atLeast .detail.severity 7 }}critical{{ else }}warning{{ end }}`.
+// A field that is absent from the message is "no" (false), so a finding
+// that carries no score takes the else branch instead of failing the
+// whole template; a field that is present but not numeric is an error.
+func atLeast(value, threshold any) (bool, error) {
+	if value == nil {
+		return false, nil
+	}
+
+	v, err := toNumber(value)
+	if err != nil {
+		return false, fmt.Errorf("atLeast value: %w", err)
+	}
+
+	t, err := toNumber(threshold)
+	if err != nil {
+		return false, fmt.Errorf("atLeast threshold: %w", err)
+	}
+
+	return v >= t, nil
+}
+
 // renderString runs one template field of an `alert:` block against
 // body. Every field is a template, even one with no `{{` in it: treating
 // them uniformly is simpler than asking a chart consumer to remember
 // which fields this service treats specially, and a plain string is its
 // own template that renders to itself.
 func renderString(tmpl string, body map[string]any) (string, error) {
-	t, err := template.New("alert").Parse(tmpl)
+	t, err := template.New("alert").Funcs(templateFuncs).Parse(tmpl)
 	if err != nil {
 		return "", fmt.Errorf("parsing template %q: %w", tmpl, err)
 	}

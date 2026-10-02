@@ -1,6 +1,6 @@
 # Every value set away from its default, so a change to any one of them
 # shows up in the golden diff. The three mapping rules are copied from
-# docs/alert-ingress.md's own example verbatim.
+# docs/alert-ingress.md's own example.
 nameOverride: cloud-events
 replicaCount: 3
 
@@ -34,10 +34,14 @@ mappings:
     match: {"detail-type": "GuardDuty Finding"}
     alert:
       alertname: CloudSecurityFinding
-      severity: '{{ if ge .detail.severity 7.0 }}critical{{ else }}warning{{ end }}'
+      severity: '{{ if atLeast .detail.severity 7 }}critical{{ else }}warning{{ end }}'
       labels:
         source: guardduty
         k8s_cluster_name: cloud
+        account: '{{ .account }}'
+        region: '{{ .region }}'
+        finding_type: '{{ .detail.type }}'
+        finding_id: '{{ .detail.id }}'
       annotations:
         summary: '{{ .detail.title }}'
         runbook: cloud-security-finding
@@ -50,17 +54,29 @@ mappings:
         source: cloudtrail
         k8s_cluster_name: cloud
   - name: budget
-    match: {"Message.budgetName": "*"}
+    match: {"_sns.TopicArn": "arn:aws:sns:eu-west-1:111122223333:example-budgets"}
+    matchRegex: {"_sns.Message": "Budget Name: "}
     alert:
       alertname: BudgetThresholdCrossed
       severity: warning
       labels:
         source: budgets
         k8s_cluster_name: cloud
+      annotations:
+        summary: '{{ ._sns.Subject }}'
 
 heartbeat:
   match: {"source": "alert-ingress-heartbeat"}
   interval: 10m
+
+rules:
+  heartbeat:
+    enabled: true
+  rejectedMessages:
+    enabled: true
+    ratePerSecond: 0.1
+    window: 10m
+    for: 30m
 
 resolveAfter: 2h
 

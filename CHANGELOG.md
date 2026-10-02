@@ -4,6 +4,47 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.36.1
+
+`alert-ingress`: a safe certificate cache, an alert on rejected messages,
+mappings that see the SNS envelope, and an optional separate metrics port.
+
+- **Behaviour change: the default render gains a second VMRule group,
+  `alert-ingress.rejected`, with the warning `AlertIngressMessagesRejected`.**
+  The receiver now counts every refused message in
+  `alert_ingress_rejected_total{reason}` (`malformed`, `signature`,
+  `unknown_topic`, `confirmation`, `unsupported_type`; a closed set) and the
+  rule fires when the rate per reason stays above `rules.rejectedMessages.ratePerSecond`
+  (default 0.05) for `rules.rejectedMessages.for` (default 15m) over
+  `rules.rejectedMessages.window` (default 5m). Set
+  `rules.rejectedMessages.enabled: false` to keep the old render; raise the
+  rate if your edge sees internet noise. `rules.heartbeat.enabled` (default
+  true) now switches the existing deadman group; with both off no VMRule is
+  rendered. `alert_ingress_messages_total{outcome="rejected"}` is unchanged.
+- Fix: the signing-certificate cache was an unlocked map hit by concurrent
+  requests, which can crash the process with "concurrent map writes". It is
+  now mutex-guarded, bounded (32 entries), expires after 6 hours, and only
+  ever holds certificates fetched from the pinned signing host.
+- Mappings can match the SNS envelope. `_sns.TopicArn`, `_sns.Subject`,
+  `_sns.Message` (the raw text, for plain-text publishers such as budget
+  notifications), `_sns.MessageId` and `_sns.Type` are readable in `match`
+  and in every `alert` template; they come from the signed envelope and a
+  message body cannot overwrite them. New `matchRegex` (RE2, searched in the
+  text at a path) sits beside `match`; both must hold. Existing mappings
+  are unchanged.
+- Distinct findings stay distinct alerts: labels are templates over the
+  message, so set `account`, `region`, `finding_type` and `finding_id` from
+  the finding (see the GuardDuty example in `docs/alert-ingress.md`).
+  Template helper `atLeast VALUE THRESHOLD` is a numeric `>=` that accepts
+  int, float or numeric-string values, so
+  `{{ if atLeast .detail.severity 7 }}critical{{ else }}warning{{ end }}`
+  no longer needs the `7.0` literal; an absent value is false, a
+  non-numeric one falls back to `CloudEventUnmapped`.
+- New `service.metricsPort` (default `0`, unchanged: one port). Set it and
+  `/healthz` and `/metrics` are served only on that port, which the Service
+  does not expose; probes and the PodMonitor follow it. Route only
+  `POST /` of the webhook port at the edge.
+
 ## v0.36.0
 
 `observability-stack`: HA mode. A pair of stores across zones, as two
