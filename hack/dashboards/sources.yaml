@@ -618,6 +618,10 @@ dashboards:
       setExpr:
         - {title: 'Not Ready ExternalSecrets  [15m]', expr: 'sum(externalsecret_status_condition{condition="Ready",status="False"}) by (exported_namespace, name) == 1'}
         - {title: 'ExternalSecret sync call errors [15m]', expr: 'sum(increase(externalsecret_sync_calls_error[15m])) by (name, exported_namespace)', legend: '{{exported_namespace}}/{{name}}'}
+    tweaks:
+      dropPanels:
+        - {title: "Webhook latency [5m]", reason: "controller_runtime_webhook_latency_seconds_bucket is not exported by any External Secrets Operator version in use, so the panel can never have data"}
+        - {title: "webhook latency", reason: "controller_runtime_webhook_latency_seconds_bucket is not exported by any External Secrets Operator version in use, so the panel can never have data"}
 
   # Authored: no upstream project ships a Kargo dashboard
   # (hack/dashboards/kargo.py).
