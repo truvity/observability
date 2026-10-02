@@ -746,6 +746,9 @@ spec:
         - source_labels: [namespace]
           regex: (.+)
           target_label: k8s_namespace_name
+        - action: drop
+          source_labels: [__name__]
+          regex: ^(kubernetes_feature_enabled)$
     - job_name: cadvisor
       scheme: https
       honor_labels: false

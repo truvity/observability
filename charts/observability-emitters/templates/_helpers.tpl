@@ -531,6 +531,22 @@ by a relabel step (relabel_configs run after `job` is set from the name, so
   replacement: kubelet
 {{- end -}}
 
+{{/*
+The kubelet scrape's own default drop: exact metric names nothing here reads
+(see `metrics.scrape.kubeletDrop` in values.yaml). One `drop` rule, or none
+when disabled or when both lists are empty. Kubelet job only: the cadvisor
+job has its own (`cadvisorDrop`).
+*/}}
+{{- define "observability-emitters.scrapeConfig.kubeletDropMetricRelabelConfigs" -}}
+{{- $kd := .Values.metrics.scrape.kubeletDrop -}}
+{{- if $kd.enabled -}}
+{{- $names := concat ($kd.metricNames | default list) ($kd.extraMetricNames | default list) -}}
+{{- if $names -}}
+{{- printf "- action: drop\n  source_labels: [__name__]\n  regex: ^(%s)$" (join "|" $names) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "observability-emitters.scrapeConfig.kubelet" -}}
 - job_name: kubelet
   scheme: https
@@ -547,6 +563,9 @@ by a relabel step (relabel_configs run after `job` is set from the name, so
 {{ include "observability-emitters.nodeMetricsPathRelabelConfig" . | indent 4 }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
+{{- with (include "observability-emitters.scrapeConfig.kubeletDropMetricRelabelConfigs" .) }}
+{{ . | indent 4 }}
+{{- end }}
 {{- end -}}
 
 {{- define "observability-emitters.scrapeConfig.cadvisor" -}}

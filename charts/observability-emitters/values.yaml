@@ -363,6 +363,28 @@ metrics:
         - go_sched_latencies_seconds_bucket
       # -- Added to `keepBucketMetrics` above rather than replacing it.
       extraKeepBucketMetrics: []
+    # -- A default DROP for the KUBELET scrape's own series that no
+    # dashboard or rule here reads and that cost the most. Today one:
+    # `kubernetes_feature_enabled`, the kubelet's feature-gate gauge, one
+    # series per gate per node per stage. Measured on a real install it was
+    # the single largest metric the kubelet job stored (tens of thousands of
+    # series on a store of pod-churning nodes, since a series is minted per
+    # gate and per node), and nothing reads it: it only says whether a gate
+    # is on. Kubelet job only, never cadvisor (see `cadvisorDrop`). Off
+    # (`enabled: false`) stores every kubelet series exactly as the kubelet
+    # emits it.
+    #
+    # `metricNames` is REPLACED wholesale by a consumer who sets that key;
+    # widen it without losing the default through `extraMetricNames`, which
+    # is concatenated onto it.
+    kubeletDrop:
+      enabled: true
+      # -- Exact metric names, matched against `__name__` and dropped
+      # outright.
+      metricNames:
+        - kubernetes_feature_enabled
+      # -- Added to `metricNames` above rather than replacing it.
+      extraMetricNames: []
   # -- Anything else in the VMAgent spec, merged over what this chart
   # renders.
   #

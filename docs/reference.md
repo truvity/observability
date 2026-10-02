@@ -1115,6 +1115,9 @@ use or not.
 | `metrics.scrape.cadvisorDrop.extraMetricNames[]` | list | `[]` (0.9.1) | Added to `metricNames` rather than replacing it. |
 | `metrics.scrape.cadvisorDrop.keepBucketMetrics[]` | list | `[go_sched_latencies_seconds_bucket]` (0.9.1) | Every cadvisor `_bucket` histogram series is dropped as well, **except** the names here. Replaced wholesale by a consumer who sets this key; widen it with `extraKeepBucketMetrics` instead. |
 | `metrics.scrape.cadvisorDrop.extraKeepBucketMetrics[]` | list | `[]` (0.9.1) | Added to `keepBucketMetrics` rather than replacing it. |
+| `metrics.scrape.kubeletDrop.enabled` | bool | `true` (0.34.0) | A default DROP on the **kubelet job only** — never cadvisor's. Off stores every kubelet series exactly as the kubelet emits it. |
+| `metrics.scrape.kubeletDrop.metricNames[]` | list | `[kubernetes_feature_enabled]` (0.34.0) | Exact `__name__` matches, dropped outright: the kubelet's feature-gate gauge, one series per gate per node per stage, which nothing here reads. **Replaced wholesale** by a consumer who sets this key; widen it with `extraMetricNames` instead. |
+| `metrics.scrape.kubeletDrop.extraMetricNames[]` | list | `[]` (0.34.0) | Added to `metricNames` rather than replacing it. |
 | `metrics.spec` | object | `{}` | Merged over the rendered `VMAgent` spec. Guarded — see below. |
 
 **`cadvisorDrop` (0.9.1), the measurement behind it.** Measured against a

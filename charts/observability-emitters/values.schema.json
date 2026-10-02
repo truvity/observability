@@ -309,6 +309,31 @@
                 "type": "string"
               }
             },
+            "kubeletDrop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "description": "A default DROP, on the kubelet scrape only, for series nothing here reads — see this chart's own values.yaml comment on `metrics.scrape.kubeletDrop`.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "metricNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraMetricNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
             "cadvisorDrop": {
               "type": "object",
               "additionalProperties": false,
