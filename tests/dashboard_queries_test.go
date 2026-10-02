@@ -493,6 +493,61 @@ func TestOpenbaoFamiliesCountOnlyForADashboardThatRequiresThem(t *testing.T) {
 	assert.Contains(t, requiredSources(t)["openbao"], "openbao-server-metrics")
 }
 
+// External Secrets Operator's own series are an optional source
+// (`external-secrets-metrics`): scraped only where the chart's
+// `serviceMonitor.enabled` is on. They count for the dashboard that declares
+// it and for no other; the controller-runtime and workqueue families the same
+// pods report are the stack's own and count everywhere.
+func TestExternalSecretsFamiliesCountOnlyForADashboardThatRequiresThem(t *testing.T) {
+	src := loadAvailableMetrics(t)
+	for _, m := range []string{
+		"externalsecret_status_condition", "externalsecret_sync_calls_error", "externalsecret_provider_api_calls_count",
+	} {
+		assert.Falsef(t, metricAvailable(src, m), "%s must be absent for a dashboard that does not require external-secrets-metrics", m)
+		assert.Truef(t, metricAvailableWith(src, m, "external-secrets-metrics"),
+			"%s is scraped with the operator's serviceMonitor and must be on the list for a dashboard that requires it", m)
+	}
+	assert.False(t, metricAvailableWith(src, "externalsecret_status_condition", "openbao-server-metrics"))
+	assert.Contains(t, requiredSources(t)["external-secrets"], "external-secrets-metrics")
+}
+
+// A platform component's dashboard offers only the clusters that run the
+// component: its `cluster` variable is label_values over one of the
+// component's own series, never over `up` or a metric every cluster has. A
+// dashboard that listed every cluster would open empty on most of them. (Which
+// clusters run which component is the consumer's; nothing here names one.)
+func TestComponentDashboardsOfferOnlyTheClustersThatRunTheComponent(t *testing.T) {
+	want := map[string]string{
+		"argocd":                  "label_values(argocd_app_info, k8s_cluster_name)",
+		"kargo":                   `label_values(up{job="kargo-controller-metrics"}, k8s_cluster_name)`,
+		"victoriametrics-single":  `label_values(vm_app_version{version=~"victoria-metrics-.*"}, k8s_cluster_name)`,
+		"victoriametrics-vmalert": `label_values(vm_app_version{version=~"^vmalert.*"}, k8s_cluster_name)`,
+		"victorialogs-single":     `label_values(vm_app_version{version=~"victoria-logs-.*"}, k8s_cluster_name)`,
+		"victoriatraces-single":   `label_values(vm_app_version{version=~"victoria-traces-.*"}, k8s_cluster_name)`,
+	}
+	for name, q := range want {
+		raw, err := os.ReadFile(filepath.Join(dashboardsDir, name+".json"))
+		require.NoError(t, err)
+		var d struct {
+			Templating struct {
+				List []struct {
+					Name       string `json:"name"`
+					Definition string `json:"definition"`
+				} `json:"list"`
+			} `json:"templating"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &d), name)
+		found := false
+		for _, v := range d.Templating.List {
+			if v.Name == "cluster" {
+				found = true
+				assert.Equal(t, q, v.Definition, "%s: the cluster variable must list only the clusters with the component's own series", name)
+			}
+		}
+		assert.True(t, found, "%s has no cluster variable", name)
+	}
+}
+
 // The scrape keeps cnpg_pg_settings_setting for eight settings only, so a
 // panel selecting any other (or none, which reads "every setting") is
 // reading rows the store never holds.

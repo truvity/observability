@@ -1305,7 +1305,7 @@ that choose which ship.
 ### `dashboards.<name>.enabled`
 
 Every shipped dashboard has a key; the schema refuses an unknown name. Most
-default to `true`. Three read an OPTIONAL metric source, one a default
+default to `true`. Several read an OPTIONAL metric source, one a default
 install does not run, and are off:
 
 | Key | Default | Source it reads | What turns the source on |
@@ -1314,6 +1314,8 @@ install does not run, and are off:
 | `dashboards.node-exporter-full` | `true` | node-exporter | the same; empty panels until then |
 | `dashboards.cnpg-cluster` | `false` | `cnpg-instance-metrics`: the CloudNativePG instance exporter (`:9187` on each Postgres pod) | a scrape of the Postgres pods, which the Postgres cluster chart's `PodMonitor` (`monitoring.enablePodMonitor`) creates |
 | `dashboards.keycloak` | `false` | `keycloak-metrics`: Keycloak's own `/metrics` (management port of `{install}-service`) | the Keycloak chart's `serviceMonitor` (and `metrics.httpHistograms` for the latency panels) |
+| `dashboards.openbao` | `false` | `openbao-server-metrics`: the OpenBAO server's own `vault_*` series | the server's telemetry on and `charts/openbao-ops`' `serverMetrics` PodMonitor |
+| `dashboards.external-secrets` | `false` | `external-secrets-metrics`: External Secrets Operator's own series (the controller, webhook and cert controller) | the operator chart's `serviceMonitor.enabled: true`; the dashboard is the project's own (`docs/snippets/dashboard.json`, Apache-2.0), pinned to the chart's release tag and rewritten to the contract |
 
 `cnpg-cluster` selects instances by the exporter's own `cluster` label (the
 Postgres cluster) and the collector's `k8s_cluster_name` (the install), never

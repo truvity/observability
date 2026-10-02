@@ -65,6 +65,13 @@ sources:
       persistentvolumeclaims, horizontalpodautoscalers. Not configmaps,
       secrets, services, endpoints, ingresses, networkpolicies or
       persistentvolumes.
+      kube-state-metrics writes no kube_*_labels series while its label
+      allow-list is empty (the default), so a dashboard counts objects through
+      kube_<kind>_created. kube_pod_container_status_waiting_reason is written
+      only while a container is waiting (kube-state-metrics skips running
+      containers), so it is absent from a healthy cluster: a panel on it reads
+      no data when nothing is stuck, and a tile that needs a zero reads it off
+      kube_pod_container_status_waiting, which every container has.
     prefixes:
       - kube_cronjob_
       - kube_job_
@@ -437,6 +444,23 @@ sources:
       - vault_token_creation
       - vault_expire_num_leases
       - vault_expire_num_irrevocable_leases
+  # -- External Secrets Operator (optional source `external-secrets-metrics`).
+  # The operator's own series, from the three ServiceMonitors its chart renders
+  # when `serviceMonitor.enabled` is true (the controller, the webhook and the
+  # cert controller; the job is the Service's name). The controller-runtime and
+  # workqueue families the same pods report are already claimed above by the
+  # stack's own components; this source adds the operator-specific ones, by
+  # exact name, as each is documented in the project's docs/api/metrics.md.
+  - name: External Secrets Operator (serviceMonitor.enabled)
+    onlyWith: external-secrets-metrics
+    note: >-
+      only where the chart's serviceMonitor is on. One series per ExternalSecret
+      for its Ready condition and its sync errors, and one per provider and
+      call for the provider API counter.
+    names:
+      - externalsecret_status_condition
+      - externalsecret_sync_calls_error
+      - externalsecret_provider_api_calls_count
 
 # Families that do NOT exist yet and must not be queried by a shipped
 # dashboard. Not read by the code; here so a reviewer sees the boundary.

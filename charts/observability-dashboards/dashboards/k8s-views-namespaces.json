@@ -340,7 +340,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(kube_deployment_labels{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
+          "expr": "count(kube_deployment_created{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
           "interval": "",
           "legendFormat": "Deployments",
           "refId": "D"
@@ -350,7 +350,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(kube_statefulset_labels{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
+          "expr": "count(kube_statefulset_created{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
           "interval": "",
           "legendFormat": "Statefulsets",
           "refId": "E"
@@ -360,7 +360,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(kube_daemonset_labels{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
+          "expr": "count(kube_daemonset_created{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
           "interval": "",
           "legendFormat": "Daemonsets",
           "refId": "F"

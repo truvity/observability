@@ -2516,7 +2516,7 @@
                 "type": "prometheus",
                 "uid": "$datasource"
               },
-              "expr": "sum(go_memstats_sys_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"}) + sum(vm_cache_size_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"})",
+              "expr": "sum(go_memstats_sys_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"})",
               "format": "time_series",
               "hide": false,
               "intervalFactor": 1,
@@ -2528,7 +2528,7 @@
                 "type": "prometheus",
                 "uid": "$datasource"
               },
-              "expr": "sum(go_memstats_heap_inuse_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"}) + sum(vm_cache_size_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"})",
+              "expr": "sum(go_memstats_heap_inuse_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"})",
               "format": "time_series",
               "hide": false,
               "intervalFactor": 1,

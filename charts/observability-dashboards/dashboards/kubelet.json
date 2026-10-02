@@ -68,7 +68,7 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 4,
+        "w": 5,
         "x": 0,
         "y": 0
       },
@@ -103,8 +103,8 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 4,
-        "x": 4,
+        "w": 5,
+        "x": 5,
         "y": 0
       },
       "id": 2,
@@ -138,8 +138,8 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 4,
-        "x": 8,
+        "w": 5,
+        "x": 10,
         "y": 0
       },
       "id": 3,
@@ -173,8 +173,8 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 4,
-        "x": 12,
+        "w": 5,
+        "x": 15,
         "y": 0
       },
       "id": 4,
@@ -209,7 +209,7 @@
       "gridPos": {
         "h": 7,
         "w": 4,
-        "x": 16,
+        "x": 20,
         "y": 0
       },
       "id": 5,
@@ -229,41 +229,6 @@
         }
       ],
       "title": "Desired Volume Count",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "datasource",
-        "uid": "-- Mixed --"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 20,
-        "y": 0
-      },
-      "id": 6,
-      "interval": "1m",
-      "options": {
-        "colorMode": "none"
-      },
-      "pluginVersion": "v13.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum(rate(kubelet_node_config_error{k8s_cluster_name=\"$cluster\", job=\"kubelet\", metrics_path=\"/metrics\", instance=~\"$instance\"}[$__rate_interval]))",
-          "instant": true
-        }
-      ],
-      "title": "Config Error Count",
       "type": "stat"
     },
     {

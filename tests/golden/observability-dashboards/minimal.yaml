@@ -6374,7 +6374,7 @@ data:
         "nowDelay": ""
       },
       "timezone": "",
-      "title": "CloudNativePG ($cluster)",
+      "title": "CloudNativePG / Operator ($cluster)",
       "uid": "truvity-obs-cnpg-operator",
       "weekStart": "",
       "links": [
@@ -7514,7 +7514,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(irate(envoy_http_downstream_cx_rx_bytes_total{k8s_cluster_name=~\"$cluster\",envoy_http_conn_manager_prefix=~\"http-.*\"}[$__rate_interval]))",
+              "expr": "sum(irate(envoy_http_downstream_cx_rx_bytes_total{k8s_cluster_name=~\"$cluster\",envoy_http_conn_manager_prefix=~\"https?-.*\"}[$__rate_interval]))",
               "format": "time_series",
               "intervalFactor": 1,
               "legendFormat": "{{service}} - in",
@@ -7527,7 +7527,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(irate(envoy_http_downstream_cx_tx_bytes_total{k8s_cluster_name=~\"$cluster\",envoy_http_conn_manager_prefix=~\"http-.*\"}[$__rate_interval]))",
+              "expr": "sum(irate(envoy_http_downstream_cx_tx_bytes_total{k8s_cluster_name=~\"$cluster\",envoy_http_conn_manager_prefix=~\"https?-.*\"}[$__rate_interval]))",
               "format": "time_series",
               "intervalFactor": 1,
               "legendFormat": "{{service}} - out",
@@ -14852,7 +14852,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=\"critical\"}) or vector(0)",
+              "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=\"critical\"}) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -14862,7 +14862,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -14925,7 +14925,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=\"warning\"}) or vector(0)",
+              "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=\"warning\"}) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -14935,7 +14935,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -14998,7 +14998,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity!~\"critical|warning\"}) or vector(0)",
+              "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity!~\"critical|warning\"}) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15008,7 +15008,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15340,7 +15340,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=~\"critical|warning\"}) or vector(0)",
+              "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=~\"critical|warning\"}) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15350,7 +15350,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15413,7 +15413,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "count((kube_pod_status_ready{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",condition=\"false\"} == 1) and on (k8s_cluster_name, namespace, pod) (kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",phase=~\"Pending|Running\"} == 1)) or vector(0)",
+              "expr": "count((kube_pod_status_ready{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",condition=\"false\"} == 1) and on (k8s_cluster_name, namespace, pod) (kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",phase=~\"Pending|Running\"} == 1)) or (0 * count(kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15423,7 +15423,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15468,7 +15468,7 @@ data:
           "id": 10,
           "type": "stat",
           "title": "CrashLoopBackOff",
-          "description": "Containers currently waiting in CrashLoopBackOff: the process starts and dies. Read the pod's logs and its last terminated reason in the pod view.",
+          "description": "Containers currently waiting in CrashLoopBackOff: the process starts and dies. Read the pod's logs and its last terminated reason in the pod view. kube-state-metrics writes the reason series only while a container waits, so zero is read off the always-present waiting gauge; No data means kube-state-metrics is not scraped.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -15486,7 +15486,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",reason=\"CrashLoopBackOff\"}) or vector(0)",
+              "expr": "sum(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",reason=\"CrashLoopBackOff\"}) or (0 * count(kube_pod_container_status_waiting{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15496,7 +15496,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15541,7 +15541,7 @@ data:
           "id": 11,
           "type": "stat",
           "title": "ImagePullBackOff",
-          "description": "Containers that cannot pull their image (ImagePullBackOff or ErrImagePull). Check the image name and tag, the registry, and the pull secret.",
+          "description": "Containers that cannot pull their image (ImagePullBackOff or ErrImagePull). Check the image name and tag, the registry, and the pull secret. Zero is read off the always-present waiting gauge, as for CrashLoopBackOff; No data means kube-state-metrics is not scraped.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -15559,7 +15559,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",reason=~\"ImagePullBackOff|ErrImagePull\"}) or vector(0)",
+              "expr": "sum(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",reason=~\"ImagePullBackOff|ErrImagePull\"}) or (0 * count(kube_pod_container_status_waiting{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15569,7 +15569,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15632,7 +15632,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(increase(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[1h])) or vector(0)",
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[1h]))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15642,7 +15642,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15709,7 +15709,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=~\"false|unknown\"}) or vector(0)",
+              "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=~\"false|unknown\"})",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15719,7 +15719,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15782,7 +15782,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=~\"MemoryPressure|DiskPressure|PIDPressure\",status=\"true\"}) or vector(0)",
+              "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=~\"MemoryPressure|DiskPressure|PIDPressure\",status=\"true\"})",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15792,7 +15792,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15855,7 +15855,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "count((kubelet_volume_stats_used_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"} / kubelet_volume_stats_capacity_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}) > 0.85) or vector(0)",
+              "expr": "count((kubelet_volume_stats_used_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"} / kubelet_volume_stats_capacity_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}) > 0.85) or (0 * count(kubelet_volume_stats_capacity_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15865,7 +15865,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -15928,7 +15928,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "(sum(increase(vm_rows_ignored_total{k8s_cluster_name=~\"$cluster\"}[1h])) or vector(0)) + (sum(increase(vl_rows_dropped_total{k8s_cluster_name=~\"$cluster\"}[1h])) or vector(0)) + (sum(increase(vt_rows_dropped_total{k8s_cluster_name=~\"$cluster\"}[1h])) or vector(0))",
+              "expr": "sum(increase(vm_rows_ignored_total{k8s_cluster_name=~\"$cluster\"}[1h]) or increase(vl_rows_dropped_total{k8s_cluster_name=~\"$cluster\"}[1h]) or increase(vt_rows_dropped_total{k8s_cluster_name=~\"$cluster\"}[1h])) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -15938,7 +15938,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -16147,7 +16147,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",phase=\"Running\"}) or vector(0)",
+              "expr": "sum(kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",phase=\"Running\"})",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -16157,7 +16157,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "0",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -17659,7 +17659,7 @@ data:
           "id": 40,
           "type": "stat",
           "title": "Newest Postgres backup age",
-          "description": "Age of the newest successful backup across the scraped Postgres clusters, from the backup plugin's own timestamp. Past a day and a half means a scheduled backup was missed: read the Backup resources. n/a where no backup is reported.",
+          "description": "Age of the newest successful backup across the scraped Postgres clusters, from the backup plugin's own timestamp. Past a day and a half means a scheduled backup was missed: read the Backup resources. No data where no backup is reported.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -17687,7 +17687,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "s",
-              "noValue": "n/a",
+              "noValue": "No data",
               "decimals": 0,
               "mappings": [],
               "thresholds": {
@@ -18166,7 +18166,7 @@ data:
                 "uid": "${datasource}"
               },
               "exemplar": true,
-              "expr": "sum(kube_namespace_labels{k8s_cluster_name=\"$cluster\"})",
+              "expr": "count(kube_namespace_created{k8s_cluster_name=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Namespaces",
               "refId": "A"
@@ -18196,7 +18196,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_deployment_labels{k8s_cluster_name=\"$cluster\"})",
+              "expr": "count(kube_deployment_created{k8s_cluster_name=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Deployments",
               "refId": "F"
@@ -18206,7 +18206,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_statefulset_labels{k8s_cluster_name=\"$cluster\"})",
+              "expr": "count(kube_statefulset_created{k8s_cluster_name=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Statefulsets",
               "refId": "G"
@@ -18216,7 +18216,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_daemonset_labels{k8s_cluster_name=\"$cluster\"})",
+              "expr": "count(kube_daemonset_created{k8s_cluster_name=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Daemonsets",
               "refId": "H"
@@ -20387,7 +20387,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_deployment_labels{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
+              "expr": "count(kube_deployment_created{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Deployments",
               "refId": "D"
@@ -20397,7 +20397,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_statefulset_labels{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
+              "expr": "count(kube_statefulset_created{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Statefulsets",
               "refId": "E"
@@ -20407,7 +20407,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_daemonset_labels{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
+              "expr": "count(kube_daemonset_created{namespace=~\"$namespace\", k8s_cluster_name=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Daemonsets",
               "refId": "F"
@@ -27803,7 +27803,7 @@ data:
           },
           "gridPos": {
             "h": 7,
-            "w": 4,
+            "w": 5,
             "x": 0,
             "y": 0
           },
@@ -27838,8 +27838,8 @@ data:
           },
           "gridPos": {
             "h": 7,
-            "w": 4,
-            "x": 4,
+            "w": 5,
+            "x": 5,
             "y": 0
           },
           "id": 2,
@@ -27873,8 +27873,8 @@ data:
           },
           "gridPos": {
             "h": 7,
-            "w": 4,
-            "x": 8,
+            "w": 5,
+            "x": 10,
             "y": 0
           },
           "id": 3,
@@ -27908,8 +27908,8 @@ data:
           },
           "gridPos": {
             "h": 7,
-            "w": 4,
-            "x": 12,
+            "w": 5,
+            "x": 15,
             "y": 0
           },
           "id": 4,
@@ -27944,7 +27944,7 @@ data:
           "gridPos": {
             "h": 7,
             "w": 4,
-            "x": 16,
+            "x": 20,
             "y": 0
           },
           "id": 5,
@@ -27964,41 +27964,6 @@ data:
             }
           ],
           "title": "Desired Volume Count",
-          "type": "stat"
-        },
-        {
-          "datasource": {
-            "type": "datasource",
-            "uid": "-- Mixed --"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "none"
-            }
-          },
-          "gridPos": {
-            "h": 7,
-            "w": 4,
-            "x": 20,
-            "y": 0
-          },
-          "id": 6,
-          "interval": "1m",
-          "options": {
-            "colorMode": "none"
-          },
-          "pluginVersion": "v13.0.0",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "expr": "sum(rate(kubelet_node_config_error{k8s_cluster_name=\"$cluster\", job=\"kubelet\", metrics_path=\"/metrics\", instance=~\"$instance\"}[$__rate_interval]))",
-              "instant": true
-            }
-          ],
-          "title": "Config Error Count",
           "type": "stat"
         },
         {
@@ -34020,7 +33985,7 @@ data:
               },
               "gridPos": {
                 "h": 12,
-                "w": 12,
+                "w": 24,
                 "x": 0,
                 "y": 433
               },
@@ -34064,124 +34029,6 @@ data:
                 }
               ],
               "title": "Network Traffic",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Network interface utilization as a percentage of its maximum capacity",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "out (-) / in (+)",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 40,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "percentunit"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byRegexp",
-                      "options": "/.*out.*/"
-                    },
-                    "properties": [
-                      {
-                        "id": "custom.transform",
-                        "value": "negative-Y"
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 12,
-                "w": 12,
-                "x": 12,
-                "y": 433
-              },
-              "id": 338,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "(node_network_speed_bytes{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} > bool 0) * (rate(node_network_receive_bytes_total{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}[$__rate_interval]) / node_network_speed_bytes{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"})",
-                  "format": "time_series",
-                  "legendFormat": "{{device}} - Rx in",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "(node_network_speed_bytes{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} > bool 0) * (rate(node_network_transmit_bytes_total{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}[$__rate_interval]) / node_network_speed_bytes{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"})",
-                  "format": "time_series",
-                  "legendFormat": "{{device}} - Tx out",
-                  "range": true,
-                  "refId": "B",
-                  "step": 240
-                }
-              ],
-              "title": "Network Saturation",
               "type": "timeseries"
             },
             {
@@ -37771,7 +37618,7 @@ data:
               },
               "gridPos": {
                 "h": 10,
-                "w": 12,
+                "w": 24,
                 "x": 0,
                 "y": 735
               },
@@ -37824,189 +37671,6 @@ data:
                 }
               ],
               "title": "Processes Status",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Current number of processes in each state (e.g., running, sleeping, zombie). Requires --collector.processes to be enabled in node_exporter",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "normal"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "short"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "D"
-                    },
-                    "properties": [
-                      {
-                        "id": "displayName",
-                        "value": "Uninterruptible Sleeping"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "I"
-                    },
-                    "properties": [
-                      {
-                        "id": "displayName",
-                        "value": "Idle Kernel Thread"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "R"
-                    },
-                    "properties": [
-                      {
-                        "id": "displayName",
-                        "value": "Running"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "S"
-                    },
-                    "properties": [
-                      {
-                        "id": "displayName",
-                        "value": "Interruptible Sleeping"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "T"
-                    },
-                    "properties": [
-                      {
-                        "id": "displayName",
-                        "value": "Stopped"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "X"
-                    },
-                    "properties": [
-                      {
-                        "id": "displayName",
-                        "value": "Dead"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Z"
-                    },
-                    "properties": [
-                      {
-                        "id": "displayName",
-                        "value": "Zombie"
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 12,
-                "y": 735
-              },
-              "id": 315,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_processes_state{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ state }}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                }
-              ],
-              "title": "Processes Detailed States",
               "type": "timeseries"
             },
             {
@@ -38240,282 +37904,6 @@ data:
                 }
               ],
               "title": "CPU Saturation per Core",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Number of active PIDs on the system and the configured maximum allowed. Useful for detecting PID exhaustion risk. Requires --collector.processes in node_exporter",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "short"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "PIDs limit"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "#F2495C",
-                          "mode": "fixed"
-                        }
-                      },
-                      {
-                        "id": "custom.fillOpacity",
-                        "value": 0
-                      },
-                      {
-                        "id": "custom.lineStyle",
-                        "value": {
-                          "dash": [
-                            10,
-                            10
-                          ],
-                          "fill": "dash"
-                        }
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 0,
-                "y": 775
-              },
-              "id": 313,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_processes_pids{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Number of PIDs",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "node_processes_max_processes{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "PIDs limit",
-                  "range": true,
-                  "refId": "B",
-                  "step": 240
-                }
-              ],
-              "title": "PIDs Number and Limit",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Number of active threads on the system and the configured thread limit. Useful for monitoring thread pressure. Requires --collector.processes in node_exporter",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "short"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Threads limit"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "#F2495C",
-                          "mode": "fixed"
-                        }
-                      },
-                      {
-                        "id": "custom.fillOpacity",
-                        "value": 0
-                      },
-                      {
-                        "id": "custom.lineStyle",
-                        "value": {
-                          "dash": [
-                            10,
-                            10
-                          ],
-                          "fill": "dash"
-                        }
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 12,
-                "y": 775
-              },
-              "id": 314,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_processes_threads{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Allocated threads",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "node_processes_max_threads{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Threads limit",
-                  "range": true,
-                  "refId": "B",
-                  "step": 240
-                }
-              ],
-              "title": "Threads Number and Limit",
               "type": "timeseries"
             }
           ],
@@ -38797,190 +38185,6 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "description": "Real-time CPU frequency scaling per core, including average minimum and maximum allowed scaling frequencies",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "hertz"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Max"
-                    },
-                    "properties": [
-                      {
-                        "id": "custom.lineStyle",
-                        "value": {
-                          "dash": [
-                            10,
-                            10
-                          ],
-                          "fill": "dash"
-                        }
-                      },
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "dark-red",
-                          "mode": "fixed"
-                        }
-                      },
-                      {
-                        "id": "custom.hideFrom",
-                        "value": {
-                          "legend": true,
-                          "tooltip": false,
-                          "viz": false
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Min"
-                    },
-                    "properties": [
-                      {
-                        "id": "custom.lineStyle",
-                        "value": {
-                          "dash": [
-                            10,
-                            10
-                          ],
-                          "fill": "dash"
-                        }
-                      },
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "blue",
-                          "mode": "fixed"
-                        }
-                      },
-                      {
-                        "id": "custom.hideFrom",
-                        "value": {
-                          "legend": true,
-                          "tooltip": false,
-                          "viz": false
-                        }
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 0,
-                "y": 826
-              },
-              "id": 321,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_cpu_scaling_frequency_hertz{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "CPU {{ cpu }}",
-                  "range": true,
-                  "refId": "B",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "avg(node_cpu_scaling_frequency_max_hertz{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"})",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Max",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "avg(node_cpu_scaling_frequency_min_hertz{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"})",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Min",
-                  "range": true,
-                  "refId": "C",
-                  "step": 240
-                }
-              ],
-              "title": "CPU Frequency Scaling",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
               "description": "Rate of scheduling timeslices executed per CPU. Reflects how frequently the scheduler switches tasks on each core",
               "fieldConfig": {
                 "defaults": {
@@ -39035,8 +38239,8 @@ data:
               },
               "gridPos": {
                 "h": 10,
-                "w": 12,
-                "x": 12,
+                "w": 24,
+                "x": 0,
                 "y": 826
               },
               "id": 306,
@@ -39071,104 +38275,6 @@ data:
                 }
               ],
               "title": "CPU Schedule Timeslices",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Breaks down hardware interrupts by type and device. Useful for diagnosing IRQ load on network, disk, or CPU interfaces. Requires --collector.interrupts to be enabled in node_exporter",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "ops"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 0,
-                "y": 836
-              },
-              "id": 259,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "rate(node_interrupts_total{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}[$__rate_interval])",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ type }} - {{ info }}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                }
-              ],
-              "title": "IRQ Detail",
               "type": "timeseries"
             },
             {
@@ -39261,8 +38367,8 @@ data:
               },
               "gridPos": {
                 "h": 10,
-                "w": 12,
-                "x": 12,
+                "w": 24,
+                "x": 0,
                 "y": 836
               },
               "id": 151,
@@ -39318,1023 +38424,6 @@ data:
             "w": 24,
             "x": 0,
             "y": 26
-          },
-          "id": 304,
-          "panels": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Monitors hardware sensor temperatures and critical thresholds as exposed by Linux hwmon. Includes CPU, GPU, and motherboard sensors where available",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "celsius"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byRegexp",
-                      "options": "/.*Critical.*/"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "#E24D42",
-                          "mode": "fixed"
-                        }
-                      },
-                      {
-                        "id": "custom.fillOpacity",
-                        "value": 0
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 0,
-                "y": 737
-              },
-              "id": 158,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_hwmon_temp_celsius{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} * on(chip) group_left(chip_name) node_hwmon_chip_names{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ chip_name }} {{ sensor }}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                },
-                {
-                  "expr": "node_hwmon_temp_crit_alarm_celsius{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} * on(chip) group_left(chip_name) node_hwmon_chip_names{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "hide": true,
-                  "interval": "",
-                  "legendFormat": "{{ chip_name }} {{ sensor }} Critical Alarm",
-                  "refId": "B",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "node_hwmon_temp_crit_celsius{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} * on(chip) group_left(chip_name) node_hwmon_chip_names{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ chip_name }} {{ sensor }} Critical",
-                  "range": true,
-                  "refId": "C",
-                  "step": 240
-                },
-                {
-                  "expr": "node_hwmon_temp_crit_hyst_celsius{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} * on(chip) group_left(chip_name) node_hwmon_chip_names{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "hide": true,
-                  "interval": "",
-                  "legendFormat": "{{ chip_name }} {{ sensor }} Critical Hysteresis",
-                  "refId": "D",
-                  "step": 240
-                },
-                {
-                  "expr": "node_hwmon_temp_max_celsius{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} * on(chip) group_left(chip_name) node_hwmon_chip_names{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "hide": true,
-                  "interval": "",
-                  "legendFormat": "{{ chip_name }} {{ sensor }} Max",
-                  "refId": "E",
-                  "step": 240
-                }
-              ],
-              "title": "Hardware Temperature Monitor",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Shows how hard each cooling device (fan/throttle) is working relative to its maximum capacity",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "percent"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byRegexp",
-                      "options": "/.*Max.*/"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "#EF843C",
-                          "mode": "fixed"
-                        }
-                      },
-                      {
-                        "id": "custom.fillOpacity",
-                        "value": 0
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 12,
-                "y": 737
-              },
-              "id": 300,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "(node_cooling_device_max_state{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} > bool 0) * (100 * node_cooling_device_cur_state{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} / node_cooling_device_max_state{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"})",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{name}} - {{type}}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                }
-              ],
-              "title": "Cooling Device Utilization",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Shows the online status of power supplies (e.g., AC, battery). A value of 1-Yes indicates the power supply is active/online",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "bool_yes_no"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 0,
-                "y": 747
-              },
-              "id": 302,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_power_supply_online{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ power_supply }} online",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                }
-              ],
-              "title": "Power Supply",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Displays the current fan speeds (RPM) from hardware sensors via the hwmon interface",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "rotrpm"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 12,
-                "y": 747
-              },
-              "id": 325,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_hwmon_fan_rpm{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} * on(chip) group_left(chip_name) node_hwmon_chip_names{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ chip_name }} {{ sensor }}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "node_hwmon_fan_min_rpm{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} * on(chip) group_left(chip_name) node_hwmon_chip_names{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "hide": true,
-                  "interval": "",
-                  "legendFormat": "{{ chip_name }} {{ sensor }} rpm min",
-                  "range": true,
-                  "refId": "B",
-                  "step": 240
-                }
-              ],
-              "title": "Hardware Fan Speed",
-              "type": "timeseries"
-            }
-          ],
-          "title": "Hardware Misc",
-          "type": "row"
-        },
-        {
-          "collapsed": true,
-          "gridPos": {
-            "h": 1,
-            "w": 24,
-            "x": 0,
-            "y": 27
-          },
-          "id": 296,
-          "panels": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Current number of systemd units in each operational state, such as active, failed, inactive, or transitioning",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "normal"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "short"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Failed"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "#F2495C",
-                          "mode": "fixed"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Active"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "#73BF69",
-                          "mode": "fixed"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Activating"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "#C8F2C2",
-                          "mode": "fixed"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Deactivating"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "orange",
-                          "mode": "fixed"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Inactive"
-                    },
-                    "properties": [
-                      {
-                        "id": "color",
-                        "value": {
-                          "fixedColor": "dark-blue",
-                          "mode": "fixed"
-                        }
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 0,
-                "y": 4228
-              },
-              "id": 298,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_systemd_units{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\",state=\"activating\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Activating",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "node_systemd_units{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\",state=\"active\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Active",
-                  "range": true,
-                  "refId": "B",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "node_systemd_units{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\",state=\"deactivating\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Deactivating",
-                  "range": true,
-                  "refId": "C",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "node_systemd_units{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\",state=\"failed\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Failed",
-                  "range": true,
-                  "refId": "D",
-                  "step": 240
-                },
-                {
-                  "editorMode": "code",
-                  "expr": "node_systemd_units{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\",state=\"inactive\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "Inactive",
-                  "range": true,
-                  "refId": "E",
-                  "step": 240
-                }
-              ],
-              "title": "Systemd Units State",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Current number of active connections per systemd socket, as reported by the Node Exporter systemd collector",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "short"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 12,
-                "y": 4228
-              },
-              "id": 331,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_systemd_socket_current_connections{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ name }}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                }
-              ],
-              "title": "Systemd Sockets Current",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Rate of accepted connections per second for each systemd socket",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "eps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 0,
-                "y": 4238
-              },
-              "id": 297,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "rate(node_systemd_socket_accepted_connections_total{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}[$__rate_interval])",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ name }}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                }
-              ],
-              "title": "Systemd Sockets Accepted",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "description": "Rate of systemd socket connection refusals per second, typically due to service unavailability or backlog overflow",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 20,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "eps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 12,
-                "x": 12,
-                "y": 4238
-              },
-              "id": 332,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "mean",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "rate(node_systemd_socket_refused_connections_total{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"}[$__rate_interval])",
-                  "format": "time_series",
-                  "interval": "",
-                  "legendFormat": "{{ name }}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                }
-              ],
-              "title": "Systemd Sockets Refused",
-              "type": "timeseries"
-            }
-          ],
-          "title": "Systemd",
-          "type": "row"
-        },
-        {
-          "collapsed": true,
-          "gridPos": {
-            "h": 1,
-            "w": 24,
-            "x": 0,
-            "y": 28
           },
           "id": 270,
           "panels": [
@@ -41477,7 +39566,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 29
+            "y": 27
           },
           "id": 271,
           "panels": [
@@ -41929,7 +40018,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 30
+            "y": 28
           },
           "id": 272,
           "panels": [
@@ -43320,7 +41409,7 @@ data:
               },
               "gridPos": {
                 "h": 10,
-                "w": 12,
+                "w": 16,
                 "x": 0,
                 "y": 301
               },
@@ -43372,80 +41461,6 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "description": "Maximum speed of each network interface as reported by the operating system. This is a static hardware capability, not current throughput",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "thresholds"
-                  },
-                  "decimals": 0,
-                  "fieldMinMax": false,
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "bps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 6,
-                "x": 12,
-                "y": 301
-              },
-              "id": 280,
-              "options": {
-                "displayMode": "basic",
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": false
-                },
-                "maxVizHeight": 30,
-                "minVizHeight": 16,
-                "minVizWidth": 8,
-                "namePlacement": "auto",
-                "orientation": "horizontal",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "showUnfilled": true,
-                "sizing": "manual",
-                "valueMode": "color"
-              },
-              "pluginVersion": "11.6.1",
-              "targets": [
-                {
-                  "editorMode": "code",
-                  "expr": "node_network_speed_bytes{k8s_cluster_name=~\"$cluster\",instance=\"$node\",job=\"$job\"} * 8",
-                  "format": "time_series",
-                  "legendFormat": "{{ device }}",
-                  "range": true,
-                  "refId": "A",
-                  "step": 240
-                }
-              ],
-              "title": "Speed",
-              "type": "bargauge"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
               "description": "MTU (Maximum Transmission Unit) in bytes for each network interface. Affects packet size and transmission efficiency",
               "fieldConfig": {
                 "defaults": {
@@ -43470,8 +41485,8 @@ data:
               },
               "gridPos": {
                 "h": 10,
-                "w": 6,
-                "x": 18,
+                "w": 8,
+                "x": 16,
                 "y": 301
               },
               "id": 288,
@@ -43524,7 +41539,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 31
+            "y": 29
           },
           "id": 273,
           "panels": [
@@ -44670,7 +42685,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 32
+            "y": 30
           },
           "id": 274,
           "panels": [
@@ -46448,7 +44463,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 33
+            "y": 31
           },
           "id": 279,
           "panels": [
@@ -49734,7 +47749,7 @@ data:
                     "type": "prometheus",
                     "uid": "$datasource"
                   },
-                  "expr": "sum(go_memstats_sys_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"}) + sum(vm_cache_size_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"})",
+                  "expr": "sum(go_memstats_sys_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"})",
                   "format": "time_series",
                   "hide": false,
                   "intervalFactor": 1,
@@ -49746,7 +47761,7 @@ data:
                     "type": "prometheus",
                     "uid": "$datasource"
                   },
-                  "expr": "sum(go_memstats_heap_inuse_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"}) + sum(vm_cache_size_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"})",
+                  "expr": "sum(go_memstats_heap_inuse_bytes{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"})",
                   "format": "time_series",
                   "hide": false,
                   "intervalFactor": 1,
@@ -56881,7 +54896,7 @@ data:
           },
           "gridPos": {
             "h": 5,
-            "w": 4,
+            "w": 8,
             "x": 0,
             "y": 8
           },
@@ -56952,8 +54967,8 @@ data:
           },
           "gridPos": {
             "h": 5,
-            "w": 4,
-            "x": 4,
+            "w": 8,
+            "x": 8,
             "y": 8
           },
           "id": 40,
@@ -57023,8 +55038,8 @@ data:
           },
           "gridPos": {
             "h": 5,
-            "w": 4,
-            "x": 8,
+            "w": 8,
+            "x": 16,
             "y": 8
           },
           "id": 41,
@@ -57062,109 +55077,6 @@ data:
           ],
           "title": "Active workers",
           "type": "stat"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "description": " Shows amount of Prometheus Operator objects processed by Operator.",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "barWidthFactor": 0.6,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "showValues": false,
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": 0
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 5,
-            "w": 12,
-            "x": 12,
-            "y": 8
-          },
-          "id": 38,
-          "options": {
-            "legend": {
-              "calcs": [
-                "max",
-                "mean"
-              ],
-              "displayMode": "table",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "hideZeros": false,
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "12.3.0",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "editorMode": "code",
-              "expr": "sum(rate(operator_prometheus_converter_watch_events_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__interval])) by (event_type,object_type_name)",
-              "instant": false,
-              "legendFormat": "{{object_type_name}} {{event_type}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Prometheus Converter Watch events",
-          "type": "timeseries"
         },
         {
           "datasource": {
@@ -74228,611 +72140,6 @@ data:
                 "type": "prometheus",
                 "uid": "$datasource"
               },
-              "description": "Shows the number of matched samples by the aggregation rule. \n\nThe more samples is matched, the more work this aggregation rule does. The matching rule is specified via `match` param.\n\nSee more details in [stream aggregation config](https://docs.victoriametrics.com/victoriametrics/stream-aggregation/#stream-aggregation-config). ",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "axisSoftMin": 0,
-                    "barAlignment": 0,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  }
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 4254
-              },
-              "id": 146,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "lastNotNull",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true,
-                  "sortBy": "Last *",
-                  "sortDesc": true
-                },
-                "tooltip": {
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(vm_streamaggr_matched_samples_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\",instance=~\"$instance\", url=~\"$url\"}[$__rate_interval])) without (instance, pod) > 0",
-                  "instant": false,
-                  "legendFormat": "__auto",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Matched samples ($instance)",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "The rate of dropped samples during aggregation. \nStream aggregation will drop samples with NaN values, too old timestamps or samples identified as duplicates during deduplication. See https://docs.victoriametrics.com/victoriametrics/stream-aggregation/#ignoring-old-samples ",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "axisSoftMin": 0,
-                    "barAlignment": 0,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  }
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 4254
-              },
-              "id": 143,
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate({k8s_cluster_name=~\"$cluster\",__name__=~\"vm_streamaggr_ignored_samples_total|vm_streamaggr_dedup_dropped_samples_total\", job=~\"$job\",instance=~\"$instance\", url=~\"$url\"}[$__rate_interval]) > 0) without (instance, pod)",
-                  "instant": false,
-                  "legendFormat": "__auto",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Dropped samples ($instance)",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "Shows the number of produced samples by the aggregation rule. \n\nNumber of produced samples depend on params like `by`, `without`, `interval`, etc.\n\nSee more details in [stream aggregation config](https://docs.victoriametrics.com/victoriametrics/stream-aggregation/#stream-aggregation-config). ",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "axisSoftMin": 0,
-                    "barAlignment": 0,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  }
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 4262
-              },
-              "id": 147,
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "min",
-                    "lastNotNull",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true,
-                  "sortBy": "Last *",
-                  "sortDesc": true
-                },
-                "tooltip": {
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(vm_streamaggr_output_samples_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\",instance=~\"$instance\", url=~\"$url\"}[$__rate_interval])) without (instance, pod) > 0",
-                  "instant": false,
-                  "legendFormat": "__auto",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Produced samples ($instance)",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "Shows events when deduplication or aggregation couldn't be finished in the configured interval. Such events may result into bad accuracy of produced data.\n\nPossible solutions:\n* increase interval; \n* use match filter matching smaller number of series;\n* reduce samples ingestion rate to stream aggregation",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "axisSoftMin": 0,
-                    "barAlignment": 0,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "min": -5,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  }
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 4262
-              },
-              "id": 139,
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "expr": "increase(vm_streamaggr_flush_timeouts_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\",instance=~\"$instance\", url=~\"$url\"}[$__rate_interval]) > 0",
-                  "instant": false,
-                  "legendFormat": "aggregation: {{url}} ({{job}}): {{path}}:{{position}}",
-                  "range": true,
-                  "refId": "A"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "expr": "increase(vm_streamaggr_dedup_flush_timeouts_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\",instance=~\"$instance\", url=~\"$url\"}[$__rate_interval]) > 0",
-                  "hide": false,
-                  "instant": false,
-                  "legendFormat": "deduplication: {{url}} ({{job}}): {{path}}:{{position}}",
-                  "range": true,
-                  "refId": "B"
-                }
-              ],
-              "title": "Flush timeouts ($instance)",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "Shows the max lag between samples timestamps within one batch passed to the aggregation input.\n\nLower is better.\n\nToo high lag or lag exceeding the interval might be a sign that data was delayed before aggregation or resource insufficiency on aggregator. Samples with high lag may affect accuracy of aggregation.\n\nSee https://docs.victoriametrics.com/victoriametrics/stream-aggregation/#ignoring-old-samples",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "axisSoftMin": 0,
-                    "barAlignment": 0,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "s"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 4270
-              },
-              "id": 142,
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "expr": "histogram_quantile(0.99, sum(rate(vm_streamaggr_samples_lag_seconds_bucket{k8s_cluster_name=~\"$cluster\",job=~\"$job\",instance=~\"$instance\", url=~\"$url\"}[$__rate_interval])) without (instance, pod))",
-                  "instant": false,
-                  "legendFormat": "__auto",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Samples lag 0.99 quantile ($instance)",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "The 99th percentile of avg flush duration for the aggregated data. \n\nSmaller is better.\n\nAggregation can produce incorrect results ff flush duration exceeds configured deduplication interval. See \"Flush Timeouts\" panel.",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "axisSoftMin": 0,
-                    "barAlignment": 0,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "s"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 4270
-              },
-              "id": 137,
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "expr": "histogram_quantile(0.99, rate(vm_streamaggr_dedup_flush_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\",job=~\"$job\",instance=~\"$instance\", url=~\"$url\"}[$__rate_interval]))",
-                  "instant": false,
-                  "legendFormat": "__auto",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Dedup flush duration 0.99 quantile ($instance)",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
               "description": "Shows the size of Label Compressor in number of entries.\n\nLabels compressor encodes label-value pairs during aggregation to optimise memory usage. It is expected for its size to grow with time and to reset on vmagent restarts.\n\nRapid spikes in Label compressor size might be a sign of significant changes in labels of received samples.",
               "fieldConfig": {
                 "defaults": {
@@ -74909,7 +72216,7 @@ data:
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 4310
+                "y": 4286
               },
               "id": 141,
               "options": {
@@ -75407,109 +72714,6 @@ data:
                 "type": "prometheus",
                 "uid": "$datasource"
               },
-              "description": "Shows the current limit usage of unique series over an hourly period. Vmagent will start to drop series once the limit is reached.\n\nPlease note, panel will be blank if `remoteWrite.maxHourlySeries` is not set.",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "showValues": false,
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "line"
-                    }
-                  },
-                  "mappings": [],
-                  "max": 100,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "transparent",
-                        "value": 0
-                      },
-                      {
-                        "color": "red",
-                        "value": 0.9
-                      }
-                    ]
-                  },
-                  "unit": "percent"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 2275
-              },
-              "id": 88,
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": false
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "none"
-                }
-              },
-              "pluginVersion": "12.2.0",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "exemplar": true,
-                  "expr": "max(\n  vmagent_hourly_series_limit_current_series{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"} \n  / \n  vmagent_hourly_series_limit_max_series{k8s_cluster_name=~\"$cluster\",job=~\"$job\", instance=~\"$instance\"}\n  ) by(job) * 100",
-                  "interval": "",
-                  "legendFormat": "{{job}}",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Hourly series limit",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
               "description": "Shows saturation of every connection to remote storage. If the threshold of 90% is reached, then the connection is saturated (busy or slow) by more than 90%, so vmagent won't be able to keep up and can start buffering data. \n\nThis usually means that `-remoteWrite.queues` command-line flag must be increased in order to increase the number of connections per each remote storage.\n",
               "fieldConfig": {
                 "defaults": {
@@ -75572,8 +72776,8 @@ data:
               },
               "gridPos": {
                 "h": 8,
-                "w": 12,
-                "x": 12,
+                "w": 24,
+                "x": 0,
                 "y": 2275
               },
               "id": 84,
@@ -75612,109 +72816,6 @@ data:
               ],
               "title": "Remote write connection saturation ($instance)",
               "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "Shows the current limit usage of unique series over a daily period. Vmagent will start to drop series once the limit is reached.\n\nPlease note, panel will be blank if `remoteWrite.maxDailySeries` is not set.",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "showValues": false,
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "line"
-                    }
-                  },
-                  "mappings": [],
-                  "max": 100,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "transparent",
-                        "value": 0
-                      },
-                      {
-                        "color": "red",
-                        "value": 0.9
-                      }
-                    ]
-                  },
-                  "unit": "percentunit"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 2283
-              },
-              "id": 90,
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": false
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "none"
-                }
-              },
-              "pluginVersion": "12.2.0",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "$datasource"
-                  },
-                  "editorMode": "code",
-                  "exemplar": true,
-                  "expr": "max(\n  vmagent_daily_series_limit_current_series{k8s_cluster_name=~\"$cluster\",job=~\"$job\",instance=~\"$instance\"} \n  / \n  vmagent_daily_series_limit_max_series{k8s_cluster_name=~\"$cluster\",job=~\"$job\",instance=~\"$instance\"}\n) by(job)",
-                  "interval": "",
-                  "legendFormat": "{{job}}",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Daily series limit",
-              "type": "timeseries"
             }
           ],
           "title": "Remote write",
@@ -75726,515 +72827,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 43
-          },
-          "id": 163,
-          "panels": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "Positive series show bytes written by vmagent producers into Kafka. Negative series show bytes read by vmagent consumers from Kafka. Read this together with Messages in / out: a stable byte rate with rising message rate usually means smaller Kafka payloads and higher per-message overhead. Producer Kafka metrics aggregate at job level because they do not expose the full remoteWrite URL label.\n\nDocs: <a href=\"https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#estimating-message-size-and-rate\" target=\"_blank\">estimating message size and rate</a>. Kafka read docs: <a href=\"https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#reading-metrics\" target=\"_blank\">reading metrics</a>.",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": true,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "showValues": false,
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      }
-                    ]
-                  },
-                  "unit": "Bps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 44
-              },
-              "id": 164,
-              "links": [
-                {
-                  "title": "Docs: estimating size/rate",
-                  "url": "https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#estimating-message-size-and-rate"
-                },
-                {
-                  "title": "Docs: reading metrics",
-                  "url": "https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#reading-metrics"
-                }
-              ],
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "mean",
-                    "lastNotNull",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "none"
-                }
-              },
-              "pluginVersion": "12.2.0",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(vmagent_remotewrite_kafka_sent_bytes_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__rate_interval])) by (job)",
-                  "legendFormat": "Produced to Kafka",
-                  "range": true,
-                  "refId": "A"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "-sum(rate(vmagent_kafka_consumer_read_bytes_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__rate_interval])) by (job)",
-                  "legendFormat": "Consumed from Kafka",
-                  "range": true,
-                  "refId": "B"
-                }
-              ],
-              "title": "Traffic (bytes)",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "Positive series show Kafka messages produced by vmagent. Negative series show Kafka messages consumed by vmagent. Read this together with Traffic (bytes), because a stable byte rate with rising message rate usually means smaller Kafka messages and higher per-message overhead. Producer Kafka metrics aggregate at job level because they do not expose the full remoteWrite URL label.\n\nDocs: <a href=\"https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#estimating-message-size-and-rate\" target=\"_blank\">estimating message size and rate</a>. Kafka read docs: <a href=\"https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#reading-metrics\" target=\"_blank\">reading metrics</a>.",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": true,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "showValues": false,
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      }
-                    ]
-                  },
-                  "unit": "ops"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 44
-              },
-              "id": 165,
-              "links": [
-                {
-                  "title": "Docs: estimating size/rate",
-                  "url": "https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#estimating-message-size-and-rate"
-                },
-                {
-                  "title": "Docs: reading metrics",
-                  "url": "https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#reading-metrics"
-                }
-              ],
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "mean",
-                    "lastNotNull",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "none"
-                }
-              },
-              "pluginVersion": "12.2.0",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(vmagent_remotewrite_kafka_messages_sent_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__rate_interval])) by (job)",
-                  "legendFormat": "Produced to Kafka",
-                  "range": true,
-                  "refId": "A"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "-sum(rate(vmagent_kafka_messages_read_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__rate_interval])) by (job)",
-                  "legendFormat": "Consumed from Kafka",
-                  "range": true,
-                  "refId": "B"
-                }
-              ],
-              "title": "Messages in / out",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "Kafka producer-side errors from vmagent remote write. This panel shows send errors and delivery errors reported by Kafka producers.\n\nKafka write docs: <a href=\"https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#writing-metrics\" target=\"_blank\">writing metrics</a>.",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "showValues": false,
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": 0
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "ops"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 52
-              },
-              "id": 167,
-              "links": [
-                {
-                  "title": "Docs: writing metrics",
-                  "url": "https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#writing-metrics"
-                },
-                {
-                  "title": "Docs: reading metrics",
-                  "url": "https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#reading-metrics"
-                }
-              ],
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "mean",
-                    "lastNotNull",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "none"
-                }
-              },
-              "pluginVersion": "12.2.0",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(vmagent_remotewrite_kafka_messages_send_errors_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__rate_interval])) by (job)",
-                  "legendFormat": "Producer send errors",
-                  "range": true,
-                  "refId": "A"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(vmagent_remotewrite_kafka_messages_delivery_errors_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__rate_interval])) by (job)",
-                  "legendFormat": "Producer delivery errors",
-                  "range": true,
-                  "refId": "B"
-                }
-              ],
-              "title": "Producer errors",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
-              },
-              "description": "Kafka consumer-side errors from vmagent. This panel shows client errors and ingest errors reported while reading from Kafka and passing data further downstream.\n\nKafka read docs: <a href=\"https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#reading-metrics\" target=\"_blank\">reading metrics</a>.",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "never",
-                    "showValues": false,
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "links": [],
-                  "mappings": [],
-                  "min": 0,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": 0
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "ops"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 52
-              },
-              "id": 168,
-              "links": [
-                {
-                  "title": "Docs: reading metrics",
-                  "url": "https://docs.victoriametrics.com/victoriametrics/integrations/kafka/#reading-metrics"
-                }
-              ],
-              "options": {
-                "legend": {
-                  "calcs": [
-                    "mean",
-                    "lastNotNull",
-                    "max"
-                  ],
-                  "displayMode": "table",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "multi",
-                  "sort": "none"
-                }
-              },
-              "pluginVersion": "12.2.0",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(vmagent_kafka_client_errors_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__rate_interval])) by (job)",
-                  "legendFormat": "Consumer client errors",
-                  "range": true,
-                  "refId": "C"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${datasource}"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(rate(vmagent_kafka_ingest_errors_total{k8s_cluster_name=~\"$cluster\",job=~\"$job\"}[$__rate_interval])) by (job)",
-                  "legendFormat": "Consumer ingest errors",
-                  "range": true,
-                  "refId": "D"
-                }
-              ],
-              "title": "Consumer errors",
-              "type": "timeseries"
-            }
-          ],
-          "title": "Kafka (Enterprise)",
-          "type": "row"
-        },
-        {
-          "collapsed": true,
-          "gridPos": {
-            "h": 1,
-            "w": 24,
-            "x": 0,
-            "y": 60
+            "y": 59
           },
           "id": 113,
           "panels": [

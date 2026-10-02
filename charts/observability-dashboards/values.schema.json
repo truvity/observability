@@ -78,7 +78,8 @@
         "envoy-clusters",
         "kargo",
         "keycloak",
-        "openbao"
+        "openbao",
+        "external-secrets"
       ],
       "properties": {
         "fleet-overview": { "$ref": "#/definitions/dashboardEntry" },
@@ -107,7 +108,8 @@
         "envoy-clusters": { "$ref": "#/definitions/dashboardEntry" },
         "kargo": { "$ref": "#/definitions/dashboardEntry" },
         "keycloak": { "$ref": "#/definitions/dashboardEntry" },
-        "openbao": { "$ref": "#/definitions/dashboardEntry" }
+        "openbao": { "$ref": "#/definitions/dashboardEntry" },
+        "external-secrets": { "$ref": "#/definitions/dashboardEntry" }
       }
     },
     "home": {

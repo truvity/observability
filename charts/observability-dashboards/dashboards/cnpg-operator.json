@@ -956,7 +956,7 @@
     "nowDelay": ""
   },
   "timezone": "",
-  "title": "CloudNativePG ($cluster)",
+  "title": "CloudNativePG / Operator ($cluster)",
   "uid": "truvity-obs-cnpg-operator",
   "weekStart": "",
   "links": [

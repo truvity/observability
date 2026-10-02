@@ -402,7 +402,7 @@
             "uid": "${datasource}"
           },
           "exemplar": true,
-          "expr": "sum(kube_namespace_labels{k8s_cluster_name=\"$cluster\"})",
+          "expr": "count(kube_namespace_created{k8s_cluster_name=\"$cluster\"})",
           "interval": "",
           "legendFormat": "Namespaces",
           "refId": "A"
@@ -432,7 +432,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(kube_deployment_labels{k8s_cluster_name=\"$cluster\"})",
+          "expr": "count(kube_deployment_created{k8s_cluster_name=\"$cluster\"})",
           "interval": "",
           "legendFormat": "Deployments",
           "refId": "F"
@@ -442,7 +442,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(kube_statefulset_labels{k8s_cluster_name=\"$cluster\"})",
+          "expr": "count(kube_statefulset_created{k8s_cluster_name=\"$cluster\"})",
           "interval": "",
           "legendFormat": "Statefulsets",
           "refId": "G"
@@ -452,7 +452,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(kube_daemonset_labels{k8s_cluster_name=\"$cluster\"})",
+          "expr": "count(kube_daemonset_created{k8s_cluster_name=\"$cluster\"})",
           "interval": "",
           "legendFormat": "Daemonsets",
           "refId": "H"

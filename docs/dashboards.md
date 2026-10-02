@@ -159,6 +159,7 @@ in the change, never shipped empty.
 | `kargo` | `kargo-controller-metrics` | authored (`authored: true`) |
 | `keycloak` | the install's own `/metrics`: `{install}-service` through the Keycloak chart's ServiceMonitor (optional source `keycloak-metrics`; off by default) | authored (`authored: true`) |
 | `openbao` | the OpenBAO server pods' `/v1/sys/metrics` (optional source `openbao-server-metrics`; off by default) | authored (`authored: true`) |
+| `external-secrets` | `external-secrets-metrics`, `external-secrets-webhook-metrics`, `external-secrets-cert-controller-metrics` (optional source `external-secrets-metrics`; off by default) | External Secrets Operator `docs/snippets/dashboard.json` |
 
 - **Job names follow the converters.** A ServiceMonitor's `job` is its
   Service name; a PodMonitor's is `<namespace>/<PodMonitor name>`. With
@@ -206,6 +207,13 @@ in the change, never shipped empty.
 - **The Fleet overview** carries one line of tiles per component, health only,
   each linking to the component's dashboard with datasource and cluster
   carried across. A component a cluster does not run reads `n/a`.
+- **A tile never invents a zero.** There is no `or vector(0)`. A count over
+  series that exist only when something is wrong is zero when a series of the
+  same source proves it is scraped (`or (0 * count(<always-present series>))`)
+  and reads `No data` when it is not; a sum over series the source writes for
+  every object has no fallback. `kube_pod_container_status_waiting_reason` is
+  written only while a container waits, so the tiles on it take their zero from
+  `kube_pod_container_status_waiting`.
 
 ## Third-party dashboards
 

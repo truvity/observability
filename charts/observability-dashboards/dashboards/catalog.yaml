@@ -60,6 +60,14 @@ envoy-proxy:
   queryCheck: true
   ref: v1.9.2
   upstream: envoy-gateway
+external-secrets:
+  file: external-secrets.json
+  folder: platform
+  queryCheck: true
+  ref: v2.10.0
+  requires:
+  - external-secrets-metrics
+  upstream: external-secrets
 fleet-overview:
   authored: true
   file: fleet-overview.json

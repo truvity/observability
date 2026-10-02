@@ -448,6 +448,97 @@ def _relayout(dashboard) -> None:
     panels.sort(key=lambda p: (p["gridPos"]["y"], p["gridPos"]["x"]))
 
 
+def _overlaps_rows(a, b) -> bool:
+    ay, ah = a["gridPos"]["y"], a["gridPos"]["h"]
+    by, bh = b["gridPos"]["y"], b["gridPos"]["h"]
+    return ay < by + bh and by < ay + ah
+
+
+def _close_gaps(panels, victims) -> None:
+    """Remove `victims` from the `panels` list (in place) and close the hole
+    each leaves, touching nothing else. A band is the panels sharing the
+    victim's `y` and `h`: if members remain they are re-spread across the 24
+    columns (so a row of three does not end up half wide); if the band is
+    empty and no other panel spans its rows, everything below moves up by
+    its height. Anything more clever would move panels the removal did not
+    touch.
+    """
+    for v in victims:
+        panels.remove(v)
+    for y, h in sorted({(v["gridPos"]["y"], v["gridPos"]["h"]) for v in victims}):
+        band = sorted(
+            (p for p in panels if p["gridPos"]["y"] == y and p["gridPos"]["h"] == h),
+            key=lambda p: p["gridPos"]["x"],
+        )
+        probe = {"gridPos": {"y": y, "h": h}}
+        if not band:
+            if not any(_overlaps_rows(p, probe) for p in panels):
+                for p in panels:
+                    if p["gridPos"]["y"] >= y + h:
+                        p["gridPos"]["y"] -= h
+            continue
+        total = sum(p["gridPos"]["w"] for p in band)
+        # Respread only a band that is a full-width row on its own: a band
+        # whose neighbours sit beside it in other rows (a tall panel next to
+        # two short ones) keeps its columns.
+        beside = [p for p in panels if p not in band and _overlaps_rows(p, probe)]
+        if total < 24 and not beside:
+            x = 0
+            for i, p in enumerate(band):
+                w = 24 - x if i == len(band) - 1 else round(p["gridPos"]["w"] * 24 / total)
+                p["gridPos"].update({"x": x, "w": w})
+                x += w
+
+
+def _matches_panel(p, d) -> bool:
+    return p.get("title") == d["title"] and p.get("type") != "row"
+
+
+def apply_tweaks(dashboard, spec) -> None:
+    """The per-dashboard edits sources.yaml's `tweaks:` block names, applied
+    after the generic rewrite: literal query replacements, panel drops and a
+    title. Every entry must match (a patch that silently matches nothing is
+    how a stale one survives an upstream bump), and every drop is printed so
+    the review sees it. A collapsed row left with no panel goes too.
+    """
+    cfg = spec.get("tweaks") or {}
+    name = spec["name"]
+    for rep in cfg.get("replace", []):
+        hit = 0
+        for panel in walk_panels(dashboard.get("panels")):
+            for target in panel.get("targets") or []:
+                e = target.get("expr")
+                if isinstance(e, str) and rep["from"] in e:
+                    target["expr"] = e.replace(rep["from"], rep["to"])
+                    hit += 1
+        if not hit:
+            raise SystemExit("%s: tweaks.replace matched nothing (upstream moved?): %r" % (name, rep["from"]))
+    for d in cfg.get("dropPanels", []):
+        hit = 0
+        top = dashboard["panels"]
+        if not d.get("row"):
+            victims = [p for p in top if _matches_panel(p, d)]
+            if victims:
+                hit += len(victims)
+                _close_gaps(top, victims)
+        for row in [p for p in top if p.get("type") == "row" and p.get("panels")]:
+            if d.get("row") and row.get("title") != d["row"]:
+                continue
+            victims = [p for p in row["panels"] if _matches_panel(p, d)]
+            if victims:
+                hit += len(victims)
+                _close_gaps(row["panels"], victims)
+        if not hit:
+            raise SystemExit("%s: tweaks.dropPanels matched nothing: %r" % (name, d["title"]))
+        print("  %s: drop %r x%d (%s)" % (name, d["title"], hit, d["reason"]))
+    if cfg.get("dropPanels"):
+        for row in [p for p in dashboard["panels"] if p.get("type") == "row" and p.get("collapsed") and not p.get("panels")]:
+            print("  %s: drop row %r (no panel left)" % (name, row.get("title")))
+            _close_gaps(dashboard["panels"], [row])
+    if cfg.get("title"):
+        dashboard["title"] = cfg["title"]
+
+
 # Panels the node-exporter-based originals answered with node_* series a
 # store does not hold. cadvisor's root cgroup (`id="/"`, container empty)
 # is the node's own total, so utilisation is answered from it, against
@@ -626,6 +717,7 @@ def build_one(spec: dict, bundles: dict) -> None:
                 "update or remove the patch: %r" % (name, literal)
             )
 
+    apply_tweaks(dashboard, spec)
     set_title(dashboard)
     add_navigation(dashboard, spec)
     if spec.get("upstream"):
@@ -725,7 +817,7 @@ def write_notices(manifest: dict) -> None:
         lines += [
             "- Modified: rewritten to this repository's dashboard contract "
             "(datasource/cluster/namespace variables, titles, links)"
-            + ("; panels on metrics a store does not hold replaced or removed" if spec.get("adapt") else ""),
+            + ("; panels on metrics a store does not hold replaced or removed" if spec.get("adapt") or spec.get("tweaks") else ""),
             "",
         ]
     text = "\n".join(lines)
@@ -737,14 +829,43 @@ def write_notices(manifest: dict) -> None:
     print("wrote THIRD_PARTY_NOTICES.md (root and chart)")
 
 
+def retrofit_one(spec: dict) -> None:
+    """Apply a dashboard's `tweaks:` to the JSON already committed, without
+    fetching. For a dashboard whose pinned upstream ref can no longer be
+    fetched (the ref was removed upstream): the committed file is the only
+    copy of that upstream's content, and the tweak is recorded in
+    sources.yaml for the regeneration that follows a ref bump.
+    """
+    path = OUT_DIR / ("%s.json" % spec["name"])
+    dashboard = json.loads(path.read_text())
+    apply_tweaks(dashboard, spec)
+    path.write_text(json.dumps(dashboard, indent=2, ensure_ascii=False) + "\n")
+    print("retrofitted %s" % path.relative_to(ROOT))
+
+
 def main() -> None:
+    """With no arguments, rebuild every dashboard. `NAME...` rebuilds only
+    those; `--retrofit NAME...` applies their `tweaks:` to the committed
+    JSON (see retrofit_one). The catalog and notices are always rewritten.
+    """
+    args = sys.argv[1:]
+    retrofit = "--retrofit" in args
+    only = [a for a in args if not a.startswith("--")]
     manifest = yaml.safe_load(SOURCES.read_text())
     MANIFEST.update(manifest)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    unknown = set(only) - {s["name"] for s in manifest["dashboards"]}
+    if unknown:
+        sys.exit("unknown dashboard(s): %s" % ", ".join(sorted(unknown)))
     failures = []
     for spec in manifest["dashboards"]:
+        if only and spec["name"] not in only:
+            continue
         try:
-            build_one(spec, manifest.get("bundles", {}))
+            if retrofit:
+                retrofit_one(spec)
+            else:
+                build_one(spec, manifest.get("bundles", {}))
         except SystemExit as e:
             failures.append("%s: %s" % (spec["name"], e))
     if failures:

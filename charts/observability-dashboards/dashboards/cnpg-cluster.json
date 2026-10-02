@@ -5606,7 +5606,7 @@
     "nowDelay": ""
   },
   "timezone": "",
-  "title": "CloudNativePG ($cluster)",
+  "title": "CloudNativePG / Clusters ($cluster)",
   "uid": "truvity-obs-cnpg-cluster",
   "weekStart": "",
   "links": [

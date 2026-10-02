@@ -18,6 +18,11 @@ Design, stated so a reviewer can check it:
   * Every tile drills down: a data link into the Kubernetes views or the
     store dashboard, carrying datasource, cluster, namespace and the time
     range across.
+  * A tile never invents a zero. A count over series that exist only when
+    something is wrong (firing alerts, pods not Ready, full volumes) is
+    zero when the SAME source proves it is scraped (`or (0 * count(anchor))`),
+    and reads "No data" when it is not; a sum over series the source always
+    writes needs no fallback at all. There is no `or vector(0)`.
   * Only series a store holds today (hack/dashboards/available-metrics.yaml).
     Kargo tiles read series that exist only when the Kargo preset is on, so
     they show "n/a" when it is off and a count (possibly 0) when it is on.
@@ -116,7 +121,7 @@ class Builder:
         self.panels.append(r)
 
     def stat(self, title, description, expr, x, y, link_to, unit="short", w=4, h=4,
-             steps=None, no_value="0", instant=True, decimals=0):
+             steps=None, no_value="No data", instant=True, decimals=0):
         # `steps`: [(value|None, color)]; the default is green at 0 and red
         # from 1, right for every count of "things that should be zero".
         steps = steps or [(None, GREEN), (1, RED)]
@@ -249,7 +254,8 @@ def build():
     b.row("Firing alerts, all selected clusters", 0)
 
     def alerts(sel):
-        return "count(ALERTS{alertstate=\"firing\",%s,%s,%s}) or vector(0)" % (CLUSTER, NS, sel)
+        return ("count(ALERTS{alertstate=\"firing\",%s,%s,%s}) or (0 * count(up{%s}))"
+                % (CLUSTER, NS, sel, CLUSTER))
 
     b.stat("Critical alerts",
            "Alerts firing with severity critical. Anything above zero needs a person now: open the table beside it, start with the oldest.",
@@ -274,44 +280,47 @@ def build():
 
     b.stat("Firing alerts",
            "Critical and warning alerts firing for this cluster. Above zero: read the table at the top, filtered to this cluster.",
-           'count(ALERTS{alertstate="firing",%s,%s,severity=~"critical|warning"}) or vector(0)' % (CLUSTER, NS),
+           'count(ALERTS{alertstate="firing",%s,%s,severity=~"critical|warning"}) or (0 * count(up{%s}))' % (CLUSTER, NS, CLUSTER),
            0, y, to_ns)
     b.stat("Pods not Ready",
            "Pods that are Pending or Running but not Ready (Succeeded pods, such as finished Jobs, are excluded). Open the namespaces view and read Pods with unexpected status.",
            'count((kube_pod_status_ready{%s,%s,condition="false"} == 1) and on (k8s_cluster_name, namespace, pod) '
-           '(kube_pod_status_phase{%s,%s,phase=~"Pending|Running"} == 1)) or vector(0)' % (CLUSTER, NS, CLUSTER, NS),
+           '(kube_pod_status_phase{%s,%s,phase=~"Pending|Running"} == 1)) or (0 * count(kube_pod_status_phase{%s,%s}))'
+           % (CLUSTER, NS, CLUSTER, NS, CLUSTER, NS),
            4, y, to_ns)
     b.stat("CrashLoopBackOff",
-           "Containers currently waiting in CrashLoopBackOff: the process starts and dies. Read the pod's logs and its last terminated reason in the pod view.",
-           'sum(kube_pod_container_status_waiting_reason{%s,%s,reason="CrashLoopBackOff"}) or vector(0)' % (CLUSTER, NS),
+           "Containers currently waiting in CrashLoopBackOff: the process starts and dies. Read the pod's logs and its last terminated reason in the pod view. kube-state-metrics writes the reason series only while a container waits, so zero is read off the always-present waiting gauge; No data means kube-state-metrics is not scraped.",
+           'sum(kube_pod_container_status_waiting_reason{%s,%s,reason="CrashLoopBackOff"}) or (0 * count(kube_pod_container_status_waiting{%s,%s}))'
+           % (CLUSTER, NS, CLUSTER, NS),
            8, y, to_ns)
     b.stat("ImagePullBackOff",
-           "Containers that cannot pull their image (ImagePullBackOff or ErrImagePull). Check the image name and tag, the registry, and the pull secret.",
-           'sum(kube_pod_container_status_waiting_reason{%s,%s,reason=~"ImagePullBackOff|ErrImagePull"}) or vector(0)' % (CLUSTER, NS),
+           "Containers that cannot pull their image (ImagePullBackOff or ErrImagePull). Check the image name and tag, the registry, and the pull secret. Zero is read off the always-present waiting gauge, as for CrashLoopBackOff; No data means kube-state-metrics is not scraped.",
+           'sum(kube_pod_container_status_waiting_reason{%s,%s,reason=~"ImagePullBackOff|ErrImagePull"}) or (0 * count(kube_pod_container_status_waiting{%s,%s}))'
+           % (CLUSTER, NS, CLUSTER, NS),
            12, y, to_ns)
     b.stat("Restarts (1h)",
            "Container restarts in the last hour. A handful is noise; a steady climb is a crash loop or OOM kills. Open the namespaces view and read Container Restarts.",
-           'sum(increase(kube_pod_container_status_restarts_total{%s,%s}[1h])) or vector(0)' % (CLUSTER, NS),
+           'sum(increase(kube_pod_container_status_restarts_total{%s,%s}[1h]))' % (CLUSTER, NS),
            16, y, to_ns, steps=[(None, GREEN), (5, ORANGE), (20, RED)])
     b.stat("Nodes NotReady",
            "Nodes whose Ready condition is false or unknown. Pods on them are unreachable or about to be evicted: check the node's kubelet and the cloud instance.",
-           'sum(kube_node_status_condition{%s,condition="Ready",status=~"false|unknown"}) or vector(0)' % CLUSTER,
+           'sum(kube_node_status_condition{%s,condition="Ready",status=~"false|unknown"})' % CLUSTER,
            20, y, to_global)
     y += 4
 
     b.stat("Nodes under pressure",
            "Nodes reporting memory, disk or PID pressure. The kubelet starts evicting pods under pressure: find the noisy workload in the cluster view, or add capacity.",
-           'sum(kube_node_status_condition{%s,condition=~"MemoryPressure|DiskPressure|PIDPressure",status="true"}) or vector(0)' % CLUSTER,
+           'sum(kube_node_status_condition{%s,condition=~"MemoryPressure|DiskPressure|PIDPressure",status="true"})' % CLUSTER,
            0, y, to_global)
     b.stat("PVCs over 85% full",
            "Persistent volumes whose used bytes exceed 85% of capacity. Expand the claim or clean up before it fills; open the namespaces view for the Persistent Volumes panels.",
-           'count((kubelet_volume_stats_used_bytes{%s,%s} / kubelet_volume_stats_capacity_bytes{%s,%s}) > 0.85) or vector(0)'
-           % (CLUSTER, NS, CLUSTER, NS),
+           'count((kubelet_volume_stats_used_bytes{%s,%s} / kubelet_volume_stats_capacity_bytes{%s,%s}) > 0.85) '
+           'or (0 * count(kubelet_volume_stats_capacity_bytes{%s,%s}))' % (CLUSTER, NS, CLUSTER, NS, CLUSTER, NS),
            4, y, to_ns)
     b.stat("Rows dropped or ignored (1h)",
            "Rows the metrics, logs and traces stores refused in the last hour (ignored or dropped for a reason, such as too many labels or a timestamp out of range). Above zero means data is being lost at the write path: open the store dashboard and read the reason.",
-           '(sum(increase(vm_rows_ignored_total{%s}[1h])) or vector(0)) + (sum(increase(vl_rows_dropped_total{%s}[1h])) or vector(0)) '
-           '+ (sum(increase(vt_rows_dropped_total{%s}[1h])) or vector(0))' % (CLUSTER, CLUSTER, CLUSTER),
+           'sum(increase(vm_rows_ignored_total{%s}[1h]) or increase(vl_rows_dropped_total{%s}[1h]) or increase(vt_rows_dropped_total{%s}[1h])) '
+           'or (0 * count(up{%s}))' % (CLUSTER, CLUSTER, CLUSTER, CLUSTER),
            8, y, to_store)
     b.stat("Kargo stages not healthy",
            "Kargo Stages whose Ready or Healthy condition is false or unknown. Shows n/a where the Kargo state metrics are not enabled. Open the Stage in Kargo and read its conditions.",
@@ -326,7 +335,7 @@ def build():
            16, y, to_ns, no_value="n/a")
     b.stat("Pods running",
            "Pods in the Running phase, for scale. It is context, not an alarm: a sudden drop with no deploy is worth a look.",
-           'sum(kube_pod_status_phase{%s,%s,phase="Running"}) or vector(0)' % (CLUSTER, NS),
+           'sum(kube_pod_status_phase{%s,%s,phase="Running"})' % (CLUSTER, NS),
            20, y, to_global, steps=[(None, "blue")])
     y += 4
 
@@ -361,7 +370,8 @@ def build():
         w = 24 // len(components)
         for i, (title, desc, bad, anchor, kw) in enumerate(components):
             expr = "(%s) or (0 * count(%s))" % (bad, anchor)
-            b.stat(title, desc, expr, i * w, y, kw.pop("link"), w=w, h=3, no_value="n/a", **kw)
+            no_value = kw.pop("no_value", "n/a")
+            b.stat(title, desc, expr, i * w, y, kw.pop("link"), w=w, h=3, no_value=no_value, **kw)
 
     to_argocd = link_cluster("Open the ArgoCD dashboard", UID_ARGOCD)
     to_certs = link_cluster("Open the cert-manager dashboard", UID_CERT_MANAGER)
@@ -462,9 +472,9 @@ def build():
          'max(cnpg_pg_replication_lag{%s})' % K, pg_up,
          {"link": to_pg, "unit": "s", "decimals": 1, "steps": [(None, GREEN), (30, ORANGE), (300, RED)]}),
         ("Newest Postgres backup age",
-         "Age of the newest successful backup across the scraped Postgres clusters, from the backup plugin's own timestamp. Past a day and a half means a scheduled backup was missed: read the Backup resources. n/a where no backup is reported.",
+         "Age of the newest successful backup across the scraped Postgres clusters, from the backup plugin's own timestamp. Past a day and a half means a scheduled backup was missed: read the Backup resources. No data where no backup is reported.",
          'time() - max(%s)' % pg_backup, pg_backup,
-         {"link": to_pg, "unit": "s", "decimals": 0, "steps": [(None, GREEN), (129600, ORANGE), (259200, RED)]}),
+         {"link": to_pg, "unit": "s", "decimals": 0, "no_value": "No data", "steps": [(None, GREEN), (129600, ORANGE), (259200, RED)]}),
     ], y)
 
     def var_ds():
