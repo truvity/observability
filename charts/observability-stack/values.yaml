@@ -57,15 +57,23 @@ fullnameOverride: ""
 # cluster that runs the full stack — never a second pin to keep in sync
 # by hand.
 #
-# It is a CONTRACT, not an override. Setting `mode: operator-only` does
-# not turn anything else off for you: `vmauth.enabled`, `vmalert.enabled`,
-# `alertmanager.enabled`, `grafana.enabled`, `backup.enabled`,
-# `selfAlerts.enabled`, `metricsSelfScrape.enabled`, the three stores
+# Four toggles resolve through `mode` when left `null` (their default):
+# `vmauth.enabled`, `vmalert.enabled`, `alertmanager.enabled` and
+# `metricsSelfScrape.enabled`. Unset, `mode: full` turns all four ON;
+# `mode: operator-only` turns all four OFF; `mode: replica` turns
+# `metricsSelfScrape` ON (it runs the stores, so it scrapes them) and the
+# other three OFF (the primary release owns them). An explicit `true` or
+# `false` is taken as written, whatever the mode.
+#
+# Everything else is a CONTRACT, not an override: `mode: operator-only`
+# does not turn it off for you. `karma.enabled`, `grafana.enabled`, `backup.enabled`,
+# `selfAlerts.enabled`, the three stores
 # (`victoria-metrics-k8s-stack.vmsingle.enabled`,
 # `victoria-logs-single.enabled`, `victoria-traces-single.enabled`) all
 # still default to their "full" shape and must be turned off explicitly,
 # and `tenancy.principals`, `tenancy.writers` and `tenancy.alertReaders`
-# must be empty. The render refuses every one it finds still on, the same
+# must be empty. The render refuses every one it finds still on, and an
+# explicit `true` on any of the four toggles above, the same
 # way every other combination in this chart is checked rather than
 # silently resolved — see docs/doctrine.md's note on mirrors: a value this
 # chart could compute for you is a value it validates instead, because two

@@ -59,11 +59,11 @@ service:
   port: 8080
   metricsPort: 0
 
-# -- Render a PodMonitor for the port above. Refused false only as an
-# explicit, loud choice: the counters this service exports are its own
-# deadman (see `heartbeat` below), and a PodMonitor nobody scrapes means
-# alert_ingress_messages_total exists and nothing ever reads it — the
-# counters exist and nobody scrapes them.
+# -- Render a PodMonitor for the port above. `false` is allowed and is not
+# refused: it renders no PodMonitor, a real choice for an estate that scrapes
+# some other way. Take care, though: the counters this service exports are
+# its own deadman (see `heartbeat` below), so with no scrape of any kind
+# alert_ingress_messages_total exists and nothing ever reads it.
 selfMonitor: true
 
 # -- Alertmanager's own alert API. This chart renders a NetworkPolicy that

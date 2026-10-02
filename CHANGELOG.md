@@ -6,6 +6,14 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **Docs: two values comments corrected, one refusal fixture added.** No
+  render moves. `observability-stack`'s `mode` comment now says what each
+  mode resolves the four `null` toggles to (`vmauth`, `vmalert`,
+  `alertmanager`, `metricsSelfScrape`); `alert-ingress`'s `selfMonitor`
+  comment no longer claims `false` is refused (it is allowed).
+  tests/invalid/observability-mcp gains a fixture for a `caBundle` that
+  names neither a `configMap` nor a `secret`.
+
 - **Docs: the architecture diagrams and pages match the current charts.**
   No render moves. docs/target-state.md draws the whole estate as one
   Mermaid diagram (every emitter, the external and browser receivers, the
