@@ -17,6 +17,12 @@ ServiceAccount's name; IRSA by the annotation under
 `smctl.serviceAccount.annotations`). A private GHCR or another registry: a
 docker config.json in a Secret this chart only mounts.
 
+smctl empties its cache directory at start by removing it and creating it
+again. The directory is therefore a subdirectory of the cache volume's mount
+(`/cache/maps`), never the mount point itself: removing a mount point fails
+on a read-only root filesystem (the pod runs with one), and the volume,
+unlike the root, is writable.
+
 The configuration is rendered from the values and from the apps list; smctl
 refuses an unknown key, so only keys it knows are written.
 */ -}}
@@ -39,7 +45,7 @@ refuses an unknown key, so only keys it knows are written.
       "listen" ":8080"
       "apps" $smApps
       "auth" $auth
-      "cache" (dict "dir" "/cache" "maxSize" $m.cache.maxSize)
+      "cache" (dict "dir" "/cache/maps" "maxSize" $m.cache.maxSize)
       "limits" $m.limits
       "negativeCache" $m.negativeCache
       "fetchTimeout" $m.fetchTimeout -}}

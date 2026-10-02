@@ -2611,7 +2611,7 @@ data:
     auth:
       mode: ecr
     cache:
-      dir: /cache
+      dir: /cache/maps
       maxSize: 2GiB
     fetchTimeout: 60s
     limits:
@@ -2887,7 +2887,7 @@ spec:
         app.kubernetes.io/name: observability-rum-sourcemaps
       annotations:
         # A changed configuration restarts the pods (smctl reads it once).
-        checksum/config: d615cc9bbc7e1381a5dd36675a1d2bbfb409eea110b08bb2d474d847adb748ed
+        checksum/config: 41582623866b1dfafc7109fc56cad709bba8ca80657cd56832e56fe45815896d
     spec:
       serviceAccountName: observability-rum-sourcemaps
       # The ServiceAccount is mounted only where it carries an identity the
