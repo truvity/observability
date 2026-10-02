@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.42.0
 
 - **`vmalert.remoteEvaluators`: evaluate selected rules against another
   store and notify through this install's Alertmanager.** Default `[]`:
@@ -49,6 +49,9 @@ must be done first, and whether a default moved. Newest first, one
   Alertmanager pair and self-alert list, docs/safety.md's emitter refusals
   and docs/adoption.md's upgrade steps now say what the charts do. Links
   to the retired doctrine anchors are fixed.
+
+## v0.41.1
+
 - **`rulecheck`: no more `text file busy` when the rule tools run in
   parallel.** Parallel callers (several tests in one process) could fork a
   child while another goroutine still had the freshly written parser binary
