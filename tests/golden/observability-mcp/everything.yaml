@@ -285,6 +285,12 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 2
+  # A rollout never takes a pod away before its replacement is ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: observability-mcp
@@ -301,6 +307,26 @@ spec:
         # The aggregator reads its file once at start.
         checksum/aggregator-config: 95902deb9522e69a2d8450b78aa4360dbf54bac722d8e92b320157832847f601
     spec:
+      # Replicas spread over zones and nodes, so one node or zone going away
+      # does not take the connector with it. Soft (ScheduleAnyway): a small
+      # estate still schedules.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability-mcp
+              app.kubernetes.io/instance: observability-mcp
+              app.kubernetes.io/component: primary
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability-mcp
+              app.kubernetes.io/instance: observability-mcp
+              app.kubernetes.io/component: primary
       serviceAccountName: observability-mcp-primary
       automountServiceAccountToken: false
       securityContext:
@@ -528,6 +554,12 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 2
+  # A rollout never takes a pod away before its replacement is ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: observability-mcp
@@ -541,6 +573,26 @@ spec:
         app.kubernetes.io/component: grafana
         app.kubernetes.io/managed-by: Helm
     spec:
+      # Replicas spread over zones and nodes, so one node or zone going away
+      # does not take the connector with it. Soft (ScheduleAnyway): a small
+      # estate still schedules.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability-mcp
+              app.kubernetes.io/instance: observability-mcp
+              app.kubernetes.io/component: grafana
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability-mcp
+              app.kubernetes.io/instance: observability-mcp
+              app.kubernetes.io/component: grafana
       serviceAccountName: observability-mcp-grafana
       automountServiceAccountToken: false
       securityContext:

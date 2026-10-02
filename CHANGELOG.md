@@ -4,6 +4,22 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-mcp`: zero-gap rolling updates, and spread for connectors that
+run more than one replica.
+
+- **Behaviour change: every connector Deployment now renders
+  `strategy: RollingUpdate` with `maxUnavailable: 0` and `maxSurge: 1`.** A
+  rollout starts the new pod and waits for it to be ready before stopping an
+  old one, so a restart no longer drops below the desired count (with one
+  replica that means one extra pod during the rollout).
+- **With `replicaCount` above 1, a connector's pods carry two soft topology
+  spread constraints** (`maxSkew: 1`, `ScheduleAnyway`) on
+  `topology.kubernetes.io/zone` and `kubernetes.io/hostname`, selecting that
+  connector's own pods. Single-replica connectors render none. There is no new
+  value; the constraints are not configurable.
+
 ## v0.34.0
 
 `observability-dashboards`, `observability-emitters`, `platform-alerts`: a

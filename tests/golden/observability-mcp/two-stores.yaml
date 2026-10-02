@@ -416,6 +416,12 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
+  # A rollout never takes a pod away before its replacement is ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: observability-mcp
@@ -659,6 +665,12 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
+  # A rollout never takes a pod away before its replacement is ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: observability-mcp
@@ -871,6 +883,12 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
+  # A rollout never takes a pod away before its replacement is ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: observability-mcp

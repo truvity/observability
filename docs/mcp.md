@@ -86,6 +86,7 @@ collide.
 | `networkPolicy.egress.{issuer,vmauth,grafana}` | `[]` | Where the issuer, the stores' vmauth and Grafana are reached. Required for what is enabled. |
 | `networkPolicy.metricsFrom` | `[]` | Optional: who may scrape the aggregator's `/metrics` (port 9090). |
 | `podDisruptionBudget.enabled` | `false` | Refused with fewer than two replicas. |
+| rollout and spread | always / with `replicaCount` > 1 | Every connector's Deployment rolls with `maxUnavailable: 0`, `maxSurge: 1`, so a restart never drops below the desired count. With `replicaCount` above 1 the pods also carry soft (`ScheduleAnyway`, `maxSkew: 1`) topology spread constraints on `topology.kubernetes.io/zone` and `kubernetes.io/hostname`. Not configurable. |
 | `httpRoute.*` | disabled | Optional HTTPRoute for the connectors; see "Exposing connectors through a Gateway". |
 
 ### A store

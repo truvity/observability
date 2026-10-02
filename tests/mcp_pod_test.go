@@ -50,8 +50,19 @@ type mcpDoc struct {
 	} `yaml:"metadata"`
 	Data map[string]string `yaml:"data"`
 	Spec struct {
+		Replicas int `yaml:"replicas"`
+		Strategy *struct {
+			Type          string `yaml:"type"`
+			RollingUpdate struct {
+				MaxUnavailable int `yaml:"maxUnavailable"`
+				MaxSurge       int `yaml:"maxSurge"`
+			} `yaml:"rollingUpdate"`
+		} `yaml:"strategy"`
 		Template struct {
 			Spec struct {
+				TopologySpreadConstraints []struct {
+					TopologyKey string `yaml:"topologyKey"`
+				} `yaml:"topologySpreadConstraints"`
 				Containers []mcpContainer `yaml:"containers"`
 				Volumes    []struct {
 					Name      string `yaml:"name"`
@@ -334,6 +345,30 @@ func TestMCPObjectsAreNamedPerConnector(t *testing.T) {
 			assert.True(t, strings.HasPrefix(d.Metadata.Name, "observability-mcp-"), "%s: %s is not named observability-mcp-<connector>", g, key)
 		}
 	}
+}
+
+// Every connector rolls without a gap (a pod is never removed before its
+// replacement is ready), and a connector with more than one replica spreads
+// them over zones and nodes; a single replica carries no spread.
+func TestMCPRolloutIsGaplessAndReplicasSpread(t *testing.T) {
+	sawSpread := false
+	for key, d := range mcpDocs(t, "Deployment") {
+		require.NotNil(t, d.Spec.Strategy, "%s: no strategy", key)
+		assert.Equal(t, "RollingUpdate", d.Spec.Strategy.Type, key)
+		assert.Equal(t, 0, d.Spec.Strategy.RollingUpdate.MaxUnavailable, key)
+		assert.Equal(t, 1, d.Spec.Strategy.RollingUpdate.MaxSurge, key)
+		var keys []string
+		for _, c := range d.Spec.Template.Spec.TopologySpreadConstraints {
+			keys = append(keys, c.TopologyKey)
+		}
+		if d.Spec.Replicas > 1 {
+			sawSpread = true
+			assert.ElementsMatch(t, []string{"topology.kubernetes.io/zone", "kubernetes.io/hostname"}, keys, key)
+		} else {
+			assert.Empty(t, keys, key)
+		}
+	}
+	assert.True(t, sawSpread, "no golden renders a multi-replica connector")
 }
 
 // A private CA for the outbound target is mounted, read-only, into the proxy

@@ -61,6 +61,12 @@ metadata:
     {{- include "observability-mcp.labels" . | nindent 4 }}
 spec:
   replicas: {{ .replicaCount }}
+  # A rollout never takes a pod away before its replacement is ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       {{- include "observability-mcp.selectorLabels" . | nindent 6 }}
@@ -74,6 +80,24 @@ spec:
         checksum/aggregator-config: {{ include "observability-mcp.aggregatorConfig" . | sha256sum }}
       {{- end }}
     spec:
+      {{- if gt (int .replicaCount) 1 }}
+      # Replicas spread over zones and nodes, so one node or zone going away
+      # does not take the connector with it. Soft (ScheduleAnyway): a small
+      # estate still schedules.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "observability-mcp.selectorLabels" . | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "observability-mcp.selectorLabels" . | nindent 14 }}
+      {{- end }}
       serviceAccountName: {{ $full }}
       automountServiceAccountToken: false
       securityContext:
