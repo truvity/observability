@@ -690,6 +690,16 @@ alertmanager:
   # on `topology.kubernetes.io/zone`, `whenUnsatisfiable: ScheduleAnyway`,
   # against the replicas' own labels. Set, replaces it whole.
   topologySpreadConstraints: []
+  # -- Only read when `replicaCount` > 1.
+  cluster:
+    # -- Go duration. How long a replica keeps retrying a peer it lost
+    # before it forgets that peer. A rescheduled replica comes back at a
+    # new IP, so the old address is a dead peer the survivor retries until
+    # this elapses, and `alertmanager_cluster_failed_peers` stays above 0
+    # meanwhile (the vendored `AlertmanagerClusterFailedPeers` fires on a
+    # healthy mesh). Alertmanager's own default is `6h`; passed as
+    # `--cluster.reconnect-timeout`.
+    reconnectTimeout: 5m
   # -- An Alertmanager the estate already runs, when `enabled` is false.
   # A vmalert with no notifier evaluates every rule and sends the result
   # nowhere, which is indistinguishable from an estate with no problems,

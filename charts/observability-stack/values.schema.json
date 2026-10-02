@@ -679,6 +679,16 @@
         "topologySpreadConstraints": {
           "type": "array"
         },
+        "cluster": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reconnectTimeout": {
+              "type": "string",
+              "description": "Go duration (`5m`, `90s`, `1h30m`). Only read when `replicaCount` > 1. How long a replica retries a lost peer before forgetting it; passed as `--cluster.reconnect-timeout`. Alertmanager's own default is `6h`."
+            }
+          }
+        },
         "notifierUrl": {
           "type": "string"
         },

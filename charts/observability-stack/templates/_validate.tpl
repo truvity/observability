@@ -1106,6 +1106,14 @@ estate has stated one: the heartbeat has to land comfortably inside it, or
 a single delayed delivery reads as the estate being down.
 */ -}}
 {{- $watchdog := .Values.alertmanager.watchdog -}}
+{{- /*
+`alertmanager.cluster.reconnectTimeout` becomes `--cluster.reconnect-timeout`,
+a Go duration; anything else makes Alertmanager exit at start.
+*/ -}}
+{{- $reconnect := toString (($.Values.alertmanager.cluster | default dict).reconnectTimeout | default "") -}}
+{{- if not (regexMatch "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$" $reconnect) -}}
+{{- fail (printf "observability-stack: alertmanager.cluster.reconnectTimeout is %q. It must be a Go duration such as 5m, 90s or 1h30m: it is passed as Alertmanager's --cluster.reconnect-timeout, which refuses anything else and would crash-loop every replica." $reconnect) -}}
+{{- end -}}
 {{- if and $watchdog.tokenKey (not $watchdog.secretName) -}}
 {{- fail "observability-stack: alertmanager.watchdog.tokenKey is set but alertmanager.watchdog.secretName is empty. The token qualifies the deadman receiver, which only exists with a Secret to read its URL from; set secretName, or remove tokenKey." -}}
 {{- end -}}

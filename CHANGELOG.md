@@ -4,6 +4,24 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`: a moved Alertmanager replica is forgotten in minutes.
+
+- **Behaviour change: an Alertmanager pair renders one more flag.** Only
+  installs with `alertmanager.replicaCount` above 1 move (the
+  `alertmanager-pair` and `everything` goldens): the VMAlertmanager gains
+  `extraArgs: {cluster.reconnect-timeout: "5m"}`. One replica renders
+  byte-identically to before.
+- A rescheduled replica comes back at a new IP; the survivor kept the old
+  address as a failed peer for Alertmanager's default 6h, so
+  `alertmanager_cluster_failed_peers` stayed above 0 and
+  `AlertmanagerClusterFailedPeers` fired on a healthy mesh. Set
+  `alertmanager.cluster.reconnectTimeout` (a Go duration, default `5m`) to
+  move it; anything that is not a Go duration is refused. Restoring the old
+  behaviour is `reconnectTimeout: 6h`. `--cluster.reconnect-interval` is
+  untouched.
+
 ## v0.27.0
 
 `observability-stack`: an Alertmanager pair is safe to run.

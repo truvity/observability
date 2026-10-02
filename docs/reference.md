@@ -374,6 +374,7 @@ rule with it. An install with no rules yet shows none of this.
 | `alertmanager.enabled` | bool | `null` (0.9.0) | Renders the `VMAlertmanager`. Null resolves through `mode` — see `vmauth.enabled`'s own row. |
 | `alertmanager.replicaCount` | int | `1` | Above 1 the replicas form one mesh (the operator joins them on 9094) and the chart renders the pair safeguards below. 1 renders none of them. |
 | `alertmanager.podDisruptionBudget` | object | `{}` | Only when `replicaCount` > 1. Empty renders `maxUnavailable: 1`. Set, replaces it. |
+| `alertmanager.cluster.reconnectTimeout` | string | `5m` | Only when `replicaCount` > 1. A Go duration, passed as `--cluster.reconnect-timeout`: how long a replica retries a lost peer before forgetting it. A rescheduled replica returns at a new IP, and until this elapses the survivor reports it in `alertmanager_cluster_failed_peers` (Alertmanager's own default is `6h`). Anything that is not a Go duration is refused. |
 | `alertmanager.affinity` | object | `{}` | Only when `replicaCount` > 1. Empty renders preferred pod anti-affinity on `kubernetes.io/hostname` against the replicas. Set, replaces it. |
 | `alertmanager.topologySpreadConstraints` | list | `[]` | Only when `replicaCount` > 1. Empty renders `maxSkew: 1` on `topology.kubernetes.io/zone`, `ScheduleAnyway`. Set, replaces it. |
 | `alertmanager.notifierUrl` | string | `""` | An Alertmanager the estate already runs, for when `enabled` is false. **One of the two is required**: a vmalert with no notifier sends every alert nowhere. |

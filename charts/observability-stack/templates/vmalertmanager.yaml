@@ -169,6 +169,15 @@ spec:
         matchLabels:
           {{- toYaml $amSelector | nindent 10 }}
     {{- end }}
+  {{- /*
+  A replica that is rescheduled returns at a new IP; the survivor keeps
+  the old address as a failed peer until --cluster.reconnect-timeout
+  (upstream default 6h) and alertmanager_cluster_failed_peers stays above
+  0 on a healthy mesh. The operator maps extraArgs keys, without dashes,
+  to Alertmanager flags.
+  */}}
+  extraArgs:
+    cluster.reconnect-timeout: {{ $am.cluster.reconnectTimeout | quote }}
   {{- end }}
   securityContext:
     {{- include "observability-stack.restrictedSecurityContext" . | nindent 4 }}
