@@ -4,6 +4,96 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.34.0
+
+`observability-dashboards`, `observability-emitters`, `platform-alerts`: a
+truth pass over the shipped dashboards, and alert groups for Argo CD, External
+Secrets Operator and AWS Controllers for Kubernetes.
+
+- **Behaviour change: panels that could never hold data are gone from the
+  default dashboards.** Each was checked against a real store and has no
+  series to read: Kubelet "Config Error Count" (the metric went with dynamic
+  kubelet configuration); VictoriaMetrics operator "Prometheus Converter Watch
+  events"; twelve vmagent panels (the agent's own hourly and daily series
+  limit, the six stream-aggregation panels and the four Kafka panels, with
+  their rows); fifteen Node Exporter Full panels on collectors a virtual
+  machine's exporter does not run or hardware it does not have (hardware
+  temperature and fan speed, cooling devices, power supply, CPU frequency
+  scaling, systemd units and sockets, detailed process states, PID and thread
+  limits, interrupt detail, network speed and saturation), with the two rows
+  that held only those. The panels beside them keep their data and are
+  re-spread across the row. Re-enable one by adding it back to your own copy
+  of the dashboard.
+- **Behaviour change: four panels read a series that exists.** Envoy Clusters
+  "Downstream Network Traffic" selects connection-manager prefixes `https?-.*`
+  (it matched `http-.*`, which no listener's prefix equals); VictoriaLogs
+  "Memory usage" no longer adds `vm_cache_size_bytes`, which VictoriaLogs does
+  not export, so its first two series render; the "Kubernetes Resource Count"
+  panels of the Global and Namespaces views count `kube_<kind>_created`
+  instead of summing `kube_<kind>_labels` (kube-state-metrics writes no
+  `*_labels` series while its label allow-list is empty, the default).
+- **Behaviour change: the two CloudNativePG dashboards are titled apart.** They
+  were both `CloudNativePG ($cluster)`, with the same URL slug. They are now
+  `CloudNativePG / Clusters ($cluster)` and `CloudNativePG / Operator
+  ($cluster)`; the uids are unchanged, so links and bookmarks still open.
+- **Behaviour change: Fleet overview tiles no longer invent a zero.** No tile
+  falls back to `or vector(0)`. Where a count is zero because the series only
+  exists when something is wrong (firing alerts, pods not Ready, full volumes,
+  rows dropped), the zero is read off a series of the same source that proves
+  it is scraped (`or (0 * count(...))`); where the source writes a series for
+  every object (restarts, nodes not Ready, pods running) there is no fallback.
+  A missing source now reads **No data** (the cluster-row tiles' no-value text
+  is `No data`; the component tiles keep `n/a`, and "Newest Postgres backup
+  age" reads `No data` where no backup is reported). The CrashLoopBackOff and
+  ImagePullBackOff tiles query `kube_pod_container_status_waiting_reason`,
+  which kube-state-metrics writes only while a container is waiting (it skips
+  running containers), so their zero comes from the always-present
+  `kube_pod_container_status_waiting`. Nothing trimmed that metric: no emitter
+  change was needed to make it appear.
+- **Behaviour change: the kubelet scrape drops `kubernetes_feature_enabled`.**
+  The feature-gate gauge is one series per gate per node per stage, the
+  largest metric the kubelet job stored on a real install, and nothing here
+  reads it. New value `metrics.scrape.kubeletDrop` (`enabled: true`,
+  `metricNames: [kubernetes_feature_enabled]`, `extraMetricNames: []`), on the
+  kubelet job only, shaped like `cadvisorDrop`. `enabled: false` restores the
+  series; `extraMetricNames` widens the list without replacing it. Every
+  `observability-emitters` golden that renders the kubelet job moves by that
+  one `drop` step.
+- **`dashboards.external-secrets`** (default **off**): External Secrets
+  Operator's own dashboard (the project's `docs/snippets/dashboard.json`,
+  Apache-2.0, pinned to the chart's release tag and rewritten to the
+  contract), in the `Platform` folder, uid `truvity-obs-external-secrets`:
+  error rates by controller, not-Ready ExternalSecrets, provider API calls,
+  the admission webhook and the controllers. It needs the operator chart's
+  `serviceMonitor.enabled: true` (a new optional source,
+  `external-secrets-metrics`); without it every panel is empty, hence the
+  default. The Fleet overview has no External Secrets row: the chart cannot
+  render a row only where a source is on, so there is none.
+- **`platform-alerts` `groups.argocd`** (default **off**): six alerts on Argo
+  CD's own metrics (`ArgoCDAppSyncFailed`, `ArgoCDAppUnhealthy`,
+  `ArgoCDAppOutOfSync`, `ArgoCDClusterConnectionLost`, `ArgoCDGitFetchFailing`,
+  `ArgoCDMetricsAbsent`). `outOfSync.enabled: false` drops the out-of-sync
+  alert for an estate whose applications are out of sync by design.
+- **`platform-alerts` `groups.eso`** (default **off**): nine alerts, the
+  highest-severity pair on the admission webhook (`ESOWebhookDown`,
+  `ESOWebhookAbsent`: both validating webhooks fail closed, so while it is down
+  every write of an ExternalSecret or a store is refused), then
+  `ESOExternalSecretNotReady`, `ESOSecretStoreNotReady`,
+  `ESOClusterSecretStoreNotReady`, `ESOReconcileErrors`,
+  `ESOProviderAPIErrors`, `ESOWorkqueueStuck` and `ESOMetricsAbsent`.
+- **`platform-alerts` `groups.ack`** (default **off**): `ACKControllerDown`,
+  `ACKControllerAbsent`, `ACKReconcileErrors`, `ACKTerminalReconcileErrors` and
+  `ACKReconcilePanics` on controller-runtime's metrics in the controllers'
+  namespaces (`namespace`, default `ack-.*`). Name the controllers' namespaces
+  in `expectedNamespaces` to get one `absent` per controller.
+- **`platform-alerts` `groups.kargo`**: three controller rules beside the
+  promotion rules, each its own switch and **off by default** so a group that
+  is already on renders what it did: `controllerAbsent.enabled`
+  (`KargoControllerAbsent`), `reconcileErrors.enabled`
+  (`KargoControllerReconcileErrors`) and `workqueueDepth.enabled`
+  (`KargoControllerWorkqueueStuck`), with `controllerJob` naming the scrape job.
+  New `keepClusterLabel`, as for the other groups.
+
 ## v0.33.1
 
 `observability-emitters`, `platform-alerts`: probe series carry the tenancy
