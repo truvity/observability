@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.43.0
 
 - feat(alert-ingress): AWS Budgets (plain-text) and Cost Anomaly Detection
   (JSON) alerts reach Alertmanager through the receiver. New template
