@@ -515,6 +515,13 @@ func TestDeadmanGroupRendersThreeChecksOnItsOwnProvider(t *testing.T) {
 	assert.Equal(t, "Bearer ${ALERT_URL_DEADMAN_TOKEN}", parsed.Alerting.Custom.Headers["Authorization"])
 	assert.Contains(t, parsed.Alerting.Custom.Body, `"channel":"#deadman"`)
 	assert.Contains(t, parsed.Alerting.Custom.Body, "[ALERT_TRIGGERED_OR_RESOLVED]")
+	assert.NotContains(t, parsed.Alerting.Custom.Body, "[ALERT_DESCRIPTION]",
+		"the description is shared by both states; the body must not carry it")
+
+	states := parsed.Alerting.Custom.Placeholders["ALERT_TRIGGERED_OR_RESOLVED"]
+	assert.Equal(t, "TRIGGERED: the alerting path may be down: this check has failed twice in a row", states["TRIGGERED"])
+	assert.Equal(t, "RESOLVED: the check is passing again", states["RESOLVED"])
+	assert.NotContains(t, states["RESOLVED"], "in a row", "a resolved post must not repeat the trigger text")
 	assert.Equal(t, "${ALERT_URL_COMPANY_SLACK}", parsed.Alerting.Slack.WebhookURL)
 	assert.NotContains(t, out, "nobody is notified")
 }
