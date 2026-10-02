@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.39.0
 
 New chart `observability-rum`: browser telemetry through Grafana Faro and a
 self-hosted Alloy, with "issues" built on the log store instead of an error
