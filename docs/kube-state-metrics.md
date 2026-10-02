@@ -1,10 +1,11 @@
 # kube-state-metrics
 
-Design for `charts/observability-emitters`' `kubeStateMetrics`, the
-fourth and only-off-by-default emitter. Not a new signal — it wraps
-upstream's own chart — but the placement, the collector list and one
-relabel rule are this repository's own decisions, and this page is where
-they are written down.
+Design for `charts/observability-emitters`' `kubeStateMetrics`, one of
+the two emitters that are off by default (the other is `nodeExporter`,
+for the same reason — see [reference.md](reference.md#nodeexporter)). Not
+a new signal — it wraps upstream's own chart — but the placement, the
+collector list and one relabel rule are this repository's own decisions,
+and this page is where they are written down.
 
 ## The problem it closes
 
@@ -96,7 +97,8 @@ roughly ten to twenty series per pod, and the others at single digits
 per object — an upstream estimate, not a measurement of this list
 against a real cluster's object count. This repository's own doctrine
 is to ask the store rather than trust a sender's number (see
-docs/doctrine.md, "A 200 is not storage"); the same applies here.
+[emitting.md](emitting.md#verifying), "A 200 is not storage"); the same
+applies here.
 
 `metricLabelsAllowlist` and `metricAnnotationsAllowList` stay at
 upstream's own default, empty — no per-object label or annotation

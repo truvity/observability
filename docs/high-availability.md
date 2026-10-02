@@ -38,6 +38,32 @@ release reconciles it (the operator watches the namespace). The mode is a
 contract in the sense `operator-only` is: it refuses, naming the key, every
 component it does not run that is still switched on.
 
+```mermaid
+flowchart LR
+  subgraph zoneA["zone a: the primary, mode: full"]
+    direction TB
+    vmauth["vmauth ×2<br/>reads: static.urls [own, peer],<br/>first_available, retry on 500/502/503<br/>writes: one backend, own stores"]
+    opA["operator (reconciles<br/>both VMSingles)"]
+    stA["metrics · logs · traces<br/>observability_replica=a"]
+    alA["vmalert metrics, logs<br/>state in own store"]
+    alP["vmalert metrics-peer, logs-peer<br/>state in the PEER's store"]
+    am["Alertmanager pair"]
+    bk["backup (primary only)"]
+    vmauth --> stA
+    alA -. reads .-> stA
+    alA & alP --> am
+    bk -. snapshots .-> stA
+  end
+  subgraph zoneB["zone b: mode: replica"]
+    direction TB
+    stB["metrics · logs · traces<br/>observability_replica=b<br/>NetworkPolicies, scrape objects<br/>and nothing else"]
+  end
+  vmauth -. "ha.peer.{metrics,logs,traces}:<br/>only when the own store fails" .-> stB
+  alP -. reads .-> stB
+  opA -. reconciles .-> stB
+  readers["Grafana · MCP · the status box"] --> vmauth
+```
+
 ### What the primary adds under `ha.enabled`
 
 - **Reads over both.** Every reader route (`metrics`, `logs`, `traces`, and
@@ -225,6 +251,20 @@ pair is how to say "two destinations" once, with a credential per
 destination.
 
 ### One list, three agents
+
+```mermaid
+flowchart LR
+  subgraph cluster["a cluster: charts/observability-emitters"]
+    direction TB
+    vmagent["metrics agent<br/>one remoteWrite per destination<br/>persistent queue: size / N each"]
+    gw["OpenTelemetry gateway<br/>one exporter per signal per destination<br/>own file_storage queue or WAL, own token env"]
+    vlagent["log agent<br/>remoteWrite written by hand, checked:<br/>own bearerTokenFile, own maxDiskUsagePerURL"]
+  end
+  a["zone a: write-a.example<br/>token A"]
+  b["zone b: write-b.example<br/>token B"]
+  vmagent & gw & vlagent -- "every signal" --> a
+  vmagent & gw & vlagent -- "every signal, again" --> b
+```
 
 ```yaml
 remote:

@@ -25,7 +25,31 @@ otlp:
 
 ## The trust model
 
-Three parties, three jobs.
+Three parties, three jobs. The boundary between "claimed" and "verified"
+is the route; the collector is the last step and authenticates nothing.
+
+```mermaid
+flowchart LR
+  subgraph out["outside the cluster"]
+    fn["a Lambda, a batch job, a partner<br/>OTLP/HTTP + a JWT"]
+  end
+  subgraph edge["the public route (Envoy Gateway)"]
+    sp["SecurityPolicy: verify the JWT<br/>claimToHeaders: sub → x-roster-subject, …<br/>ClientTrafficPolicy: remove the client's<br/>copies of those headers FIRST<br/>no anonymous rule; POST /v1/* only"]
+  end
+  subgraph cl["the cluster"]
+    np["NetworkPolicy: the external port admits<br/>otlp.external.networkPolicy.ingressFrom<br/>(the route's Envoy pods) and nobody else"]
+    rx["gateway receiver otlp/external :4319<br/>include_metadata"]
+    p1["transform/external-disown<br/>delete k8s.*, kubernetes.*, telemetry.source,<br/>deleteAttributes, every mapped attribute"]
+    p2["resource/external-identity<br/>header → attribute"]
+    p3["filter/external-unidentified<br/>DROP data missing a required header"]
+    p4["transform/external-stamp<br/>cluster, tier, namespace=external,<br/>telemetry.source=external, static attributes"]
+    exp["batch → the same exporters<br/>as the in-cluster pipelines"]
+    np --> rx --> p1 --> p2 --> p3 --> p4 --> exp
+  end
+  fn -- "claims identity in the payload" --> sp
+  sp -- "identity in headers only" --> np
+  inc["in-cluster workloads"] -- ":4317 / :4318, unchanged" --> exp
+```
 
 1. **The public route** (an Envoy Gateway `HTTPRoute` with a
    `SecurityPolicy`) verifies the caller's JWT, and writes the verified

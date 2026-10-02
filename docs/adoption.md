@@ -14,19 +14,23 @@ is a floor for the next.
 | 1 | `observability-crds` | — | every kind present on the cluster |
 | 2 | `observability-stack` (stores, proxy, alerters, Alertmanager) | 1, cert-manager, an issuer, the Secrets | a query through the proxy with a real token returns only that token's grants |
 | 3 | `observability-emitters`, on every cluster | 1, 2 | **ask the store**: a line, a series and a span from a real namespace, stamped with that namespace |
-| 4 | `notifications:` on the stack | 2, a webhook Secret | a synthetic critical reaches the right channel |
-| 5 | `pkg/statusbox` → the box | a private network, an edge tunnel | the public pages render; the ops page answers only privately |
-| 6 | the deadman | 4, 5 | scaling Alertmanager to zero fires the box, on two providers, within five minutes |
+| 4 | `notifications:` on the stack | 2, a Slack bot token (or Telegram, or a webhook) Secret | a synthetic critical reaches the right channel |
+| 5 | `pkg/statusbox` → the box | a private network; an edge tunnel once a page is public | the private page answers only over the private network; the deadman group reads the install's alerts through `tenancy.alertReaders` |
+| 6 | the deadman | 4, 5 | scaling the metrics vmalert to zero fires the box's deadman on its own chat channel within two probe intervals, and posts RESOLVED when it returns |
 | 7 | `platform-alerts` with the store list | 4 | `WritePathDead` fires when a store's writes are stopped |
 | 8 | the store self-alerts (inside 2) | 4 | each fires on its inverted condition, silent on a week of healthy data |
 | 9 | `alert-ingress` | 4, a public route, topics | a real finding reaches the channel; suspending the heartbeat fires the deadman rule |
-| 10 | `observability-dashboards` | Grafana | the store-health dashboard shows step 3's write path |
-| 11 | the estate's own rule packs and dashboards | 4, 10 | the same contract: incident, healthy range, fixture; the same lint |
+| 10 | `observability-dashboards`, and `observability-grafana` where one Grafana spans installs | Grafana | the store-health dashboard shows step 3's write path |
+| 11 | the second half of a pair: `mode: replica`, `ha.enabled` on the primary, `remote.replicas` on every emitter | 2, 3, two zones | reads answer with the primary's store scaled to 0; the divergence ratio sits near 1 ([high-availability.md](high-availability.md)) |
+| 12 | `observability-rum`, for the browser apps | 3, a route on each app's host | an exception thrown in a page appears in "Frontend Issues" with a fingerprint, symbolicated |
+| 13 | `observability-mcp`, for agents | 2, an issuer with token exchange | a tool call through the connector returns only the principal's grants |
+| 14 | the estate's own rule packs and dashboards | 4, 10 | the same contract: incident, healthy range, fixture; the same lint |
 
 Receivers before packs, because a rule that fires into a receiver named
 `blackhole` proves nothing. The box before the deadman, because the
 deadman is what proves the router; and the router before the rules,
-because the rules are what the router is for.
+because the rules are what the router is for. The pair after the single
+install works, because a pair is two of something that already does.
 
 ## The CRDs come first, and they are a release of their own
 
@@ -368,10 +372,13 @@ victoria-logs-collector:
     extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
 ```
 
-Plus a destination list per emitter. `tests/cases/observability-emitters/`
-holds three worked values files — the smallest useful one, one that sets
-everything, and the zone-redundant pair — each with the render it
-produces beside it.
+Plus a destination list per emitter: one `remote` block for the usual
+shape, with `replicas` for a store pair. `tests/cases/observability-emitters/`
+holds a worked values file per shape — the smallest useful one, one that
+sets everything, the HA pair reached across a gateway (`remote-ha-pair`)
+and in-cluster (`local-ha-pair`), the external receiver, the probes,
+kube-state-metrics, node-exporter — each with the render it produces
+under `tests/golden/`.
 
 ### Two things to carry out of this chart
 
@@ -411,7 +418,51 @@ sets `logs.enabled: false` and keeps the other two.
 
 Each entry says what to do; none is optional reading before a bump. What
 changed and why is in CHANGELOG.md, and is not repeated here: an entry
-below is the work, in the order it has to happen.
+below is the work, in the order it has to happen. Every entry since
+0.11.0 that moved a default is marked `**Behaviour change` in
+CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
+are below.
+
+### 0.39.0 → 0.40.0
+
+**`observability-rum`: `sourcemaps.sync` is gone, and the schema refuses
+the key.** An install that synced maps from an object store moves to
+`sourcemaps.smctl` (maps as OCI artifacts, pushed by `smctl push` at
+release time, `repositoryTemplate` required) or to a mounted
+`sourcemaps.directory` — one of the two, never both (docs/frontend.md,
+"Source maps"). The operator Deployment of `observability-stack` restarts
+once for the new `VM_PROMETHEUSCONVERTERADDARGOCDIGNOREANNOTATIONS`
+environment variable; nothing to do, but expect the rollout.
+
+### 0.36.1 → 0.37.0
+
+**`observability-stack`'s `WriterBufferGrowing` / `WriterDroppingPackets`
+are per destination** and `WriterDroppingPackets` is summed `by (url)`. A
+cluster writing to a pair sets `selfAlerts.writer.bufferMetricsExtra` and
+`droppedPacketsMetricsExtra` to the log agent's metric names so both
+agents are covered (docs/high-availability.md, "Alerts that make the
+buffers live"). A route or silence that matched the old global alert now
+needs the `url` label.
+
+### 0.35.0 → 0.35.1
+
+**Every `*Absent` guard in `platform-alerts` fires per cluster.** A store
+holding several clusters will raise alerts it never raised for a
+controller, exporter or probe missing on ONE cluster; each carries that
+cluster's own `clusterLabel`. A cluster, controller or probe removed on
+purpose keeps alerting until `absentLookback` (default `1d`) has passed —
+silence it for a day rather than widening the lookback. `clusterLabel: ""`
+renders the old expressions.
+
+### 0.28.0 → 0.29.0
+
+**`metrics.scrape.probes` is answered by a blackbox exporter, and
+`up{job="http-probe"}` no longer exists.** Set `blackboxExporter.enabled:
+true` in `observability-emitters` before the bump (probes without it are
+refused), move any own alert from `up{job="http-probe"}` to
+`probe_success{probe="<name>"}` — `platform-alerts` `groups.probes` does
+that for you — and, from 0.33.1, expect the probe series to carry the
+tenancy labels, so a scoped reader sees them.
 
 ### 0.10.0 → 0.11.0
 
