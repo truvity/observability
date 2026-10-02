@@ -396,6 +396,9 @@ type (
 		Method  string            `yaml:"method"`
 		Body    string            `yaml:"body"`
 		Headers map[string]string `yaml:"headers"`
+		// Placeholders renames [ALERT_TRIGGERED_OR_RESOLVED] per state
+		// (Gatus v5.37 `alerting.custom.placeholders`).
+		Placeholders map[string]map[string]string `yaml:"placeholders,omitempty"`
 	}
 
 	gatusSlackAlerting struct {
@@ -747,8 +750,19 @@ func deadmanAlerting(d DeadmanChecks, alerting *gatusAlerting) ([]gatusAlertRef,
 	alerting.Custom = &gatusCustomAlerting{
 		URL:    p.URL,
 		Method: "POST",
-		Body: fmt.Sprintf(`{"channel":%q,"text":"[ALERT_TRIGGERED_OR_RESOLVED]: [ENDPOINT_GROUP]/[ENDPOINT_NAME] - [ALERT_DESCRIPTION]"}`,
+		// Gatus substitutes [ALERT_TRIGGERED_OR_RESOLVED] LAST, so its
+		// value cannot carry other placeholders, and the per-alert
+		// description is shared by both states. The state-specific
+		// sentence therefore lives in the placeholder values and the
+		// description stays out of the body.
+		Body: fmt.Sprintf(`{"channel":%q,"text":"[ENDPOINT_GROUP]/[ENDPOINT_NAME] - [ALERT_TRIGGERED_OR_RESOLVED]"}`,
 			p.Channel),
+		Placeholders: map[string]map[string]string{
+			"ALERT_TRIGGERED_OR_RESOLVED": {
+				"TRIGGERED": "TRIGGERED: " + deadmanTriggeredText,
+				"RESOLVED":  "RESOLVED: the check is passing again",
+			},
+		},
 		Headers: map[string]string{
 			"Authorization": "Bearer " + alertVar(p.TokenEnvKey),
 			"Content-Type":  "application/json; charset=utf-8",
@@ -757,11 +771,16 @@ func deadmanAlerting(d DeadmanChecks, alerting *gatusAlerting) ([]gatusAlertRef,
 
 	return []gatusAlertRef{{
 		Type:             "custom",
-		Description:      "the alerting path may be down: this check has failed twice in a row",
+		Description:      deadmanTriggeredText,
 		FailureThreshold: deadmanFailureThreshold,
 		SendOnResolved:   true,
 	}}, alerting, nil
 }
+
+// deadmanTriggeredText is the sentence a TRIGGERED post carries (and the
+// alert's description); it is only true while the check is failing, so the
+// RESOLVED post must not reuse it.
+const deadmanTriggeredText = "the alerting path may be down: this check has failed twice in a row"
 
 var (
 	postChannelRE       = regexp.MustCompile(`^#?[A-Za-z0-9][A-Za-z0-9_-]*$`)

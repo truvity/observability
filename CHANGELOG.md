@@ -4,6 +4,18 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.31.1
+
+`statusbox`: RESOLVED posts say the check recovered.
+
+- The deadman's chat post used one shared sentence for both states, so a
+  recovery read "failed twice in a row". The rendered `alerting.custom` now
+  sets `placeholders.ALERT_TRIGGERED_OR_RESOLVED`: TRIGGERED keeps its
+  meaning, RESOLVED reads "RESOLVED: the check is passing again". The body
+  is now `<group>/<name> - <state text>` and no longer uses
+  `[ALERT_DESCRIPTION]` (the alert's own description is unchanged). Same
+  channel, same fields.
+
 ## v0.31.0
 
 `observability-dashboards`: a Keycloak dashboard, off by default.
