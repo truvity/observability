@@ -157,6 +157,27 @@ Alerts: `PodUnschedulable`, one per pod. It overlaps upstream's
 Job-owned pods, which `KubePodNotReady` excludes. A pod Pending for another
 reason (an image pull, a volume) is not this alert's.
 
+### `groups.probes`
+
+Off by default. Reads the blackbox exporter's series for the probes of
+`observability-emitters` (`metrics.scrape.probes`).
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `alertName` | string | `HTTPProbeDown` | Name of the alert. |
+| `probe` | regex | `.+` | Over the `probe` label; anchored by the matcher. |
+| `summary` / `description` | string | `""` | Plain text replacing the generated annotation (no template braces). |
+| `for` | duration | `5m` | How long `probe_success` must read 0. |
+| `severity` | enum | `warning` | |
+| `certExpiry.enabled` | bool | `false` | Adds the certificate alert. |
+| `certExpiry.alertName` | string | `HTTPProbeCertExpiring` | |
+| `certExpiry.withinDays` | int | `14` | Fires when `probe_ssl_earliest_cert_expiry` is less than this many days away. |
+| `certExpiry.for` / `.severity` | duration / enum | `1h` / `warning` | |
+
+Alerts: `max by (probe) (probe_success{probe=~"<probe>"}) == 0` and, with
+`certExpiry`, `min by (probe) (probe_ssl_earliest_cert_expiry{probe=~"<probe>"}) - time() < withinDays * 86400`.
+
 ### `groups.nodeClaims`
 
 Off by default. For a cluster whose nodes Karpenter provisions (including
@@ -1056,7 +1077,7 @@ use or not.
 | `metrics.queue.size` | quantity | `10Gi` | The persistent queue's volume. The operator divides it by the number of destinations to derive `-remoteWrite.maxDiskUsagePerURL`, so size it in multiples of 500MB with at least 500Mi per destination. |
 | `metrics.queue.storageClassName` | string | `""` | Empty renders no class and takes the cluster's default. |
 | `metrics.scrape.kubelet` / `.cadvisor` | bool | `true` | The node's two endpoints, as inline scrape configs. Everything else arrives as a `PodMonitor` or `ServiceMonitor` authored by whoever owns the thing being watched. |
-| `metrics.scrape.probes[]` (`name`, `url`, `interval`) | list | `[]` | HTTP probes of `observability-emitters`: each is a scrape of a URL this cluster does not run, kept for `up{job="http-probe", probe="<name>"}` (1 for a 200 answer whatever the body, 0 for a refused connection, a TLS failure or any other status), stamped with this cluster's identity. No blackbox exporter. `url` carries no user info, query or fragment. Pair it with `platform-alerts` `groups.probes`. |
+| `metrics.scrape.probes[]` (`name`, `url`, `module`, `interval`) | list | `[]` | HTTP probes: each renders a `VMProbe` that has the metrics agent ask the blackbox exporter to probe `url` (no user info, query or fragment) with `module` (a key of `blackboxExporter.modules`, default `http_2xx`) on `interval` (default: the agent's). The series are the exporter's `probe_success`, `probe_http_status_code`, `probe_duration_seconds` and `probe_ssl_earliest_cert_expiry`, stamped with this cluster's identity, `probe="<name>"`, `job="http-probe"`. **Behaviour change:** replaces the direct scrape and its `up{job="http-probe"}`. **Refused:** probes without `blackboxExporter.enabled`, an unknown `module`, a duplicate `name`. Pair it with `platform-alerts` `groups.probes`. |
 | `metrics.scrape.cadvisorAsKubeletJob` | bool | `true` (0.13.0) | Stores the cadvisor series as `job="kubelet"` with `metrics_path="/metrics/cadvisor"`, the kube-prometheus convention the k8s-stack's default `k8s.rules.*` recording rules and the mixin dashboards select on. The vmagent scrape keeps the name `cadvisor`; a relabel step sets the stored `job`. `false` keeps `job="cadvisor"` (the 0.12.x series identity), under which those rules match nothing. |
 | `metrics.scrape.cadvisorDrop.enabled` | bool | `true` (0.9.1) | A default DROP on the **cadvisor job only** — never kubelet's. Off restores every cadvisor series exactly as upstream emits it. See below. |
 | `metrics.scrape.cadvisorDrop.metricNames[]` | list | `[container_tasks_state, container_memory_failures_total, container_blkio_device_usage_total]` (0.9.1) | Exact `__name__` matches, dropped outright. **Replaced wholesale** by a consumer who sets this key; widen it with `extraMetricNames` instead. |
@@ -1125,6 +1146,25 @@ agent's own metrics come from a `PodMonitor` rather than a
 `VMServiceScrape`. The two node-level jobs copy the container's own
 `namespace` into `k8s_namespace_name` after the scrape.
 `remoteWrite.shardByURL` in `metrics.spec.extraArgs` is refused outright.
+
+### `blackboxExporter`
+
+The exporter behind `metrics.scrape.probes`: the upstream image as one
+Deployment with its own ServiceAccount (no token mounted), a Service and a
+ConfigMap. Neither the VictoriaMetrics operator nor the vendored k8s-stack
+chart ships one.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `blackboxExporter.enabled` | bool | `false` | Renders the exporter. Required by any probe. |
+| `blackboxExporter.image` | `{repository, tag}` | `prom/blackbox-exporter:v0.28.0` | |
+| `blackboxExporter.replicaCount` | int | `1` | |
+| `blackboxExporter.port` | int | `9115` | |
+| `blackboxExporter.podSecurityContext` / `.containerSecurityContext` | object | `restricted`: non-root 65534, `RuntimeDefault` seccomp, no escalation, read-only root, drop `ALL` | |
+| `blackboxExporter.nodeSelector` / `.tolerations` | object / list | `{}` / `[]` | Where the probe leaves from. |
+| `blackboxExporter.resources` | object | 10m CPU request, no CPU limit / 64Mi | Memory request == limit. |
+| `blackboxExporter.modules` | map | `http_2xx` | The exporter's modules by name, merged with what you add. `http_2xx`: `prober: http`, `timeout: 5s`, GET, any 2xx (`valid_status_codes: []`), `follow_redirects: false`, `preferred_ip_protocol: ip4`. |
+| `blackboxExporter.networkPolicy.enabled` | bool | `false` | A NetworkPolicy on the exporter pods admitting TCP on `port` only from the metrics agent's pods. |
 
 ### `logs` — vlagent
 

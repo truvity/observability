@@ -6,6 +6,44 @@ must be done first, and whether a default moved. Newest first, one
 
 ## v0.28.0
 
+`observability-emitters`, `platform-alerts`: a real blackbox exporter for
+HTTP probes.
+
+- **Behaviour change: `metrics.scrape.probes` is answered by a blackbox
+  exporter, not scraped directly.** The list keeps its shape (`name`,
+  `url`, `interval`, and a new optional `module`), but each probe now
+  renders a `VMProbe` aimed at the exporter instead of an inline scrape of
+  the URL, and `up{job="http-probe"}` no longer exists: read
+  `probe_success{probe="<name>"}` (1 while the module accepts the answer,
+  0 otherwise), plus `probe_http_status_code`, `probe_duration_seconds` and
+  `probe_ssl_earliest_cert_expiry`. The series carry the same stamped
+  `k8s_cluster_name` and `deployment_environment_name`, `probe=<name>` and
+  `job="http-probe"`. The old path handed the response body to the agent as
+  Prometheus text, so a JSON health document made it log `cannot unmarshal
+  Prometheus line` on every scrape and tripped `TooManyErrorLogs`. There is
+  no compatibility path: set `blackboxExporter.enabled: true` with the
+  probes, and move any alert off `up{job="http-probe"}` (`platform-alerts`
+  `groups.probes` does it for you). Installs that set no probes render
+  byte-identically.
+- **`blackboxExporter`** (emitters, default off): the upstream
+  `prom/blackbox-exporter:v0.28.0` as one Deployment with its own
+  ServiceAccount (no token), Service and ConfigMap, Pod Security
+  `restricted`, `resources`, `nodeSelector`, `tolerations` and an optional
+  `networkPolicy.enabled` that admits the exporter's port only from the
+  metrics agent. `modules` defaults to `http_2xx` (GET, any 2xx,
+  redirects not followed, IPv4) and merges with what you add. Neither the
+  VictoriaMetrics operator nor the vendored k8s-stack chart ships a
+  blackbox exporter, so this is the chart's own component.
+- **Refused:** probes without `blackboxExporter.enabled`, a probe whose
+  `module` is not a key of `blackboxExporter.modules`, and two probes with
+  one name.
+- **`platform-alerts` `groups.probes`** now alerts on
+  `max by (probe) (probe_success{probe=~"<probe>"}) == 0` (the `for`,
+  `alertName`, `severity`, `summary` and `description` values are
+  unchanged). The new **`groups.probes.certExpiry`** (default off) adds
+  `HTTPProbeCertExpiring`: `probe_ssl_earliest_cert_expiry` less than
+  `withinDays` (default 14) away, for `1h`.
+
 `observability-stack`: a moved Alertmanager replica is forgotten in minutes.
 
 - **Behaviour change: an Alertmanager pair renders one more flag.** Only
@@ -63,7 +101,8 @@ channel, and an outside probe.
   match a method and `POST` on that path creates alerts, so the edge in front
   must admit GET only. Refused without `alertmanager.enabled`.
 - **`metrics.scrape.probes`** (emitters, default empty): HTTP probes as
-  scrapes of a URL, kept for `up{job="http-probe"}`; **`groups.probes`**
+  scrapes of a URL, kept for `up{job="http-probe"}` (replaced by a
+  blackbox exporter in the entry above); **`groups.probes`**
   (platform-alerts, default off): the alert on `up == 0`, with a settable
   `alertName`, `summary` and `description` (plain text, default empty).
 - **`statusbox.Catalogue.Deadman`**: the deadman group (vmalert Watchdog,
