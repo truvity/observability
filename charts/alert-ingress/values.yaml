@@ -114,18 +114,36 @@ topics: []
 #       match: {"_sns.TopicArn": "<the budgets topic ARN>"}
 #       matchRegex: {"_sns.Message": "Budget Name: "}
 #       alert:
-#         alertname: BudgetThresholdCrossed
+#         alertname: CloudBudgetThreshold
 #         severity: warning
 #         labels:
 #           source: budgets
 #           k8s_cluster_name: cloud
+#           topic: '{{ ._sns.TopicArn }}'
+#           subject: '{{ ._sns.Subject }}'
+#           budget_name: '{{ reFind "Budget Name: (\\S+)" ._sns.Message }}'
 #         annotations:
 #           summary: '{{ ._sns.Subject }}'
+#     - name: cost-anomaly
+#       match: {"_sns.TopicArn": "<the cost anomaly topic ARN>", "anomalyId": "*"}
+#       alert:
+#         alertname: CloudCostAnomaly
+#         severity: warning
+#         labels:
+#           source: cost-anomaly
+#           k8s_cluster_name: cloud
+#           monitor_name: '{{ .dimensionalValue }}'
+#           account_id: '{{ .accountId }}'
+#         annotations:
+#           summary: '{{ ._sns.Subject }}'
+#           impact: '{{ .impact.totalImpact }}'
+#           details: '{{ .anomalyDetailsLink }}'
 #
 # Template helpers beyond the Go builtins: `atLeast VALUE THRESHOLD` (numeric
 # >=, accepts a JSON number or a numeric string; an absent field is false,
 # a non-numeric one fails the render and the message becomes
-# CloudEventUnmapped) and `num VALUE`.
+# CloudEventUnmapped), `num VALUE` and `reFind PATTERN TEXT` (first capture
+# group of an RE2 match, "" on a miss).
 mappings: []
 
 # -- The estate's own scheduled proof-of-life message, published through

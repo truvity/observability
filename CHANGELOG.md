@@ -4,6 +4,15 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- feat(alert-ingress): AWS Budgets (plain-text) and Cost Anomaly Detection
+  (JSON) alerts reach Alertmanager through the receiver. New template
+  helper `reFind PATTERN TEXT` pulls a label out of a plain-text message
+  (first capture group, empty on a miss). `docs/alert-ingress.md` gains the
+  two example mappings (`CloudBudgetThreshold`, `CloudCostAnomaly`) and what
+  the AWS side must configure. No default moves; the render is unchanged.
+
 ## v0.42.0
 
 - **`vmalert.remoteEvaluators`: evaluate selected rules against another

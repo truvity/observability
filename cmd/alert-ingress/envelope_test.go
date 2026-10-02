@@ -218,3 +218,101 @@ func TestWebhookHandlerRefusesGET(t *testing.T) {
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
+
+const (
+	costAnomalyTopic = "<the cost anomaly topic ARN>"
+	anomalyMessage   = `{"accountId":"example-account","anomalyId":"a1","dimensionalValue":"Amazon Elastic Block Store",` +
+		`"monitorArn":"example-monitor-arn","impact":{"maxImpact":48.22,"totalImpact":48.22},` +
+		`"rootCauses":[{"service":"Amazon Elastic Block Store","region":"us-east-1"}],` +
+		`"anomalyDetailsLink":"https://example.invalid/anomaly/a1"}`
+)
+
+func awsMappings() []Mapping {
+	return []Mapping{
+		{
+			Name:       "budget",
+			Match:      map[string]string{"_sns.TopicArn": exampleBudget},
+			MatchRegex: map[string]string{"_sns.Message": "Budget Name: "},
+			Alert: AlertSpec{
+				Alertname: "CloudBudgetThreshold", Severity: "warning",
+				Labels: map[string]string{
+					"topic":       "{{ ._sns.TopicArn }}",
+					"subject":     "{{ ._sns.Subject }}",
+					"budget_name": `{{ reFind "Budget Name: (\\S+)" ._sns.Message }}`,
+				},
+			},
+		},
+		{
+			Name:  "cost-anomaly",
+			Match: map[string]string{"_sns.TopicArn": costAnomalyTopic, "anomalyId": "*"},
+			Alert: AlertSpec{
+				Alertname: "CloudCostAnomaly", Severity: "warning",
+				Labels: map[string]string{"monitor_name": "{{ .dimensionalValue }}", "account_id": "{{ .accountId }}"},
+				Annotations: map[string]string{
+					"impact": "{{ .impact.totalImpact }}", "details": "{{ .anomalyDetailsLink }}",
+				},
+			},
+		},
+	}
+}
+
+func TestBudgetPlainTextExtractsNameAndTopic(t *testing.T) {
+	fixture := newSigningFixture(t)
+	am := newFakeAlertmanager(t)
+	cfg := envelopeConfig(awsMappings()...)
+	cfg.Topics = append(cfg.Topics, costAnomalyTopic)
+	srv := newTestServer(t, fixture, cfg, am)
+
+	post(t, srv, notification(fixture, t, exampleBudget, "AWS Budgets: example has exceeded your alert threshold",
+		"AWS Budget Notification\nBudget Name: example\nBudget Type: COST\nAlert Threshold: > 80%"))
+
+	require.Len(t, am.posts, 1)
+	l := am.posts[0][0].Labels
+	assert.Equal(t, "CloudBudgetThreshold", l["alertname"])
+	assert.Equal(t, exampleBudget, l["topic"])
+	assert.Equal(t, "AWS Budgets: example has exceeded your alert threshold", l["subject"])
+	assert.Equal(t, "example", l["budget_name"])
+}
+
+func TestBudgetRewordedTextDegradesLabelNotAlert(t *testing.T) {
+	in := buildInput(Envelope{TopicArn: exampleBudget, Message: "Budget Name: \nsomething else"})
+	l, _, err := renderAlert(awsMappings()[0].Alert, in)
+	require.NoError(t, err)
+	assert.Empty(t, l["budget_name"])
+
+	_, err = renderString(`{{ reFind "(" "x" }}`, nil)
+	assert.Error(t, err)
+
+	got, err := renderString(`{{ reFind "a+" "baab" }}`, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "aa", got)
+}
+
+func TestCostAnomalyJSONMapsAndIsScopedByTopic(t *testing.T) {
+	fixture := newSigningFixture(t)
+	am := newFakeAlertmanager(t)
+	cfg := envelopeConfig(awsMappings()...)
+	cfg.Topics = append(cfg.Topics, costAnomalyTopic)
+	srv := newTestServer(t, fixture, cfg, am)
+
+	post(t, srv, notification(fixture, t, costAnomalyTopic, "AWS Cost Management: Cost anomaly detected", anomalyMessage))
+	// The same body on another allow-listed topic is not this mapping.
+	post(t, srv, notification(fixture, t, exampleBudget, "", anomalyMessage))
+
+	require.Len(t, am.posts, 2)
+	a := am.posts[0][0]
+	assert.Equal(t, "CloudCostAnomaly", a.Labels["alertname"])
+	assert.Equal(t, "Amazon Elastic Block Store", a.Labels["monitor_name"])
+	assert.Equal(t, "example-account", a.Labels["account_id"])
+	assert.Equal(t, "48.22", a.Annotations["impact"])
+	assert.Equal(t, "https://example.invalid/anomaly/a1", a.Annotations["details"])
+	assert.Equal(t, "CloudEventUnmapped", am.posts[1][0].Labels["alertname"])
+}
+
+// Plain text yields a nil-equivalent body but never a dead end: the
+// envelope is present and a JSON-only mapping simply does not match.
+func TestPlainTextBodyIsEmptyButEnvelopeMatchable(t *testing.T) {
+	in := buildInput(Envelope{TopicArn: exampleBudget, Subject: "s", Message: "not json"})
+	assert.True(t, matches(map[string]string{"_sns.Subject": "s"}, in))
+	assert.False(t, matches(map[string]string{"anomalyId": "*"}, in))
+}

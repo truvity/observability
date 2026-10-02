@@ -87,10 +87,29 @@ mappings:
     match: {"_sns.TopicArn": "<the budgets topic ARN>"}
     matchRegex: {"_sns.Message": "Budget Name: "}   # plain text, not JSON
     alert:
-      alertname: BudgetThresholdCrossed
+      alertname: CloudBudgetThreshold
       severity: warning
-      labels: {source: budgets, k8s_cluster_name: cloud}
-      annotations: {summary: '{{ ._sns.Subject }}'}
+      labels:
+        source: budgets
+        k8s_cluster_name: cloud
+        topic: '{{ ._sns.TopicArn }}'
+        subject: '{{ ._sns.Subject }}'
+        budget_name: '{{ reFind "Budget Name: (\\S+)" ._sns.Message }}'
+      annotations: {summary: '{{ ._sns.Subject }}', text: '{{ ._sns.Message }}'}
+  - name: cost-anomaly
+    match: {"_sns.TopicArn": "<the cost anomaly topic ARN>", "anomalyId": "*"}
+    alert:
+      alertname: CloudCostAnomaly
+      severity: warning
+      labels:
+        source: cost-anomaly
+        k8s_cluster_name: cloud
+        monitor_name: '{{ .dimensionalValue }}'
+        account_id: '{{ .accountId }}'
+      annotations:
+        summary: '{{ ._sns.Subject }}'
+        impact: '{{ .impact.totalImpact }}'
+        details: '{{ .anomalyDetailsLink }}'
 
 # The heartbeat: a scheduled event the estate publishes through the same
 # path, and the rule that fires when it stops arriving.
@@ -132,7 +151,56 @@ the labels make two findings two alerts, where a fixed label set would
 collapse them into one that Alertmanager de-duplicates. Template helpers
 beyond Go's builtins: `atLeast VALUE THRESHOLD` (numeric `>=`; int, float
 or numeric string; an absent value is false, a non-numeric one fails the
-render and the message becomes `CloudEventUnmapped`) and `num VALUE`.
+render and the message becomes `CloudEventUnmapped`), `num VALUE`, and
+`reFind PATTERN TEXT` (the first capture group of the first RE2 match, the
+whole match if the pattern has no group, and `""` when nothing matches, so a
+reworded publisher degrades one label instead of failing the render).
+
+## AWS Budgets and Cost Anomaly Detection
+
+Both publish to an SNS topic in the account that owns the budget or the
+monitor, and both reach this receiver through the mappings above. Allow-list
+each topic ARN under `topics`.
+
+**Budgets** publishes a plain-text `Message` (not JSON) with a Subject of the
+form `AWS Budgets: <budget name> has exceeded your alert threshold`. AWS does
+not document the body layout as a contract; in practice it carries
+`Budget Name:`, `Budget Type:`, `Budgeted Amount:`, `Alert Type:`,
+`Alert Threshold:` and `ACTUAL Amount:` / `FORECASTED Amount:` lines. The
+`budget` mapping above therefore keys on the topic and a loose
+`Budget Name: ` substring, and carries the topic and Subject as labels, which
+are reliable; `budget_name` comes from `reFind` and is empty rather than
+wrong if the text ever changes. Drop the `matchRegex` line if the topic only
+ever carries budgets.
+
+**Cost Anomaly Detection** publishes JSON. Fields (from the AWS-published
+sample): `accountId`, `anomalyId`, `anomalyStartDate`, `anomalyEndDate`,
+`dimensionalValue` (the service or dimension value), `monitorArn`,
+`anomalyScore{maxScore,currentScore}`, `impact{maxImpact,totalImpact}`,
+`rootCauses[{service,region,linkedAccount,usageType}]` and
+`anomalyDetailsLink`; the Subject reads
+`AWS Cost Management: Cost anomaly detected on <timestamp>`. The monitor's
+display name is not in the message, so `monitor_name` above carries
+`dimensionalValue`; use `monitorArn` in a label if a stable monitor key is
+needed.
+
+What the AWS side must configure:
+
+- The topic policy must allow the publisher, in the same account as the
+  budget or monitor (Budgets does not support cross-account topics):
+  principal service `budgets.amazonaws.com` (conditions
+  `aws:SourceAccount` and an `ArnLike` on `aws:SourceArn` scoped to the budgets of that account)
+  or `costalerts.amazonaws.com`, action `SNS:Publish`, resource the topic.
+- Topic region: an anomaly subscription needs the SNS topic in the same
+  region as the Cost Explorer endpoint it is created through (`us-east-1`);
+  Budgets is a global service and publishes to a topic in the region the
+  ARN names. Topics must not use SSE with the default AWS-managed key;
+  Budgets refuses encrypted topics unless the KMS key policy grants it.
+- Anomaly subscriptions: SNS subscribers require frequency `IMMEDIATE`
+  (daily and weekly digests go to email only).
+- The HTTPS subscription on each topic leaves `RawMessageDelivery` at
+  `false`: this receiver verifies the SNS signature, which only the wrapped
+  envelope carries.
 
 ## What it does with a message, in order
 
