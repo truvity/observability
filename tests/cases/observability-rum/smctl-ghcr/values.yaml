@@ -1,0 +1,21 @@
+# smctl against a private GHCR package: a docker config Secret, the default
+# limits, one app.
+global:
+  observabilityRum:
+    otlp:
+      endpoint: http://otlp-gateway.example.svc:4318
+    apps:
+      - name: shop
+        apiKeySecret:
+          name: shop-rum-key
+          key: key
+        allowedOrigins:
+          - https://shop.example
+    sourcemaps:
+      smctl:
+        enabled: true
+        repositoryTemplate: ghcr.io/example-org/sourcemaps/{app}
+        auth:
+          mode: dockerConfig
+          dockerConfigSecret:
+            name: sourcemaps-pull

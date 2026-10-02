@@ -1,4 +1,43 @@
 ---
+# Source: observability-rum/templates/sourcemap-smctl.yaml
+# Only the Alloy pods may read the maps (smctl has no authentication of its
+# own, and a map can carry the app's source), and the pod may reach only
+# DNS and the registry's HTTPS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-rum-sourcemaps
+  namespace: rum
+  labels:
+    app.kubernetes.io/name: observability-rum
+    app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/managed-by: Helm
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: observability-rum
+      app.kubernetes.io/name: observability-rum-sourcemaps
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy
+              app.kubernetes.io/instance: observability-rum
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+
+---
 # Source: observability-rum/charts/alloy/templates/pdb.yaml
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -35,6 +74,18 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: alloy
     app.kubernetes.io/component: rbac
+
+---
+# Source: observability-rum/templates/sourcemap-smctl.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-rum-sourcemaps
+  namespace: rum
+  labels:
+    app.kubernetes.io/name: observability-rum
+    app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/managed-by: Helm
 
 ---
 # Source: observability-rum/charts/alloy/templates/configmap.yaml
@@ -115,7 +166,7 @@ data:
         }
         location {
           minified_path_prefix = "https://shop.example/"
-          path                 = "/sourcemaps/shop/{{ .Release }}"
+          path                 = "http://observability-rum-sourcemaps:8080/shop/{{ .Release }}"
         }
       }
     
@@ -2335,6 +2386,39 @@ data:
     
 
 ---
+# Source: observability-rum/templates/sourcemap-smctl.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-rum-sourcemaps
+  namespace: rum
+  labels:
+    app.kubernetes.io/name: observability-rum
+    app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/managed-by: Helm
+data:
+  config.yaml: |
+    apps:
+    - name: shop
+    auth:
+      dockerConfig: /etc/smctl/docker/config.json
+      mode: dockerConfig
+    cache:
+      dir: /cache
+      maxSize: 1GiB
+    fetchTimeout: 60s
+    limits:
+      maxFileSize: 64MiB
+      maxFiles: 10000
+      maxLayerSize: 256MiB
+      maxTotalSize: 512MiB
+    listen: :8080
+    negativeCache:
+      maxEntries: 4096
+      ttl: 30s
+    repositoryTemplate: ghcr.io/example-org/sourcemaps/{app}
+
+---
 # Source: observability-rum/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -2419,6 +2503,28 @@ spec:
     - name: shop
       port: 12347
       targetPort: 12347
+      protocol: TCP
+
+---
+# Source: observability-rum/templates/sourcemap-smctl.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-rum-sourcemaps
+  namespace: rum
+  labels:
+    app.kubernetes.io/name: observability-rum
+    app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/name: observability-rum-sourcemaps
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
       protocol: TCP
 
 ---
@@ -2544,6 +2650,91 @@ spec:
             name: observability-rum
         - emptyDir: {}
           name: storage
+
+---
+# Source: observability-rum/templates/sourcemap-smctl.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-rum-sourcemaps
+  namespace: rum
+  labels:
+    app.kubernetes.io/name: observability-rum
+    app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: observability-rum
+      app.kubernetes.io/name: observability-rum-sourcemaps
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: observability-rum
+        app.kubernetes.io/name: observability-rum-sourcemaps
+      annotations:
+        # A changed configuration restarts the pods (smctl reads it once).
+        checksum/config: ee97893e0dc12e5b56d6afd4c14b9e81cd8f515009e8cb0a3916a1c30f344489
+    spec:
+      serviceAccountName: observability-rum-sourcemaps
+      # The ServiceAccount is mounted only where it carries an identity the
+      # SDK reads from the pod (IRSA's projected token, Pod Identity's
+      # token); anonymous and dockerConfig need no API access at all.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: smctl
+          image: ghcr.io/truvity/ocictl/smctl:0.7.1@sha256:534ca957ff0cc00a0444adb88cff031d2878664a97eb1aa84f8790c1008808ec
+          args: ["serve", "--config", "/etc/smctl/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/smctl/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: cache
+              mountPath: /cache
+            - name: docker
+              mountPath: /etc/smctl/docker
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: observability-rum-sourcemaps
+        - name: cache
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: docker
+          secret:
+            secretName: sourcemaps-pull
 
 ---
 # Source: observability-rum/charts/alloy/templates/servicemonitor.yaml

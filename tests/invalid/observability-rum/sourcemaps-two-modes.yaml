@@ -1,0 +1,17 @@
+# expect: are both set
+global:
+  observabilityRum:
+    otlp:
+      endpoint: "http://otlp-gateway.example.svc:4318"
+    sourcemaps:
+      directory: /sourcemaps
+      smctl:
+        enabled: true
+        repositoryTemplate: ghcr.io/example/sourcemaps/{app}
+    apps:
+      - name: shop
+        apiKeySecret:
+          name: shop-rum-key
+          key: key
+        allowedOrigins:
+          - https://shop.example

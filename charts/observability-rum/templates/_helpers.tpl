@@ -42,7 +42,7 @@ callers `fromYamlArray` it). Reads `.Values.global.observabilityRum` only.
 
 Per app: name, id (the Alloy-safe identifier), port, serviceName,
 environment, secretName, secretKey, origins, prefixes, maxPayload,
-maxBytes, rate, burst, traces (the share of browser traces kept).
+maxBytes, rate, burst, traces, repository (the share of browser traces kept).
 */}}
 {{- define "observability-rum.apps" -}}
 {{- $c := .Values.global.observabilityRum -}}
@@ -73,6 +73,7 @@ maxBytes, rate, burst, traces (the share of browser traces kept).
       "secretKey" ($key.key | default "")
       "origins" $origins
       "prefixes" $prefixes
+      "repository" ($sm.repository | default "")
       "maxPayload" $size
       "maxBytes" (include "observability-rum.bytes" $size | int)
       "rate" (ternary $rl.rate $d.rateLimit.rate (hasKey $rl "rate"))

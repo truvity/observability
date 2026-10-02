@@ -53,9 +53,11 @@ global:
     #                  for this receiver, strategy global.
     #   sampling       optional {traces: 0..1}: keep this share of browser
     #                  traces here. Session sampling belongs to the SDK.
-    #   sourcemaps     optional {minifiedPathPrefixes: [...]}: URL prefixes the
-    #                  browser reports scripts under. Default: each allowed
-    #                  origin followed by "/".
+    #   sourcemaps     optional {minifiedPathPrefixes: [...], repository}:
+    #                  URL prefixes the browser reports scripts under (default:
+    #                  each allowed origin followed by "/"); and, with
+    #                  `sourcemaps.smctl`, the registry repository of this
+    #                  app's maps when it is not the template's.
     apps: []
 
     defaults:
@@ -90,49 +92,79 @@ global:
       # -- Refused when true. Alloy's own default is to fetch a map from the
       # URL the browser reports; this chart never lets it.
       download: false
-      # -- Where Alloy reads maps from when `sync` is off: a directory INSIDE
-      # the Alloy pod, one subdirectory per app, then the release, then the
-      # script's path: <directory>/<app>/<release>/assets/index.js.map .
-      # Mount it yourself (alloy.alloy.mounts.extra and
-      # alloy.controller.volumes.extra). Ignored when `sync.enabled`.
-      directory: /sourcemaps
+      # -- Mode 1 (the default): a directory INSIDE the Alloy pod, one
+      # subdirectory per app, then the release, then the script's path:
+      # <directory>/<app>/<release>/assets/index.js.map . Mount it yourself
+      # (alloy.alloy.mounts.extra and alloy.controller.volumes.extra).
+      # Empty means /sourcemaps. REFUSED when `smctl.enabled` (one mode).
+      directory: ""
       cache:
         # -- A map not found is cached as a miss; this is how soon it is
-        # looked for again (a release whose maps are still syncing).
+        # looked for again (a release whose maps are still being pushed).
         missRetry: 1m
         # -- How long an unused parsed map stays in memory.
         ttl: 1h
-      # -- A READ-ONLY copy of an object-store prefix, served to Alloy over
-      # HTTP inside the cluster by its own small Deployment. Off by default.
-      # Credentials come from the pod's ServiceAccount (Pod Identity or
-      # IRSA, set through `serviceAccount.annotations`); the chart accepts
-      # no static keys. Bucket layout: <prefix>/<app>/<release>/<path>.map .
-      sync:
+      # -- Mode 2: `smctl serve`, a small Deployment that serves any app's
+      # source map from an OCI registry (GHCR, ECR) to Alloy over HTTP
+      # inside the cluster: GET /<app>/<release>/<path>.map . The maps are
+      # published by the release job with `smctl push` (docs/frontend.md).
+      # Off by default. No static credentials: ECR through the pod's
+      # ServiceAccount (Pod Identity or IRSA), a private GHCR or other
+      # registry through a mounted docker config Secret.
+      smctl:
         enabled: false
-        bucket: ""
-        # -- Key prefix inside the bucket, without a leading or trailing
-        # slash. Empty: the bucket root.
-        prefix: ""
-        region: ""
-        # -- For an S3-compatible store that is not AWS. Empty: AWS.
-        endpointUrl: ""
-        interval: 5m
+        # -- REQUIRED when enabled, no default (a public chart knows no
+        # organisation): the registry repository one app's maps are pushed
+        # to, with `{app}` standing for the app's `name`, e.g.
+        # ghcr.io/<org>/sourcemaps/{app} . An app can override it with its
+        # own `sourcemaps.repository`.
+        repositoryTemplate: ""
+        auth:
+          # -- anonymous | ecr | dockerConfig.
+          #   anonymous     a public package; no login.
+          #   ecr           `ecr:GetAuthorizationToken` through the default
+          #                 AWS credential chain; every repository must be an
+          #                 ECR host. Set `serviceAccount.annotations` for
+          #                 IRSA (Pod Identity needs none: it binds by the
+          #                 ServiceAccount's name).
+          #   dockerConfig  a Secret holding a docker config.json.
+          mode: anonymous
+          # -- mode dockerConfig: the Secret (in this namespace) and its key.
+          dockerConfigSecret:
+            name: ""
+            key: config.json
+        cache:
+          # -- Unpacked bytes kept in the cache directory; whole releases
+          # are evicted least-recently-used. smctl's own spelling (GiB).
+          maxSize: 1GiB
+          # -- The emptyDir the cache lives on: a Kubernetes quantity, above
+          # `maxSize`.
+          volumeSize: 2Gi
+        # -- smctl's own caps, one release at a time (sizes in its spelling).
+        limits:
+          maxLayerSize: 256MiB
+          maxTotalSize: 512MiB
+          maxFileSize: 64MiB
+          maxFiles: 10000
+        negativeCache:
+          # -- How long "no such release" is remembered, so a release whose
+          # maps are not pushed yet does not hit the registry per frame.
+          ttl: 30s
+          maxEntries: 4096
+        fetchTimeout: 60s
         replicas: 1
         serviceAccount:
-          # -- Annotations on the sync pod's ServiceAccount, e.g. an IRSA
-          # role annotation. Pod Identity needs none (it binds by name).
+          # -- Annotations on the ServiceAccount, e.g. an IRSA role annotation.
           annotations: {}
-        # -- Pinned by tag; set `digest` to pin harder.
-        syncImage:
-          repository: public.ecr.aws/aws-cli/aws-cli
-          tag: 2.34.0
-        serveImage:
-          repository: docker.io/library/busybox
-          tag: 1.37.0
+        # -- Pinned by digest (the multi-arch index of the tag).
+        image:
+          repository: ghcr.io/truvity/ocictl/smctl
+          tag: 0.7.1
+          digest: sha256:534ca957ff0cc00a0444adb88cff031d2878664a97eb1aa84f8790c1008808ec
         resources:
           requests:
             cpu: 10m
-            memory: 32Mi
+            memory: 64Mi
           limits:
             memory: 256Mi
 

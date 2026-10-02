@@ -1,12 +1,15 @@
-# expect: needs `sourcemaps.sync.bucket`
+# expect: only `auth.mode: ecr` uses
 global:
   observabilityRum:
     otlp:
       endpoint: "http://otlp-gateway.example.svc:4318"
     sourcemaps:
-      sync:
+      smctl:
         enabled: true
-        region: eu-west-1
+        repositoryTemplate: ghcr.io/example/sourcemaps/{app}
+        serviceAccount:
+          annotations:
+            example.com/role: reader
     apps:
       - name: shop
         apiKeySecret:
@@ -14,4 +17,3 @@ global:
           key: key
         allowedOrigins:
           - https://shop.example
-

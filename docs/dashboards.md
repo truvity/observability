@@ -170,6 +170,7 @@ in the change, never shipped empty.
 | `kargo` | `kargo-controller-metrics` | authored (`authored: true`) |
 | `keycloak` | the install's own `/metrics`: `{install}-service` through the Keycloak chart's ServiceMonitor (optional source `keycloak-metrics`; off by default) | authored (`authored: true`) |
 | `openbao` | the OpenBAO server pods' `/v1/sys/metrics` (optional source `openbao-server-metrics`; off by default) | authored (`authored: true`) |
+| `frontend-issues`, `frontend-overview` | no metrics: the LOG store, through a VictoriaLogs `datasource` variable, from what `charts/observability-rum` writes (optional source `frontend-telemetry`; off by default; folder `frontend`; `datasources.logs` and `.traces` are required while one is on) | authored (`authored: true`, `hack/dashboards/frontend.py`) |
 | `external-secrets` | `external-secrets-metrics`, `external-secrets-webhook-metrics`, `external-secrets-cert-controller-metrics` (optional source `external-secrets-metrics`; off by default) | External Secrets Operator `docs/snippets/dashboard.json` |
 
 - **Job names follow the converters.** A ServiceMonitor's `job` is its
@@ -228,7 +229,7 @@ in the change, never shipped empty.
 
 ## Third-party dashboards
 
-Every dashboard except `fleet-overview`, `kargo`, `keycloak` and `openbao` (all authored here) is an
+Every dashboard except `fleet-overview`, `kargo`, `keycloak`, `openbao` and the two `frontend-*` (all authored here) is an
 upstream project's work, modified to the contract above. Apache-2.0 requires the licence text, a
 modification notice and the attribution to travel with it, so
 `THIRD_PARTY_NOTICES.md` lists each one (upstream, URL, pinned ref, SPDX

@@ -1,0 +1,74 @@
+# The two Frontend dashboards alone: what a Grafana turns on to read browser
+# telemetry from a log store (charts/observability-rum). Off by default (the
+# catalog entries `requires` the optional source `frontend-telemetry`), so no
+# existing golden moves. They read logs and traces, not metrics, so
+# `datasources.metrics` is empty here and that is accepted. The rest of the
+# set is off so the golden shows only them, and the home page is off with it.
+datasources:
+  metrics: ""
+  logs: example-logs
+  traces: example-traces
+
+home: ""
+
+dashboards:
+  fleet-overview:
+    enabled: false
+  k8s-views-global:
+    enabled: false
+  k8s-views-namespaces:
+    enabled: false
+  k8s-views-pods:
+    enabled: false
+  k8s-views-nodes:
+    enabled: false
+  victoriametrics-single:
+    enabled: false
+  victoriametrics-vmagent:
+    enabled: false
+  victoriametrics-vmalert:
+    enabled: false
+  victoriametrics-operator:
+    enabled: false
+  victorialogs-single:
+    enabled: false
+  victorialogs-vlagent:
+    enabled: false
+  victoriatraces-single:
+    enabled: false
+  alertmanager:
+    enabled: false
+  node-exporter-full:
+    enabled: false
+  kubelet:
+    enabled: false
+  argocd:
+    enabled: false
+  cert-manager:
+    enabled: false
+  cnpg-operator:
+    enabled: false
+  cnpg-cluster:
+    enabled: false
+  nats-server:
+    enabled: false
+  nats-jetstream:
+    enabled: false
+  envoy-gateway:
+    enabled: false
+  envoy-proxy:
+    enabled: false
+  envoy-clusters:
+    enabled: false
+  kargo:
+    enabled: false
+  keycloak:
+    enabled: false
+  openbao:
+    enabled: false
+  external-secrets:
+    enabled: false
+  frontend-issues:
+    enabled: true
+  frontend-overview:
+    enabled: true

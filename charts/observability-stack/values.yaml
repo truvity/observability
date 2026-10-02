@@ -2183,6 +2183,16 @@ victoria-metrics-k8s-stack:
         value: "false"
       - name: VM_ENABLEDPROMETHEUSCONVERTER_ALERTMANAGERCONFIG
         value: "false"
+      # The operator copies a converted object's annotations, ArgoCD's
+      # `tracking-id` among them, onto the native VMServiceScrape /
+      # VMPodScrape it creates. ArgoCD then claims that object for the
+      # Application too, with nothing in git to compare it to: it is listed
+      # with no status for as long as the ServiceMonitor exists. This makes
+      # the operator mark what it converts `IgnoreExtraneous` (and
+      # `Prune=false`), the operator's own switch for exactly this. Inert
+      # without ArgoCD.
+      - name: VM_PROMETHEUSCONVERTERADDARGOCDIGNOREANNOTATIONS
+        value: "true"
     resources:
       # CPU request: measured p95 was under 5m, so 1.5 x p95 is under the
       # 10m floor; 50m keeps headroom for a rule-evaluation burst after a

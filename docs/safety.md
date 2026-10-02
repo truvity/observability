@@ -1885,7 +1885,7 @@ and the whole of "what bounds a public write endpoint", is
 | `alloy.rbac.create: true` | The subchart's default Role reads every Secret and pod in the namespace, and a ClusterRole besides; the receivers need `get` on their own keys. The chart renders that Role itself, by name. |
 | `alloy.alloy.configMap.content` replaced or `create: false` | A hand-written configuration silently drops the app stamping, the privacy rules and the fingerprint. |
 | `networkPolicy.enabled` with no `ingressFrom` | The first policy that selects a pod default-denies it; with no peer listed the gateway reaches nothing. |
-| `sourcemaps.sync` without a bucket or region; a prefix with a slash at either end | A sync that copies nothing leaves every stack minified. |
+| `sourcemaps.directory` together with `sourcemaps.smctl.enabled`; `smctl` with no `repositoryTemplate` or one without `{app}`; `dockerConfig` with no Secret; a credential for a mode that does not read it | Two sources of maps is one nobody knows is in use; a template without `{app}` serves one app's maps (which can carry source) for another's; a credential nothing reads. |
 | Every alert switched off while `rules.enabled`; a malformed window; `maxFingerprints` outside 1-100 | A VMRule with no groups is refused by the operator; the cap is what keeps one bad release from being one notification per error. |
 
 ### What bounds a public write endpoint, which is less than the settings say

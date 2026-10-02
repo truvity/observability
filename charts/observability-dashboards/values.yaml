@@ -20,9 +20,11 @@ fullnameOverride: ""
 # names its datasource by UID, and the estate chose these when it set
 # Grafana up (see charts/observability-stack's own `grafana.datasources`,
 # whose defaults match). Every shipped dashboard here queries metrics, so
-# only `metrics` is required; `logs` and `traces` exist for
-# `extraDashboards` that query those stores instead, and the chart never
-# reads them itself.
+# only `metrics` is required for the default set. `logs` and `traces` are
+# read by the optional Frontend dashboards (logs: the default of their
+# VictoriaLogs `datasource` picker, which a viewer can change to another
+# logs datasource; traces: the "open trace" link) and by `extraDashboards`
+# that query those stores.
 datasources:
   metrics: victoriametrics
   logs: victorialogs
@@ -65,6 +67,8 @@ folders:
   infrastructure: Infrastructure
   stores: Observability
   platform: Platform
+  # The Frontend dashboards (browser telemetry; charts/observability-rum).
+  frontend: Frontend
 
 # -- The dashboard designated as the estate's home page: the name of one
 # ENABLED shipped dashboard, or "" for none. The chart annotates that
@@ -190,6 +194,20 @@ dashboards:
   # Grafana whose store holds the cluster's metrics. Vendored from the
   # project's own dashboard (Apache-2.0), rewritten to the contract.
   external-secrets:
+    enabled: false
+
+  # -- OFF by default: the two Frontend dashboards ("Frontend Issues",
+  # "Frontend Overview") read browser telemetry from a LOG store, through a
+  # VictoriaLogs datasource, from what charts/observability-rum writes. They
+  # exist here, besides that chart's own `dashboards.enabled`, for a Grafana
+  # that loads dashboards from its own namespace only. Their `datasource`
+  # variable is of type VictoriaLogs: the default is `datasources.logs`, and a
+  # viewer picks another logs datasource (one per cluster's store) from the
+  # dropdown. Turn them on, or the rum chart's, not both: the dashboards
+  # carry the same uid.
+  frontend-issues:
+    enabled: false
+  frontend-overview:
     enabled: false
 
 # -- The estate's own dashboards, held to the same lint as the shipped
