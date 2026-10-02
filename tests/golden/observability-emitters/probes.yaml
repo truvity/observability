@@ -986,6 +986,13 @@ spec:
         - "https://status.example.com/health"
       labels:
         probe: "example-status"
+      relabelingConfigs:
+        - target_label: k8s_cluster_name
+          replacement: "example-cluster"
+        - target_label: deployment_environment_name
+          replacement: "development"
+        - target_label: k8s_namespace_name
+          replacement: "default"
 
 ---
 # Source: observability-emitters/templates/probes.yaml
@@ -1012,3 +1019,10 @@ spec:
         - "http://api.example.com:8080/healthz"
       labels:
         probe: "example-api"
+      relabelingConfigs:
+        - target_label: k8s_cluster_name
+          replacement: "example-cluster"
+        - target_label: deployment_environment_name
+          replacement: "development"
+        - target_label: k8s_namespace_name
+          replacement: "default"

@@ -4,6 +4,25 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-emitters`, `platform-alerts`: probe series carry the tenancy
+labels; probes alert when absent.
+
+- **`observability-emitters`: every `VMProbe` now stamps `k8s_cluster_name`,
+  `deployment_environment_name` and `k8s_namespace_name` (the release's
+  namespace) in its own target relabeling.** The operator does not apply the
+  agent's default scrape class to a `VMProbe`, so since v0.29.0 the
+  `probe_*` series were scraped healthy and stored with no cluster label, and
+  any reader scoped by that label (every scoped query grant) saw nothing.
+  `owner` now follows the release namespace. Only the probe goldens change.
+- **`platform-alerts`: the probes group gains `<alertName>Absent`** (default
+  `HTTPProbeDownAbsent`), `absent(probe_success{probe=~"<probe>"})` for
+  `groups.probes.absentFor` (default `15m`) at `groups.probes.absentSeverity`
+  (empty, the default, takes `severity`). `probe_success == 0` is silent when
+  the series is missing, which is how this went unnoticed. A new alert rule
+  appears wherever the probes group is on; set `probe` to a name to watch one
+  probe, as the default selector fires only when no probe reports.
 ## v0.33.0
 
 `platform-alerts`: a NATS and JetStream alert group, off by default.

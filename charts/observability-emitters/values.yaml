@@ -276,7 +276,8 @@ metrics:
     # probe a URL this cluster does not run. The exporter's own series
     # arrive (`probe_success`, `probe_http_status_code`,
     # `probe_duration_seconds`, `probe_ssl_earliest_cert_expiry`), stamped
-    # with this cluster's identity by the default scrape class, with
+    # with this cluster's identity (cluster, tier and this release's
+    # namespace) by the probe's own target relabeling, with
     # `probe="<name>"` and `job="http-probe"`. The target's body is never
     # parsed as Prometheus text, so a JSON health document is fine.
     #

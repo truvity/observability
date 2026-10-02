@@ -1,0 +1,10 @@
+# expect: at '/groups/probes/absentSeverity'
+# A deadman severity the routing tree has no branch for is a deadman that
+# fires into nowhere, which is no deadman.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  probes:
+    enabled: true
+    absentSeverity: urgent
