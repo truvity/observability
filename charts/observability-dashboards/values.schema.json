@@ -28,24 +28,25 @@
         },
         "logs": {
           "type": "string",
-          "description": "For extraDashboards that query VictoriaLogs; unused by the shipped set."
+          "description": "The VictoriaLogs datasource UID: the default of the Frontend dashboards' `datasource` picker, and what extraDashboards that query VictoriaLogs name. The render refuses it empty while a Frontend dashboard is enabled."
         },
         "traces": {
           "type": "string",
-          "description": "For extraDashboards that query VictoriaTraces; unused by the shipped set."
+          "description": "The VictoriaTraces datasource UID: the Frontend Issues dashboard's link to a trace, and what extraDashboards that query VictoriaTraces name. The render refuses it empty while that dashboard is enabled."
         }
       }
     },
     "folders": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fleet", "kubernetes", "infrastructure", "stores", "platform"],
+      "required": ["fleet", "kubernetes", "infrastructure", "stores", "platform", "frontend"],
       "properties": {
         "fleet": { "type": "string", "minLength": 1 },
         "kubernetes": { "type": "string", "minLength": 1 },
         "infrastructure": { "type": "string", "minLength": 1 },
         "stores": { "type": "string", "minLength": 1 },
-        "platform": { "type": "string", "minLength": 1 }
+        "platform": { "type": "string", "minLength": 1 },
+        "frontend": { "type": "string", "minLength": 1 }
       }
     },
     "dashboards": {
@@ -79,7 +80,9 @@
         "kargo",
         "keycloak",
         "openbao",
-        "external-secrets"
+        "external-secrets",
+        "frontend-issues",
+        "frontend-overview"
       ],
       "properties": {
         "fleet-overview": { "$ref": "#/definitions/dashboardEntry" },
@@ -109,7 +112,9 @@
         "kargo": { "$ref": "#/definitions/dashboardEntry" },
         "keycloak": { "$ref": "#/definitions/dashboardEntry" },
         "openbao": { "$ref": "#/definitions/dashboardEntry" },
-        "external-secrets": { "$ref": "#/definitions/dashboardEntry" }
+        "external-secrets": { "$ref": "#/definitions/dashboardEntry" },
+        "frontend-issues": { "$ref": "#/definitions/dashboardEntry" },
+        "frontend-overview": { "$ref": "#/definitions/dashboardEntry" }
       }
     },
     "home": {

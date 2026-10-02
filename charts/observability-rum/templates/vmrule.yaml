@@ -20,6 +20,15 @@ fingerprints are the one unbounded thing here, so each issue rule keeps at
 most `rules.maxFingerprints` per evaluation, highest volume first. The rest
 are not lost: they are on the dashboard.
 */ -}}
+{{- /*
+`record: ""` on an alert and `alert: ""` on a recording rule are written
+out on purpose. The VMRule CRD defaults both to the empty string, the API
+server applies the default on admission, and ArgoCD diffs the rendered
+manifest against the STORED object field for field: a manifest that omits
+them is OutOfSync forever on a field nothing ever changed (the same class
+as the relabel `action` the ServiceMonitor CRD defaults). The operator
+treats an empty one as unset, so the rules behave identically.
+*/ -}}
 {{- $full := include "observability-rum.fullname" . -}}
 {{- $scope := "telemetry.source:faro" -}}
 {{- $ni := $r.newIssue -}}
@@ -47,6 +56,7 @@ spec:
         # `history`. It resolves by itself once the fingerprint has history
         # older than `window`, so it stays up about one window.
         - alert: FrontendNewIssue
+          record: ""
           expr: >-
             _time:{{ $ni.history }} {{ $scope }} kind:exception error.fingerprint:*
             | stats by ({{ $by }})
@@ -76,6 +86,7 @@ spec:
         # that, and seen at least once earlier within `history`: a fix that
         # did not hold, or a bug that came back with a release.
         - alert: FrontendIssueRegressed
+          record: ""
           expr: >-
             _time:{{ $rg.history }} {{ $scope }} kind:exception error.fingerprint:*
             | stats by ({{ $by }})
@@ -111,6 +122,7 @@ spec:
         # broken page that every session hits both show; below
         # `minSessions` the ratio is noise and the alert is silent.
         - alert: FrontendErrorRateHigh
+          record: ""
           expr: >-
             _time:{{ $er.window }} {{ $scope }}
             | stats by (k8s.cluster.name, app)
@@ -138,6 +150,7 @@ spec:
         {{- if gt (float64 $er.perMinute) 0.0 }}
         # Exceptions per minute over `window`, whatever the traffic.
         - alert: FrontendErrorRateHigh
+          record: ""
           expr: >-
             _time:{{ $er.window }} {{ $scope }} kind:exception
             | stats by (k8s.cluster.name, app) count() as exceptions
@@ -170,6 +183,7 @@ spec:
       rules:
         {{- range $v := list "lcp" "inp" "cls" }}
         - record: frontend:web_vitals_{{ $v }}_p75
+          alert: ""
           expr: >-
             _time:{{ $r.recording.webVitals.window }} {{ $scope }} kind:measurement type:web-vitals value_{{ $v }}:*
             | stats by (k8s.cluster.name, app) quantile(0.75, value_{{ $v }}) as {{ $v }}

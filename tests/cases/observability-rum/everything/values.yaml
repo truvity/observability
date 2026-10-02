@@ -1,5 +1,5 @@
 # Every knob: two apps (the second with all its overrides), the source-map
-# sync, the policy, tuned alerts, dashboards in another namespace.
+# smctl (ECR), the policy, tuned alerts, dashboards in another namespace.
 global:
   observabilityRum:
     otlp:
@@ -37,18 +37,24 @@ global:
           - https://back-office.example
           - https://back-office.example:8443
         sourcemaps:
+          repository: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/internal/back-office-maps
           minifiedPathPrefixes:
             - https://back-office.example/static/
     sourcemaps:
       cache:
         missRetry: 30s
         ttl: 2h
-      sync:
+      smctl:
         enabled: true
-        bucket: example-sourcemaps
-        prefix: web
-        region: eu-west-1
-        interval: 2m
+        repositoryTemplate: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/sourcemaps/{app}
+        auth:
+          mode: ecr
+        cache:
+          maxSize: 2GiB
+          volumeSize: 3Gi
+        negativeCache:
+          ttl: 1m
+        replicas: 2
         serviceAccount:
           annotations:
             example.com/role: sourcemaps-reader

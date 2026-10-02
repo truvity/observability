@@ -1,0 +1,752 @@
+{
+  "uid": "observability-rum-issues",
+  "title": "Frontend Issues ($cluster)",
+  "description": "Browser exceptions grouped by error fingerprint (charts/observability-rum): what is new, how big, since when, in which release, and the raw events behind each.",
+  "tags": [
+    "observability-frontend",
+    "frontend-issues"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "links": [
+    {
+      "title": "Frontend",
+      "type": "dashboards",
+      "tags": [
+        "observability-frontend"
+      ],
+      "asDropdown": false,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "datasource",
+        "type": "datasource",
+        "query": "victoriametrics-logs-datasource",
+        "current": {
+          "selected": false,
+          "text": "__LOGS_DATASOURCE_UID__",
+          "value": "__LOGS_DATASOURCE_UID__"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 1,
+        "regex": ""
+      },
+      {
+        "name": "cluster",
+        "label": "cluster",
+        "type": "query",
+        "datasource": {
+          "type": "victoriametrics-logs-datasource",
+          "uid": "$datasource"
+        },
+        "query": {
+          "type": "fieldValue",
+          "field": "k8s.cluster.name",
+          "query": "telemetry.source:faro",
+          "limit": 100
+        },
+        "definition": "field values of k8s.cluster.name",
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 2,
+        "regex": "",
+        "sort": 1
+      },
+      {
+        "name": "app",
+        "label": "app",
+        "type": "query",
+        "datasource": {
+          "type": "victoriametrics-logs-datasource",
+          "uid": "$datasource"
+        },
+        "query": {
+          "type": "fieldValue",
+          "field": "app",
+          "query": "telemetry.source:faro k8s.cluster.name:\"$cluster\"",
+          "limit": 100
+        },
+        "definition": "field values of app",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": "*",
+        "multi": false,
+        "options": [],
+        "refresh": 2,
+        "regex": "",
+        "sort": 1
+      },
+      {
+        "name": "fingerprint",
+        "label": "fingerprint",
+        "type": "textbox",
+        "query": "*",
+        "current": {
+          "selected": false,
+          "text": "*",
+          "value": "*"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "*",
+            "value": "*"
+          }
+        ],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Exceptions",
+      "description": "Exceptions the browsers reported in the selected range, for the chosen app. A rise after a release is the first thing to read the table below for.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$datasource"
+          },
+          "expr": "telemetry.source:faro k8s.cluster.name:\"$cluster\" app:$app kind:exception | stats count() as n",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Distinct issues",
+      "description": "Different error fingerprints seen in the range. One issue is one fingerprint: an exception type, a normalised message and the first frame of the app's own code. See docs/frontend.md.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$datasource"
+          },
+          "expr": "telemetry.source:faro k8s.cluster.name:\"$cluster\" app:$app kind:exception error.fingerprint:* | stats count_uniq(error.fingerprint) as n",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Sessions with an exception",
+      "description": "Anonymous browser sessions that hit at least one exception. Compare it with Sessions on the Overview dashboard for the share of sessions affected.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$datasource"
+          },
+          "expr": "telemetry.source:faro k8s.cluster.name:\"$cluster\" app:$app kind:exception | stats count_uniq(session_id) as n",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Exceptions without a fingerprint",
+      "description": "Exception rows carrying no error.fingerprint: the pipeline did not run on them. Anything above zero is a defect to report, not an issue to fix in an app.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$datasource"
+          },
+          "expr": "telemetry.source:faro k8s.cluster.name:\"$cluster\" app:$app kind:exception -error.fingerprint:* | stats count() as n",
+          "queryType": "stats",
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Exceptions over time",
+      "description": "Exceptions per bucket, one line per app. A step that lines up with a release is a regression; a slow climb is a leak or a degrading dependency.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$datasource"
+          },
+          "expr": "telemetry.source:faro k8s.cluster.name:\"$cluster\" app:$app kind:exception | stats by (app) count() as exceptions",
+          "queryType": "statsRange",
+          "editorMode": "code",
+          "step": "$__interval",
+          "legendFormat": "{{app}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Issues",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Issues by fingerprint",
+      "description": "One row per fingerprint in the range, busiest first (200 at most): the app, the exception type, the normalised message (numbers, ids, strings and URLs removed, so the same bug groups) and one message as it was seen, how many events and sessions, when it first and last appeared WITHIN the selected range, the release of the latest event and its trace. Click a fingerprint to see its raw events below; click a trace to open it.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Events"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sessions"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Fingerprint"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Raw events of this fingerprint",
+                    "url": "/d/observability-rum-issues?var-datasource=${datasource:queryparam}&var-cluster=${cluster:queryparam}&var-app=${__data.fields.App}&${__url_time_range}&var-fingerprint=${__value.raw}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trace"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the trace",
+                    "url": "/explore?schemaVersion=1&orgId=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22__TRACES_DATASOURCE_UID__%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22uid%22%3A%22__TRACES_DATASOURCE_UID__%22%7D%2C%22query%22%3A%22${__value.raw}%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-7d%22%2C%22to%22%3A%22now%22%7D%7D%7D",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Message"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 420
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sample"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 420
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Events",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "json",
+            "keepTime": false,
+            "replace": true
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "events",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "sessions",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "first_seen",
+                "destinationType": "time"
+              },
+              {
+                "targetField": "last_seen",
+                "destinationType": "time"
+              }
+            ],
+            "fields": {}
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Line": true,
+              "id": true,
+              "labels": true,
+              "streams": true,
+              "streamId": true
+            },
+            "indexByName": {
+              "app": 0,
+              "fingerprint": 1,
+              "type": 2,
+              "message": 3,
+              "sample": 4,
+              "events": 5,
+              "sessions": 6,
+              "first_seen": 7,
+              "last_seen": 8,
+              "release": 9,
+              "trace_id": 10
+            },
+            "renameByName": {
+              "app": "App",
+              "fingerprint": "Fingerprint",
+              "type": "Type",
+              "message": "Message",
+              "sample": "Sample",
+              "events": "Events",
+              "sessions": "Sessions",
+              "first_seen": "First seen",
+              "last_seen": "Last seen",
+              "release": "Release",
+              "trace_id": "Trace"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$datasource"
+          },
+          "expr": "telemetry.source:faro k8s.cluster.name:\"$cluster\" app:$app kind:exception error.fingerprint:* | stats by (app, error.fingerprint) count() as events, count_uniq(session_id) as sessions, min(_time) as first_seen, max(_time) as last_seen, any(type) as type, any(error.message) as message, any(value) as sample, row_max(_time, app_release, trace_id) as latest | sort by (events desc) limit 200 | unpack_json from latest fields (app_release, trace_id) | fields app, error.fingerprint, type, message, sample, events, sessions, first_seen, last_seen, app_release, trace_id | rename error.fingerprint as fingerprint, app_release as release",
+          "queryType": "instant",
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Raw events",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Raw events",
+      "description": "The exception rows of the fingerprint set in the variable above (`*` is every one), newest first, with every field: the page, the release, the session, the trace_id and the symbolicated stack. Click a fingerprint in the table to set it.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "$datasource"
+          },
+          "expr": "telemetry.source:faro k8s.cluster.name:\"$cluster\" app:$app kind:exception error.fingerprint:$fingerprint | sort by (_time desc)",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 200
+        }
+      ]
+    }
+  ]
+}

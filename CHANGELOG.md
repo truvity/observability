@@ -4,6 +4,52 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **`observability-rum`: source maps from `smctl serve`; the object-store sync
+  is gone.** `global.observabilityRum.sourcemaps.smctl` renders one small
+  service that serves any app's source map from an OCI registry (GHCR or ECR)
+  to Alloy: a ConfigMap built from the values, a Deployment
+  (`ghcr.io/truvity/ocictl/smctl` 0.7.1, pinned by digest; non-root, read-only
+  root filesystem, an `emptyDir` cache), a Service on `:8080`, a ServiceAccount
+  and a NetworkPolicy (ingress from the Alloy pods only; egress to DNS and
+  443). Alloy's `location` keeps the contract
+  `http://<fullname>-sourcemaps:8080/<app>/{{ .Release }}` with each app's
+  `minifiedPathPrefixes`. `smctl.repositoryTemplate` is REQUIRED (no
+  organisation default in a public chart; `{app}` stands for the app's name; an
+  app can override with `apps[].sourcemaps.repository`). `smctl.auth.mode` is
+  `anonymous`, `ecr` (the ServiceAccount's identity: Pod Identity, or IRSA
+  through `smctl.serviceAccount.annotations`) or `dockerConfig` (a Secret you
+  name). Off by default. docs/frontend.md says how the release job publishes
+  with `smctl push` after goreleaser.
+  **Removed: `sourcemaps.sync`** (the `aws s3 sync` plus busybox pair); the
+  schema now refuses the key. Nothing in this repository used it. There is ONE
+  source of maps: `sourcemaps.directory` (now defaulting to empty, meaning
+  `/sourcemaps`) together with `smctl.enabled` is refused.
+- **`observability-rum`: the VMRule is in sync.** The CRD defaults `record` on an
+  alert and `alert` on a recording rule to `""`, the API server stores them, and
+  ArgoCD diffed the rendered rule against the stored one forever. Both keys are
+  now written on every rule (one empty); `tests/vmrule_defaults_test.go` holds
+  the goldens to it. The rendered rules mean the same thing.
+- **`observability-stack`: the operator marks converted scrape objects for
+  ArgoCD.** `victoria-metrics-k8s-stack.operator.env` gains
+  `VM_PROMETHEUSCONVERTERADDARGOCDIGNOREANNOTATIONS=true`. The operator copies a
+  converted ServiceMonitor's annotations (ArgoCD's tracking id) onto the
+  VMServiceScrape it creates, which ArgoCD listed as part of the Application with
+  no status; it is now `IgnoreExtraneous`. Scraping is unchanged. The operator
+  Deployment restarts once.
+- **`observability-dashboards`: "Frontend Issues" and "Frontend Overview".** Two
+  new optional dashboards (`dashboards.frontend-issues`,
+  `dashboards.frontend-overview`, off by default, folder `folders.frontend`,
+  default `Frontend`) for a Grafana that loads dashboards from its own namespace
+  only. They read browser telemetry from a log store through a VictoriaLogs
+  `datasource` variable (default `datasources.logs`; a viewer picks another logs
+  datasource) and link to traces through `datasources.traces`; the render refuses
+  either empty while one of them is on. They are the same files, with the same
+  uids, as `charts/observability-rum`'s own (`dashboards.enabled`, default
+  unchanged): ship from one chart. `just dashboard-lint` accepts the datasource
+  variable as it always did. Nothing existing renders differently.
+
 ## v0.39.0
 
 New chart `observability-rum`: browser telemetry through Grafana Faro and a

@@ -34,8 +34,10 @@ spec:
           port: 12345
 
 ---
-# Source: observability-rum/templates/sourcemap-sync.yaml
-# Only the Alloy pods may read the maps.
+# Source: observability-rum/templates/sourcemap-smctl.yaml
+# Only the Alloy pods may read the maps (smctl has no authentication of its
+# own, and a map can carry the app's source), and the pod may reach only
+# DNS and the registry's HTTPS.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -48,9 +50,9 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: observability-rum-sourcemaps
       app.kubernetes.io/instance: observability-rum
-  policyTypes: [Ingress]
+      app.kubernetes.io/name: observability-rum-sourcemaps
+  policyTypes: [Ingress, Egress]
   ingress:
     - from:
         - podSelector:
@@ -60,6 +62,23 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+    # EKS Pod Identity's agent answers credential requests on a link-local
+    # address, over plain HTTP (IRSA needs only the HTTPS rule above).
+    - to:
+        - ipBlock:
+            cidr: 169.254.170.23/32
+      ports:
+        - protocol: TCP
+          port: 80
 
 ---
 # Source: observability-rum/charts/alloy/templates/pdb.yaml
@@ -100,7 +119,7 @@ metadata:
     app.kubernetes.io/component: rbac
 
 ---
-# Source: observability-rum/templates/sourcemap-sync.yaml
+# Source: observability-rum/templates/sourcemap-smctl.yaml
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -2573,6 +2592,40 @@ data:
     
 
 ---
+# Source: observability-rum/templates/sourcemap-smctl.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-rum-sourcemaps
+  namespace: rum
+  labels:
+    app.kubernetes.io/name: observability-rum
+    app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/managed-by: Helm
+data:
+  config.yaml: |
+    apps:
+    - name: shop
+    - name: back-office
+      repository: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/internal/back-office-maps
+    auth:
+      mode: ecr
+    cache:
+      dir: /cache
+      maxSize: 2GiB
+    fetchTimeout: 60s
+    limits:
+      maxFileSize: 64MiB
+      maxFiles: 10000
+      maxLayerSize: 256MiB
+      maxTotalSize: 512MiB
+    listen: :8080
+    negativeCache:
+      maxEntries: 4096
+      ttl: 1m
+    repositoryTemplate: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/sourcemaps/{app}
+
+---
 # Source: observability-rum/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -2665,7 +2718,7 @@ spec:
       protocol: TCP
 
 ---
-# Source: observability-rum/templates/sourcemap-sync.yaml
+# Source: observability-rum/templates/sourcemap-smctl.yaml
 apiVersion: v1
 kind: Service
 metadata:
@@ -2678,8 +2731,8 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: observability-rum-sourcemaps
     app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/name: observability-rum-sourcemaps
   ports:
     - name: http
       port: 8080
@@ -2811,7 +2864,7 @@ spec:
           name: storage
 
 ---
-# Source: observability-rum/templates/sourcemap-sync.yaml
+# Source: observability-rum/templates/sourcemap-smctl.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -2822,69 +2875,46 @@ metadata:
     app.kubernetes.io/instance: observability-rum
     app.kubernetes.io/managed-by: Helm
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
-      app.kubernetes.io/name: observability-rum-sourcemaps
       app.kubernetes.io/instance: observability-rum
+      app.kubernetes.io/name: observability-rum-sourcemaps
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: observability-rum-sourcemaps
         app.kubernetes.io/instance: observability-rum
+        app.kubernetes.io/name: observability-rum-sourcemaps
+      annotations:
+        # A changed configuration restarts the pods (smctl reads it once).
+        checksum/config: 23b395e285173703f2c45b36092ff20b9c52de037fba640ec62dd9867bf3672e
     spec:
       serviceAccountName: observability-rum-sourcemaps
+      # The ServiceAccount is mounted only where it carries an identity the
+      # SDK reads from the pod (IRSA's projected token, Pod Identity's
+      # token); anonymous and dockerConfig need no API access at all.
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
-        runAsUser: 65534
-        runAsGroup: 65534
+        runAsUser: 65532
+        runAsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       containers:
-        # Copies the prefix into the shared volume, forever, `--delete` so a
-        # removed object disappears. It only reads from the bucket.
-        - name: sync
-          image: public.ecr.aws/aws-cli/aws-cli:2.34.0
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              while true; do
-                aws s3 sync "s3://example-sourcemaps/web" /maps --delete --only-show-errors || echo "sync failed; retrying in 2m" >&2
-                sleep 2m
-              done
-          env:
-            - name: HOME
-              value: /tmp
-            - name: AWS_EC2_METADATA_DISABLED
-              value: "true"
-            - name: AWS_REGION
-              value: "eu-west-1"
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 10m
-              memory: 32Mi
-          volumeMounts:
-            - name: maps
-              mountPath: /maps
-            - name: tmp
-              mountPath: /tmp
-        # Serves the volume to Alloy, read-only, on the pod network only.
-        - name: serve
-          image: docker.io/library/busybox:1.37.0
-          command: ["httpd", "-f", "-p", "8080", "-h", "/maps"]
+        - name: smctl
+          image: ghcr.io/truvity/ocictl/smctl:0.7.1@sha256:534ca957ff0cc00a0444adb88cff031d2878664a97eb1aa84f8790c1008808ec
+          args: ["serve", "--config", "/etc/smctl/config.yaml"]
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
               port: http
           securityContext:
             allowPrivilegeEscalation: false
@@ -2896,16 +2926,21 @@ spec:
               memory: 256Mi
             requests:
               cpu: 10m
-              memory: 32Mi
+              memory: 64Mi
           volumeMounts:
-            - name: maps
-              mountPath: /maps
+            - name: config
+              mountPath: /etc/smctl/config.yaml
+              subPath: config.yaml
               readOnly: true
+            - name: cache
+              mountPath: /cache
       volumes:
-        - name: maps
-          emptyDir: {}
-        - name: tmp
-          emptyDir: {}
+        - name: config
+          configMap:
+            name: observability-rum-sourcemaps
+        - name: cache
+          emptyDir:
+            sizeLimit: 3Gi
 
 ---
 # Source: observability-rum/charts/alloy/templates/servicemonitor.yaml
@@ -2954,6 +2989,7 @@ spec:
         # `history`. It resolves by itself once the fingerprint has history
         # older than `window`, so it stays up about one window.
         - alert: FrontendNewIssue
+          record: ""
           expr: >-
             _time:30d telemetry.source:faro kind:exception error.fingerprint:*
             | stats by (k8s.cluster.name, app, error.fingerprint)
@@ -2979,6 +3015,7 @@ spec:
         # that, and seen at least once earlier within `history`: a fix that
         # did not hold, or a bug that came back with a release.
         - alert: FrontendIssueRegressed
+          record: ""
           expr: >-
             _time:30d telemetry.source:faro kind:exception error.fingerprint:*
             | stats by (k8s.cluster.name, app, error.fingerprint)
@@ -3008,6 +3045,7 @@ spec:
         # broken page that every session hits both show; below
         # `minSessions` the ratio is noise and the alert is silent.
         - alert: FrontendErrorRateHigh
+          record: ""
           expr: >-
             _time:15m telemetry.source:faro
             | stats by (k8s.cluster.name, app)
@@ -3031,6 +3069,7 @@ spec:
               1, with at least 50 sessions).
         # Exceptions per minute over `window`, whatever the traffic.
         - alert: FrontendErrorRateHigh
+          record: ""
           expr: >-
             _time:15m telemetry.source:faro kind:exception
             | stats by (k8s.cluster.name, app) count() as exceptions
@@ -3057,18 +3096,21 @@ spec:
       interval: 30s
       rules:
         - record: frontend:web_vitals_lcp_p75
+          alert: ""
           expr: >-
             _time:10m telemetry.source:faro kind:measurement type:web-vitals value_lcp:*
             | stats by (k8s.cluster.name, app) quantile(0.75, value_lcp) as lcp
             | rename k8s.cluster.name as k8s_cluster_name
             | stats by (k8s_cluster_name, app) max(lcp) as lcp
         - record: frontend:web_vitals_inp_p75
+          alert: ""
           expr: >-
             _time:10m telemetry.source:faro kind:measurement type:web-vitals value_inp:*
             | stats by (k8s.cluster.name, app) quantile(0.75, value_inp) as inp
             | rename k8s.cluster.name as k8s_cluster_name
             | stats by (k8s_cluster_name, app) max(inp) as inp
         - record: frontend:web_vitals_cls_p75
+          alert: ""
           expr: >-
             _time:10m telemetry.source:faro kind:measurement type:web-vitals value_cls:*
             | stats by (k8s.cluster.name, app) quantile(0.75, value_cls) as cls

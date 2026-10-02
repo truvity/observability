@@ -1139,6 +1139,8 @@ spec:
               value: "false"
             - name: VM_ENABLEDPROMETHEUSCONVERTER_ALERTMANAGERCONFIG
               value: "false"
+            - name: VM_PROMETHEUSCONVERTERADDARGOCDIGNOREANNOTATIONS
+              value: "true"
             - name: POD_NAME
               valueFrom:
                 fieldRef:

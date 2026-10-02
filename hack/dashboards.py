@@ -17,6 +17,7 @@ fetch, and this script fails loudly instead of guessing.
 import json
 import re
 import sys
+import types
 import urllib.request
 from pathlib import Path
 
@@ -26,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "hack" / "dashboards"))
 
 import fleet_overview  # noqa: E402  (hack/dashboards/fleet_overview.py)
+import frontend as frontend_dashboard  # noqa: E402  (hack/dashboards/frontend.py)
 import kargo as kargo_dashboard  # noqa: E402  (hack/dashboards/kargo.py)
 import keycloak as keycloak_dashboard  # noqa: E402  (hack/dashboards/keycloak.py)
 import openbao as openbao_dashboard  # noqa: E402  (hack/dashboards/openbao.py)
@@ -320,7 +322,9 @@ def add_navigation(dashboard, spec) -> None:
     dashboard["tags"] = tags
     links = list(dashboard.get("links") or [])
     have = {l.get("title") for l in links}
-    nav = list(NAV_LINKS)
+    # `nav: false`: no dropdowns to the metric dashboards. includeVars would
+    # hand them this dashboard's `datasource`, a VictoriaLogs one.
+    nav = list(NAV_LINKS) if spec.get("nav", True) else []
     if "observability-platform" in spec.get("tags", []):
         nav.append(PLATFORM_NAV_LINK)
     for title, tag, tip in nav:
@@ -678,13 +682,19 @@ def build_one(spec: dict, bundles: dict) -> None:
             raw = platform_adapt.render_mixin_defaults(raw, spec["mixinDefaults"])
         dashboard = json.loads(raw)
 
-    dashboard["uid"] = stable_uid(name)
+    # A dashboard another chart ships under the same uid (the Frontend pair,
+    # also shipped by charts/observability-rum) keeps it: one dashboard, one
+    # identity, whichever chart put it in the Grafana.
+    if not (spec.get("keepUid") and dashboard.get("uid")):
+        dashboard["uid"] = stable_uid(name)
 
     if spec.get("generator"):
         # Authored to the contract already: only the datasource variable's
-        # default (the placeholder the chart substitutes) is stamped.
+        # default (the placeholder the chart substitutes) is stamped, unless
+        # the generator named one itself (the Frontend pair's logs
+        # datasource, __LOGS_DATASOURCE_UID__).
         for v in dashboard["templating"]["list"]:
-            if v["type"] == "datasource":
+            if v["type"] == "datasource" and not str(v.get("current", {}).get("value", "")).startswith("__"):
                 v["current"] = {"selected": True, "text": DATASOURCE_TOKEN, "value": DATASOURCE_TOKEN}
     elif spec.get("adapt") == "k8s-views":
         rename_datasource_var(dashboard)
@@ -727,7 +737,10 @@ def build_one(spec: dict, bundles: dict) -> None:
         desc = (dashboard.get("description") or "").strip()
         # Upstream's own description may already carry an older notice.
         dashboard["description"] = (desc + " " + note).strip() if note not in desc else desc
-    verify_every_query_filtered(dashboard, name)
+    # The metric-selector check reads PromQL; a LogsQL dashboard (one that
+    # names the `logs` datasource) is held to the lint's own rules instead.
+    if "logs" not in spec.get("datasources", []):
+        verify_every_query_filtered(dashboard, name)
 
     out_path = OUT_DIR / ("%s.json" % name)
     out_path.write_text(json.dumps(dashboard, indent=2, ensure_ascii=False) + "\n")
@@ -745,7 +758,7 @@ def write_catalog(manifest: dict) -> None:
         # Provenance of a dashboard adopted from a third party, and whether
         # tests/dashboard_queries_test.go holds it to the available-metrics
         # allow-list.
-        for key in ("upstream", "authored", "ref", "queryCheck", "requires", "deferred"):
+        for key in ("upstream", "authored", "ref", "queryCheck", "requires", "deferred", "datasources"):
             if key in spec:
                 entry[key] = spec[key]
         catalog[spec["name"]] = entry
@@ -767,6 +780,8 @@ MANIFEST: dict = {}
 REPORTS: dict = {}
 GENERATORS = {
     "hack/dashboards/fleet_overview.py": fleet_overview,
+    "hack/dashboards/frontend.py:issues": types.SimpleNamespace(build=frontend_dashboard.issues),
+    "hack/dashboards/frontend.py:overview": types.SimpleNamespace(build=frontend_dashboard.overview),
     "hack/dashboards/kargo.py": kargo_dashboard,
     "hack/dashboards/keycloak.py": keycloak_dashboard,
     "hack/dashboards/openbao.py": openbao_dashboard,

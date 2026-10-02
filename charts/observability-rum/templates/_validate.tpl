@@ -25,7 +25,7 @@ are `validate`.
     repeated                                  -> validate.config
   - rateLimit.strategy other than global      -> validate.config
   - sourcemaps.download true                  -> validate.config
-  - sourcemaps.sync without a bucket/region   -> validate.config
+  - sourcemaps.smctl and directory both set, no repositoryTemplate, bad auth -> validate.config
   - alloy.fullnameOverride empty, alloy.rbac.create true,
     a replaced configuration, networkPolicy
     with no peers, a malformed alert window   -> validate
@@ -146,27 +146,45 @@ touch, and one receiver per app makes it per app anyway.
 {{- /* Alloy downloads a map from the page's own origin by default, taking
        the URL from the (client-reported) script URL in the payload: the
        receiver would fetch whatever a stray post named, and the maps would
-       have to be public. Maps come from the directory or the sync, only. */ -}}
+       have to be public. Maps come from the directory or smctl, only. */ -}}
 {{- if $s.download -}}
-{{- fail "observability-rum: `sourcemaps.download: true` is refused. It makes the receiver fetch a source map from a URL the BROWSER names (a server-side request an anonymous poster steers) and means the maps are served publicly from the app. Source maps come from `sourcemaps.directory` or `sourcemaps.sync`." -}}
+{{- fail "observability-rum: `sourcemaps.download: true` is refused. It makes the receiver fetch a source map from a URL the BROWSER names (a server-side request an anonymous poster steers) and means the maps are served publicly from the app. Source maps come from `sourcemaps.directory` or `sourcemaps.smctl`." -}}
 {{- end -}}
-{{- $sync := $s.sync -}}
-{{- if $sync.enabled -}}
-{{- if not $sync.bucket -}}
-{{- fail "observability-rum: `sourcemaps.sync.enabled` needs `sourcemaps.sync.bucket`. The sync copies one bucket prefix, read-only, into a volume the receivers read; with no bucket it would sync nothing and every stack trace would stay minified." -}}
+{{- $m := $s.smctl -}}
+{{- if $m.enabled -}}
+{{- if $s.directory -}}
+{{- fail "observability-rum: `sourcemaps.directory` and `sourcemaps.smctl.enabled` are both set. There is ONE source of source maps: a directory the estate mounts into the Alloy pods, or the smctl service. Unset `sourcemaps.directory`, or turn `sourcemaps.smctl.enabled` off." -}}
 {{- end -}}
-{{- if and (not $sync.region) (not $sync.endpointUrl) -}}
-{{- fail "observability-rum: `sourcemaps.sync` needs `region` (or an `endpointUrl` for an S3-compatible store); the client refuses to start without one." -}}
+{{- $apps := include "observability-rum.apps" . | fromYamlArray -}}
+{{- if not $apps -}}
+{{- fail "observability-rum: `sourcemaps.smctl.enabled` needs at least one app in `global.observabilityRum.apps`: smctl serves only the apps it is configured with, and takes its list from there." -}}
 {{- end -}}
-{{- if or (hasPrefix "/" ($sync.prefix | default "")) (hasSuffix "/" ($sync.prefix | default "")) -}}
-{{- fail "observability-rum: `sourcemaps.sync.prefix` must not start or end with a slash; the layout is <prefix>/<app>/<release>/<path>.map." -}}
+{{- $needTemplate := false -}}
+{{- range $a := $apps -}}
+{{- if not $a.repository -}}
+{{- $needTemplate = true -}}
 {{- end -}}
-{{- if not (regexMatch "^[1-9][0-9]*[smh]$" $sync.interval) -}}
-{{- fail (printf "observability-rum: `sourcemaps.sync.interval` %q is not a duration like 5m." $sync.interval) -}}
+{{- end -}}
+{{- if and $needTemplate (not $m.repositoryTemplate) -}}
+{{- fail "observability-rum: `sourcemaps.smctl.repositoryTemplate` is required (an app without its own `sourcemaps.repository` needs it). It is where each app's maps were pushed, e.g. ghcr.io/<org>/sourcemaps/{app}; this chart knows no organisation, so it has no default." -}}
+{{- end -}}
+{{- if and $m.repositoryTemplate (not (contains "{app}" $m.repositoryTemplate)) -}}
+{{- fail (printf "observability-rum: `sourcemaps.smctl.repositoryTemplate` %q has no {app}: every app would read the same repository, so one app's maps would be served for another's." $m.repositoryTemplate) -}}
+{{- end -}}
+{{- if and (eq $m.auth.mode "dockerConfig") (not $m.auth.dockerConfigSecret.name) -}}
+{{- fail "observability-rum: `sourcemaps.smctl.auth.mode: dockerConfig` needs `auth.dockerConfigSecret.name`, a Secret in this namespace holding the docker config.json." -}}
+{{- end -}}
+{{- if and (ne $m.auth.mode "dockerConfig") $m.auth.dockerConfigSecret.name -}}
+{{- fail (printf "observability-rum: `sourcemaps.smctl.auth.dockerConfigSecret` is set but `auth.mode` is %q: a credential nothing reads. Use mode dockerConfig, or drop the Secret." $m.auth.mode) -}}
+{{- end -}}
+{{- if and (ne $m.auth.mode "ecr") $m.serviceAccount.annotations -}}
+{{- fail (printf "observability-rum: `sourcemaps.smctl.serviceAccount.annotations` carry a cloud identity, which only `auth.mode: ecr` uses; the mode is %q." $m.auth.mode) -}}
 {{- end -}}
 {{- else -}}
+{{- if $s.directory -}}
 {{- if not (regexMatch "^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$" $s.directory) -}}
 {{- fail (printf "observability-rum: `sourcemaps.directory` %q is not an absolute path." $s.directory) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

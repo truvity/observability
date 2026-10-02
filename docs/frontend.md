@@ -31,7 +31,7 @@ as for any other emitter ([emitting.md](emitting.md)).
 | A generated pipeline | `faro.receiver` → `otelcol.receiver.loki` → `otelcol.processor.transform` (stamp, scrub, fingerprint) → `memory_limiter` → `batch` → `otelcol.exporter.otlphttp`; traces skip the Loki step. |
 | A ClusterIP Service | One **named port per app**. No Ingress, no public host: how traffic arrives is the estate's gateway. |
 | A Role | `get` on the named app-key Secrets, nothing else. |
-| Optional: a source-map sync | A read-only copy of an object-store prefix, served to Alloy inside the cluster. |
+| Optional: `smctl serve` | A small service that serves any app's source map from an OCI registry (GHCR, ECR) to Alloy inside the cluster. |
 | Rules and dashboards | One VMRule (LogsQL, for the logs alerter) and two dashboards. |
 
 ## The values, and why the apps are under `global`
@@ -229,36 +229,88 @@ front of the route**. Without them the memory limit is the only guard.
 
 ## Source maps
 
-Alloy symbolicates from maps on a filesystem it can read; it has no object-store
-reader, and `sourcemaps.download` (its default) would make it fetch a map from
-a URL the *browser* names, which means a server-side request an anonymous
-poster steers and maps served publicly from the app. `download: true` is
-**refused**. Maps come from one of two places:
+Alloy symbolicates from maps it can read by path or by URL, and
+`sourcemaps.download` (its default) would make it fetch a map from a URL the
+*browser* names, which means a server-side request an anonymous poster steers
+and maps served publicly from the app. `download: true` is **refused**. Maps
+come from **one** of two places; setting both is refused too.
 
-- **`sourcemaps.directory`** (default). A directory inside the Alloy pod, one
-  subdirectory per app: `<directory>/<app>/<release>/assets/index.js.map`.
-  Mount it yourself: add a volume to `alloy.controller.volumes.extra` and a
-  mount to `alloy.alloy.mounts.extra`. A list you set replaces the chart's, so
-  keep its `storage` entry (an `emptyDir` at `/tmp/alloy`) in both.
-- **`sourcemaps.sync`** (off by default). A small Deployment of this chart: one
-  container copies an object-store prefix into an `emptyDir` with
-  `aws s3 sync --delete` every `interval`, another serves the volume read-only
-  over HTTP, and Alloy's `location` points at that Service. The bucket layout
-  is `<prefix>/<app>/<release>/<path>.map`. **Credentials come from the pod's
-  ServiceAccount** (Pod Identity binds by the ServiceAccount's name,
-  `<fullname>-sourcemaps`; IRSA by an annotation under
-  `sync.serviceAccount.annotations`); the chart accepts no key, secret or
-  token, and the role needs read on the prefix and nothing else. `endpointUrl`
-  points it at an S3-compatible store. A NetworkPolicy lets only the Alloy
-  pods reach the maps.
+- **`sourcemaps.directory`** (default `/sourcemaps`). A directory inside the
+  Alloy pod, one subdirectory per app:
+  `<directory>/<app>/<release>/assets/index.js.map`. Mount it yourself: add a
+  volume to `alloy.controller.volumes.extra` and a mount to
+  `alloy.alloy.mounts.extra`. A list you set replaces the chart's, so keep its
+  `storage` entry (an `emptyDir` at `/tmp/alloy`) in both.
+- **`sourcemaps.smctl`** (off by default). The maps are OCI artifacts in the
+  registry the app's image goes to, and `smctl serve` (from `ocictl`, image
+  `ghcr.io/truvity/ocictl/smctl`, pinned by digest) is the one small service
+  that serves any of them: `GET /<app>/<release>/<path>.map`, which is the
+  request Alloy's `location` makes. It pulls a release's artifact on first use,
+  unpacks it into a bounded cache (an `emptyDir`) and answers from disk. The
+  chart renders its ConfigMap from the values, a Deployment (non-root,
+  read-only root filesystem), a Service on `:8080` named
+  `<fullname>-sourcemaps` (Alloy's `location` points at
+  `http://<fullname>-sourcemaps:8080/<app>/{{ .Release }}`, with each app's
+  `minifiedPathPrefixes`), and a NetworkPolicy: ingress from the Alloy pods
+  only (smctl has no authentication of its own, and a map can carry the app's
+  source), egress to DNS and 443 (plus the Pod Identity agent's link-local
+  address in mode `ecr`).
+
+  ```yaml
+  global:
+    observabilityRum:
+      sourcemaps:
+        smctl:
+          enabled: true
+          # REQUIRED, no default: where each app's maps are pushed; {app} is
+          # the app's `name`. An app can override it: apps[].sourcemaps.repository.
+          repositoryTemplate: ghcr.io/<org>/sourcemaps/{app}
+          auth:
+            mode: anonymous          # anonymous | ecr | dockerConfig
+  ```
+
+  **Credentials**: none in the chart. `anonymous` is a public package.
+  `ecr` uses the pod's ServiceAccount (Pod Identity binds by the
+  ServiceAccount's name, `<fullname>-sourcemaps`; IRSA by an annotation under
+  `smctl.serviceAccount.annotations`); the role needs
+  `ecr:GetAuthorizationToken` and `ecr:BatchGetImage` /
+  `ecr:GetDownloadUrlForLayer` on the map repositories, nothing else.
+  `dockerConfig` mounts a Secret you name (`auth.dockerConfigSecret`, key
+  `config.json`), for a private GHCR package. The cache (`cache.maxSize`,
+  `limits.*`, `negativeCache.*`) is smctl's own and all of it is a value.
 
   Why a Deployment of its own rather than a sidecar of the Alloy pod: the
-  subchart cannot be given a per-release container, and a mount per app would
-  mean the estate writing exactly the volumes this chart exists to write.
+  subchart cannot be given a per-release container.
 
-The `<release>` is the SDK's `app.release`. Set it to the **build id that
-names the uploaded maps** (a commit hash), not the semantic version. A map
-that is not there yet is an unsymbolicated row, not a lost one.
+The earlier object-store sync (`sourcemaps.sync`, an `aws s3 sync` loop beside
+a busybox server) is gone: `smctl` serves from the registry the image already
+lives in, with the same retention tooling, and it has nothing of its own to
+keep in sync. The key is refused by the schema.
+
+### Publishing
+
+The release job pushes the maps right after `goreleaser release`, so a release
+that did not publish cannot push maps for it, and the maps never ride in the
+application image:
+
+```bash
+smctl push --goreleaser-dist dist/<project> --image <image> --maps dist-sourcemaps
+# or, for a build GoReleaser did not run
+smctl push --repository ghcr.io/<org>/sourcemaps/<app> --version 1.4.0 --maps dist-sourcemaps
+```
+
+(`--repository-template` defaults to `{registry}/{owner}/sourcemaps/{app}`,
+the shape `repositoryTemplate` above takes.) Authentication is `GITHUB_TOKEN`
+for `ghcr.io` and the Docker credential store for anything else. The artifact
+is tagged with the release version and read back by that tag alone: see
+ocictl's `docs/sourcemaps.md` for the artifact format and the full flags.
+
+The `<release>` is the SDK's `app.release`. With `smctl` it must **equal the
+version the maps were pushed under** (for GoReleaser, `{{ .Version }}`, without
+the `v`; smctl turns `+` into `_` the way the publisher does). With a directory
+it is whatever names the uploaded maps (a commit hash). A map that is not there
+yet is an unsymbolicated row, not a lost one: Alloy remembers the miss for
+`sourcemaps.cache.missRetry`, smctl for `smctl.negativeCache.ttl`.
 
 ## The gateway side
 
@@ -347,6 +399,27 @@ rules, runs the `stats` query and writes the result through the alerter's
 The dashboards do not need them, because they compute p75 from the log rows at
 query time; turn them on for long ranges or to alert on a vital.
 
+## What ArgoCD shows
+
+Two things looked like drift on a live cluster, and neither is the Application
+being wrong.
+
+- **The VMRule was `OutOfSync` for good.** The VMRule CRD defaults `record` (on an
+  alert) and `alert` (on a recording rule) to the empty string, the API server
+  stores the default, and ArgoCD diffs the rendered manifest with the stored
+  object field for field. A rule that left the key out could never match. The
+  chart writes both keys on every rule, one of them empty
+  (`tests/vmrule_defaults_test.go`); the operator reads an empty one as unset.
+- **The `VMServiceScrape` showed no status.** The Alloy subchart's
+  ServiceMonitor is converted by the VictoriaMetrics operator, which copies the
+  object's annotations onto the VMServiceScrape, ArgoCD's tracking id included.
+  ArgoCD then counts the converted object as part of the Application, with no
+  desired state to compare. The remedy is the operator's, not a field of this
+  chart: `charts/observability-stack` sets
+  `VM_PROMETHEUSCONVERTERADDARGOCDIGNOREANNOTATIONS`, which marks what it
+  converts `IgnoreExtraneous`. An estate that runs its own operator sets it
+  there; the converted object keeps existing and keeps being scraped.
+
 ## Dashboards
 
 Two, in the folder `dashboards.folder`, under the contract in
@@ -354,6 +427,13 @@ Two, in the folder `dashboards.folder`, under the contract in
 `cluster` variable populated by a field-values query, `$cluster` in the title),
 rendered as ConfigMaps for Grafana's sidecar in `dashboards.namespace`. The
 datasource is the VictoriaLogs plugin; the UIDs are `dashboards.datasources`.
+They are optional here (`dashboards.enabled`, on by default) and ALSO ship from
+`charts/observability-dashboards` (`dashboards.frontend-issues`,
+`dashboards.frontend-overview`, off by default, folder `folders.frontend`): a
+Grafana loads dashboards from its own namespace only, so the Grafana that is not
+in this chart's cluster takes them from there, and a viewer picks the logs
+datasource (the `datasource` variable is of type VictoriaLogs; its default is
+that chart's `datasources.logs`). The two copies carry the same uid; use one.
 `hack/dashboards/frontend.py` generates the JSON (committed); a query's time
 range is the dashboard's.
 
@@ -383,7 +463,7 @@ Each has a fixture under `tests/invalid/observability-rum/`.
 | A port outside 1024–65535, `12345`, or shared by two apps | One receiver per port |
 | `rateLimit.strategy` other than `global`; a zero rate or burst | `per_app` keys on the payload |
 | `sourcemaps.download: true` | The receiver would fetch a URL the browser names |
-| `sourcemaps.sync` without a bucket or region, a prefix with a slash at either end | It would sync nothing |
+| `sourcemaps.directory` with `sourcemaps.smctl.enabled`; smctl with no `repositoryTemplate` (or one without `{app}`), a `dockerConfig` mode with no Secret, a credential for a mode that does not read it; the removed `sourcemaps.sync` | One source of maps; a template that serves one app's maps for another's; a credential nothing reads |
 | `sampling.traces` outside (0, 1] | |
 | `alloy.rbac.create: true` | The subchart's Role reads every Secret and pod in the namespace |
 | `alloy.alloy.configMap.content` replaced, or `create: false` | A hand-written configuration drops the stamping, the privacy rules and the fingerprint |
@@ -413,8 +493,9 @@ Not verified, and the first things to look at on a real cluster:
   receiver that starts only once its Secret exists (the design is fail-closed:
   an unreadable key leaves the receiver unstarted; a present but empty key is
   *not* caught).
-- The source-map sync against a real object store and Pod Identity, and the
-  `aws-cli` image's behaviour with a read-only root filesystem.
+- `smctl serve` against a real registry and Pod Identity (the chart renders
+  what ocictl documents; the render is not evidence that a map is served), and
+  its behaviour with a read-only root filesystem.
 - How the two Grafana tables render: the queries return what the
   transformations expect, but the panels were not opened in a browser.
 - The SDK's frame order (top first) and `app.release` handling against a real

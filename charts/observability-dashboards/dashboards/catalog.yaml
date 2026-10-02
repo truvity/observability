@@ -75,6 +75,23 @@ fleet-overview:
   queryCheck: true
   requires:
   - cnpg-instance-metrics
+frontend-issues:
+  authored: true
+  datasources:
+  - logs
+  - traces
+  file: frontend-issues.json
+  folder: frontend
+  requires:
+  - frontend-telemetry
+frontend-overview:
+  authored: true
+  datasources:
+  - logs
+  file: frontend-overview.json
+  folder: frontend
+  requires:
+  - frontend-telemetry
 k8s-views-global:
   file: k8s-views-global.json
   folder: kubernetes

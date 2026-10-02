@@ -1463,6 +1463,7 @@ install does not run, and are off:
 | `dashboards.cnpg-cluster` | `false` | `cnpg-instance-metrics`: the CloudNativePG instance exporter (`:9187` on each Postgres pod) | a scrape of the Postgres pods, which the Postgres cluster chart's `PodMonitor` (`monitoring.enablePodMonitor`) creates |
 | `dashboards.keycloak` | `false` | `keycloak-metrics`: Keycloak's own `/metrics` (management port of `{install}-service`) | the Keycloak chart's `serviceMonitor` (and `metrics.httpHistograms` for the latency panels) |
 | `dashboards.openbao` | `false` | `openbao-server-metrics`: the OpenBAO server's own `vault_*` series | the server's telemetry on and `charts/openbao-ops`' `serverMetrics` PodMonitor |
+| `dashboards.frontend-issues`, `dashboards.frontend-overview` | `false` | `frontend-telemetry`: browser telemetry in a LOG store (VictoriaLogs), written by `charts/observability-rum` | the rum chart running; these need `datasources.logs` (and `.traces`, Issues' link to a trace); the `datasource` picker is a VictoriaLogs variable. Same uid as the rum chart's own copies: ship from one chart |
 | `dashboards.external-secrets` | `false` | `external-secrets-metrics`: External Secrets Operator's own series (the controller, webhook and cert controller) | the operator chart's `serviceMonitor.enabled: true`; the dashboard is the project's own (`docs/snippets/dashboard.json`, Apache-2.0), pinned to the chart's release tag and rewritten to the contract |
 
 `cnpg-cluster` selects instances by the exporter's own `cluster` label (the
@@ -1511,18 +1512,22 @@ keys stay under `alloy:`.
 | `privacy.stripUrlQueryAndFragment` | bool | `true` | Removes `?query` and `#fragment` from every absolute URL in every attribute and span attribute. |
 | `privacy.dropUserAttributes` | bool | `true` | Deletes `user_*` on logs and `user.*` / `enduser.*` on spans. The anonymous session id stays. |
 | `sourcemaps.download` | bool | `false` | **Refused when true.** The receiver would fetch a map from a URL the browser names. |
-| `sourcemaps.directory` | path | `/sourcemaps` | Where Alloy reads maps from when `sync` is off: `<directory>/<app>/<release>/<path>.map`. Mounted by the estate. |
+| `sourcemaps.directory` | path | `""` (`/sourcemaps`) | Where Alloy reads maps from: `<directory>/<app>/<release>/<path>.map`. Mounted by the estate. **Refused with `smctl.enabled`** (one source). |
 | `sourcemaps.cache.missRetry` | duration | `1m` | How soon a map not found is looked for again. |
 | `sourcemaps.cache.ttl` | duration | `1h` | How long an unused parsed map stays in memory. |
-| `sourcemaps.sync.enabled` | bool | `false` | Renders the sync Deployment, Service, ServiceAccount and NetworkPolicy; Alloy then reads over HTTP. |
-| `sourcemaps.sync.bucket` / `.region` | string | `""` | **Required with `enabled`** (`region` or `endpointUrl`). Read-only; credentials from the ServiceAccount, never a value. |
-| `sourcemaps.sync.prefix` | string | `""` | Key prefix; no slash at either end. Layout `<prefix>/<app>/<release>/<path>.map`. |
-| `sourcemaps.sync.endpointUrl` | URL | `""` | An S3-compatible store that is not AWS. |
-| `sourcemaps.sync.interval` | duration | `5m` | |
-| `sourcemaps.sync.replicas` | int | `1` | |
-| `sourcemaps.sync.serviceAccount.annotations` | map | `{}` | e.g. an IRSA role annotation. Pod Identity needs none. |
-| `sourcemaps.sync.syncImage` / `.serveImage` | `{repository, tag, digest}` | the AWS CLI / busybox | Pinned by tag. |
-| `sourcemaps.sync.resources` | object | 10m / 32Mi requests, 256Mi limit | Both containers. |
+| `sourcemaps.smctl.enabled` | bool | `false` | Renders the smctl ConfigMap, Deployment, Service (`:8080`), ServiceAccount and NetworkPolicy; Alloy then reads over HTTP. |
+| `sourcemaps.smctl.repositoryTemplate` | string | `""` | **Required with `enabled`** unless every app sets `apps[].sourcemaps.repository`; must contain `{app}`. E.g. `ghcr.io/<org>/sourcemaps/{app}`. No default: a public chart knows no organisation. |
+| `apps[].sourcemaps.repository` | string | unset | This app's map repository, instead of the template. |
+| `sourcemaps.smctl.auth.mode` | enum | `anonymous` | `anonymous`, `ecr` (ServiceAccount identity) or `dockerConfig`. |
+| `sourcemaps.smctl.auth.dockerConfigSecret` | `{name, key}` | `{"", config.json}` | Mode `dockerConfig`: a Secret in this namespace holding a docker config.json. Refused for any other mode. |
+| `sourcemaps.smctl.serviceAccount.annotations` | map | `{}` | e.g. an IRSA role annotation; only with mode `ecr`. Pod Identity needs none. |
+| `sourcemaps.smctl.cache.maxSize` / `.volumeSize` | size / quantity | `1GiB` / `2Gi` | Unpacked bytes smctl keeps (LRU by release) / the `emptyDir` it lives on. |
+| `sourcemaps.smctl.limits.{maxLayerSize,maxTotalSize,maxFileSize,maxFiles}` | sizes / int | `256MiB` / `512MiB` / `64MiB` / `10000` | smctl's caps on one release. |
+| `sourcemaps.smctl.negativeCache.{ttl,maxEntries}` | duration / int | `30s` / `4096` | How long a missing release is remembered. |
+| `sourcemaps.smctl.fetchTimeout` | duration | `60s` | |
+| `sourcemaps.smctl.replicas` | int | `1` | |
+| `sourcemaps.smctl.image` | `{repository, tag, digest}` | `ghcr.io/truvity/ocictl/smctl` `0.7.1` by digest | |
+| `sourcemaps.smctl.resources` | object | 10m / 64Mi requests, 256Mi limit | |
 
 ### `rules`, `dashboards`, `networkPolicy`
 

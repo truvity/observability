@@ -1,14 +1,14 @@
-# expect: must not start or end with a slash
+# expect: value must be one of 'anonymous'
 global:
   observabilityRum:
     otlp:
       endpoint: "http://otlp-gateway.example.svc:4318"
     sourcemaps:
-      sync:
+      smctl:
         enabled: true
-        bucket: example-maps
-        region: eu-west-1
-        prefix: /maps/
+        repositoryTemplate: ghcr.io/example/sourcemaps/{app}
+        auth:
+          mode: static
     apps:
       - name: shop
         apiKeySecret:
@@ -16,4 +16,3 @@ global:
           key: key
         allowedOrigins:
           - https://shop.example
-

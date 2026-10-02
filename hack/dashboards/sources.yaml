@@ -655,6 +655,32 @@ dashboards:
     queryCheck: true
     requires: [openbao-server-metrics]
 
+  # Authored: the two Frontend dashboards (hack/dashboards/frontend.py), the
+  # same files charts/observability-rum ships for a Grafana in its own
+  # cluster. They read the LOG store through a VictoriaLogs datasource, picked
+  # by the `datasource` variable (a datasource variable of that type, so a
+  # viewer chooses which store's logs), and Faro telemetry only exists where
+  # charts/observability-rum runs: an optional source, off by default. Not
+  # `queryCheck`: the queries are LogsQL, not PromQL.
+  - name: frontend-issues
+    authored: true
+    generator: hack/dashboards/frontend.py:issues
+    keepUid: true
+    nav: false
+    folder: frontend
+    tags: [observability-frontend, frontend-issues]
+    requires: [frontend-telemetry]
+    datasources: [logs, traces]
+  - name: frontend-overview
+    authored: true
+    generator: hack/dashboards/frontend.py:overview
+    keepUid: true
+    nav: false
+    folder: frontend
+    tags: [observability-frontend, frontend-overview]
+    requires: [frontend-telemetry]
+    datasources: [logs]
+
 # Third-party provenance. Every fetched dashboard names its `upstream`
 # here; hack/dashboards.py renders THIRD_PARTY_NOTICES.md from this and the
 # per-dashboard `url`/`ref`, and tests/third_party_notices_test.go fails a

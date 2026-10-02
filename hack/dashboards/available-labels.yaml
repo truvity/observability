@@ -61,6 +61,7 @@ optionalSources:
   keycloak-metrics: Keycloak's own /metrics is scraped only where truvity/keycloak's chart turns its ServiceMonitor on, so keycloak_*, agroal_* and the jvm_* of a Keycloak pod are absent from a default install
   cnpg-instance-metrics: the CloudNativePG instance exporter (:9187 on each Postgres pod) is scraped only where the Postgres cluster chart's PodMonitor selects the pods, so cnpg_* and barman_cloud_* are absent from a default install; the operator's own series are not
   openbao-server-metrics: OpenBAO runs only where the secret plane does, and its metrics are scraped only where charts/openbao-ops' serverMetrics PodMonitor is applied, so vault_* is absent from a default install
+  frontend-telemetry: the Frontend dashboards read the LOG store (LogsQL), from what charts/observability-rum writes; no metric is involved, and the rows exist only where that chart runs
   external-secrets-metrics: External Secrets Operator's metrics are scraped only where its chart's serviceMonitor.enabled is on, so externalsecret_* is absent from a default install
 
 # The two node jobs (metrics.scrape.kubelet, .cadvisor) are inline scrape

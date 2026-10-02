@@ -1,0 +1,211 @@
+{{- $c := .Values.global.observabilityRum -}}
+{{- $m := $c.sourcemaps.smctl -}}
+{{- if $m.enabled }}
+{{- /*
+`smctl serve`: one small Deployment that serves any app's source map from an
+OCI registry to Alloy over HTTP inside the cluster. Why a Deployment of its
+own and not a sidecar of the Alloy pod: the Alloy subchart cannot be given a
+per-release container (its pod spec takes no templates). Alloy's `location`
+accepts a base URL as well as a directory, so the receivers ask this Service
+for GET /<app>/<release>/<path>.map, which is the contract smctl implements.
+
+The maps are published by the release job (`smctl push`, docs/frontend.md)
+into the same registry as the image and read here, only: the credentials
+need pull rights and nothing else. None live in this chart. ECR: the pod's
+ServiceAccount carries the cloud identity (Pod Identity binds by the
+ServiceAccount's name; IRSA by the annotation under
+`smctl.serviceAccount.annotations`). A private GHCR or another registry: a
+docker config.json in a Secret this chart only mounts.
+
+The configuration is rendered from the values and from the apps list; smctl
+refuses an unknown key, so only keys it knows are written.
+*/ -}}
+{{- $full := include "observability-rum.fullname" . -}}
+{{- $labels := include "observability-rum.labels" . -}}
+{{- $apps := include "observability-rum.apps" . | fromYamlArray -}}
+{{- $smApps := list -}}
+{{- range $a := $apps -}}
+{{- $e := dict "name" $a.name -}}
+{{- if $a.repository -}}
+{{- $_ := set $e "repository" $a.repository -}}
+{{- end -}}
+{{- $smApps = append $smApps $e -}}
+{{- end -}}
+{{- $auth := dict "mode" $m.auth.mode -}}
+{{- if eq $m.auth.mode "dockerConfig" -}}
+{{- $_ := set $auth "dockerConfig" (printf "/etc/smctl/docker/%s" $m.auth.dockerConfigSecret.key) -}}
+{{- end -}}
+{{- $conf := dict
+      "listen" ":8080"
+      "apps" $smApps
+      "auth" $auth
+      "cache" (dict "dir" "/cache" "maxSize" $m.cache.maxSize)
+      "limits" $m.limits
+      "negativeCache" $m.negativeCache
+      "fetchTimeout" $m.fetchTimeout -}}
+{{- if $m.repositoryTemplate -}}
+{{- $_ := set $conf "repositoryTemplate" $m.repositoryTemplate -}}
+{{- end -}}
+{{- $selector := dict "app.kubernetes.io/name" (printf "%s-sourcemaps" .Chart.Name) "app.kubernetes.io/instance" .Release.Name }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}-sourcemaps
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- $labels | nindent 4 }}
+  {{- with $m.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-sourcemaps
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- $labels | nindent 4 }}
+data:
+  config.yaml: |
+    {{- toYaml $conf | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-sourcemaps
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- toYaml $selector | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-sourcemaps
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  replicas: {{ $m.replicas }}
+  selector:
+    matchLabels:
+      {{- toYaml $selector | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- toYaml $selector | nindent 8 }}
+      annotations:
+        # A changed configuration restarts the pods (smctl reads it once).
+        checksum/config: {{ toYaml $conf | sha256sum }}
+    spec:
+      serviceAccountName: {{ $full }}-sourcemaps
+      # The ServiceAccount is mounted only where it carries an identity the
+      # SDK reads from the pod (IRSA's projected token, Pod Identity's
+      # token); anonymous and dockerConfig need no API access at all.
+      automountServiceAccountToken: {{ eq $m.auth.mode "ecr" }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: smctl
+          image: {{ $m.image.repository }}:{{ $m.image.tag }}{{ with $m.image.digest }}@{{ . }}{{ end }}
+          args: ["serve", "--config", "/etc/smctl/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/smctl/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: cache
+              mountPath: /cache
+            {{- if eq $m.auth.mode "dockerConfig" }}
+            - name: docker
+              mountPath: /etc/smctl/docker
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $full }}-sourcemaps
+        - name: cache
+          emptyDir:
+            sizeLimit: {{ $m.cache.volumeSize }}
+        {{- if eq $m.auth.mode "dockerConfig" }}
+        - name: docker
+          secret:
+            secretName: {{ $m.auth.dockerConfigSecret.name }}
+        {{- end }}
+---
+# Only the Alloy pods may read the maps (smctl has no authentication of its
+# own, and a map can carry the app's source), and the pod may reach only
+# DNS and the registry's HTTPS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-sourcemaps
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $selector | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "observability-rum.alloySelector" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+    {{- if eq $m.auth.mode "ecr" }}
+    # EKS Pod Identity's agent answers credential requests on a link-local
+    # address, over plain HTTP (IRSA needs only the HTTPS rule above).
+    - to:
+        - ipBlock:
+            cidr: 169.254.170.23/32
+      ports:
+        - protocol: TCP
+          port: 80
+    {{- end }}
+{{- end }}
