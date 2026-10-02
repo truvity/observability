@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	exampleTopic  = "arn:aws:sns:eu-west-1:111122223333:example"
-	exampleBudget = "arn:aws:sns:eu-west-1:111122223333:example-budgets"
+	exampleTopic  = "<the security-alerts topic ARN>"
+	exampleBudget = "<the budgets topic ARN>"
 )
 
 func rejectedValue(t *testing.T, srv *Server, reason string) float64 {
@@ -144,8 +144,8 @@ func TestDistinctFindingsGetDistinctLabelSets(t *testing.T) {
 		return l
 	}
 
-	a := render(`{"account":"111122223333","region":"eu-west-1","detail":{"severity":8,"type":"Recon:EC2/Portscan","id":"f1"}}`)
-	b := render(`{"account":"111122223333","region":"eu-west-1","detail":{"severity":8,"type":"Recon:EC2/Portscan","id":"f2"}}`)
+	a := render(`{"account":"example-account","region":"eu-west-1","detail":{"severity":8,"type":"Recon:EC2/Portscan","id":"f1"}}`)
+	b := render(`{"account":"example-account","region":"eu-west-1","detail":{"severity":8,"type":"Recon:EC2/Portscan","id":"f2"}}`)
 
 	assert.NotEqual(t, a, b)
 	assert.Equal(t, "f1", a["finding_id"])
@@ -190,7 +190,7 @@ func TestRejectedReasons(t *testing.T) {
 	post(t, srv, unsigned)
 	assert.Equal(t, float64(1), rejectedValue(t, srv, ReasonSignature))
 
-	post(t, srv, notification(fixture, t, "arn:aws:sns:eu-west-1:111122223333:other", "", `{}`))
+	post(t, srv, notification(fixture, t, "<some other topic nobody allow-listed>", "", `{}`))
 	assert.Equal(t, float64(1), rejectedValue(t, srv, ReasonTopic))
 
 	unsub := fixture.sign(t, Envelope{Type: "UnsubscribeConfirmation", TopicArn: exampleTopic, Message: "m", Timestamp: "t", SubscribeURL: "u", Token: "k"})

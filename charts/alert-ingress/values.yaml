@@ -111,7 +111,7 @@ topics: []
 #           summary: '{{ .detail.title }}'
 #           runbook: cloud-security-finding
 #     - name: budget
-#       match: {"_sns.TopicArn": "arn:aws:sns:eu-west-1:111122223333:example-budgets"}
+#       match: {"_sns.TopicArn": "<the budgets topic ARN>"}
 #       matchRegex: {"_sns.Message": "Budget Name: "}
 #       alert:
 #         alertname: BudgetThresholdCrossed

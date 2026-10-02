@@ -54,7 +54,7 @@ mappings:
         source: cloudtrail
         k8s_cluster_name: cloud
   - name: budget
-    match: {"_sns.TopicArn": "arn:aws:sns:eu-west-1:111122223333:example-budgets"}
+    match: {"_sns.TopicArn": "<the budgets topic ARN>"}
     matchRegex: {"_sns.Message": "Budget Name: "}
     alert:
       alertname: BudgetThresholdCrossed

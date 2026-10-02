@@ -3,7 +3,7 @@
 alertmanager:
   url: http://vmalertmanager-observability-stack.observability.svc:9093
 topics:
-  - "arn:aws:sns:eu-west-1:111122223333:example"
+  - "<the security-alerts topic ARN>"
 service:
   port: 8080
   metricsPort: 8080

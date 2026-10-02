@@ -110,7 +110,7 @@ data:
             source: budgets
           severity: warning
         match:
-          _sns.TopicArn: arn:aws:sns:eu-west-1:111122223333:example-budgets
+          _sns.TopicArn: <the budgets topic ARN>
         matchRegex:
           _sns.Message: 'Budget Name: '
         name: budget
@@ -168,7 +168,7 @@ spec:
         # ConfigMap edit lands on disk and the running process keeps the
         # configuration it read at startup — a values change that
         # applied, synced, and did nothing.
-        alert-ingress/config-checksum: d13deff34ee737b3f2ac31ee30ca7db3d0c253f37fb9daffb38fb1b126446391
+        alert-ingress/config-checksum: 2008c116f1724511db21bdbd6f6414796fc1f7792c8200b6915e620778f2982f
     spec:
       serviceAccountName: alert-ingress-cloud-events
       automountServiceAccountToken: false

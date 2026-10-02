@@ -68,7 +68,7 @@ data:
     alertmanager:
       url: "http://vmalertmanager-observability-stack.observability.svc:9093"
     topics:
-      - arn:aws:sns:eu-west-1:111122223333:example
+      - <the security-alerts topic ARN>
     mappings:
       []
     heartbeat:
@@ -125,7 +125,7 @@ spec:
         # ConfigMap edit lands on disk and the running process keeps the
         # configuration it read at startup — a values change that
         # applied, synced, and did nothing.
-        alert-ingress/config-checksum: 26e5566b75cb3104e3ec01988ff7e8d3d3a398e5ede1b6bf1cc7ed6a9faa96ec
+        alert-ingress/config-checksum: 2c08e880737f3985314a55b8e4bfa7c9631feb5018fb29fbf98b984f5551c3ad
     spec:
       serviceAccountName: alert-ingress
       automountServiceAccountToken: false
