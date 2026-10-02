@@ -60,5 +60,7 @@ dashboards:
     enabled: false
   kargo:
     enabled: false
+  keycloak:
+    enabled: false
   openbao:
     enabled: true
