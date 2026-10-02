@@ -71,6 +71,29 @@ database are two independent probers that both alert. Availability of
 the watcher is a second, independent box in another place — never a
 shared store — and it is not the starting point.
 
+### The deadman group (`Catalogue.Deadman`)
+
+Three pulled checks in the `platform` group, every two minutes, paging after
+two consecutive failures and again when resolved, through their OWN
+provider (`DeadmanChecks.Post`, a Gatus `custom` provider that POSTs
+`{"channel","text"}` with `Authorization: Bearer <bot token>` to a chat
+API such as Slack's `chat.postMessage`). `Providers` is not shared with
+them: the company signals keep it and never reach the deadman channel.
+
+- `deadman`: the Watchdog is present in vmalert (`/api/v1/alerts`);
+- `alertmanager-watchdog` (`AlertmanagerWatchdog`): the Watchdog is ACTIVE
+  in Alertmanager, from `GET /api/v2/alerts?filter=alertname="Watchdog"
+  &active=true&silenced=false&inhibited=false` on `AlertsRead.Host`
+  (the response is a JSON array; the condition reads
+  `[BODY][0].labels.alertname == Watchdog`). The route must admit GET
+  only: see `tenancy.alertReaders[].alertmanager`;
+- one check per `NotFiring` entry: that alert is NOT firing in vmalert.
+
+A chat API answers 200 even for a refusal (Slack's `not_in_channel`),
+which Gatus cannot see: the bot must already be in the channel.
+`hack/gatus-deadman-proof.sh` proves the three checks, the threshold, the
+bot token in the header and the resolved message on the real image.
+
 A Config built from `external-endpoints:` alone refuses to start: Gatus
 panics at boot ("configuration should contain at least one endpoint or
 suite") unless at least one ordinary `endpoints:` or `suites:` entry is
@@ -212,7 +235,8 @@ type Catalogue struct {
     PlatformHosts []string          // infrastructure hosts, the "platform" group
     Companies     []Company         // one group per company, in render order
     AlertsRead    AlertsRead        // the one pull path — see "internal → status, pulled"
-    Providers     DeadmanProviders  // optional Slack/PagerDuty AlertURLs keys
+    Providers     DeadmanProviders  // optional Slack/PagerDuty AlertURLs keys (company signals)
+    Deadman       DeadmanChecks     // the deadman group's own provider and checks
     Security      *OIDCSecurity     // nil = private/breakglass instance
     StoragePath   string            // Gatus storage.path
 }
