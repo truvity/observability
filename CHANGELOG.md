@@ -4,6 +4,22 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.33.0
+
+`platform-alerts`: a NATS and JetStream alert group, off by default.
+
+- **Behaviour change: a new `groups.nats` key, `enabled: false`.** The
+  default render is unchanged. Turn it on where the upstream NATS chart and
+  its exporter PodMonitor run: it renders `platform-alerts.nats` with nine
+  alerts (broker down, too few cluster routes, no JetStream meta leader,
+  stream with no leader, consumer backlog growing, slow consumers,
+  JetStream storage above 80%, broker memory above 90% of its limit, and a
+  deadman). `job` defaults to `nats/nats`; the memory alert needs
+  cadvisor and kube-state-metrics series for the broker container. There is
+  no authorization-error alert: the exporter has no such metric. On a store
+  that holds several clusters set `keepClusterLabel: true`, as for
+  `pendingPods`, so the alert names the cluster the broker is in.
+
 ## v0.32.0
 
 `observability-dashboards`: an OpenBAO dashboard.

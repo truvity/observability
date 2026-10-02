@@ -1,0 +1,224 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.nats
+      interval: 1m
+      rules:
+        # A broker whose exporter is not being scraped.
+        #
+        # `up` is the scrape's own series for the PodMonitor job the NATS
+        # chart ships (`nats/nats`): 0 when the prometheus-nats-exporter
+        # sidecar does not answer, which is a broker down, a broker not
+        # ready, or the sidecar itself dead. `max by (pod)` so a pod whose
+        # address changed on restart reads as one broker, not two.
+        - alert: NATSBrokerDown
+          expr: >-
+            max by (k8s_cluster_name, pod) (up{job="nats/nats"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "NATS broker {{ $labels.pod }} has not answered its metrics scrape for 5m"
+            description: >-
+              The exporter of NATS broker {{ $labels.pod }} (job nats/nats) has
+              been down for 5m. With three brokers the cluster and JetStream
+              keep a quorum through one loss, but not two. Check
+              `kubectl -n <namespace> get pods` and the pod's events and logs.
+            runbook_url: "https://runbooks.example.com/NATSBrokerDown"
+        # A broker that sees fewer cluster routes than its peers need.
+        #
+        # `nats_varz_routes` is the number of route connections the broker
+        # holds. Every peer is reached over `cluster.pool_size` pooled
+        # routes (`nats_varz_cluster_pool_size`, 3 by default), plus one
+        # per pinned account, so a healthy 3-broker cluster reads 8, not 2.
+        # The floor is therefore peers x pool size, with peers read from the
+        # JetStream meta group size (`nats_varz_jetstream_meta_cluster_size`
+        # less this broker): a peer that is wholly unreachable drops the
+        # count well below it, while a single re-dialled route does not.
+        - alert: NATSClusterRoutesMissing
+          expr: >-
+            max by (k8s_cluster_name, pod) (nats_varz_routes{job="nats/nats"})
+            <
+            (
+              max by (k8s_cluster_name, pod) (nats_varz_jetstream_meta_cluster_size{job="nats/nats"} - 1)
+              *
+              max by (k8s_cluster_name, pod) (nats_varz_cluster_pool_size{job="nats/nats"})
+            )
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "NATS broker {{ $labels.pod }} sees too few cluster routes ({{ $value }})"
+            description: >-
+              Broker {{ $labels.pod }} holds fewer route connections than one
+              pooled set per peer, for 10m: it has lost a
+              peer (a restart, a NetworkPolicy, a DNS or node problem), so
+              the cluster is partitioned or degraded. Check the other
+              brokers' own routes and `nats server report connections`.
+            runbook_url: "https://runbooks.example.com/NATSClusterRoutesMissing"
+        # JetStream's meta group has no leader.
+        #
+        # `meta_leader` is a label of the jsz-derived series (the leader the
+        # reporting broker sees, empty while there is none) and
+        # `nats_varz_jetstream_meta_leader` carries the same name in its
+        # `value` label. Without a meta leader no stream or consumer can be
+        # created or changed, and JetStream API calls fail.
+        - alert: NATSJetStreamNoMetaLeader
+          expr: >-
+            max by (k8s_cluster_name, pod) (nats_server_total_streams{job="nats/nats", meta_leader=""})
+            or
+            max by (k8s_cluster_name, pod) (nats_varz_jetstream_meta_leader{job="nats/nats", value=""})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "NATS JetStream has no meta leader, as seen by {{ $labels.pod }}"
+            description: >-
+              Broker {{ $labels.pod }} reports no JetStream meta leader for
+              5m. The meta group needs a majority of brokers
+              to elect one: check how many brokers are up and routed
+              (NATSBrokerDown, NATSClusterRoutesMissing) and the brokers'
+              logs for raft errors.
+            runbook_url: "https://runbooks.example.com/NATSJetStreamNoMetaLeader"
+        # A stream with no leader.
+        #
+        # Every `nats_stream_*` series carries `stream_leader`, the leader
+        # the reporting broker sees; empty while the stream's raft group
+        # has none. A stream without a leader accepts no publishes and
+        # serves no consumers.
+        - alert: NATSStreamNoLeader
+          expr: >-
+            max by (k8s_cluster_name, account, stream_name) (nats_stream_total_messages{job="nats/nats", stream_leader=""})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "NATS stream {{ $labels.account }}/{{ $labels.stream_name }} has no leader"
+            description: >-
+              The stream {{ $labels.stream_name }} of account {{ $labels.account }}
+              has had no leader for 5m, so it takes no publishes
+              and serves no consumers. Usually a majority of its replicas is
+              down or unrouted; `nats stream info` and the brokers' logs say
+              which.
+            runbook_url: "https://runbooks.example.com/NATSStreamNoLeader"
+        # A consumer whose backlog has not drained for the whole window and
+        # has grown over it.
+        #
+        # `nats_consumer_num_pending` is the messages not yet delivered to
+        # the consumer; every broker holding a replica reports it, hence the
+        # `max by`. The backlog must have stayed above `minPending` for the
+        # entire window (so a burst that drained does not count) and be
+        # higher at the end than at the start.
+        - alert: NATSConsumerBacklogGrowing
+          expr: >-
+            max by (k8s_cluster_name, account, stream_name, consumer_name) (
+              (delta(nats_consumer_num_pending{job="nats/nats"}[15m]) > 0)
+              and
+              (min_over_time(nats_consumer_num_pending{job="nats/nats"}[15m]) > 100)
+            )
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "NATS consumer {{ $labels.stream_name }}/{{ $labels.consumer_name }} backlog keeps growing"
+            description: >-
+              The backlog of consumer {{ $labels.consumer_name }} on stream
+              {{ $labels.stream_name }} (account {{ $labels.account }}) has stayed
+              above 100 messages for 15m and is larger than at the
+              start of that window: the consumer is slower than the
+              producers or has stopped. Check the consuming service and
+              `nats consumer info`.
+            runbook_url: "https://runbooks.example.com/NATSConsumerBacklogGrowing"
+        # Slow consumers: the broker dropped or throttled a client that
+        # could not keep up. `nats_varz_slow_consumers` is a cumulative
+        # count since the broker started, so only its increase means
+        # anything (`increase` also rides out a restart's reset).
+        - alert: NATSSlowConsumers
+          expr: >-
+            max by (k8s_cluster_name, pod) (increase(nats_varz_slow_consumers{job="nats/nats"}[10m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "NATS broker {{ $labels.pod }} is cutting off slow consumers"
+            description: >-
+              The slow-consumer count of broker {{ $labels.pod }} rose within the
+              last 10m: a client is not reading
+              fast enough and the broker is dropping its messages or its
+              connection. `nats server report connections --sort pending`
+              names the client.
+            runbook_url: "https://runbooks.example.com/NATSSlowConsumers"
+        # JetStream's file store filling up.
+        #
+        # `nats_varz_jetstream_stats_storage` is the bytes the broker's
+        # JetStream holds on disk, `nats_varz_jetstream_config_max_storage`
+        # the store size it was configured with (the limit it enforces).
+        # A zero limit is filtered out rather than divided by.
+        - alert: NATSJetStreamStorageHigh
+          expr: >-
+            max by (k8s_cluster_name, pod) (nats_varz_jetstream_stats_storage{job="nats/nats"})
+            /
+            (max by (k8s_cluster_name, pod) (nats_varz_jetstream_config_max_storage{job="nats/nats"}) > 0)
+            > 0.8
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "NATS broker {{ $labels.pod }} JetStream storage is above 80%"
+            description: >-
+              JetStream on broker {{ $labels.pod }} uses more than
+              80% of its configured file store for 15m. At the
+              limit publishes to streams that do not discard old messages
+              are refused. Check stream sizes and retention with `nats
+              stream report`, or grow the store.
+            runbook_url: "https://runbooks.example.com/NATSJetStreamStorageHigh"
+        # Broker memory near the container's limit.
+        #
+        # The broker exports no limit of its own (`go_gc_gomemlimit_bytes`
+        # is unset), so it is the container's working set (cadvisor) over
+        # the pod's memory limit (kube-state-metrics). A container without
+        # a limit has no `kube_pod_container_resource_limits` series and so
+        # is never alerted on.
+        - alert: NATSMemoryNearLimit
+          expr: >-
+            max by (k8s_cluster_name, pod) (container_memory_working_set_bytes{namespace="nats", container="nats"})
+            /
+            max by (k8s_cluster_name, pod) (kube_pod_container_resource_limits{namespace="nats", container="nats", resource="memory"})
+            > 0.9
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "NATS broker {{ $labels.pod }} memory is above 90% of its limit"
+            description: >-
+              The working set of broker {{ $labels.pod }} has been above
+              90% of its memory limit for 10m; at the limit the
+              kernel kills it. Look for a connection or subscription surge
+              (`nats server report connections`) or raise the limit.
+            runbook_url: "https://runbooks.example.com/NATSMemoryNearLimit"
+        # The deadman for every rule above: no NATS exporter series at all
+        # (the PodMonitor gone, the scrape blocked, the chart not installed)
+        # reads as healthy to rules that compare values.
+        - alert: NATSMetricsAbsent
+          expr: >-
+            absent(up{job="nats/nats"})
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No NATS exporter has been scraped for 30m"
+            description: >-
+              up{job="nats/nats"} has not been seen in 30m, so none of the
+              NATS rules can fire. Check that the NATS chart's PodMonitor is
+              applied and the brokers' metrics port is reachable from the
+              agent.
+            runbook_url: "https://runbooks.example.com/NATSMetricsAbsent"

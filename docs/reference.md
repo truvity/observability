@@ -199,6 +199,36 @@ Initialized), which `groups.pendingPods` cannot.
 Alerts: `NodeClaimNotReady` (one per claim and condition type),
 `NodeClaimMetricsAbsent`.
 
+### `groups.nats`
+
+Off by default. For the upstream NATS Helm chart with its
+prometheus-nats-exporter sidecar and PodMonitor (exporter 0.20.x with
+`-varz -connz -routez -jsz`). The metric names were read off a live store,
+not guessed; the values.yaml comment lists each.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `job` | string | `nats/nats` | The exporter's scrape job (`<namespace>/<podmonitor>`). |
+| `severity` | enum | `critical` | Broker down, no meta leader, stream with no leader. |
+| `warningSeverity` | enum | `warning` | Every other alert in the group. |
+| `brokerDownFor` / `routesFor` / `leaderFor` | duration | `5m` / `10m` / `5m` | Hold times of the matching alerts. |
+| `backlog.window` / `.minPending` / `.for` | duration / int / duration | `15m` / `100` / `5m` | The backlog must stay above `minPending` for the whole window and grow over it. |
+| `slowConsumers.window` / `.for` | duration | `10m` / `5m` | Window of the `increase`, and the hold. |
+| `storage.ratio` / `.for` | number / duration | `0.8` / `15m` | Fraction of the configured JetStream store. |
+| `memory.namespace` / `.container` / `.ratio` / `.for` | string / string / number / duration | `nats` / `nats` / `0.9` / `10m` | Working set over the container's memory limit. |
+| `absentFor` | duration | `30m` | Deadman for the whole group. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`: keep the series' own cluster label rather than `commonLabels`'. |
+
+Alerts: `NATSBrokerDown`, `NATSClusterRoutesMissing` (fewer routes than
+peers x `cluster.pool_size`; a healthy 3-broker cluster reads 8, not 2),
+`NATSJetStreamNoMetaLeader`, `NATSStreamNoLeader`,
+`NATSConsumerBacklogGrowing`, `NATSSlowConsumers`,
+`NATSJetStreamStorageHigh`, `NATSMemoryNearLimit` (from cadvisor and
+kube-state-metrics: the broker has no limit metric of its own),
+`NATSMetricsAbsent`. There is no authorization or auth-callout error
+metric in the exporter, so there is no rule for it.
+
 ## `charts/observability-stack`
 
 One install of the store. The chart renders the proxy, the two vmalerts,
