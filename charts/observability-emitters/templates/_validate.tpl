@@ -750,6 +750,46 @@ and a stream field is a cardinality decision.
 {{- if lt (int .Values.otlp.replicaCount) 1 -}}
 {{- fail "observability-emitters: `otlp.replicaCount` is below 1. An enabled gateway with no replica is an OTLP endpoint that refuses every connection, and an SDK that cannot export drops spans silently after its own queue fills." -}}
 {{- end -}}
+{{- include "observability-emitters.validate.otlpExternal" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+External OTLP ingest (`otlp.external`): the ways to accept data from
+outside the cluster and file it under an identity the caller chose.
+*/}}
+{{- define "observability-emitters.validate.otlpExternal" -}}
+{{- $e := .Values.otlp.external -}}
+{{- if $e.enabled -}}
+{{- if not $e.headers -}}
+{{- fail "observability-emitters: `otlp.external.enabled` is true but `otlp.external.headers` is empty. The headers are the ONLY source of the caller's identity — the payload's own claims are deleted — so with none, every external record would be stored with no identity at all, or (were it not dropped) with whatever the sender wrote. Map each header the gateway sets to the attribute it becomes, e.g. `x-roster-subject: enduser.id`." -}}
+{{- end -}}
+{{- $v := .Values.otlp -}}
+{{- if or (eq (int $e.httpPort) (int $v.service.grpcPort)) (eq (int $e.httpPort) (int $v.service.httpPort)) (eq (int $e.httpPort) 8888) -}}
+{{- fail (printf "observability-emitters: `otlp.external.httpPort` (%d) is the same as the in-cluster OTLP ports or the collector's own telemetry port. External and in-cluster traffic must never share a receiver — they have opposite identity rules (a pod's identity is its connection, an external caller's is a header the gateway set). Use a port of its own." (int $e.httpPort)) -}}
+{{- end -}}
+{{- $seen := dict -}}
+{{- range $kind, $m := dict "headers" $e.headers "attributes" ($e.attributes | default dict) -}}
+{{- range $k, $val := $m -}}
+{{- $attr := ternary $val $k (eq $kind "headers") | toString -}}
+{{- if not (regexMatch "^[A-Za-z0-9_.-]+$" $attr) -}}
+{{- fail (printf "observability-emitters: `otlp.external.%s` names the attribute %q, which is not a plain attribute name ([A-Za-z0-9_.-]). The name is written into the collector's own transform language." $kind $attr) -}}
+{{- end -}}
+{{- if or (hasPrefix "k8s." $attr) (hasPrefix "kubernetes." $attr) -}}
+{{- fail (printf "observability-emitters: `otlp.external.%s` writes the attribute %q. Everything under `k8s.` / `kubernetes.` is the scoping key (cluster and namespace) and is derived by the collector, never taken from a request — a header that could set it would let a caller file its data under another workload's namespace. Use another attribute name." $kind $attr) -}}
+{{- end -}}
+{{- if has $attr (list "telemetry.source" "deployment.environment.name") -}}
+{{- fail (printf "observability-emitters: `otlp.external.%s` writes the attribute %q, which the chart stamps itself on every external record (`telemetry.source=external`, the tier from `tenancy.environment`). Use another attribute name." $kind $attr) -}}
+{{- end -}}
+{{- if hasKey $seen $attr -}}
+{{- fail (printf "observability-emitters: `otlp.external` writes the attribute %q twice (headers and static attributes together). The second write would silently win; keep one." $attr) -}}
+{{- end -}}
+{{- $_ := set $seen $attr true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $e.networkPolicy.ingressFrom -}}
+{{- fail "observability-emitters: `otlp.external.enabled` is true but `otlp.external.networkPolicy.ingressFrom` is empty. The collector trusts the identity headers on this port, so the port must be reachable from the gateway's Envoy pods ONLY: any other pod that could connect would set the headers itself. Name the peers (a namespaceSelector and podSelector in one entry)." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

@@ -226,6 +226,8 @@ charts take as Secret names, delivered through External Secrets.
   [docs/frontend.md](docs/frontend.md) — one design page per
   piece: the values it takes, what it renders, what it refuses, how it
   is proven.
+- [docs/external-ingest.md](docs/external-ingest.md) — OTLP from outside the
+  cluster (an AWS Lambda): identity from the gateway's headers, never the payload
 - [docs/emitting.md](docs/emitting.md) — for whoever wires a service's
   SDK: the one address, which attributes are theirs and which are taken
   from them, and how to ask the store rather than trust a 200.

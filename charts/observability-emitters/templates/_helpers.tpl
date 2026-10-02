@@ -659,6 +659,7 @@ one.
 {{- $root := . -}}
 {{- $t := .Values.tenancy -}}
 {{- $v := .Values.otlp -}}
+{{- $ext := $v.external | default dict -}}
 {{- $full := include "observability-emitters.gateway.fullname" . -}}
 {{- $effMetricsDestinations := include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" "metrics") | fromYamlArray -}}
 {{- $effLogsDestinations := include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" "logs") | fromYamlArray -}}
@@ -694,6 +695,19 @@ receivers:
         endpoint: 0.0.0.0:{{ $v.service.grpcPort }}
       http:
         endpoint: 0.0.0.0:{{ $v.service.httpPort }}
+{{- if $ext.enabled }}
+  # External ingest: its own receiver, on its own port, so the identity
+  # rules for traffic from outside the cluster are never shared with the
+  # in-cluster receiver above. `include_metadata` is what makes the
+  # request's headers visible to the processors (`from_context`). HTTP
+  # only: the route in front of it is an HTTP route.
+  otlp/external:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:{{ $ext.httpPort }}
+        include_metadata: true
+        max_request_body_size: {{ $ext.maxRequestBodyBytes | int }}
+{{- end }}
 {{- if $v.events.enabled }}
   # Kubernetes Events are not container logs and do not come from the log
   # agent: they are an API object, read here. Only the lease holder reads,
@@ -784,6 +798,9 @@ processors:
 {{- include "observability-emitters.owners.ottl" $root | trim | nindent 10 }}
 {{- end }}
 {{- end }}
+{{- if $ext.enabled }}
+{{- include "observability-emitters.gateway.externalProcessors" $root | nindent 2 }}
+{{- end }}
   # Delta metrics and deduplication do not mix: the store keeps one sample
   # per interval, and dropping one sample of a delta series loses the
   # increment it carried rather than a repetition of a total. An SDK's
@@ -821,8 +838,15 @@ exporters:
         - k8s.cluster.name
         - k8s.namespace.name
         - deployment.environment.name
-{{- if $t.owners }}
+{{- if or $t.owners $ext.enabled }}
         - owner
+{{- end }}
+{{- if $ext.enabled }}
+        # External callers only: who sent it, and that it came from
+        # outside. Absent on in-cluster series, so these add no label
+        # there.
+        - cloud.account.id
+        - telemetry.source
 {{- end }}
 {{- end }}
 {{- range $d := $effLogsDestinations }}
@@ -888,6 +912,12 @@ service:
       receivers: [otlp]
       processors: [transform/disown, k8sattributes, transform/tenancy, delta_to_cumulative, batch]
       exporters: [{{ join ", " $metricsExporters }}]
+{{- if $ext.enabled }}
+    metrics/external:
+      receivers: [otlp/external]
+      processors: [transform/external-disown, resource/external-identity, filter/external-unidentified, transform/external-stamp, delta_to_cumulative, batch]
+      exporters: [{{ join ", " $metricsExporters }}]
+{{- end }}
 {{- end }}
 {{- $logExporters := list }}
 {{- range $d := $effLogsDestinations }}{{ $logExporters = append $logExporters (printf "otlp_http/logs-%s" $d.name) }}{{ end }}
@@ -896,6 +926,12 @@ service:
       receivers: [otlp{{ if $v.events.enabled }}, k8s_events{{ end }}]
       processors: [transform/disown, k8sattributes, transform/tenancy, batch]
       exporters: [{{ join ", " $logExporters }}]
+{{- if $ext.enabled }}
+    logs/external:
+      receivers: [otlp/external]
+      processors: [transform/external-disown, resource/external-identity, filter/external-unidentified, transform/external-stamp, batch]
+      exporters: [{{ join ", " $logExporters }}]
+{{- end }}
 {{- end }}
 {{- $traceExporters := list }}
 {{- range $d := $effTracesDestinations }}{{ $traceExporters = append $traceExporters (printf "otlp_http/traces-%s" $d.name) }}{{ end }}
@@ -904,6 +940,101 @@ service:
       receivers: [otlp]
       processors: [transform/disown, k8sattributes, transform/tenancy, batch]
       exporters: [{{ join ", " $traceExporters }}]
+{{- if $ext.enabled }}
+    traces/external:
+      receivers: [otlp/external]
+      processors: [transform/external-disown, resource/external-identity, filter/external-unidentified, transform/external-stamp, batch]
+      exporters: [{{ join ", " $traceExporters }}]
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+The external-ingest processors (`otlp.external`), in the order that is the
+security property:
+
+  transform/external-disown      deletes every identity or tenancy
+                                 attribute the CLIENT supplied;
+  resource/external-identity     writes the gateway-verified request
+                                 headers in (`from_context`);
+  filter/external-unidentified   drops anything that arrived without one
+                                 of them, rather than storing it
+                                 anonymous;
+  transform/external-stamp       the chart's own stamps: cluster,
+                                 environment, namespace, source, and the
+                                 static attributes.
+
+All of them run BEFORE `batch`: the headers belong to one request, and
+after batching a resource can be merged from several.
+
+Deleting first is what makes the rest trustworthy: `upsert` would
+overwrite a forged value anyway, but only for a header that is present,
+and an attribute nobody writes (an `owner` this deployment has no header
+for) would pass straight through. Whatever a client may not choose is
+removed whether or not anything replaces it.
+*/}}
+{{- define "observability-emitters.gateway.externalProcessors" -}}
+{{- $ext := .Values.otlp.external -}}
+{{- $t := .Values.tenancy -}}
+{{- $del := list -}}
+{{- range $a := $ext.deleteAttributes | default list }}{{ $del = append $del (toString $a) }}{{ end -}}
+{{- range $h, $a := $ext.headers }}{{ $del = append $del (toString $a) }}{{ end -}}
+{{- range $a, $_ := ($ext.attributes | default dict) }}{{ $del = append $del (toString $a) }}{{ end -}}
+{{- $del = append $del "telemetry.source" | uniq | sortAlpha -}}
+transform/external-disown:
+  error_mode: ignore
+{{- range $signal := list "metric" "log" "trace" }}
+  {{ $signal }}_statements:
+    - context: resource
+      statements:
+        - delete_matching_keys(attributes, "^(k8s|kubernetes)[.].*")
+{{- range $a := $del }}
+        - delete_key(attributes, {{ $a | quote }})
+{{- end }}
+    - context: scope
+      statements:
+        - delete_matching_keys(attributes, "^(k8s|kubernetes)[.].*")
+{{- range $a := $del }}
+        - delete_key(attributes, {{ $a | quote }})
+{{- end }}
+    - context: {{ ternary "datapoint" (ternary "log" "span" (eq $signal "log")) (eq $signal "metric") }}
+      statements:
+        - delete_matching_keys(attributes, "^(k8s|kubernetes)[.].*")
+{{- range $a := $del }}
+        - delete_key(attributes, {{ $a | quote }})
+{{- end }}
+{{- end }}
+resource/external-identity:
+  attributes:
+{{- range $h, $a := $ext.headers }}
+    - key: {{ $a | quote }}
+      from_context: {{ printf "metadata.%s" $h | quote }}
+      action: upsert
+{{- end }}
+filter/external-unidentified:
+  error_mode: ignore
+{{- range $signal := list "metric" "log" "trace" }}
+  {{ $signal }}_conditions:
+{{- range $h, $a := $ext.headers }}
+    - resource.attributes[{{ $a | quote }}] == nil or resource.attributes[{{ $a | quote }}] == ""
+{{- end }}
+{{- end }}
+transform/external-stamp:
+  error_mode: ignore
+{{- range $signal := list "metric" "log" "trace" }}
+  {{ $signal }}_statements:
+    - context: resource
+      statements:
+        - set(attributes["k8s.cluster.name"], {{ $t.cluster | quote }})
+        - set(attributes["deployment.environment.name"], {{ $t.environment | quote }})
+        - set(attributes["k8s.namespace.name"], {{ $ext.namespace | quote }})
+{{- if eq $signal "log" }}
+        - set(attributes["kubernetes.pod_namespace"], {{ $ext.namespace | quote }})
+{{- end }}
+        - set(attributes["telemetry.source"], "external")
+{{- range $a, $val := ($ext.attributes | default dict) }}
+        - set(attributes[{{ $a | quote }}], {{ $val | toString | quote }})
+{{- end }}
 {{- end }}
 {{- end -}}
 

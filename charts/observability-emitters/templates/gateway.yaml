@@ -133,6 +133,12 @@ spec:
       port: {{ .Values.otlp.service.httpPort }}
       targetPort: otlp-http
       protocol: TCP
+    {{- if .Values.otlp.external.enabled }}
+    - name: otlp-external
+      port: {{ .Values.otlp.external.httpPort }}
+      targetPort: otlp-external
+      protocol: TCP
+    {{- end }}
 ---
 {{- /*
 The headless Service a StatefulSet needs to name its pods. It carries no
@@ -222,6 +228,11 @@ spec:
             - name: otlp-http
               containerPort: {{ .Values.otlp.service.httpPort }}
               protocol: TCP
+            {{- if .Values.otlp.external.enabled }}
+            - name: otlp-external
+              containerPort: {{ .Values.otlp.external.httpPort }}
+              protocol: TCP
+            {{- end }}
             - name: telemetry
               containerPort: 8888
               protocol: TCP
@@ -303,6 +314,44 @@ spec:
         resources:
           requests:
             storage: {{ .Values.otlp.queue.size }}
+{{- if .Values.otlp.external.enabled }}
+---
+{{- /*
+Selecting the gateway's pods makes this the first NetworkPolicy they have,
+and a pod selected by one is default-deny for ingress: so the in-cluster
+ports are listed here, open to everyone exactly as they were without a
+policy, and the external port is the only one that is narrowed. Narrowed
+to the peers in `otlp.external.networkPolicy.ingressFrom` (the gateway's
+Envoy pods): the headers that carry the caller's identity are believed
+only from the hop that verified the JWT and stripped the client's copies,
+so a pod that could reach this port directly could write them itself.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "observability-emitters.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "observability-emitters.gateway.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: {{ .Values.otlp.service.grpcPort }}
+          protocol: TCP
+        - port: {{ .Values.otlp.service.httpPort }}
+          protocol: TCP
+        - port: 8888
+          protocol: TCP
+    - from:
+        {{- toYaml .Values.otlp.external.networkPolicy.ingressFrom | nindent 8 }}
+      ports:
+        - port: {{ .Values.otlp.external.httpPort }}
+          protocol: TCP
+{{- end }}
 {{- if .Values.otlp.podMonitor.enabled }}
 ---
 apiVersion: monitoring.coreos.com/v1
