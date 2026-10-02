@@ -343,12 +343,20 @@ spec:
           labels:
             {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
           annotations:
+            {{- if $g.summary }}
+            summary: {{ $g.summary | quote }}
+            {{- else }}
             summary: "HTTP probe {{`{{ $labels.probe }}`}} has not answered 200 for {{ $g.for }}"
+            {{- end }}
+            {{- if $g.description }}
+            description: {{ $g.description | quote }}
+            {{- else }}
             description: >-
               The probe {{`{{ $labels.probe }}`}} (charts/observability-emitters
               `metrics.scrape.probes`) has read up == 0 for {{ $g.for }}: the URL
               refused the connection, failed TLS or answered something other
               than 200 from this cluster's own egress.
+            {{- end }}
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" $g.alertName)) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
     {{- if .Values.groups.pendingPods.enabled }}

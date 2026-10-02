@@ -47,7 +47,7 @@ channel, and an outside probe.
 - **`metrics.scrape.probes`** (emitters, default empty): HTTP probes as
   scrapes of a URL, kept for `up{job="http-probe"}`; **`groups.probes`**
   (platform-alerts, default off): the alert on `up == 0`, with a settable
-  `alertName`.
+  `alertName`, `summary` and `description` (plain text, default empty).
 - **`statusbox.Catalogue.Deadman`**: the deadman group (vmalert Watchdog,
   Alertmanager Watchdog, and not-firing checks) on its own `custom`
   provider and the two-failure threshold; `Providers` no longer reaches

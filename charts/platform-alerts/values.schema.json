@@ -158,6 +158,8 @@
             "enabled": { "type": "boolean" },
             "alertName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
             "probe": { "type": "string", "minLength": 1 },
+            "summary": { "type": "string", "pattern": "^[^{}]*$", "description": "Plain text replacing the alert's summary. No template braces. Empty keeps the generated summary." },
+            "description": { "type": "string", "pattern": "^[^{}]*$", "description": "Plain text replacing the alert's description. No template braces. Empty keeps the generated description." },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" }
           }

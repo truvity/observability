@@ -216,6 +216,12 @@ groups:
     # -- A regular expression over the probe's `probe` label (its name in
     # `metrics.scrape.probes`). Anchored by the matcher itself.
     probe: ".+"
+    # -- Plain text that replaces the alert's `summary` / `description`
+    # (no template braces: rendered literally). For an estate whose probe
+    # leaves through a third party and wants the alert to say so. Empty
+    # keeps the generated text.
+    summary: ""
+    description: ""
     # -- How long a probe must read `up == 0` before firing. The agent
     # scrapes once a minute by default; several misses in a row is a real
     # outage, one is a blip.
