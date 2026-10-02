@@ -1,0 +1,9 @@
+# expect: does not match pattern
+# An empty name would render a VMUser called <release>-reader-; refused.
+tenancy:
+  readers:
+    - name: ""
+      tokenSecret: {name: example-read-token, key: token}
+      grants:
+        - cluster: example-edge
+          allNamespaces: true

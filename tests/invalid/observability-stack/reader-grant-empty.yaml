@@ -1,0 +1,17 @@
+# expect: neither `namespaces` nor `allNamespaces`
+# A cluster with neither list nor allNamespaces is refused, not read as everything.
+tenancy:
+  readers:
+    - name: edge-evaluator
+      tokenSecret: {name: example-read-token, key: token}
+      grants: [{cluster: example-edge}]
+
+# Minimum receiver, so the Alertmanager refusal does not preempt this fixture.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

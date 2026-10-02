@@ -71,8 +71,8 @@ fullnameOverride: ""
 # (`victoria-metrics-k8s-stack.vmsingle.enabled`,
 # `victoria-logs-single.enabled`, `victoria-traces-single.enabled`) all
 # still default to their "full" shape and must be turned off explicitly,
-# and `tenancy.principals`, `tenancy.writers` and `tenancy.alertReaders`
-# must be empty. The render refuses every one it finds still on, and an
+# and `tenancy.principals`, `tenancy.writers`, `tenancy.readers` and
+# `tenancy.alertReaders` must be empty. The render refuses every one it finds still on, and an
 # explicit `true` on any of the four toggles above, the same
 # way every other combination in this chart is checked rather than
 # silently resolved — see docs/doctrine.md's note on mirrors: a value this
@@ -590,6 +590,33 @@ tenancy:
   # object name, and the operator drops all but one with no error outside
   # `status.currentSyncError`).
   writers: []
+  # -- The metrics readers: a static bearer token that may QUERY this
+  # install's metrics store, scoped by a grant, for a machine rather than
+  # a person — the first use is another install's
+  # `vmalert.remoteEvaluators` entry evaluating its rules against this
+  # store (docs/notifications.md, "Evaluating another store's rules").
+  #
+  #   readers:
+  #     - name: central-evaluator
+  #       tokenSecret:
+  #         name: example-metrics-read-token
+  #         key: token
+  #       grants:
+  #         - cluster: example-cluster
+  #           allNamespaces: true
+  #
+  # The token is the caller's: this chart takes the NAME of a Secret and
+  # never a value. `grants` has the shape a principal's has and is
+  # enforced the way a principal's is, by a filter vmauth forces onto the
+  # route — here as literal `extra_filters` query arguments (one per
+  # grant, ORed by the store), because a static token has no claim to
+  # substitute from. A reader gets `/prometheus/api/v1/query` and
+  # `/prometheus/api/v1/query_range` and nothing else: no series, labels,
+  # tsdb status or vmui, no write route, no logs, no traces, no alerts.
+  # An empty grant list is refused; "everything on a cluster" is
+  # `allNamespaces: true`, written out. Needs the proxy (`mode: full`,
+  # vmauth rendered); two readers sharing a `name` are refused.
+  readers: []
   # -- Admit the alerts-reader route although nothing can scope it.
   #
   # vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster

@@ -47,6 +47,7 @@ vmalert and karma, or the pair splits and pages twice.
 {{- include "observability-stack.validate.tenancy" . -}}
 {{- include "observability-stack.validate.writers" . -}}
 {{- include "observability-stack.validate.alertReaders" . -}}
+{{- include "observability-stack.validate.readers" . -}}
 {{- include "observability-stack.validate.grafana" . -}}
 {{- include "observability-stack.validate.routeOverlap" . -}}
 {{- include "observability-stack.validate.k8sStackClusterLabel" . -}}
@@ -58,7 +59,7 @@ vmalert and karma, or the pair splits and pages twice.
 Setting it does not turn anything else off: every component the mode
 does not run — vmauth, both vmalerts, Alertmanager, Grafana, backups,
 the self-alerts, the metrics self-scrape, all three stores, and
-`tenancy.principals`/`writers`/`alertReaders` — must ALSO be turned off
+`tenancy.principals`/`writers`/`readers`/`alertReaders` — must ALSO be turned off
 (or left empty) explicitly, or this refuses. The alternative — the mode
 silently forcing each of those off — is the shape this chart refuses
 everywhere else a value could be computed instead of checked (see
@@ -133,6 +134,9 @@ a fetched VMRule, no Grafana for a fetched dashboard.
 {{- if .Values.tenancy.writers -}}
 {{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.writers` is set. There is no proxy here for a writer's bearer token to authenticate against. Clear `tenancy.writers`, or drop `mode` back to \"full\"." -}}
 {{- end -}}
+{{- if .Values.tenancy.readers -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.readers` is set. There is no proxy here for a reader's bearer token to authenticate against. Clear `tenancy.readers`, or drop `mode` back to \"full\"." -}}
+{{- end -}}
 {{- if .Values.tenancy.alertReaders -}}
 {{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.alertReaders` is set. There is no vmalert here for it to read. Clear `tenancy.alertReaders`, or drop `mode` back to \"full\"." -}}
 {{- end -}}
@@ -187,6 +191,9 @@ every setting that says otherwise instead of quietly ignoring it.
 {{- end -}}
 {{- if .Values.tenancy.writers -}}
 {{- fail "observability-stack: `mode` is \"replica\" but `tenancy.writers` is set. There is no proxy here for a writer's token to authenticate against. Clear it." -}}
+{{- end -}}
+{{- if .Values.tenancy.readers -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.readers` is set. There is no proxy here for a reader's token to authenticate against. Clear it." -}}
 {{- end -}}
 {{- if .Values.tenancy.alertReaders -}}
 {{- fail "observability-stack: `mode` is \"replica\" but `tenancy.alertReaders` is set. There is no vmalert here for it to read. Clear it." -}}
@@ -1656,6 +1663,81 @@ is the same failure the trace refusal exists to prevent.
 {{- range $r := $t.alertReaders -}}
 {{- if and $r.alertmanager (not $observabilityStackEffective.alertmanager) -}}
 {{- fail (printf "observability-stack: `tenancy.alertReaders` entry %q sets `alertmanager: true` but `alertmanager.enabled` is false. There is no Alertmanager for this route to read." $r.name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`tenancy.readers`: a static bearer token that may QUERY the metrics store,
+scoped by a grant (docs/notifications.md, "Evaluating another store's
+rules"). The shapes (a plain name, a Secret name AND key, at least one
+grant) are the schema's; what it cannot see is checked here, with the
+grant checks the principals get — a grant that is empty, or names both
+spellings, or names a cluster twice, is a reader that reads more or less
+than somebody meant.
+*/}}
+{{- define "observability-stack.validate.readers" -}}
+{{- $t := .Values.tenancy -}}
+{{- if $t.readers -}}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- if not $eff.vmauth -}}
+{{- fail "observability-stack: `tenancy.readers` is set but this install renders no vmauth (`mode` is not \"full\", or `vmauth.enabled` is false). A reader's bearer token authenticates against the proxy; with none, the reader is configured and unreachable. Set it on the install that runs the proxy, or empty the list." -}}
+{{- end -}}
+{{- $fullname := include "observability-stack.fullname" . -}}
+{{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
+{{- $names := dict -}}
+{{- range $r := $t.readers -}}
+{{- if not (regexMatch $shape (toString $r.name)) -}}
+{{- fail (printf "observability-stack: `tenancy.readers` entry %q is not a DNS label (lower-case alphanumerics and hyphens, starting and ending with an alphanumeric)." (toString $r.name)) -}}
+{{- end -}}
+{{- if hasKey $names $r.name -}}
+{{- fail (printf "observability-stack: reader %q appears twice in `tenancy.readers`. The second `VMUser` this chart renders would collide with the first's object name, and the operator drops all but one from vmauth's config with no error outside `status.currentSyncError` — a reader that silently stops being able to read." $r.name) -}}
+{{- end -}}
+{{- $_ := set $names $r.name true -}}
+{{- if gt (len (printf "%s-reader-%s" $fullname $r.name)) 63 -}}
+{{- fail (printf "observability-stack: reader %q makes the VMUser name %q longer than 63 characters, and a truncated name can collide with another reader's. Shorten it." $r.name (printf "%s-reader-%s" $fullname $r.name)) -}}
+{{- end -}}
+{{- range $p := $t.principals -}}
+{{- $pn := $p.name | default $p.group | default "" -}}
+{{- $slug := regexReplaceAll "[^a-z0-9]+" (lower $pn) "-" | trimAll "-" | trunc 40 | trimSuffix "-" -}}
+{{- if eq $slug (printf "reader-%s" $r.name) -}}
+{{- fail (printf "observability-stack: reader %q and principal %q would render the same VMUser object name. Rename one of them." $r.name $pn) -}}
+{{- end -}}
+{{- end -}}
+{{- if not $r.grants -}}
+{{- fail (printf "observability-stack: reader %q has no grants. A reader with no grant would read nothing, or with a careless rewrite everything; a reader that may read everything on a cluster says so with `allNamespaces: true`." $r.name) -}}
+{{- end -}}
+{{- $clusters := dict -}}
+{{- range $g := $r.grants -}}
+{{- if not (regexMatch $shape (toString $g.cluster)) -}}
+{{- fail (printf "observability-stack: reader %q has cluster %q, which is not a plain name (%s). Names are interpolated into a filter expression, so one carrying `|`, `)` or `.*` would widen the grant." $r.name (toString $g.cluster) $shape) -}}
+{{- end -}}
+{{- if hasKey $clusters $g.cluster -}}
+{{- fail (printf "observability-stack: reader %q is granted cluster %q twice. Merge them, or one grant is silently ignored." $r.name $g.cluster) -}}
+{{- end -}}
+{{- $_ := set $clusters $g.cluster true -}}
+{{- if and $g.allNamespaces $g.namespaces -}}
+{{- fail (printf "observability-stack: reader %q grants cluster %q with both `allNamespaces` and a `namespaces` list. One of them is wrong, and guessing which is how a grant quietly widens." $r.name $g.cluster) -}}
+{{- end -}}
+{{- if and (not $g.allNamespaces) (not $g.namespaces) -}}
+{{- fail (printf "observability-stack: reader %q grants cluster %q with neither `namespaces` nor `allNamespaces`. An empty grant is refused rather than read as \"everything\": say `allNamespaces: true` if that is meant." $r.name $g.cluster) -}}
+{{- end -}}
+{{- range $ns := ($g.namespaces | default list) -}}
+{{- if not (regexMatch $shape (toString $ns)) -}}
+{{- fail (printf "observability-stack: reader %q grants namespace %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $r.name (toString $ns) $shape) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /* The grant is enforced by a query argument the route sets; a client one that is merged instead of dropped would win. */ -}}
+{{- range $arg, $value := ($.Values.vmauth.extraArgs | default dict) -}}
+{{- if eq (toString $arg) "mergeQueryArgs" -}}
+{{- range $merged := (splitList "," (toString $value)) -}}
+{{- if has (trim $merged) (list "extra_filters" "extra_filters[]") -}}
+{{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q while `tenancy.readers` is set. A reader's grant is enforced as that query argument on its route, and vmauth drops a client's clashing one only when it is NOT merged: with it merged the caller's own filter is sent beside the grant's, and a caller who may send its own filter may send a wider one. Remove it." (trim $merged)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

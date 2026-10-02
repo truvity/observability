@@ -1,0 +1,6 @@
+# expect: missing property 'grants'
+# No grants: refused rather than read as everything.
+tenancy:
+  readers:
+    - name: edge-evaluator
+      tokenSecret: {name: example-read-token, key: token}

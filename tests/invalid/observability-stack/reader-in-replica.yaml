@@ -1,0 +1,18 @@
+# expect: `mode` is "replica" but `tenancy.readers`
+# A replica runs the stores only; there is no proxy for a reader's token.
+mode: replica
+ha:
+  enabled: true
+zones:
+  - example-1a
+  - example-1b
+victoria-metrics-k8s-stack:
+  victoria-metrics-operator:
+    enabled: false
+  syncJob:
+    enabled: false
+tenancy:
+  readers:
+    - name: edge-evaluator
+      tokenSecret: {name: example-read-token, key: token}
+      grants: [{cluster: example-edge, allNamespaces: true}]
