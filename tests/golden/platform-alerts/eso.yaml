@@ -1,0 +1,188 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.eso
+      interval: 1m
+      rules:
+        # The admission webhook is down.
+        #
+        # Both validating webhooks of External Secrets Operator
+        # (ExternalSecret and SecretStore validation) fail closed
+        # (`failurePolicy: Fail`): while the webhook pod does not answer,
+        # the API server refuses every create and update of an ExternalSecret,
+        # SecretStore and ClusterSecretStore, which blocks every deploy that
+        # carries one. Highest severity in the group.
+        - alert: ESOWebhookDown
+          expr: >-
+            max by (k8s_cluster_name, pod) (up{namespace="external-secrets", job=~"external-secrets-webhook.*"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The External Secrets webhook {{ $labels.pod }} has not answered its scrape for 5m"
+            description: >-
+              The webhook pod {{ $labels.pod }} does not answer. The
+              webhooks fail closed, so writes of ExternalSecrets, SecretStores
+              and ClusterSecretStores are being refused cluster-wide. Check the
+              pod in namespace external-secrets, its events and its log; as a last
+              resort the webhook configurations can be set to ignore failures.
+            runbook_url: "https://runbooks.example.com/ESOWebhookDown"
+        # No webhook is reporting at all: the pod is gone or no longer scraped.
+        # The same outage as above, which `== 0` cannot see once the series is
+        # stale.
+        - alert: ESOWebhookAbsent
+          expr: >-
+            absent(up{namespace="external-secrets", job=~"external-secrets-webhook.*"})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No External Secrets webhook has been scraped for 5m"
+            description: >-
+              up{namespace="external-secrets", job=~"external-secrets-webhook.*"} has not
+              been seen in 5m: the webhook Deployment is
+              gone or not scraped. If it is gone the webhooks fail closed and
+              writes of ExternalSecrets and SecretStores are refused.
+            runbook_url: "https://runbooks.example.com/ESOWebhookAbsent"
+        # An ExternalSecret that is not Ready.
+        #
+        # `externalsecret_status_condition` is 1 on the series of the
+        # condition the ExternalSecret currently has. The series' own
+        # `namespace` is the ExternalSecret's, which collides with the scrape's
+        # and survives as `exported_namespace` under `honor_labels: false`,
+        # which is how this chart's emitters scrape.
+        - alert: ESOExternalSecretNotReady
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (
+              externalsecret_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ExternalSecret {{ $labels.exported_namespace }}/{{ $labels.name }} has not been Ready for 15m"
+            description: >-
+              The ExternalSecret is not syncing: the Kubernetes Secret it
+              owns is stale or was never created. `kubectl describe
+              externalsecret` shows the reason: a missing remote key, a store
+              that denies the read, or a template that does not render.
+            runbook_url: "https://runbooks.example.com/ESOExternalSecretNotReady"
+        # A SecretStore that is not Ready.
+        #
+        # A store that cannot validate its provider silently stales every
+        # ExternalSecret that reads it.
+        - alert: ESOSecretStoreNotReady
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (
+              secretstore_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SecretStore {{ $labels.exported_namespace }}/{{ $labels.name }} has not been Ready for 10m"
+            description: >-
+              The store cannot validate its provider, so every ExternalSecret
+              that reads it goes stale. `kubectl describe secretstore` shows
+              why: unreachable provider, rejected credentials or a bad
+              configuration.
+            runbook_url: "https://runbooks.example.com/ESOSecretStoreNotReady"
+        # A ClusterSecretStore that is not Ready.
+        - alert: ESOClusterSecretStoreNotReady
+          expr: >-
+            max by (k8s_cluster_name, name) (
+              clustersecretstore_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ClusterSecretStore {{ $labels.name }} has not been Ready for 10m"
+            description: >-
+              The cluster-wide store cannot validate its provider, so every
+              ExternalSecret that reads it, in any namespace, goes stale.
+              `kubectl describe clustersecretstore` shows why.
+            runbook_url: "https://runbooks.example.com/ESOClusterSecretStoreNotReady"
+        # Reconciles that ended in an error, per controller.
+        #
+        # controller-runtime pre-initialises the counter at 0 for every
+        # controller, so `increase` sees the first error. `for` equal to the
+        # window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: ESOReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, controller) (
+              increase(controller_runtime_reconcile_errors_total{namespace="external-secrets"}[15m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "External Secrets controller {{ $labels.controller }} keeps failing to reconcile"
+            description: >-
+              The {{ $labels.controller }} controller has recorded reconcile
+              errors for 15m. Read the operator's log
+              for the object and the error; the not-Ready alerts name the
+              objects that are affected.
+            runbook_url: "https://runbooks.example.com/ESOReconcileErrors"
+        # Calls to the secret provider's API that fail.
+        #
+        # `externalsecret_provider_api_calls_count` carries `provider`, `call`
+        # and `status` (`success` or `error`). Same shape as the rule above:
+        # the errors must keep arriving for `for`.
+        - alert: ESOProviderAPIErrors
+          expr: >-
+            sum by (k8s_cluster_name, provider) (
+              increase(externalsecret_provider_api_calls_count{status="error"}[10m])
+            ) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Calls to the {{ $labels.provider }} secret provider keep failing"
+            description: >-
+              API calls to the provider {{ $labels.provider }} have kept
+              failing for 10m: the provider is
+              unreachable or throttling, or has rejected the operator's
+              credentials. ExternalSecrets that read from it go stale.
+            runbook_url: "https://runbooks.example.com/ESOProviderAPIErrors"
+        # A work queue that does not drain.
+        - alert: ESOWorkqueueStuck
+          expr: >-
+            max by (k8s_cluster_name, name) (workqueue_depth{namespace="external-secrets"}) > 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "External Secrets work queue {{ $labels.name }} has not drained for 30m"
+            description: >-
+              The queue {{ $labels.name }} has held items for
+              30m: secret delivery is delayed. The operator is
+              slower than the changes arriving, or a worker is stuck.
+            runbook_url: "https://runbooks.example.com/ESOWorkqueueStuck"
+        # The deadman for the rules above: nothing in the operator's
+        # namespace is scraped (the chart's `serviceMonitor.enabled` is off,
+        # the pods are gone, the scrape is blocked).
+        - alert: ESOMetricsAbsent
+          expr: >-
+            absent(up{namespace="external-secrets"})
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No External Secrets target has been scraped for 15m"
+            description: >-
+              up{namespace="external-secrets"} has not been seen in 15m,
+              so none of the External Secrets rules can fire. Check that the
+              operator chart's `serviceMonitor.enabled` is on and the pods are
+              running.
+            runbook_url: "https://runbooks.example.com/ESOMetricsAbsent"

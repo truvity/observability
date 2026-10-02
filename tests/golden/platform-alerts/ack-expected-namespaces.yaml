@@ -1,0 +1,122 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.ack
+      interval: 1m
+      rules:
+        # An AWS Controllers for Kubernetes controller that does not answer.
+        #
+        # ACK controllers are what makes AWS resources converge on their
+        # Kubernetes objects, and a down controller is silent otherwise: the
+        # objects stay as they were.
+        - alert: ACKControllerDown
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod) (up{namespace=~"example-ack-.*"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The ACK controller {{ $labels.pod }} in {{ $labels.namespace }} has not answered its scrape for 5m"
+            description: >-
+              The controller does not answer its metrics scrape: it is down,
+              crash-looping or not ready. AWS resources it owns are not being
+              created, updated or deleted. Check the pod in
+              {{ $labels.namespace }}, its events and its log.
+            runbook_url: "https://runbooks.example.com/ACKControllerDown"
+        # A controller that is not reporting at all.
+        #
+        # One `absent` per controller namespace named in `expectedNamespaces`:
+        # an alert for the one that is missing, with its `namespace` label
+        # taken from the selector.
+        - alert: ACKControllerAbsent
+          expr: >-
+            absent(up{namespace="example-ack-one"})
+            or
+            absent(up{namespace="example-ack-two"})
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "An ACK controller has not been scraped for 10m"
+            description: >-
+              No `up` series has been seen for an ACK controller in
+              10m: its Deployment is gone, its pod is not
+              scheduled, or the PodMonitor is no longer applied. AWS resources
+              it owns are not being reconciled.
+            runbook_url: "https://runbooks.example.com/ACKControllerAbsent"
+        # Reconciles that ended in an error and will be retried.
+        #
+        # controller-runtime pre-initialises the counter at 0 for every
+        # controller, so `increase` sees the first error. `for` equal to the
+        # window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: ACKReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_reconcile_errors_total{namespace=~"example-ack-.*"}[15m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} keeps failing to reconcile {{ $labels.controller }}"
+            description: >-
+              The controller in {{ $labels.namespace }} has recorded reconcile
+              errors on {{ $labels.controller }} for 15m.
+              The resources are retried and may be failing on AWS permissions,
+              throttling or a bad spec: the controller's log names the
+              resource.
+            runbook_url: "https://runbooks.example.com/ACKReconcileErrors"
+        # Terminal reconcile errors: a resource that needs a human.
+        #
+        # A terminal error is one the controller will not retry (an invalid
+        # spec, a name that is taken). The counter only moves when the error
+        # is first found, so the alert lasts `window` and then clears with the
+        # resource still broken: the Terminal condition on the object is what
+        # stays.
+        - alert: ACKTerminalReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_terminal_reconcile_errors_total{namespace=~"example-ack-.*"}[1h])
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} hit a terminal error on {{ $labels.controller }}"
+            description: >-
+              A resource of kind {{ $labels.controller }} reached a terminal
+              error in {{ $labels.namespace }} within the last
+              1h. The controller will not retry it:
+              `kubectl get` the resources of that kind and read the
+              `ACK.Terminal` condition's message.
+            runbook_url: "https://runbooks.example.com/ACKTerminalReconcileErrors"
+        # A controller that panicked in a reconcile.
+        #
+        # controller-runtime recovers the panic and counts it; the object is
+        # retried, and the bug is the controller's.
+        - alert: ACKReconcilePanics
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_reconcile_panics_total{namespace=~"example-ack-.*"}[15m])
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} panicked while reconciling {{ $labels.controller }}"
+            description: >-
+              The controller in {{ $labels.namespace }} recovered from a
+              panic reconciling {{ $labels.controller }} within the last
+              15m. It is a defect in that controller version:
+              find the resource in the log and check for a newer release.
+            runbook_url: "https://runbooks.example.com/ACKReconcilePanics"

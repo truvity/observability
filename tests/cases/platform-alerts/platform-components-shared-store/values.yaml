@@ -1,0 +1,87 @@
+# A store that holds several clusters, rules running on one of them: the
+# series' own cluster label survives on every alert of the platform component
+# groups (as nats-shared-store does for NATS). Every value moved off its
+# default so a change to any shows in the golden.
+commonLabels:
+  k8s_cluster_name: example
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  kargo:
+    enabled: true
+    keepClusterLabel: true
+    controllerJob: example-kargo-controller
+    controllerAbsent:
+      enabled: true
+      for: 7m
+      severity: warning
+    reconcileErrors:
+      enabled: true
+      window: 20m
+      for: 10m
+      severity: critical
+    workqueueDepth:
+      enabled: true
+      for: 45m
+      severity: info
+  argocd:
+    enabled: true
+    keepClusterLabel: true
+    job: example-argocd-.*
+    severity: warning
+    warningSeverity: info
+    syncFailed:
+      window: 20m
+      for: 2m
+    unhealthyFor: 25m
+    outOfSync:
+      enabled: false
+    clusterLostFor: 9m
+    gitFetch:
+      window: 20m
+      minFailures: 5
+      for: 8m
+    absentFor: 25m
+    absentSeverity: info
+  eso:
+    enabled: true
+    keepClusterLabel: true
+    namespace: example-secrets
+    webhookJob: example-webhook-.*
+    severity: warning
+    warningSeverity: info
+    webhookDownFor: 7m
+    notReadyFor: 25m
+    storeNotReadyFor: 12m
+    reconcileErrors:
+      window: 25m
+      for: 20m
+    providerErrors:
+      window: 20m
+      for: 15m
+    workqueueFor: 45m
+    absentFor: 25m
+  ack:
+    enabled: true
+    keepClusterLabel: true
+    namespace: example-ack-.*
+    severity: warning
+    warningSeverity: info
+    downFor: 7m
+    absentFor: 20m
+    reconcileErrors:
+      window: 25m
+      for: 20m
+    terminalErrors:
+      window: 2h
+      for: 3m
+    panics:
+      window: 25m
+      for: 3m
+runbookBaseUrl: https://runbooks.example.com/

@@ -1,0 +1,20 @@
+# The kargo group with all three controller rules switched on, at their own
+# defaults. kargo-defaults (the group alone) is unchanged: they are off there.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  kargo:
+    enabled: true
+    controllerAbsent:
+      enabled: true
+    reconcileErrors:
+      enabled: true
+    workqueueDepth:
+      enabled: true
+runbookBaseUrl: https://runbooks.example.com/

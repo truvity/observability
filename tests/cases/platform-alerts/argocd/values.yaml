@@ -1,0 +1,13 @@
+# The argocd group alone, at its own defaults.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  argocd:
+    enabled: true
+runbookBaseUrl: https://runbooks.example.com/

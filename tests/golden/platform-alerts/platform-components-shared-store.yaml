@@ -1,0 +1,557 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.kargo
+      interval: 1m
+      rules:
+        # A Kargo Stage stuck on a promotion error.
+        #
+        # `kargo_stage_condition` is a gauge kube-state-metrics' own
+        # customResourceState feature exports from the Stage's own
+        # `.status.conditions`: 1 while the condition named by `type` and
+        # `reason` is True, 0 while it is False or Unknown. This chart
+        # does not configure that feature — see docs/kube-state-metrics.md
+        # for the config that produces it.
+        - alert: KargoStagePromotionErrored
+          expr: >-
+            kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
+          for: 15m
+          labels:
+            k8s_cluster_name: example
+            severity: critical
+          annotations:
+            summary: "Kargo Stage {{ $labels.namespace }}/{{ $labels.stage }} has not recovered from a promotion error"
+            description: >-
+              The Stage's Ready condition has read LastPromotionErrored for 15m.
+              Re-promote the Freight from the Kargo UI or CLI once the underlying
+              failure is fixed; the Stage will not retry itself.
+            runbook_url: "https://runbooks.example.com/KargoStagePromotionErrored"
+        # The same failure, corroborated by the Promotion object itself.
+        #
+        # `kargo_promotion_phase` is a StateSet over Pending, Running,
+        # Succeeded, Failed, Errored and Aborted: 1 on the Promotion's
+        # current phase, 0 on every other. Joining on (namespace, stage)
+        # against the Stage condition above is what tells an Errored
+        # promotion whose Stage has already recovered (a retry that
+        # succeeded since) apart from one still stuck.
+        - alert: KargoPromotionErrored
+          expr: >-
+            kargo_promotion_phase{phase="Errored"} == 1
+            and on (k8s_cluster_name, namespace, stage) kargo_stage_condition{type="Ready", reason="LastPromotionErrored"} == 0
+          for: 15m
+          labels:
+            k8s_cluster_name: example
+            severity: critical
+          annotations:
+            summary: "Kargo Promotion {{ $labels.namespace }}/{{ $labels.promotion }} errored and its Stage has not recovered"
+            description: >-
+              The Promotion has sat in the Errored phase for 15m and its
+              Stage still reads LastPromotionErrored. Re-promote the Freight from
+              the Kargo UI or CLI once the underlying failure is fixed.
+            runbook_url: "https://runbooks.example.com/KargoPromotionErrored"
+        # The deadman for the two rules above.
+        #
+        # Same shape as the write-path deadman: a rule that reads
+        # `kargo_stage_condition` or `kargo_promotion_phase` cannot itself
+        # notice those series going away, because it evaluates to nothing
+        # rather than to a value it could compare. Either kube-state-metrics'
+        # `customResourceState` config for Kargo's CRDs was never applied,
+        # was edited away, or the whole scrape went dark — every case the
+        # two rules above go silent right along with it.
+        - alert: KargoStateMetricsAbsent
+          expr: >-
+            absent(kargo_stage_condition{type="Ready"}) or absent(kargo_promotion_phase)
+          for: 30m
+          labels:
+            k8s_cluster_name: example
+            severity: warning
+          annotations:
+            summary: "kube-state-metrics has not exported Kargo's own Stage/Promotion metrics for 30m"
+            description: >-
+              Neither kargo_stage_condition{type="Ready"} nor
+              kargo_promotion_phase has been seen in 30m, so
+              KargoStagePromotionErrored and KargoPromotionErrored cannot fire
+              even if a promotion is stuck. Check kube-state-metrics'
+              customResourceState config against docs/kube-state-metrics.md, and
+              that the scrape itself is still up.
+            runbook_url: "https://runbooks.example.com/KargoStateMetricsAbsent"
+        # No Kargo controller is reporting.
+        #
+        # Nothing promotes while the controller is down, and the Stage and
+        # Promotion series above are written by kube-state-metrics from the
+        # objects, so they stay green. `absent(up == 1)` covers both a
+        # controller whose scrape reads 0 and one that is not scraped at
+        # all.
+        - alert: KargoControllerAbsent
+          expr: >-
+            absent(up{job="example-kargo-controller"} == 1)
+          for: 7m
+          labels:
+            k8s_cluster_name: example
+            severity: warning
+          annotations:
+            summary: "No Kargo controller has answered its metrics scrape for 7m"
+            description: >-
+              up{job="example-kargo-controller"} has not been 1 in 7m: the Kargo
+              controller is down, crash-looping or no longer scraped, so no
+              Promotion is being executed. Check the controller's pod and its
+              ServiceMonitor.
+            runbook_url: "https://runbooks.example.com/KargoControllerAbsent"
+        # Reconciles that ended in an error, per controller loop.
+        #
+        # `controller_runtime_reconcile_errors_total` is pre-initialised at 0
+        # for every loop, so `increase` sees the first error too. `for` equal
+        # to the window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: KargoControllerReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, controller) (
+              increase(controller_runtime_reconcile_errors_total{job="example-kargo-controller"}[20m])
+            ) > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kargo controller loop {{ $labels.controller }} keeps failing to reconcile"
+            description: >-
+              The {{ $labels.controller }} loop of the Kargo controller has
+              recorded reconcile errors for 10m. The objects it
+              owns are not converging: read the controller's log for the
+              resource and the error.
+            runbook_url: "https://runbooks.example.com/KargoControllerReconcileErrors"
+        # A work queue that does not drain.
+        #
+        # `workqueue_depth` is the items waiting. A queue is rarely empty
+        # for an instant, so only depth above zero for the whole `for` counts:
+        # the controller is slower than the changes arriving, or stuck.
+        - alert: KargoControllerWorkqueueStuck
+          expr: >-
+            max by (k8s_cluster_name, name) (workqueue_depth{job="example-kargo-controller"}) > 0
+          for: 45m
+          labels:
+            severity: info
+          annotations:
+            summary: "Kargo work queue {{ $labels.name }} has not drained for 45m"
+            description: >-
+              The work queue {{ $labels.name }} of the Kargo controller has
+              held items for 45m: reconciles are slower than changes
+              arrive, or a worker is stuck. Compare with the controller's CPU
+              and its reconcile errors.
+            runbook_url: "https://runbooks.example.com/KargoControllerWorkqueueStuck"
+    - name: platform-alerts.argocd
+      interval: 1m
+      rules:
+        # An Application whose sync ended in Failed or Error.
+        #
+        # `argocd_app_sync_total` is a counter per Application and phase. The
+        # Failed series of an Application that never failed does not exist
+        # until its first failure, and plain `increase` skips a series' first
+        # sample, so the first failure would go unseen: `increase_pure`
+        # counts from zero. It stays true for `syncFailed.window` after the
+        # last failure.
+        - alert: ArgoCDAppSyncFailed
+          expr: >-
+            sum by (k8s_cluster_name, name, project, dest_server, phase) (
+              increase_pure(argocd_app_sync_total{job=~"example-argocd-.*", phase=~"Failed|Error"}[20m])
+            ) > 0
+          for: 2m
+          labels:
+            severity: info
+          annotations:
+            summary: "Argo CD application {{ $labels.name }} ended a sync as {{ $labels.phase }}"
+            description: >-
+              A sync of application {{ $labels.name }} (project
+              {{ $labels.project }}, destination {{ $labels.dest_server }})
+              ended in {{ $labels.phase }} within the last
+              20m. Open the application and read the
+              sync result: a manifest the cluster refused, a hook that
+              failed, or a resource that never became healthy.
+            runbook_url: "https://runbooks.example.com/ArgoCDAppSyncFailed"
+        # An Application whose health is Degraded, Missing or Unknown.
+        #
+        # `argocd_app_info` is a gauge of 1 per Application, carrying its
+        # health in `health_status`. Progressing is left out on purpose: a
+        # rollout is Progressing, and one that never finishes is caught by
+        # Degraded when its resources time out.
+        - alert: ArgoCDAppUnhealthy
+          expr: >-
+            max by (k8s_cluster_name, name, project, dest_server, health_status) (
+              argocd_app_info{job=~"example-argocd-.*", health_status=~"Degraded|Missing|Unknown"}
+            )
+          for: 25m
+          labels:
+            severity: info
+          annotations:
+            summary: "Argo CD application {{ $labels.name }} has been {{ $labels.health_status }} for 25m"
+            description: >-
+              Application {{ $labels.name }} (project {{ $labels.project }},
+              destination {{ $labels.dest_server }}) reports health
+              {{ $labels.health_status }}. Open it and read the resource that
+              is not healthy: a crash-looping workload, a missing object, or a
+              cluster Argo CD cannot read (see ArgoCDClusterConnectionLost).
+            runbook_url: "https://runbooks.example.com/ArgoCDAppUnhealthy"
+        # An Application whose live state has differed from Git for too long.
+        #
+        # An application that does not self-heal and does not prune is
+        # OutOfSync by design (a resource kept on purpose): leave `outOfSyncFor`
+        # long, or switch the rule off with `outOfSync.enabled: false`.
+        # A destination cluster the application controller cannot reach.
+        #
+        # `argocd_cluster_connection_status` is 1 while the controller's
+        # connection to the cluster works and 0 while it does not. With the
+        # connection down every application on that cluster is stale, and
+        # none of the app-level alerts can say so.
+        - alert: ArgoCDClusterConnectionLost
+          expr: >-
+            min by (k8s_cluster_name, server) (argocd_cluster_connection_status{job=~"example-argocd-.*"}) < 1
+          for: 9m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Argo CD cannot reach the cluster {{ $labels.server }}"
+            description: >-
+              The application controller has had no working connection to
+              {{ $labels.server }} for 9m: its
+              applications are no longer reconciled. Check the cluster's API
+              endpoint, the credentials Argo CD holds for it, and the network
+              path from the controller.
+            runbook_url: "https://runbooks.example.com/ArgoCDClusterConnectionLost"
+        # The repo server failing to fetch from Git.
+        #
+        # `argocd_git_fetch_fail_total` is born at the first failure of a
+        # repository, hence `increase_pure`. At least `gitFetch.minFailures`
+        # within the window, so one dropped connection does not fire: Argo CD
+        # retries every few minutes, and a repository that is really
+        # unreachable fails on every attempt.
+        - alert: ArgoCDGitFetchFailing
+          expr: >-
+            sum by (k8s_cluster_name, repo) (
+              increase_pure(argocd_git_fetch_fail_total{job=~"example-argocd-.*"}[20m])
+            ) >= 5
+          for: 8m
+          labels:
+            severity: info
+          annotations:
+            summary: "The Argo CD repo server cannot fetch {{ $labels.repo }}"
+            description: >-
+              At least 5 Git fetches of
+              {{ $labels.repo }} failed within 20m, for
+              8m. Applications that track it cannot see new
+              commits or render manifests. Check the repository's address and
+              credentials, the Git host, and the repo server's log.
+            runbook_url: "https://runbooks.example.com/ArgoCDGitFetchFailing"
+        # The deadman for every rule above: no Application is reported at all
+        # (the application controller down, its ServiceMonitor gone, the
+        # scrape blocked) reads as healthy to rules that compare values.
+        - alert: ArgoCDMetricsAbsent
+          expr: >-
+            absent(argocd_app_info{job=~"example-argocd-.*"})
+          for: 25m
+          labels:
+            k8s_cluster_name: example
+            severity: info
+          annotations:
+            summary: "Argo CD has reported no applications for 25m"
+            description: >-
+              argocd_app_info{job=~"example-argocd-.*"} has not been seen in
+              25m, so none of the Argo CD rules can fire. The
+              application controller is down or its metrics endpoint is not
+              scraped: check its pod and the ServiceMonitor the chart renders
+              (`controller.metrics.serviceMonitor.enabled`).
+            runbook_url: "https://runbooks.example.com/ArgoCDMetricsAbsent"
+    - name: platform-alerts.eso
+      interval: 1m
+      rules:
+        # The admission webhook is down.
+        #
+        # Both validating webhooks of External Secrets Operator
+        # (ExternalSecret and SecretStore validation) fail closed
+        # (`failurePolicy: Fail`): while the webhook pod does not answer,
+        # the API server refuses every create and update of an ExternalSecret,
+        # SecretStore and ClusterSecretStore, which blocks every deploy that
+        # carries one. Highest severity in the group.
+        - alert: ESOWebhookDown
+          expr: >-
+            max by (k8s_cluster_name, pod) (up{namespace="example-secrets", job=~"example-webhook-.*"}) == 0
+          for: 7m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The External Secrets webhook {{ $labels.pod }} has not answered its scrape for 7m"
+            description: >-
+              The webhook pod {{ $labels.pod }} does not answer. The
+              webhooks fail closed, so writes of ExternalSecrets, SecretStores
+              and ClusterSecretStores are being refused cluster-wide. Check the
+              pod in namespace example-secrets, its events and its log; as a last
+              resort the webhook configurations can be set to ignore failures.
+            runbook_url: "https://runbooks.example.com/ESOWebhookDown"
+        # No webhook is reporting at all: the pod is gone or no longer scraped.
+        # The same outage as above, which `== 0` cannot see once the series is
+        # stale.
+        - alert: ESOWebhookAbsent
+          expr: >-
+            absent(up{namespace="example-secrets", job=~"example-webhook-.*"})
+          for: 7m
+          labels:
+            k8s_cluster_name: example
+            severity: warning
+          annotations:
+            summary: "No External Secrets webhook has been scraped for 7m"
+            description: >-
+              up{namespace="example-secrets", job=~"example-webhook-.*"} has not
+              been seen in 7m: the webhook Deployment is
+              gone or not scraped. If it is gone the webhooks fail closed and
+              writes of ExternalSecrets and SecretStores are refused.
+            runbook_url: "https://runbooks.example.com/ESOWebhookAbsent"
+        # An ExternalSecret that is not Ready.
+        #
+        # `externalsecret_status_condition` is 1 on the series of the
+        # condition the ExternalSecret currently has. The series' own
+        # `namespace` is the ExternalSecret's, which collides with the scrape's
+        # and survives as `exported_namespace` under `honor_labels: false`,
+        # which is how this chart's emitters scrape.
+        - alert: ESOExternalSecretNotReady
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (
+              externalsecret_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 25m
+          labels:
+            severity: info
+          annotations:
+            summary: "ExternalSecret {{ $labels.exported_namespace }}/{{ $labels.name }} has not been Ready for 25m"
+            description: >-
+              The ExternalSecret is not syncing: the Kubernetes Secret it
+              owns is stale or was never created. `kubectl describe
+              externalsecret` shows the reason: a missing remote key, a store
+              that denies the read, or a template that does not render.
+            runbook_url: "https://runbooks.example.com/ESOExternalSecretNotReady"
+        # A SecretStore that is not Ready.
+        #
+        # A store that cannot validate its provider silently stales every
+        # ExternalSecret that reads it.
+        - alert: ESOSecretStoreNotReady
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (
+              secretstore_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 12m
+          labels:
+            severity: info
+          annotations:
+            summary: "SecretStore {{ $labels.exported_namespace }}/{{ $labels.name }} has not been Ready for 12m"
+            description: >-
+              The store cannot validate its provider, so every ExternalSecret
+              that reads it goes stale. `kubectl describe secretstore` shows
+              why: unreachable provider, rejected credentials or a bad
+              configuration.
+            runbook_url: "https://runbooks.example.com/ESOSecretStoreNotReady"
+        # A ClusterSecretStore that is not Ready.
+        - alert: ESOClusterSecretStoreNotReady
+          expr: >-
+            max by (k8s_cluster_name, name) (
+              clustersecretstore_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 12m
+          labels:
+            severity: info
+          annotations:
+            summary: "ClusterSecretStore {{ $labels.name }} has not been Ready for 12m"
+            description: >-
+              The cluster-wide store cannot validate its provider, so every
+              ExternalSecret that reads it, in any namespace, goes stale.
+              `kubectl describe clustersecretstore` shows why.
+            runbook_url: "https://runbooks.example.com/ESOClusterSecretStoreNotReady"
+        # Reconciles that ended in an error, per controller.
+        #
+        # controller-runtime pre-initialises the counter at 0 for every
+        # controller, so `increase` sees the first error. `for` equal to the
+        # window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: ESOReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, controller) (
+              increase(controller_runtime_reconcile_errors_total{namespace="example-secrets"}[25m])
+            ) > 0
+          for: 20m
+          labels:
+            severity: info
+          annotations:
+            summary: "External Secrets controller {{ $labels.controller }} keeps failing to reconcile"
+            description: >-
+              The {{ $labels.controller }} controller has recorded reconcile
+              errors for 20m. Read the operator's log
+              for the object and the error; the not-Ready alerts name the
+              objects that are affected.
+            runbook_url: "https://runbooks.example.com/ESOReconcileErrors"
+        # Calls to the secret provider's API that fail.
+        #
+        # `externalsecret_provider_api_calls_count` carries `provider`, `call`
+        # and `status` (`success` or `error`). Same shape as the rule above:
+        # the errors must keep arriving for `for`.
+        - alert: ESOProviderAPIErrors
+          expr: >-
+            sum by (k8s_cluster_name, provider) (
+              increase(externalsecret_provider_api_calls_count{status="error"}[20m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: info
+          annotations:
+            summary: "Calls to the {{ $labels.provider }} secret provider keep failing"
+            description: >-
+              API calls to the provider {{ $labels.provider }} have kept
+              failing for 15m: the provider is
+              unreachable or throttling, or has rejected the operator's
+              credentials. ExternalSecrets that read from it go stale.
+            runbook_url: "https://runbooks.example.com/ESOProviderAPIErrors"
+        # A work queue that does not drain.
+        - alert: ESOWorkqueueStuck
+          expr: >-
+            max by (k8s_cluster_name, name) (workqueue_depth{namespace="example-secrets"}) > 0
+          for: 45m
+          labels:
+            severity: info
+          annotations:
+            summary: "External Secrets work queue {{ $labels.name }} has not drained for 45m"
+            description: >-
+              The queue {{ $labels.name }} has held items for
+              45m: secret delivery is delayed. The operator is
+              slower than the changes arriving, or a worker is stuck.
+            runbook_url: "https://runbooks.example.com/ESOWorkqueueStuck"
+        # The deadman for the rules above: nothing in the operator's
+        # namespace is scraped (the chart's `serviceMonitor.enabled` is off,
+        # the pods are gone, the scrape is blocked).
+        - alert: ESOMetricsAbsent
+          expr: >-
+            absent(up{namespace="example-secrets"})
+          for: 25m
+          labels:
+            k8s_cluster_name: example
+            severity: info
+          annotations:
+            summary: "No External Secrets target has been scraped for 25m"
+            description: >-
+              up{namespace="example-secrets"} has not been seen in 25m,
+              so none of the External Secrets rules can fire. Check that the
+              operator chart's `serviceMonitor.enabled` is on and the pods are
+              running.
+            runbook_url: "https://runbooks.example.com/ESOMetricsAbsent"
+    - name: platform-alerts.ack
+      interval: 1m
+      rules:
+        # An AWS Controllers for Kubernetes controller that does not answer.
+        #
+        # ACK controllers are what makes AWS resources converge on their
+        # Kubernetes objects, and a down controller is silent otherwise: the
+        # objects stay as they were.
+        - alert: ACKControllerDown
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod) (up{namespace=~"example-ack-.*"}) == 0
+          for: 7m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The ACK controller {{ $labels.pod }} in {{ $labels.namespace }} has not answered its scrape for 7m"
+            description: >-
+              The controller does not answer its metrics scrape: it is down,
+              crash-looping or not ready. AWS resources it owns are not being
+              created, updated or deleted. Check the pod in
+              {{ $labels.namespace }}, its events and its log.
+            runbook_url: "https://runbooks.example.com/ACKControllerDown"
+        # A controller that is not reporting at all.
+        #
+        # With no `expectedNamespaces`, this can only say that no ACK
+        # controller reports at all; name the controllers' namespaces to catch
+        # one of several missing.
+        - alert: ACKControllerAbsent
+          expr: >-
+            absent(up{namespace=~"example-ack-.*"})
+          for: 20m
+          labels:
+            k8s_cluster_name: example
+            severity: warning
+          annotations:
+            summary: "An ACK controller has not been scraped for 20m"
+            description: >-
+              No `up` series has been seen for an ACK controller in
+              20m: its Deployment is gone, its pod is not
+              scheduled, or the PodMonitor is no longer applied. AWS resources
+              it owns are not being reconciled.
+            runbook_url: "https://runbooks.example.com/ACKControllerAbsent"
+        # Reconciles that ended in an error and will be retried.
+        #
+        # controller-runtime pre-initialises the counter at 0 for every
+        # controller, so `increase` sees the first error. `for` equal to the
+        # window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: ACKReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_reconcile_errors_total{namespace=~"example-ack-.*"}[25m])
+            ) > 0
+          for: 20m
+          labels:
+            severity: info
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} keeps failing to reconcile {{ $labels.controller }}"
+            description: >-
+              The controller in {{ $labels.namespace }} has recorded reconcile
+              errors on {{ $labels.controller }} for 20m.
+              The resources are retried and may be failing on AWS permissions,
+              throttling or a bad spec: the controller's log names the
+              resource.
+            runbook_url: "https://runbooks.example.com/ACKReconcileErrors"
+        # Terminal reconcile errors: a resource that needs a human.
+        #
+        # A terminal error is one the controller will not retry (an invalid
+        # spec, a name that is taken). The counter only moves when the error
+        # is first found, so the alert lasts `window` and then clears with the
+        # resource still broken: the Terminal condition on the object is what
+        # stays.
+        - alert: ACKTerminalReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_terminal_reconcile_errors_total{namespace=~"example-ack-.*"}[2h])
+            ) > 0
+          for: 3m
+          labels:
+            severity: info
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} hit a terminal error on {{ $labels.controller }}"
+            description: >-
+              A resource of kind {{ $labels.controller }} reached a terminal
+              error in {{ $labels.namespace }} within the last
+              2h. The controller will not retry it:
+              `kubectl get` the resources of that kind and read the
+              `ACK.Terminal` condition's message.
+            runbook_url: "https://runbooks.example.com/ACKTerminalReconcileErrors"
+        # A controller that panicked in a reconcile.
+        #
+        # controller-runtime recovers the panic and counts it; the object is
+        # retried, and the bug is the controller's.
+        - alert: ACKReconcilePanics
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_reconcile_panics_total{namespace=~"example-ack-.*"}[25m])
+            ) > 0
+          for: 3m
+          labels:
+            severity: info
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} panicked while reconciling {{ $labels.controller }}"
+            description: >-
+              The controller in {{ $labels.namespace }} recovered from a
+              panic reconciling {{ $labels.controller }} within the last
+              25m. It is a defect in that controller version:
+              find the resource in the log and check for a newer release.
+            runbook_url: "https://runbooks.example.com/ACKReconcilePanics"

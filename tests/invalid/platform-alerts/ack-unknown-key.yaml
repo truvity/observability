@@ -1,0 +1,8 @@
+# expect: additional properties 'terminalError' not allowed
+# A typo in an alerting chart is a rule that never fires, so an unknown key
+# under a group must fail the render too.
+groups:
+  ack:
+    enabled: true
+    terminalError:
+      window: 1h

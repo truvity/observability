@@ -1,0 +1,7 @@
+# expect: at '/groups/eso/severity'
+# The webhook alerts carry this severity: one the routing tree has no branch for
+# is the highest-impact alert of the group firing into nowhere.
+groups:
+  eso:
+    enabled: true
+    severity: urgent

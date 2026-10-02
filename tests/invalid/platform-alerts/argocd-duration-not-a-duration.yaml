@@ -1,0 +1,7 @@
+# expect: at '/groups/argocd/unhealthyFor'
+# A hold time vmalert cannot parse is a rule it refuses at load, long after the
+# chart reported a successful install.
+groups:
+  argocd:
+    enabled: true
+    unhealthyFor: soon

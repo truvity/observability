@@ -201,6 +201,35 @@ groups:
     # Kargo itself may be healthy underneath it — so it defaults one tier
     # below the rules it is the deadman for.
     absentSeverity: warning
+    # -- Keep the series' own `clusterLabel` on the controller alerts below
+    # (see `pendingPods.keepClusterLabel`). The two rules above do not
+    # aggregate and always keep it.
+    keepClusterLabel: false
+    # -- The scrape job of the Kargo controller's own metrics (the
+    # controller's ServiceMonitor: the job is the Service's name). The three
+    # rules below read it; each is its own switch and OFF by default, so a
+    # group that was already on renders exactly what it did.
+    controllerJob: kargo-controller-metrics
+    # -- No controller answers its scrape: nothing promotes while it is down,
+    # and the kube-state-metrics series above stay green.
+    controllerAbsent:
+      enabled: false
+      for: 5m
+      severity: critical
+    # -- Reconciles that end in an error, per controller loop
+    # (`KargoControllerReconcileErrors`). `for` equal to `window` means one
+    # isolated error never fires: errors must keep arriving.
+    reconcileErrors:
+      enabled: false
+      window: 15m
+      for: 15m
+      severity: warning
+    # -- A work queue that holds items for the whole `for`
+    # (`KargoControllerWorkqueueStuck`).
+    workqueueDepth:
+      enabled: false
+      for: 30m
+      severity: warning
 
   # HTTP probes (charts/observability-emitters `metrics.scrape.probes`).
   #
@@ -390,4 +419,135 @@ groups:
     # -- Keep the series' own `clusterLabel` on the alert (see
     # `pendingPods.keepClusterLabel`). Not applied to NATSMetricsAbsent,
     # whose `absent()` result carries no series labels.
+    keepClusterLabel: false
+
+  # Argo CD (the application controller's, repo server's and API server's
+  # ServiceMonitors, job `argocd-*-metrics`).
+  #
+  # Off by default: it reads series that exist only where Argo CD runs and is
+  # scraped. The names are the ones the upstream chart's metrics endpoints
+  # export:
+  #   argocd_app_sync_total{name, project, dest_server, phase}
+  #   argocd_app_info{name, project, dest_server, health_status, sync_status}
+  #   argocd_cluster_connection_status{server}
+  #   argocd_git_fetch_fail_total{repo}
+  # The rules are this chart's own; the community mixin carries no licence and
+  # was only read for the names of what is worth watching.
+  argocd:
+    enabled: false
+    # -- A regular expression over the `job` of Argo CD's metrics endpoints.
+    job: argocd-.*-metrics
+    # -- Severity of `ArgoCDClusterConnectionLost`: with the connection down
+    # every application on that cluster is stale.
+    severity: critical
+    # -- Severity of the application-level alerts and the Git alert.
+    warningSeverity: warning
+    syncFailed:
+      # -- How far back a Failed or Error sync stays visible.
+      window: 10m
+      for: 1m
+    # -- How long an application must be Degraded, Missing or Unknown.
+    # Progressing is not counted: a rollout is Progressing.
+    unhealthyFor: 15m
+    outOfSync:
+      # -- `false` drops `ArgoCDAppOutOfSync`, for an estate where applications
+      # are OutOfSync by design (no self-heal, no prune).
+      enabled: true
+      for: 30m
+    # -- How long a destination cluster must be unreachable.
+    clusterLostFor: 5m
+    gitFetch:
+      window: 10m
+      # -- Failed fetches of one repository within `window` that count. One
+      # dropped connection does not.
+      minFailures: 3
+      for: 5m
+    # -- How long no application can be reported before `ArgoCDMetricsAbsent`.
+    absentFor: 15m
+    # -- Severity of the deadman.
+    absentSeverity: warning
+    # -- Keep the series' own `clusterLabel` on the alerts (see
+    # `pendingPods.keepClusterLabel`). Not applied to the deadman.
+    keepClusterLabel: false
+
+  # External Secrets Operator (the chart's `serviceMonitor.enabled`: three
+  # ServiceMonitors, one per Deployment).
+  #
+  # Off by default. Metric names are the operator's own (docs/api/metrics.md
+  # in its repository) plus controller-runtime's:
+  #   externalsecret_status_condition{name, namespace, condition, status}
+  #   secretstore_status_condition, clustersecretstore_status_condition
+  #   externalsecret_provider_api_calls_count{provider, call, status}
+  #   controller_runtime_reconcile_errors_total{controller}
+  #   workqueue_depth{name}
+  # An object's own `namespace` collides with the scrape's and survives as
+  # `exported_namespace` under `honor_labels: false`, which this chart's
+  # emitters force.
+  eso:
+    enabled: false
+    # -- Where the operator runs. Selects the target's own `namespace`, which
+    # is what keeps another controller's workqueue and reconcile series out.
+    namespace: external-secrets
+    # -- A regular expression over the webhook's `job` (the Service name its
+    # ServiceMonitor scrapes through).
+    webhookJob: external-secrets-webhook.*
+    # -- Severity of the webhook alerts: both webhooks fail closed, so while
+    # it is down every write of an ExternalSecret or a store is refused.
+    severity: critical
+    # -- Severity of everything else in the group.
+    warningSeverity: warning
+    webhookDownFor: 5m
+    notReadyFor: 15m
+    storeNotReadyFor: 10m
+    reconcileErrors:
+      window: 15m
+      for: 15m
+    providerErrors:
+      window: 10m
+      for: 10m
+    workqueueFor: 30m
+    # -- How long nothing in the namespace can be scraped before
+    # `ESOMetricsAbsent`.
+    absentFor: 15m
+    # -- Keep the series' own `clusterLabel` on the alerts (see
+    # `pendingPods.keepClusterLabel`). Not applied to the `absent` alerts.
+    keepClusterLabel: false
+
+  # AWS Controllers for Kubernetes (one controller Deployment per AWS
+  # service, each in its own namespace, scraped by a PodMonitor).
+  #
+  # Off by default. The controllers expose controller-runtime's metrics only:
+  #   up, controller_runtime_reconcile_errors_total{controller},
+  #   controller_runtime_terminal_reconcile_errors_total{controller},
+  #   controller_runtime_reconcile_panics_total{controller}
+  # `ack_outbound_api_requests_total` has no result label, so AWS throttling
+  # cannot be alerted on from it.
+  ack:
+    enabled: false
+    # -- A regular expression over the controllers' namespaces.
+    namespace: ack-.*
+    # -- Namespaces that MUST report: one `absent` per entry, so a missing
+    # controller among several is seen. Empty (the default) renders one
+    # `absent` over `namespace`, which only sees all of them gone.
+    expectedNamespaces: []
+    # -- Severity of a controller that is down or missing: AWS resources it
+    # owns stop converging, silently.
+    severity: critical
+    # -- Severity of the error and panic alerts.
+    warningSeverity: warning
+    downFor: 5m
+    absentFor: 10m
+    reconcileErrors:
+      window: 15m
+      for: 15m
+    terminalErrors:
+      # -- A terminal error is counted once, when found, so the alert lasts
+      # `window` after it.
+      window: 1h
+      for: 1m
+    panics:
+      window: 15m
+      for: 1m
+    # -- Keep the series' own `clusterLabel` on the alerts (see
+    # `pendingPods.keepClusterLabel`). Not applied to the `absent` alert.
     keepClusterLabel: false
