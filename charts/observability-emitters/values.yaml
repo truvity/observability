@@ -190,6 +190,35 @@ remote:
   # exporter id and a queue directory, the same as any low-level
   # destination's own `name`.
   name: remote
+  # -- HIGH AVAILABILITY: the other half (or halves) of a store pair.
+  # Every signal `remote` covers is written to `url` AND to each entry
+  # here — one vmagent `remoteWrite`, one gateway exporter per signal,
+  # each with its OWN on-disk buffer (the vmagent persistent queue, the
+  # gateway's `file_storage` queue and write-ahead log), so a replica
+  # that is down fills only its own.
+  #
+  #   remote:
+  #     url: https://write-a.example.private
+  #     name: zone-a
+  #     tokenSecret: {name: write-token-a, key: token}
+  #     replicas:
+  #       - name: zone-b
+  #         url: https://write-b.example.private
+  #         tokenSecret: {name: write-token-b, key: token}
+  #
+  # A store holds one user per bearer token, so a replica needs a
+  # credential of its own: an entry whose `tokenSecret` equals the
+  # first's (or another replica's) is refused, as is a repeated URL or
+  # name. `caSecret` defaults to `remote.caSecret`. The same list
+  # serves a cluster that runs both halves itself: `url` and each
+  # replica are then the in-cluster write endpoints.
+  #
+  # The log AGENT (`victoria-logs-collector.remoteWrite`) is still its
+  # own list, outside this chart's reach: with `logs` in `signals` the
+  # chart REFUSES an agent whose entries are not exactly these URLs, each
+  # with its own `bearerTokenFile`. docs/high-availability.md, "The
+  # writers".
+  replicas: []
 
 ###############################################################################
 # The metrics agent: vmagent, as a VMAgent object the operator reconciles.
@@ -593,6 +622,12 @@ otlp:
   queue:
     size: 10Gi
     storageClassName: ""
+    # -- Cap on EACH exporter's on-disk `sending_queue`, in batches
+    # (`queue_size`); 0 leaves the collector's default. With N destinations
+    # per signal the volume holds N queues per signal plus N write-ahead
+    # logs, so size `size` for all of them and set this to keep one stalled
+    # destination from taking the others' room (docs/high-availability.md).
+    maxBatches: 0
   # -- Where each signal goes. Three lists because three stores.
   #
   #   destinations:

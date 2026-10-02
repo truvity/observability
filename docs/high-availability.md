@@ -215,6 +215,107 @@ is read only if the primary fails. If the primary is the replica that was
 replaced, the pair is exactly as exposed as it was before step 1 until the
 queues have drained, so do not take down the other replica in that window.
 
+## The writers
+
+The stores half of the pair is `charts/observability-stack`; the other half
+is every writer sending to **both** stores. `charts/observability-emitters`
+already held one buffer per destination (the metrics agent, the OpenTelemetry
+gateway and the log agent each queue on disk per URL); what it learned for a
+pair is how to say "two destinations" once, with a credential per
+destination.
+
+### One list, three agents
+
+```yaml
+remote:
+  name: zone-a
+  url: https://write-a.example.private
+  tokenSecret: {name: write-token-a, key: token}
+  caSecret: {name: write-ca, key: ca.crt}      # optional, shared by default
+  replicas:
+    - name: zone-b
+      url: https://write-b.example.private
+      tokenSecret: {name: write-token-b, key: token}
+```
+
+| Agent | What it renders per destination |
+|---|---|
+| Metrics agent (vmagent) | one `remoteWrite` entry (`<url>/api/v1/write`), its own `bearerTokenSecret`, its own CA; one persistent-queue slice (see below) |
+| OpenTelemetry gateway | per signal (metrics, logs, traces) one exporter with its own `file_storage` `sending_queue` (or write-ahead log, for metrics), its own `Authorization` header from its own environment variable, its own CA mount |
+| Log agent (vlagent) | **not rendered by `remote`**: a subchart's values are computed before any template runs, so the list is written by hand, one entry per destination, with its own `bearerTokenFile` and `maxDiskUsagePerURL` |
+
+The log agent is therefore **checked**, not trusted. With `remote.replicas`
+set and `logs` among the signals, the chart refuses a
+`victoria-logs-collector.remoteWrite` whose URLs are not exactly
+`remote.url` plus the replicas, and refuses two entries reading their bearer
+from one file. `tests/cases/observability-emitters/remote-ha-pair` is a
+complete example.
+
+A cluster that runs **both halves itself** needs no separate form: the same
+list with in-cluster write endpoints (the primary's proxy, and the replica's
+write endpoint) works, or write the low-level destination lists, where each
+entry takes an optional `tokenSecret` of its own
+(`tests/cases/observability-emitters/local-ha-pair`). Both forms render the
+same thing.
+
+Refused, each with a fixture: a repeated URL (a trailing slash does not hide
+it), a repeated name, a replica without a credential of its own or sharing
+one with another entry, and `-remoteWrite.shardByURL` (which would give each
+half of the pair half the series).
+
+**Why a credential per destination.** The store authenticates one user per
+bearer token, and a token is unique per user on the proxy. Two destinations
+on one token are one identity: the halves cannot be told apart in the store's
+logs, nor one revoked without the other. A pair therefore has two tokens, and
+usually two hostnames (the replica release has no proxy of its own; the
+writer routes of the primary keep one backend each, see above).
+
+**The log agent's URL path.** The agent's URL must stay without a path (the
+chart refuses anything but the protocol's own `/insert/native`). The path is
+the endpoint, not a prefix: the agent appends the endpoint itself, and a
+wrong path answers 404, which the agent treats as permanent and drops the
+block. So a replica cannot be reached by a path prefix on a shared host; give
+each half its own host, which also keeps one failure domain per destination.
+
+### Buffers: on disk, per destination, sized by values
+
+Nothing queues in memory only. Each destination fills its own buffer while
+its store is down, so one slow or dead half never takes space from the other
+in the same agent (the cap, not the disk, is the bound):
+
+| Agent | Where | Sized by | Per destination |
+|---|---|---|---|
+| vmagent | PVC (`persistent-queue-data`) | `metrics.queue.size` | the operator divides it by the number of URLs: `size / N`, at least 500Mi each. 2 destinations on the default `10Gi` is 5Gi each |
+| Gateway | PVC per replica (`queue`) | `otlp.queue.size` for the whole volume, `otlp.queue.maxBatches` for each exporter's queue | the volume holds 3N buffers (N destinations x 3 signals). Raise `size` with N: an HA pair wants roughly double the single-destination size. `maxBatches` keeps one stalled exporter from using the others' room; the write-ahead log of the metrics exporter has no cap of its own and is bounded by the volume |
+| vlagent | hostPath (`tmpDataPath`) | `maxDiskUsagePerURL` | per URL, required. The node's disk is bounded by `maxDiskUsagePerURL` x URLs, not by the kubelet: keep it deliberate (3GB each for a pair, for instance) |
+
+Defaults are unchanged by pair support (`10Gi`, no `maxBatches`, the cap
+you set). A buffer holds hours, not days, and does not backfill a store that
+was down longer: see "Runbook: replace a replica" above.
+
+### Alerts that make the buffers live
+
+Every rule below is **per destination**, and every one is off until its
+metric name is set (`selfAlerts`, in the primary release; the metric names
+are values, not defaults, because a name nobody confirmed against the store
+is a rule that never fires):
+
+| Value | Set to (confirm against the store) | Fires for |
+|---|---|---|
+| `selfAlerts.writer.bufferMetric` | `vmagent_remotewrite_pending_data_bytes` | a buffer growing, per `url` (the series carries the destination) |
+| `selfAlerts.writer.bufferMetricsExtra` | `[vlagent_remotewrite_pending_data_bytes]` | the log agent's, in the same rule |
+| `selfAlerts.writer.droppedPacketsMetric` | `vmagent_remotewrite_packets_dropped_total` | data discarded, summed `by (url)` |
+| `selfAlerts.writer.droppedPacketsMetricsExtra` | the log agent's counter, if it exports one | same |
+| `selfAlerts.gateway.queueSizeMetric` / `queueCapacityMetric` | `otelcol_exporter_queue_size` / `otelcol_exporter_queue_capacity` | an exporter queue above `queueRatio`, per `exporter` (one per destination and signal) |
+| `selfAlerts.gateway.exportFailedMetricPrefix` / `enqueueFailedMetricPrefix` | `otelcol_exporter` prefixes | send and enqueue failures, per `exporter` |
+
+The writers' own series must reach a store the primary's vmalert reads
+(scrape the emitters' `PodMonitor`s into it); otherwise the names return
+nothing. A buffer that is deliberately down (a replica being rebuilt) will
+fire `WriterBufferGrowing` for its URL while it grows; that is the signal the
+runbook above tells you to watch, and once the buffer is full the drop rule
+takes over.
+
 ## Backup
 
 Backup runs **only in the primary**. It pins to the primary's VMSingle pod
@@ -226,12 +327,11 @@ from the bucket only if both volumes are lost.
 
 ## Not in this chart
 
-- **The collectors.** `charts/observability-emitters` is multi-destination
-  already (vmagent, the OpenTelemetry gateway and vlagent each hold a queue
-  per destination), but the pair is not wired in it yet, and the `remote:`
-  shorthand takes one address. Until the writers send to both stores, a
-  replica is empty. Wiring them, and routing cross-cluster writers to the
-  replica, comes with the estate's own configuration.
+- **The estate's collectors.** `charts/observability-emitters` writes to
+  both halves (see "The writers"); setting it up in each cluster, and
+  routing cross-cluster writers to the replica (a hostname and a credential
+  of its own), is the estate's configuration. Until the writers send to both
+  stores, a replica is empty.
 - **Seeding the replica** from the primary's history. A new replica starts
   empty and fills from the moment its writers send to it; seed the metrics
   store from the backup before the pair is trusted if the history matters.

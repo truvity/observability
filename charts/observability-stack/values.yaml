@@ -1903,9 +1903,28 @@ selfAlerts:
   # back the same way.
   #
   # Each renders only once its metric name is supplied — never before.
+  #
+  # PER DESTINATION, which is what an HA pair of stores needs: every
+  # remote-write agent labels these series with the destination's `url`,
+  # so the rules fire (and name the URL) for the half that is down while
+  # the other half stays quiet. Each AGENT has its own metric name, so a
+  # cluster running the metrics agent and the log agent sets the first
+  # here and the rest in the `…Extra` lists (docs/high-availability.md,
+  # "Writers"):
+  #
+  #   writer:
+  #     bufferMetric: vmagent_remotewrite_pending_data_bytes
+  #     bufferMetricsExtra: [vlagent_remotewrite_pending_data_bytes]
+  #     droppedPacketsMetric: vmagent_remotewrite_packets_dropped_total
+  #     droppedPacketsMetricsExtra: [vlagent_remotewrite_packets_dropped_total]
+  #
+  # The gateway's own queue is the `gateway` block above: its series
+  # carry an `exporter` label, one per destination and signal.
   writer:
     bufferMetric: ""
+    bufferMetricsExtra: []
     droppedPacketsMetric: ""
+    droppedPacketsMetricsExtra: []
     for: 10m
     severity: critical
   proxyConcurrency:

@@ -995,7 +995,8 @@ store.
 | `selfAlerts.snapshotAge` rules | — | — | **MetricStoreSnapshotOlderThanWindow**, **LogStoreSnapshotOlderThanWindow**, **TraceStoreSnapshotOlderThanWindow** — one per enabled `backup.<store>`, named per store the same as `diskGuard` above. Reads `kube_cronjob_status_last_successful_time` — a standard kube-state-metrics field, not a guessed one — scoped to the exact CronJob names `templates/backup.yaml` renders in this release. **Not gated behind a `metric` value**: the name itself is not in question, only whether THIS release's store carries kube-state-metrics data at all (`kube-state-metrics.enabled: false` above is deliberate — see docs/safety.md). |
 | `selfAlerts.snapshotAge.metrics.maxAge` / `.logs.maxAge` / `.traces.maxAge` | duration | `150m` / `2h` / `2h` | The matching `backup.<store>.schedule` plus slack — stated here rather than derived from the cron expression, the same doctrine as `platform-alerts`' `groups.backups.maxSuccessAge`. Update it if you change the schedule; the two are not derived from one another. |
 | `selfAlerts.writer.bufferMetric` / `.for` / `.severity` | string / duration / severity | `""` / `10m` / `critical` | **WriterBufferGrowing**: read as vmalert's own `remoteWrite` path (`templates/vmalert.yaml` sets one on both alerters), generic across writers on purpose. Fires on the buffer's own rate of change (`deriv(...) > 0`) rather than a fixed byte threshold — no magnitude this chart could state generically, and a buffer growing at all is already the failure. **NOT DEFAULTED.** |
-| `selfAlerts.writer.droppedPacketsMetric` | string | `""` | **WriterDroppingPackets**, same `writer` block. **NOT DEFAULTED.** |
+| `selfAlerts.writer.droppedPacketsMetric` | string | `""` | **WriterDroppingPackets**, same `writer` block, summed `by (url)`. **NOT DEFAULTED.** |
+| `selfAlerts.writer.bufferMetricsExtra[]` / `.droppedPacketsMetricsExtra[]` | list of strings | `[]` | More metric names for the same two rules (each agent names its own: the metrics agent's is not the log agent's). One name renders the plain selector, several render `{__name__=~"a\|b"}`. Both rules are **per destination**: the series carry the destination's `url`, so a pair's down half fires and names its URL while the other stays quiet. A cluster writing to an HA pair sets the metrics agent's and the log agent's names — see [high-availability.md](high-availability.md#the-writers). |
 | `selfAlerts.proxyConcurrency.limitedRequestsMetric` / `.window` / `.for` / `.severity` | string / duration / duration / severity | `""` / `5m` / `5m` / `warning` | **ProxyAtConcurrencyLimit**: vmauth refusing requests over its own concurrency cap. **NOT DEFAULTED** even though a live measurement found `vmauth_concurrent_requests_limit_reached_total` present on the store — the one counter with actual evidence behind it, still held to the same "no default" rule as the rest. |
 
 #### `selfAlerts.storeMemory`, `selfAlerts.divergence` (HA)
@@ -1205,6 +1206,7 @@ writing ALL of to the SAME place.
 | `remote.caSecret.name` / `.key` | string | `""` / `""` | Optional; either both empty or both set. |
 | `remote.signals[]` | `metrics`\|`logs`\|`traces` | `[metrics, logs, traces]` | Which low-level forms `remote` expands into. |
 | `remote.name` | name | `remote` | The `name:` every generated destination entry carries. |
+| `remote.replicas[]` | `{name, url, tokenSecret, caSecret?}` | `[]` | The other halves of an HA store pair. Every covered signal is written to `url` **and** to each entry: one more `remoteWrite` on the metrics agent and one more exporter per signal in the gateway, each with its own on-disk buffer. `tokenSecret` (`{name, key}`) is **required and must differ** from `remote.tokenSecret` and from every other entry (a store holds one user per bearer token); `caSecret` defaults to `remote.caSecret`. Refused: a repeated URL (a trailing slash does not hide it) or name, a shared credential, and — with `logs` in `signals` — a `victoria-logs-collector.remoteWrite` whose URLs are not exactly `remote.url` plus the replicas, or that reads two entries' bearer from one file. See [high-availability.md](high-availability.md#the-writers). |
 
 Setting `url` expands into `metrics.destinations` (one entry, with
 `/api/v1/write` appended), `otlp.destinations.metrics` and, per the
@@ -1226,7 +1228,7 @@ use or not.
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `metrics.enabled` | bool | `true` | Renders the `VMAgent` and its `PodMonitor`. |
-| `metrics.destinations[]` | `{name, url}` | `[]` | Every destination receives every sample. **Refused empty.** Names must be distinct: they become queue directories. |
+| `metrics.destinations[]` | `{name, url, caSecret?, tokenSecret?}` | `[]` | Every destination receives every sample. **Refused empty.** Names must be distinct: they become queue directories, and so must URLs. `tokenSecret` is an optional credential of this destination's own (default: `writeCredentials`). |
 | `metrics.image` | `{repository, tag}` | `victoriametrics/vmagent:v1.152.0` | An `enterprise` tag is refused. |
 | `metrics.replicaCount` | int | `1` | |
 | `metrics.resources` | object | 100m CPU request, no CPU limit / 1Gi | Measured p95 about 15m, max about 31m; memory request == limit. |
@@ -1349,11 +1351,12 @@ override any of the three.
 | `otlp.image` | `{repository, tag}` | `otel/opentelemetry-collector-contrib:0.161.0` | The contrib distribution: `k8sattributes`, `k8s_events`, `file_storage` and `delta_to_cumulative` are not in core. |
 | `otlp.replicaCount` | int | `2` | Each replica owns a queue volume, which is why this is a StatefulSet. |
 | `otlp.resources` | object | 50m CPU request, no CPU limit / 1Gi | The gateway collector, per replica. Measured p95 under 5m. |
-| `otlp.queue.size` | quantity | `10Gi` | One volume per replica, holding both the OTLP `sending_queue`s and the remote-write WAL. **Required.** |
+| `otlp.queue.size` | quantity | `10Gi` | One volume per replica, holding both the OTLP `sending_queue`s and the remote-write WAL. With N destinations per signal it holds 3N buffers, so size it for all of them (an HA pair: roughly double). **Required.** |
+| `otlp.queue.maxBatches` | int | `0` | Caps each OTLP exporter's own on-disk `sending_queue` (`queue_size`, in batches), so one stalled destination cannot use the room of the others. `0` leaves the collector's default and renders nothing. The remote-write WAL has no cap of its own: it is bounded by the volume. |
 | `otlp.queue.storageClassName` | string | `""` | |
-| `otlp.destinations.metrics[]` | `{name, url}` | `[]` | Base URLs; the exporter appends `/api/v1/write`. **Refused empty.** |
-| `otlp.destinations.logs[]` | `{name, url}` | `[]` | Appends `/insert/opentelemetry/v1/logs`. |
-| `otlp.destinations.traces[]` | `{name, url}` | `[]` | Appends `/insert/opentelemetry/v1/traces`. |
+| `otlp.destinations.metrics[]` | `{name, url, caSecret?, tokenSecret?}` | `[]` | Base URLs; the exporter appends `/api/v1/write`. **Refused empty.** |
+| `otlp.destinations.logs[]` | `{name, url, caSecret?, tokenSecret?}` | `[]` | Appends `/insert/opentelemetry/v1/logs`. |
+| `otlp.destinations.traces[]` | `{name, url, caSecret?, tokenSecret?}` | `[]` | Appends `/insert/opentelemetry/v1/traces`. |
 | `otlp.streamFields` | list | `[k8s.cluster.name, kubernetes.pod_namespace, service.name]` | The `VL-Stream-Fields` header. **Refused empty**, must contain both keys, and every entry must be an attribute the chart knows to be constant for the lifetime of a pod. The Helm release attribute is refused: navigation, not a stream. |
 | `otlp.events.enabled` | bool | `true` | Kubernetes Events through the `k8s_events` receiver, with a leader-election lease so replicas do not each ingest every Event. Events do **not** come from the log agent. |
 | `otlp.service.grpcPort` / `.httpPort` | int | `4317` / `4318` | |

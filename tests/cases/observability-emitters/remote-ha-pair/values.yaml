@@ -1,0 +1,67 @@
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# A cluster that writes to a central store pair across a gateway: the
+# `remote` sugar with one replica. Every signal goes to BOTH halves, each
+# with its own buffer and its own bearer (a store holds one user per
+# token). Read the golden for: two `remoteWrite` entries on the metrics
+# agent, two exporters per signal in the gateway (each with its own queue
+# directory and its own token variable), and no sharding.
+#
+# The log agent is upstream's own list: it is written by hand, one entry
+# per destination, each with its own token file, and the chart refuses a
+# list that does not match `remote`.
+tenancy:
+  cluster: example-pair
+  environment: production
+
+remote:
+  name: zone-a
+  url: https://write-a.example.private
+  tokenSecret: {name: example-write-token-a, key: token}
+  caSecret: {name: example-private-ca, key: ca.crt}
+  replicas:
+    - name: zone-b
+      url: https://write-b.example.private
+      tokenSecret: {name: example-write-token-b, key: token}
+
+metrics:
+  # 2Gi over two destinations: 1Gi per URL, above the 500Mi floor.
+  queue:
+    size: 2Gi
+
+otlp:
+  queue:
+    size: 20Gi
+    maxBatches: 4000
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: remote-write-tls
+      projected:
+        sources:
+          - secret:
+              name: example-private-ca
+              items: [{key: ca.crt, path: ca.crt}]
+          - secret:
+              name: example-write-token-a
+              items: [{key: token, path: token-a}]
+          - secret:
+              name: example-write-token-b
+              items: [{key: token, path: token-b}]
+  extraVolumeMounts:
+    - name: remote-write-tls
+      mountPath: /etc/observability-emitters/tls
+      readOnly: true
+  remoteWrite:
+    - url: https://write-a.example.private
+      tlsCAFile: /etc/observability-emitters/tls/ca.crt
+      bearerTokenFile: /etc/observability-emitters/tls/token-a
+      maxDiskUsagePerURL: 3GB
+    - url: https://write-b.example.private
+      tlsCAFile: /etc/observability-emitters/tls/ca.crt
+      bearerTokenFile: /etc/observability-emitters/tls/token-b
+      maxDiskUsagePerURL: 3GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-pair","deployment.environment.name":"production"}'

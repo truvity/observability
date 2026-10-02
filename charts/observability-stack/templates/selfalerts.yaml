@@ -259,16 +259,25 @@ spec:
         # buffer GROWING rather than on crossing a size nobody confirmed.
         # Growth means the write path is blocked and the eventual loss is
         # proportional to how long it takes somebody to look.
+        #
+        # Per destination: the buffer metric of every remote-write agent
+        # carries the destination's `url`, so a series (and an alert)
+        # exists per URL — a replica that is down fires for ITS url while
+        # the other half of an HA pair stays quiet. `bufferMetricsExtra`
+        # adds the other agents' names (the log agent's is not the metrics
+        # agent's) to the same rule.
+        {{- $bufNames := prepend ($sa.writer.bufferMetricsExtra | default list) $sa.writer.bufferMetric }}
         - alert: WriterBufferGrowing
           expr: >-
-            deriv({{ $sa.writer.bufferMetric }}[15m]) > 0
+            deriv({{ if gt (len $bufNames) 1 }}{__name__=~{{ join "|" $bufNames | quote }}}{{ else }}{{ $sa.writer.bufferMetric }}{{ end }}[15m]) > 0
           for: {{ $sa.writer.for }}
           labels:
             severity: {{ $sa.writer.severity }}
           annotations:
             summary: "A writer's remote-write buffer is growing"
             description: >-
-              {{ $sa.writer.bufferMetric }} has been increasing for
+              The buffer for destination {{`{{ $labels.url }}`}}
+              ({{ join ", " $bufNames }}) has been increasing for
               {{ $sa.writer.for }}. Nothing is lost yet — that is what the
               buffer is for — and everything will be once it is full.
               Check the destination and the network policy in front of it.
@@ -279,16 +288,21 @@ spec:
         # permanent and drop the block, and the log agent does the same
         # on a 404 — a wrong write path is unrecoverable loss, not a
         # retry.
+        #
+        # Per destination, like the buffer rule: summed by `url`, so a
+        # drop toward one half of a pair names that half.
+        {{- $dropNames := prepend ($sa.writer.droppedPacketsMetricsExtra | default list) $sa.writer.droppedPacketsMetric }}
         - alert: WriterDroppingPackets
           expr: >-
-            sum(rate({{ $sa.writer.droppedPacketsMetric }}[5m])) > 0
+            sum by (url) (rate({{ if gt (len $dropNames) 1 }}{__name__=~{{ join "|" $dropNames | quote }}}{{ else }}{{ $sa.writer.droppedPacketsMetric }}{{ end }}[5m])) > 0
           for: {{ $sa.writer.for }}
           labels:
             severity: {{ $sa.writer.severity }}
           annotations:
             summary: "A writer is dropping packets on its remote-write path"
             description: >-
-              {{ $sa.writer.droppedPacketsMetric }} is rising. Data is being
+              {{ join ", " $dropNames }} is rising for destination
+              {{`{{ $labels.url }}`}}. Data is being
               discarded, not delayed: a 400 or 404 from the destination is
               treated as permanent, and the block is gone, not retried.
         {{- end }}
@@ -321,7 +335,8 @@ spec:
           annotations:
             summary: "The OpenTelemetry gateway's export queue is filling"
             description: >-
-              {{ $sa.gateway.queueSizeMetric }} is above {{ mulf $sa.gateway.queueRatio 100 }}% of
+              The queue of exporter {{`{{ $labels.exporter }}`}} (one per
+              destination and signal): {{ $sa.gateway.queueSizeMetric }} is above {{ mulf $sa.gateway.queueRatio 100 }}% of
               {{ $sa.gateway.queueCapacityMetric }}. Once it is full the
               collector blocks or drops, and "sending queue is full" is
               exactly the failure that ran for hours unreported.

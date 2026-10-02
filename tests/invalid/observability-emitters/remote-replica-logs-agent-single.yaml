@@ -1,0 +1,30 @@
+# expect: has no entry for https://write-b.example.private
+# The log agent is upstream's own list: with a replica set it must list both halves, or every log line goes to one store only.
+
+tenancy:
+  cluster: example-cluster
+  environment: development
+
+remote:
+  name: zone-a
+  url: https://write-a.example.private
+  tokenSecret: {name: token-a, key: token}
+  replicas:
+    - name: zone-b
+      url: https://write-b.example.private
+      tokenSecret: {name: token-b, key: token}
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://write-a.example.private
+      bearerTokenFile: /etc/observability-write-token/token-a
+      maxDiskUsagePerURL: 3GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'

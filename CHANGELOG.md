@@ -4,6 +4,43 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-emitters`: write every signal to both halves of an HA store
+pair (see docs/high-availability.md, "The writers"). Without the new keys
+every render is unchanged.
+
+- **`remote.replicas[]`**: `{name, url, tokenSecret, caSecret?}`. Every signal
+  `remote` covers is written to `remote.url` and to each replica: one more
+  `remoteWrite` on the metrics agent and one more exporter per signal in the
+  gateway, each with its own on-disk buffer (the persistent queue, the
+  `file_storage` queue and the write-ahead log) and its own bearer. A replica
+  needs a credential of its own, because a store holds one user per token.
+  Refused: a repeated URL or name, a replica sharing a credential with
+  another entry, and, with `logs` among the signals, a
+  `victoria-logs-collector.remoteWrite` that is not exactly `remote.url` plus
+  the replicas or that reads two entries' bearer from one file (the log
+  agent's list is upstream's and stays hand-written). `shardByURL` stays
+  refused. A cluster running both halves itself uses the same list with
+  in-cluster endpoints.
+- Each low-level destination (`metrics.destinations[]`,
+  `otlp.destinations.*[]`) takes an optional `tokenSecret` of its own; the
+  gateway reads each from its own environment variable.
+- `otlp.queue.maxBatches` (default `0`, renders nothing) caps each
+  exporter's `sending_queue`, so one stalled destination cannot use the
+  room of the others.
+- The log agent's URL keeps refusing a path: the path is the endpoint, not a
+  prefix, so a replica is reached by its own host.
+- **Behaviour change: `observability-stack`'s `WriterBufferGrowing`,
+  `WriterDroppingPackets` and `GatewayQueueFilling` are per destination.**
+  Only rendered with `selfAlerts.writer`/`selfAlerts.gateway` metric names set.
+  `WriterDroppingPackets` is now summed `by (url)` (it was one global sum) and
+  its descriptions name the destination (`url`) or exporter. New
+  `selfAlerts.writer.bufferMetricsExtra` and `droppedPacketsMetricsExtra` add
+  the log agent's metric names to the same rules; empty by default, so a
+  render with one name differs only in those lines. Revert by summing
+  yourself in an own rule: the old expression had no per-URL meaning.
+
 ## v0.36.1
 
 `alert-ingress`: a safe certificate cache, an alert on rejected messages,

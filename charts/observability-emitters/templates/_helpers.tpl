@@ -232,31 +232,58 @@ secretName` — see _validate.tpl), `writeCredentials` otherwise.
 {{- end -}}
 
 {{/*
-`metrics.destinations`, effective: `remote`'s own one-entry list when
-`remote` is in use and "metrics" is one of its `signals` — the metrics
-agent's own `/api/v1/write` suffix appended here, the one place that
-suffix is added rather than asked of the caller — or the low-level list
-otherwise.
+`remote`'s destinations: the entry for `remote.url` itself (it carries no
+`tokenSecret` of its own — it writes with the effective write credential,
+so a single-destination `remote` renders exactly what it always did),
+then one entry per `remote.replicas[]`, each with its OWN `tokenSecret`
+(a credential must be unique per destination on the store side) and the
+CA of `remote` unless the replica names another. The base URLs are as
+given: the metrics agent's own suffix is added by the caller.
+*/}}
+{{- define "observability-emitters.remote.entries" -}}
+{{- $remote := .Values.remote -}}
+{{- $first := dict "name" $remote.name "url" $remote.url -}}
+{{- if ($remote.caSecret).name -}}
+{{- $_ := set $first "caSecret" $remote.caSecret -}}
+{{- end -}}
+{{- $entries := list $first -}}
+{{- range $r := ($remote.replicas | default list) -}}
+{{- $e := dict "name" $r.name "url" $r.url "tokenSecret" $r.tokenSecret -}}
+{{- if ($r.caSecret).name -}}
+{{- $_ := set $e "caSecret" $r.caSecret -}}
+{{- else if ($remote.caSecret).name -}}
+{{- $_ := set $e "caSecret" $remote.caSecret -}}
+{{- end -}}
+{{- $entries = append $entries $e -}}
+{{- end -}}
+{{- toYaml $entries -}}
+{{- end -}}
+
+{{/*
+`metrics.destinations`, effective: `remote`'s own list when `remote` is in
+use and "metrics" is one of its `signals` — the metrics agent's own
+`/api/v1/write` suffix appended here, the one place that suffix is added
+rather than asked of the caller — or the low-level list otherwise.
 */}}
 {{- define "observability-emitters.effectiveMetricsDestinations" -}}
 {{- $signals := include "observability-emitters.remote.signals" . | fromYamlArray -}}
 {{- if and (eq (include "observability-emitters.remote.inUse" .) "true") (has "metrics" $signals) -}}
-{{- $remote := .Values.remote -}}
-{{- $entry := dict "name" $remote.name "url" (printf "%s/api/v1/write" (trimSuffix "/" $remote.url)) -}}
-{{- if ($remote.caSecret).name -}}
-{{- $_ := set $entry "caSecret" $remote.caSecret -}}
+{{- $out := list -}}
+{{- range $e := (include "observability-emitters.remote.entries" . | fromYamlArray) -}}
+{{- $_ := set $e "url" (printf "%s/api/v1/write" (trimSuffix "/" $e.url)) -}}
+{{- $out = append $out $e -}}
 {{- end -}}
-{{- toYaml (list $entry) -}}
+{{- toYaml $out -}}
 {{- else -}}
 {{- toYaml .Values.metrics.destinations -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
-`otlp.destinations.<signal>`, effective: `remote`'s own one-entry list
-when `remote` is in use and `signal` is one of its `signals` — the base
-URL as-is, since every OTLP exporter already appends its own path — or
-the low-level list otherwise. Called once per signal:
+`otlp.destinations.<signal>`, effective: `remote`'s own list when
+`remote` is in use and `signal` is one of its `signals` — the base URL
+as-is, since every OTLP exporter already appends its own path — or the
+low-level list otherwise. Called once per signal:
 `(dict "root" . "signal" "metrics"|"logs"|"traces")`.
 */}}
 {{- define "observability-emitters.effectiveOtlpDestinations" -}}
@@ -264,14 +291,35 @@ the low-level list otherwise. Called once per signal:
 {{- $signal := .signal -}}
 {{- $signals := include "observability-emitters.remote.signals" $root | fromYamlArray -}}
 {{- if and (eq (include "observability-emitters.remote.inUse" $root) "true") (has $signal $signals) -}}
-{{- $remote := $root.Values.remote -}}
-{{- $entry := dict "name" $remote.name "url" $remote.url -}}
-{{- if ($remote.caSecret).name -}}
-{{- $_ := set $entry "caSecret" $remote.caSecret -}}
-{{- end -}}
-{{- toYaml (list $entry) -}}
+{{- toYaml (include "observability-emitters.remote.entries" $root | fromYamlArray) -}}
 {{- else -}}
 {{- toYaml (index $root.Values.otlp.destinations $signal) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The credential one destination writes with: its own `tokenSecret` when it
+names one, the effective write credential otherwise.
+*/}}
+{{- define "observability-emitters.destinationCredential" -}}
+{{- if .d.tokenSecret -}}
+{{- toYaml (dict "secretName" .d.tokenSecret.name "key" (.d.tokenSecret.key | default "token")) -}}
+{{- else -}}
+{{- include "observability-emitters.effectiveWriteCredentials" .root -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The environment variable the gateway interpolates one destination's bearer
+from. A destination with no `tokenSecret` of its own keeps the one shared
+variable; one with its own gets a variable named for its signal and name
+(names are plain lowercase-and-dash, so the translation is injective).
+*/}}
+{{- define "observability-emitters.otlp.tokenEnv" -}}
+{{- if .d.tokenSecret -}}
+{{- printf "OBSERVABILITY_WRITE_TOKEN_%s_%s" (.signal | upper) ((.d.name | upper) | replace "-" "_") -}}
+{{- else -}}
+OBSERVABILITY_WRITE_TOKEN
 {{- end -}}
 {{- end -}}
 
@@ -290,8 +338,9 @@ exactly where a security property gets turned off by accident.
 {{- $rw := list -}}
 {{- range $d := (include "observability-emitters.effectiveMetricsDestinations" . | fromYamlArray) -}}
 {{- $entry := dict "url" $d.url -}}
-{{- if $creds.secretName -}}
-{{- $_ := set $entry "bearerTokenSecret" (dict "name" $creds.secretName "key" $creds.key) -}}
+{{- $dc := include "observability-emitters.destinationCredential" (dict "root" $root "d" $d) | fromYaml -}}
+{{- if $dc.secretName -}}
+{{- $_ := set $entry "bearerTokenSecret" (dict "name" $dc.secretName "key" $dc.key) -}}
 {{- end -}}
 {{- /*
 A destination's own CA, for a `url` whose certificate is not publicly
@@ -753,7 +802,7 @@ exporters:
     wal:
       directory: /var/lib/otelcol/wal/{{ $d.name }}
     headers:
-      Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+      Authorization: "Bearer ${env:{{ include "observability-emitters.otlp.tokenEnv" (dict "signal" "metrics" "d" $d) }}}"
     {{- if $d.caSecret }}
     tls:
       ca_file: {{ include "observability-emitters.otlp.caFile" (dict "signal" "metrics" "name" $d.name) | quote }}
@@ -780,7 +829,7 @@ exporters:
   otlp_http/logs-{{ $d.name }}:
     logs_endpoint: {{ printf "%s/insert/opentelemetry/v1/logs" (trimSuffix "/" $d.url) | quote }}
     headers:
-      Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+      Authorization: "Bearer ${env:{{ include "observability-emitters.otlp.tokenEnv" (dict "signal" "logs" "d" $d) }}}"
       # Without this header every resource attribute becomes a stream
       # field, and an SDK's resource carries the pod's UID and start time —
       # so every restart mints a stream the store never reuses.
@@ -792,6 +841,9 @@ exporters:
     sending_queue:
       enabled: true
       storage: file_storage
+      {{- if $v.queue.maxBatches }}
+      queue_size: {{ $v.queue.maxBatches | int }}
+      {{- end }}
     retry_on_failure:
       enabled: true
 {{- end }}
@@ -799,7 +851,7 @@ exporters:
   otlp_http/traces-{{ $d.name }}:
     traces_endpoint: {{ printf "%s/insert/opentelemetry/v1/traces" (trimSuffix "/" $d.url) | quote }}
     headers:
-      Authorization: "Bearer ${env:OBSERVABILITY_WRITE_TOKEN}"
+      Authorization: "Bearer ${env:{{ include "observability-emitters.otlp.tokenEnv" (dict "signal" "traces" "d" $d) }}}"
     {{- if $d.caSecret }}
     tls:
       ca_file: {{ include "observability-emitters.otlp.caFile" (dict "signal" "traces" "name" $d.name) | quote }}
@@ -807,6 +859,9 @@ exporters:
     sending_queue:
       enabled: true
       storage: file_storage
+      {{- if $v.queue.maxBatches }}
+      queue_size: {{ $v.queue.maxBatches | int }}
+      {{- end }}
     retry_on_failure:
       enabled: true
 {{- end }}
