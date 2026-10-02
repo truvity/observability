@@ -14,8 +14,7 @@ must be done first, and whether a default moved. Newest first, one
   reads Keycloak's own metrics, a new optional source `keycloak-metrics`
   scraped only where truvity/keycloak's chart turns its `serviceMonitor` on
   (and `metrics.httpHistograms` for the latency panels). Turn it on together
-  with that ServiceMonitor; an `extraValues` that lists dashboards by key
-  needs no change.
+  with that ServiceMonitor.
 
 ## v0.30.0
 
