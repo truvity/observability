@@ -852,6 +852,15 @@ karma:
     # -- Base URL of the Prometheus-compatible API that holds the `ALERTS`
     # series. Required when `enabled`.
     uri: ""
+  # -- The filters karma applies when the UI opens with no `?q=` (karma's
+  # `filters.default`). The default hides this chart's always-firing
+  # Watchdog (the deadman heartbeat, an alert nobody acts on). It is only
+  # a default: remove the filter in the UI to see Watchdog. A set list
+  # REPLACES it; `[]` shows everything. Syntax: karma's filter bar, for
+  # example `alertname!=Watchdog` or `@state=active`.
+  filters:
+    default:
+      - alertname!=Watchdog
   # -- RAW karma configuration, deep-merged over everything above and
   # last. UNVALIDATED: a key here can undo the authentication, the ACLs or
   # the proxying above, and nothing in this chart checks it. Maps merge,

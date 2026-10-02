@@ -402,6 +402,9 @@ data:
       header:
         name: X-Auth-Request-Email
         value_re: ^(.+)$
+    filters:
+      default:
+      - alertname!=Watchdog
     listen:
       port: 8080
 
@@ -1174,7 +1177,7 @@ spec:
         app.kubernetes.io/instance: observability-stack
         app.kubernetes.io/name: karma
       annotations:
-        checksum/config: 14395b677ad3aca2294652a7bf5b6b14e7f5ae0074367e4c410f9586ed4f7856
+        checksum/config: 123ca511dd7e06d7d33ed09feddbd646ee44b3a3ebd450e35a69e9ff7928d37f
     spec:
       serviceAccountName: observability-stack-karma
       automountServiceAccountToken: false

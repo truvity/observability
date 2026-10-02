@@ -4,6 +4,18 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`observability-stack`: karma hides the Watchdog alert by default.
+
+- **Behaviour change: karma opens with `alertname!=Watchdog`.** The
+  always-firing Watchdog (the deadman heartbeat) no longer clutters the
+  console. New value `karma.filters.default` (list of strings, rendered as
+  karma's `filters.default`); the default is `[alertname!=Watchdog]`. It
+  only applies when the UI opens with no `?q=`: remove the filter in the UI
+  to see Watchdog. Set your own list to replace it, or `[]` to show
+  everything. Only installs with `karma.enabled` render differently.
+
 ## v0.29.0
 
 `observability-emitters`, `platform-alerts`: a real blackbox exporter for

@@ -433,6 +433,7 @@ OFF by default. karma ([prymitive/karma](https://github.com/prymitive/karma)) is
 | `karma.acl.silences` | list | `[]` | karma's silence ACL rules (karma docs/ACLs.md), rendered to the ACL file. `action` must be `allow`, `block` or `requireMatcher`; `scope.groups` must name a declared group. Block regex silences first. |
 | `karma.history.enabled` | bool | `false` | Alert history (how often an alert fired in 24h). |
 | `karma.history.uri` | string | `""` | Prometheus-compatible endpoint holding `ALERTS`, used for every alert in place of its `generatorURL`. Required when enabled. It must answer without credentials: this chart's proxy and stores need a token, and a ConfigMap is no place for one. |
+| `karma.filters.default` | list of string | `[alertname!=Watchdog]` | Filters karma applies when the UI opens with no `?q=` (karma's `filters.default`, <https://github.com/prymitive/karma/blob/main/docs/CONFIGURATION.md>). The default hides the always-firing Watchdog; remove the filter in the UI to see it. A set list replaces the default; `[]` applies none. |
 | `karma.extraConfig` | object | `{}` | RAW karma config, deep-merged over everything above, last. **Unvalidated**: it can undo the authentication, the ACLs and the proxying. Maps merge, lists replace. Stored in a ConfigMap: no secrets. |
 | `karma.resources` | object | 50m CPU request, no CPU limit / 128Mi | Judged by `resources.policy` like every other component. |
 | `karma.nodeSelector` / `.tolerations` / `.affinity` | | `{}` / `[]` / `{}` | |
