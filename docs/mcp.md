@@ -414,10 +414,16 @@ it serves health and metrics, not MCP; `tests/mcp_pod_test.go` asserts
 exactly those two ports, that every stock server listens on loopback and
 holds no credential, and that the egress is three rules.
 
-Several replicas of a store connector are safe (the aggregator is stateless
-and opens a session per call); the Grafana connector keeps a session in
-`mcp-grafana`'s memory, so its default is one replica, and a second needs
-session affinity at the gateway.
+No MCP session state lives in any pod, so a restart (or a rollout, or a
+second replica) never costs a client its session. The aggregator serves the
+client side statelessly: it neither mints nor checks `Mcp-Session-Id`, and a
+request that carries one from a pod that is gone is answered like any other.
+Its upstream sessions are one per call. `mcp-grafana` runs stateless too (it
+is started with its streamable-HTTP transport, which in the pinned release is
+always stateless), and the proxy forwards the header without reading it.
+`tests/` and `cmd/mcp-aggregator` pin the aggregator's half. Several replicas
+of either kind of connector are therefore safe; the default stays one, which
+is a cost choice, not a session one.
 
 ## What the proxy image must do
 

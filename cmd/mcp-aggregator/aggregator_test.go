@@ -36,7 +36,15 @@ type fake struct {
 	// cancelled receives once when the `slow` tool sees its context end.
 	cancelled chan struct{}
 	sessions  []string // every Mcp-Session-Id the upstream issued
+	// current is the MCP handler in service; restart swaps it for a fresh
+	// one, which knows none of the sessions the old one issued.
+	current atomic.Pointer[http.Handler]
+	build   func() http.Handler
 }
+
+// restart simulates the upstream's pod restarting: every session it held is
+// gone, and a request that names one is refused as the stock servers do.
+func (f *fake) restart() { h := f.build(); f.current.Store(&h) }
 
 var schemaQuery = map[string]any{
 	"type":                 "object",
@@ -80,10 +88,13 @@ func newFakeMode(t *testing.T, requestBound bool, name string, tools ...string) 
 		return s
 	}
 	opts := &mcp.StreamableHTTPOptions{Stateless: requestBound, PropagateRequestCancellation: requestBound}
-	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mk() }, opts)
+	f.build = func() http.Handler {
+		return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mk() }, opts)
+	}
+	f.restart()
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec := &sidRecorder{ResponseWriter: w, f: f}
-		h.ServeHTTP(rec, r)
+		(*f.current.Load()).ServeHTTP(rec, r)
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -576,4 +587,53 @@ func TestMetricsNeverCarryArguments(t *testing.T) {
 		buf.WriteString(mf.String())
 	}
 	assert.NotContains(t, buf.String(), "SECRET-ARGUMENT")
+}
+
+// TestClientSessionSurvivesRestart pins the restart story: nothing in the pod
+// holds MCP session state, so a client that holds a session id from before a
+// restart, and an upstream that restarted and forgot every session, change
+// nothing for a call.
+func TestClientSessionSurvivesRestart(t *testing.T) {
+	up := newFake(t, "m", "query")
+	h := newHarness(t, cfgFor(Backend{Prefix: "metrics", URL: up.url(), Tools: []string{"query"}}))
+	require.NoError(t, h.agg.Sync(context.Background()))
+
+	post := func(body string, hdr map[string]string) (*http.Response, string) {
+		req, _ := http.NewRequest(http.MethodPost, h.srv.URL, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp, string(b)
+	}
+	// What a connector sends after a restart: a session id from the old pod,
+	// on a request that is not an initialize.
+	stale := map[string]string{"Mcp-Session-Id": "id-from-the-pod-that-was-replaced", "Mcp-Protocol-Version": "2025-06-18"}
+	for name, body := range map[string]string{
+		"tools/list": `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		"tools/call": `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"metrics_query","arguments":{"query":"up"}}}`,
+	} {
+		resp, out := post(body, stale)
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "%s with a stale session id: %s", name, out)
+		assert.Contains(t, out, `"result"`, name)
+		assert.Empty(t, resp.Header.Get("Mcp-Session-Id"), name)
+	}
+
+	// An upstream that restarts between two calls: the next call opens a new
+	// upstream session instead of reusing a dead one.
+	cs := h.connect(t, "")
+	call := func() {
+		t.Helper()
+		r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "metrics_query", Arguments: map[string]any{"query": "up"}})
+		require.NoError(t, err)
+		assert.False(t, r.IsError, "%v", r.Content)
+	}
+	call()
+	up.restart()
+	call()
 }
