@@ -64,7 +64,7 @@ mappings:
     match: {"detail-type": "AWS Console Sign In via CloudTrail", "detail.userIdentity.type": "Root"}
     alert: {alertname: RootConsoleLogin, severity: critical, labels: {source: cloudtrail, k8s_cluster_name: cloud}}
   - name: budget
-    match: {"_sns.TopicArn": "arn:aws:sns:eu-west-1:111122223333:example-budgets"}
+    match: {"_sns.TopicArn": "<the budgets topic ARN>"}
     matchRegex: {"_sns.Message": "Budget Name: "}   # plain text, not JSON
     alert:
       alertname: BudgetThresholdCrossed

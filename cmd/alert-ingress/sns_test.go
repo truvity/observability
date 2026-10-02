@@ -216,7 +216,7 @@ func TestVerifierIsSafeForConcurrentUse(t *testing.T) {
 				env := Envelope{
 					Type:      "Notification",
 					MessageID: fmt.Sprintf("id-%d-%d", i, j),
-					TopicArn:  "arn:aws:sns:eu-west-1:111122223333:example",
+					TopicArn:  "<the security-alerts topic ARN>",
 					Message:   `{"k":"v"}`,
 					Timestamp: "2026-01-01T00:00:00.000Z",
 				}
