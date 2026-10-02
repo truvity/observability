@@ -566,3 +566,32 @@ groups:
     # `pendingPods.keepClusterLabel`). Not applied to the `absent` alert, which always keeps its own cluster
     # label (`absentLookback`).
     keepClusterLabel: false
+
+  # Pod Security admission rejections.
+  #
+  # The incident class: `enforce` on a namespace refuses a controller's pod
+  # create, the ReplicaSet / StatefulSet / Job / DaemonSet records a
+  # `FailedCreate` Event "violates PodSecurity ...", and the workload simply
+  # does not start. No pod exists, so no metric records it.
+  #
+  # Off by default, and the only LogsQL group: it needs the Kubernetes
+  # Events in the log store (`observability-emitters` `otlp.events`, on by
+  # default), a logs vmalert (`observability-stack` `vmalert` logs flavour),
+  # and renders a VMRule of its own marked `observability.rule-type: vlogs`
+  # (`<release>-platform-alerts-logs`). Events carry the involved object, so
+  # the alert is per cluster, namespace and owning controller.
+  podSecurity:
+    enabled: false
+    # -- Look-back of the query. Longer than the evaluation interval on
+    # purpose: a controller's Events are rate-limited once it backs off, so
+    # a still-failing workload emits roughly one every five minutes.
+    window: 15m
+    # -- 0s: a rejection repeats on retry and is never transient noise.
+    for: 0s
+    # -- Warning: one workload is down, not the platform. Raise it where a
+    # namespace holds only things that must run.
+    severity: warning
+    # -- Keep each Event's own cluster label on the alert (see
+    # `pendingPods.keepClusterLabel`). Set it on a log store that holds
+    # several clusters (the vmalert evaluating it names only its own).
+    keepClusterLabel: false
