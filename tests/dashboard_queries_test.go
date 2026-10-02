@@ -473,6 +473,26 @@ func TestCnpgInstanceFamiliesCountOnlyForADashboardThatRequiresThem(t *testing.T
 	assert.NotContains(t, req["cnpg-operator"], "cnpg-instance-metrics")
 }
 
+// OpenBAO's own metrics are an optional source (`openbao-server-metrics`):
+// they exist only where the server's telemetry is on and the PodMonitor is
+// applied, so they count for a dashboard that declares it and for no other.
+func TestOpenbaoFamiliesCountOnlyForADashboardThatRequiresThem(t *testing.T) {
+	src := loadAvailableMetrics(t)
+	for _, m := range []string{
+		"vault_core_unsealed", "vault_core_active", "vault_autopilot_node_healthy",
+		"vault_raft_storage_follower_applied_index_delta", "vault_core_handle_request",
+		"vault_audit_log_request_failure", "vault_token_count", "vault_expire_num_leases",
+	} {
+		assert.Falsef(t, metricAvailable(src, m), "%s must be absent for a dashboard that does not require openbao-server-metrics", m)
+		assert.Truef(t, metricAvailableWith(src, m, "openbao-server-metrics"),
+			"%s is scraped with the OpenBAO source and must be on the list for a dashboard that requires it", m)
+	}
+	// Nothing is claimed by prefix: a series no dashboard reads is not held.
+	assert.False(t, metricAvailableWith(src, "vault_runtime_alloc_bytes", "openbao-server-metrics"))
+	assert.False(t, metricAvailableWith(src, "vault_core_active", "cnpg-instance-metrics"))
+	assert.Contains(t, requiredSources(t)["openbao"], "openbao-server-metrics")
+}
+
 // The scrape keeps cnpg_pg_settings_setting for eight settings only, so a
 // panel selecting any other (or none, which reads "every setting") is
 // reading rows the store never holds.

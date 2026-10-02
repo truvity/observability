@@ -398,10 +398,50 @@ sources:
       - agroal_available_count
       - agroal_awaiting_count
       - vendor_statistics_approximate_entries_unique
+  # -- OpenBAO (optional source `openbao-server-metrics`). The server's own
+  # /v1/sys/metrics?format=prometheus, scraped from each server pod by the
+  # PodMonitor charts/openbao-ops (truvity/openbao) renders. The server keeps
+  # the `vault_` prefix on the wire. Listed by exact name, one entry per
+  # series the `openbao` dashboard reads, each from OpenBAO's telemetry
+  # documentation (docs/internals/telemetry). A summary also exposes `_count`
+  # and `_sum`, listed only where the dashboard reads them.
+  - name: OpenBAO server (PodMonitor on the server pods)
+    onlyWith: openbao-server-metrics
+    note: >-
+      only where the server's telemetry is on (unauthenticated_metrics_access
+      on the listener, prometheus_retention_time) and the PodMonitor is
+      applied. The Autopilot, token and lease gauges are set by the active
+      node only, and a follower's applied-index delta by a follower only; a
+      former holder keeps exporting its last value until the retention
+      passes, so a panel on them must be joined to vault_core_active.
+    names:
+      - vault_core_unsealed
+      - vault_core_active
+      - vault_core_handle_request
+      - vault_core_handle_request_count
+      - vault_core_handle_login_request
+      - vault_core_handle_login_request_count
+      - vault_autopilot_healthy
+      - vault_autopilot_failure_tolerance
+      - vault_autopilot_node_healthy
+      - vault_raft_storage_stats_commit_index
+      - vault_raft_storage_follower_applied_index_delta
+      - vault_raft_leader_lastContact
+      - vault_raft_state_leader
+      - vault_raft_apply
+      - vault_audit_log_request
+      - vault_audit_log_response
+      - vault_audit_log_request_failure
+      - vault_audit_log_response_failure
+      - vault_token_count
+      - vault_token_creation
+      - vault_expire_num_leases
+      - vault_expire_num_irrevocable_leases
 
 # Families that do NOT exist yet and must not be queried by a shipped
 # dashboard. Not read by the code; here so a reviewer sees the boundary.
 absent:
+  - OpenBAO (vault_*) on an install that does not run OpenBAO or does not scrape it, and, even where it does, the families its source above does not claim
   - node-exporter (node_*) on an install that leaves `nodeExporter.enabled` off, and, even where it is on, the families its source above does not claim
   - CloudNativePG instance metrics (cnpg_*, barman_cloud_*) on an install that does not scrape the instances, and, even where it does, the families its source above does not claim
   - NATS exporter families other than varz and jsz (nats_connz_*, nats_routez_*, nats_subz_* are scraped but no dashboard reads them; nats_healthz_* needs -healthz, not enabled)

@@ -68,6 +68,8 @@ dashboards:
     enabled: true
   keycloak:
     enabled: true
+  openbao:
+    enabled: true
 
 extraDashboards:
   # Cluster-scoped: rules 1, 2 and 4 with no namespace variable, because
