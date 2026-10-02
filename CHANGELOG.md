@@ -4,6 +4,19 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.31.0
+
+`observability-dashboards`: a Keycloak dashboard, off by default.
+
+- **Behaviour change: a new `dashboards.keycloak` key, `enabled: false`.**
+  The default render is unchanged; only the `everything` golden, which turns
+  every dashboard on, gains the ConfigMap. The dashboard (Platform folder)
+  reads Keycloak's own metrics, a new optional source `keycloak-metrics`
+  scraped only where truvity/keycloak's chart turns its `serviceMonitor` on
+  (and `metrics.httpHistograms` for the latency panels). Turn it on together
+  with that ServiceMonitor; an `extraValues` that lists dashboards by key
+  needs no change.
+
 ## v0.30.0
 
 `observability-stack`: karma hides the Watchdog alert by default.
