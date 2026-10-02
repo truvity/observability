@@ -1,0 +1,13 @@
+# The nats group alone, at its own defaults.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  nats:
+    enabled: true
+runbookBaseUrl: https://runbooks.example.com/

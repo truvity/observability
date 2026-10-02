@@ -318,3 +318,68 @@ groups:
     # -- Keep the series' own `clusterLabel` on the alert (see
     # `pendingPods.keepClusterLabel`).
     keepClusterLabel: false
+
+  # NATS and JetStream (the upstream nats Helm chart with its
+  # prometheus-nats-exporter sidecar and PodMonitor).
+  #
+  # Off by default: it reads series that exist only where that chart runs.
+  # Every metric name was read off a live store scraping the exporter with
+  # `-varz -connz -routez -jsz` (v0.20.x), never guessed:
+  #   up{job}                                  the scrape itself
+  #   nats_varz_routes / _cluster_pool_size    varz: route connections, pool
+  #   nats_varz_jetstream_meta_cluster_size    varz: JetStream meta group size
+  #   nats_varz_jetstream_meta_leader{value}   varz: leader name in `value`
+  #   nats_server_total_streams{meta_leader}   jsz: server labels
+  #   nats_stream_total_messages{stream_leader} jsz: stream labels
+  #   nats_consumer_num_pending                jsz: consumer backlog
+  #   nats_varz_slow_consumers                 varz: cumulative count
+  #   nats_varz_jetstream_stats_storage / _config_max_storage   varz
+  # Memory has no metric of the broker's own and is computed from cadvisor
+  # and kube-state-metrics. There is no authorization-error metric in the
+  # exporter, so no rule for it.
+  nats:
+    enabled: false
+    # -- The scrape job of the exporter: `<namespace>/<podmonitor>`.
+    job: nats/nats
+    # -- Severity of the rules that mean the broker set is down or
+    # JetStream cannot serve (NATSBrokerDown, the two no-leader rules).
+    severity: critical
+    # -- Severity of the rest: degradation that is not yet an outage.
+    warningSeverity: warning
+    # -- How long an exporter must stay down before NATSBrokerDown fires.
+    brokerDownFor: 5m
+    # -- How long a broker must see too few routes. Covers a rolling
+    # restart of a peer.
+    routesFor: 10m
+    # -- How long the meta group or a stream may have no leader. An
+    # election takes seconds; 5m is a lost quorum.
+    leaderFor: 5m
+    backlog:
+      # -- Window over which the backlog must stay above `minPending` and
+      # grow.
+      window: 15m
+      # -- Backlog (messages) that must never be dropped under during the
+      # window, so a trickle of a few pending messages never alerts.
+      minPending: 100
+      for: 5m
+    slowConsumers:
+      window: 10m
+      for: 5m
+    storage:
+      # -- Fraction of the configured JetStream store.
+      ratio: 0.8
+      for: 15m
+    memory:
+      # -- Where the brokers run and what their container is called, to
+      # select cadvisor and kube-state-metrics series.
+      namespace: nats
+      container: nats
+      # -- Fraction of the container's memory limit.
+      ratio: 0.9
+      for: 10m
+    # -- How long no exporter series can exist before NATSMetricsAbsent.
+    absentFor: 30m
+    # -- Keep the series' own `clusterLabel` on the alert (see
+    # `pendingPods.keepClusterLabel`). Not applied to NATSMetricsAbsent,
+    # whose `absent()` result carries no series labels.
+    keepClusterLabel: false

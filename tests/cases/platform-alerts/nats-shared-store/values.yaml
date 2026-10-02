@@ -1,0 +1,16 @@
+# A store that holds several clusters, rules running on one of them: the
+# series' own cluster label survives on every NATS alert.
+commonLabels:
+  k8s_cluster_name: kernel
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  nats:
+    enabled: true
+    keepClusterLabel: true
