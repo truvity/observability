@@ -738,6 +738,34 @@ vmalert:
   # turning it OFF is a decision to make on purpose.
   watchdog:
     enabled: true
+  # -- Evaluate selected rule groups against ANOTHER metrics store and
+  # notify through THIS install's Alertmanager. One extra VMAlert per entry:
+  # its datasource is the other store, its notifiers are the main alerter's
+  # (the Alertmanager pair, `alertmanager.notifierUrl`), its remoteWrite and
+  # remoteRead (`ALERTS`, `ALERTS_FOR_STATE`) are the LOCAL store. It
+  # evaluates exactly the VMRules that carry the label
+  # `observability.truvity.io/evaluator: <name>`, and the main metrics
+  # alerter ignores every rule carrying that key, so the two never overlap.
+  # Empty (the default) renders nothing and changes nothing.
+  #
+  # Refused: an empty or duplicate `name`, a missing `datasource.url`, an
+  # `auth` that is not exactly one of `bearer` / `basic` with every Secret
+  # name and key set, `notifications.mode: evaluate-only` (nobody to
+  # notify), and an install that renders no vmalert or has neither an
+  # Alertmanager nor `alertmanager.notifierUrl`. Credentials come from an
+  # EXISTING Secret, never inline. The consumer opens the egress to the
+  # other store. See docs/notifications.md, "Evaluating another store's rules".
+  remoteEvaluators: []
+  # - name: other-store            # DNS label; names the VMAlert and the rule label
+  #   evaluationInterval: 1m       # default: `interval`
+  #   datasource:
+  #     url: https://metrics.other-store.example   # the read endpoint, e.g. its proxy
+  #     auth:                      # exactly one of bearer / basic
+  #       bearer: {secretName: other-store-read, key: token}
+  #       # basic: {secretName: other-store-read, usernameKey: username, passwordKey: password}
+  #     caBundle: {}               # optional private CA: {secret|configMap: {name, key}}
+  #   externalLabels:              # merged over vmalert.externalLabels
+  #     k8s_cluster_name: edge
   resources:
     # CPU request: measured p95 was under 5m, so 1.5 x p95 is under the
     # 10m floor; 50m keeps headroom for a rule-evaluation burst after a
@@ -1967,6 +1995,18 @@ selfAlerts:
     enabled: true
     window: 15m
     for: 1m
+    severity: warning
+
+  # RemoteEvaluatorFailing. Renders whenever `vmalert.remoteEvaluators` is
+  # non-empty, without `selfAlerts.enabled` (like `slackDelivery`): an
+  # evaluator whose datasource is unreachable evaluates nothing, so its
+  # rules never fire and the estate looks healthy. Reads vmalert's own
+  # execution-error counters of the evaluator pods from the LOCAL store and
+  # fires through the local Alertmanager. Healthy range: 0.
+  remoteEvaluator:
+    enabled: true
+    window: 10m
+    for: 5m
     severity: warning
 
   # StoreMemoryNearLimit. Works in BOTH modes, and renders without

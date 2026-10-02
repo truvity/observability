@@ -886,3 +886,30 @@ capabilities:
   drop:
     - ALL
 {{- end -}}
+
+{{/*
+The `notifiers:` entries of a vmalert that notifies this install's
+Alertmanager: one per replica of the pair, or the one URL. Shared by the
+main alerters and the remote evaluators (templates/vmalert.yaml). Lines
+start at column 0; indent at the call site.
+*/}}
+{{- define "observability-stack.vmalert.notifiers" -}}
+{{- $fullname := include "observability-stack.fullname" . -}}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- $notifier := .Values.alertmanager.notifierUrl | default (printf "http://vmalertmanager-%s.%s.svc:9093" $fullname .Release.Namespace) -}}
+{{- if and $eff.alertmanager (not .Values.alertmanager.notifierUrl) (gt (int .Values.alertmanager.replicaCount) 1) -}}
+{{- /*
+An Alertmanager pair: vmalert sends every alert to EVERY instance,
+through the per-pod DNS name of the operator's headless Service, and
+the instances dedup through the mesh. One load-balanced URL would hand
+an alert to one replica only, and a replica restart would lose it.
+https://docs.victoriametrics.com/victoriametrics/vmalert/#high-availability
+("The same alert will be sent to all configured notifiers").
+*/ -}}
+{{- range $i := until (int .Values.alertmanager.replicaCount) }}
+- url: {{ printf "http://vmalertmanager-%s-%d.vmalertmanager-%s.%s.svc:9093" $fullname $i $fullname $.Release.Namespace | quote }}
+{{- end -}}
+{{- else }}
+- url: {{ $notifier | quote }}
+{{- end -}}
+{{- end -}}

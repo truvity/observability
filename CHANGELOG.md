@@ -6,6 +6,25 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **`vmalert.remoteEvaluators`: evaluate selected rules against another
+  store and notify through this install's Alertmanager.** Default `[]`:
+  the render is byte-identical to before (all goldens unchanged). Each
+  entry renders one extra VMAlert (`<release>-remote-<name>`) whose
+  datasource is another metrics store (bearer or basic auth from an
+  existing Secret, optional CA), whose notifiers are the main alerter's
+  (the Alertmanager pair or `alertmanager.notifierUrl`) and whose
+  remoteWrite/remoteRead are the local store. It evaluates the VMRules
+  labelled `observability.truvity.io/evaluator: <name>`; once the list is
+  non-empty the main metrics and logs alerters exclude every rule carrying
+  that label key, so no rule has two owners. One replica per entry, no
+  `-peer` twin. New self-alert `RemoteEvaluatorFailing`
+  (`selfAlerts.remoteEvaluator`). Refused: empty, invalid or duplicate
+  names, no `datasource.url`, auth that is not exactly one of
+  bearer/basic with Secret and keys named, `notifications.mode:
+  evaluate-only`, and installs that render no vmalert. The consumer opens
+  egress to the other store. docs/notifications.md, "Evaluating another
+  store's rules".
+
 - **Docs: two values comments corrected, one refusal fixture added.** No
   render moves. `observability-stack`'s `mode` comment now says what each
   mode resolves the four `null` toggles to (`vmauth`, `vmalert`,

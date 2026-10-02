@@ -1,0 +1,19 @@
+# expect: needs `datasource.auth` with exactly one of
+# Bearer and basic together.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+vmalert:
+  remoteEvaluators:
+    - name: other-store
+      datasource:
+        url: https://metrics.other-store.example
+        auth:
+          bearer: {secretName: example-other-store-read, key: token}
+          basic: {secretName: example-other-store-read, usernameKey: u, passwordKey: p}

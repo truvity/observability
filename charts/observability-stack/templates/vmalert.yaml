@@ -129,12 +129,24 @@ spec:
     {{- if $isLogs }}
     matchLabels:
       observability.rule-type: vlogs
+    {{- if $root.Values.vmalert.remoteEvaluators }}
+    matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: DoesNotExist
+    {{- end }}
     {{- else }}
     matchExpressions:
       - key: observability.rule-type
         operator: NotIn
         values:
           - vlogs
+      {{- if $root.Values.vmalert.remoteEvaluators }}
+      {{- /* Rules owned by a remote evaluator (below) are evaluated there,
+             against the store they were written for; here they would be
+             evaluated against the wrong one and see their metric absent. */}}
+      - key: observability.truvity.io/evaluator
+        operator: DoesNotExist
+      {{- end }}
     {{- end }}
   {{- /* Empty selector: every namespace, which is what the release did
          before selection was narrowed by label. */}}
@@ -155,21 +167,7 @@ spec:
       {{- include "observability-stack.targetAuth" $root | nindent 6 }}
   {{- if not $evaluateOnly }}
   notifiers:
-    {{- if and $observabilityStackEffective.alertmanager (not $root.Values.alertmanager.notifierUrl) (gt (int $root.Values.alertmanager.replicaCount) 1) }}
-    {{- /*
-    An Alertmanager pair: vmalert sends every alert to EVERY instance,
-    through the per-pod DNS name of the operator's headless Service, and
-    the instances dedup through the mesh. One load-balanced URL would hand
-    an alert to one replica only, and a replica restart would lose it.
-    https://docs.victoriametrics.com/victoriametrics/vmalert/#high-availability
-    ("The same alert will be sent to all configured notifiers").
-    */}}
-    {{- range $i := until (int $root.Values.alertmanager.replicaCount) }}
-    - url: {{ printf "http://vmalertmanager-%s-%d.vmalertmanager-%s.%s.svc:9093" $fullname $i $fullname $.Release.Namespace | quote }}
-    {{- end }}
-    {{- else }}
-    - url: {{ $notifier | quote }}
-    {{- end }}
+    {{- include "observability-stack.vmalert.notifiers" $root | trim | nindent 4 }}
   {{- end }}
   {{- with $root.Values.vmalert.externalLabels }}
   externalLabels:
@@ -210,5 +208,104 @@ spec:
   {{- end }}
 {{- end }}
 {{- end }}
+{{- end }}
+{{- end }}
+{{- /*
+Remote evaluators: one extra metrics vmalert per entry of
+`vmalert.remoteEvaluators`, evaluating the VMRules that carry
+`observability.truvity.io/evaluator: <name>` against ANOTHER metrics store
+and notifying through THIS install's Alertmanager (docs/notifications.md,
+"Evaluating another store's rules"). See templates/_validate.tpl
+(`observability-stack.validate.remoteEvaluators`) for what is refused.
+
+Disjointness: the main metrics alerter's selector refuses every rule that
+carries the `observability.truvity.io/evaluator` key, whatever its value,
+and each evaluator selects exactly one value of it, so no rule is ever
+evaluated by two alerters and none of these is evaluated against the
+local store. The selector cannot be empty by construction.
+
+Notifiers are the main alerter's own (`observability-stack.vmalert.notifiers`),
+so the Alertmanager pair, `alertmanager.notifierUrl` and `notifications.mode`
+apply unchanged. remoteWrite and remoteRead are the LOCAL store, like the
+main alerter's: `ALERTS`/`ALERTS_FOR_STATE` are written where the alerts
+are read from, and a restarted evaluator restores its `for:` timers.
+
+Single replica, no peer twin, also under `ha`: a pair exists so the loss of
+one STORE does not stop evaluation, and an evaluator reads one remote store
+that is its only source of truth; a twin would read the same store, notify
+the same Alertmanager twice and add nothing. The pod is rescheduled like the
+main alerter's and restores state from the local store.
+*/ -}}
+{{- if and $observabilityStackEffective.vmalert .Values.vmalert.remoteEvaluators }}
+{{- $root := . }}
+{{- $fullname := include "observability-stack.fullname" . }}
+{{- $metrics := include "observability-stack.metrics.url" . }}
+{{- range $ev := $root.Values.vmalert.remoteEvaluators }}
+{{- $auth := $ev.datasource.auth | default dict }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: {{ printf "%s-remote-%s" $fullname $ev.name }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.rule-type: prometheus
+    observability.truvity.io/evaluator: {{ $ev.name }}
+spec:
+  replicaCount: 1
+  evaluationInterval: {{ $ev.evaluationInterval | default $root.Values.interval }}
+  securityContext:
+    {{- include "observability-stack.restrictedSecurityContext" $root | nindent 4 }}
+  ruleSelector:
+    matchLabels:
+      observability.truvity.io/evaluator: {{ $ev.name }}
+    matchExpressions:
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
+  ruleNamespaceSelector: {}
+  resources:
+    {{- include "observability-stack.resources" $root.Values.vmalert.resources | nindent 4 }}
+  datasource:
+    url: {{ $ev.datasource.url | quote }}
+    {{- with $auth.bearer }}
+    bearerTokenSecret:
+      name: {{ .secretName | quote }}
+      key: {{ .key | quote }}
+    {{- end }}
+    {{- with $auth.basic }}
+    basicAuth:
+      username:
+        name: {{ .secretName | quote }}
+        key: {{ .usernameKey | quote }}
+      password:
+        name: {{ .secretName | quote }}
+        key: {{ .passwordKey | quote }}
+    {{- end }}
+    {{- with $ev.datasource.caBundle }}
+    tlsConfig:
+      ca:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+  remoteWrite:
+    url: {{ $metrics | quote }}
+    basicAuth:
+      {{- include "observability-stack.targetAuth" $root | nindent 6 }}
+  remoteRead:
+    url: {{ $metrics | quote }}
+    basicAuth:
+      {{- include "observability-stack.targetAuth" $root | nindent 6 }}
+  notifiers:
+    {{- include "observability-stack.vmalert.notifiers" $root | trim | nindent 4 }}
+  {{- $labels := merge (deepCopy ($ev.externalLabels | default dict)) (deepCopy ($root.Values.vmalert.externalLabels | default dict)) }}
+  {{- with $labels }}
+  externalLabels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $root.Values.vmalert.externalUrl }}
+  extraArgs:
+    external.url: {{ . | quote }}
+  {{- end }}
 {{- end }}
 {{- end }}
