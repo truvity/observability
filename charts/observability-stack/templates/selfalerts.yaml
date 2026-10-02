@@ -33,7 +33,8 @@ least one Slack workspace is declared and Alertmanager is rendered.
 */ -}}
 {{- $slackWorkspaces := (((.Values.notifications | default dict).slack) | default dict).workspaces | default list -}}
 {{- $slackRule := and $slackWorkspaces .Values.selfAlerts.slackDelivery.enabled (include "observability-stack.effectiveEnabled" . | fromYaml).alertmanager -}}
-{{- if or .Values.selfAlerts.enabled $slackRule -}}
+{{- $remoteRule := and .Values.vmalert.remoteEvaluators .Values.selfAlerts.remoteEvaluator.enabled (include "observability-stack.effectiveEnabled" . | fromYaml).vmalert -}}
+{{- if or .Values.selfAlerts.enabled $slackRule $remoteRule -}}
 {{- $root := . -}}
 {{- $fullname := include "observability-stack.fullname" . -}}
 {{- $sa := .Values.selfAlerts -}}
@@ -77,6 +78,33 @@ spec:
               Slack are not arriving: check the workspace's bot token
               Secret, that the channel exists (a private channel needs the
               bot invited) and Slack's own status.
+        {{- end }}
+
+        {{- if $remoteRule }}
+        # RemoteEvaluatorFailing. A remote evaluator (templates/vmalert.yaml,
+        # `vmalert.remoteEvaluators`) whose datasource is unreachable, or
+        # whose credential is refused, fails every rule evaluation: its
+        # rules never fire and nothing else says so. vmalert counts these
+        # on its own /metrics, which the local store scrapes like the main
+        # alerter's; the series are picked by the evaluator pods' name
+        # (`vmalert-<release>-remote-<name>-...`), and the three counter
+        # names are the ones vmalert has used for rule-evaluation errors
+        # (an absent name simply contributes nothing). Fires through the
+        # local Alertmanager. Healthy range: 0.
+        - alert: RemoteEvaluatorFailing
+          expr: >-
+            sum by (pod) (increase({__name__=~"vmalert_(alerting|recording)_rules_errors_total|vmalert_execution_errors_total", pod=~{{ printf "vmalert-%s-remote-.+" $fullname | quote }}}[{{ $sa.remoteEvaluator.window }}])) > 0
+          for: {{ $sa.remoteEvaluator.for }}
+          labels:
+            severity: {{ $sa.remoteEvaluator.severity }}
+          annotations:
+            summary: "A remote evaluator is failing to evaluate its rules"
+            description: >-
+              {{`{{ $labels.pod }}`}} recorded rule evaluation errors in the
+              last {{ $sa.remoteEvaluator.window }}. Its rules, which live
+              against another store, are not being evaluated: check that
+              store's endpoint, the read credential Secret and the egress
+              from this namespace.
         {{- end }}
 
         {{- if $sa.ingest.metric }}

@@ -51,7 +51,7 @@ Every piece is released; the state column says where its design page is.
 | `charts/observability-emitters` | per-cluster collection: metrics agent, log agent, OpenTelemetry gateway; optional kube-state-metrics, node-exporter, blackbox probes; the external OTLP receiver | [reference.md](reference.md#chartsobservability-emitters), [external-ingest.md](external-ingest.md) |
 | `charts/platform-alerts` | the rules that catch a silent failure, and the groups for the platform components | [reference.md](reference.md#chartsplatform-alerts) |
 | `pkg/tenancy` | one input, two shapes: the proxy's users or the issuer's claim | [reference.md](reference.md#pkgtenancy) |
-| `notifications:` in the stack chart | the one router: receivers, routing shape, template, refusals; the store self-alerts | [notifications.md](notifications.md) |
+| `notifications:` in the stack chart | the one router: receivers, routing shape, template, refusals; the store self-alerts; evaluating another store's rules (`vmalert.remoteEvaluators`) | [notifications.md](notifications.md) |
 | `charts/alert-ingress` + `cmd/alert-ingress` | events born outside the cluster, into the same router | [alert-ingress.md](alert-ingress.md) |
 | `pkg/statusbox` + `setup.sh` | the watcher outside: deadman, external probes, status pages | [statusbox.md](statusbox.md) |
 | `charts/observability-dashboards` | the generic dashboards, and the lint every dashboard passes | [dashboards.md](dashboards.md) |

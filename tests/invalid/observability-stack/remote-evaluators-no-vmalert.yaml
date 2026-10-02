@@ -1,0 +1,26 @@
+# expect: renders no vmalert
+# vmalert off.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+vmalert:
+  enabled: false
+  remoteEvaluators:
+    - name: other-store
+      datasource:
+        url: https://metrics.other-store.example
+        auth:
+          bearer: {secretName: example-other-store-read, key: token}
+
+
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      vmalert:
+        enabled: false

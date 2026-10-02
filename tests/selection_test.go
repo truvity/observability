@@ -239,3 +239,64 @@ func TestEveryRuleShapeIsEvaluatedSomewhere(t *testing.T) {
 		})
 	}
 }
+
+// TestRemoteEvaluatorRulesHaveExactlyOneOwner: a rule carrying
+// `observability.truvity.io/evaluator: <name>` is evaluated by that
+// evaluator's alerter and by no other, in particular not by the main
+// metrics alerter, which would evaluate it against the local store and see
+// its metric absent forever. And a rule without the label is still never
+// taken by an evaluator.
+func TestRemoteEvaluatorRulesHaveExactlyOneOwner(t *testing.T) {
+	const key = "observability.truvity.io/evaluator"
+
+	alerters := map[string]vmalertDoc{}
+
+	for _, doc := range splitDocs(t, "golden/observability-stack/remote-evaluators.yaml") {
+		var a vmalertDoc
+		if err := yaml.Unmarshal(doc, &a); err != nil || a.Kind != "VMAlert" {
+			continue
+		}
+
+		alerters[a.Metadata.Name] = a
+	}
+
+	require.Len(t, alerters, 4, "two main alerters and two remote evaluators")
+
+	owners := func(labels map[string]string) []string {
+		var out []string
+
+		for name, a := range alerters {
+			if a.Spec.RuleSelector != nil && a.Spec.RuleSelector.selects(labels) {
+				out = append(out, name)
+			}
+		}
+
+		return out
+	}
+
+	for _, name := range []string{"other-store", "third-store"} {
+		for _, extra := range []map[string]string{nil, {"observability.rule-type": "prometheus"}, {"observability.rule-type": "vlogs"}} {
+			labels := map[string]string{key: name}
+			for k, v := range extra {
+				labels[k] = v
+			}
+
+			got := owners(labels)
+
+			if extra["observability.rule-type"] == "vlogs" {
+				assert.Empty(t, got, "a LogsQL rule with an evaluator label is evaluated by nobody, never by the wrong alerter")
+
+				continue
+			}
+
+			require.Len(t, got, 1, "%v is owned by %v", labels, got)
+			assert.True(t, strings.HasSuffix(got[0], "-remote-"+name), "%v owned by %s", labels, got[0])
+		}
+	}
+
+	for _, labels := range []map[string]string{nil, {"observability.rule-type": "prometheus"}, {"observability.rule-type": "vlogs"}} {
+		for _, o := range owners(labels) {
+			assert.NotContains(t, o, "-remote-", "an unlabelled rule must never reach a remote evaluator")
+		}
+	}
+}

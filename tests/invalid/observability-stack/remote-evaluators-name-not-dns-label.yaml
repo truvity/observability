@@ -1,0 +1,19 @@
+# expect: is not a DNS label
+# An uppercase name.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+vmalert:
+  remoteEvaluators:
+    - name: Other_Store
+      datasource:
+        url: https://metrics.other-store.example
+        auth:
+          bearer: {secretName: example-other-store-read, key: token}
+

@@ -1,0 +1,52 @@
+# Remote evaluators: two extra vmalerts evaluating the VMRules labelled
+# `observability.truvity.io/evaluator: <name>` against ANOTHER metrics
+# store and notifying through THIS install's Alertmanager PAIR (one
+# notifier per replica). One authenticates with a bearer token, the other
+# with basic auth and a private CA. The main alerters then exclude every
+# rule that carries the label key, and RemoteEvaluatorFailing renders.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+vmalert:
+  externalUrl: https://grafana.example
+  externalLabels:
+    k8s_cluster_name: central
+  remoteEvaluators:
+    - name: other-store
+      datasource:
+        url: https://metrics.other-store.example
+        auth:
+          bearer: {secretName: example-other-store-read, key: token}
+      externalLabels:
+        k8s_cluster_name: edge
+    - name: third-store
+      evaluationInterval: 30s
+      datasource:
+        url: https://metrics.third-store.example
+        auth:
+          basic: {secretName: example-third-store-read, usernameKey: username, passwordKey: password}
+        caBundle:
+          configMap: {name: example-third-store-ca, key: ca.crt}
+
+notifications:
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+alertmanager:
+  replicaCount: 2

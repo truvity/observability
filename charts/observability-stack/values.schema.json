@@ -11,6 +11,14 @@
     "tenancy"
   ],
   "definitions": {
+    "remoteEvaluatorKeyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "key": { "type": "string", "minLength": 1 }
+      }
+    },
     "duration": {
       "type": "string",
       "pattern": "^[0-9]+(ms|s|m|h|d|w|y)$",
@@ -662,6 +670,60 @@
           "type": "object",
           "additionalProperties": {
             "type": "string"
+          }
+        },
+        "remoteEvaluators": {
+          "type": "array",
+          "description": "One extra VMAlert per entry: evaluates the VMRules labelled `observability.truvity.io/evaluator: <name>` against another metrics store and notifies through this install's Alertmanager. See docs/notifications.md, \"Evaluating another store's rules\".",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "description": "A DNS label; empty is refused at render time." },
+              "evaluationInterval": { "$ref": "#/definitions/duration" },
+              "datasource": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "url": { "type": "string", "description": "The other store's read endpoint; empty is refused at render time." },
+                  "auth": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "bearer": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "secretName": { "type": "string" },
+                          "key": { "type": "string" }
+                        }
+                      },
+                      "basic": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "secretName": { "type": "string" },
+                          "usernameKey": { "type": "string" },
+                          "passwordKey": { "type": "string" }
+                        }
+                      }
+                    }
+                  },
+                  "caBundle": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "configMap": { "$ref": "#/definitions/remoteEvaluatorKeyRef" },
+                      "secret": { "$ref": "#/definitions/remoteEvaluatorKeyRef" }
+                    }
+                  }
+                }
+              },
+              "externalLabels": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
           }
         },
         "watchdog": {
@@ -1552,6 +1614,16 @@
             "droppedPacketsMetricsExtra": { "type": "array", "items": { "type": "string", "minLength": 1 } },
             "for": { "$ref": "#/definitions/duration" },
             "droppedPacketsMetric": { "type": "string" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
+        "remoteEvaluator": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }
           }
         },

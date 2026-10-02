@@ -686,6 +686,123 @@ No NetworkPolicy selects the Alertmanager pods: the first policy that did
 would default-deny the mesh (9094 TCP and UDP) and vmalert's pushes. One
 replica renders none of the above, byte for byte as before.
 
+## Evaluating another store's rules
+
+An estate that runs a second, separate metrics store (another environment)
+may have one whose own stack runs `notifications.mode: evaluate-only`: its
+rules evaluate and nobody hears about them. `vmalert.remoteEvaluators`
+lets the CENTRAL install evaluate selected rule groups against that other
+store and notify through its own Alertmanager. The first use is a
+heartbeat-missing alert on a metric that exists only in the other store:
+it cannot be written on the central store (the metric is absent there, for
+ever) and is worth nothing in a stack that notifies nobody.
+
+```mermaid
+flowchart LR
+  subgraph central["central install"]
+    main["vmalert (main)<br/>local rules only"]
+    ev["vmalert (remote evaluator)<br/>one per entry"]
+    local[("local store")]
+    am["Alertmanager"]
+  end
+  other[("other store<br/>(its read endpoint)")]
+  rule["VMRule labelled<br/>observability.truvity.io/evaluator: other-store"]
+  rule -. "selected by" .-> ev
+  rule -. "ignored by" .-> main
+  ev -- "queries (bearer or basic)" --> other
+  ev -- "ALERTS, ALERTS_FOR_STATE<br/>(write and restore)" --> local
+  ev -- "notifies, every replica" --> am
+  main --> am
+  main --> local
+```
+
+One entry renders one extra `VMAlert`, named `<release>-remote-<name>`:
+
+- **datasource** is the other store's read endpoint (`datasource.url`),
+  authenticated with a bearer token or basic auth read from an EXISTING
+  Secret (`datasource.auth`), optionally with a private CA
+  (`datasource.caBundle`, a ConfigMap or Secret key).
+- **notifiers** are the main alerter's, rendered by the same helper: the
+  Alertmanager pair (one notifier per replica), or `alertmanager.notifierUrl`.
+- **remoteWrite and remoteRead** are the LOCAL store, like the main
+  alerter's. Alert state (`ALERTS`, `ALERTS_FOR_STATE`) is then visible in
+  the central store and Grafana, and a restarted evaluator restores its
+  `for:` timers instead of re-arming them. The other store is only read.
+- **externalLabels** are `vmalert.externalLabels` with the entry's own on
+  top: set the source cluster label here so routing (`cluster` is a route
+  dimension) and the alert text say which environment the alert is about.
+
+### The label contract
+
+A VMRule is owned by an evaluator by carrying, on the VMRule object's
+metadata, `observability.truvity.io/evaluator: <name>`. The evaluator
+selects exactly that value; the main metrics alerter (and the logs
+alerter) select only rules that do NOT carry the key at all, whatever its
+value. So a rule is never evaluated by two alerters, none of these is ever
+evaluated against the wrong store, and the selector cannot be empty. The
+exclusion renders only when `remoteEvaluators` is non-empty: with the list
+empty the render is byte-identical to before. A rule labelled with a name
+no entry declares is evaluated by nobody: keep the label and the entry
+together. Rules are PromQL (`observability.rule-type: vlogs` is not
+supported on an evaluator and such a rule is evaluated by nobody).
+
+### Refusals
+
+An empty, non-DNS-label, too-long or duplicate `name`; a missing or
+non-http(s) `datasource.url`; `datasource.auth` that is not exactly one
+of `bearer` / `basic` with every Secret name and key set; a `caBundle`
+naming both or neither of `configMap` / `secret`; `notifications.mode:
+evaluate-only` (nobody would be notified); an install that renders no
+vmalert (`mode: replica` or `operator-only`, or `vmalert.enabled:
+false`); and, through the existing notifier refusal, an install with no
+Alertmanager and no `alertmanager.notifierUrl`.
+
+### High availability
+
+One replica per entry, also under `ha`, with no `-peer` twin. A pair keeps
+alerting through the loss of one STORE; an evaluator reads one remote
+store, its only source of truth, and a twin would read the same data and
+notify the same Alertmanager twice. A rescheduled pod restores its timers
+from the local store (the primary's, on a pair). The loss of the remote
+store is the failure the self-alert below is for.
+
+### Self-monitoring
+
+`RemoteEvaluatorFailing` (`selfAlerts.remoteEvaluator`, on by default,
+rendered whenever the list is non-empty and independent of
+`selfAlerts.enabled`): rule-evaluation error counters of the evaluator
+pods, from the local store, firing through the local Alertmanager. An
+unreachable datasource or a refused credential is therefore not silent.
+Each evaluator pod is scraped like the main alerters (the operator's own
+VMServiceScrape for a VMAlert).
+
+### What the consumer provides
+
+1. A read credential for the other store, as a Secret in the release's
+   namespace (`datasource.auth` names it and its keys). Read-only: the
+   chart never writes there.
+2. Network reachability. The chart renders ingress policies only, and its
+   vmalert policy already selects every vmalert pod, evaluators included.
+   If the namespace has default-deny egress, allow the evaluator pods
+   (`app.kubernetes.io/name: vmalert`, name `vmalert-<release>-remote-<name>`)
+   to reach the other store's hostname (typically TCP 443), the local
+   store, and Alertmanager (TCP 9093).
+3. The rules: VMRules carrying the evaluator label, wherever the
+   operator selects rules from (the evaluator uses an empty namespace
+   selector, like the main alerter).
+
+```yaml
+vmalert:
+  remoteEvaluators:
+    - name: other-store
+      datasource:
+        url: https://metrics.other-store.example
+        auth:
+          bearer: {secretName: other-store-read, key: token}
+      externalLabels:
+        k8s_cluster_name: edge
+```
+
 ## What stays the consumer's
 
 The channel names, the webhook, the route list, the external URL. And

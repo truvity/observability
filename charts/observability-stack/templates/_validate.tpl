@@ -41,6 +41,7 @@ vmalert and karma, or the pair splits and pages twice.
 {{- include "observability-stack.validate.scrapeFrom" . -}}
 {{- include "observability-stack.validate.clientsFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
+{{- include "observability-stack.validate.remoteEvaluators" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
 {{- include "observability-stack.validate.karma" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
@@ -2025,6 +2026,71 @@ way for that to quietly not be true.
 {{- end -}}
 {{- if and $k.history.enabled (not $k.history.uri) -}}
 {{- fail "observability-stack: karma.history.enabled is true but karma.history.uri is empty. karma needs the Prometheus-compatible endpoint that holds the ALERTS series." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`vmalert.remoteEvaluators`: one extra VMAlert per entry, evaluating the
+VMRules labelled `observability.truvity.io/evaluator: <name>` against
+another store and notifying through this install's Alertmanager. Every
+check refuses a shape that renders and then evaluates nothing, or notifies
+nobody, or evaluates the same rule twice. docs/notifications.md,
+"Evaluating another store's rules".
+*/}}
+{{- define "observability-stack.validate.remoteEvaluators" -}}
+{{- $evs := .Values.vmalert.remoteEvaluators | default list -}}
+{{- if $evs -}}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- $fullname := include "observability-stack.fullname" . -}}
+{{- $mode := ((.Values.notifications | default dict).mode) | default "route" -}}
+{{- if not $eff.vmalert -}}
+{{- fail "observability-stack: `vmalert.remoteEvaluators` is set but this install renders no vmalert (`mode` is not \"full\", or `vmalert.enabled` is false). A remote evaluator notifies through this install's Alertmanager; `mode: replica` and `mode: operator-only` have none. Set it on the full install, or empty the list." -}}
+{{- end -}}
+{{- if eq $mode "evaluate-only" -}}
+{{- fail "observability-stack: `vmalert.remoteEvaluators` is set and `notifications.mode` is `evaluate-only`. Evaluate-only sends nothing to anybody, which is the very thing a remote evaluator exists to avoid: its alerts would be evaluated and notify nobody. Drop `notifications.mode` back to `route`, or empty the list." -}}
+{{- end -}}
+{{- $names := dict -}}
+{{- range $i, $e := $evs -}}
+{{- if not $e.name -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] has an empty `name`. The name is the value of the `observability.truvity.io/evaluator` label its rules carry and names its VMAlert." $i) -}}
+{{- end -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" (toString $e.name)) -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] name %q is not a DNS label (lower-case alphanumerics and hyphens, starting and ending with an alphanumeric)." $i (toString $e.name)) -}}
+{{- end -}}
+{{- if gt (len (printf "%s-remote-%s" $fullname $e.name)) 52 -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] name %q makes the VMAlert name %q longer than 52 characters, which the pod and Service names derived from it cannot carry. Shorten it." $i (toString $e.name) (printf "%s-remote-%s" $fullname $e.name)) -}}
+{{- end -}}
+{{- if hasKey $names $e.name -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators has two entries named %q. Two evaluators for one name would both evaluate the same rules and name one VMAlert twice." (toString $e.name)) -}}
+{{- end -}}
+{{- $_ := set $names $e.name true -}}
+{{- $ds := $e.datasource | default dict -}}
+{{- if not $ds.url -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] (%s) has no `datasource.url`. It is the other store's read endpoint; without it there is nothing to evaluate against." $i (toString $e.name)) -}}
+{{- end -}}
+{{- if not (regexMatch "^https?://[^\\s]+$" (toString $ds.url)) -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] (%s) `datasource.url` %q is not an http(s) URL." $i (toString $e.name) (toString $ds.url)) -}}
+{{- end -}}
+{{- $auth := $ds.auth | default dict -}}
+{{- if eq (not (not $auth.bearer)) (not (not $auth.basic)) -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] (%s) needs `datasource.auth` with exactly one of `bearer` ({secretName, key}) or `basic` ({secretName, usernameKey, passwordKey}), each naming an EXISTING Secret. An unauthenticated read of another store is refused, and a credential is never a value here." $i (toString $e.name)) -}}
+{{- end -}}
+{{- with $auth.bearer -}}
+{{- if not (and .secretName .key) -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] (%s) `datasource.auth.bearer` must set both `secretName` and `key`: the Secret and the key holding the token." $i (toString $e.name)) -}}
+{{- end -}}
+{{- end -}}
+{{- with $auth.basic -}}
+{{- if not (and .secretName .usernameKey .passwordKey) -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] (%s) `datasource.auth.basic` must set `secretName`, `usernameKey` and `passwordKey`." $i (toString $e.name)) -}}
+{{- end -}}
+{{- end -}}
+{{- with $ds.caBundle -}}
+{{- if eq (not (not .configMap)) (not (not .secret)) -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] (%s) `datasource.caBundle` must name exactly one of `configMap` or `secret` ({name, key})." $i (toString $e.name)) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
