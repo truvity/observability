@@ -381,7 +381,7 @@ sources:
       turns `serviceMonitor` on (and its image is built with metrics and user
       event metrics, which the release that added the tracing option is).
       Names from Keycloak's guides (keycloak_user_events_total,
-      jvm_memory_usage_after_gc_percent, the agroal_* pool, the embedded
+      jvm_memory_usage_after_gc, the agroal_* pool, the embedded
       Infinispan vendor_statistics_*) and Quarkus Micrometer's defaults
       (http_server_requests_seconds_*, jvm_memory_*). Not yet seen on a live
       scrape: the chart that turns it on is the change that adds them.
@@ -393,7 +393,7 @@ sources:
       - http_server_requests_seconds_bucket
       - jvm_memory_used_bytes
       - jvm_memory_max_bytes
-      - jvm_memory_usage_after_gc_percent
+      - jvm_memory_usage_after_gc
       - agroal_active_count
       - agroal_available_count
       - agroal_awaiting_count

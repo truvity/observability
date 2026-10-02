@@ -484,7 +484,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(jvm_memory_usage_after_gc_percent{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",area=\"heap\"}) or vector(0)",
+          "expr": "max(jvm_memory_usage_after_gc{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",area=\"heap\"}) or vector(0)",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1390,7 +1390,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max by (pod) (jvm_memory_usage_after_gc_percent{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",area=\"heap\"})",
+          "expr": "max by (pod) (jvm_memory_usage_after_gc{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",service=~\"$service\",area=\"heap\"})",
           "legendFormat": "{{pod}}",
           "range": true,
           "instant": false,
