@@ -16,7 +16,7 @@ defaults):
   * `vendor_statistics_approximate_entries_unique{cache}`: the embedded
     Infinispan session caches.
   * `jvm_memory_used_bytes`, `jvm_memory_max_bytes`,
-    `jvm_memory_usage_after_gc_percent`: Micrometer JVM metrics.
+    `jvm_memory_usage_after_gc`: Micrometer JVM metrics.
   * `agroal_active_count`, `agroal_available_count`, `agroal_awaiting_count`:
     the database connection pool.
 """
@@ -53,7 +53,7 @@ def build():
            12, y, None, w=4, unit="s", no_value=NO_HIST, steps=[(None, fo.GREEN), (1, fo.ORANGE), (2, fo.RED)], decimals=2)
     b.stat("Heap after GC (max)",
            "The fullest pod's heap still in use after its last garbage collection. A JVM rests near its maximum between collections by design; this is the value that shows real pressure. Above 90 percent an out-of-memory restart follows.",
-           'max(jvm_memory_usage_after_gc_percent{%s,area="heap"}) or vector(0)' % S,
+           'max(jvm_memory_usage_after_gc{%s,area="heap"}) or vector(0)' % S,
            16, y, None, w=4, unit="percentunit", no_value="n/a", steps=[(None, fo.GREEN), (0.75, fo.ORANGE), (0.9, fo.RED)], decimals=0)
     b.stat("DB requests waiting",
            "Requests waiting for a database connection across the pods. Zero is healthy; a count that stays above zero means the pool is exhausted and requests queue behind the database.",
@@ -130,7 +130,7 @@ def build():
     b.timeseries(
         "Heap after GC",
         "Share of the long-lived heap in use after the last collection, per pod. A floor that rises over days is a leak; above 90 percent the pod is about to run out.",
-        [('max by (pod) (jvm_memory_usage_after_gc_percent{%s,area="heap"})' % S, "{{pod}}")],
+        [('max by (pod) (jvm_memory_usage_after_gc{%s,area="heap"})' % S, "{{pod}}")],
         12, y, 12, 8, "percentunit", None)
     y += 8
 

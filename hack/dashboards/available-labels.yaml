@@ -219,7 +219,7 @@ jobs:
   # {install}-service, so the job is the Service's name and `service` is set.
   - name: Keycloak
     onlyWith: keycloak-metrics
-    names: [up, keycloak_user_events_total, http_server_requests_seconds_count, http_server_requests_seconds_sum, http_server_requests_seconds_bucket, jvm_memory_used_bytes, jvm_memory_max_bytes, jvm_memory_usage_after_gc_percent, agroal_active_count, agroal_available_count, agroal_awaiting_count, vendor_statistics_approximate_entries_unique]
+    names: [up, keycloak_user_events_total, http_server_requests_seconds_count, http_server_requests_seconds_sum, http_server_requests_seconds_bucket, jvm_memory_used_bytes, jvm_memory_max_bytes, jvm_memory_usage_after_gc, agroal_active_count, agroal_available_count, agroal_awaiting_count, vendor_statistics_approximate_entries_unique]
     labels: [job, instance, endpoint, service, k8s_cluster_name, k8s_namespace_name, deployment_environment_name, app_kubernetes_io_instance]
 
   # NATS series also carry the NATS cluster's own name as `cluster` (plus

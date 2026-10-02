@@ -16,6 +16,12 @@ must be done first, and whether a default moved. Newest first, one
   (and `metrics.httpHistograms` for the latency panels). Turn it on together
   with that ServiceMonitor.
 
+- **Behaviour change: the Keycloak dashboard's heap panels read
+  `jvm_memory_usage_after_gc`.** The two heap-after-GC panels queried
+  `jvm_memory_usage_after_gc_percent`, a name Keycloak does not export, so
+  they showed nothing. The metric is a ratio (0 to 1) under the new name.
+  Only the `everything` golden moves; the dashboard is still off by default.
+
 ## v0.30.0
 
 `observability-stack`: karma hides the Watchdog alert by default.
