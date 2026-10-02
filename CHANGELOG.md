@@ -4,6 +4,17 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **`rulecheck`: no more `text file busy` when the rule tools run in
+  parallel.** Parallel callers (several tests in one process) could fork a
+  child while another goroutine still had the freshly written parser binary
+  open for writing, and exec of that binary failed with ETXTBSY. Binaries are
+  now materialized under a process-wide lock (temp file beside, `Sync`,
+  `Close`, `chmod 0755`, rename into place), and a start that still hits
+  ETXTBSY is retried up to five times with a short backoff. No behaviour
+  change otherwise.
+
 ## v0.41.0
 
 - **`observability-emitters`: external OTLP ingest, `otlp.external`** (off by

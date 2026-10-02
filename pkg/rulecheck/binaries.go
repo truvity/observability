@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,6 +31,13 @@ var (
 	metricsParser = parser{"VictoriaMetrics/VictoriaMetrics", "victoria-metrics", "victoria-metrics-prod"}
 	logsParser    = parser{"VictoriaMetrics/VictoriaLogs", "victoria-logs", "victoria-logs-prod"}
 )
+
+// fetchMu serializes materializing binaries within the process. A fork in one
+// goroutine while another holds a write fd on an executable makes the child
+// inherit that fd, and exec of the file then fails with ETXTBSY
+// (golang/go#22315); one writer at a time, plus the retry in startCmd, keeps
+// parallel tests clear of it.
+var fetchMu sync.Mutex
 
 // binary returns the path to a release binary, downloading and caching it
 // if needed.
@@ -49,6 +57,9 @@ func (p parser) fetch(ctx context.Context, o Options, version string) (string, e
 
 	dir := filepath.Join(cache, version)
 	path := filepath.Join(dir, p.binary)
+
+	fetchMu.Lock()
+	defer fetchMu.Unlock()
 
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
@@ -121,9 +132,10 @@ func (p parser) fetch(ctx context.Context, o Options, version string) (string, e
 		}
 
 		_, werr := tmp.Write(bin)
+		serr := tmp.Sync()
 		cerr := tmp.Close()
 
-		if err := errors.Join(werr, cerr, os.Chmod(tmp.Name(), 0o755), os.Rename(tmp.Name(), path)); err != nil {
+		if err := errors.Join(werr, serr, cerr, os.Chmod(tmp.Name(), 0o755), os.Rename(tmp.Name(), path)); err != nil {
 			_ = os.Remove(tmp.Name())
 
 			return "", err

@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -139,11 +140,8 @@ func start(ctx context.Context, bin string) (*running, error) {
 
 	ctx, cancel := context.WithCancel(ctx)
 
-	cmd := exec.CommandContext(ctx, bin, "-httpListenAddr="+addr, "-storageDataPath="+dir, "-loggerLevel=ERROR")
-	cmd.Stdout = io.Discard
-
-	stderr, _ := cmd.StderrPipe()
-	if err := cmd.Start(); err != nil {
+	cmd, stderr, err := startCmd(ctx, bin, "-httpListenAddr="+addr, "-storageDataPath="+dir, "-loggerLevel=ERROR")
+	if err != nil {
 		cancel()
 		_ = os.RemoveAll(dir)
 
@@ -178,6 +176,36 @@ func start(ctx context.Context, bin string) (*running, error) {
 	r.stop()
 
 	return nil, fmt.Errorf("%s did not become healthy on %s:\n%s", filepath.Base(bin), addr, tail.String())
+}
+
+// startCmd starts bin with stdout discarded and returns its stderr pipe. A
+// start that fails with ETXTBSY is retried a few times: another goroutine's
+// fork can briefly hold a write fd on a binary just materialized
+// (golang/go#22315), and the fd closes as soon as that child execs.
+func startCmd(ctx context.Context, bin string, args ...string) (*exec.Cmd, io.ReadCloser, error) {
+	const tries = 5
+
+	for attempt := 1; ; attempt++ {
+		cmd := exec.CommandContext(ctx, bin, args...)
+		cmd.Stdout = io.Discard
+
+		stderr, err := cmd.StderrPipe()
+		if err == nil {
+			if err = cmd.Start(); err == nil {
+				return cmd, stderr, nil
+			}
+		}
+
+		if !errors.Is(err, syscall.ETXTBSY) || attempt == tries {
+			return nil, nil, err
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-time.After(time.Duration(attempt) * 50 * time.Millisecond):
+		}
+	}
 }
 
 // post sends one expression; "" means the parser accepted it.
