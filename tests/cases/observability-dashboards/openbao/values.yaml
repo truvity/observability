@@ -1,0 +1,64 @@
+# The OpenBAO dashboard alone: what the one cluster that runs OpenBAO turns on
+# together with the server's telemetry and openbao-ops' `serverMetrics`
+# PodMonitor (truvity/openbao). It is off by default (its catalog entry
+# `requires` the optional source `openbao-server-metrics`), so no existing
+# golden moves. The rest of the set is off so the golden shows only it, and
+# the home page is off with it.
+datasources:
+  metrics: example-metrics
+
+home: ""
+
+dashboards:
+  fleet-overview:
+    enabled: false
+  k8s-views-global:
+    enabled: false
+  k8s-views-namespaces:
+    enabled: false
+  k8s-views-pods:
+    enabled: false
+  k8s-views-nodes:
+    enabled: false
+  victoriametrics-single:
+    enabled: false
+  victoriametrics-vmagent:
+    enabled: false
+  victoriametrics-vmalert:
+    enabled: false
+  victoriametrics-operator:
+    enabled: false
+  victorialogs-single:
+    enabled: false
+  victorialogs-vlagent:
+    enabled: false
+  victoriatraces-single:
+    enabled: false
+  alertmanager:
+    enabled: false
+  node-exporter-full:
+    enabled: false
+  kubelet:
+    enabled: false
+  argocd:
+    enabled: false
+  cert-manager:
+    enabled: false
+  cnpg-operator:
+    enabled: false
+  cnpg-cluster:
+    enabled: false
+  nats-server:
+    enabled: false
+  nats-jetstream:
+    enabled: false
+  envoy-gateway:
+    enabled: false
+  envoy-proxy:
+    enabled: false
+  envoy-clusters:
+    enabled: false
+  kargo:
+    enabled: false
+  openbao:
+    enabled: true
