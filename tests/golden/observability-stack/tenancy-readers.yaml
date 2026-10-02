@@ -1987,7 +1987,7 @@ spec:
     - observability-stack-victoria-metrics-operator
     - observability-stack-victoria-metrics-operator.default
     - observability-stack-victoria-metrics-operator.default.svc
-    - observability-stack-victoria-metrics-operator.default.svc.cluster.local.
+    - observability-stack-victoria-metrics-operator.default.svc.cluster.example.
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/webhook.yaml
