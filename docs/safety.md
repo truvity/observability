@@ -289,9 +289,9 @@ underneath it.
 
 ## The refusals: `observability-stack`
 
-Seventy-one, each with a fixture under
-`tests/invalid/observability-stack/` that is otherwise valid, so it fails
-for its one reason and no other.
+Each with a fixture under `tests/invalid/observability-stack/` that is
+otherwise valid, so it fails for its one reason and no other; the
+fixtures, not this table, are the count.
 
 | Refusal | The failure it prevents |
 |---|---|
@@ -647,11 +647,11 @@ for the same reason — and `templates/selfscrape.yaml` renders a
 than as a values.yaml literal that could drift from it.
 
 **A doctrine refinement, while on the subject of what can and cannot be
-observed.** docs/doctrine.md, "Rules are proven, not asserted", says: "A
-rule whose failure case it cannot itself observe does not belong here.
-That is why there is no alert on a store's read-only flag: the sample
-carrying it is written into the store that has stopped accepting
-writes." True as written for the METRICS store's own read-only flag —
+observed.** This repository's doctrine page used to say, under "Rules are
+proven, not asserted": "A rule whose failure case it cannot itself observe
+does not belong here. That is why there is no alert on a store's
+read-only flag: the sample carrying it is written into the store that has
+stopped accepting writes." True as written for the METRICS store's own read-only flag —
 that is genuinely self-referential, the exact failure the sentence
 describes. It is NOT true in general: `vl_storage_is_read_only` and
 `vt_storage_is_read_only` exist on the log and trace stores, and a
@@ -1226,12 +1226,11 @@ stop working in a patch release.
 
 ## The refusals: `observability-emitters`
 
-Thirty-nine, each with a fixture under
-`tests/invalid/observability-emitters/` that is otherwise valid, so it
-fails for its one reason and no other.
+Each with a fixture under `tests/invalid/observability-emitters/` that is
+otherwise valid, so it fails for its one reason and no other.
 
-They divide into five kinds, and the first kind is the reason the chart
-exists.
+They divide into a handful of kinds, and the first kind is the reason the
+chart exists.
 
 ### The scoping key, which is a security property and not a convenience
 
@@ -1258,7 +1257,9 @@ grants.
 | `remoteWrite.shardByURL` | It SPLITS the series between the destinations instead of replicating to all of them, so a zone-redundant pair holds half the data each. Every query still answers and every dashboard still draws, with half of every result missing. |
 | An empty destination list on an enabled emitter | The agent collects everything, buffers it, and drops the oldest when the buffer fills — with a Ready pod and a green sync for as long as it takes anyone to notice. |
 | A destination name used twice | The names become exporter ids and queue directories. Two destinations sharing one share a queue, and only one is ever written to: an install that looks zone-redundant holds one copy. |
-| One URL listed twice | Not redundancy — one store receiving every sample twice, and half the buffer it looked like there was. |
+| One URL listed twice (a trailing slash does not hide it) | Not redundancy — one store receiving every sample twice, and half the buffer it looked like there was. |
+| A `remote.replicas[]` entry without a credential of its own, or sharing one with another entry | A store holds one user per bearer token: two destinations on one token are one identity, which cannot be told apart in the store's logs nor revoked separately. |
+| With `remote.replicas` and `logs` among the signals: a `victoria-logs-collector.remoteWrite` whose URLs are not exactly `remote.url` plus the replicas, or two entries reading their bearer from one file | The log agent's list is upstream's and written by hand, so it is checked against the pair rather than trusted; a half that is missing from it is a half with no container logs, and every pod is Ready. |
 | `selectAllByDefault: false` | With no selectors set that selects NO scrape objects: not a narrower set, none. A component whose `PodMonitor` is ignored looks exactly like a component with nothing wrong. |
 
 ### Buffers, which have to be on something
@@ -1336,6 +1337,28 @@ aggregate with no `by`, so five of its six outputs carry no cluster label and
 merge across clusters (the cluster-label rewrite can only rename a `cluster`
 an expression already names). `node.rules` carries `k8s_cluster_name` on every
 output. `hack/node-exporter-proof.sh` shows both against the real binaries.
+
+### External ingest, which believes a header only because of who sent it
+
+The external receiver (`otlp.external`, [external-ingest.md](external-ingest.md))
+files data under an identity the route verified and the collector merely
+copies. Everything below is a shape where the copy would be of something
+the sender chose.
+
+| Refusal | The failure it prevents |
+|---|---|
+| `otlp.external.headers` empty | A receiver with no identity source stores every record anonymous, under the static namespace, and nothing says whose it was. |
+| A header or static attribute writing `k8s.*`, `kubernetes.*`, `telemetry.source` or `deployment.environment.name`; one attribute written twice | The scoping key, the source marker and the tier are the chart's own stamps; a mapping onto them would let the route — or a misconfigured one — file data under another workload. |
+| `otlp.external.httpPort` equal to an in-cluster port, or 8888 | The in-cluster receivers read no headers; one port serving both would make every in-cluster sender's identity whatever header it set itself. |
+| `otlp.external.networkPolicy.ingressFrom` empty | The headers are believed because of WHO can reach the port. A policy admitting nobody looks scoped and admits nobody; without the peer there is no second step in the chain. |
+
+### Probes, which ask an exporter rather than the agent
+
+| Refusal | The failure it prevents |
+|---|---|
+| `metrics.scrape.probes` without `blackboxExporter.enabled` | A `VMProbe` aimed at an exporter that does not exist: every probe is scraped-down from the first evaluation, which reads as every target being down. |
+| A probe naming a `module` that is not a key of `blackboxExporter.modules` | The exporter answers the unknown module with a failure, so `probe_success` is 0 for a target that is up. |
+| Two probes with one name | `probe` is the series identity; two targets under one name are one series with two values, and the store keeps an arbitrary one. |
 
 ### And the rest
 
@@ -1867,10 +1890,10 @@ whenever the receiver is on: only the holder reads.
 
 ## The refusals: `observability-rum`
 
-Thirty-four, each with a fixture under `tests/invalid/observability-rum/`. The
-chart is a **public write endpoint**: anyone on the internet can post to it, so
-the refusals are about what bounds that, not about convenience. The design,
-and the whole of "what bounds a public write endpoint", is
+Each with a fixture under `tests/invalid/observability-rum/`. The chart is a
+**public write endpoint**: anyone on the internet can post to it, so the
+refusals are about what bounds that, not about convenience. The design, and
+the whole of "what bounds a public write endpoint", is
 [frontend.md](frontend.md).
 
 | Refused | The failure it prevents |
@@ -1920,6 +1943,24 @@ are a short fixed list (cluster, namespace, `service.name`); one value per
 error there would mint a stream per error and take the store with it, the
 failure the emitters were built around. `tests/observability_rum_test.go`
 fails if any `error.*` attribute is ever written as a resource attribute.
+
+## The refusals of the other charts
+
+Each of these has its table on its own design page, and a fixture per
+row under `tests/invalid/<chart>/`:
+
+- `alert-ingress` — an open subscription endpoint, a mapping with no
+  name or severity, a heartbeat nobody publishes, an egress rule with no
+  peer: [alert-ingress.md](alert-ingress.md#refusals).
+- `observability-dashboards` — a datasource nobody can point at, a
+  dashboard failing the lint, an extra dashboard with no folder, a home
+  page that is not shipped: [dashboards.md](dashboards.md#refusals).
+- `observability-grafana` — the sidecar interval that never updates, two
+  default stores, a renamed datasource that crash-loops, a workload
+  audience shared with a human client: [grafana.md](grafana.md#refusals).
+- `observability-mcp` — a connector with no issuer, no proxy image, no
+  outbound credential, a bundle for an http target, a route that attaches
+  nowhere: [mcp.md](mcp.md#refusals).
 
 ## The Enterprise boundary
 

@@ -55,18 +55,21 @@ global:
         logs: true                             # default true
         traces: {enabled: true}                # default true; bearerEnv optional
     renamedDatasources: []                     # old names, see below
+    correlate: true                            # logs ↔ traces links, see below
     oauth:
       name: SSO
       issuer: https://issuer.example.org       # /authorize /token /userinfo derive from it
       clientId: grafana
       clientSecretRef: {name: grafana-client, key: client-secret}
       roleAttributePath: "contains(groups[*], 'example:admin') && 'Admin' || 'Editor'"
-      scopes: "openid profile email groups offline_access"
+      groupsAttributePath: groups              # default
+      scopes: "openid profile email groups offline_access"   # default
+      usePkce: true                            # default
       sessionMaxLifetime: 24h
     database:
       host: postgres.example.org:5432
       name: grafana
-      sslMode: verify-full
+      sslMode: verify-full                     # disable | require | verify-ca | verify-full
       caFile: /etc/ssl/private-ca/ca.crt
       secretRef: {name: grafana-pg-app, usernameKey: username, passwordKey: password}
     secretKeyRef: {name: grafana-secret-key, key: secret_key}
@@ -265,6 +268,7 @@ Set `correlate: false` for plain datasources.
 | Condition | Why |
 |---|---|
 | `grafana.sidecar.dashboards.provider.updateIntervalSeconds` of 10 or less | dashboards never update |
+| no `stores`; a store with no `name` or no `url` | a Grafana with nothing to read |
 | no `default` store, or more than one | the datasource variable has no starting point |
 | a datasource uid produced twice | the database refuses the second row, pods crash-loop |
 | a `renamedDatasources` entry equal to a current datasource name | deleted and recreated on every start |

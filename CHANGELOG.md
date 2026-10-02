@@ -6,6 +6,22 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **Docs: the architecture diagrams and pages match the current charts.**
+  No render moves. docs/target-state.md draws the whole estate as one
+  Mermaid diagram (every emitter, the external and browser receivers, the
+  store pair, Alertmanager, karma, alert-ingress, the readers, the status
+  box) and the pages it links to each carry a focused one: the HA pair's
+  reads and writes, the external-ingest trust boundary, the browser path
+  through Alloy and `smctl serve`, the status box's pull, the router, the
+  MCP pod. Stale "not yet released" and "designed" markers are gone; the
+  README's status column, docs/reference.md (`notifications.mode`,
+  `metricsSelfScrape`, `nodeExporter`, `metrics.scrape.nodeLabels`,
+  `groups.probes.absentFor`, the dashboards chart's own values, the
+  operator's `env`, the published artifacts), docs/alert-ingress.md's
+  refusals, docs/dashboards.md's folders and set, docs/notifications.md's
+  Alertmanager pair and self-alert list, docs/safety.md's emitter refusals
+  and docs/adoption.md's upgrade steps now say what the charts do. Links
+  to the retired doctrine anchors are fixed.
 - **`rulecheck`: no more `text file busy` when the rule tools run in
   parallel.** Parallel callers (several tests in one process) could fork a
   child while another goroutine still had the freshly written parser binary

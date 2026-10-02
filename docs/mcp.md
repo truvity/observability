@@ -20,22 +20,31 @@ estate with two stores and one Grafana sets two `stores` entries and
 
 A store's pod:
 
-```
- client ─► gateway ─► proxy :8080 ─► aggregator 127.0.0.1:8081 ─► metrics  127.0.0.1:8082  ┐
-                        │  inbound                 (tools only)  ─► logs     127.0.0.1:8083  ├─ the stock servers
-                        │  validates the                         ─► traces   127.0.0.1:8084  ┘
-                        │  caller's token,                                   │
-                        │  strips it                                         │ call the store on 127.0.0.1:8429
-                        ▼                                                    ▼
-                  issuer (JWKS)             proxy (outbound side) ─► the store's vmauth
-                                            injects a token it exchanged for the pod's own
-                                            ServiceAccount token
+```mermaid
+flowchart LR
+  client["MCP client<br/>(an agent, with its access token)"] --> gwy["the gateway<br/>(HTTPRoute, optional here)"]
+  gwy --> proxy
+  subgraph pod["one connector pod: observability-mcp-&lt;store&gt;"]
+    direction LR
+    proxy["resource-proxy :8080<br/>inbound: validate iss, aud, signature;<br/>serve RFC 9728 metadata; strip the token"]
+    agg["mcp-aggregator 127.0.0.1:8081<br/>tools only, allowlisted, prefixed;<br/>stateless; one upstream session per call"]
+    vm["mcp-victoriametrics 127.0.0.1:8082"]
+    vl["mcp-victorialogs 127.0.0.1:8083"]
+    vt["mcp-victoriatraces 127.0.0.1:8084"]
+    outb["proxy, outbound side 127.0.0.1:8429<br/>replaces Authorization with a token it<br/>exchanged (RFC 8693) for the pod's own<br/>projected ServiceAccount token"]
+    proxy --> agg --> vm & vl & vt
+    vm & vl & vt -- "no credential" --> outb
+  end
+  proxy -. JWKS .-> issuer["the issuer"]
+  outb -. "token exchange" .-> issuer
+  outb -- "a machine principal's<br/>read routes" --> vmauth["the store's vmauth"]
 ```
 
 A Grafana pod is the proxy and the stock `mcp-grafana`, with no aggregator:
 
-```
- client ─► gateway ─► proxy :8080 ─► mcp-grafana 127.0.0.1:8081 ─► proxy (outbound side) ─► Grafana
+```mermaid
+flowchart LR
+  client["MCP client"] --> proxy["resource-proxy :8080"] --> mg["mcp-grafana 127.0.0.1:8081<br/>search + dashboard tools, --disable-write"] --> outb["proxy, outbound side"] --> grafana["Grafana<br/>[auth.jwt], a fixed Viewer"]
 ```
 
 - **proxy** is `resource-proxy` from truvity/access-roster, the pod's only
@@ -78,8 +87,12 @@ collide.
 | `proxy.image.tag` | `""` | **No default.** Required: the image is another repository's release. `proxy.image.digest` pins it further. |
 | `aggregator.image.tag` | `""` | Empty is this chart's own `appVersion`: one release builds both. |
 | `aggregator.callTimeout` | `60s` | How long one tool call may run before the caller gets an error naming the backend. |
-| `upstreams.<server>.image` | pinned tag and digest | See below. |
-| `upstreams.<server>.tools` | the verified allowlist | Replace to narrow (a list replaces, it does not merge). |
+| `upstreams.<server>.image` | pinned tag and digest: `mcp-victoriametrics` v1.20.2, `mcp-victorialogs` v1.9.0, `mcp-victoriatraces` v1.5.0, `mcp-grafana` 1.6.3 | See below; `values.yaml` carries the digests. |
+| `upstreams.<server>.tools` | the verified allowlist | Replace to narrow (a list replaces, it does not merge). `prefix`, `entrypointPath`, `disabledTools`, `resources` and `runAsUser` sit beside it. |
+| `serviceAccountToken.{audience,expirationSeconds}` | `access-issuer`, `600` | The projected token the proxy exchanges. |
+| `networkPolicy.enabled` | `true` | Renders the policy below; `ingressFrom` and the `egress.*` peers are required while it is on; `egress.dns` narrows the DNS rule (see "Network"). |
+| `podDisruptionBudget.minAvailable` | `1` | |
+| `proxy.{image.repository,runAsUser,resources}`, `aggregator.{image.repository,runAsUser,resources}` | see `values.yaml` | The pod shape; `grafana.scope` (`openid`) and `grafana.replicaCount` (1) likewise. |
 | `stores[]` | `[]` | One connector each; see below. |
 | `grafana.*` | disabled | The Grafana connector; see below. |
 | `networkPolicy.ingressFrom` | `[]` | The gateway. Required while `networkPolicy.enabled`. |
@@ -461,7 +474,7 @@ only with a `caBundle`, `OUTBOUND_CA_FILE`.
 | a connector with `resourceURL` empty, or the same as another's | No client could get a token with the right `aud`; one URL is one resource. |
 | a connector with `outbound.{tokenEndpoint,clientId,audience}` empty | The servers would call with no credential. |
 | a store with no `vmauth.url`, or one with a path | Nothing to read; a path would be dropped. |
-| `caBundle` with both `configMap` and `secret`, with neither, or on an http URL | One source only; a bundle for an http target would silently do nothing. |
+| `caBundle` with both `configMap` and `secret`, with neither (no fixture yet), or on an http URL | One source only; a bundle for an http target would silently do nothing. |
 | `podPort` outside 1-65535 | Not a port. |
 | a store with every signal off; a cluster that is not a plain label value | Nothing to expose; the list only fills the instructions. |
 | an allowlist that is empty or would produce a tool name over 64 characters | The aggregator refuses it at start; here it is refused at render. |

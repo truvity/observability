@@ -5,16 +5,16 @@ browser's errors, web vitals and traces into rows in the log and trace stores
 this repository already runs, and builds a Sentry-shaped *issues* view on top
 of the log store instead of adding an error tracker.
 
-```
- browser                      cluster
- ───────                      ──────────────────────────────────────────────────────
- Faro Web SDK  ── POST ──▶  gateway route  ──▶  Alloy `faro.receiver` (one per app)
- (anonymous                 (the estate's)         │ stamps the app, normalises, fingerprints
-  session id)                                       ▼
-                                          OTLP gateway  ──▶  VictoriaLogs / VictoriaTraces
-                                          (the estate's)            │
-                                                                    ├── vmalert (logs): new issue, regression, error rate
-                                                                    └── Grafana: Frontend Issues, Frontend Overview
+```mermaid
+flowchart LR
+  sdk["browser: Faro Web SDK<br/>anonymous session id, no user block"] -- "POST https://shop.example/faro/collect<br/>x-api-key (public, rotatable)" --> route["the app's own route<br/>(the estate's gateway)<br/>body limit + rate limit HERE"]
+  route -- "rewrite to /collect" --> rx["Alloy faro.receiver, one per app<br/>origin allow-list · global rate limit<br/>stamp app · scrub · fingerprint · symbolicate"]
+  rx -- "OTLP/HTTP, nothing else" --> gw["the OTLP gateway<br/>(charts/observability-emitters)"]
+  gw --> vl["log store"] & vt["trace store"]
+  smctl["smctl serve<br/>(optional; ingress from Alloy only)"] -. "GET /app/release/x.js.map" .-> rx
+  reg["OCI registry: GHCR or ECR<br/>maps pushed by `smctl push`<br/>at release time"] -. pull .-> smctl
+  vl -. "LogsQL rules: new issue,<br/>regression, error rate" .-> vmalert["vmalert (logs)"]
+  vl -. "Frontend Issues,<br/>Frontend Overview" .-> grafana["Grafana"]
 ```
 
 The chart writes to **the OTLP gateway and nothing else**. It has no store
@@ -230,10 +230,11 @@ front of the route**. Without them the memory limit is the only guard.
 ## Source maps
 
 Alloy symbolicates from maps it can read by path or by URL, and
-`sourcemaps.download` (its default) would make it fetch a map from a URL the
-*browser* names, which means a server-side request an anonymous poster steers
-and maps served publicly from the app. `download: true` is **refused**. Maps
-come from **one** of two places; setting both is refused too.
+`sourcemaps.download` (Alloy's own default; `false` here) would make it fetch a
+map from a URL the *browser* names, which means a server-side request an
+anonymous poster steers and maps served publicly from the app. `download: true`
+is **refused**. Maps come from **one** of two places; setting both is refused
+too.
 
 - **`sourcemaps.directory`** (default `/sourcemaps`). A directory inside the
   Alloy pod, one subdirectory per app:

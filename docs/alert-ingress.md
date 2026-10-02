@@ -1,7 +1,20 @@
 # alert-ingress: events born outside the cluster
 
-Design for `cmd/alert-ingress` and `charts/alert-ingress`. Not yet
-released; this page is the contract.
+Design for `cmd/alert-ingress` and `charts/alert-ingress`: a small HTTP
+service that turns a cloud provider's signed notifications into alerts in
+the same Alertmanager everything else reaches a person through. The image
+is `ghcr.io/truvity/observability/alert-ingress`, built by this
+repository's release at the chart's own tag; `image.tag` left empty pulls
+the matching build.
+
+```mermaid
+flowchart LR
+  cloud["the cloud: a threat finding,<br/>a root sign-in, a key use,<br/>a budget, the heartbeat"] -- "SNS: signed envelope" --> edge["the estate's public route<br/>POST / only, rate-limited"]
+  edge --> ai["alert-ingress<br/>verify signature → allow-list the topic<br/>→ match a mapping → render the alert"]
+  ai -- "POST /api/v2/alerts<br/>(the only in-cluster egress)" --> am["Alertmanager"]
+  ai -. "GET the signing certificate;<br/>GET the confirmation URL" .-> sns["the provider's signing host"]
+  vmalert["vmalert"] -. "alert_ingress_*_total<br/>heartbeat and rejected rules" .-> ai
+```
 
 ## The problem it closes
 
@@ -31,6 +44,13 @@ It knows nothing about the estate.
 # charts/alert-ingress values
 alertmanager:
   url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+# The NetworkPolicy is on by default and names Alertmanager's pods as the
+# one in-cluster egress; it is refused empty while the policy is on.
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels: {app.kubernetes.io/name: vmalertmanager}
 
 # Topics this receiver will confirm a subscription from. A public
 # endpoint that confirms anything can be subscribed to anyone's topic
@@ -160,15 +180,35 @@ is not the provider is posting to the public route, or a real topic is being
 turned away. Each group is switched off with `rules.heartbeat.enabled` and
 `rules.rejectedMessages.enabled`.
 
+## Values
+
+The whole surface, beside the example above: `image.{repository,tag,pullPolicy}`
+(the tag defaults to the chart's own version), `replicaCount` (2),
+`resources`, `service.port` (8080) and `service.metricsPort` (0: one port;
+set it to serve `/healthz` and `/metrics` on a second port the Service does
+not expose), `selfMonitor` (true: a `PodMonitor` on the metrics port),
+`alertmanager.url` (required), `topics`, `mappings`, `heartbeat.{match,interval}`,
+`rules.heartbeat.enabled` and `rules.rejectedMessages.{enabled,ratePerSecond,window,for}`,
+`resolveAfter` (1h), `networkPolicy.{enabled,alertmanagerPeer,egress.dns,egress.allowCloudHTTPS}`.
+A `match` value of `"*"` tests only that the path is present.
+
 ## Refusals
+
+Each has a fixture under `tests/invalid/alert-ingress/`.
 
 | Shape | Why |
 |---|---|
 | `topics` empty | an open subscription endpoint |
-| `mappings` empty | everything unmapped — legal, but a consumer who wrote no mapping did not mean it |
-| a mapping with no `severity` | routes to the default tier by accident |
-| `heartbeat` unset | the path can die unnoticed |
-| a `PodMonitor` not rendered (`selfMonitor: false`) | the counters exist and nobody scrapes them |
+| a mapping with no `alert.alertname` or no `severity` | an alert with no name, or one that routes to the default tier by accident |
+| `heartbeat.match` empty | the path can die unnoticed |
+| `networkPolicy.alertmanagerPeer` empty while `networkPolicy.enabled` | an egress rule with no peer admits nothing, and the render looks scoped |
+| `service.metricsPort` equal to `service.port` | the second port would not be a second port |
+| `alertmanager.url` or `image.repository` empty; an unknown key (schema) | nowhere to post, nothing to pull, a setting that applies to nothing |
+
+Deliberately **not** refused: an empty `mappings` (every message becomes
+`CloudEventUnmapped`, which is the honest shape for an install that has
+not written its first mapping yet) and `selfMonitor: false` (an estate
+that scrapes some other way; the counters still exist).
 
 ## Security properties, stated
 
@@ -210,7 +250,7 @@ turned away. Each group is switched off with `rules.heartbeat.enabled` and
   verbatim, such as the resolver's service CIDR as an `ipBlock`.
 - It runs as a non-root static binary from `scratch`.
 
-## Proof, before release
+## Proof
 
 - a unit fixture per source shape (finding, sign-in, budget, alarm state
   change, heartbeat), each asserting the rendered alert;
@@ -218,8 +258,10 @@ turned away. Each group is switched off with `rules.heartbeat.enabled` and
   is rejected, a message with a certificate URL outside the signing
   domain is rejected;
 - the unmapped path produces `CloudEventUnmapped`;
-- golden render; fixtures for each refusal.
+- golden renders under `tests/golden/alert-ingress/`; a fixture for each
+  refusal; `just rulecheck` parses the two rules on the real
+  VictoriaMetrics binary.
 
-After release, in a consumer: a sample finding and a real sign-in reach
-the channel through the router; suspending the scheduled heartbeat fires
-the deadman rule.
+In a consumer: a sample finding and a real sign-in reach the channel
+through the router; suspending the scheduled heartbeat fires the deadman
+rule.

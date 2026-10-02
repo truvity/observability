@@ -11,8 +11,8 @@ everything still looks green.
 |---|---|---|
 | `charts/observability-crds` | The CustomResourceDefinitions the rest of the stack needs, owned as their own release rather than as a side effect of whichever chart installed them first: the VictoriaMetrics operator's, and the four Prometheus Operator scrape kinds every component authors its scrape objects in. Applied before the controllers, never pruned. | released |
 | `charts/platform-alerts` | The rules that fire when something has stopped working silently: a CronJob that is no longer scheduled, a store whose write path has died, a volume that was never mounted, a store approaching its own read-only limit. Every rule carries the incident that earned it and a negative fixture that must fail. | released |
-| `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces behind an authorising proxy that scopes every query to the clusters and namespaces the caller may read; two vmalerts and Alertmanager with a deadman that leaves the cluster; network policies and backups; optionally Grafana, forwarding the signed-in user's identity. Single-replica today — `ha` is accepted and the zone-redundant behaviour follows. | released |
-| `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent, an OpenTelemetry gateway and an optional kube-state-metrics and node-exporter, each stamping the cluster, the namespace and the environment tier under OpenTelemetry's names — from what the collector can see, never from what the application said — and each replicating to every destination with its own on-disk buffer. | released |
+| `charts/observability-stack` | One install of the store: VictoriaMetrics, VictoriaLogs and VictoriaTraces behind an authorising proxy that scopes every query to the clusters and namespaces the caller may read; two vmalerts and Alertmanager (one, or a pair) with a deadman that leaves the cluster; karma as the console that silences in a person's name; network policies and backups; optionally Grafana, forwarding the signed-in user's identity. `ha` makes it half of a zone-redundant pair: a stores-only `mode: replica` release beside it, reads over both, a vmalert per replica — see [docs/high-availability.md](docs/high-availability.md). | released |
+| `charts/observability-emitters` | Per-cluster collection: a metrics agent, a log agent, an OpenTelemetry gateway and an optional kube-state-metrics, node-exporter and blackbox exporter, each stamping the cluster, the namespace and the environment tier under OpenTelemetry's names — from what the collector can see, never from what the application said — and each replicating to every destination (both halves of a pair) with its own on-disk buffer and credential. The gateway's optional external receiver files telemetry from outside the cluster under an identity a route verified — see [docs/external-ingest.md](docs/external-ingest.md). | released |
 | `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. Refuses a name that could widen a grant rather than escaping it. | released |
 | `notifications:` in `observability-stack` | The one router: receiver kinds and how their secret is mounted, the routing shape by cluster × namespace × severity, the message template, and the refusals that retire the `blackhole` default. The stack's own self-alerts are a separate release. | released |
 | `charts/alert-ingress` + `cmd/alert-ingress` | Events born outside the cluster — a threat finding, a root sign-in, a key use, a budget — into the same router: signed notifications from an allow-listed topic, mapped by values, never dropped. | released |
@@ -20,7 +20,7 @@ everything still looks green.
 | `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | released |
 | `charts/observability-grafana` | One Grafana as the read UI over several stores: a datasource set per store, OIDC sign-in, a database of its own, dashboards from git only. See [docs/grafana.md](docs/grafana.md). | released |
 | `charts/observability-mcp` + `cmd/mcp-aggregator` | Read-only Model Context Protocol connectors so an agent can read the estate: one per Victoria store (metrics, logs and traces tools in one server, prefixed, allowlisted) and one for Grafana's dashboards. Each is the stock server(s) on loopback behind a proxy that validates the caller's access token and holds the only credential the store sees. See [docs/mcp.md](docs/mcp.md). | released |
-| `charts/observability-rum` | Browser telemetry for an estate's web apps: Grafana Faro receivers on a self-hosted Alloy, one per app and stamping its own identity, writing to the OTLP gateway with an error fingerprint on every exception so "issues" are built on the log store, with alerts for new and regressed issues and two dashboards. See [docs/frontend.md](docs/frontend.md). | unreleased |
+| `charts/observability-rum` | Browser telemetry for an estate's web apps: Grafana Faro receivers on a self-hosted Alloy, one per app and stamping its own identity, writing to the OTLP gateway with an error fingerprint on every exception so "issues" are built on the log store, with alerts for new and regressed issues, two dashboards, and source maps served from an OCI registry by `smctl serve`. See [docs/frontend.md](docs/frontend.md). | released |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module
@@ -73,9 +73,11 @@ defaults. Query-time isolation over telemetry an application labelled
 itself is not isolation.
 
 Everything else follows from those two. Redundancy is the writer's job
-because no store here replicates across a zone: two independent instances,
-collectors sending to both with per-destination buffers, the proxy in
-front of reads. High availability is a values flag, not a different
+because no store here replicates across a zone: two independent releases
+of the stores in two zones, every collector sending to both with a buffer
+and a credential per destination, the proxy reading its own store first
+and the peer on failure. High availability is a values flag
+(`ha.enabled`, `mode: replica`, `remote.replicas`), not a different
 architecture.
 
 And one router. Every alert an install evaluates and every event the
@@ -83,7 +85,9 @@ cloud publishes about it reach a person through the same Alertmanager,
 routed by cluster × namespace × severity; the only things outside that
 router are the ones that must notice the router itself has died — a
 watcher on a box outside every cluster, and the edge provider watching
-the box. [docs/target-state.md](docs/target-state.md) draws it.
+the box. [docs/target-state.md](docs/target-state.md#how-the-pieces-connect)
+draws it: every emitter, both halves of a pair, the readers, and the
+three parties that watch each other.
 
 ## Install and a worked example
 
@@ -223,11 +227,14 @@ charts take as Secret names, delivered through External Secrets.
   [docs/alert-ingress.md](docs/alert-ingress.md),
   [docs/statusbox.md](docs/statusbox.md),
   [docs/dashboards.md](docs/dashboards.md),
-  [docs/frontend.md](docs/frontend.md) — one design page per
-  piece: the values it takes, what it renders, what it refuses, how it
-  is proven.
+  [docs/grafana.md](docs/grafana.md),
+  [docs/mcp.md](docs/mcp.md),
+  [docs/frontend.md](docs/frontend.md),
+  [docs/kube-state-metrics.md](docs/kube-state-metrics.md) — one design
+  page per piece: the values it takes, what it renders, what it refuses,
+  how it is proven.
 - [docs/external-ingest.md](docs/external-ingest.md) — OTLP from outside the
-  cluster (an AWS Lambda): identity from the gateway's headers, never the payload
+  cluster (an AWS Lambda): identity from the gateway's headers, never the payload.
 - [docs/emitting.md](docs/emitting.md) — for whoever wires a service's
   SDK: the one address, which attributes are theirs and which are taken
   from them, and how to ask the store rather than trust a 200.
@@ -262,13 +269,14 @@ unmodified upstream chart as an archive, pinned, with the Apache-2.0 text in
 
 ## Status
 
-Used in production by its maintainers.
+Used in production by its maintainers: every chart and package in the
+table above is released and in use, the store pair included.
 
 ## Development
 
 ```console
 devbox shell
-just check      # lint, golden renders, leak canary
+just check      # lint, golden renders, leak canary, dashboard lint, rule check
 just golden     # regenerate the golden renders — review the diff
 just crds       # re-fetch observability-crds from its pinned upstreams
 ```

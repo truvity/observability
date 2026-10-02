@@ -98,6 +98,14 @@ the headers the route sets, not from the payload; see
 [external-ingest.md](external-ingest.md). Do not point an in-cluster
 workload at it.
 
+## From a browser
+
+A browser is not a service: it holds no secret and cannot be resolved to a
+pod. Browser apps send through the Grafana Faro SDK to a receiver on the
+app's own host (`charts/observability-rum`), which stamps the app and
+forwards to the same gateway; see [frontend.md](frontend.md). Never point
+a page at the gateway's ports.
+
 ## Verifying
 
 **A 200 from the exporter means the collector queued your batch. It is

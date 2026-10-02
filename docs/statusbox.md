@@ -1,8 +1,20 @@
 # The status box: the watcher outside
 
 Design for `pkg/statusbox` (Pulumi, Go), the `setup.sh` release asset,
-and the templates they carry. Not yet released; this page is the
-contract.
+and the templates they carry.
+
+```mermaid
+flowchart LR
+  subgraph box["the status box: one VM, outside every cluster, no inbound port"]
+    direction TB
+    ts["tailscaled: joins the private network;<br/>serves the private page on :80"]
+    gatus["gatus-ops: ONE private page<br/>probes · company components · the deadman group"]
+  end
+  gatus -. "GET vmalert /api/v1/alerts?match[]=…<br/>GET Alertmanager /api/v2/alerts<br/>bearer: tenancy.alertReaders" .-> vmauth["the install's vmauth<br/>(over the private network)"]
+  gatus -. "HTTPS, DNS, certificate expiry" .-> hosts["the estate's public hostnames"]
+  gatus -- "deadman: two failures in a row,<br/>then RESOLVED on recovery" --> chat["a chat API<br/>(its own bot token)"]
+  edge["the edge provider's health check"] -. "GET /health" .-> gatus
+```
 
 ## The problem it closes
 
@@ -79,6 +91,9 @@ provider (`DeadmanChecks.Post`, a Gatus `custom` provider that POSTs
 `{"channel","text"}` with `Authorization: Bearer <bot token>` to a chat
 API such as Slack's `chat.postMessage`). `Providers` is not shared with
 them: the company signals keep it and never reach the deadman channel.
+The post is `<group>/<name> - <state text>`, and the two states read
+differently (`placeholders.ALERT_TRIGGERED_OR_RESOLVED`): a recovery says
+"RESOLVED: the check is passing again", never "failed twice in a row".
 
 - `deadman`: the Watchdog is present in vmalert (`/api/v1/alerts`);
 - `alertmanager-watchdog` (`AlertmanagerWatchdog`): the Watchdog is ACTIVE
@@ -444,7 +459,7 @@ Two consequences, documented so nobody rediscovers them:
 | Job | How |
 |---|---|
 | deadman, internal → status | **pulled**, both — see "internal → status, pulled" below. Gatus on the box reads the install's own alerting state directly; nothing pushes into the box at all today. |
-| the deadman's alert | leaves Gatus on **two** providers — the chat channel, and the box's own read of the alerting pipeline, which does not depend on it |
+| the deadman's alert | leaves Gatus on the deadman group's own chat provider (`Catalogue.Deadman`), which depends on nothing in the estate; the company signals' `Providers` never reach that channel |
 | external probes | ordinary Gatus `endpoints:`: HTTP status, body conditions, `[CERTIFICATE_EXPIRATION]`, DNS, from outside the estate's accounts |
 | the second vantage and the watcher's watcher | the edge provider's health checks: multi-region against the same hostnames, and one against the box's own `/health` |
 | a new hostname | a line in the estate's catalogue; the estate's renderer emits a probe and a component; the box is replaced |
@@ -511,7 +526,7 @@ infrastructure-as-code path, and it collapses the edge and the watcher
 into one party); a UI-driven uptime tool (fails config-as-code at the
 door); Gatus replicas with a shared database (coordinates nothing).
 
-## Proof, before release
+## Proof
 
 - golden render of the cloud-init for a two-instance fixture;
 - a unit test that the firewall admits exactly one public port —
@@ -530,11 +545,12 @@ door); Gatus replicas with a shared database (coordinates nothing).
   `twinproduction/gatus:v5.37.0`, `/health` answers, and every rendered
   endpoint is live in Gatus's own API.
 
-After release, in a consumer: the public pages render behind the edge;
-the private page answers only over the private network; stopping the box
-fires the edge health check; scaling the install's metrics vmalert to
-zero (or blocking the box's read of it) fires the deadman on both
-providers within its own probe interval; a config change replaces the
+In a consumer: the private page answers only over the private network
+(and, once a company page exists, its public page renders behind the
+edge); stopping the box fires the edge health check; scaling the
+install's metrics vmalert to zero (or blocking the box's read of it)
+fires the deadman group on its chat channel after two probe intervals,
+and posts RESOLVED when it comes back; a config change replaces the
 instance — the old box stopped briefly to free the disk, the new box
 already booted before the disk reaches it — and the disk comes back
 with its history.

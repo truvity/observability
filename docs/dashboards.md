@@ -1,7 +1,7 @@
 # Dashboards
 
 Design for `charts/observability-dashboards` and the lint every dashboard
-passes. Not yet released; this page is the contract.
+passes (`just dashboard-lint`, `cmd/dashboardlint`).
 
 ## The problem it closes
 
@@ -36,15 +36,30 @@ datasources:
   metrics: victoriametrics
   logs:    victorialogs
   traces:  victoriatraces
-folders:
-  infrastructure: Infrastructure       # keyed by cluster
+folders:                               # one Grafana folder per group
+  fleet:          Fleet                # the home page
+  kubernetes:     Kubernetes           # the views: cluster, namespace, pod, nodes
+  infrastructure: Infrastructure       # node and kubelet, keyed by cluster
   stores:         Observability        # the stack's own health
-  platform:       Platform             # ArgoCD, cert-manager, CloudNativePG, NATS, Envoy Gateway, Kargo
+  platform:       Platform             # ArgoCD, cert-manager, CloudNativePG, NATS, Envoy Gateway, Kargo, Keycloak, OpenBAO, External Secrets
+  frontend:       Frontend             # browser telemetry (observability-rum)
+home: fleet-overview                   # the dashboard Grafana opens on
 dashboards:
   node-exporter-full: {enabled: true}
   kubelet:            {enabled: true}
   # …one key per shipped dashboard; `enabled: false` drops it from the render
+extraDashboards: []                    # the estate's own, each with a folder
 ```
+
+The shipped set, by folder: `fleet-overview` (fleet); `k8s-views-global`,
+`k8s-views-namespaces`, `k8s-views-pods`, `k8s-views-nodes` (kubernetes);
+`node-exporter-full`, `kubelet` (infrastructure); `victoriametrics-single`,
+`victoriametrics-vmagent`, `victoriametrics-vmalert`,
+`victoriametrics-operator`, `victorialogs-single`, `victorialogs-vlagent`,
+`victoriatraces-single`, `alertmanager` (stores); the platform components
+below; `frontend-issues`, `frontend-overview` (frontend). Every key and
+its default is in `values.yaml`; [reference.md](reference.md#chartsobservability-dashboards)
+lists the ones that are off because they read an optional source.
 
 ## The contract every dashboard passes
 
@@ -260,15 +275,22 @@ additive and can follow.
 
 | Shape | Why |
 |---|---|
-| a datasource UID missing for a store that is enabled | dashboards for a store nobody can point at |
+| a datasource UID missing for a store that is enabled (`datasources.logs`/`.traces` while a frontend dashboard is on) | dashboards for a store nobody can point at |
 | a dashboard failing the lint | shipped into the render is shipped into every consumer |
 | `extraDashboards` entry with no folder | lands at the root beside the shipped set |
+| `home` naming a dashboard that is not shipped, or one that is off | Grafana's home page opens on a file the sidecar never delivers |
 
-## Proof, before release
+Each has a fixture under `tests/invalid/observability-dashboards/`.
+
+## Proof
 
 - the lint passes on every shipped dashboard, and fails on fixtures with
   a literal datasource, a missing cluster variable, a title without
   `$cluster`;
-- golden render for the default set and for a set with two extras;
+- `tests/dashboard_queries_test.go` parses every query on the pinned
+  VictoriaMetrics and holds it to `hack/dashboards/available-metrics.yaml`
+  (`just dashboard-queries` makes a missing Docker a failure);
+- golden render for the default set and for a set with every dashboard
+  on (`everything`);
 - in a consumer: the store-health dashboard shows an install's write
   path, and switching `datasource` switches the cluster list.

@@ -1,24 +1,40 @@
 # Notifications: the one router
 
-Design for the `notifications:` block of `charts/observability-stack`.
-Not yet released; this page is the contract the implementation is held
-to.
+Design for the `notifications:` block of `charts/observability-stack`:
+the one router every alert an install evaluates, and every event the
+cloud publishes about it, reaches a person through.
+
+```mermaid
+flowchart LR
+  vma["vmalert (metrics)"] --> am
+  vml["vmalert (logs)"] --> am
+  peer["the -peer twins<br/>(ha.enabled only)"] -.-> am
+  ai["alert-ingress"] --> am
+  am["Alertmanager: one, or a pair<br/>(a mesh on 9094; every vmalert<br/>notifies every replica)"]
+  am -- "route: cluster × namespace × severity" --> slack["Slack: one app per workspace,<br/>one receiver per channel"]
+  am --> tg["Telegram"]
+  am --> wh["webhooks (a status page)"]
+  am -- "Watchdog, every repeatInterval" --> dead["the deadman receiver<br/>(pushed; optional)"]
+  karma["karma: the console that<br/>silences in a person's name"] -. "reads; proxies silences" .-> am
+  box["the status box"] -. "GET /api/v2/alerts:<br/>is the Watchdog active?" .-> am
+```
 
 ## The problem it closes
 
-The chart ships with Alertmanager routing to a receiver named
-`blackhole`. That is honest — the chart cannot know a channel — but it
-means a consumer who installs the stack, the collectors and the rules
-has a system that evaluates every rule and tells nobody. Nothing about
-it is unhealthy. It is the most expensive shape a monitoring system can
+The chart used to ship with Alertmanager routing to a receiver named
+`blackhole`. That was honest — the chart cannot know a channel — but it
+meant a consumer who installed the stack, the collectors and the rules
+had a system that evaluated every rule and told nobody. Nothing about
+it was unhealthy. It is the most expensive shape a monitoring system can
 have, because it looks exactly like a quiet estate.
 
-`alertmanager.config` today is a free-form object the consumer fills
-with Alertmanager's own syntax. That has three costs: the chart cannot
-refuse the blackhole shape, the consumer writes a routing tree by hand
-that every other consumer writes again, and the message template —
-which is where the cluster name, the runbook link and the Grafana link
-live — is copied rather than shipped.
+`alertmanager.config` was a free-form object the consumer filled with
+Alertmanager's own syntax. That had three costs: the chart could not
+refuse the blackhole shape, the consumer wrote a routing tree by hand
+that every other consumer wrote again, and the message template — which
+is where the cluster name, the runbook link and the Grafana link live —
+was copied rather than shipped. `notifications` replaced it; the chart
+refuses `alertmanager.enabled` with none of it configured.
 
 ## The shape
 
@@ -642,6 +658,34 @@ to get it, and the render it produces has no Alertmanager to look
 healthy in the first place — the absence is the whole visible fact,
 not a receiver quietly doing nothing behind a passing health check.
 
+## An Alertmanager pair
+
+`alertmanager.replicaCount: 2` (or more) is one mesh: the operator joins
+the replicas on 9094, and the chart renders what a pair needs to be safe
+to run rather than merely to exist:
+
+- a `PodDisruptionBudget` (`maxUnavailable: 1`), preferred anti-affinity
+  on `kubernetes.io/hostname` and a soft zone spread, each overridable
+  (`alertmanager.podDisruptionBudget`, `.affinity`,
+  `.topologySpreadConstraints`);
+- **every vmalert notifies every replica** — one `notifiers` entry per
+  pod through the operator's headless Service, as vmalert's own HA
+  guidance asks, instead of one load-balanced URL; the replicas
+  deduplicate through the mesh. A set `alertmanager.notifierUrl` still
+  wins;
+- `--cluster.reconnect-timeout` (`alertmanager.cluster.reconnectTimeout`,
+  default `5m`, a Go duration): a rescheduled replica comes back at a new
+  IP, and with Alertmanager's own 6h the survivor kept the old address as
+  a failed peer, so `alertmanager_cluster_failed_peers` stayed above 0 and
+  `AlertmanagerClusterFailedPeers` fired on a healthy mesh;
+- karma lists each replica as a server with the same `cluster` value, as
+  its documentation asks for an HA cluster; those names are reserved
+  against `karma.alertmanagers`.
+
+No NetworkPolicy selects the Alertmanager pods: the first policy that did
+would default-deny the mesh (9094 TCP and UDP) and vmalert's pushes. One
+replica renders none of the above, byte for byte as before.
+
 ## What stays the consumer's
 
 The channel names, the webhook, the route list, the external URL. And
@@ -651,9 +695,9 @@ look now, `warning` means a person should look today, `info` is for a
 dashboard — but a consumer's own rules carry whatever severity the
 consumer gives them.
 
-## Also in the same release: the vmalert settings that make routing true
+## The vmalert settings that make routing true
 
-Not values; changed defaults, because each has a wrong upstream default
+Not values; fixed defaults, because each has a wrong upstream default
 that fails in a way that looks like something else:
 
 - every vmalert carries `-remoteWrite.url` and `-remoteRead.url` to the
@@ -685,23 +729,29 @@ threshold's headroom, a negative fixture.
 | `ProxyAtConcurrencyLimit` | vmauth refusing requests |
 | `MetricStoreDiskNearGuard`, `LogStoreDiskNearGuard`, `TraceStoreDiskNearGuard` | free disk approaching the store's own minimum, one rule per store |
 | `MetricStoreSnapshotOlderThanWindow`, `LogStoreSnapshotOlderThanWindow`, `TraceStoreSnapshotOlderThanWindow` | the newest snapshot older than the backup schedule allows, one rule per store |
+| `SlackNotificationsFailing` | Alertmanager's own failed-delivery counter for Slack rising — routed to `slack.failureReceiver`, never to Slack ("When Slack itself fails", above); renders whenever a workspace is declared |
+| `StoreMemoryNearLimit` | a store container's working set above 80% of its memory limit for 15m (`selfAlerts.storeMemory`, either half of a pair) |
+| `MetricStoreReplicaDivergence`, `LogStoreReplicaDivergence`, `TraceStoreReplicaDivergence` | the two halves of a pair ingesting at rates that differ by more than a tolerance (`selfAlerts.divergence`, primary only; see [high-availability.md](high-availability.md#divergence)) |
 
-None of these can be written by a consumer, because each names a
-counter the chart controls; and none is optional, because each is a
-failure that reports itself nowhere else. Every rule that watches one
-specific store is named for that store — three stores exist, and a rule
-named just "Store..." does not say which one paged you.
+Every rule that watches one specific store is named for that store —
+three stores exist, and a rule named just "Store..." does not say which
+one paged you. Every metric name is a value with no default, because a
+name nobody confirmed against the store is a rule that never fires;
+[reference.md](reference.md#selfalerts) has each, and
+[safety.md](safety.md#the-self-alerts-nineteen-rules-and-what-a-live-install-did-to-eleven-of-the-original-twelve)
+has the measurement behind that rule.
 
-## Proof, before release
+## Proof
 
 - golden renders for a Slack-only install and a Slack + webhook +
   deadman install, a Telegram-only install and a Telegram + Slack +
-  webhook install;
+  webhook install, and an Alertmanager pair;
 - one fixture per refusal;
-- a rendered configuration passes `amtool check-config`;
+- `just rulecheck` parses every rendered rule, the self-alerts included,
+  on the real VictoriaMetrics binary;
 - the template renders against a fixture alert with every link
   resolving to a URL with no pod hostname in it.
 
-After release, in a consumer: a synthetic critical reaches the right
-channel within five minutes; a warning in a project's namespace reaches
-that project's channel; scaling Alertmanager to zero fires the far end.
+In a consumer: a synthetic critical reaches the right channel within
+five minutes; a warning in a project's namespace reaches that project's
+channel; scaling Alertmanager to zero fires the far end.

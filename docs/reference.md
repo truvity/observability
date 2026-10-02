@@ -1,6 +1,12 @@
 # Reference
 
-Every value, its default, and what it does.
+Every value, its default, and what it does, for the charts and the Go
+package whose surface is not already a table on their own design page.
+`charts/alert-ingress`, `charts/observability-grafana` and
+`charts/observability-mcp` are documented on [alert-ingress.md](alert-ingress.md),
+[grafana.md](grafana.md) and [mcp.md](mcp.md); every chart's `values.yaml`
+carries the same comments, and its `values.schema.json` refuses an
+unknown key.
 
 ## `charts/observability-crds`
 
@@ -116,9 +122,12 @@ Alerts: `StoreApproachingReadOnly`, one per qualifying store, labelled
 ### `groups.kargo`
 
 Off by default: not every estate runs Kargo. The series this group reads
-come from kube-state-metrics' own `customResourceState` feature,
-configured by the estate rather than this chart — see
-docs/kube-state-metrics.md for a worked config.
+come from kube-state-metrics' own `customResourceState` feature —
+`charts/observability-emitters`' `kubeStateMetrics.customResources.kargo.enabled`
+renders exactly that config and its RBAC; see
+[kube-state-metrics.md](kube-state-metrics.md#customresourcestate-the-config-platform-alerts-kargo-group-reads)
+for the shape, and for the hand-written path an estate with a different
+CRD version keeps.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
@@ -183,6 +192,8 @@ Off by default. Reads the blackbox exporter's series for the probes of
 | `summary` / `description` | string | `""` | Plain text replacing the generated annotation (no template braces). |
 | `for` | duration | `5m` | How long `probe_success` must read 0. |
 | `severity` | enum | `warning` | |
+| `absentFor` | duration | `15m` | The deadman `<alertName>Absent`: how long no `probe_success` series matching `probe` may be seen. The rule above is silent when its series is missing (`== 0` has nothing to compare), which is the case where a probe is not working at all. |
+| `absentSeverity` | enum | `""` | Severity of the deadman; empty takes `severity`. |
 | `certExpiry.enabled` | bool | `false` | Adds the certificate alert. |
 | `certExpiry.alertName` | string | `HTTPProbeCertExpiring` | |
 | `certExpiry.withinDays` | int | `14` | Fires when `probe_ssl_earliest_cert_expiry` is less than this many days away. |
@@ -377,9 +388,9 @@ values.yaml, listed here, and enforced rather than remembered.
 | `vmauth.image.tag` | string | `v1.152.0` | **Refused below v1.152.0.** `default_vm_access_claim` arrived in v1.147.0, and every release from v1.138.0, where claim matching was introduced, through v1.151.x matched claim values unanchored (GHSA-f99m-22fh-qw96). The operator's own default tag is older than both, so it is set here. |
 | `vmauth.replicaCount` | int | `1` | **At least 2 when `ha.enabled`** (refused otherwise): the proxy is what both stores are read through, and one pod takes every read with its zone. Under `ha.enabled` the pods carry a soft zone spread (`ScheduleAnyway`, so a zone loss leaves a pod schedulable) and a PodDisruptionBudget (`maxUnavailable: 1`). |
 | `vmauth.resources` | object | 100m CPU request, no CPU limit / 512Mi | CPU request from measured p95 x 1.5 with headroom; memory request == limit. |
-| `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | A rejected token that logs nothing is an access problem nobody can diagnose. Note the trade: with this flag vmauth also returns the offending token in the 401 body. |
+| `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | Extra flags for vmauth. A rejected token that logs nothing is an access problem nobody can diagnose; note the trade: with this flag vmauth also returns the offending token in the 401 body. **`mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` is refused**: it exempts a client's copy of that argument from the clash rule that is the other half of the enforcement, and vmselect ORs alternatives, so a caller could add an empty one and read every cluster and namespace. |
 | `vmauth.deniedPaths` | list | `["/internal/.*", "/-/reload"]` | Paths no user may be routed to. Checked against every route the chart renders; a match fails the render. |
-| `vmauth.loadBalancingPolicy` | enum | `first_available` | A read balanced onto a replica still replaying its buffer returns a gap, and a gap reads as an outage. **Refused as anything else under `ha.enabled`**: reads go to this release's stores and fall over to the peer only on failure. |
+| `vmauth.loadBalancingPolicy` | `first_available` \| `least_loaded` | `first_available` | A read balanced onto a replica still replaying its buffer returns a gap, and a gap reads as an outage. **Refused as anything else under `ha.enabled`**: reads go to this release's stores and fall over to the peer only on failure. |
 | `vmauth.retryStatusCodes` | list | `[500, 502, 503]` | What a backend returns while it is coming back. |
 
 ### `tenancy`
@@ -395,10 +406,10 @@ values.yaml, listed here, and enforced rather than remembered.
 | `tenancy.logsClusterField` | log field name | `k8s.cluster.name` | The log **stream field** carrying the cluster — the conventional name, which both log writers stamp. |
 | `tenancy.logsNamespaceField` | log field name | `kubernetes.pod_namespace` | The log stream field carrying the namespace: the container-log agent's own spelling, because it cannot rename a field and the gateway is configured to write the same one. |
 | `tenancy.ownCluster` | name | `""` | **Optional.** The name THIS install's own cluster is known by. Exists only so `tenancy.writers[].cluster` has something to be refused against — a writer pinned to this value would be pinning itself to the unscoped, local writer's own identity. Left unset, that one refusal does nothing. |
-| `vmauth.extraArgs` | map | `{logInvalidAuthTokens: "true"}` | Extra flags for vmauth. **`mergeQueryArgs` naming `extra_filters` or `extra_stream_filters` is refused**: it exempts a client's copy of that argument from the clash rule that is the other half of the enforcement, and vmselect ORs alternatives, so a caller could add an empty one and read every cluster and namespace. |
 | `tenancy.allowUnfilteredTraceReads` | bool | `false` | Admit the trace read route although nothing can scope it. **Required whenever a trace store is enabled alongside `principals`**, because vmauth enforces a grant by substituting it into the route and VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to substitute one into. Setting it records that every principal who can reach the proxy reads every namespace's spans on every cluster. It admits the trace route and nothing else. |
-| `tenancy.allowUnfilteredMetricMetadata` | `false` | Admits `/api/v1/metadata`, which carries every metric name, type and help and takes no filter. Off is safe and **visible**: Grafana logs a 401 where metric descriptions would be. Its three siblings (`status/active_queries`, `status/top_queries`, `status/metric_names_stats`) are admitted by nothing. |
-| `tenancy.principals[].group` | string | — | Matched against `claimName`. One `VMUser` per entry. |
+| `tenancy.allowUnfilteredMetricMetadata` | bool | `false` | Admits `/api/v1/metadata`, which carries every metric name, type and help and takes no filter. Off is safe and **visible**: Grafana logs a 401 where metric descriptions would be. Its three siblings (`status/active_queries`, `status/top_queries`, `status/metric_names_stats`) are admitted by nothing. |
+| `tenancy.principals[].group` | string | — | Matched against `claimName`. One `VMUser` per entry. Exactly one of `group` and `groups` is required. |
+| `tenancy.principals[].groups` / `.name` | list of strings / string | — | Several group spellings for ONE principal (`name` names the `VMUser`; required with `groups`, refused beside `group`): a token carrying ANY of them selects it and reads EVERY grant — correct only while every holder of one spelling holds them all; otherwise mint per-person `vm_access` claims instead. Each entry is escaped and anchored like `group`. `just multi-group-reader-proof` shows it on the real binaries. |
 | `tenancy.principals[].audience` | client id | — | **Optional.** Overrides `tenancy.audience` for THIS principal's own `matchClaims.aud` alone — a machine reader minted under its own client id, for instance. Unset falls back to `tenancy.audience`, which stays required regardless. Escaped and anchored the same way; refused under the same terms (whitespace, a newline, or being present and empty). |
 | `tenancy.principals[].routes` | list | all three | **Optional.** Which of the three read routes (`metrics`, `logs`, `traces`) this principal's `VMUser` gets at all — unset renders all three (a trace route among them still needs a trace store and `tenancy.allowUnfilteredTraceReads`, unaffected by this). `[metrics]` is a reader with no logs or traces `targetRef`, not merely an unused filter on those routes. A restriction that would render no route at all — an empty list, or `traces` alone with no trace store enabled — is refused. |
 | `tenancy.principals[].metricsQueryOnly` | bool | `false` | **Optional.** Narrows the metrics route, when this principal has one, to exactly `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range` — no series, labels, label values, tsdb status or vmui. Refused when `routes` is set and excludes `metrics`. |
@@ -488,6 +499,7 @@ Who needs the credential:
 | `vmalert.externalLabels` | map | `{}` | Labels on every alert and recording rule. |
 | `vmalert.watchdog.enabled` | bool | `true` | Renders `templates/watchdog.yaml`'s `Watchdog` VMRule (`vector(1)`, always firing, on the metrics alerter) — but only when `victoria-metrics-k8s-stack`'s own vendored default rule set is not already providing one (see `victoria-metrics-k8s-stack.defaultRules.*`, below); on the default install, the vendored one is the Watchdog. Independent of `alertmanager.*` either way — read PUSHED, through `alertmanager.watchdog`'s route, or PULLED, through `tenancy.alertReaders`; only the former needs Alertmanager at all. |
 | `vmalert.resources` | object | 50m CPU request, no CPU limit / 512Mi | Both vmalerts. Measured p95 was under 5m. |
+| `metricsSelfScrape.enabled` | bool | `null` | A `ServiceMonitor` on the metrics store's own `/metrics`, reading `storeCredentials` (the operator's own self-scrape carries no basic auth and 401s forever; `vmsingle.spec.disableSelfServiceScrape: true` turns that one off, and is refused otherwise). Null resolves through `mode` like `vmauth.enabled`. |
 
 Both carry `remoteWrite` **and** `remoteRead` against the metrics store;
 neither is configurable, because each has exactly one correct value and the
@@ -599,6 +611,7 @@ docs/safety.md for the failure it closes; this is the value list.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
+| `notifications.mode` | `route` \| `evaluate-only` | `route` | `route` is the router described here. `evaluate-only` keeps both vmalerts evaluating with `-notifier.blackhole` and renders no Alertmanager, for an install with nowhere to page yet; refused beside `alertmanager.enabled` true (or left at its default), `alertmanager.notifierUrl`, or any receiver, severity, route, `also`, `catchAll` or `drop`. See docs/notifications.md, "Evaluate, notify nobody yet". |
 | `notifications.externalUrl` | string | `vmalert.externalUrl` | The base of the Grafana link in every Slack message. The same fact as `vmalert.externalUrl` — set this one only when it needs to differ; the chart refuses if both are set and disagree. Required (one or the other) the moment a receiver kind is configured. |
 | `notifications.alertmanagerUrl` | string | `""` | The externally reachable base URL of THIS Alertmanager's UI, no trailing slash. Set, it is the VMAlertmanager `externalURL` and the base of the `Silence` link (a named Slack mrkdwn link). Empty: the message has **no `Silence` link**. No default on purpose: the pod address is unreachable and the Grafana base has no silence page (the chart refuses Grafana-managed alerting). Must be an absolute `http(s)://` URL without a trailing slash. `vmalert.externalUrl` no longer feeds `externalURL`. |
 | `notifications.console` | `alertmanager` \| `karma` | `alertmanager` | Which console the Slack message's `Silence` link opens. The Slack message has a named `Grafana` link on each alert's line and ONE group line of named links after the alerts (`Silence`, `View`, only those that exist), and its title links to `View` (karma) or Grafana; `&` inside a link is written `&amp;` per Slack's escaping rules. `alertmanager` is today's link, byte for byte. `karma` opens karma's silence form prefilled with the alert's labels and adds a `View` link filtered to the alert group. Needs `consoleUrl` and `karma.enabled`. The Telegram message keeps the Alertmanager link. |
@@ -1007,7 +1020,7 @@ store.
 | `selfAlerts.gateway.enqueueFailedMetricPrefix` | string | `""` | **GatewayEnqueueFailing**: the gateway's own queue refusing what a sender hands it, separate from `exportFailedMetricPrefix` — a send failure and an enqueue failure are different losses, and a single rule cannot tell an operator which one paged them. Same prefix-matching reasoning; **NOT DEFAULTED**. |
 | `selfAlerts.gateway.enqueueFailWindow` / `.enqueueFailFor` / `.enqueueFailSeverity` | duration / duration / severity | `5m` / `5m` / `critical` | |
 | `selfAlerts.diskGuard.headroomFactor` / `.for` / `.severity` | number / duration / severity | `2` / `10m` / `warning` | Shared by all three stores' `*StoreDiskNearGuard` rules. `headroomFactor` mirrors `platform-alerts`' `storeLimits.headroomFactor`; refused at or below 1. `for` is minutes, not seconds: free space falls monotonically under normal operation, so a single reading under the guard is a measurement artefact, not a trend. |
-| `selfAlerts.diskGuard.metrics` / `.logs` / `.traces` (each `{freeSpaceMetric, freeSpaceLimitMetric}`) | string | `""` / `""` (all three) | **MetricStoreDiskNearGuard**, **LogStoreDiskNearGuard**, **TraceStoreDiskNearGuard** — one per store, named per store rather than one alert distinguished by a `store` label. **NOT DEFAULTED for any of the three**: `vm_free_disk_space_bytes` is absent from a measured live vmsingile despite `storage.minFreeDiskSpaceBytes` being set — a real open question, since a gauge has no obvious reason to be registered lazily the way a reason-labelled counter might be (see docs/safety.md). Renders per store only once its pair is set; one name without the other is refused. |
+| `selfAlerts.diskGuard.metrics` / `.logs` / `.traces` (each `{freeSpaceMetric, freeSpaceLimitMetric}`) | string | `""` / `""` (all three) | **MetricStoreDiskNearGuard**, **LogStoreDiskNearGuard**, **TraceStoreDiskNearGuard** — one per store, named per store rather than one alert distinguished by a `store` label. **NOT DEFAULTED for any of the three**: `vm_free_disk_space_bytes` is absent from a measured live vmsingle despite `storage.minFreeDiskSpaceBytes` being set — a real open question, since a gauge has no obvious reason to be registered lazily the way a reason-labelled counter might be (see docs/safety.md). Renders per store only once its pair is set; one name without the other is refused. |
 | `selfAlerts.snapshotAge.for` / `.severity` | duration / severity | `30m` / `critical` | Shared by all three stores' `*StoreSnapshotOlderThanWindow` rules. The condition itself is slow-moving — a snapshot is hours old or it is not — but `kube_cronjob_status_last_successful_time` can be briefly absent from a scrape while a job is actively running; `for` is long enough that a job in flight does not page, short against each `maxAge` below so a real stale snapshot is not meaningfully delayed. |
 | `selfAlerts.snapshotAge` rules | — | — | **MetricStoreSnapshotOlderThanWindow**, **LogStoreSnapshotOlderThanWindow**, **TraceStoreSnapshotOlderThanWindow** — one per enabled `backup.<store>`, named per store the same as `diskGuard` above. Reads `kube_cronjob_status_last_successful_time` — a standard kube-state-metrics field, not a guessed one — scoped to the exact CronJob names `templates/backup.yaml` renders in this release. **Not gated behind a `metric` value**: the name itself is not in question, only whether THIS release's store carries kube-state-metrics data at all (`kube-state-metrics.enabled: false` above is deliberate — see docs/safety.md). |
 | `selfAlerts.snapshotAge.metrics.maxAge` / `.logs.maxAge` / `.traces.maxAge` | duration | `150m` / `2h` / `2h` | The matching `backup.<store>.schedule` plus slack — stated here rather than derived from the cron expression, the same doctrine as `platform-alerts`' `groups.backups.maxSuccessAge`. Update it if you change the schedule; the two are not derived from one another. |
@@ -1024,7 +1037,7 @@ its own switch and **not** gated by `selfAlerts.enabled`. Both default off.
 | Value | Type | Default | What it does |
 |---|---|---|---|
 | `selfAlerts.storeMemory.enabled` | bool | `false` | **StoreMemoryNearLimit**, either mode. The working set of each store container of THIS release (`container_memory_working_set_bytes`) over its memory limit (`kube_pod_container_resource_limits`), grouped by the cluster label. Needs cAdvisor and kube-state-metrics series in the store the vmalert reads. Set it in the replica release too: each release alerts for its own pods. |
-| `selfAlerts.storeMemory.ratio` / `.for` / `.severity` | number / duration / severity | `0.8` / `15m` / `warning` | Fire above that fraction of the limit for that long. |
+| `selfAlerts.storeMemory.ratio` / `.for` / `.severity` | number (0, 1) / duration / severity | `0.8` / `15m` / `warning` | Fire above that fraction of the limit for that long. |
 | `selfAlerts.divergence.enabled` | bool | `false` | **MetricStoreReplicaDivergence**, **LogStoreReplicaDivergence**, **TraceStoreReplicaDivergence**, per enabled store: `abs(1 - rate(a) / rate(b)) > threshold` over `window`, on the stores' rows-ingested counters selected by `observability_replica`. Refused unless `ha.enabled` on a `mode: full` release. **Measure a week first** (see `threshold`). |
 | `selfAlerts.divergence.window` / `.for` / `.severity` | duration / duration / severity | `1h` / `30m` / `warning` | |
 | `selfAlerts.divergence.threshold` | number (0, 1] | `0.25` | A tolerance, never an equality: the counters are scraped at different instants and a writer replaying a queue skews one side for minutes. A conservative starting value, not a measured one: watch the ratio for a week of a healthy pair, then set it just above the worst healthy value. |
@@ -1043,6 +1056,7 @@ through.
 | `victoria-metrics-k8s-stack.victoria-metrics-operator.crds.enabled` | `false` | The CRDs are `charts/observability-crds`'. **`crds.plain` must be `false` as well** — upstream disables CRD creation only when both are, because a Helm dependency condition cannot gate a `crds/` directory. |
 | `…operator.crds.cleanup.enabled` | `false` | The cleanup Job deletes every VictoriaMetrics object in the namespace on uninstall. |
 | `…operator.admissionWebhooks.certManager.enabled` | `true` | Otherwise the chart generates a self-signed CA at render time: a new certificate on every upgrade, and a render that is not a function of its inputs. This is why cert-manager is a prerequisite. |
+| `…operator.env[]` | the five entries below | `VM_ENABLEDPROMETHEUSCONVERTER_PROBE`, `_SCRAPECONFIG`, `_PROMETHEUSRULE`, `_ALERTMANAGERCONFIG` are `"false"`: the operator converts only the two kinds this repository authors (`ServiceMonitor`, `PodMonitor`, left at its default of on), so a Prometheus Operator beside it is never fought over the rest (docs/safety.md, "The doctrine's own promise was broken"). `VM_PROMETHEUSCONVERTERADDARGOCDIGNOREANNOTATIONS` is `"true"`: the operator copies a converted object's annotations (Argo CD's tracking id) onto the `VMServiceScrape` it creates, which Argo CD then listed as part of the Application with no status; the flag marks it `IgnoreExtraneous`. Turning the converter off while this chart renders a `ServiceMonitor` is refused. |
 | `victoria-metrics-k8s-stack.defaultRules.rules.<Alert>` | `{}` | Per-alert override applied by the sync job: `{enabled: false}` (or `create: false`) drops that upstream alert, `{spec: {...}}` overrides fields of it (`RecordingRulesNoData` ships one). Used to turn `KubeCPUOvercommit` / `KubeMemoryOvercommit` off where nodes are provisioned on demand, paired with `platform-alerts`' `groups.pendingPods`. |
 | `victoria-metrics-k8s-stack.defaultRules.*` | upstream's own, ON | Left alone, deliberately: it fetches rule sources over the network and applies them directly to the cluster (invisible to `helm template`), and several — target- and pod-health, job failures, log/API-error volume, and this install's `Watchdog` alert (its `general.rules` group) — have no `charts/platform-alerts` equivalent. `templates/watchdog.yaml` renders this chart's own Watchdog only when this is turned OFF (`defaultRules.enabled: false`, not `create: false` alone — see its own doc comment in values.yaml); turning both off at once is refused (`observability-stack.validate.watchdogSource`). |
 | `victoria-metrics-k8s-stack.vmsingle.spec.retentionPeriod` | `90d` | **With a unit.** A bare number is months. |
@@ -1156,8 +1170,12 @@ the request.
 
 ## `charts/observability-emitters`
 
-Per-cluster collection: four optional emitters, each replicating to every
-destination it is given and each stamping the same three dimensions.
+Per-cluster collection: three emitters on by default (the metrics agent,
+the log agent, the OpenTelemetry gateway), two off (kube-state-metrics,
+node-exporter: a cluster may already run one), and the blackbox exporter
+behind the probes. Each replicates to every destination it is given, with
+a disk buffer and a credential per destination, and each stamps the same
+three dimensions.
 
 **The names are not values.** What every writer stamps and every filter
 selects on is OpenTelemetry's vocabulary, spelled the way each store can
@@ -1252,6 +1270,7 @@ use or not.
 | `metrics.queue.size` | quantity | `10Gi` | The persistent queue's volume. The operator divides it by the number of destinations to derive `-remoteWrite.maxDiskUsagePerURL`, so size it in multiples of 500MB with at least 500Mi per destination. |
 | `metrics.queue.storageClassName` | string | `""` | Empty renders no class and takes the cluster's default. |
 | `metrics.scrape.kubelet` / `.cadvisor` | bool | `true` | The node's two endpoints, as inline scrape configs. Everything else arrives as a `PodMonitor` or `ServiceMonitor` authored by whoever owns the thing being watched. |
+| `metrics.scrape.nodeLabels[]` | list of label names | `[]` | Node labels copied onto every kubelet and cadvisor series, by name; the node's own `node` label is always present. Opt-in rather than a `labelmap` of every node label because those belong to the cloud provider: on a managed cluster there are around forty, which puts every node series past the store's `-maxLabelsPerTimeseries` — where it is IGNORED and the write still answers 200. |
 | `metrics.scrape.probes[]` (`name`, `url`, `module`, `interval`) | list | `[]` | HTTP probes: each renders a `VMProbe` that has the metrics agent ask the blackbox exporter to probe `url` (no user info, query or fragment) with `module` (a key of `blackboxExporter.modules`, default `http_2xx`) on `interval` (default: the agent's). The series are the exporter's `probe_success`, `probe_http_status_code`, `probe_duration_seconds` and `probe_ssl_earliest_cert_expiry`, stamped with this cluster's identity, `probe="<name>"`, `job="http-probe"`. **Behaviour change:** replaces the direct scrape and its `up{job="http-probe"}`. **Refused:** probes without `blackboxExporter.enabled`, an unknown `module`, a duplicate `name`. Pair it with `platform-alerts` `groups.probes`. |
 | `metrics.scrape.cadvisorAsKubeletJob` | bool | `true` (0.13.0) | Stores the cadvisor series as `job="kubelet"` with `metrics_path="/metrics/cadvisor"`, the kube-prometheus convention the k8s-stack's default `k8s.rules.*` recording rules and the mixin dashboards select on. The vmagent scrape keeps the name `cadvisor`; a relabel step sets the stored `job`. `false` keeps `job="cadvisor"` (the 0.12.x series identity), under which those rules match nothing. |
 | `metrics.scrape.cadvisorDrop.enabled` | bool | `true` (0.9.1) | A default DROP on the **cadvisor job only** — never kubelet's. Off restores every cadvisor series exactly as upstream emits it. See below. |
@@ -1368,6 +1387,7 @@ override any of the three.
 | `otlp.image` | `{repository, tag}` | `otel/opentelemetry-collector-contrib:0.161.0` | The contrib distribution: `k8sattributes`, `k8s_events`, `file_storage` and `delta_to_cumulative` are not in core. |
 | `otlp.replicaCount` | int | `2` | Each replica owns a queue volume, which is why this is a StatefulSet. |
 | `otlp.resources` | object | 50m CPU request, no CPU limit / 1Gi | The gateway collector, per replica. Measured p95 under 5m. |
+| `otlp.nodeSelector` / `.tolerations` / `.podSecurityContext` / `.containerSecurityContext` | object / list / object / object | `{}` / `[]` / non-root 10001, `RuntimeDefault` seccomp / no escalation, drop `ALL` | The pod's placement and the `restricted` profile it runs under. |
 | `otlp.queue.size` | quantity | `10Gi` | One volume per replica, holding both the OTLP `sending_queue`s and the remote-write WAL. With N destinations per signal it holds 3N buffers, so size it for all of them (an HA pair: roughly double). **Required.** |
 | `otlp.queue.maxBatches` | int | `0` | Caps each OTLP exporter's own on-disk `sending_queue` (`queue_size`, in batches), so one stalled destination cannot use the room of the others. `0` leaves the collector's default and renders nothing. The remote-write WAL has no cap of its own: it is bounded by the volume. |
 | `otlp.queue.storageClassName` | string | `""` | |
@@ -1430,6 +1450,30 @@ row below is read back and refused by this chart rather than duplicated.
 | `…prometheus.monitor.enabled` | `true` | Renders the `ServiceMonitor`. **Refused false** — a component with no scrape object looks exactly like a component with nothing wrong. |
 | `…prometheus.monitor.http.metricRelabelings` | an eight-step chain: drop `k8s_namespace_name`, drop the target-stamped `namespace`/`pod`/`container`/`service`, restore each from its `exported_<name>` twin, drop the `exported_` twins, derive `k8s_namespace_name` from the (now-corrected) `namespace` | **The fix for the one thing this component gets backwards** — see docs/kube-state-metrics.md, "The namespace stamp". Every step, and the ORDER between the steps that depend on one another, is refused missing or swapped, checked against the merged value. |
 
+### `nodeExporter`
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `nodeExporter.enabled` | bool | `false` | Renders upstream's `prometheus-node-exporter` chart as a DaemonSet. **Off by default**, for the reason kube-state-metrics is: a cluster may already run one, and a second exports every `node_*` series twice. The node series are cluster-scoped (no `k8s_namespace_name`, as for the kubelet's own node-level series), so only a grant on all namespaces of the cluster reads them; the exporter pod's `namespace` and `pod` stay because `node.rules` joins on them. The `node-exporter-full` and `k8s-views-nodes` dashboards read it. Refused with `metrics.enabled: false`. |
+
+### `prometheus-node-exporter` — the upstream chart
+
+Its own values, pinned in `Chart.yaml` at the version the vendored
+k8s-stack carries and leaves disabled, vendored under this chart's
+`charts/` directory and rendered only while `nodeExporter.enabled` is
+true. Read back and refused by this chart rather than duplicated:
+
+| Value | Default | What it does |
+|---|---|---|
+| `…hostNetwork` / `…hostPID` / `…hostRootFsMount.enabled` | `true` | A node agent must see the node, not its own pod. **Each refused false**: a pod with one off stays Ready, is scraped, and reports a different machine's numbers (`node_network_*` of one veth, `node_processes_*` of two processes, a container overlay's disk). |
+| `…service.listenOnAllInterfaces` | `false` | With the host's network, every interface the node has would otherwise carry the port. |
+| `…priorityClassName` / `…tolerations` | `system-node-critical` / `[{operator: Exists}]` | The same defaults as the log agent's, for the same reason: a DaemonSet pod that cannot fit is a node with no metrics. |
+| `…affinity` / `…nodeSelector` | `{}` / `kubernetes.io/os: linux` | Where NOT to run (a `nodeAffinity` you set replaces upstream's default of no Fargate or virtual nodes). |
+| `…resources` | 10m / 64Mi, no CPU limit | Sized from a running exporter; a 100m quota throttled a third of scrapes. |
+| `…prometheus.monitor.enabled` | `true` | **Refused false**: a component with no scrape object looks like one with nothing wrong. |
+| `…prometheus.monitor.relabelings` | steps setting `job="node-exporter"`, `instance` and `node` | **Refused without them**: the dashboard and the k8s-stack's `node.rules` select on exactly those. `just node-exporter-proof` shows the rules recording on the real binaries. |
+| the collector set | a trimmed list, `--collector.disable-defaults` | Upstream turns on about forty; `values.yaml` names the ones something reads, each with who reads it. |
+
 ### `victoria-logs-collector` — the upstream chart
 
 Its own values, pinned in `Chart.yaml` and vendored under the chart's
@@ -1455,8 +1499,16 @@ docs/safety.md has the two writer collisions and how each one is closed.
 ## `charts/observability-dashboards`
 
 Dashboards for Grafana, rendered as one ConfigMap each. The contract every
-dashboard meets is in [dashboards.md](dashboards.md); this is only the values
-that choose which ship.
+dashboard meets is in [dashboards.md](dashboards.md); this is the values.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `datasources.metrics` / `.logs` / `.traces` | UID | `victoriametrics` / `victorialogs` / `victoriatraces` | The datasource UIDs the estate provisioned Grafana with. Every shipped dashboard queries metrics; `logs` and `traces` are read by the frontend dashboards and by `extraDashboards` over those stores. Refused empty for a store a dashboard that is on reads. |
+| `folders.fleet` / `.kubernetes` / `.infrastructure` / `.stores` / `.platform` / `.frontend` | string | `Fleet` / `Kubernetes` / `Infrastructure` / `Observability` / `Platform` / `Frontend` | The Grafana folder each group files into, through the `k8s-sidecar-target-directory` annotation — which takes effect only where the Grafana chart sets `sidecar.dashboards.folderAnnotation` and `provider.foldersFromFilesStructure` (see `values.yaml`). |
+| `home` | name | `fleet-overview` | The dashboard annotated as the home page; refused unless it is an enabled shipped dashboard. Pointing Grafana at it is the Grafana chart's `default_home_dashboard_path` or the preferences API (`values.yaml` has both). |
+| `dashboards.<name>.enabled` | bool | mostly `true` | One key per shipped dashboard, below. |
+| `extraDashboards[]` | list of `{name, folder, json}` | `[]` | The estate's own, held to the same lint; refused without a `folder`. |
+| `nameOverride` / `fullnameOverride` | string | `""` | |
 
 ### `dashboards.<name>.enabled`
 
@@ -1638,5 +1690,9 @@ produces no diff.
 | `observability-emitters` | `oci://ghcr.io/truvity/charts/observability-emitters` |
 | `observability-stack` | `oci://ghcr.io/truvity/charts/observability-stack` |
 | `platform-alerts` | `oci://ghcr.io/truvity/charts/platform-alerts` |
+| `alert-ingress` | `oci://ghcr.io/truvity/charts/alert-ingress`; the image `ghcr.io/truvity/observability/alert-ingress:<version>` |
+| `observability-dashboards` | `oci://ghcr.io/truvity/charts/observability-dashboards` |
+| `observability-grafana` | `oci://ghcr.io/truvity/charts/observability-grafana` |
+| `observability-mcp` | `oci://ghcr.io/truvity/charts/observability-mcp`; the image `ghcr.io/truvity/observability/mcp-aggregator:<version>` |
 | `observability-rum` | `oci://ghcr.io/truvity/charts/observability-rum` |
-| `pkg/tenancy` | `github.com/truvity/observability` |
+| `pkg/tenancy`, `pkg/statusbox` | `github.com/truvity/observability`; `setup.sh` and `checksums.txt` are release assets |
