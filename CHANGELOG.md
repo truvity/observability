@@ -24,6 +24,16 @@ must be done first, and whether a default moved. Newest first, one
   joined to `vault_core_active`, because the server keeps exporting a former
   leader's last value after a leadership change.
 
+## v0.31.2
+
+`observability-dashboards`: the Keycloak heap panels read the right metric.
+
+- **Behaviour change: the Keycloak dashboard's heap panels read
+  `jvm_memory_usage_after_gc`.** The two heap-after-GC panels queried
+  `jvm_memory_usage_after_gc_percent`, a name Keycloak does not export, so
+  they showed nothing. The metric is a ratio (0 to 1) under the new name.
+  Only the `everything` golden moves; the dashboard is still off by default.
+
 ## v0.31.1
 
 `statusbox`: RESOLVED posts say the check recovered.
@@ -47,12 +57,6 @@ must be done first, and whether a default moved. Newest first, one
   scraped only where truvity/keycloak's chart turns its `serviceMonitor` on
   (and `metrics.httpHistograms` for the latency panels). Turn it on together
   with that ServiceMonitor.
-
-- **Behaviour change: the Keycloak dashboard's heap panels read
-  `jvm_memory_usage_after_gc`.** The two heap-after-GC panels queried
-  `jvm_memory_usage_after_gc_percent`, a name Keycloak does not export, so
-  they showed nothing. The metric is a ratio (0 to 1) under the new name.
-  Only the `everything` golden moves; the dashboard is still off by default.
 
 ## v0.30.0
 
