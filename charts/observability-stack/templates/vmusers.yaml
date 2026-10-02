@@ -273,6 +273,64 @@ spec:
     {{- end }}
 {{- end }}
 {{- /*
+The metrics readers.
+
+A bearer token that may QUERY this install's metrics store, scoped by a
+grant, for a machine that is not a person and has no OIDC identity: the
+first user is another install's vmalert (`vmalert.remoteEvaluators`)
+evaluating its rules against this store. Modelled on the writers for the
+token and on the principals for the grant.
+
+Two things differ from a principal, both forced. A static token carries no
+`vm_access` claim, so there is no placeholder to substitute: the grant is
+written into the route's `query_args` as LITERAL `extra_filters` values,
+one per grant (VictoriaMetrics ORs them, exactly as it does the claim's
+list). vmauth drops a client query argument that clashes with one the
+route already set (`vmauth.extraArgs.mergeQueryArgs` naming `extra_filters`
+is refused in _validate.tpl), so the caller cannot send its own. And the
+route list is the query-only one, always: `/api/v1/query` and
+`/api/v1/query_range`, which is all a vmalert datasource asks for. No
+series, labels, label values, tsdb status, vmui, metadata, no write
+route, and no log or trace route at all.
+*/}}
+{{- range $r := .Values.tenancy.readers }}
+{{- $byCluster := dict }}
+{{- range $grant := $r.grants }}
+{{- $_ := set $byCluster $grant.cluster $grant }}
+{{- end }}
+{{- $filters := list }}
+{{- range $cluster := (keys $byCluster | sortAlpha) }}
+{{- $filters = append $filters (include "observability-stack.filter" (dict "grant" (index $byCluster $cluster) "labels" $labels)) }}
+{{- end }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-reader-%s" $fullname $r.name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.role: metrics-reader
+spec:
+  name: {{ $r.name | quote }}
+  disable_secret_creation: true
+  tokenRef:
+    name: {{ $r.tokenSecret.name | quote }}
+    key: {{ $r.tokenSecret.key | quote }}
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    - static:
+        {{- include "observability-stack.staticTarget" (list $root $metrics $haPeer.metrics) | nindent 8 }}
+      paths:
+        {{- include "observability-stack.readPaths.metrics.queryOnly" $root | nindent 8 }}
+      query_args:
+        - name: {{ include "observability-stack.filterArg.metrics" $root }}
+          values:
+            {{- toYaml $filters | nindent 12 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+{{- end }}
+{{- /*
 The alert readers: a bearer token that may READ vmalert's own
 `/api/v1/alerts` and nothing else — see `tenancy.alertReaders`'s own doc
 comment in values.yaml for why this is neither a `principal` (a person's

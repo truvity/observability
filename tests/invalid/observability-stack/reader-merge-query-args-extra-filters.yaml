@@ -1,0 +1,22 @@
+# expect: mergeQueryArgs
+# The grant is a query argument the route sets; merging lets a caller add a wider one.
+vmauth:
+  extraArgs:
+    mergeQueryArgs: extra_filters
+tenancy:
+  readers:
+    - name: edge-evaluator
+      tokenSecret: {name: example-read-token, key: token}
+      grants:
+        - cluster: example-edge
+          allNamespaces: true
+
+# Minimum receiver, so the Alertmanager refusal does not preempt this fixture.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

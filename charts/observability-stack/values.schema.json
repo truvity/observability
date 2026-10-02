@@ -295,7 +295,7 @@
         "operator-only",
         "replica"
       ],
-      "description": "\"replica\": the second half of a high-availability pair — the three stores and nothing else; a CONTRACT like operator-only (docs/high-availability.md). \"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs — see charts/observability-crds) — no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, the three stores, and tenancy.principals/writers/alertReaders left empty) — the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
+      "description": "\"replica\": the second half of a high-availability pair — the three stores and nothing else; a CONTRACT like operator-only (docs/high-availability.md). \"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs — see charts/observability-crds) — no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, the three stores, and tenancy.principals/writers/readers/alertReaders left empty) — the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
     },
     "ha": {
       "description": "Zone-redundant mode (docs/high-availability.md). Unset (null) or `false`: the single install. `true`: the legacy boolean, accepted and refused with fewer than two zones, nothing else. An object with `enabled: true`: this release is one half of a pair.",
@@ -570,6 +570,54 @@
               "cluster": {
                 "$ref": "#/definitions/name",
                 "description": "OPTIONAL. The cluster this writer's series, log records and spans are FORCED to belong to, overriding whatever k8s_cluster_name (or the log/trace equivalent) the writer's own collector config claims. Unset is the unscoped, local writer's shape — a collector writing to the store beside it, exactly as charts/observability-emitters has always done — and is unaffected by this field existing. Set it for a REMOTE writer: one whose collector runs on a different cluster than this install and pushes here across the network, where a bearer token alone proves nothing about which cluster it actually ran on. Refused when it equals `tenancy.ownCluster` (that is the unscoped writer's job), and refused as a duplicate if two writers name the same cluster."
+              }
+            }
+          }
+        },
+        "readers": {
+          "type": "array",
+          "description": "Static-bearer, read-only METRICS QUERY readers, scoped by a grant: a machine in another cluster (another install's `vmalert.remoteEvaluators` entry) queries this store with a token from a Secret. Routes are `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range` only; the grant is enforced as literal `extra_filters` on them. No write, log, trace or admin route.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "tokenSecret",
+              "grants"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/name"
+              },
+              "tokenSecret": {
+                "$ref": "#/definitions/secretRef"
+              },
+              "grants": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "cluster"
+                  ],
+                  "properties": {
+                    "cluster": {
+                      "$ref": "#/definitions/name"
+                    },
+                    "namespaces": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/definitions/name"
+                      },
+                      "description": "An EMPTY list is refused rather than read as everything."
+                    },
+                    "allNamespaces": {
+                      "type": "boolean"
+                    }
+                  }
+                }
               }
             }
           }

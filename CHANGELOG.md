@@ -13,6 +13,22 @@ must be done first, and whether a default moved. Newest first, one
   two example mappings (`CloudBudgetThreshold`, `CloudCostAnomaly`) and what
   the AWS side must configure. No default moves; the render is unchanged.
 
+- **`tenancy.readers`: static-bearer, read-only metrics query readers.**
+  Default `[]`: the render is byte-identical to before (all goldens
+  unchanged). Each entry (`name`, `tokenSecret: {name, key}` of an existing
+  Secret, `grants` shaped like a principal's) renders one VMUser,
+  `<release>-reader-<name>`, whose only routes are
+  `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range`, with the
+  grant forced onto them as literal `extra_filters` (one per cluster, ORed
+  by the store). No write, log, trace, vmalert or admin route. It is the
+  credential for another install's `vmalert.remoteEvaluators` entry: add a
+  reader on the store being read, and an evaluator on the central install
+  whose `datasource.auth.bearer` names a Secret with the same token
+  (docs/notifications.md, "End to end"). Refused: empty, non-DNS-label or
+  duplicate names, a missing Secret name or key, an empty or ambiguous
+  grant, `mergeQueryArgs` naming `extra_filters`, and any install with no
+  proxy (`mode: replica` / `operator-only`, `vmauth.enabled: false`).
+
 ## v0.42.0
 
 - **`vmalert.remoteEvaluators`: evaluate selected rules against another

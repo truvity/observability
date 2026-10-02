@@ -1,0 +1,7 @@
+# expect: does not match pattern
+# A namespace with regex metacharacters is refused, never escaped.
+tenancy:
+  readers:
+    - name: edge-evaluator
+      tokenSecret: {name: example-read-token, key: token}
+      grants: [{cluster: example-edge, namespaces: ["a|.*"]}]

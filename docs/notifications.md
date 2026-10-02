@@ -803,6 +803,52 @@ vmalert:
         k8s_cluster_name: edge
 ```
 
+### End to end: a scoped read token for the evaluator
+
+When the other store is itself an install of this chart, mint the read
+credential there with `tenancy.readers` instead of reusing a person's
+identity. Both sides, with one token:
+
+1. Create a Secret holding a long random token, once on each side: on the
+   OTHER store's cluster (the one the reader's `tokenSecret` names) and on
+   the central cluster (the one the evaluator's `datasource.auth.bearer`
+   names). Same value, different clusters, so the chart never sees it.
+2. On the OTHER store's install, add a reader. The grant is what the
+   evaluator may see; it is enforced by the proxy, not by trust.
+
+   ```yaml
+   tenancy:
+     readers:
+       - name: central-evaluator
+         tokenSecret: {name: central-evaluator-read, key: token}
+         grants:
+           - cluster: edge
+             allNamespaces: true      # or: namespaces: [example-app]
+   ```
+
+3. On the CENTRAL install, add the evaluator. The datasource URL is the
+   other proxy's host WITH the `/prometheus` path, which is where the
+   reader's two routes live (vmalert appends `/api/v1/query`):
+
+   ```yaml
+   vmalert:
+     remoteEvaluators:
+       - name: other-store
+         datasource:
+           url: https://metrics.other-store.example/prometheus
+           auth:
+             bearer: {secretName: central-evaluator-read, key: token}
+   ```
+
+A reader gets `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range`
+and nothing else: no write, series, labels, vmui, log, trace, alert or admin
+route. Its grant arrives as literal `extra_filters` query arguments the
+caller cannot override (one per granted cluster, ORed by the store; a
+namespace list narrows further). The evaluator's remoteRead and remoteWrite
+target its own local store, so no other route is needed. The edge in front
+of the other proxy must route its hostname to vmauth and admit those paths.
+Refusals are listed in docs/safety.md.
+
 ## What stays the consumer's
 
 The channel names, the webhook, the route list, the external URL. And

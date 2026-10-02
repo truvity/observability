@@ -1,0 +1,39 @@
+# Metrics readers: static bearer tokens that may only QUERY this store,
+# each scoped by a grant. One reader is bound to a namespace list on one
+# cluster, the other to every namespace on two clusters. Beside a
+# principal and a writer, to show the four kinds coexisting.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+  writers:
+    - name: metrics-agent
+      tokenSecret: {name: example-writer-token, key: token}
+      destinations: [metrics]
+  readers:
+    - name: edge-evaluator
+      tokenSecret: {name: example-metrics-read-token, key: token}
+      grants:
+        - cluster: example-edge
+          namespaces: [example-app, example-jobs]
+    - name: wide-evaluator
+      tokenSecret: {name: example-wide-read-token, key: token}
+      grants:
+        - cluster: example-edge
+          allNamespaces: true
+        - cluster: example-other
+          allNamespaces: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
