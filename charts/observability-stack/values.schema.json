@@ -1548,6 +1548,8 @@
           "additionalProperties": false,
           "properties": {
             "bufferMetric": { "type": "string" },
+            "bufferMetricsExtra": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "droppedPacketsMetricsExtra": { "type": "array", "items": { "type": "string", "minLength": 1 } },
             "for": { "$ref": "#/definitions/duration" },
             "droppedPacketsMetric": { "type": "string" },
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }

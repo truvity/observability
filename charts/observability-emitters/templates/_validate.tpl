@@ -209,6 +209,69 @@ check needed here. */ -}}
 {{- fail "observability-emitters: `remote.signals` includes \"traces\" but `otlp.destinations.traces` is also set. `remote` already expands into one entry there for this signal — the two forms are refused together. Remove \"traces\" from `remote.signals`, or clear `otlp.destinations.traces` and let `remote` provide it." -}}
 {{- end -}}
 {{- end -}}
+{{- /*
+`remote.replicas`: the other halves of an HA store pair.
+
+Three things go wrong silently here. The same address twice is not
+redundancy — it is one store taking every sample twice, spelled two ways
+(a trailing slash defeats the plain string comparison the destination
+lists make, so it is normalised here). The same credential twice is
+refused because a store authenticates one user per bearer token: a pair
+written with one token reaches one of them, or neither. And the log agent
+is a real subchart whose list this chart cannot compute, so it is CHECKED
+rather than trusted: an agent that writes to only one half sends every log
+line to one store while the other, and the dashboards over it, look healthy.
+*/ -}}
+{{- if ($remote.replicas | default list) -}}
+{{- $seenUrl := dict (trimSuffix "/" (toString $remote.url)) "`remote.url`" -}}
+{{- $seenName := dict (toString $remote.name) "`remote.name`" -}}
+{{- $seenToken := dict (printf "%s/%s" $remote.tokenSecret.name $remote.tokenSecret.key) "`remote.tokenSecret`" -}}
+{{- range $i, $r := $remote.replicas -}}
+{{- $where := printf "`remote.replicas[%d]`" $i -}}
+{{- $u := trimSuffix "/" (toString $r.url) -}}
+{{- if hasKey $seenUrl $u -}}
+{{- fail (printf "observability-emitters: %s has the same address as %s (%s). Two entries for one address is not a pair — it is one store receiving every sample twice, and half the buffer it looked like there was. Give the replica the address of the OTHER store." $where (index $seenUrl $u) $u) -}}
+{{- end -}}
+{{- $_ := set $seenUrl $u $where -}}
+{{- if hasKey $seenName (toString $r.name) -}}
+{{- fail (printf "observability-emitters: %s uses the name %q that %s already has. The name becomes an exporter id and a queue directory: two destinations sharing one share a queue, and only one of them is ever written to." $where (toString $r.name) (index $seenName (toString $r.name))) -}}
+{{- end -}}
+{{- $_ := set $seenName (toString $r.name) $where -}}
+{{- $tk := printf "%s/%s" $r.tokenSecret.name $r.tokenSecret.key -}}
+{{- if hasKey $seenToken $tk -}}
+{{- fail (printf "observability-emitters: %s writes with the credential %s, the same Secret and key as %s. A store holds one user per bearer token, so a second destination on the same token is the same user: the pair is written through one identity, and the store cannot tell the halves apart or revoke one without the other. Give each destination a Secret of its own." $where $tk (index $seenToken $tk)) -}}
+{{- end -}}
+{{- $_ := set $seenToken $tk $where -}}
+{{- end -}}
+{{- if and .Values.logs.enabled (has "logs" $signals) -}}
+{{- $vlc := index .Values "victoria-logs-collector" -}}
+{{- $want := dict -}}
+{{- $_ := set $want (trimSuffix "/" (toString $remote.url)) true -}}
+{{- range $r := $remote.replicas -}}
+{{- $_ := set $want (trimSuffix "/" (toString $r.url)) true -}}
+{{- end -}}
+{{- $have := dict -}}
+{{- $files := dict -}}
+{{- range $i, $d := ($vlc.remoteWrite | default list) -}}
+{{- $_ := set $have (trimSuffix "/" (toString $d.url)) true -}}
+{{- $f := toString ($d.bearerTokenFile | default "") -}}
+{{- if and $f (hasKey $files $f) -}}
+{{- fail (printf "observability-emitters: `victoria-logs-collector.remoteWrite[%d]` reads its bearer from %q, the same file as an earlier entry. With `remote.replicas` each half of the pair is written with its own credential; point each entry's `bearerTokenFile` at its own mounted Secret." $i $f) -}}
+{{- end -}}
+{{- if $f -}}{{- $_ := set $files $f true -}}{{- end -}}
+{{- end -}}
+{{- range $u, $_ := $want -}}
+{{- if not (hasKey $have $u) -}}
+{{- fail (printf "observability-emitters: `remote.replicas` is set and covers \"logs\", but `victoria-logs-collector.remoteWrite` has no entry for %s. The container-log agent is upstream's own list, so this chart cannot expand `remote` into it: list one entry per destination (`remote.url` and each replica), each with its own `bearerTokenFile` and `maxDiskUsagePerURL`. An agent that writes to one half sends every log line to one store only." $u) -}}
+{{- end -}}
+{{- end -}}
+{{- range $u, $_ := $have -}}
+{{- if not (hasKey $want $u) -}}
+{{- fail (printf "observability-emitters: `victoria-logs-collector.remoteWrite` has an entry for %s, which is neither `remote.url` nor a `remote.replicas[].url`. The log agent and the other emitters would write to different stores." $u) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

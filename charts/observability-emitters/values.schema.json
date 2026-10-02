@@ -99,7 +99,31 @@
           "caSecret": {
             "$ref": "#/definitions/secretRef",
             "description": "OPTIONAL. A Secret holding a PEM CA bundle to trust for THIS destination's TLS, for a `url` whose certificate is not publicly trusted (a private/estate root). The chart takes the NAME of a Secret and never a value; it mounts the named key as a file and points the destination's own TLS config at it — `tlsConfig.ca.secret` on a VMAgent `remoteWrite` entry (the operator mounts it), or a volume this chart mounts itself for the OTLP gateway's exporters, whichever list this entry is in. Unset: the destination's certificate must already chain to a publicly-trusted root, or to one already trusted by the pod's own OS trust store."
+          },
+          "tokenSecret": {
+            "$ref": "#/definitions/secretRef",
+            "description": "OPTIONAL. This destination's OWN bearer (a Secret name and key), in place of the cluster's write credential. A store authenticates one user per token, so the second half of an HA pair is written with a credential of its own. The chart takes the NAME and never a value. Unset: the cluster's write credential."
           }
+        }
+      }
+    },
+    "otlpQueue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size"
+      ],
+      "properties": {
+        "size": {
+          "$ref": "#/definitions/quantity"
+        },
+        "storageClassName": {
+          "type": "string"
+        },
+        "maxBatches": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cap on each OTLP exporter's own on-disk `sending_queue`, in batches (`queue_size`), so one stalled destination cannot take the whole volume from the others. 0 leaves the collector's default."
         }
       }
     },
@@ -221,6 +245,21 @@
         },
         "name": {
           "$ref": "#/definitions/plainName"
+        },
+        "replicas": {
+          "type": "array",
+          "description": "The other halves of an HA store pair: every signal `remote` covers is written to `url` AND to each entry, each with its own queue and its own credential.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "url", "tokenSecret"],
+            "properties": {
+              "name": { "$ref": "#/definitions/plainName" },
+              "url": { "type": "string", "minLength": 1 },
+              "tokenSecret": { "$ref": "#/definitions/secretRef" },
+              "caSecret": { "$ref": "#/definitions/secretRef", "description": "Defaults to `remote.caSecret`." }
+            }
+          }
         }
       }
     },
@@ -517,7 +556,7 @@
           "$ref": "#/definitions/resources"
         },
         "queue": {
-          "$ref": "#/definitions/queue"
+          "$ref": "#/definitions/otlpQueue"
         },
         "destinations": {
           "type": "object",

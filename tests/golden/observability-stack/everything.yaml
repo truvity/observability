@@ -3216,16 +3216,24 @@ spec:
         # buffer GROWING rather than on crossing a size nobody confirmed.
         # Growth means the write path is blocked and the eventual loss is
         # proportional to how long it takes somebody to look.
+        #
+        # Per destination: the buffer metric of every remote-write agent
+        # carries the destination's `url`, so a series (and an alert)
+        # exists per URL — a replica that is down fires for ITS url while
+        # the other half of an HA pair stays quiet. `bufferMetricsExtra`
+        # adds the other agents' names (the log agent's is not the metrics
+        # agent's) to the same rule.
         - alert: WriterBufferGrowing
           expr: >-
-            deriv(example_vmalert_remotewrite_pending_data_bytes[15m]) > 0
+            deriv({__name__=~"example_vmalert_remotewrite_pending_data_bytes|example_vlagent_remotewrite_pending_data_bytes"}[15m]) > 0
           for: 15m
           labels:
             severity: critical
           annotations:
             summary: "A writer's remote-write buffer is growing"
             description: >-
-              example_vmalert_remotewrite_pending_data_bytes has been increasing for
+              The buffer for destination {{ $labels.url }}
+              (example_vmalert_remotewrite_pending_data_bytes, example_vlagent_remotewrite_pending_data_bytes) has been increasing for
               15m. Nothing is lost yet — that is what the
               buffer is for — and everything will be once it is full.
               Check the destination and the network policy in front of it.
@@ -3234,16 +3242,20 @@ spec:
         # permanent and drop the block, and the log agent does the same
         # on a 404 — a wrong write path is unrecoverable loss, not a
         # retry.
+        #
+        # Per destination, like the buffer rule: summed by `url`, so a
+        # drop toward one half of a pair names that half.
         - alert: WriterDroppingPackets
           expr: >-
-            sum(rate(example_vmalert_remotewrite_packets_dropped_total[5m])) > 0
+            sum by (url) (rate({__name__=~"example_vmalert_remotewrite_packets_dropped_total|example_vlagent_remotewrite_packets_dropped_total"}[5m])) > 0
           for: 15m
           labels:
             severity: critical
           annotations:
             summary: "A writer is dropping packets on its remote-write path"
             description: >-
-              example_vmalert_remotewrite_packets_dropped_total is rising. Data is being
+              example_vmalert_remotewrite_packets_dropped_total, example_vlagent_remotewrite_packets_dropped_total is rising for destination
+              {{ $labels.url }}. Data is being
               discarded, not delayed: a 400 or 404 from the destination is
               treated as permanent, and the block is gone, not retried.
         # GatewayQueueFilling.
@@ -3273,7 +3285,8 @@ spec:
           annotations:
             summary: "The OpenTelemetry gateway's export queue is filling"
             description: >-
-              example_otelcol_exporter_queue_size is above 75% of
+              The queue of exporter {{ $labels.exporter }} (one per
+              destination and signal): example_otelcol_exporter_queue_size is above 75% of
               example_otelcol_exporter_queue_capacity. Once it is full the
               collector blocks or drops, and "sending queue is full" is
               exactly the failure that ran for hours unreported.

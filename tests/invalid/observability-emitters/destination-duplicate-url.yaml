@@ -1,0 +1,18 @@
+# expect: lists "https://metrics.example/api/v1/write" twice
+# Two entries for one address is not redundancy: it is one store taking
+# every sample twice.
+writeCredentials:
+  secretName: example-write-token
+tenancy:
+  cluster: example-cluster
+  environment: development
+metrics:
+  destinations:
+    - name: zone-a
+      url: https://metrics.example/api/v1/write
+    - name: zone-b
+      url: https://metrics.example/api/v1/write
+otlp:
+  enabled: false
+logs:
+  enabled: false

@@ -269,8 +269,10 @@ selfAlerts:
     severity: warning
   writer:
     bufferMetric: example_vmalert_remotewrite_pending_data_bytes
+    bufferMetricsExtra: [example_vlagent_remotewrite_pending_data_bytes]
     for: 15m
     droppedPacketsMetric: example_vmalert_remotewrite_packets_dropped_total
+    droppedPacketsMetricsExtra: [example_vlagent_remotewrite_packets_dropped_total]
     severity: critical
   proxyConcurrency:
     limitedRequestsMetric: example_vmauth_concurrent_requests_limit_reached_total

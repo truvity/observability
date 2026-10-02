@@ -1,0 +1,33 @@
+# expect: that `remote.name` already has
+# Two destinations sharing a name share an exporter id and a queue directory.
+
+tenancy:
+  cluster: example-cluster
+  environment: development
+
+remote:
+  name: zone-a
+  url: https://write-a.example.private
+  tokenSecret: {name: token-a, key: token}
+  replicas:
+    - name: zone-a
+      url: https://write-b.example.private
+      tokenSecret: {name: token-b, key: token}
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://write-a.example.private
+      bearerTokenFile: /etc/observability-write-token/token-a
+      maxDiskUsagePerURL: 3GB
+    - url: https://write-b.example.private
+      bearerTokenFile: /etc/observability-write-token/token-b
+      maxDiskUsagePerURL: 3GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'

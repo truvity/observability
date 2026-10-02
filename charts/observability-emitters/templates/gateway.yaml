@@ -241,6 +241,24 @@ spec:
                 secretKeyRef:
                   name: {{ $writeCredentials.secretName | quote }}
                   key: {{ $writeCredentials.key | quote }}
+            {{- /*
+            A destination with a credential of its own (`remote.replicas[]`
+            always has one: a bearer is unique per destination on the store
+            side) gets a variable of its own, named for its signal and its
+            name — the same name the exporter's header interpolates.
+            */}}
+            {{- $root := . }}
+            {{- range $signal := (list "metrics" "logs" "traces") }}
+            {{- range $d := (include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" $signal) | fromYamlArray) }}
+            {{- if $d.tokenSecret }}
+            - name: {{ include "observability-emitters.otlp.tokenEnv" (dict "signal" $signal "d" $d) }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $d.tokenSecret.name | quote }}
+                  key: {{ $d.tokenSecret.key | default "token" | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
           resources:
             {{- toYaml .Values.otlp.resources | nindent 12 }}
           volumeMounts:

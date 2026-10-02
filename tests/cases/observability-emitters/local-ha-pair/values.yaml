@@ -1,0 +1,73 @@
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# A cluster that runs BOTH halves of the pair itself: the low-level
+# destination lists, each entry naming its own write endpoint (plain
+# in-cluster HTTP) and its own bearer. Nothing here is `remote`; the two
+# forms render the same thing, which is the point.
+tenancy:
+  cluster: example-local
+  environment: production
+
+writeCredentials:
+  secretName: example-write-token-a
+
+metrics:
+  queue:
+    size: 2Gi
+  destinations:
+    - name: local-a
+      url: http://proxy-a.example.svc:8427/api/v1/write
+    - name: local-b
+      url: http://proxy-b.example.svc:8427/api/v1/write
+      tokenSecret: {name: example-write-token-b, key: token}
+
+otlp:
+  queue:
+    size: 20Gi
+    maxBatches: 4000
+  destinations:
+    metrics:
+      - name: local-a
+        url: http://proxy-a.example.svc:8427
+      - name: local-b
+        url: http://proxy-b.example.svc:8427
+        tokenSecret: {name: example-write-token-b, key: token}
+    logs:
+      - name: local-a
+        url: http://proxy-a.example.svc:8427
+      - name: local-b
+        url: http://proxy-b.example.svc:8427
+        tokenSecret: {name: example-write-token-b, key: token}
+    traces:
+      - name: local-a
+        url: http://proxy-a.example.svc:8427
+      - name: local-b
+        url: http://proxy-b.example.svc:8427
+        tokenSecret: {name: example-write-token-b, key: token}
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token-a
+      secret:
+        secretName: example-write-token-a
+    - name: write-token-b
+      secret:
+        secretName: example-write-token-b
+  extraVolumeMounts:
+    - name: write-token-a
+      mountPath: /etc/observability-write-token-a
+      readOnly: true
+    - name: write-token-b
+      mountPath: /etc/observability-write-token-b
+      readOnly: true
+  remoteWrite:
+    - url: http://proxy-a.example.svc:8427
+      bearerTokenFile: /etc/observability-write-token-a/token
+      maxDiskUsagePerURL: 3GB
+    - url: http://proxy-b.example.svc:8427
+      bearerTokenFile: /etc/observability-write-token-b/token
+      maxDiskUsagePerURL: 3GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-local","deployment.environment.name":"production"}'
