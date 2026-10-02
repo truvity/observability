@@ -209,4 +209,31 @@ _add("envoy-clusters", {
     "Excluded": "Endpoints excluded from load balancing, per Envoy cluster, for example while draining.",
 })
 
+_add("external-secrets", {
+    "SecretStore error rate [15m]": "Share of SecretStore reconciles that ended in an error over 15 minutes. Empty while there are none; above zero means a store cannot validate its provider: read the store's Ready condition and the controller log.",
+    "ClusterSecretStore error rate [15m]": "Share of ClusterSecretStore reconciles that ended in an error over 15 minutes. Empty while there are none; above zero means a cluster-wide store cannot validate its provider.",
+    "ExternalSecret error rate [15m]": "Share of ExternalSecret reconciles that ended in an error over 15 minutes. Empty while there are none; above zero means secrets are not syncing: open the Not Ready ExternalSecrets table.",
+    "ClusterExternalSecret error rate [15m]": "Share of ClusterExternalSecret reconciles that ended in an error over 15 minutes. Empty while there are none or the kind is unused.",
+    "PushSecret error rate [15m]": "Share of PushSecret reconciles that ended in an error over 15 minutes. Empty while there are none or the kind is unused.",
+    "Provider error rate [15m]": "Share of calls to the secret provider's API that failed over 15 minutes. Empty while there are none; above zero means the provider is unreachable, throttling or refusing the operator's credentials.",
+    "Workqueue depth": "Items waiting in the operator's work queues, per queue. A depth that does not drain means reconciles are slower than changes arrive, or stuck.",
+    "Webhook error rate [15m]": "Share of admission webhook requests answered with an HTTP 500 over 15 minutes. The webhooks fail closed, so errors here block ExternalSecret and SecretStore writes cluster-wide.",
+    "Webhook latency [5m]": "The 99th-percentile time the admission webhook takes to answer. A rise slows every ExternalSecret and SecretStore write.",
+    "Reconcile latency [p99]": "The 99th-percentile time a reconcile takes across all the operator's controllers. A rise is a slow provider or an overloaded operator.",
+    "reconcile error rate [p99]": "Share of reconciles that ended in an error in the last minute, for the selected controllers. Empty while there are none.",
+    "Provider errors [15m]": "Failed calls to the secret provider's API in the last 15 minutes, by provider and call. Should be empty; a call that keeps failing names the provider operation to check.",
+    "Not Ready ExternalSecrets  [15m]": "ExternalSecrets whose Ready condition is False, by namespace and name. Should be empty. Open the ExternalSecret and read its status message: a missing remote key, a denied store or a bad template.",
+    "ExternalSecret sync call errors [15m]": "Failed ExternalSecret syncs in the last 15 minutes, by namespace and name. A secret that keeps failing is stale in the cluster.",
+    "requests by path per minute": "Admission webhook requests per minute by webhook (ExternalSecret and SecretStore validation). A flat zero while resources are being written means the API server is not reaching the webhook.",
+    "requests in flight": "Admission webhook requests being handled now, by webhook. A number that stays high is a slow or stuck webhook.",
+    "requests by code per minute": "Admission webhook requests per minute by HTTP code. Anything other than 200 is a failing webhook, which blocks writes because it fails closed.",
+    "webhook latency": "Distribution of admission webhook response times. A band that moves up slows writes of ExternalSecrets and SecretStores.",
+    "active workers by controller": "Reconcile workers busy now, per controller. Workers pinned at their maximum with a deep queue mean the controller is saturated.",
+    "workqueue depth": "Items waiting in the operator's work queues, per queue. A depth that does not drain is a controller that cannot keep up.",
+    "API calls by provider": "Calls to the secret provider's API per minute, by provider, operation and result. Failed results are the ones to read; a rise in volume is more or faster-refreshing ExternalSecrets.",
+    "max concurrent: $controller": "The configured maximum concurrent reconciles of the controller. Compare with its active workers to see headroom.",
+    "reconcile rate per minute: $controller": "Reconciles per minute for the controller, by result. An error series that grows is the controller failing; a flat zero is a controller that stopped.",
+    "reconcile time latency: $controller": "Distribution of reconcile durations for the controller. A band that moves up is a slow provider or an overloaded operator.",
+})
+
 DESCRIPTIONS = _D

@@ -182,6 +182,15 @@ dashboards:
   # holds it.
   openbao:
     enabled: false
+  # -- OFF by default: it reads External Secrets Operator's own metrics, an
+  # optional source (`external-secrets-metrics`) scraped only where the
+  # operator's chart turns `serviceMonitor.enabled` on (it renders the three
+  # ServiceMonitors: controller, webhook and cert controller). Without it
+  # every panel is empty. Turn it on together with that setting, in the
+  # Grafana whose store holds the cluster's metrics. Vendored from the
+  # project's own dashboard (Apache-2.0), rewritten to the contract.
+  external-secrets:
+    enabled: false
 
 # -- The estate's own dashboards, held to the same lint as the shipped
 # set. Each entry is rendered as its own ConfigMap, unmodified except for

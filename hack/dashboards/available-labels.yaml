@@ -61,6 +61,7 @@ optionalSources:
   keycloak-metrics: Keycloak's own /metrics is scraped only where truvity/keycloak's chart turns its ServiceMonitor on, so keycloak_*, agroal_* and the jvm_* of a Keycloak pod are absent from a default install
   cnpg-instance-metrics: the CloudNativePG instance exporter (:9187 on each Postgres pod) is scraped only where the Postgres cluster chart's PodMonitor selects the pods, so cnpg_* and barman_cloud_* are absent from a default install; the operator's own series are not
   openbao-server-metrics: OpenBAO runs only where the secret plane does, and its metrics are scraped only where charts/openbao-ops' serverMetrics PodMonitor is applied, so vault_* is absent from a default install
+  external-secrets-metrics: External Secrets Operator's metrics are scraped only where its chart's serviceMonitor.enabled is on, so externalsecret_* is absent from a default install
 
 # The two node jobs (metrics.scrape.kubelet, .cadvisor) are inline scrape
 # configs: `job` and `metrics_path` are fixed by the chart. BOTH store
@@ -264,3 +265,17 @@ jobs:
     onlyWith: openbao-server-metrics
     names: [up, vault_core_unsealed, vault_core_active, vault_core_handle_request, vault_core_handle_request_count, vault_core_handle_login_request, vault_core_handle_login_request_count, vault_autopilot_healthy, vault_autopilot_failure_tolerance, vault_autopilot_node_healthy, vault_raft_storage_stats_commit_index, vault_raft_storage_follower_applied_index_delta, vault_raft_leader_lastContact, vault_raft_state_leader, vault_raft_apply, vault_audit_log_request, vault_audit_log_response, vault_audit_log_request_failure, vault_audit_log_response_failure, vault_token_count, vault_token_creation, vault_expire_num_leases, vault_expire_num_irrevocable_leases]
     labels: [job, instance, endpoint, k8s_cluster_name, k8s_namespace_name, deployment_environment_name, app_kubernetes_io_instance]
+
+  # External Secrets Operator (optional source external-secrets-metrics): three
+  # ServiceMonitors, so the job is each Service's name and `service` is set.
+  # Its controller-runtime and workqueue series carry `controller` and `name`,
+  # the ExternalSecret series `name` and `namespace` of the object (the latter
+  # collides with the scrape's and survives as `exported_namespace` under
+  # honor_labels: false), none of which are judged here.
+  - name: External Secrets Operator
+    onlyWith: external-secrets-metrics
+    names: [up, externalsecret_status_condition, externalsecret_sync_calls_error, externalsecret_provider_api_calls_count]
+    prefixes: [go_, process_, workqueue_, controller_runtime_]
+    labels: *platformLabels
+    values:
+      job: [external-secrets-metrics, external-secrets-webhook-metrics, external-secrets-cert-controller-metrics]

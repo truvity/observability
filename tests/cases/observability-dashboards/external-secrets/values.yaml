@@ -1,0 +1,67 @@
+# The External Secrets Operator dashboard alone: what a cluster turns on
+# together with the operator chart's `serviceMonitor.enabled`. It is off by
+# default (its catalog entry `requires` the optional source
+# `external-secrets-metrics`), so no existing golden moves. The rest of the
+# set is off so the golden shows only it, and the home page is off with it.
+datasources:
+  metrics: example-metrics
+
+home: ""
+
+dashboards:
+  fleet-overview:
+    enabled: false
+  k8s-views-global:
+    enabled: false
+  k8s-views-namespaces:
+    enabled: false
+  k8s-views-pods:
+    enabled: false
+  k8s-views-nodes:
+    enabled: false
+  victoriametrics-single:
+    enabled: false
+  victoriametrics-vmagent:
+    enabled: false
+  victoriametrics-vmalert:
+    enabled: false
+  victoriametrics-operator:
+    enabled: false
+  victorialogs-single:
+    enabled: false
+  victorialogs-vlagent:
+    enabled: false
+  victoriatraces-single:
+    enabled: false
+  alertmanager:
+    enabled: false
+  node-exporter-full:
+    enabled: false
+  kubelet:
+    enabled: false
+  argocd:
+    enabled: false
+  cert-manager:
+    enabled: false
+  cnpg-operator:
+    enabled: false
+  cnpg-cluster:
+    enabled: false
+  nats-server:
+    enabled: false
+  nats-jetstream:
+    enabled: false
+  envoy-gateway:
+    enabled: false
+  envoy-proxy:
+    enabled: false
+  envoy-clusters:
+    enabled: false
+  kargo:
+    enabled: false
+  keycloak:
+    enabled: false
+  openbao:
+    enabled: false
+  external-secrets:
+    enabled: true

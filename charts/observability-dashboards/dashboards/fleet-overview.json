@@ -166,7 +166,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=\"critical\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=\"critical\"}) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -176,7 +176,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -239,7 +239,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=\"warning\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=\"warning\"}) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -249,7 +249,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -312,7 +312,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity!~\"critical|warning\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity!~\"critical|warning\"}) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -322,7 +322,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -654,7 +654,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=~\"critical|warning\"}) or vector(0)",
+          "expr": "count(ALERTS{alertstate=\"firing\",k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",severity=~\"critical|warning\"}) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -664,7 +664,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -727,7 +727,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count((kube_pod_status_ready{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",condition=\"false\"} == 1) and on (k8s_cluster_name, namespace, pod) (kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",phase=~\"Pending|Running\"} == 1)) or vector(0)",
+          "expr": "count((kube_pod_status_ready{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",condition=\"false\"} == 1) and on (k8s_cluster_name, namespace, pod) (kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",phase=~\"Pending|Running\"} == 1)) or (0 * count(kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -737,7 +737,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -782,7 +782,7 @@
       "id": 10,
       "type": "stat",
       "title": "CrashLoopBackOff",
-      "description": "Containers currently waiting in CrashLoopBackOff: the process starts and dies. Read the pod's logs and its last terminated reason in the pod view.",
+      "description": "Containers currently waiting in CrashLoopBackOff: the process starts and dies. Read the pod's logs and its last terminated reason in the pod view. kube-state-metrics writes the reason series only while a container waits, so zero is read off the always-present waiting gauge; No data means kube-state-metrics is not scraped.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -800,7 +800,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",reason=\"CrashLoopBackOff\"}) or vector(0)",
+          "expr": "sum(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",reason=\"CrashLoopBackOff\"}) or (0 * count(kube_pod_container_status_waiting{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -810,7 +810,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -855,7 +855,7 @@
       "id": 11,
       "type": "stat",
       "title": "ImagePullBackOff",
-      "description": "Containers that cannot pull their image (ImagePullBackOff or ErrImagePull). Check the image name and tag, the registry, and the pull secret.",
+      "description": "Containers that cannot pull their image (ImagePullBackOff or ErrImagePull). Check the image name and tag, the registry, and the pull secret. Zero is read off the always-present waiting gauge, as for CrashLoopBackOff; No data means kube-state-metrics is not scraped.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -873,7 +873,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",reason=~\"ImagePullBackOff|ErrImagePull\"}) or vector(0)",
+          "expr": "sum(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",reason=~\"ImagePullBackOff|ErrImagePull\"}) or (0 * count(kube_pod_container_status_waiting{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -883,7 +883,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -946,7 +946,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[1h])) or vector(0)",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[1h]))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -956,7 +956,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -1023,7 +1023,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=~\"false|unknown\"}) or vector(0)",
+          "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=~\"false|unknown\"})",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1033,7 +1033,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -1096,7 +1096,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=~\"MemoryPressure|DiskPressure|PIDPressure\",status=\"true\"}) or vector(0)",
+          "expr": "sum(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=~\"MemoryPressure|DiskPressure|PIDPressure\",status=\"true\"})",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1106,7 +1106,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -1169,7 +1169,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count((kubelet_volume_stats_used_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"} / kubelet_volume_stats_capacity_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}) > 0.85) or vector(0)",
+          "expr": "count((kubelet_volume_stats_used_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"} / kubelet_volume_stats_capacity_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}) > 0.85) or (0 * count(kubelet_volume_stats_capacity_bytes{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1179,7 +1179,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -1242,7 +1242,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "(sum(increase(vm_rows_ignored_total{k8s_cluster_name=~\"$cluster\"}[1h])) or vector(0)) + (sum(increase(vl_rows_dropped_total{k8s_cluster_name=~\"$cluster\"}[1h])) or vector(0)) + (sum(increase(vt_rows_dropped_total{k8s_cluster_name=~\"$cluster\"}[1h])) or vector(0))",
+          "expr": "sum(increase(vm_rows_ignored_total{k8s_cluster_name=~\"$cluster\"}[1h]) or increase(vl_rows_dropped_total{k8s_cluster_name=~\"$cluster\"}[1h]) or increase(vt_rows_dropped_total{k8s_cluster_name=~\"$cluster\"}[1h])) or (0 * count(up{k8s_cluster_name=~\"$cluster\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1252,7 +1252,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -1461,7 +1461,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",phase=\"Running\"}) or vector(0)",
+          "expr": "sum(kube_pod_status_phase{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\",phase=\"Running\"})",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1471,7 +1471,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "0",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -2973,7 +2973,7 @@
       "id": 40,
       "type": "stat",
       "title": "Newest Postgres backup age",
-      "description": "Age of the newest successful backup across the scraped Postgres clusters, from the backup plugin's own timestamp. Past a day and a half means a scheduled backup was missed: read the Backup resources. n/a where no backup is reported.",
+      "description": "Age of the newest successful backup across the scraped Postgres clusters, from the backup plugin's own timestamp. Past a day and a half means a scheduled backup was missed: read the Backup resources. No data where no backup is reported.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -3001,7 +3001,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "noValue": "n/a",
+          "noValue": "No data",
           "decimals": 0,
           "mappings": [],
           "thresholds": {

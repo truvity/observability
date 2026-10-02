@@ -27,6 +27,25 @@ dashboards:
     folder: stores
     tags: [observability-stores]
     seedQuery: 'vm_app_version{version=~"^vmagent.*"}'
+    tweaks:
+      dropPanels:
+        # The series-limit gauges exist only when -remoteWrite.maxHourlySeries
+        # or maxDailySeries is set, and the limit is enforced on the store.
+        - {title: Hourly series limit, row: Remote write, reason: "vmagent_hourly_series_limit_* exist only when the agent's own series limit is set; the limit is enforced on the store"}
+        - {title: Daily series limit, row: Remote write, reason: "vmagent_daily_series_limit_* exist only when the agent's own series limit is set; the limit is enforced on the store"}
+        # No stream aggregation is configured; only the idle labels compressor
+        # gauges are exported, and the panel on them stays.
+        - {title: "Matched samples ($instance)", row: Streaming aggregation, reason: "vm_streamaggr_* are exported only when stream aggregation is configured"}
+        - {title: "Dropped samples ($instance)", row: Streaming aggregation, reason: "vm_streamaggr_* are exported only when stream aggregation is configured"}
+        - {title: "Produced samples ($instance)", row: Streaming aggregation, reason: "vm_streamaggr_* are exported only when stream aggregation is configured"}
+        - {title: "Flush timeouts ($instance)", row: Streaming aggregation, reason: "vm_streamaggr_* are exported only when stream aggregation is configured"}
+        - {title: "Samples lag 0.99 quantile ($instance)", row: Streaming aggregation, reason: "vm_streamaggr_* are exported only when stream aggregation is configured"}
+        - {title: "Dedup flush duration 0.99 quantile ($instance)", row: Streaming aggregation, reason: "vm_streamaggr_* are exported only when stream aggregation is configured"}
+        # Kafka is an enterprise feature none of the agents here use.
+        - {title: "Traffic (bytes)", row: "Kafka (Enterprise)", reason: "vmagent_*kafka_* are exported only by the enterprise Kafka integration"}
+        - {title: "Messages in / out", row: "Kafka (Enterprise)", reason: "vmagent_*kafka_* are exported only by the enterprise Kafka integration"}
+        - {title: Producer errors, row: "Kafka (Enterprise)", reason: "vmagent_*kafka_* are exported only by the enterprise Kafka integration"}
+        - {title: Consumer errors, row: "Kafka (Enterprise)", reason: "vmagent_*kafka_* are exported only by the enterprise Kafka integration"}
 
   - name: victoriametrics-vmalert
     upstream: victoriametrics
@@ -43,6 +62,9 @@ dashboards:
     folder: stores
     tags: [observability-stores]
     seedQuery: 'operator_log_messages_total'
+    tweaks:
+      dropPanels:
+        - {title: Prometheus Converter Watch events, reason: "operator_prometheus_converter_watch_events_total is not exported by the pinned operator; only operator_prometheus_converter_active_watchers is, and the Prometheus Objects watchers stat reads it"}
 
   - name: victorialogs-single
     upstream: victorialogs
@@ -51,6 +73,12 @@ dashboards:
     folder: stores
     tags: [observability-stores]
     seedQuery: 'vm_app_version{version=~"victoria-logs-.*"}'
+    tweaks:
+      replace:
+        # VictoriaLogs exports no vm_cache_size_bytes, and a sum of nothing
+        # made both series of the panel empty.
+        - from: ' + sum(vm_cache_size_bytes{k8s_cluster_name=~"$cluster",job=~"$job", instance=~"$instance"})'
+          to: ''
 
   - name: victorialogs-vlagent
     upstream: victorialogs
@@ -99,6 +127,9 @@ dashboards:
     # left alone, `cluster="$cluster"` would match nothing, because
     # nothing here ever sets a bare `cluster` label.
     preRenamed: true
+    tweaks:
+      dropPanels:
+        - {title: Config Error Count, reason: "kubelet_node_config_error came from dynamic kubelet configuration, removed from Kubernetes years ago, so the panel can never have data"}
 
   # node-exporter-full has no seedQuery: it is rewritten by the generic
   # rule (every panel already keys off `job`/`nodename`, no dashboard
@@ -111,6 +142,23 @@ dashboards:
     folder: infrastructure
     tags: [observability-kubernetes]
     seedQuery: 'node_uname_info'
+    tweaks:
+      dropPanels:
+        - {title: Hardware Temperature Monitor, reason: "node_hwmon_* needs a hardware monitor, which a virtual machine has none of"}
+        - {title: Hardware Fan Speed, reason: "node_hwmon_* needs a hardware monitor, which a virtual machine has none of"}
+        - {title: Cooling Device Utilization, reason: "node_cooling_device_* needs a cooling device, which a virtual machine has none of"}
+        - {title: Power Supply, reason: "node_power_supply_* needs a power supply, which a virtual machine has none of"}
+        - {title: CPU Frequency Scaling, reason: "node_cpu_scaling_frequency_* is not exposed on a virtual machine's cpufreq"}
+        - {title: Systemd Units State, reason: "node_systemd_* needs --collector.systemd, which is not enabled"}
+        - {title: Systemd Sockets Current, reason: "node_systemd_* needs --collector.systemd, which is not enabled"}
+        - {title: Systemd Sockets Accepted, reason: "node_systemd_* needs --collector.systemd, which is not enabled"}
+        - {title: Systemd Sockets Refused, reason: "node_systemd_* needs --collector.systemd, which is not enabled"}
+        - {title: Processes Detailed States, reason: "node_processes_* needs --collector.processes, which is not enabled"}
+        - {title: PIDs Number and Limit, reason: "node_processes_* needs --collector.processes, which is not enabled"}
+        - {title: Threads Number and Limit, reason: "node_processes_* needs --collector.processes, which is not enabled"}
+        - {title: IRQ Detail, reason: "node_interrupts_total needs --collector.interrupts, which is not enabled"}
+        - {title: Network Saturation, row: "CPU / Memory / Net / Disk", reason: "node_network_speed_bytes is not reported by virtual network interfaces"}
+        - {title: Speed, row: Network Traffic, reason: "node_network_speed_bytes is not reported by virtual network interfaces"}
     # node-exporter is off by default (`nodeExporter.enabled`, 0.15.0), so
     # this dashboard is empty until it is on; a consumer hides it until then.
     requires: [node-exporter]
@@ -150,6 +198,15 @@ dashboards:
     folder: kubernetes
     tags: [observability-kubernetes, kubernetes]
     queryCheck: true
+    # kube-state-metrics writes no kube_*_labels series while its label
+    # allow-list is empty (the default), so a count over them was empty; the
+    # *_created series of the same kind is written for every object.
+    tweaks:
+      replace:
+        - {from: 'sum(kube_namespace_labels{', to: 'count(kube_namespace_created{'}
+        - {from: 'sum(kube_deployment_labels{', to: 'count(kube_deployment_created{'}
+        - {from: 'sum(kube_statefulset_labels{', to: 'count(kube_statefulset_created{'}
+        - {from: 'sum(kube_daemonset_labels{', to: 'count(kube_daemonset_created{'}
 
   - name: k8s-views-namespaces
     upstream: dotdc
@@ -159,6 +216,14 @@ dashboards:
     folder: kubernetes
     tags: [observability-kubernetes, kubernetes]
     queryCheck: true
+    # kube-state-metrics writes no kube_*_labels series while its label
+    # allow-list is empty (the default), so a count over them was empty; the
+    # *_created series of the same kind is written for every object.
+    tweaks:
+      replace:
+        - {from: 'sum(kube_deployment_labels{', to: 'count(kube_deployment_created{'}
+        - {from: 'sum(kube_statefulset_labels{', to: 'count(kube_statefulset_created{'}
+        - {from: 'sum(kube_daemonset_labels{', to: 'count(kube_daemonset_created{'}
 
   - name: k8s-views-nodes
     upstream: dotdc
@@ -291,6 +356,8 @@ dashboards:
     folder: platform
     tags: [observability-platform, cnpg]
     queryCheck: true
+    tweaks:
+      title: 'CloudNativePG / Operator ($cluster)'
     platform:
       anchor: 'controller_runtime_reconcile_total{job="cnpg-system/cnpg-cloudnative-pg"}'
       keepOnlyRows: [Operator]
@@ -324,6 +391,8 @@ dashboards:
     tags: [observability-platform, cnpg]
     queryCheck: true
     requires: [cnpg-instance-metrics]
+    tweaks:
+      title: 'CloudNativePG / Clusters ($cluster)'
     platform:
       anchor: 'cnpg_collector_up'
       dropRows:
@@ -507,6 +576,10 @@ dashboards:
     platform:
       anchor: 'envoy_server_live'
       varAnchor: 'envoy_cluster_membership_total'
+      replace:
+        # The HTTP listener's connection-manager prefix is `http` or `https`
+        # plus the port; the anchored `http-.*` never matched `https-<port>`.
+        - {from: 'envoy_http_conn_manager_prefix=~"http-.*"', to: 'envoy_http_conn_manager_prefix=~"https?-.*"'}
       renameVars:
         cluster: {name: envoy_cluster, label: envoy cluster}
         namespace: {name: route_namespace, label: route namespace}
@@ -514,6 +587,37 @@ dashboards:
         - {title: Outlier ejected, reason: envoy_cluster_outlier_detection_* exist only when outlier detection is configured; requires envoy-outlier-detection}
       units:
         Total requests: reqps
+
+  # External Secrets Operator's own dashboard (docs/snippets/dashboard.json in
+  # the project, the file its chart ships as `grafanaDashboard`), pinned to the
+  # release tag of the chart in use. The operator is an optional source here:
+  # its metrics are scraped only where the chart's `serviceMonitor.enabled` is
+  # on, so the dashboard requires `external-secrets-metrics` and is off by
+  # default. Upstream selects on `service`; the converters' job is the Service
+  # name (`external-secrets-metrics`, `external-secrets-webhook-metrics`,
+  # `external-secrets-cert-controller-metrics`), so the selectors become a `job`
+  # match, which the available-labels list can judge.
+  - name: external-secrets
+    upstream: external-secrets
+    url: https://raw.githubusercontent.com/external-secrets/external-secrets/{ref}/docs/snippets/dashboard.json
+    ref: v2.10.0
+    adapt: platform
+    folder: platform
+    tags: [observability-platform, external-secrets]
+    queryCheck: true
+    requires: [external-secrets-metrics]
+    platform:
+      anchor: 'externalsecret_status_condition'
+      regexMatchVars: [controller]
+      replace:
+        - {from: 'service=~".*external-secrets.*"', to: 'job=~"external-secrets.*"'}
+        - {from: 'service=~"external-secrets.*"', to: 'job=~"external-secrets.*"'}
+      # An ExternalSecret's own `namespace` label collides with the scrape's and
+      # survives as `exported_namespace` (honor_labels: false), so grouping by
+      # `namespace` would name the operator's namespace on every row.
+      setExpr:
+        - {title: 'Not Ready ExternalSecrets  [15m]', expr: 'sum(externalsecret_status_condition{condition="Ready",status="False"}) by (exported_namespace, name) == 1'}
+        - {title: 'ExternalSecret sync call errors [15m]', expr: 'sum(increase(externalsecret_sync_calls_error[15m])) by (name, exported_namespace)', legend: '{{exported_namespace}}/{{name}}'}
 
   # Authored: no upstream project ships a Kargo dashboard
   # (hack/dashboards/kargo.py).
@@ -606,6 +710,11 @@ upstreams:
     url: https://github.com/nats-io/prometheus-nats-exporter
     license: Apache-2.0
     copyright: Copyright 2017-2018 The NATS Authors
+  external-secrets:
+    project: External Secrets Operator
+    url: https://github.com/external-secrets/external-secrets
+    license: Apache-2.0
+    copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
   envoy-gateway:
     project: Envoy Gateway
     url: https://github.com/envoyproxy/gateway

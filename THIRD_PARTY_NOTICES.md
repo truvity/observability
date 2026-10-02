@@ -28,7 +28,7 @@ ships a NOTICE file at the pinned ref.
 - Pinned ref: `v1.152.0`
 - SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
 - Copyright: Copyright 2019-2026 VictoriaMetrics, Inc.
-- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
 
 ## victoriametrics-vmalert
 
@@ -48,7 +48,7 @@ ships a NOTICE file at the pinned ref.
 - Pinned ref: `v1.152.0`
 - SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
 - Copyright: Copyright 2019-2026 VictoriaMetrics, Inc.
-- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
 
 ## victorialogs-single
 
@@ -58,7 +58,7 @@ ships a NOTICE file at the pinned ref.
 - Pinned ref: `v1.121.0`
 - SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
 - Copyright: Copyright 2019-2025 VictoriaMetrics, Inc.
-- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
 
 ## victorialogs-vlagent
 
@@ -98,7 +98,7 @@ ships a NOTICE file at the pinned ref.
 - Pinned ref: `v0.19.0`
 - SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
 - Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
-- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
 
 ## node-exporter-full
 
@@ -108,7 +108,7 @@ ships a NOTICE file at the pinned ref.
 - Pinned ref: `99a25cc154c21c4fcbae1aa24352bf1b6764d847`
 - SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
 - Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
-- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
 
 ## k8s-views-global
 
@@ -236,6 +236,16 @@ ships a NOTICE file at the pinned ref.
 - URL: https://github.com/envoyproxy/gateway
 - Fetched from: https://raw.githubusercontent.com/envoyproxy/gateway/v1.9.2/charts/gateway-addons-helm/dashboards/envoy-clusters.json
 - Pinned ref: `v1.9.2`
+- SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
+- Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
+- Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed
+
+## external-secrets
+
+- Upstream project: External Secrets Operator
+- URL: https://github.com/external-secrets/external-secrets
+- Fetched from: https://raw.githubusercontent.com/external-secrets/external-secrets/v2.10.0/docs/snippets/dashboard.json
+- Pinned ref: `v2.10.0`
 - SPDX licence: Apache-2.0 (`LICENSES/Apache-2.0.txt`)
 - Copyright: none stated (the LICENSE file is the unfilled Apache-2.0 template)
 - Modified: rewritten to this repository's dashboard contract (datasource/cluster/namespace variables, titles, links); panels on metrics a store does not hold replaced or removed

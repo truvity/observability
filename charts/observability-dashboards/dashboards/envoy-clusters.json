@@ -1048,7 +1048,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(irate(envoy_http_downstream_cx_rx_bytes_total{k8s_cluster_name=~\"$cluster\",envoy_http_conn_manager_prefix=~\"http-.*\"}[$__rate_interval]))",
+          "expr": "sum(irate(envoy_http_downstream_cx_rx_bytes_total{k8s_cluster_name=~\"$cluster\",envoy_http_conn_manager_prefix=~\"https?-.*\"}[$__rate_interval]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{service}} - in",
@@ -1061,7 +1061,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(irate(envoy_http_downstream_cx_tx_bytes_total{k8s_cluster_name=~\"$cluster\",envoy_http_conn_manager_prefix=~\"http-.*\"}[$__rate_interval]))",
+          "expr": "sum(irate(envoy_http_downstream_cx_tx_bytes_total{k8s_cluster_name=~\"$cluster\",envoy_http_conn_manager_prefix=~\"https?-.*\"}[$__rate_interval]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{service}} - out",
