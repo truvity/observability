@@ -1377,6 +1377,14 @@ override any of the three.
 | `otlp.streamFields` | list | `[k8s.cluster.name, kubernetes.pod_namespace, service.name]` | The `VL-Stream-Fields` header. **Refused empty**, must contain both keys, and every entry must be an attribute the chart knows to be constant for the lifetime of a pod. The Helm release attribute is refused: navigation, not a stream. |
 | `otlp.events.enabled` | bool | `true` | Kubernetes Events through the `k8s_events` receiver, with a leader-election lease so replicas do not each ingest every Event. Events do **not** come from the log agent. |
 | `otlp.service.grpcPort` / `.httpPort` | int | `4317` / `4318` | |
+| `otlp.external.enabled` | bool | `false` | **Opt-in.** External OTLP ingest: a second receiver (`otlp/external`, HTTP) and three pipelines of their own, with identity from request headers a trusting gateway route set, never from the payload. Renders a Service port, a container port and a NetworkPolicy. See docs/external-ingest.md. |
+| `otlp.external.httpPort` | int | `4319` | The receiver's port. Refused if it equals `service.grpcPort`, `service.httpPort` or 8888. |
+| `otlp.external.maxRequestBodyBytes` | int | `4194304` | Receiver `max_request_body_size`, after decompression. |
+| `otlp.external.namespace` | name | `external` | Stamped as `k8s.namespace.name` (and `kubernetes.pod_namespace` on logs): the scoping key for external data. Static, never from a request. |
+| `otlp.external.headers` | map header to attribute | `{}` | **Required, refused empty.** Lowercase header names; each is written into its attribute, and EVERY listed header is required (data without one is dropped). Refused: an attribute under `k8s.` / `kubernetes.`, `telemetry.source`, `deployment.environment.name`, or one written twice. |
+| `otlp.external.attributes` | map | `{}` | Static resource attributes stamped on external data (same refusals as `headers`), e.g. `owner`. |
+| `otlp.external.deleteAttributes` | list | `owner, project, deployment.environment.name, service.namespace, cloud.account.id, aws.account.id, aws.iam.role, aws.iam.role.arn, enduser.id, enduser.role, enduser.scope, access.subject` | Attributes a client may not choose, deleted from resource, scope and every record. Always deleted on top: `k8s.*`, `kubernetes.*`, `telemetry.source` and everything in `headers` / `attributes`. |
+| `otlp.external.networkPolicy.ingressFrom` | list of peers | `[]` | **Required, refused empty.** NetworkPolicy peers (the gateway's Envoy pods) allowed to reach the external port; the in-cluster ports stay open to all, as without the policy. |
 | `otlp.podMonitor.enabled` | bool | `true` | The gateway's own `otelcol_exporter_send_failed_*` and `otelcol_exporter_enqueue_failed_*`. |
 | `otlp.podMonitor.extraLabels` | map | `{}` | |
 

@@ -90,6 +90,14 @@ the trace store's select APIs take no argument a proxy could put a
 filter in — so span contents carrying no personal data is a rule for the
 code that emits them, and nothing downstream can enforce it.
 
+## From outside the cluster
+
+Telemetry from outside (an AWS Lambda function, through a public route that
+verifies a JWT) goes to a separate gateway port whose identity comes from
+the headers the route sets, not from the payload; see
+[external-ingest.md](external-ingest.md). Do not point an in-cluster
+workload at it.
+
 ## Verifying
 
 **A 200 from the exporter means the collector queued your batch. It is

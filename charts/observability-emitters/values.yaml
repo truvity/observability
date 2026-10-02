@@ -688,6 +688,79 @@ otlp:
     # SDK's default differs by language.
     grpcPort: 4317
     httpPort: 4318
+  # -- External OTLP ingest: telemetry from OUTSIDE the cluster (an AWS
+  # Lambda function, say) that arrives through a public gateway route which
+  # has ALREADY verified the caller's JWT and written the caller's identity
+  # into request headers. Off by default; nothing in any render moves.
+  #
+  # The trust model (docs/external-ingest.md): the collector believes the
+  # headers listed in `headers` and nothing the payload says about who sent
+  # it. A separate receiver on a separate port, so in-cluster traffic and
+  # external traffic never share identity rules; every client-supplied
+  # identity or tenancy attribute is deleted FIRST, then the headers are
+  # written in, then the chart's own stamps. The route in front MUST strip
+  # these headers from the client before it sets them, and the
+  # NetworkPolicy below admits the port from that route's pods only.
+  external:
+    enabled: false
+    # -- The receiver's port. A separate Service port and container port;
+    # must differ from `service.grpcPort`, `service.httpPort` and 8888.
+    httpPort: 4319
+    # -- The largest request body the receiver accepts, in bytes, measured
+    # after decompression. Larger is answered 400 and counted by the
+    # receiver. 4 MiB: an OTLP batch from one function invocation is far
+    # smaller.
+    maxRequestBodyBytes: 4194304
+    # -- The namespace external data is filed under: stamped into
+    # `k8s.namespace.name` (and `kubernetes.pod_namespace` on logs), the
+    # scoping key a read grant selects on. Static, never from a request:
+    # the namespace is half of the key. Grant readers this value.
+    namespace: external
+    # -- Request header -> resource attribute, for every identity the
+    # gateway verified. REQUIRED when external is enabled. Header names
+    # lowercase. EVERY listed header is required: data that arrives
+    # without one (or with it empty) is DROPPED, not stored anonymous.
+    # An attribute under `k8s.` or `kubernetes.` is refused (the
+    # collector derives those), as are `telemetry.source` and
+    # `deployment.environment.name`, which the chart stamps. Example:
+    #
+    #   headers:
+    #     x-roster-subject: enduser.id
+    #     x-roster-account: cloud.account.id
+    #     x-roster-owner: owner
+    headers: {}
+    # -- Static resource attributes stamped on everything external, after
+    # the deletions: the tenancy a deployment has no header for
+    # (`owner: acme`). Same refusals as `headers`.
+    attributes: {}
+    # -- Attributes a client may NOT choose, deleted from the resource, the
+    # scope and every span, log record and data point before anything is
+    # written. This is the chart's list for the identity and tenancy keys;
+    # extend it, do not shrink it without reading docs/external-ingest.md.
+    # Always deleted on top of this list, and not removable: every
+    # attribute in `headers` and `attributes`, `telemetry.source`, and
+    # everything under `k8s.` and `kubernetes.`.
+    deleteAttributes:
+      - owner
+      - project
+      - deployment.environment.name
+      - service.namespace
+      - cloud.account.id
+      - aws.account.id
+      - aws.iam.role
+      - aws.iam.role.arn
+      - enduser.id
+      - enduser.role
+      - enduser.scope
+      - access.subject
+    networkPolicy:
+      # -- Who may reach the external port: NetworkPolicy `from` peers,
+      # naming the gateway's Envoy pods (a `namespaceSelector` AND
+      # `podSelector` in ONE entry). REQUIRED when external is enabled and
+      # refused empty: an external port anything in the cluster can reach
+      # lets any pod set the identity headers itself. The in-cluster ports
+      # (4317, 4318, 8888) stay open to everyone, as without the policy.
+      ingressFrom: []
   # -- Self-monitoring, as a PodMonitor.
   #
   # The gateway has no operator to scrape it and no Service on its

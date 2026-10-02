@@ -4,6 +4,32 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **`observability-emitters`: external OTLP ingest, `otlp.external`** (off by
+  default; no existing render moves). The gateway collector accepts OTLP from
+  outside the cluster (an AWS Lambda, through a public route that has already
+  verified a JWT) on a SEPARATE receiver and port (`otlp/external`, HTTP,
+  `httpPort` 4319, `include_metadata`) with three pipelines of their own that
+  end in the same exporters. Identity comes from request headers the route
+  sets (`otlp.external.headers`, header to attribute), never from the payload:
+  client-supplied identity and tenancy attributes (`k8s.*`, `kubernetes.*`,
+  `telemetry.source`, plus the `deleteAttributes` list: `owner`, `project`,
+  `cloud.account.id`, `aws.*` role keys, `enduser.*` ...) are deleted from
+  resource, scope and every record first; the headers are written in; data
+  missing a required header is dropped; then the chart stamps cluster, tier,
+  the static `external` namespace and `telemetry.source=external`. Renders a
+  Service port, a container port and a NetworkPolicy (the in-cluster ports
+  stay open to all; the external port admits only
+  `networkPolicy.ingressFrom`, the gateway's Envoy pods). Refused: no header
+  map, a header or static attribute writing `k8s.*`/`kubernetes.*` (or the
+  chart's own stamps), the same port as an in-cluster one, empty
+  `ingressFrom`. Metrics promote `owner`, `cloud.account.id` and
+  `telemetry.source` to labels when this is on. The route must strip the
+  client's copies of the headers first. A test runs the real rendered
+  processors in the pinned collector with forged attributes. See
+  docs/external-ingest.md.
+
 ## v0.40.0
 
 - **Behaviour change: existing goldens moved.** `observability-rum`'s VMRule
