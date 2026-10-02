@@ -4,6 +4,18 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- fix(observability-rum): `smctl serve` no longer crash-loops at start with
+  `reset cache dir: unlinkat //cache: read-only file system`. smctl empties
+  its cache directory by removing and recreating it, which fails on the
+  volume's mount point under a read-only root filesystem. The rendered
+  config now points `cache.dir` at `/cache/maps`, a subdirectory of the
+  writable emptyDir mounted at `/cache`. The mount, the size limit, the
+  read-only root filesystem and the restricted security context are
+  unchanged; only the ConfigMap (and so the pod's config checksum) moves,
+  in installs with `sourcemaps.smctl.enabled`.
+
 ## v0.43.0
 
 - feat(alert-ingress): AWS Budgets (plain-text) and Cost Anomaly Detection

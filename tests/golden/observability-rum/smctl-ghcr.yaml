@@ -2404,7 +2404,7 @@ data:
       dockerConfig: /etc/smctl/docker/config.json
       mode: dockerConfig
     cache:
-      dir: /cache
+      dir: /cache/maps
       maxSize: 1GiB
     fetchTimeout: 60s
     limits:
@@ -2675,7 +2675,7 @@ spec:
         app.kubernetes.io/name: observability-rum-sourcemaps
       annotations:
         # A changed configuration restarts the pods (smctl reads it once).
-        checksum/config: ee97893e0dc12e5b56d6afd4c14b9e81cd8f515009e8cb0a3916a1c30f344489
+        checksum/config: b983db49c3af62da377b6b4c1bdff26c01dd09b97b7c915a8d1c3e3314e4c6f3
     spec:
       serviceAccountName: observability-rum-sourcemaps
       # The ServiceAccount is mounted only where it carries an identity the
