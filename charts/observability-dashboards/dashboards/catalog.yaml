@@ -128,6 +128,13 @@ node-exporter-full:
   requires:
   - node-exporter
   upstream: rfmoz
+openbao:
+  authored: true
+  file: openbao.json
+  folder: platform
+  queryCheck: true
+  requires:
+  - openbao-server-metrics
 victorialogs-single:
   file: victorialogs-single.json
   folder: stores

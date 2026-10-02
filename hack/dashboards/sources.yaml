@@ -535,6 +535,17 @@ dashboards:
     tags: [observability-platform, keycloak]
     queryCheck: true
     requires: [keycloak-metrics]
+  # Authored: no upstream project ships an OpenBAO dashboard for the series
+  # the server exposes (hack/dashboards/openbao.py). OpenBAO runs where the
+  # secret plane does and its metrics are scraped only where charts/openbao-ops'
+  # serverMetrics is on, so it is an optional source: off by default.
+  - name: openbao
+    authored: true
+    generator: hack/dashboards/openbao.py
+    folder: platform
+    tags: [observability-platform, openbao]
+    queryCheck: true
+    requires: [openbao-server-metrics]
 
 # Third-party provenance. Every fetched dashboard names its `upstream`
 # here; hack/dashboards.py renders THIRD_PARTY_NOTICES.md from this and the

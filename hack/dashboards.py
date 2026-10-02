@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "hack" / "dashboards"))
 import fleet_overview  # noqa: E402  (hack/dashboards/fleet_overview.py)
 import kargo as kargo_dashboard  # noqa: E402  (hack/dashboards/kargo.py)
 import keycloak as keycloak_dashboard  # noqa: E402  (hack/dashboards/keycloak.py)
+import openbao as openbao_dashboard  # noqa: E402  (hack/dashboards/openbao.py)
 import platform_extras  # noqa: E402  (hack/dashboards/platform_extras.py)
 import platform_adapt  # noqa: E402  (hack/dashboards/platform_adapt.py)
 from descriptions import DESCRIPTIONS, NODE_DESCRIPTIONS  # noqa: E402
@@ -676,6 +677,7 @@ GENERATORS = {
     "hack/dashboards/fleet_overview.py": fleet_overview,
     "hack/dashboards/kargo.py": kargo_dashboard,
     "hack/dashboards/keycloak.py": keycloak_dashboard,
+    "hack/dashboards/openbao.py": openbao_dashboard,
 }
 
 

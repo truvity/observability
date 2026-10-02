@@ -18,6 +18,24 @@ must be done first, and whether a default moved. Newest first, one
 
 ## v0.31.0
 
+`observability-dashboards`: an OpenBAO dashboard.
+
+- **`dashboards.openbao`** (default **off**): the OpenBAO server's health
+  from its own metrics (`vault_*`), in the `Platform` folder, uid
+  `truvity-obs-openbao`. Rows: availability (pods reporting, sealed pods,
+  active nodes, healthy voters, failure tolerance, audit failures, and the
+  seal and active state by pod), Raft (Autopilot voter health, commit index,
+  applied index behind the leader, leader contact, leadership changes, write
+  rate), requests (rate and p50/p99 latency, logins), tokens and leases, and
+  the audit devices. It needs the server's telemetry on and a PodMonitor on
+  the server pods (truvity/openbao `openbao-ops` >= v0.27.0:
+  `serverMetrics`); without it every panel is empty, hence the default.
+  Turn it on in the Grafana whose store holds that cluster's metrics. Nothing
+  else in the render changes: with the key left alone the default set is
+  byte-identical. The panels on the Autopilot, token and lease gauges are
+  joined to `vault_core_active`, because the server keeps exporting a former
+  leader's last value after a leadership change.
+
 `observability-dashboards`: a Keycloak dashboard, off by default.
 
 - **Behaviour change: a new `dashboards.keycloak` key, `enabled: false`.**

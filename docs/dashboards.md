@@ -158,6 +158,7 @@ in the change, never shipped empty.
 | `envoy-proxy`, `envoy-clusters` | `envoy-gateway-system/envoy-proxy` | envoyproxy/gateway addons |
 | `kargo` | `kargo-controller-metrics` | authored (`authored: true`) |
 | `keycloak` | the install's own `/metrics`: `{install}-service` through the Keycloak chart's ServiceMonitor (optional source `keycloak-metrics`; off by default) | authored (`authored: true`) |
+| `openbao` | the OpenBAO server pods' `/v1/sys/metrics` (optional source `openbao-server-metrics`; off by default) | authored (`authored: true`) |
 
 - **Job names follow the converters.** A ServiceMonitor's `job` is its
   Service name; a PodMonitor's is `<namespace>/<PodMonitor name>`. With
@@ -187,13 +188,28 @@ in the change, never shipped empty.
   panels read the PostgreSQL 17 `pg_stat_checkpointer` names the exporter
   publishes. The ApplicationSet controller and Envoy's Wasm cache are not
   read either.
+- **OpenBAO is an optional source.** Its series (`vault_*`: the server keeps
+  that prefix on the wire) exist only where the server's telemetry is on and
+  the `serverMetrics` PodMonitor of truvity/openbao's `openbao-ops` chart is
+  applied, so the `openbao` dashboard `requires: [openbao-server-metrics]` and
+  is off by default (`dashboards.openbao.enabled`), like `cnpg-cluster`. Five
+  rows: availability (seal and active state, voters, failure tolerance, audit
+  failures), Raft (voter health, commit index, follower lag, leader contact,
+  leadership changes), requests (rate and p50/p99 latency, logins), tokens and
+  leases, and audit. The Autopilot, token and lease gauges are set by the
+  active node only and a follower's applied-index delta by a follower only, and
+  a former holder keeps exporting its last value until the server's
+  `prometheus_retention_time` passes, so every panel on them is joined to
+  `vault_core_active`; a panel that sums them unjoined double counts after a
+  leadership change. OpenBAO's own `namespace` label collides with the scrape's
+  and survives as `exported_namespace`; the token panels sum over it.
 - **The Fleet overview** carries one line of tiles per component, health only,
   each linking to the component's dashboard with datasource and cluster
   carried across. A component a cluster does not run reads `n/a`.
 
 ## Third-party dashboards
 
-Every dashboard except `fleet-overview`, `kargo` and `keycloak` (all authored here) is an
+Every dashboard except `fleet-overview`, `kargo`, `keycloak` and `openbao` (all authored here) is an
 upstream project's work, modified to the contract above. Apache-2.0 requires the licence text, a
 modification notice and the attribution to travel with it, so
 `THIRD_PARTY_NOTICES.md` lists each one (upstream, URL, pinned ref, SPDX
