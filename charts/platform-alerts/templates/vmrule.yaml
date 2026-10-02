@@ -330,15 +330,17 @@ spec:
     - name: platform-alerts.probes
       interval: {{ .Values.interval }}
       rules:
-        # An HTTP probe that is not answering 200 from this cluster.
+        # An HTTP probe that is not answering 2xx from this cluster.
         #
-        # `up{job="http-probe"}` is the emitters chart's probe series: 1
-        # while the URL answers 200, 0 for a refused connection, a TLS
-        # failure or any other status. `max by (probe)` so a probe that
-        # resolves to several targets is down only when all are.
+        # `probe_success` is the blackbox exporter's own series for a probe
+        # of `observability-emitters` (`metrics.scrape.probes`): 1 while the
+        # URL answers as the module accepts (any 2xx by default), 0 for a
+        # refused connection, a TLS failure or any other status. `max by
+        # (probe)` so a probe that resolves to several targets is down only
+        # when all are.
         - alert: {{ $g.alertName }}
           expr: >-
-            max by ({{ $b }}probe) (up{job="http-probe", probe=~"{{ $g.probe }}"}) == 0
+            max by ({{ $b }}probe) (probe_success{probe=~"{{ $g.probe }}"}) == 0
           for: {{ $g.for }}
           labels:
             {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
@@ -346,18 +348,38 @@ spec:
             {{- if $g.summary }}
             summary: {{ $g.summary | quote }}
             {{- else }}
-            summary: "HTTP probe {{`{{ $labels.probe }}`}} has not answered 200 for {{ $g.for }}"
+            summary: "HTTP probe {{`{{ $labels.probe }}`}} has not answered 2xx for {{ $g.for }}"
             {{- end }}
             {{- if $g.description }}
             description: {{ $g.description | quote }}
             {{- else }}
             description: >-
               The probe {{`{{ $labels.probe }}`}} (charts/observability-emitters
-              `metrics.scrape.probes`) has read up == 0 for {{ $g.for }}: the URL
-              refused the connection, failed TLS or answered something other
-              than 200 from this cluster's own egress.
+              `metrics.scrape.probes`) has read probe_success == 0 for {{ $g.for }}: the URL
+              refused the connection, failed TLS or answered something the
+              probe's module does not accept (any 2xx, by default) from this
+              cluster's own egress.
             {{- end }}
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" $g.alertName)) }}{{ . | nindent 12 }}{{- end }}
+        {{- if $g.certExpiry.enabled }}
+        # The TLS certificate a probe saw expires within `withinDays`.
+        # `probe_ssl_earliest_cert_expiry` is a Unix time and exists only
+        # for an https target; the earliest certificate of the chain.
+        - alert: {{ $g.certExpiry.alertName }}
+          expr: >-
+            min by ({{ $b }}probe) (probe_ssl_earliest_cert_expiry{probe=~"{{ $g.probe }}"}) - time() < {{ mul (int $g.certExpiry.withinDays) 86400 }}
+          for: {{ $g.certExpiry.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.certExpiry.severity) | nindent 12 }}
+          annotations:
+            summary: "The TLS certificate seen by probe {{`{{ $labels.probe }}`}} expires within {{ $g.certExpiry.withinDays }} days"
+            description: >-
+              The earliest certificate in the chain the probe
+              {{`{{ $labels.probe }}`}} (charts/observability-emitters
+              `metrics.scrape.probes`) was shown expires in less than
+              {{ $g.certExpiry.withinDays }} days.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" $g.certExpiry.alertName)) }}{{ . | nindent 12 }}{{- end }}
+        {{- end }}
     {{- end }}
     {{- if .Values.groups.pendingPods.enabled }}
     {{- $g := .Values.groups.pendingPods }}

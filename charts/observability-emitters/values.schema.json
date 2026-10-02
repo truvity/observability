@@ -276,7 +276,7 @@
             },
             "probes": {
               "type": "array",
-              "description": "HTTP probes: a scrape of a URL this cluster does not run, kept for its `up` series. See values.yaml `metrics.scrape.probes`.",
+              "description": "HTTP probes: a VMProbe per entry, answered by the blackbox exporter (`blackboxExporter`). See values.yaml `metrics.scrape.probes`.",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
@@ -290,6 +290,11 @@
                     "type": "string",
                     "pattern": "^https?://[^/?#@\\s]+(/[^?#\\s]*)?$",
                     "description": "scheme://host[:port][/path]: no user info, no query, no fragment."
+                  },
+                  "module": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A key of `blackboxExporter.modules`; default `http_2xx`."
                   },
                   "interval": {
                     "type": "string",
@@ -416,6 +421,43 @@
       "properties": {
         "enabled": {
           "type": "boolean"
+        }
+      }
+    },
+    "blackboxExporter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "tag"],
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "minLength": 1 }
+          }
+        },
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "podSecurityContext": { "type": "object" },
+        "containerSecurityContext": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "resources": { "type": "object" },
+        "modules": {
+          "type": "object",
+          "description": "Blackbox exporter modules by name, in the exporter's own configuration shape.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["prober"],
+            "properties": { "prober": { "type": "string", "enum": ["http", "tcp", "icmp", "dns", "grpc"] } }
+          }
+        },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "enabled": { "type": "boolean" } }
         }
       }
     },

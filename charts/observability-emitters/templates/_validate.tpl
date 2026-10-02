@@ -28,6 +28,7 @@ instead.
 {{- include "observability-emitters.validate.kubeStateMetrics" . -}}
 {{- include "observability-emitters.validate.nodeExporter" . -}}
 {{- include "observability-emitters.validate.otlp" . -}}
+{{- include "observability-emitters.validate.probes" . -}}
 {{- include "observability-emitters.validate.licence" . -}}
 {{- end -}}
 
@@ -766,6 +767,35 @@ the vendor's terms. A tag is the only thing a chart can see.
 {{- range $flag, $_ := (.Values.metrics.spec.extraArgs | default dict) -}}
 {{- if or (eq $flag "license") (eq $flag "licenseFile") (hasPrefix "license." $flag) -}}
 {{- fail (printf "observability-emitters: `metrics.spec.extraArgs` sets `%s`. A licence flag is an Enterprise flag, and this chart never renders one." $flag) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+HTTP probes: the exporter they need, and the module they name.
+
+A probe with no exporter renders a VMProbe pointing at a Service that does
+not exist, which the agent scrapes, fails, and reports as `probe_success`
+absent — an alert on `== 0` then never fires, and the endpoint is watched
+by nothing. An unknown module is the same silence one level down: the
+exporter answers 400 and no `probe_success` series is ever written.
+*/}}
+{{- define "observability-emitters.validate.probes" -}}
+{{- $probes := (.Values.metrics.scrape.probes | default list) -}}
+{{- if $probes -}}
+{{- if not .Values.blackboxExporter.enabled -}}
+{{- fail "observability-emitters: `metrics.scrape.probes` lists probes but `blackboxExporter.enabled` is false. A probe is a VMProbe aimed at the blackbox exporter; without it the probe points at a Service that does not exist, no `probe_success` series is ever written, and an alert on `probe_success == 0` never fires — the endpoint is watched by nothing while everything reports healthy. Set `blackboxExporter.enabled: true`." -}}
+{{- end -}}
+{{- $names := dict -}}
+{{- range $p := $probes -}}
+{{- if hasKey $names $p.name -}}
+{{- fail (printf "observability-emitters: `metrics.scrape.probes` has two probes named %q. The name is the `probe` label and the VMProbe's name, so the second would replace the first. Rename one." $p.name) -}}
+{{- end -}}
+{{- $_ := set $names $p.name true -}}
+{{- $m := default "http_2xx" $p.module -}}
+{{- if not (hasKey ($.Values.blackboxExporter.modules | default dict) $m) -}}
+{{- fail (printf "observability-emitters: probe %q names module %q, which is not a key of `blackboxExporter.modules` (%s). The exporter would answer 400 to every probe and write no `probe_success` series, so the alert on it could never fire. Name an existing module, or define it under `blackboxExporter.modules`." $p.name $m (keys $.Values.blackboxExporter.modules | sortAlpha | join ", ")) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

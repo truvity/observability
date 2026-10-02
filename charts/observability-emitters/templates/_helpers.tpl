@@ -52,6 +52,34 @@ app.kubernetes.io/part-of: observability-emitters
 {{- end -}}
 
 {{/*
+The blackbox exporter's names and labels. Its own `app.kubernetes.io/name`
+(the chart's name plus `-blackbox-exporter`), the same shape as the
+gateway's, so a selector never matches another component's pods.
+*/}}
+{{- define "observability-emitters.blackbox.fullname" -}}
+{{- printf "%s-blackbox-exporter" (include "observability-emitters.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "observability-emitters.blackbox.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "observability-emitters.name" . }}-blackbox-exporter
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "observability-emitters.blackbox.labels" -}}
+{{ include "observability-emitters.blackbox.selectorLabels" . }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: observability-emitters
+{{- end -}}
+
+{{/*
+The exporter's configuration file: `modules` as the user wrote them, under
+the one key the exporter reads.
+*/}}
+{{- define "observability-emitters.blackbox.config" -}}
+{{- dict "modules" .Values.blackboxExporter.modules | toYaml -}}
+{{- end -}}
+
+{{/*
 The scoping-key stamp, as target relabeling.
 
 The names are literals here and in every other stamping site, on purpose:
@@ -281,9 +309,6 @@ OTLP gateway below, this chart writes no volume for it.
 {{- end -}}
 {{- if $v.scrape.cadvisor -}}
 {{- $scrapeConfigs = append $scrapeConfigs (include "observability-emitters.scrapeConfig.cadvisor" $root) -}}
-{{- end -}}
-{{- range $p := ($v.scrape.probes | default list) -}}
-{{- $scrapeConfigs = append $scrapeConfigs (include "observability-emitters.scrapeConfig.probe" (dict "root" $root "probe" $p)) -}}
 {{- end -}}
 {{- $base := dict
     "image" (dict "repository" $v.image.repository "tag" $v.image.tag)
@@ -522,37 +547,6 @@ by a relabel step (relabel_configs run after `job` is set from the name, so
 {{ include "observability-emitters.nodeMetricsPathRelabelConfig" . | indent 4 }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
-{{- end -}}
-
-{{/*
-One HTTP probe: a scrape of a URL this cluster does not run, kept only for
-its `up` series. The body is never parsed for samples that matter: a
-healthy endpoint that answers 200 with anything (a JSON health document
-included) is `up == 1`, and a connection failure, a TLS failure or a
-non-200 answer is `up == 0` (measured on vmagent: a 200 JSON body parses
-to no samples and `up` stays 1; a 401 or a refused connection gives 0).
-That is a probe, without a blackbox exporter to run. Stamped with the
-cluster's own identity like the node jobs, so an alert on it routes by
-cluster. `job` is `http-probe` for every probe and `probe` carries the
-name.
-*/}}
-{{- define "observability-emitters.scrapeConfig.probe" -}}
-{{- $u := urlParse .probe.url -}}
-- job_name: {{ printf "http-probe-%s" .probe.name | quote }}
-  scheme: {{ $u.scheme }}
-  honor_labels: false
-  metrics_path: {{ default "/" $u.path | quote }}
-  {{- with .probe.interval }}
-  scrape_interval: {{ . }}
-  {{- end }}
-  static_configs:
-    - targets: [{{ $u.host | quote }}]
-      labels:
-        probe: {{ .probe.name | quote }}
-  relabel_configs:
-    - target_label: job
-      replacement: http-probe
-{{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" .root | indent 4 }}
 {{- end -}}
 
 {{- define "observability-emitters.scrapeConfig.cadvisor" -}}

@@ -271,22 +271,28 @@ metrics:
     # `job="cadvisor"`; any query of yours that selected that label then
     # keeps working, and those recording rules keep matching nothing.
     cadvisorAsKubeletJob: true
-    # -- HTTP probes: each is a scrape of a URL this cluster does not run,
-    # kept for its `up` series (`job="http-probe"`, `probe="<name>"`,
-    # stamped with this cluster's identity). `up` is 1 for a 200 answer
-    # (whatever the body: a JSON health document parses to no samples and
-    # `up` stays 1) and 0 for a refused connection, a TLS failure or any
-    # other status. A probe from the cluster's own egress, with no
-    # blackbox exporter to run: it tells you the endpoint is reachable and
-    # healthy FROM HERE, not what its body says.
+    # -- HTTP probes: each is a `VMProbe` that has the metrics agent ask the
+    # blackbox exporter (`blackboxExporter`, which must be enabled) to
+    # probe a URL this cluster does not run. The exporter's own series
+    # arrive (`probe_success`, `probe_http_status_code`,
+    # `probe_duration_seconds`, `probe_ssl_earliest_cert_expiry`), stamped
+    # with this cluster's identity by the default scrape class, with
+    # `probe="<name>"` and `job="http-probe"`. The target's body is never
+    # parsed as Prometheus text, so a JSON health document is fine.
     #
     #   probes:
     #     - name: example-status
     #       url: https://status.example.com/health
+    #       module: http_2xx      # optional; a key of `blackboxExporter.modules`
     #       interval: 1m          # optional; the agent's own interval
     #
     # Empty by default. A probe's `url` carries no user info, query or
-    # fragment: put nothing secret in it.
+    # fragment: put nothing secret in it. An unknown `module`, or a probe
+    # with `blackboxExporter.enabled: false`, is refused.
+    #
+    # Behaviour change in 0.28.0: this value used to be a direct scrape of
+    # the URL by the agent (`up{job="http-probe"}`); there is no such
+    # series any more. Alert on `probe_success`.
     probes: []
     # -- Node labels to copy onto every kubelet and cadvisor series, by
     # name. Empty is the default, and the node's own `node` label is always
@@ -636,6 +642,65 @@ otlp:
   podMonitor:
     enabled: true
     extraLabels: {}
+
+# -- The blackbox exporter that answers `metrics.scrape.probes`. Off by
+# default: a cluster with no probes runs nothing extra. The upstream image,
+# not a chart: the exporter is one stateless Deployment, and neither the
+# VictoriaMetrics operator nor the k8s-stack chart vendored here ships one.
+blackboxExporter:
+  enabled: false
+  image:
+    repository: prom/blackbox-exporter
+    tag: v0.28.0
+  replicaCount: 1
+  port: 9115
+  # -- Pod Security `restricted`. The image runs as `nobody` already; naming
+  # the user is what lets the kubelet verify `runAsNonRoot`.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  # -- Where the exporter may run, and the taints it tolerates. Empty means
+  # wherever the scheduler puts it. The probe leaves from this pod, so a
+  # node pool with a different egress path probes a different path.
+  nodeSelector: {}
+  tolerations: []
+  # -- A few millicores and a few dozen MiB at one probe a minute; memory
+  # request == limit, no CPU limit.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 64Mi
+  # -- The exporter's modules, by name; a probe picks one with `module`.
+  # Maps merge with this default, so adding `http_2xx_post` keeps
+  # `http_2xx`. `http_2xx` is what a probe uses when it names no module:
+  # an empty `valid_status_codes` means any 2xx, and a redirect is NOT
+  # followed (a 301 from a health URL is an answer worth knowing about).
+  modules:
+    http_2xx:
+      prober: http
+      timeout: 5s
+      http:
+        method: GET
+        valid_status_codes: []
+        follow_redirects: false
+        preferred_ip_protocol: ip4
+  # -- A NetworkPolicy that admits the exporter's port only from the metrics
+  # agent's pods. Off by default, like the chart's other components, which
+  # leave policy to the namespace; on, it selects the exporter pods and so
+  # default-denies every other ingress to them.
+  networkPolicy:
+    enabled: false
 
 ###############################################################################
 # Self-monitoring for the metrics agent.

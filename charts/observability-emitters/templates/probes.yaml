@@ -1,0 +1,35 @@
+{{- range $p := (.Values.metrics.scrape.probes | default list) }}
+{{- if and $.Values.metrics.enabled $.Values.blackboxExporter.enabled }}
+{{- /*
+One HTTP probe: a VMProbe the metrics agent turns into a scrape of the
+blackbox exporter's `/probe?module=<module>&target=<url>`. The series are
+the exporter's own `probe_*` ones, so the target's body is never parsed.
+They are stamped with this cluster's identity by the agent's default
+scrape class (the same one every other scrape object gets), `probe` carries
+the name and `job` is `http-probe` for every probe.
+*/}}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMProbe
+metadata:
+  name: {{ printf "%s-%s" (include "observability-emitters.fullname" $) $p.name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-emitters.labels" $ | nindent 4 }}
+spec:
+  jobName: http-probe
+  module: {{ default "http_2xx" $p.module | quote }}
+  {{- with $p.interval }}
+  interval: {{ . }}
+  {{- end }}
+  vmProberSpec:
+    url: {{ printf "%s.%s.svc:%d" (include "observability-emitters.blackbox.fullname" $) $.Release.Namespace (int $.Values.blackboxExporter.port) | quote }}
+    scheme: http
+    path: /probe
+  targets:
+    staticConfig:
+      targets:
+        - {{ $p.url | quote }}
+      labels:
+        probe: {{ $p.name | quote }}
+{{- end }}
+{{- end }}
