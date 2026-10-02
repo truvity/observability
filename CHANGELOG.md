@@ -6,6 +6,14 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **Behaviour change: existing goldens moved.** `observability-rum`'s VMRule
+  rules now carry `record: ""` (alerts) / `alert: ""` (recording rules): the
+  same rules, written the way the API server stores them; no opt-out and none
+  needed. `observability-stack`'s operator Deployment gains one env var,
+  `VM_PROMETHEUSCONVERTERADDARGOCDIGNOREANNOTATIONS=true` (every stack golden
+  that renders the operator); to restore the previous output set
+  `victoria-metrics-k8s-stack.operator.env` to the four converter entries only.
+  `observability-rum`'s removed `sourcemaps.sync` is below.
 - **`observability-rum`: source maps from `smctl serve`; the object-store sync
   is gone.** `global.observabilityRum.sourcemaps.smctl` renders one small
   service that serves any app's source map from an OCI registry (GHCR or ECR)

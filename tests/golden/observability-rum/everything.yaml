@@ -2607,7 +2607,7 @@ data:
     apps:
     - name: shop
     - name: back-office
-      repository: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/internal/back-office-maps
+      repository: ecr.example.com/internal/back-office-maps
     auth:
       mode: ecr
     cache:
@@ -2623,7 +2623,7 @@ data:
     negativeCache:
       maxEntries: 4096
       ttl: 1m
-    repositoryTemplate: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/sourcemaps/{app}
+    repositoryTemplate: ecr.example.com/sourcemaps/{app}
 
 ---
 # Source: observability-rum/templates/rbac.yaml
@@ -2887,7 +2887,7 @@ spec:
         app.kubernetes.io/name: observability-rum-sourcemaps
       annotations:
         # A changed configuration restarts the pods (smctl reads it once).
-        checksum/config: 23b395e285173703f2c45b36092ff20b9c52de037fba640ec62dd9867bf3672e
+        checksum/config: d615cc9bbc7e1381a5dd36675a1d2bbfb409eea110b08bb2d474d847adb748ed
     spec:
       serviceAccountName: observability-rum-sourcemaps
       # The ServiceAccount is mounted only where it carries an identity the
