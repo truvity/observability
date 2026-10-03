@@ -55,14 +55,16 @@ store can hold several clusters' series: the series vanishing from one
 cluster leaves the others' behind, `absent()` stays false, and the outage is
 silent. This renders, for a non-empty `clusterLabel`:
 
-  (group by (<cluster>, <by...>) (max_over_time(sel[<absentLookback>]))
-     unless group by (<cluster>, <by...>) (sel))
+  (group by (<cluster>, <by...>) (max_over_time(sel{<cluster>!=""}[<absentLookback>]))
+     unless group by (<cluster>, <by...>) (sel{<cluster>!=""}))
   or (absent(sel) unless on() group(max_over_time(sel[<absentLookback>])))
 
 The first line fires once per cluster (and per `by` label value) that HAD
 the series within `absentLookback` and no longer does; its result carries
 those labels, which the alert keeps (the rule omits the cluster label from
-its static labels). The second keeps the whole-store `absent()` for "never
+its static labels). Only series that carry the cluster label count there
+(`sel{<cluster>!=""}`), so a series written before the cluster label was
+attached and since replaced cannot keep it firing for the lookback. The second keeps the whole-store `absent()` for "never
 existed / everything gone", and is silenced while the first can still see
 the series, so one outage is one alert. Empty `clusterLabel` renders the
 bare `absent()` byte for byte. `cur` is a suffix applied to the "now" side
@@ -74,7 +76,8 @@ only (`== 1`); `by` lists extra labels to keep per series.
 {{- if $r.Values.clusterLabel -}}
 {{- $l := join ", " (concat (list $r.Values.clusterLabel) (default (list) .by)) -}}
 {{- $lb := $r.Values.absentLookback -}}
-(group by ({{ $l }}) (max_over_time({{ .sel }}[{{ $lb }}])) unless group by ({{ $l }}) ({{ .sel }}{{ $cur }})) or (absent({{ .sel }}{{ $cur }}) unless on() group(max_over_time({{ .sel }}[{{ $lb }}])))
+{{- $sl := printf `%s, %s!=""}` (trimSuffix "}" .sel) $r.Values.clusterLabel -}}
+(group by ({{ $l }}) (max_over_time({{ $sl }}[{{ $lb }}])) unless group by ({{ $l }}) ({{ $sl }}{{ $cur }})) or (absent({{ .sel }}{{ $cur }}) unless on() group(max_over_time({{ .sel }}[{{ $lb }}])))
 {{- else -}}
 absent({{ .sel }}{{ $cur }})
 {{- end -}}

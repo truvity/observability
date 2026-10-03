@@ -4,6 +4,19 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **fix: `platform-alerts` `*Absent` guards no longer fire for a day on a
+  retired unlabelled series.** A series written before its source carried
+  the cluster label (a VMProbe before it gained its tenancy relabels) has no
+  `k8s_cluster_name`; once the labelled series replaced it, the per-cluster
+  branch kept firing on the old one until the lookback expired. That branch
+  now selects `sel{k8s_cluster_name!=""}` on both sides (the label follows
+  `clusterLabel`); the whole-store `absent()` branch is unchanged. Applies
+  to every `*Absent` rule that uses the shared guard, including
+  `<alertName>Absent` of the probes group and `ACKControllerAbsent` with
+  `expectedNamespaces`. No values change; the expressions in the render do.
+
 ## v0.44.0
 
 - **`platform-alerts` gains four generic groups, all off by default, and

@@ -1173,7 +1173,7 @@ spec:
             or
             {{- end }}
             {{- if $.Values.clusterLabel }}
-            (label_replace(group by ({{ $.Values.clusterLabel }}) (max_over_time(up{namespace=~"{{ $union }}"}[{{ $.Values.absentLookback }}])), "namespace", "{{ $n }}", "", "") unless group by ({{ $.Values.clusterLabel }}, namespace) (up{namespace="{{ $n }}"})) or (absent(up{namespace="{{ $n }}"}) unless on() group(max_over_time(up{namespace=~"{{ $union }}"}[{{ $.Values.absentLookback }}])))
+            (label_replace(group by ({{ $.Values.clusterLabel }}) (max_over_time(up{namespace=~"{{ $union }}", {{ $.Values.clusterLabel }}!=""}[{{ $.Values.absentLookback }}])), "namespace", "{{ $n }}", "", "") unless group by ({{ $.Values.clusterLabel }}, namespace) (up{namespace="{{ $n }}", {{ $.Values.clusterLabel }}!=""})) or (absent(up{namespace="{{ $n }}"}) unless on() group(max_over_time(up{namespace=~"{{ $union }}"}[{{ $.Values.absentLookback }}])))
             {{- else }}
             absent(up{namespace="{{ $n }}"})
             {{- end }}

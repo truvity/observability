@@ -65,7 +65,7 @@ spec:
         # two rules above go silent right along with it.
         - alert: KargoStateMetricsAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(kargo_stage_condition{type="Ready"}[1d])) unless group by (k8s_cluster_name) (kargo_stage_condition{type="Ready"})) or (absent(kargo_stage_condition{type="Ready"}) unless on() group(max_over_time(kargo_stage_condition{type="Ready"}[1d]))) or (group by (k8s_cluster_name) (max_over_time(kargo_promotion_phase[1d])) unless group by (k8s_cluster_name) (kargo_promotion_phase)) or (absent(kargo_promotion_phase) unless on() group(max_over_time(kargo_promotion_phase[1d])))
+            (group by (k8s_cluster_name) (max_over_time(kargo_stage_condition{type="Ready", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (kargo_stage_condition{type="Ready", k8s_cluster_name!=""})) or (absent(kargo_stage_condition{type="Ready"}) unless on() group(max_over_time(kargo_stage_condition{type="Ready"}[1d]))) or (group by (k8s_cluster_name) (max_over_time(kargo_promotion_phase, k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (kargo_promotion_phase, k8s_cluster_name!=""})) or (absent(kargo_promotion_phase) unless on() group(max_over_time(kargo_promotion_phase[1d])))
           for: 30m
           labels:
             severity: warning

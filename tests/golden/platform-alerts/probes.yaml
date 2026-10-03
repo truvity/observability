@@ -42,7 +42,7 @@ spec:
         # one, which is what a single-probe estate wants.
         - alert: ExampleStatusDownAbsent
           expr: >-
-            (group by (k8s_cluster_name, probe) (max_over_time(probe_success{probe=~"example-status"}[1d])) unless group by (k8s_cluster_name, probe) (probe_success{probe=~"example-status"})) or (absent(probe_success{probe=~"example-status"}) unless on() group(max_over_time(probe_success{probe=~"example-status"}[1d])))
+            (group by (k8s_cluster_name, probe) (max_over_time(probe_success{probe=~"example-status", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name, probe) (probe_success{probe=~"example-status", k8s_cluster_name!=""})) or (absent(probe_success{probe=~"example-status"}) unless on() group(max_over_time(probe_success{probe=~"example-status"}[1d])))
           for: 15m
           labels:
             severity: critical
