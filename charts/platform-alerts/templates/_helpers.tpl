@@ -76,7 +76,10 @@ only (`== 1`); `by` lists extra labels to keep per series.
 {{- if $r.Values.clusterLabel -}}
 {{- $l := join ", " (concat (list $r.Values.clusterLabel) (default (list) .by)) -}}
 {{- $lb := $r.Values.absentLookback -}}
-{{- $sl := printf `%s, %s!=""}` (trimSuffix "}" .sel) $r.Values.clusterLabel -}}
+{{- $sl := printf `%s{%s!=""}` .sel $r.Values.clusterLabel -}}
+{{- if hasSuffix "}" .sel -}}
+{{- $sl = printf `%s, %s!=""}` (trimSuffix "}" .sel) $r.Values.clusterLabel -}}
+{{- end -}}
 (group by ({{ $l }}) (max_over_time({{ $sl }}[{{ $lb }}])) unless group by ({{ $l }}) ({{ $sl }}{{ $cur }})) or (absent({{ .sel }}{{ $cur }}) unless on() group(max_over_time({{ .sel }}[{{ $lb }}])))
 {{- else -}}
 absent({{ .sel }}{{ $cur }})

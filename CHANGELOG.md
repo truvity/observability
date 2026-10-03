@@ -6,7 +6,7 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
-- **fix: `platform-alerts` `*Absent` guards no longer fire for a day on a
+- **Behaviour change: `platform-alerts` `*Absent` guards no longer fire for a day on a
   retired unlabelled series.** A series written before its source carried
   the cluster label (a VMProbe before it gained its tenancy relabels) has no
   `k8s_cluster_name`; once the labelled series replaced it, the per-cluster
@@ -15,7 +15,9 @@ must be done first, and whether a default moved. Newest first, one
   `clusterLabel`); the whole-store `absent()` branch is unchanged. Applies
   to every `*Absent` rule that uses the shared guard, including
   `<alertName>Absent` of the probes group and `ACKControllerAbsent` with
-  `expectedNamespaces`. No values change; the expressions in the render do.
+  `expectedNamespaces`. No values change; the expressions in the render do. To keep the old
+  expression there is no opt-out; an empty `clusterLabel` renders the bare
+  `absent()` as before.
 
 ## v0.44.0
 
