@@ -1,0 +1,21 @@
+# expect: `unmapped.labels` name "severity" is refused
+# severity has its own value, unmapped.severity; a label of that name would
+# shadow it. See templates/_validate.tpl#validate.unmapped.
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.0.0"
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics:
+  - "<the security-alerts topic ARN>"
+unmapped:
+  labels:
+    severity: critical
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

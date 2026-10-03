@@ -121,7 +121,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 4. Unmapped is still an alert. A message no rule matches becomes
 	// CloudEventUnmapped rather than being dropped: a drop is the
 	// failure mode this whole repository exists to close.
-	labels, annotations := unmappedAlert(env.Message)
+	labels, annotations := unmappedAlert(s.Config.Unmapped, env.Message)
 	s.deliver(w, "unmapped", "unmapped", labels, annotations)
 }
 
@@ -138,7 +138,7 @@ func (s *Server) post(w http.ResponseWriter, mappingName, outcome string, spec A
 		s.Logger.Error("rendering mapping template; falling back to CloudEventUnmapped rather than dropping the message",
 			"mapping", mappingName, "error", err)
 
-		labels, annotations = unmappedAlert(rawMessage)
+		labels, annotations = unmappedAlert(s.Config.Unmapped, rawMessage)
 		mappingName, outcome = "unmapped", "unmapped"
 	}
 

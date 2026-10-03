@@ -174,11 +174,22 @@ func renderAlert(spec AlertSpec, body map[string]any) (labels, annotations map[s
 // would let a malformed body (one that happens to contain `{{`) break
 // the one path that is supposed to be unbreakable: the fallback for
 // everything else already failed.
-func unmappedAlert(message string) (labels, annotations map[string]string) {
-	labels = map[string]string{
-		"alertname": "CloudEventUnmapped",
-		"severity":  "warning",
+//
+// cfg adds static labels and may change the severity; alertname and
+// severity are written last so a label can never shadow them.
+func unmappedAlert(cfg Unmapped, message string) (labels, annotations map[string]string) {
+	severity := cfg.Severity
+	if severity == "" {
+		severity = "warning"
 	}
+
+	labels = make(map[string]string, len(cfg.Labels)+2)
+	for k, v := range cfg.Labels {
+		labels[k] = v
+	}
+
+	labels["alertname"] = "CloudEventUnmapped"
+	labels["severity"] = severity
 	annotations = map[string]string{
 		"summary": "a cloud notification matched no mapping rule",
 		"body":    truncate(message, unmappedBodyLimit),

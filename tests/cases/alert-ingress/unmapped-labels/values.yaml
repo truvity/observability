@@ -1,0 +1,22 @@
+# CloudEventUnmapped made routable: static labels and a non-default severity.
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+topics:
+  - "<the security-alerts topic ARN>"
+
+unmapped:
+  severity: info
+  labels:
+    k8s_cluster_name: cloud
+    source: unmapped
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

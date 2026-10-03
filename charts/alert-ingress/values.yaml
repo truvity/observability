@@ -146,6 +146,22 @@ topics: []
 # group of an RE2 match, "" on a miss).
 mappings: []
 
+# -- Shapes CloudEventUnmapped, the alert a message no rule matches (or whose
+# template fails) becomes, so the routing tree can route it. `labels` are
+# static strings, never templates, added to every such alert; names must be
+# Prometheus label names, and `alertname` and `severity` are refused (the
+# latter is `severity` below). `severity` empty means warning. The defaults
+# change nothing: the alert carries only `alertname` and `severity: warning`.
+#
+#   unmapped:
+#     severity: warning
+#     labels:
+#       k8s_cluster_name: cloud   # the same routing key the mappings use
+#       source: unmapped
+unmapped:
+  severity: ""
+  labels: {}
+
 # -- The estate's own scheduled proof-of-life message, published through
 # the SAME topic and path every `interval`. It carries no `alert:` field
 # and is never itself posted to Alertmanager: recognising it and keeping

@@ -111,6 +111,13 @@ mappings:
         impact: '{{ .impact.totalImpact }}'
         details: '{{ .anomalyDetailsLink }}'
 
+# Optional: make CloudEventUnmapped routable. Static strings added to every
+# such alert (never templates); `severity` empty means warning.
+unmapped:
+  severity: warning
+  labels:
+    k8s_cluster_name: cloud
+
 # The heartbeat: a scheduled event the estate publishes through the same
 # path, and the rule that fires when it stops arriving.
 heartbeat:
@@ -122,6 +129,13 @@ heartbeat:
 key the tree groups and routes on, and `cloud` (or whatever the estate
 names it) is how those alerts get their own channel without a second
 tree. The chart documents this rather than inventing a second label.
+
+`CloudEventUnmapped` would otherwise carry nothing but `alertname` and
+`severity: warning`, so a tree that routes cloud alerts on that key would
+never see it. `unmapped.labels` adds the same key (or any others) to every
+such alert. Names must be Prometheus label names; `alertname` and `severity`
+are refused (the latter is `unmapped.severity`), as are names starting with
+`__`. Left at the default, nothing changes.
 
 ## What a mapping can read
 
@@ -216,7 +230,9 @@ What the AWS side must configure:
 3. **Match** the body against the mapping rules; render the alert.
 4. **Unmapped is still an alert.** A message no rule matches becomes
    `CloudEventUnmapped`, `severity: warning`, with the body in an
-   annotation. Never a drop: a drop is the failure mode this repository
+   annotation. It carries no label beyond `alertname` and `severity`
+   unless `unmapped.labels` adds some (see below), so the routing tree
+   can route it. Never a drop: a drop is the failure mode this repository
    exists to close.
 5. **POST** to Alertmanager with a `startsAt` of now and an `endsAt` of
    now + `resolveAfter` (default 1h): cloud events do not resolve, so
@@ -255,7 +271,8 @@ The whole surface, beside the example above: `image.{repository,tag,pullPolicy}`
 `resources`, `service.port` (8080) and `service.metricsPort` (0: one port;
 set it to serve `/healthz` and `/metrics` on a second port the Service does
 not expose), `selfMonitor` (true: a `PodMonitor` on the metrics port),
-`alertmanager.url` (required), `topics`, `mappings`, `heartbeat.{match,interval}`,
+`alertmanager.url` (required), `topics`, `mappings`, `unmapped.{severity,labels}` (empty: warning, no extra labels),
+`heartbeat.{match,interval}`,
 `rules.heartbeat.enabled` and `rules.rejectedMessages.{enabled,ratePerSecond,window,for}`,
 `resolveAfter` (1h), `networkPolicy.{enabled,alertmanagerPeer,egress.dns,egress.allowCloudHTTPS}`.
 A `match` value of `"*"` tests only that the path is present.
@@ -271,6 +288,7 @@ Each has a fixture under `tests/invalid/alert-ingress/`.
 | `heartbeat.match` empty | the path can die unnoticed |
 | `networkPolicy.alertmanagerPeer` empty while `networkPolicy.enabled` | an egress rule with no peer admits nothing, and the render looks scoped |
 | `service.metricsPort` equal to `service.port` | the second port would not be a second port |
+| an `unmapped.labels` name that is not a Prometheus label name, starts with `__`, or is `alertname`/`severity` | a label Alertmanager rejects, or one that shadows a field the service owns |
 | `alertmanager.url` or `image.repository` empty; an unknown key (schema) | nowhere to post, nothing to pull, a setting that applies to nothing |
 
 Deliberately **not** refused: an empty `mappings` (every message becomes

@@ -154,7 +154,7 @@ func TestAlarmStateChangeIsUnmapped(t *testing.T) {
 	assert.Falsef(t, ok, "an alarm state change must match none of the three example mappings — "+
 		"if it does, this test and the design page's own examples have drifted apart")
 
-	labels, annotations := unmappedAlert(message)
+	labels, annotations := unmappedAlert(Unmapped{}, message)
 	assert.Equal(t, "CloudEventUnmapped", labels["alertname"])
 	assert.Equal(t, "warning", labels["severity"])
 	assert.Contains(t, annotations["body"], "CloudWatch Alarm State Change",
@@ -171,7 +171,7 @@ func TestAlarmStateChangeIsUnmapped(t *testing.T) {
 func TestUnmappedAlertNeverTemplatesTheBody(t *testing.T) {
 	hostile := `this is not json and it contains {{ .anything }} and {{ define "x" }}`
 
-	labels, annotations := unmappedAlert(hostile)
+	labels, annotations := unmappedAlert(Unmapped{}, hostile)
 	assert.Equal(t, "CloudEventUnmapped", labels["alertname"])
 	assert.True(t, strings.Contains(annotations["body"], "{{ .anything }}"),
 		"the template-looking text must survive UNCHANGED, proving it was never executed")
@@ -191,4 +191,33 @@ func TestSeverityLabelCannotBeShadowedByAMappingsOwnLabels(t *testing.T) {
 		"AlertSpec.Severity must win over a same-named entry under `labels`, the way "+
 			"platform-alerts.labels protects `severity` from commonLabels")
 	assert.Equal(t, "Example", labels["alertname"])
+}
+
+func TestUnmappedAlertCarriesStaticLabelsAndSeverity(t *testing.T) {
+	labels, _ := unmappedAlert(Unmapped{
+		Severity: "info",
+		Labels:   map[string]string{"team": "platform", "severity": "x", "alertname": "y"},
+	}, "m")
+
+	assert.Equal(t, map[string]string{"team": "platform", "alertname": "CloudEventUnmapped", "severity": "info"}, labels)
+
+	labels, _ = unmappedAlert(Unmapped{}, "m")
+	assert.Equal(t, map[string]string{"alertname": "CloudEventUnmapped", "severity": "warning"}, labels,
+		"the zero value must be the old behaviour")
+}
+
+func TestUnmappedLabelsValidation(t *testing.T) {
+	for name, labels := range map[string]map[string]string{
+		"empty":     {"": "v"},
+		"dash":      {"my-label": "v"},
+		"digit":     {"1a": "v"},
+		"reserved":  {"__x": "v"},
+		"alertname": {"alertname": "v"},
+		"severity":  {"severity": "v"},
+	} {
+		assert.Errorf(t, Unmapped{Labels: labels}.validate(), name)
+	}
+
+	assert.NoError(t, Unmapped{Labels: map[string]string{"team": "platform", "k8s_cluster_name": "cloud"}}.validate())
+	assert.NoError(t, Unmapped{}.validate())
 }
