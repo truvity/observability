@@ -1,6 +1,6 @@
-# expect: is refused: it must be a Prometheus label name
-# A dash is not allowed in a Prometheus label name; Alertmanager would reject
-# the alert. See templates/_validate.tpl#validate.unmapped.
+# expect: 'my-label' does not match pattern '^[a-zA-Z_][a-zA-Z0-9_]*$'
+# A dash is not allowed in a Prometheus label name; the schema rejects it
+# before any template runs (templates/_validate.tpl#validate.unmapped re-checks).
 image:
   repository: ghcr.io/example/alert-ingress
   tag: "1.0.0"
