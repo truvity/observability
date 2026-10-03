@@ -3046,7 +3046,7 @@ spec:
         # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
         - alert: SlackNotificationsFailing
           expr: >-
-            sum(increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) by (integration) > 0
+            sum without (pod, instance) (increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) > 0
           for: 1m
           labels:
             severity: warning
@@ -3073,7 +3073,7 @@ spec:
         # is not hitting one never touches it.
         - alert: MetricStoreIgnoringRows
           expr: >-
-            sum(rate(example_vm_rows_ignored_total[2m])) by (reason) > 0
+            sum without (pod, instance) (rate(example_vm_rows_ignored_total[2m])) > 0
           for: 2m
           labels:
             severity: critical
@@ -3097,7 +3097,7 @@ spec:
         # fires this.
         - alert: LogStoreDroppingRows
           expr: >-
-            sum(rate(example_vl_rows_dropped_total[2m])) > 0
+            sum without (pod, instance) (rate(example_vl_rows_dropped_total[2m])) > 0
           for: 2m
           labels:
             severity: critical
@@ -3112,7 +3112,7 @@ spec:
         # selfAlerts.traceStore.metric — see values.yaml.
         - alert: TraceStoreDroppingRows
           expr: >-
-            sum(rate(example_vt_rows_dropped_total[2m])) > 0
+            sum without (pod, instance) (rate(example_vt_rows_dropped_total[2m])) > 0
           for: 2m
           labels:
             severity: critical
@@ -3182,7 +3182,7 @@ spec:
         # magnitude above that baseline.
         - alert: LogStoreStreamsChurning
           expr: >-
-            sum(rate(example_vl_streams_created_total[1h])) > 2
+            sum without (pod, instance) (rate(example_vl_streams_created_total[1h])) > 2
           for: 30m
           labels:
             severity: warning
@@ -3198,7 +3198,7 @@ spec:
         # cause there rather than a label copied from the pod.
         - alert: TraceStoreStreamsChurning
           expr: >-
-            sum(rate(example_vt_streams_created_total[1h])) > 2
+            sum without (pod, instance) (rate(example_vt_streams_created_total[1h])) > 2
           for: 30m
           labels:
             severity: warning
@@ -3249,7 +3249,7 @@ spec:
         # drop toward one half of a pair names that half.
         - alert: WriterDroppingPackets
           expr: >-
-            sum by (url) (rate({__name__=~"example_vmalert_remotewrite_packets_dropped_total|example_vlagent_remotewrite_packets_dropped_total"}[5m])) > 0
+            sum without (pod, instance) (rate({__name__=~"example_vmalert_remotewrite_packets_dropped_total|example_vlagent_remotewrite_packets_dropped_total"}[5m])) > 0
           for: 15m
           labels:
             severity: critical
@@ -3315,7 +3315,7 @@ spec:
         # how a trace store stayed empty while every pod was Healthy.
         - alert: GatewayExportFailing
           expr: >-
-            sum(rate({__name__=~"example_otelcol_exporter.*"}[2m])) by (exporter) > 0
+            sum without (pod, instance) (rate({__name__=~"example_otelcol_exporter.*"}[2m])) > 0
           for: 2m
           labels:
             severity: critical
@@ -3344,7 +3344,7 @@ spec:
         # exporter path produces at any rate.
         - alert: GatewayEnqueueFailing
           expr: >-
-            sum(rate({__name__=~"example_otelcol_exporter.*"}[2m])) by (exporter) > 0
+            sum without (pod, instance) (rate({__name__=~"example_otelcol_exporter.*"}[2m])) > 0
           for: 2m
           labels:
             severity: critical
@@ -3364,7 +3364,7 @@ spec:
         # below; this chart holds every metric name to the same rule.
         - alert: ProxyAtConcurrencyLimit
           expr: >-
-            sum(rate(example_vmauth_concurrent_requests_limit_reached_total[2m])) > 0
+            sum without (pod, instance) (rate(example_vmauth_concurrent_requests_limit_reached_total[2m])) > 0
           for: 2m
           labels:
             severity: warning

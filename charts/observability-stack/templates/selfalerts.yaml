@@ -66,7 +66,7 @@ spec:
         # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
         - alert: SlackNotificationsFailing
           expr: >-
-            sum(increase(alertmanager_notifications_failed_total{integration="slack"}[{{ $sa.slackDelivery.window }}])) by (integration) > 0
+            sum without (pod, instance) (increase(alertmanager_notifications_failed_total{integration="slack"}[{{ $sa.slackDelivery.window }}])) > 0
           for: {{ $sa.slackDelivery.for }}
           labels:
             severity: {{ $sa.slackDelivery.severity }}
@@ -93,7 +93,7 @@ spec:
         # local Alertmanager. Healthy range: 0.
         - alert: RemoteEvaluatorFailing
           expr: >-
-            sum by (pod) (increase({__name__=~"vmalert_(alerting|recording)_rules_errors_total|vmalert_execution_errors_total", pod=~{{ printf "vmalert-%s-remote-.+" $fullname | quote }}}[{{ $sa.remoteEvaluator.window }}])) > 0
+            sum without (instance) (increase({__name__=~"vmalert_(alerting|recording)_rules_errors_total|vmalert_execution_errors_total", pod=~{{ printf "vmalert-%s-remote-.+" $fullname | quote }}}[{{ $sa.remoteEvaluator.window }}])) > 0
           for: {{ $sa.remoteEvaluator.for }}
           labels:
             severity: {{ $sa.remoteEvaluator.severity }}
@@ -123,7 +123,7 @@ spec:
         # is not hitting one never touches it.
         - alert: MetricStoreIgnoringRows
           expr: >-
-            sum(rate({{ $sa.ingest.metric }}[{{ $sa.ingest.window }}])) by (reason) > 0
+            sum without (pod, instance) (rate({{ $sa.ingest.metric }}[{{ $sa.ingest.window }}])) > 0
           for: {{ $sa.ingest.for }}
           labels:
             severity: {{ $sa.ingest.severity }}
@@ -150,7 +150,7 @@ spec:
         # fires this.
         - alert: LogStoreDroppingRows
           expr: >-
-            sum(rate({{ $sa.logStore.metric }}[{{ $sa.logStore.window }}])) > 0
+            sum without (pod, instance) (rate({{ $sa.logStore.metric }}[{{ $sa.logStore.window }}])) > 0
           for: {{ $sa.logStore.for }}
           labels:
             severity: {{ $sa.logStore.severity }}
@@ -168,7 +168,7 @@ spec:
         # selfAlerts.traceStore.metric — see values.yaml.
         - alert: TraceStoreDroppingRows
           expr: >-
-            sum(rate({{ $sa.traceStore.metric }}[{{ $sa.traceStore.window }}])) > 0
+            sum without (pod, instance) (rate({{ $sa.traceStore.metric }}[{{ $sa.traceStore.window }}])) > 0
           for: {{ $sa.traceStore.for }}
           labels:
             severity: {{ $sa.traceStore.severity }}
@@ -246,7 +246,7 @@ spec:
         # magnitude above that baseline.
         - alert: LogStoreStreamsChurning
           expr: >-
-            sum(rate({{ $sa.logStreamChurn.streamsCreatedMetric }}[1h])) > {{ $sa.logStreamChurn.perSecond }}
+            sum without (pod, instance) (rate({{ $sa.logStreamChurn.streamsCreatedMetric }}[1h])) > {{ $sa.logStreamChurn.perSecond }}
           for: {{ $sa.logStreamChurn.for }}
           labels:
             severity: {{ $sa.logStreamChurn.severity }}
@@ -264,7 +264,7 @@ spec:
         # cause there rather than a label copied from the pod.
         - alert: TraceStoreStreamsChurning
           expr: >-
-            sum(rate({{ $sa.traceStreamChurn.streamsCreatedMetric }}[1h])) > {{ $sa.traceStreamChurn.perSecond }}
+            sum without (pod, instance) (rate({{ $sa.traceStreamChurn.streamsCreatedMetric }}[1h])) > {{ $sa.traceStreamChurn.perSecond }}
           for: {{ $sa.traceStreamChurn.for }}
           labels:
             severity: {{ $sa.traceStreamChurn.severity }}
@@ -322,7 +322,7 @@ spec:
         {{- $dropNames := prepend ($sa.writer.droppedPacketsMetricsExtra | default list) $sa.writer.droppedPacketsMetric }}
         - alert: WriterDroppingPackets
           expr: >-
-            sum by (url) (rate({{ if gt (len $dropNames) 1 }}{__name__=~{{ join "|" $dropNames | quote }}}{{ else }}{{ $sa.writer.droppedPacketsMetric }}{{ end }}[5m])) > 0
+            sum without (pod, instance) (rate({{ if gt (len $dropNames) 1 }}{__name__=~{{ join "|" $dropNames | quote }}}{{ else }}{{ $sa.writer.droppedPacketsMetric }}{{ end }}[5m])) > 0
           for: {{ $sa.writer.for }}
           labels:
             severity: {{ $sa.writer.severity }}
@@ -394,7 +394,7 @@ spec:
         # how a trace store stayed empty while every pod was Healthy.
         - alert: GatewayExportFailing
           expr: >-
-            sum(rate({__name__=~{{ printf "%s.*" $sa.gateway.exportFailedMetricPrefix | quote }}}[{{ $sa.gateway.exportFailWindow }}])) by (exporter) > 0
+            sum without (pod, instance) (rate({__name__=~{{ printf "%s.*" $sa.gateway.exportFailedMetricPrefix | quote }}}[{{ $sa.gateway.exportFailWindow }}])) > 0
           for: {{ $sa.gateway.exportFailFor }}
           labels:
             severity: {{ $sa.gateway.exportFailSeverity }}
@@ -426,7 +426,7 @@ spec:
         # exporter path produces at any rate.
         - alert: GatewayEnqueueFailing
           expr: >-
-            sum(rate({__name__=~{{ printf "%s.*" $sa.gateway.enqueueFailedMetricPrefix | quote }}}[{{ $sa.gateway.enqueueFailWindow }}])) by (exporter) > 0
+            sum without (pod, instance) (rate({__name__=~{{ printf "%s.*" $sa.gateway.enqueueFailedMetricPrefix | quote }}}[{{ $sa.gateway.enqueueFailWindow }}])) > 0
           for: {{ $sa.gateway.enqueueFailFor }}
           labels:
             severity: {{ $sa.gateway.enqueueFailSeverity }}
@@ -449,7 +449,7 @@ spec:
         # below; this chart holds every metric name to the same rule.
         - alert: ProxyAtConcurrencyLimit
           expr: >-
-            sum(rate({{ $sa.proxyConcurrency.limitedRequestsMetric }}[{{ $sa.proxyConcurrency.window }}])) > 0
+            sum without (pod, instance) (rate({{ $sa.proxyConcurrency.limitedRequestsMetric }}[{{ $sa.proxyConcurrency.window }}])) > 0
           for: {{ $sa.proxyConcurrency.for }}
           labels:
             severity: {{ $sa.proxyConcurrency.severity }}

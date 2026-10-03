@@ -110,3 +110,41 @@ func TestEverySelfAlertKeepsItsContract(t *testing.T) {
 		"only %d self-alerts found across the goldens; this check has gone blind rather than "+
 			"the rules having been removed", seen)
 }
+
+// TestSelfAlertAggregationsKeepTheClusterLabel: a store holds several
+// clusters' series, and an aggregation naming the labels to KEEP
+// (`sum by (url)`, or a bare `sum()`) drops the cluster label, so a remote
+// cluster's alert arrived with no cluster. Only `without (...)` keeps it.
+func TestSelfAlertAggregationsKeepTheClusterLabel(t *testing.T) {
+	goldens, err := filepath.Glob("golden/observability-stack/*.yaml")
+	require.NoError(t, err)
+
+	var seen int
+
+	for _, g := range goldens {
+		for _, doc := range splitDocs(t, g) {
+			var rule vmRuleDoc
+			if err := yaml.Unmarshal(doc, &rule); err != nil || rule.Kind != "VMRule" {
+				continue
+			}
+			if !strings.HasSuffix(rule.Metadata.Name, "-selfalerts") {
+				continue
+			}
+
+			for _, group := range rule.Spec.Groups {
+				for _, r := range group.Rules {
+					if r.Alert == "" || !strings.Contains(r.Expr, "sum") {
+						continue
+					}
+					seen++
+
+					expr := strings.Join(strings.Fields(r.Expr), " ")
+					assert.Containsf(t, expr, "sum without (", "%s / %s: aggregates without `without (...)`: %s", g, r.Alert, expr)
+					assert.NotRegexpf(t, `\bby \(`, expr, "%s / %s: `by (...)` drops the cluster label: %s", g, r.Alert, expr)
+				}
+			}
+		}
+	}
+
+	assert.Positive(t, seen, "no summing self-alert found; this check has gone blind")
+}
