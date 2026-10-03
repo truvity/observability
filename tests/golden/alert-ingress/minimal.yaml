@@ -223,11 +223,17 @@ spec:
         # and never again. Either half firing alone is the same failure
         # from this rule's point of view: nothing has proven the path is
         # alive in two heartbeat intervals.
+        #
+        # Summed across the replicas (`without (pod, instance)`): the
+        # provider delivers each heartbeat to ONE pod behind the Service, so
+        # per pod a quiet replica's counter stands still while the path is
+        # perfectly alive. Only the whole Deployment counting nothing is a
+        # missing heartbeat.
         - alert: AlertIngressHeartbeatMissing
           expr: >-
             absent_over_time(alert_ingress_messages_total{mapping="heartbeat"}[30m])
             or
-            increase(alert_ingress_messages_total{mapping="heartbeat"}[30m]) == 0
+            sum without (pod, instance) (increase(alert_ingress_messages_total{mapping="heartbeat"}[30m])) == 0
           labels:
             severity: critical
           annotations:

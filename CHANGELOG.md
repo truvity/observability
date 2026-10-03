@@ -4,6 +4,16 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change: `alert-ingress`'s `AlertIngressHeartbeatMissing` sums
+  the heartbeat counter across replicas.** The provider delivers each
+  heartbeat to one pod behind the Service, so with two replicas the rule,
+  evaluated per pod, fired critical for the quieter pod while heartbeats
+  were arriving. The `increase` half is now `sum without (pod, instance)`;
+  the `absent_over_time` half is unchanged. No opt-out: the previous
+  expression paged on a healthy path.
+
 ## v0.43.2
 
 - **Behaviour change: `alert-ingress`'s egress NetworkPolicy allows
