@@ -49,6 +49,13 @@ type AlertSpec struct {
 	Severity    string            `yaml:"severity"`
 	Labels      map[string]string `yaml:"labels"`
 	Annotations map[string]string `yaml:"annotations"`
+	// Resolved is an optional template. When it renders to "true" the
+	// alert is posted already ended (`endsAt` = now), which is how a
+	// source that DOES say a state stopped being true (a CloudWatch alarm
+	// going back to OK) clears the alert it raised. Empty or any other
+	// value is today's behaviour: a firing alert. The labels must not
+	// depend on the state, or the resolve names a different alert.
+	Resolved string `yaml:"resolved"`
 }
 
 // Mapping is one entry of `mappings`, tried in the order they are
@@ -63,6 +70,12 @@ type Mapping struct {
 	// equality in Match must hold.
 	MatchRegex map[string]string `yaml:"matchRegex"`
 	Alert      AlertSpec         `yaml:"alert"`
+	// ResolveAfter overrides Config.ResolveAfter for the alerts this
+	// mapping posts; zero means the global value. A source that sends a
+	// state change once and then stays silent for as long as the state
+	// holds (a CloudWatch alarm in ALARM) needs a longer expiry than a
+	// one-shot event, with the resolve as the normal way out.
+	ResolveAfter Duration `yaml:"resolveAfter"`
 }
 
 // Heartbeat recognises the estate's own scheduled proof-of-life message.
@@ -164,6 +177,10 @@ func (c Config) Validate() error {
 
 		if m.Alert.Alertname == "" {
 			return fmt.Errorf("mappings[%d] (%s) has no alert.alertname", i, m.Name)
+		}
+
+		if m.ResolveAfter < 0 {
+			return fmt.Errorf("mappings[%d] (%s) has a negative resolveAfter", i, m.Name)
 		}
 
 		if m.Alert.Severity == "" {

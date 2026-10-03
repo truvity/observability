@@ -113,7 +113,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 3. Match against the mapping rules, in order; the first hit wins.
 	for _, m := range s.Config.Mappings {
 		if matchesMapping(m, body) {
-			s.post(w, m.Name, "mapped", m.Alert, body, env.Message)
+			s.post(w, m, body, env.Message)
 			return
 		}
 	}
@@ -122,7 +122,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CloudEventUnmapped rather than being dropped: a drop is the
 	// failure mode this whole repository exists to close.
 	labels, annotations := unmappedAlert(s.Config.Unmapped, env.Message)
-	s.deliver(w, "unmapped", "unmapped", labels, annotations)
+	s.deliver(w, "unmapped", "unmapped", labels, annotations, false, 0)
 }
 
 // post renders spec against body and delivers it. If rendering fails —
@@ -132,31 +132,50 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // far better for an on-call person to see "unmapped" and go fix the
 // template than for the message to vanish while everything reports
 // healthy.
-func (s *Server) post(w http.ResponseWriter, mappingName, outcome string, spec AlertSpec, body map[string]any, rawMessage string) {
-	labels, annotations, err := renderAlert(spec, body)
+func (s *Server) post(w http.ResponseWriter, m Mapping, body map[string]any, rawMessage string) {
+	mappingName, outcome := m.Name, "mapped"
+
+	labels, annotations, err := renderAlert(m.Alert, body)
+	resolved := false
+
+	if err == nil {
+		resolved, err = renderResolved(m.Alert, body)
+	}
+
 	if err != nil {
 		s.Logger.Error("rendering mapping template; falling back to CloudEventUnmapped rather than dropping the message",
 			"mapping", mappingName, "error", err)
 
 		labels, annotations = unmappedAlert(s.Config.Unmapped, rawMessage)
 		mappingName, outcome = "unmapped", "unmapped"
+		resolved, m.ResolveAfter = false, 0
 	}
 
-	s.deliver(w, mappingName, outcome, labels, annotations)
+	s.deliver(w, mappingName, outcome, labels, annotations, resolved, time.Duration(m.ResolveAfter))
 }
 
-// deliver POSTs one alert to Alertmanager, resolving after
-// Config.ResolveAfter, and answers the request. A delivery failure is
+// deliver POSTs one alert to Alertmanager and answers the request. A firing
+// alert resolves after resolveAfter (Config.ResolveAfter when that is
+// zero); a resolved one is posted already ended, which is how Alertmanager
+// is told to clear the alert with the same labels. A delivery failure is
 // logged and answered with a 5xx rather than counted as this outcome: the
 // provider's own retry is what recovers a transient Alertmanager outage,
 // and the message is counted only once that retry actually lands.
-func (s *Server) deliver(w http.ResponseWriter, mappingName, outcome string, labels, annotations map[string]string) {
+func (s *Server) deliver(w http.ResponseWriter, mappingName, outcome string, labels, annotations map[string]string, resolved bool, resolveAfter time.Duration) {
+	if resolveAfter == 0 {
+		resolveAfter = time.Duration(s.Config.ResolveAfter)
+	}
+
 	now := time.Now().UTC()
 	alert := AlertmanagerAlert{
 		Labels:      labels,
 		Annotations: annotations,
 		StartsAt:    now,
-		EndsAt:      now.Add(time.Duration(s.Config.ResolveAfter)),
+		EndsAt:      now.Add(resolveAfter),
+	}
+
+	if resolved {
+		alert.EndsAt = now
 	}
 
 	if err := s.Alertmanager.Post(alert); err != nil {
