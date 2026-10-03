@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.47.0
 
 - **feat(lambdaext): the generic Lambda OTLP extension now lives here.** It
   moved from `truvity/access-roster` (`internal/lambdaext`), because it is
