@@ -4,6 +4,21 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **feat(lambdaext): the extension's settings are `SLUIS_*`, with the
+  `ACCESS_ROSTER_*` names as a fallback.** The issuer it was built for is now
+  called sluis. Every setting (`SLUIS_ISSUER`, `SLUIS_AUDIENCE`,
+  `SLUIS_OTLP_ENDPOINT`, `SLUIS_OTLP_AUDIENCE`, `SLUIS_LISTEN`,
+  `SLUIS_STS_DURATION_SECONDS`, `SLUIS_STS_ALGORITHM`, `SLUIS_TOKEN_FILE` and the
+  `SLUIS_*_LOGS` / `SLUIS_TELEMETRY_*` group) is read under its new name first
+  and under its `ACCESS_ROSTER_*` name second, so a function configured with the
+  old names needs no change; when both are set the `SLUIS_*` value wins. The
+  exported `Env*` constants now hold the `SLUIS_*` names, and the
+  "is not set" error names the `SLUIS_*` variable. Nothing else moves: the
+  protocol, the layer and the extension's file name are unchanged. See
+  [docs/integrations/aws-lambda.md](docs/integrations/aws-lambda.md#configuration).
+
 ## v0.47.0
 
 - **feat(lambdaext): the generic Lambda OTLP extension now lives here.** It

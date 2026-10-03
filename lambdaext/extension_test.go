@@ -333,7 +333,7 @@ func TestExtensionWithoutConfigurationStillAnswersThePlatform(t *testing.T) {
 	if err := <-ext.exited; err != nil {
 		t.Fatalf("%v\n%s", err, ext.logs.String())
 	}
-	if !strings.Contains(ext.logs.String(), "ACCESS_ROSTER_ISSUER is not set") {
+	if !strings.Contains(ext.logs.String(), "SLUIS_ISSUER is not set") {
 		t.Fatalf("the misconfiguration must be named once:\n%s", ext.logs.String())
 	}
 }
