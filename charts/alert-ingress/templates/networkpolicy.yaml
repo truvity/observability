@@ -21,8 +21,12 @@ CIDR block, and no CIDR here would stay correct as the provider's own
 address ranges change. So rule two is HTTPS to anywhere, stated as that
 rather than dressed up as a hostname pin it cannot be.
 */}}
+{{- /* Sprig's urlParse has no `port` key: the port stays inside `host`
+       ("name.ns.svc:9093"), so it is split off here. Without an explicit
+       port the scheme's default applies. */ -}}
 {{- $am := urlParse .Values.alertmanager.url -}}
-{{- $amPort := $am.port | default (ternary "443" "80" (eq $am.scheme "https")) -}}
+{{- $hostParts := splitList ":" $am.host -}}
+{{- $amPort := ternary (last $hostParts) (ternary "443" "80" (eq $am.scheme "https")) (gt (len $hostParts) 1) -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
