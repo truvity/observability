@@ -4,6 +4,29 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **feat(alert-ingress): CloudWatch alarm notifications map to Alertmanager
+  alerts, and a mapping can resolve one.** An alarm's SNS message (JSON:
+  `AlarmName`, `NewStateValue`, `NewStateReason`, `Trigger`, ...) matches
+  with an ordinary mapping; the documented one
+  ([docs/alert-ingress.md](docs/alert-ingress.md#cloudwatch-alarms)) sets
+  `alertname` to the alarm name, severity from `severity=` in the alarm
+  description (default `warning`), `source=cloudwatch`, `account` and
+  `region` labels and the reason as an annotation. Two new optional fields
+  make it possible, and an install that sets neither renders and behaves
+  exactly as before:
+  - `mappings[].alert.resolved`: a template; when it renders to `true` the
+    alert is posted already ended, clearing the alert with the same labels.
+    `OK` resolves, `ALARM` and `INSUFFICIENT_DATA` fire. Anything but an
+    explicit `true` leaves the alert firing.
+  - `mappings[].resolveAfter`: a Go duration (no `d`) overriding the
+    top-level `resolveAfter` for that mapping, because an alarm sends one
+    message per state change and the 1h default would end the alert of an
+    alarm still in `ALARM`.
+  - The chart schema accepts both. An older chart's schema refuses both
+    keys, so a consumer gates their use on the pin.
+
 ## v0.47.0
 
 - **feat(lambdaext): the generic Lambda OTLP extension now lives here.** It

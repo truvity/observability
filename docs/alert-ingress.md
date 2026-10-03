@@ -216,6 +216,84 @@ What the AWS side must configure:
   `false`: this receiver verifies the SNS signature, which only the wrapped
   envelope carries.
 
+## CloudWatch alarms
+
+A CloudWatch alarm publishes to a topic through its `AlarmActions`
+(state `ALARM`), `OKActions` (`OK`) and `InsufficientDataActions`
+(`INSUFFICIENT_DATA`). The `Message` is a JSON object, so a mapping reads it
+directly:
+
+| Field | Meaning |
+|---|---|
+| `AlarmName`, `AlarmDescription` | the alarm's name (unique per account and region) and its free text, `null` when unset |
+| `AWSAccountId`, `AlarmArn` | the account, and an ARN carrying the region code (`Region` is a display name such as `EU (Frankfurt)`, so the code is taken from the ARN) |
+| `NewStateValue`, `OldStateValue` | `OK`, `ALARM` or `INSUFFICIENT_DATA` |
+| `NewStateReason`, `StateChangeTime` | the sentence CloudWatch gives for the change, and when |
+| `Trigger` | the metric alarm's `Namespace`, `MetricName`, `Dimensions`, `Threshold`, `TreatMissingData`; absent on a composite alarm |
+
+```yaml
+mappings:
+    - name: cloudwatch-alarm
+      match: {"AlarmName": "*", "NewStateValue": "*", "AlarmArn": "*"}
+      # An alarm sends ONE message per state change, then nothing for as long
+      # as the state holds, so the alert must outlive the 1h default; the OK
+      # message is what normally ends it.
+      resolveAfter: 24h
+      alert:
+        alertname: '{{ .AlarmName }}'
+        severity: '{{ $s := "" }}{{ with .AlarmDescription }}{{ $s = reFind "severity=(critical|warning|info)" . }}{{ end }}{{ or $s "warning" }}'
+        resolved: '{{ eq .NewStateValue "OK" }}'
+        labels:
+          source: cloudwatch
+          k8s_cluster_name: cloud-security
+          account: '{{ .AWSAccountId }}'
+          region: '{{ reFind "^arn:aws[a-z-]*:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
+        annotations:
+          summary: '{{ .AlarmName }} is {{ .NewStateValue }}'
+          reason: '{{ .NewStateReason }}'
+          state: '{{ .NewStateValue }}'
+          previous_state: '{{ .OldStateValue }}'
+          description: '{{ with .AlarmDescription }}{{ . }}{{ end }}'
+          metric: '{{ with .Trigger }}{{ .Namespace }}/{{ .MetricName }}{{ end }}'
+```
+
+How each part behaves:
+
+- **Identity.** `alertname` is the `AlarmName`; `source`, `account` and
+  `region` are labels, and the reason, states and metric are annotations.
+  Every label is state-independent, on purpose: the `OK` message must carry
+  the same label set as the `ALARM` one, because that is how Alertmanager
+  knows which alert it clears. Never put `NewStateValue` in a label.
+- **Firing and resolved.** `alert.resolved` is a template; when it renders
+  to `true` the alert is posted already ended (`endsAt` = now), which
+  clears the alert with the same labels. `ALARM` and `INSUFFICIENT_DATA`
+  fire, `OK` resolves. Anything but an explicit `true` leaves the alert
+  firing, so a template that stops matching its payload fails toward
+  noise, not silence.
+- **Expiry.** An alarm sends one message per state change and nothing while
+  the state holds, so the 1h default would end the alert of an alarm that
+  is still in `ALARM`. `mappings[].resolveAfter` overrides the global value
+  for that mapping (24h above; a Go duration, no `d`). The `OK` message is
+  the normal way out; the expiry only covers a lost one.
+- **Severity.** The notification does not carry the alarm's tags, only its
+  description. The mapping reads `severity=critical|warning|info` from
+  `AlarmDescription` and defaults to `warning`; put that token at the end of
+  the description in the stack that creates the alarm.
+- **INSUFFICIENT_DATA** fires at the same severity: a monitor that cannot
+  see is not known to be healthy. Whether the message is sent at all is
+  the alarm's `InsufficientDataActions`, so an alarm that is routinely
+  sparse should leave the topic out there, or set `treat_missing_data`
+  to `notBreaching`; otherwise a freshly created alarm raises a brief
+  alert before its first datapoint.
+- **The topic** is allow-listed like any other (`topics`), and an
+  alarm in another account publishes to a topic in its own account, whose
+  topic policy must allow `cloudwatch.amazonaws.com` to `SNS:Publish`,
+  with an HTTPS subscription whose `RawMessageDelivery` is `false`.
+
+The test payloads under `cmd/alert-ingress/testdata/` (`cloudwatch-alarm.json`,
+`cloudwatch-ok.json`, `cloudwatch-insufficient-data.json`) are the shape
+CloudWatch sends, and `cloudwatch-mapping.yaml` there is the text above.
+
 ## What it does with a message, in order
 
 1. **Verify the signature.** Every message carries one; the certificate
@@ -235,8 +313,11 @@ What the AWS side must configure:
    can route it. Never a drop: a drop is the failure mode this repository
    exists to close.
 5. **POST** to Alertmanager with a `startsAt` of now and an `endsAt` of
-   now + `resolveAfter` (default 1h): cloud events do not resolve, so
-   the alert expires rather than lingering.
+   now + `resolveAfter` (default 1h, or the mapping's own): most cloud
+   events do not resolve, so the alert expires rather than lingering. A
+   mapping whose source does say when a state ends (a CloudWatch alarm
+   back to `OK`) sets `alert.resolved`, and the alert is posted already
+   ended.
 6. **Count** it: `alert_ingress_messages_total{outcome=received|mapped|unmapped|rejected,mapping=…}`.
    Every 403 is also counted in `alert_ingress_rejected_total{reason}`, where
    `reason` is one of `malformed`, `signature`, `unknown_topic`,
@@ -274,7 +355,7 @@ not expose), `selfMonitor` (true: a `PodMonitor` on the metrics port),
 `alertmanager.url` (required), `topics`, `mappings`, `unmapped.{severity,labels}` (empty: warning, no extra labels),
 `heartbeat.{match,interval}`,
 `rules.heartbeat.enabled` and `rules.rejectedMessages.{enabled,ratePerSecond,window,for}`,
-`resolveAfter` (1h), `networkPolicy.{enabled,alertmanagerPeer,egress.dns,egress.allowCloudHTTPS}`.
+`resolveAfter` (1h; also per mapping, `mappings[].resolveAfter`), `mappings[].alert.resolved` (a template; `true` ends the alert), `networkPolicy.{enabled,alertmanagerPeer,egress.dns,egress.allowCloudHTTPS}`.
 A `match` value of `"*"` tests only that the path is present.
 
 ## Refusals
