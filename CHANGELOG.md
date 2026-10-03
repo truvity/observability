@@ -6,6 +6,22 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **feat(observability-stack): opt-in `selfAlerts.sourceAbsent`.** Every
+  self-alert reads `rate()` of a store or writer counter, and an empty
+  vector reads as healthy, so the day the scrape stops (a NetworkPolicy
+  refusing the scraper, a relabel dropping the target) they all go quiet at
+  once. `selfAlerts.sourceAbsent.enabled: true` renders `SelfAlertSourceAbsent`:
+  per cluster, a source series seen within `lookback` (default `1d`) that has
+  none now, with `tenancy.clusterLabel` required non-empty on both sides, plus
+  a whole-store `absent()` branch (the `platform-alerts` guard shape,
+  v0.44.1). It watches every metric name set under `selfAlerts` (stores,
+  cardinality, stream churn, writers, gateway, proxy, disk guard) and carries
+  a `source` label naming the one that went. Values: `enabled` (default
+  `false`, so no render changes), `lookback` (`1d`), `for` (`15m`),
+  `severity` (`warning`). Refused with `selfAlerts.enabled` off, or with no
+  metric name set. A metric name that never existed on the store fires the
+  whole-store branch, so unset names you do not want watched.
+
 - **Behaviour change: `observability-stack` self-alerts keep the cluster
   label.** On a store that holds several clusters' series, the self-alert
   expressions that aggregated with `sum(...) by (reason|url|exporter|

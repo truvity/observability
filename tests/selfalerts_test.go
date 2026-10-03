@@ -148,3 +148,41 @@ func TestSelfAlertAggregationsKeepTheClusterLabel(t *testing.T) {
 
 	assert.Positive(t, seen, "no summing self-alert found; this check has gone blind")
 }
+
+// TestSelfAlertSourceAbsentIsPerCluster: the opt-in guard on the self-alert
+// source series must be the per-cluster shape (a bare `absent()` stays false
+// while any other cluster still reports), and renders nowhere by default.
+func TestSelfAlertSourceAbsentIsPerCluster(t *testing.T) {
+	goldens, err := filepath.Glob("golden/observability-stack/*.yaml")
+	require.NoError(t, err)
+
+	var seen int
+
+	for _, g := range goldens {
+		for _, doc := range splitDocs(t, g) {
+			var rule vmRuleDoc
+			if err := yaml.Unmarshal(doc, &rule); err != nil || rule.Kind != "VMRule" {
+				continue
+			}
+
+			for _, group := range rule.Spec.Groups {
+				for _, r := range group.Rules {
+					if r.Alert != "SelfAlertSourceAbsent" {
+						continue
+					}
+					seen++
+
+					assert.Equal(t, "selfalerts-source-absent.yaml", filepath.Base(g), "the guard is opt-in and must not render by default")
+					assert.Equal(t, "warning", r.Labels["severity"])
+					expr := strings.Join(strings.Fields(r.Expr), " ")
+					assert.Contains(t, expr, `k8s_cluster_name!=""`, "%s: the per-cluster branch needs the cluster label on both sides", g)
+					assert.Contains(t, expr, "group by (k8s_cluster_name) (max_over_time(", "%s: no per-cluster branch", g)
+					assert.Contains(t, expr, "or (absent(", "%s: no whole-store absent() branch", g)
+					assert.Contains(t, expr, `label_replace(`, "%s: the alert does not say which source went", g)
+				}
+			}
+		}
+	}
+
+	assert.Equal(t, 1, seen, "SelfAlertSourceAbsent should render in exactly the one golden that opts in")
+}

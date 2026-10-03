@@ -2036,6 +2036,33 @@ selfAlerts:
     for: 5m
     severity: warning
 
+  # SelfAlertSourceAbsent. Every rule above reads an EMPTY series as
+  # healthy, so the day a scrape stops (a NetworkPolicy refusing the
+  # scraper, a renamed job, a relabel dropping the target) they all go
+  # quiet together and a quiet dashboard looks like a healthy one. This
+  # watches the metric names set under `selfAlerts` (not the snapshot
+  # rules, which read kube-state-metrics): per cluster, a series seen
+  # within `lookback` that has none now, `tenancy.clusterLabel` required
+  # non-empty on both sides, plus a whole-store `absent()` for the case
+  # where every cluster's series went at once. Opt in; needs at least one
+  # metric name set, and `selfAlerts.enabled`.
+  #
+  # Only enable it where every configured metric is always exported: a name
+  # that never existed on this store (a renamed counter, one the store only
+  # publishes after its first event) is read as "the whole store lost it"
+  # and fires, with no cluster label and `source` naming the metric. Unset
+  # the metric names you do not want watched.
+  #
+  # `lookback` is how long a vanished series keeps the alert firing: past
+  # it the series is forgotten and the alert resolves, so it is the time
+  # a human has to notice, not an outage length. A day matches
+  # platform-alerts' `absentLookback`.
+  sourceAbsent:
+    enabled: false
+    lookback: 1d
+    for: 15m
+    severity: warning
+
   # StoreMemoryNearLimit. Works in BOTH modes, and renders without
   # `selfAlerts.enabled` (its own switch, like `slackDelivery`): a store
   # that is OOM-killed under its memory limit comes back with a cold cache
