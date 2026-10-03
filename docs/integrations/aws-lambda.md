@@ -211,10 +211,10 @@ of [GetWebIdentityToken](https://docs.aws.amazon.com/STS/latest/APIReference/API
 `sts:SigningAlgorithm` is single-valued and keeps `StringEquals`.
 
 3. **The roster** must admit the role: the issuer-side AWS verifier recognises
-   the account, and a group matcher selects the role, for example
-   `arn:aws:iam::<account-id>:role/billing-*`. A role in no group is refused
-   at the exchange, which shows up as a `503` plus the issuer's sentence in
-   the extension's log line.
+   the account, and a group matcher selects the role, for example by a role
+   name pattern such as `billing-*` in that account. A role in no group is
+   refused at the exchange, which shows up as a `503` plus the issuer's
+   sentence in the extension's log line.
 
 ## Attaching the layer
 
