@@ -202,7 +202,7 @@ spec:
         # reads as healthy to rules that compare values.
         - alert: NATSMetricsAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(up{job="nats/nats"}[1d])) unless group by (k8s_cluster_name) (up{job="nats/nats"})) or (absent(up{job="nats/nats"}) unless on() group(max_over_time(up{job="nats/nats"}[1d])))
+            (group by (k8s_cluster_name) (max_over_time(up{job="nats/nats", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{job="nats/nats", k8s_cluster_name!=""})) or (absent(up{job="nats/nats"}) unless on() group(max_over_time(up{job="nats/nats"}[1d])))
           for: 30m
           labels:
             severity: warning

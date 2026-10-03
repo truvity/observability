@@ -133,7 +133,7 @@ spec:
         # scrape blocked) reads as healthy to rules that compare values.
         - alert: ArgoCDMetricsAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(argocd_app_info{job=~"argocd-.*-metrics"}[1d])) unless group by (k8s_cluster_name) (argocd_app_info{job=~"argocd-.*-metrics"})) or (absent(argocd_app_info{job=~"argocd-.*-metrics"}) unless on() group(max_over_time(argocd_app_info{job=~"argocd-.*-metrics"}[1d])))
+            (group by (k8s_cluster_name) (max_over_time(argocd_app_info{job=~"argocd-.*-metrics", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (argocd_app_info{job=~"argocd-.*-metrics", k8s_cluster_name!=""})) or (absent(argocd_app_info{job=~"argocd-.*-metrics"}) unless on() group(max_over_time(argocd_app_info{job=~"argocd-.*-metrics"}[1d])))
           for: 15m
           labels:
             severity: warning

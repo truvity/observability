@@ -69,7 +69,7 @@ spec:
         # two rules above go silent right along with it.
         - alert: KargoStateMetricsAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(kargo_stage_condition{type="Ready"}[1d])) unless group by (k8s_cluster_name) (kargo_stage_condition{type="Ready"})) or (absent(kargo_stage_condition{type="Ready"}) unless on() group(max_over_time(kargo_stage_condition{type="Ready"}[1d]))) or (group by (k8s_cluster_name) (max_over_time(kargo_promotion_phase[1d])) unless group by (k8s_cluster_name) (kargo_promotion_phase)) or (absent(kargo_promotion_phase) unless on() group(max_over_time(kargo_promotion_phase[1d])))
+            (group by (k8s_cluster_name) (max_over_time(kargo_stage_condition{type="Ready", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (kargo_stage_condition{type="Ready", k8s_cluster_name!=""})) or (absent(kargo_stage_condition{type="Ready"}) unless on() group(max_over_time(kargo_stage_condition{type="Ready"}[1d]))) or (group by (k8s_cluster_name) (max_over_time(kargo_promotion_phase{k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (kargo_promotion_phase{k8s_cluster_name!=""})) or (absent(kargo_promotion_phase) unless on() group(max_over_time(kargo_promotion_phase[1d])))
           for: 30m
           labels:
             severity: warning
@@ -92,7 +92,7 @@ spec:
         # all.
         - alert: KargoControllerAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(up{job="example-kargo-controller"}[1d])) unless group by (k8s_cluster_name) (up{job="example-kargo-controller"} == 1)) or (absent(up{job="example-kargo-controller"} == 1) unless on() group(max_over_time(up{job="example-kargo-controller"}[1d])))
+            (group by (k8s_cluster_name) (max_over_time(up{job="example-kargo-controller", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{job="example-kargo-controller", k8s_cluster_name!=""} == 1)) or (absent(up{job="example-kargo-controller"} == 1) unless on() group(max_over_time(up{job="example-kargo-controller"}[1d])))
           for: 7m
           labels:
             severity: warning
@@ -252,7 +252,7 @@ spec:
         # scrape blocked) reads as healthy to rules that compare values.
         - alert: ArgoCDMetricsAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(argocd_app_info{job=~"example-argocd-.*"}[1d])) unless group by (k8s_cluster_name) (argocd_app_info{job=~"example-argocd-.*"})) or (absent(argocd_app_info{job=~"example-argocd-.*"}) unless on() group(max_over_time(argocd_app_info{job=~"example-argocd-.*"}[1d])))
+            (group by (k8s_cluster_name) (max_over_time(argocd_app_info{job=~"example-argocd-.*", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (argocd_app_info{job=~"example-argocd-.*", k8s_cluster_name!=""})) or (absent(argocd_app_info{job=~"example-argocd-.*"}) unless on() group(max_over_time(argocd_app_info{job=~"example-argocd-.*"}[1d])))
           for: 25m
           labels:
             severity: info
@@ -296,7 +296,7 @@ spec:
         # stale.
         - alert: ESOWebhookAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(up{namespace="example-secrets", job=~"example-webhook-.*"}[1d])) unless group by (k8s_cluster_name) (up{namespace="example-secrets", job=~"example-webhook-.*"})) or (absent(up{namespace="example-secrets", job=~"example-webhook-.*"}) unless on() group(max_over_time(up{namespace="example-secrets", job=~"example-webhook-.*"}[1d])))
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="example-secrets", job=~"example-webhook-.*", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{namespace="example-secrets", job=~"example-webhook-.*", k8s_cluster_name!=""})) or (absent(up{namespace="example-secrets", job=~"example-webhook-.*"}) unless on() group(max_over_time(up{namespace="example-secrets", job=~"example-webhook-.*"}[1d])))
           for: 7m
           labels:
             severity: warning
@@ -429,7 +429,7 @@ spec:
         # the pods are gone, the scrape is blocked).
         - alert: ESOMetricsAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(up{namespace="example-secrets"}[1d])) unless group by (k8s_cluster_name) (up{namespace="example-secrets"})) or (absent(up{namespace="example-secrets"}) unless on() group(max_over_time(up{namespace="example-secrets"}[1d])))
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="example-secrets", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{namespace="example-secrets", k8s_cluster_name!=""})) or (absent(up{namespace="example-secrets"}) unless on() group(max_over_time(up{namespace="example-secrets"}[1d])))
           for: 25m
           labels:
             severity: info
@@ -472,7 +472,7 @@ spec:
         # (`expectedNamespaces`) to also catch one that never came up.
         - alert: ACKControllerAbsent
           expr: >-
-            (group by (k8s_cluster_name, namespace) (max_over_time(up{namespace=~"example-ack-.*"}[1d])) unless group by (k8s_cluster_name, namespace) (up{namespace=~"example-ack-.*"})) or (absent(up{namespace=~"example-ack-.*"}) unless on() group(max_over_time(up{namespace=~"example-ack-.*"}[1d])))
+            (group by (k8s_cluster_name, namespace) (max_over_time(up{namespace=~"example-ack-.*", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name, namespace) (up{namespace=~"example-ack-.*", k8s_cluster_name!=""})) or (absent(up{namespace=~"example-ack-.*"}) unless on() group(max_over_time(up{namespace=~"example-ack-.*"}[1d])))
           for: 20m
           labels:
             severity: warning

@@ -41,7 +41,7 @@ spec:
         # stale.
         - alert: ESOWebhookAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}[1d])) unless group by (k8s_cluster_name) (up{namespace="external-secrets", job=~"external-secrets-webhook.*"})) or (absent(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}) unless on() group(max_over_time(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}[1d])))
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="external-secrets", job=~"external-secrets-webhook.*", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{namespace="external-secrets", job=~"external-secrets-webhook.*", k8s_cluster_name!=""})) or (absent(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}) unless on() group(max_over_time(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}[1d])))
           for: 5m
           labels:
             severity: critical
@@ -174,7 +174,7 @@ spec:
         # the pods are gone, the scrape is blocked).
         - alert: ESOMetricsAbsent
           expr: >-
-            (group by (k8s_cluster_name) (max_over_time(up{namespace="external-secrets"}[1d])) unless group by (k8s_cluster_name) (up{namespace="external-secrets"})) or (absent(up{namespace="external-secrets"}) unless on() group(max_over_time(up{namespace="external-secrets"}[1d])))
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="external-secrets", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{namespace="external-secrets", k8s_cluster_name!=""})) or (absent(up{namespace="external-secrets"}) unless on() group(max_over_time(up{namespace="external-secrets"}[1d])))
           for: 15m
           labels:
             severity: warning

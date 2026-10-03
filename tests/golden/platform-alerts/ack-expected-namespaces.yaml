@@ -44,9 +44,9 @@ spec:
         # lookback, still fires on its own (the whole-store `absent()`).
         - alert: ACKControllerAbsent
           expr: >-
-            (label_replace(group by (k8s_cluster_name) (max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])), "namespace", "example-ack-one", "", "") unless group by (k8s_cluster_name, namespace) (up{namespace="example-ack-one"})) or (absent(up{namespace="example-ack-one"}) unless on() group(max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])))
+            (label_replace(group by (k8s_cluster_name) (max_over_time(up{namespace=~"example-ack-one|example-ack-two", k8s_cluster_name!=""}[1d])), "namespace", "example-ack-one", "", "") unless group by (k8s_cluster_name, namespace) (up{namespace="example-ack-one", k8s_cluster_name!=""})) or (absent(up{namespace="example-ack-one"}) unless on() group(max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])))
             or
-            (label_replace(group by (k8s_cluster_name) (max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])), "namespace", "example-ack-two", "", "") unless group by (k8s_cluster_name, namespace) (up{namespace="example-ack-two"})) or (absent(up{namespace="example-ack-two"}) unless on() group(max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])))
+            (label_replace(group by (k8s_cluster_name) (max_over_time(up{namespace=~"example-ack-one|example-ack-two", k8s_cluster_name!=""}[1d])), "namespace", "example-ack-two", "", "") unless group by (k8s_cluster_name, namespace) (up{namespace="example-ack-two", k8s_cluster_name!=""})) or (absent(up{namespace="example-ack-two"}) unless on() group(max_over_time(up{namespace=~"example-ack-one|example-ack-two"}[1d])))
           for: 10m
           labels:
             severity: critical
