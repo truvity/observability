@@ -4,6 +4,29 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.44.0
+
+- **`platform-alerts` gains four generic groups, all off by default, and
+  the backup rules their own namespace selector.** Nothing changes until a
+  group is enabled. Every expression aggregates by the cluster label, and
+  each group has `keepClusterLabel` for a store that evaluates several
+  clusters' series.
+  - `groups.envoyRoutes`: per-HTTPRoute 5xx ratio
+    (`EnvoyRoute5xxRatioHigh` / `...Critical`, 5% / 25%) and p99 upstream
+    latency (`EnvoyRouteP99LatencyHigh` / `...Critical`, 2s / 10s), read from
+    Envoy Gateway's `envoy_cluster_upstream_rq_xx` and `_rq_time_bucket`
+    (one Envoy cluster per route rule, `httproute/<ns>/<route>/rule/<n>`),
+    with a minimum-traffic guard (`minRequestsPerSecond`).
+  - `groups.certificates`: cert-manager `CertificateExpiringSoon` (14d),
+    `CertificateExpiryCritical` (3d) and `CertificateNotReady` (15m).
+  - `groups.restarts`: `ContainerOOMKilled` and `ContainerRestartingOften`.
+  - `groups.workloadAbsent`: `DeploymentNoAvailableReplicas` (no available
+    replica for 10m while spec replicas is above zero).
+  - `groups.backups.namespaceSelector` (empty inherits the top-level
+    `namespaceSelector`, so the render is unchanged by default) lets the
+    CronJob and Job-failure rules cover namespaces the volume rules should
+    not.
+
 ## v0.43.3
 
 - **Behaviour change: `alert-ingress`'s `AlertIngressHeartbeatMissing` sums

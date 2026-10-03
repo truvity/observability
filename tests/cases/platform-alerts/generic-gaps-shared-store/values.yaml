@@ -1,0 +1,30 @@
+# The generic-gaps groups on a store that holds several clusters, rules
+# running on one of them: each series' own cluster label survives.
+namespaceSelector: "^(platform)$"
+commonLabels:
+  k8s_cluster_name: kernel
+runbookBaseUrl: https://runbooks.example.com/
+groups:
+  backups:
+    enabled: true
+    namespaceSelector: "^(platform|product-a)$"
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  envoyRoutes:
+    enabled: true
+    keepClusterLabel: true
+  certificates:
+    enabled: true
+    keepClusterLabel: true
+  restarts:
+    enabled: true
+    keepClusterLabel: true
+    namespaceSelector: "^(product-a)$"
+  workloadAbsent:
+    enabled: true
+    keepClusterLabel: true
+    namespaceSelector: "^(product-a|product-b)$"

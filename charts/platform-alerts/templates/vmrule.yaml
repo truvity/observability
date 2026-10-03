@@ -90,6 +90,7 @@ spec:
     exists to prevent.
     */}}
     {{- $ignoreSuspended := ternary $g.ignoreSuspended true (hasKey $g "ignoreSuspended") }}
+    {{- $bns := default $ns $g.namespaceSelector }}
     - name: platform-alerts.backups
       interval: {{ .Values.interval }}
       rules:
@@ -101,11 +102,11 @@ spec:
         - alert: CronJobNotSucceeding
           expr: >-
             time() - max by ({{ $b }}namespace, cronjob) (
-              kube_cronjob_status_last_successful_time{namespace=~"{{ $ns }}"}
+              kube_cronjob_status_last_successful_time{namespace=~"{{ $bns }}"}
             ) > {{ $g.maxSuccessAge }}
             {{- if $ignoreSuspended }}
             unless on ({{ $c }}namespace, cronjob)
-              kube_cronjob_spec_suspend{namespace=~"{{ $ns }}"} == 1
+              kube_cronjob_spec_suspend{namespace=~"{{ $bns }}"} == 1
             {{- end }}
           labels:
             {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
@@ -138,20 +139,20 @@ spec:
           expr: >-
             WITH (
               cronjob_jobs = (
-                kube_job_created{namespace=~"{{ $ns }}"}
+                kube_job_created{namespace=~"{{ $bns }}"}
                 * on ({{ $c }}namespace, job_name) group_left(owner_name)
-                kube_job_owner{namespace=~"{{ $ns }}", owner_kind="CronJob"}
+                kube_job_owner{namespace=~"{{ $bns }}", owner_kind="CronJob"}
               ),
               newest_per_cronjob = max by ({{ $c }}namespace, owner_name) (cronjob_jobs)
               {{- if $ignoreSuspended }},
               suspended_cronjobs = label_replace(
-                kube_cronjob_spec_suspend{namespace=~"{{ $ns }}"} == 1,
+                kube_cronjob_spec_suspend{namespace=~"{{ $bns }}"} == 1,
                 "owner_name", "$1", "cronjob", "(.+)"
               )
               {{- end }}
             )
             max by ({{ $b }}namespace, job_name) (
-              kube_job_status_failed{namespace=~"{{ $ns }}"}
+              kube_job_status_failed{namespace=~"{{ $bns }}"}
               and on ({{ $c }}namespace, job_name) (
                 cronjob_jobs == on ({{ $c }}namespace, owner_name) group_left() newest_per_cronjob
                 {{- if $ignoreSuspended }}
@@ -1265,6 +1266,195 @@ spec:
               {{ $g.panics.window }}. It is a defect in that controller version:
               find the resource in the log and check for a newer release.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ACKReconcilePanics")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if .Values.groups.envoyRoutes.enabled }}
+    {{- $g := .Values.groups.envoyRoutes }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    {{- $sel := printf `job=~"%s", envoy_cluster_name=~"%s"` $g.job $g.routeSelector }}
+    {{- $w := $g.window }}
+    {{- $traffic := printf "sum by (%senvoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{%s}[%s]))" $b $sel $w }}
+    - name: platform-alerts.envoy-routes
+      interval: {{ .Values.interval }}
+      rules:
+        # The share of a route's upstream responses that are 5xx.
+        #
+        # Envoy Gateway names one Envoy cluster per HTTPRoute rule
+        # (`httproute/<namespace>/<route>/rule/<n>`), so `envoy_cluster_name`
+        # IS the per-route label, and `envoy_response_code_class` is the
+        # class digit. Both thresholds read the same ratio; the traffic
+        # guard keeps a route that sees a request an hour from paging on one
+        # failed request. A route with no 5xx series has an empty numerator
+        # and stays silent, which is the healthy case.
+        - alert: EnvoyRoute5xxRatioHigh
+          expr: >-
+            sum by ({{ $b }}envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{ {{- $sel }}, envoy_response_code_class="5"}[{{ $w }}]))
+            / {{ $traffic }} > {{ $g.warningRatio }}
+            and on ({{ $c }}envoy_cluster_name) {{ $traffic }} >= {{ $g.minRequestsPerSecond }}
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Route {{`{{ $labels.envoy_cluster_name }}`}} returns more than {{ $g.warningRatio }} 5xx"
+            description: >-
+              More than {{ $g.warningRatio }} of the upstream responses of this route were
+              5xx over {{ $w }}, at a rate above {{ $g.minRequestsPerSecond }} requests per
+              second. The name is `httproute/<namespace>/<route>/rule/<n>`: the
+              route's backend is failing or refusing connections.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "EnvoyRoute5xxRatioHigh")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: EnvoyRoute5xxRatioCritical
+          expr: >-
+            sum by ({{ $b }}envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{ {{- $sel }}, envoy_response_code_class="5"}[{{ $w }}]))
+            / {{ $traffic }} > {{ $g.criticalRatio }}
+            and on ({{ $c }}envoy_cluster_name) {{ $traffic }} >= {{ $g.minRequestsPerSecond }}
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.criticalSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Route {{`{{ $labels.envoy_cluster_name }}`}} returns more than {{ $g.criticalRatio }} 5xx"
+            description: >-
+              More than {{ $g.criticalRatio }} of the upstream responses of this route were
+              5xx over {{ $w }}: the route is effectively down.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "EnvoyRoute5xxRatioCritical")) }}{{ . | nindent 12 }}{{- end }}
+        # p99 of the upstream response time per route. Envoy's histogram is
+        # in milliseconds.
+        - alert: EnvoyRouteP99LatencyHigh
+          expr: >-
+            histogram_quantile(0.99, sum by ({{ $b }}envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket{ {{- $sel }}}[{{ $w }}]))) > {{ $g.warningLatencyMs }}
+            and on ({{ $c }}envoy_cluster_name) {{ $traffic }} >= {{ $g.minRequestsPerSecond }}
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Route {{`{{ $labels.envoy_cluster_name }}`}} p99 latency is above {{ $g.warningLatencyMs }}ms"
+            description: >-
+              The 99th percentile of upstream response time for this route is above
+              {{ $g.warningLatencyMs }}ms over {{ $w }}.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "EnvoyRouteP99LatencyHigh")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: EnvoyRouteP99LatencyCritical
+          expr: >-
+            histogram_quantile(0.99, sum by ({{ $b }}envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket{ {{- $sel }}}[{{ $w }}]))) > {{ $g.criticalLatencyMs }}
+            and on ({{ $c }}envoy_cluster_name) {{ $traffic }} >= {{ $g.minRequestsPerSecond }}
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.criticalSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Route {{`{{ $labels.envoy_cluster_name }}`}} p99 latency is above {{ $g.criticalLatencyMs }}ms"
+            description: >-
+              The 99th percentile of upstream response time for this route is above
+              {{ $g.criticalLatencyMs }}ms over {{ $w }}.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "EnvoyRouteP99LatencyCritical")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if .Values.groups.certificates.enabled }}
+    {{- $g := .Values.groups.certificates }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    {{- $cns := default $ns $g.namespaceSelector }}
+    - name: platform-alerts.certificates
+      interval: {{ .Values.interval }}
+      rules:
+        # cert-manager's own series. A Certificate's namespace is the
+        # `exported_namespace` label (the scrape's own `namespace` is
+        # cert-manager's), which the emitters keep under honor_labels: false.
+        # `> 0` skips a Certificate that has not been issued yet (0 means no
+        # expiry known; NotReady below covers it).
+        - alert: CertificateExpiringSoon
+          expr: >-
+            max by ({{ $b }}exported_namespace, name) (certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"{{ $cns }}"} > 0)
+            - time() < {{ $g.warningDays }} * 86400
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Certificate {{`{{ $labels.exported_namespace }}`}}/{{`{{ $labels.name }}`}} expires in under {{ $g.warningDays }} days"
+            description: >-
+              cert-manager renews well before expiry, so a certificate this close has
+              not been renewed: check the Certificate's conditions and its issuer.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "CertificateExpiringSoon")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: CertificateExpiryCritical
+          expr: >-
+            max by ({{ $b }}exported_namespace, name) (certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"{{ $cns }}"} > 0)
+            - time() < {{ $g.criticalDays }} * 86400
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.criticalSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Certificate {{`{{ $labels.exported_namespace }}`}}/{{`{{ $labels.name }}`}} expires in under {{ $g.criticalDays }} days"
+            description: >-
+              The certificate is about to expire (or has). Whatever serves it will
+              start failing TLS handshakes.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "CertificateExpiryCritical")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: CertificateNotReady
+          expr: >-
+            max by ({{ $b }}exported_namespace, name) (certmanager_certificate_ready_status{exported_namespace=~"{{ $cns }}", condition="True"}) == 0
+          for: {{ $g.notReadyFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.warningSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Certificate {{`{{ $labels.exported_namespace }}`}}/{{`{{ $labels.name }}`}} has not been Ready for {{ $g.notReadyFor }}"
+            description: >-
+              The Certificate's Ready condition is not True. `kubectl describe
+              certificate` and its CertificateRequest name the reason.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "CertificateNotReady")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if .Values.groups.restarts.enabled }}
+    {{- $g := .Values.groups.restarts }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    {{- $rns := default $ns $g.namespaceSelector }}
+    - name: platform-alerts.restarts
+      interval: {{ .Values.interval }}
+      rules:
+        # A container whose last termination was an OOM kill AND that has
+        # restarted within `window`. `last_terminated_reason` keeps reading
+        # OOMKilled for as long as the pod lives, so on its own it would
+        # fire forever on a container that was killed once last week.
+        - alert: ContainerOOMKilled
+          expr: >-
+            max by ({{ $b }}namespace, pod, container) (kube_pod_container_status_last_terminated_reason{namespace=~"{{ $rns }}", reason="OOMKilled"} == 1)
+            and on ({{ $c }}namespace, pod, container)
+            max by ({{ $c }}namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"{{ $rns }}"}[{{ $g.window }}])) > 0
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.oomSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Container {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}}/{{`{{ $labels.container }}`}} was OOM-killed"
+            description: >-
+              The container restarted within the last {{ $g.window }} and its last
+              termination reason is OOMKilled: its memory limit is too low or it leaks.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ContainerOOMKilled")) }}{{ . | nindent 12 }}{{- end }}
+        - alert: ContainerRestartingOften
+          expr: >-
+            max by ({{ $b }}namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"{{ $rns }}"}[{{ $g.restartWindow }}])) > {{ $g.maxRestarts }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.restartSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Container {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}}/{{`{{ $labels.container }}`}} restarted more than {{ $g.maxRestarts }} times in {{ $g.restartWindow }}"
+            description: >-
+              A restart rate this high that is not a crash loop yet (the upstream
+              crash-loop alert needs the container to be waiting in back-off at the
+              moment it evaluates) still means the container cannot stay up.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ContainerRestartingOften")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
+    {{- if .Values.groups.workloadAbsent.enabled }}
+    {{- $g := .Values.groups.workloadAbsent }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    {{- $wns := default $ns $g.namespaceSelector }}
+    - name: platform-alerts.workload-absent
+      interval: {{ .Values.interval }}
+      rules:
+        # A Deployment that is supposed to run (spec replicas above zero)
+        # and has none available. The upstream replicas-mismatch alert needs
+        # the Deployment to have SOME replicas missing; this is the whole
+        # workload gone, from a failed rollout, a quota, or a scale-down.
+        - alert: DeploymentNoAvailableReplicas
+          expr: >-
+            max by ({{ $b }}namespace, deployment) (kube_deployment_status_replicas_available{namespace=~"{{ $wns }}"}) == 0
+            and on ({{ $c }}namespace, deployment)
+            max by ({{ $c }}namespace, deployment) (kube_deployment_spec_replicas{namespace=~"{{ $wns }}"}) > 0
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Deployment {{`{{ $labels.namespace }}`}}/{{`{{ $labels.deployment }}`}} has no available replicas for {{ $g.for }}"
+            description: >-
+              The Deployment wants replicas and none is available: the workload is
+              down. Its pods' events and the ReplicaSet's conditions name why.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "DeploymentNoAvailableReplicas")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
 {{- end }}
 {{- if .Values.groups.podSecurity.enabled }}
