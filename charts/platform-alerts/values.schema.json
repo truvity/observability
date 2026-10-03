@@ -124,7 +124,8 @@
               "type": "boolean",
               "description": "Default true: both backup rules skip a CronJob whose kube_cronjob_spec_suspend is 1. `false` renders the 0.10.0 expressions."
             },
-            "namespaceSelector": { "type": "string" }
+            "namespaceSelector": { "type": "string" },
+            "keepClusterLabel": { "type": "boolean" }
           }
         },
         "writePath": {

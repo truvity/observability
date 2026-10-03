@@ -25,7 +25,8 @@ must be done first, and whether a default moved. Newest first, one
   - `groups.backups.namespaceSelector` (empty inherits the top-level
     `namespaceSelector`, so the render is unchanged by default) lets the
     CronJob and Job-failure rules cover namespaces the volume rules should
-    not.
+    not. `groups.backups.keepClusterLabel` (default false) is the same
+    switch the other groups have.
 
 ## v0.43.3
 

@@ -132,6 +132,9 @@ groups:
     # top-level selector for the volume rules still watch the CronJobs of
     # product namespaces.
     namespaceSelector: ""
+    # -- Keep the series' own `clusterLabel` on both alerts (see
+    # `pendingPods.keepClusterLabel`). Default false: unchanged render.
+    keepClusterLabel: false
 
   # The write path.
   #
