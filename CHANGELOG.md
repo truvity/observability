@@ -4,6 +4,27 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change: `observability-stack` self-alerts keep the cluster
+  label.** On a store that holds several clusters' series, the self-alert
+  expressions that aggregated with `sum(...) by (reason|url|exporter|
+  integration|pod)`, or with a plain `sum(rate(...))`, dropped
+  `tenancy.clusterLabel` (default `k8s_cluster_name`), so a remote
+  cluster's writer or gateway alert arrived with no cluster and could not be
+  routed or told apart. They now aggregate with `sum without (pod, instance)`
+  (the v0.43.3 pattern; `RemoteEvaluatorFailing` keeps `pod` and drops only
+  `instance`), so the cluster label survives along with the labels the old
+  `by (...)` kept (`reason`, `url`, `exporter`, `integration`). Affected:
+  `MetricStoreIgnoringRows`, `LogStoreDroppingRows`, `TraceStoreDroppingRows`,
+  `LogStoreStreamsChurning`, `TraceStoreStreamsChurning`,
+  `WriterDroppingPackets`, `GatewayExportFailing`, `GatewayEnqueueFailing`,
+  `ProxyAtConcurrencyLimit`, `SlackNotificationsFailing`,
+  `RemoteEvaluatorFailing`. Thresholds, windows and `for` are unchanged; an
+  alert that fired before fires now, with extra labels (the series' other
+  labels such as `job` and `namespace` also survive, where a bare `sum()`
+  dropped them). The rendered rules change in every case that renders them.
+
 ## v0.45.0
 
 - **feat(alert-ingress): static labels on unmapped events.** A new

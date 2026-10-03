@@ -2656,7 +2656,7 @@ spec:
         # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
         - alert: SlackNotificationsFailing
           expr: >-
-            sum(increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) by (integration) > 0
+            sum without (pod, instance) (increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) > 0
           for: 1m
           labels:
             severity: warning

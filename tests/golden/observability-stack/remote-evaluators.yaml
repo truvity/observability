@@ -2650,7 +2650,7 @@ spec:
         # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
         - alert: SlackNotificationsFailing
           expr: >-
-            sum(increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) by (integration) > 0
+            sum without (pod, instance) (increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) > 0
           for: 1m
           labels:
             severity: warning
@@ -2674,7 +2674,7 @@ spec:
         # local Alertmanager. Healthy range: 0.
         - alert: RemoteEvaluatorFailing
           expr: >-
-            sum by (pod) (increase({__name__=~"vmalert_(alerting|recording)_rules_errors_total|vmalert_execution_errors_total", pod=~"vmalert-observability-stack-remote-.+"}[10m])) > 0
+            sum without (instance) (increase({__name__=~"vmalert_(alerting|recording)_rules_errors_total|vmalert_execution_errors_total", pod=~"vmalert-observability-stack-remote-.+"}[10m])) > 0
           for: 5m
           labels:
             severity: warning
