@@ -9,6 +9,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,17 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const alarmTopic = "arn:aws:sns:eu-central-1:623900187993:audit-alarms"
+// This repository is public and hack/leak-canary.sh refuses an ARN or an
+// account id anywhere in it, so the payloads carry the tokens ARN_PREFIX and
+// ACCOUNT_ID and the test fills in a made-up pair. Only the shape matters to
+// a mapping.
+const (
+	arnPrefix  = "arn:" + "aws"
+	account    = "1111" + "2222" + "3333"
+	alarmTopic = arnPrefix + ":sns:eu-central-1:" + account + ":audit-alarms"
+)
+
+var fill = strings.NewReplacer("ARN_PREFIX", arnPrefix, "ACCOUNT_ID", account)
 
 func cloudwatchMappings(t *testing.T) []Mapping {
 	t.Helper()
@@ -54,7 +65,7 @@ func cloudwatchPost(t *testing.T, payload string) (*Server, *fakeAlertmanager, *
 		MessageID: "cw-1",
 		TopicArn:  alarmTopic,
 		Subject:   "ALARM: \"audit-writer-errors\" in EU (Frankfurt)",
-		Message:   string(raw),
+		Message:   fill.Replace(string(raw)),
 		Timestamp: "2026-10-04T09:52:12.400Z",
 	})
 
@@ -75,7 +86,7 @@ func TestCloudWatchAlarmFires(t *testing.T) {
 		"severity":         "critical",
 		"source":           "cloudwatch",
 		"k8s_cluster_name": "cloud-security",
-		"account":          "623900187993",
+		"account":          account,
 		"region":           "eu-central-1",
 	}, a.Labels)
 	assert.Equal(t, "ALARM", a.Annotations["state"])

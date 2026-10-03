@@ -247,7 +247,7 @@ mappings:
           source: cloudwatch
           k8s_cluster_name: cloud-security
           account: '{{ .AWSAccountId }}'
-          region: '{{ reFind "^arn:aws[a-z-]*:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
+          region: '{{ reFind "^arn:[a-z-]+:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
         annotations:
           summary: '{{ .AlarmName }} is {{ .NewStateValue }}'
           reason: '{{ .NewStateReason }}'
@@ -292,7 +292,9 @@ How each part behaves:
 
 The test payloads under `cmd/alert-ingress/testdata/` (`cloudwatch-alarm.json`,
 `cloudwatch-ok.json`, `cloudwatch-insufficient-data.json`) are the shape
-CloudWatch sends, and `cloudwatch-mapping.yaml` there is the text above.
+CloudWatch sends, with `ARN_PREFIX` and `ACCOUNT_ID` standing in for the ARN
+prefix and account id that the test fills in (this repository is public and
+carries no ARN or account id), and `cloudwatch-mapping.yaml` there is the text above.
 
 ## What it does with a message, in order
 

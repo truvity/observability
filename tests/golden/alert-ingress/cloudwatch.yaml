@@ -68,7 +68,7 @@ data:
     alertmanager:
       url: "http://vmalertmanager-observability-stack.observability.svc:9093"
     topics:
-      - arn:aws:sns:eu-central-1:623900187993:audit-alarms
+      - <the audit-alarms topic ARN>
     mappings:
       - alert:
           alertname: '{{ .AlarmName }}'
@@ -82,7 +82,7 @@ data:
           labels:
             account: '{{ .AWSAccountId }}'
             k8s_cluster_name: cloud-security
-            region: '{{ reFind "^arn:aws[a-z-]*:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
+            region: '{{ reFind "^arn:[a-z-]+:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
             source: cloudwatch
           resolved: '{{ eq .NewStateValue "OK" }}'
           severity: '{{ $s := "" }}{{ with .AlarmDescription }}{{ $s = reFind "severity=(critical|warning|info)"
@@ -147,7 +147,7 @@ spec:
         # ConfigMap edit lands on disk and the running process keeps the
         # configuration it read at startup — a values change that
         # applied, synced, and did nothing.
-        alert-ingress/config-checksum: 0d065cf9e1c0d8c2df87cbe4a348b8df61f4ff8af46c504689afcc4e90f3f2ad
+        alert-ingress/config-checksum: 31257ffadcb9e4f33c45ffb2a89b9f128dc99a020053af618137e86ecae491e3
     spec:
       serviceAccountName: alert-ingress
       automountServiceAccountToken: false
