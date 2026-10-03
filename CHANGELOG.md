@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.45.0
 
 - **feat(alert-ingress): static labels on unmapped events.** A new
   `unmapped` value (`unmapped.labels`, a map of static strings, and
