@@ -167,6 +167,25 @@ func renderAlert(spec AlertSpec, body map[string]any) (labels, annotations map[s
 	return labels, annotations, nil
 }
 
+// renderResolved reports whether spec's `resolved` template renders to
+// "true" (case-insensitive, surrounding space ignored) against body. An
+// empty field is false without running a template. Any other output is
+// false too: only an explicit "true" ends an alert, so a template that
+// drifts from what it was written for leaves the alert firing, the safe
+// side of the two mistakes.
+func renderResolved(spec AlertSpec, body map[string]any) (bool, error) {
+	if spec.Resolved == "" {
+		return false, nil
+	}
+
+	out, err := renderString(spec.Resolved, body)
+	if err != nil {
+		return false, fmt.Errorf("resolved: %w", err)
+	}
+
+	return strings.EqualFold(strings.TrimSpace(out), "true"), nil
+}
+
 // unmappedAlert builds CloudEventUnmapped directly, with NO template
 // step. The unmapped path exists precisely because this message's shape
 // is unknown, so its body is untrusted text — running it through

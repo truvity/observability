@@ -1,0 +1,20 @@
+# expect: resolveAfter
+# The binary reads a Go duration, which has no `d`: "1d" would fail the
+# mapping at start (a crash loop), so the schema refuses it at render.
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics:
+  - "<the security-alerts topic ARN>"
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
+mappings:
+  - name: alarm
+    match: {"AlarmName": "*"}
+    resolveAfter: 1d
+    alert: {alertname: x, severity: warning}

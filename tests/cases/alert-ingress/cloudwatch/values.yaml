@@ -1,0 +1,43 @@
+# A CloudWatch alarm topic: one mapping with a longer expiry, a severity read
+# from the alarm description and `resolved` clearing the alert on OK (the same
+# text as cmd/alert-ingress/testdata/cloudwatch-mapping.yaml, which the
+# binary's tests run payloads through).
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+topics:
+  - "arn:aws:sns:eu-central-1:623900187993:audit-alarms"
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
+
+mappings:
+  - name: cloudwatch-alarm
+    match: {"AlarmName": "*", "NewStateValue": "*", "AlarmArn": "*"}
+    # An alarm sends ONE message per state change, then nothing for as long
+    # as the state holds, so the alert must outlive the 1h default; the OK
+    # message is what normally ends it.
+    resolveAfter: 24h
+    alert:
+      alertname: '{{ .AlarmName }}'
+      severity: '{{ $s := "" }}{{ with .AlarmDescription }}{{ $s = reFind "severity=(critical|warning|info)" . }}{{ end }}{{ or $s "warning" }}'
+      resolved: '{{ eq .NewStateValue "OK" }}'
+      labels:
+        source: cloudwatch
+        k8s_cluster_name: cloud-security
+        account: '{{ .AWSAccountId }}'
+        region: '{{ reFind "^arn:aws[a-z-]*:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
+      annotations:
+        summary: '{{ .AlarmName }} is {{ .NewStateValue }}'
+        reason: '{{ .NewStateReason }}'
+        state: '{{ .NewStateValue }}'
+        previous_state: '{{ .OldStateValue }}'
+        description: '{{ with .AlarmDescription }}{{ . }}{{ end }}'
+        metric: '{{ with .Trigger }}{{ .Namespace }}/{{ .MetricName }}{{ end }}'

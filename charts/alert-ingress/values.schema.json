@@ -36,6 +36,10 @@
         "annotations": {
           "type": "object",
           "additionalProperties": { "type": "string" }
+        },
+        "resolved": {
+          "type": "string",
+          "description": "A Go template over the message body. Rendering to `true` posts the alert already ended, which clears the alert with the same labels (a CloudWatch alarm back to OK). Empty or anything else leaves the alert firing."
         }
       }
     },
@@ -152,7 +156,12 @@
             "additionalProperties": { "type": "string" },
             "description": "RE2 patterns, each searched in the text at a path (use `_sns.Message` or `_sns.Subject` for plain-text publishers). All of `match` and `matchRegex` must hold."
           },
-          "alert": { "$ref": "#/definitions/alertSpec" }
+          "alert": { "$ref": "#/definitions/alertSpec" },
+          "resolveAfter": {
+            "type": "string",
+            "pattern": "^([0-9]+(ms|s|m|h))+$",
+            "description": "Overrides the top-level `resolveAfter` for this mapping's alerts (a Go duration: 30m, 24h, 1h30m; the binary does not read d, w or y). Absent: the top-level value."
+          }
         }
       }
     },
