@@ -616,6 +616,9 @@ pair.
 {{- if and $sa.gateway.queueCapacityMetric (not $sa.gateway.queueSizeMetric) -}}
 {{- fail "observability-stack: `selfAlerts.gateway.queueCapacityMetric` is set but `queueSizeMetric` is not. GatewayQueueFilling would compare a gauge against nothing; set both, or neither." -}}
 {{- end -}}
+{{- if and $sa.sourceAbsent.enabled (not $sa.enabled) -}}
+{{- fail "observability-stack: `selfAlerts.sourceAbsent.enabled` is true but `selfAlerts.enabled` is not. SelfAlertSourceAbsent watches the metric names the self-alerts are configured with; with the self-alerts off there is nothing for it to watch." -}}
+{{- end -}}
 {{- /*
 Every metric name here is optional, by design, since none could be
 confirmed for certain against this chart's pins. But `selfAlerts.enabled`

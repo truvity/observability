@@ -1695,6 +1695,16 @@
             "severity": { "$ref": "#/definitions/selfAlertSeverity" }
           }
         },
+        "sourceAbsent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "lookback": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/selfAlertSeverity" }
+          }
+        },
         "storeMemory": {
           "type": "object",
           "additionalProperties": false,

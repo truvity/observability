@@ -39,6 +39,23 @@ least one Slack workspace is declared and Alertmanager is rendered.
 {{- $fullname := include "observability-stack.fullname" . -}}
 {{- $sa := .Values.selfAlerts -}}
 {{- $storeAlertPrefix := dict "metrics" "MetricStore" "logs" "LogStore" "traces" "TraceStore" -}}
+{{- /* The names SelfAlertSourceAbsent watches: every configured source series. */ -}}
+{{- $sourceNames := list -}}
+{{- if $sa.sourceAbsent.enabled -}}
+{{- range $m := concat
+    (list $sa.ingest.metric $sa.logStore.metric $sa.traceStore.metric
+          $sa.cardinality.hourlyCurrentSeriesMetric $sa.cardinality.dailyCurrentSeriesMetric
+          $sa.logStreamChurn.streamsCreatedMetric $sa.traceStreamChurn.streamsCreatedMetric
+          $sa.writer.bufferMetric $sa.writer.droppedPacketsMetric
+          $sa.gateway.queueSizeMetric $sa.proxyConcurrency.limitedRequestsMetric
+          $sa.diskGuard.metrics.freeSpaceMetric $sa.diskGuard.logs.freeSpaceMetric $sa.diskGuard.traces.freeSpaceMetric)
+    ($sa.writer.bufferMetricsExtra | default list) ($sa.writer.droppedPacketsMetricsExtra | default list) -}}
+{{- if and $m (not (has $m $sourceNames)) -}}{{- $sourceNames = append $sourceNames $m -}}{{- end -}}
+{{- end -}}
+{{- if not $sourceNames -}}
+{{- fail "observability-stack: `selfAlerts.sourceAbsent.enabled` is true but no metric name is set under `selfAlerts`, so there is no series for SelfAlertSourceAbsent to watch. Set at least one metric name, or leave `sourceAbsent.enabled: false`." -}}
+{{- end -}}
+{{- end -}}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:
@@ -492,6 +509,53 @@ spec:
               store's own minFreeDiskSpaceBytes guard. It is still serving
               reads and will keep doing so after it stops writing.
         {{- end }}
+        {{- end }}
+
+        {{- /*
+        SelfAlertSourceAbsent (`selfAlerts.sourceAbsent.enabled`).
+
+        THE INCIDENT: the self-alerts could not fire for a week because the
+        metrics store was not being scraped at all (a NetworkPolicy refused
+        the scraper), so every `rate()` above read an empty vector and an
+        empty vector is "healthy". A rule that watches a counter is silent
+        when the counter stops arriving; this is the rule that says so.
+
+        One expression over every metric name configured under
+        `selfAlerts` (the counters and gauges above, not the snapshot
+        rules, whose source is kube-state-metrics): per cluster, a series
+        seen within `lookback` that has none now. `<clusterLabel>!=""` is
+        required on both sides, so a stale series from before a relabel
+        cannot hold the alert true (the platform-alerts `*Absent` shape,
+        v0.44.1). The whole-store line (`absent()`) is silenced while the
+        per-cluster line can still see the series, so one outage is one
+        alert; it carries no cluster label. `source` names the metric.
+        */}}
+        {{- if $sourceNames }}
+        {{- $cl := $root.Values.tenancy.clusterLabel }}
+        {{- $lb := $sa.sourceAbsent.lookback }}
+        {{- $clauses := list }}
+        {{- range $m := $sourceNames }}
+        {{- if $cl }}
+        {{- $clauses = append $clauses (printf `label_replace((group by (%s) (max_over_time(%s{%s!=""}[%s])) unless group by (%s) (%s{%s!=""})) or (absent(%s) unless on() group(max_over_time(%s[%s]))), "source", "%s", "", "")` $cl $m $cl $lb $cl $m $cl $m $m $lb $m) }}
+        {{- else }}
+        {{- $clauses = append $clauses (printf `label_replace(absent(%s) unless on() group(max_over_time(%s[%s])), "source", "%s", "", "")` $m $m $lb $m) }}
+        {{- end }}
+        {{- end }}
+        - alert: SelfAlertSourceAbsent
+          expr: >-
+            {{ join "\n            or\n            " $clauses }}
+          for: {{ $sa.sourceAbsent.for }}
+          labels:
+            severity: {{ $sa.sourceAbsent.severity }}
+          annotations:
+            summary: "A store self-alert has lost the series it watches"
+            description: >-
+              {{`{{ $labels.source }}`}}{{ if $cl }}{{`{{ with $labels.`}}{{ $cl }}{{` }} on cluster {{ . }}{{ end }}`}}{{ end }}
+              was present within the last {{ $lb }} and no longer is. The
+              rules over it read an empty series as healthy, so every one
+              of them is silent while this is true: check the scrape
+              (the target's up, the NetworkPolicy in front of it, the
+              relabeling) before trusting a quiet dashboard.
         {{- end }}
 
         {{- /*
