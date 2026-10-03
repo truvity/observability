@@ -1,0 +1,25 @@
+# The four generic groups added for product namespaces (envoyRoutes,
+# certificates, restarts, workloadAbsent) at their own defaults, plus the
+# backup rules widened to product namespaces by their own selector.
+namespaceSelector: "^(platform)$"
+runbookBaseUrl: https://runbooks.example.com/
+groups:
+  backups:
+    enabled: true
+    namespaceSelector: "^(platform|product-a)$"
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  envoyRoutes:
+    enabled: true
+  certificates:
+    enabled: true
+  restarts:
+    enabled: true
+    namespaceSelector: "^(product-a)$"
+  workloadAbsent:
+    enabled: true
+    namespaceSelector: "^(product-a|product-b)$"

@@ -1,0 +1,252 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.backups
+      interval: 1m
+      rules:
+        # A CronJob that has not SUCCEEDED within its schedule plus slack.
+        # This is the rule that matters: a CronJob which stops being
+        # scheduled at all never produces a failed Job, so a rule watching
+        # failures reports healthy while nothing runs. Measured healthy
+        # range for a daily job: age resets below 24h on every run.
+        - alert: CronJobNotSucceeding
+          expr: >-
+            time() - max by (k8s_cluster_name, namespace, cronjob) (
+              kube_cronjob_status_last_successful_time{namespace=~"^(platform|product-a)$"}
+            ) > 26h
+            unless on (k8s_cluster_name, namespace, cronjob)
+              kube_cronjob_spec_suspend{namespace=~"^(platform|product-a)$"} == 1
+          labels:
+            k8s_cluster_name: kernel
+            severity: critical
+          annotations:
+            summary: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded within 26h"
+            description: >-
+              No successful run in 26h. A job that has stopped being
+              scheduled produces no failures at all, so this is the only rule that
+              can see it. Check that the CronJob exists, is not suspended, and that
+              its last Job completed.
+            runbook_url: "https://runbooks.example.com/CronJobNotSucceeding"
+        # A Job that failed outright — but only the NEWEST Job of each
+        # CronJob. `failedJobsHistoryLimit` keeps failed Job objects
+        # around long after a later run of the same CronJob has
+        # succeeded, and `kube_job_status_failed` never expires that
+        # memory on its own: reading it directly fires forever on a
+        # failure a later run already fixed. "Newest" is decided by
+        # `kube_job_created` — every Job object carries it from the
+        # instant it exists, unlike `kube_job_status_start_time`, which
+        # stays unset until a pod actually runs and so cannot outrank an
+        # older failure while the new run is merely pending. See
+        # docs/safety.md.
+        #
+        # Scoped to Jobs owned by a CronJob
+        # (`kube_job_owner{owner_kind="CronJob"}`): a standalone Job has
+        # no schedule and so no later run to supersede it, and this
+        # rule's whole intent — see its name — is backup CronJobs. A
+        # standalone Job that fails no longer raises THIS alert.
+        - alert: BackupJobFailed
+          expr: >-
+            WITH (
+              cronjob_jobs = (
+                kube_job_created{namespace=~"^(platform|product-a)$"}
+                * on (k8s_cluster_name, namespace, job_name) group_left(owner_name)
+                kube_job_owner{namespace=~"^(platform|product-a)$", owner_kind="CronJob"}
+              ),
+              newest_per_cronjob = max by (k8s_cluster_name, namespace, owner_name) (cronjob_jobs),
+              suspended_cronjobs = label_replace(
+                kube_cronjob_spec_suspend{namespace=~"^(platform|product-a)$"} == 1,
+                "owner_name", "$1", "cronjob", "(.+)"
+              )
+            )
+            max by (k8s_cluster_name, namespace, job_name) (
+              kube_job_status_failed{namespace=~"^(platform|product-a)$"}
+              and on (k8s_cluster_name, namespace, job_name) (
+                cronjob_jobs == on (k8s_cluster_name, namespace, owner_name) group_left() newest_per_cronjob
+                unless on (k8s_cluster_name, namespace, owner_name) suspended_cronjobs
+              )
+            ) > 0
+          labels:
+            k8s_cluster_name: kernel
+            severity: warning
+          annotations:
+            summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed"
+            description: >-
+              The Job reported a failed pod. If it is a backup, treat the last
+              successful run as the real recovery point until this is resolved.
+            runbook_url: "https://runbooks.example.com/BackupJobFailed"
+    - name: platform-alerts.envoy-routes
+      interval: 1m
+      rules:
+        # The share of a route's upstream responses that are 5xx.
+        #
+        # Envoy Gateway names one Envoy cluster per HTTPRoute rule
+        # (`httproute/<namespace>/<route>/rule/<n>`), so `envoy_cluster_name`
+        # IS the per-route label, and `envoy_response_code_class` is the
+        # class digit. Both thresholds read the same ratio; the traffic
+        # guard keeps a route that sees a request an hour from paging on one
+        # failed request. A route with no 5xx series has an empty numerator
+        # and stays silent, which is the healthy case.
+        - alert: EnvoyRoute5xxRatioHigh
+          expr: >-
+            sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*", envoy_response_code_class="5"}[5m]))
+            / sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) > 0.05
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} returns more than 0.05 5xx"
+            description: >-
+              More than 0.05 of the upstream responses of this route were
+              5xx over 5m, at a rate above 0.1 requests per
+              second. The name is `httproute/<namespace>/<route>/rule/<n>`: the
+              route's backend is failing or refusing connections.
+            runbook_url: "https://runbooks.example.com/EnvoyRoute5xxRatioHigh"
+        - alert: EnvoyRoute5xxRatioCritical
+          expr: >-
+            sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*", envoy_response_code_class="5"}[5m]))
+            / sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) > 0.25
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} returns more than 0.25 5xx"
+            description: >-
+              More than 0.25 of the upstream responses of this route were
+              5xx over 5m: the route is effectively down.
+            runbook_url: "https://runbooks.example.com/EnvoyRoute5xxRatioCritical"
+        # p99 of the upstream response time per route. Envoy's histogram is
+        # in milliseconds.
+        - alert: EnvoyRouteP99LatencyHigh
+          expr: >-
+            histogram_quantile(0.99, sum by (k8s_cluster_name, envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m]))) > 2000
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} p99 latency is above 2000ms"
+            description: >-
+              The 99th percentile of upstream response time for this route is above
+              2000ms over 5m.
+            runbook_url: "https://runbooks.example.com/EnvoyRouteP99LatencyHigh"
+        - alert: EnvoyRouteP99LatencyCritical
+          expr: >-
+            histogram_quantile(0.99, sum by (k8s_cluster_name, envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m]))) > 10000
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} p99 latency is above 10000ms"
+            description: >-
+              The 99th percentile of upstream response time for this route is above
+              10000ms over 5m.
+            runbook_url: "https://runbooks.example.com/EnvoyRouteP99LatencyCritical"
+    - name: platform-alerts.certificates
+      interval: 1m
+      rules:
+        # cert-manager's own series. A Certificate's namespace is the
+        # `exported_namespace` label (the scrape's own `namespace` is
+        # cert-manager's), which the emitters keep under honor_labels: false.
+        # `> 0` skips a Certificate that has not been issued yet (0 means no
+        # expiry known; NotReady below covers it).
+        - alert: CertificateExpiringSoon
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"^(platform)$"} > 0)
+            - time() < 14 * 86400
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} expires in under 14 days"
+            description: >-
+              cert-manager renews well before expiry, so a certificate this close has
+              not been renewed: check the Certificate's conditions and its issuer.
+            runbook_url: "https://runbooks.example.com/CertificateExpiringSoon"
+        - alert: CertificateExpiryCritical
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"^(platform)$"} > 0)
+            - time() < 3 * 86400
+          labels:
+            severity: critical
+          annotations:
+            summary: "Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} expires in under 3 days"
+            description: >-
+              The certificate is about to expire (or has). Whatever serves it will
+              start failing TLS handshakes.
+            runbook_url: "https://runbooks.example.com/CertificateExpiryCritical"
+        - alert: CertificateNotReady
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (certmanager_certificate_ready_status{exported_namespace=~"^(platform)$", condition="True"}) == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} has not been Ready for 15m"
+            description: >-
+              The Certificate's Ready condition is not True. `kubectl describe
+              certificate` and its CertificateRequest name the reason.
+            runbook_url: "https://runbooks.example.com/CertificateNotReady"
+    - name: platform-alerts.restarts
+      interval: 1m
+      rules:
+        # A container whose last termination was an OOM kill AND that has
+        # restarted within `window`. `last_terminated_reason` keeps reading
+        # OOMKilled for as long as the pod lives, so on its own it would
+        # fire forever on a container that was killed once last week.
+        - alert: ContainerOOMKilled
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (kube_pod_container_status_last_terminated_reason{namespace=~"^(product-a)$", reason="OOMKilled"} == 1)
+            and on (k8s_cluster_name, namespace, pod, container)
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(product-a)$"}[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} was OOM-killed"
+            description: >-
+              The container restarted within the last 15m and its last
+              termination reason is OOMKilled: its memory limit is too low or it leaks.
+            runbook_url: "https://runbooks.example.com/ContainerOOMKilled"
+        - alert: ContainerRestartingOften
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(product-a)$"}[1h])) > 5
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 5 times in 1h"
+            description: >-
+              A restart rate this high that is not a crash loop yet (the upstream
+              crash-loop alert needs the container to be waiting in back-off at the
+              moment it evaluates) still means the container cannot stay up.
+            runbook_url: "https://runbooks.example.com/ContainerRestartingOften"
+    - name: platform-alerts.workload-absent
+      interval: 1m
+      rules:
+        # A Deployment that is supposed to run (spec replicas above zero)
+        # and has none available. The upstream replicas-mismatch alert needs
+        # the Deployment to have SOME replicas missing; this is the whole
+        # workload gone, from a failed rollout, a quota, or a scale-down.
+        - alert: DeploymentNoAvailableReplicas
+          expr: >-
+            max by (k8s_cluster_name, namespace, deployment) (kube_deployment_status_replicas_available{namespace=~"^(product-a|product-b)$"}) == 0
+            and on (k8s_cluster_name, namespace, deployment)
+            max by (k8s_cluster_name, namespace, deployment) (kube_deployment_spec_replicas{namespace=~"^(product-a|product-b)$"}) > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has no available replicas for 10m"
+            description: >-
+              The Deployment wants replicas and none is available: the workload is
+              down. Its pods' events and the ReplicaSet's conditions name why.
+            runbook_url: "https://runbooks.example.com/DeploymentNoAvailableReplicas"

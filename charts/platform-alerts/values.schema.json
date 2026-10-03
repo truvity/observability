@@ -109,7 +109,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "envoyRoutes", "certificates", "restarts", "workloadAbsent"],
       "properties": {
         "backups": {
           "type": "object",
@@ -123,7 +123,8 @@
             "ignoreSuspended": {
               "type": "boolean",
               "description": "Default true: both backup rules skip a CronJob whose kube_cronjob_spec_suspend is 1. `false` renders the 0.10.0 expressions."
-            }
+            },
+            "namespaceSelector": { "type": "string" }
           }
         },
         "writePath": {
@@ -338,6 +339,68 @@
             "providerErrors": { "$ref": "#/definitions/windowedRule" },
             "workqueueFor": { "$ref": "#/definitions/duration" },
             "absentFor": { "$ref": "#/definitions/duration" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "envoyRoutes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "job": { "type": "string" },
+            "routeSelector": { "type": "string" },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "warningRatio": { "type": "number", "minimum": 0 },
+            "criticalRatio": { "type": "number", "minimum": 0 },
+            "warningLatencyMs": { "type": "number", "minimum": 0 },
+            "criticalLatencyMs": { "type": "number", "minimum": 0 },
+            "minRequestsPerSecond": { "type": "number", "minimum": 0 },
+            "warningSeverity": { "$ref": "#/definitions/severity" },
+            "criticalSeverity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "certificates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespaceSelector": { "type": "string" },
+            "warningDays": { "type": "number", "minimum": 0 },
+            "criticalDays": { "type": "number", "minimum": 0 },
+            "notReadyFor": { "$ref": "#/definitions/duration" },
+            "warningSeverity": { "$ref": "#/definitions/severity" },
+            "criticalSeverity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "restarts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespaceSelector": { "type": "string" },
+            "window": { "$ref": "#/definitions/duration" },
+            "oomSeverity": { "$ref": "#/definitions/severity" },
+            "restartWindow": { "$ref": "#/definitions/duration" },
+            "maxRestarts": { "type": "number", "minimum": 0 },
+            "restartSeverity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "workloadAbsent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespaceSelector": { "type": "string" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/severity" },
             "keepClusterLabel": { "type": "boolean" }
           }
         },

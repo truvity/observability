@@ -127,6 +127,11 @@ groups:
     # collector list) both rules behave exactly as before, never
     # silently. `false` renders the 0.10.0 expressions byte for byte.
     ignoreSuspended: true
+    # -- Namespaces both backup rules watch, instead of the top-level
+    # `namespaceSelector`. Empty inherits it. Lets an estate that narrows the
+    # top-level selector for the volume rules still watch the CronJobs of
+    # product namespaces.
+    namespaceSelector: ""
 
   # The write path.
   #
@@ -594,4 +599,84 @@ groups:
     # -- Keep each Event's own cluster label on the alert (see
     # `pendingPods.keepClusterLabel`). Set it on a log store that holds
     # several clusters (the vmalert evaluating it names only its own).
+    keepClusterLabel: false
+
+  # Per-route Envoy 5xx ratio and p99 latency.
+  #
+  # Off by default: it reads the Envoy Gateway data plane's own metrics. Names
+  # read off a live store scraping `envoy-gateway-system/envoy-proxy`:
+  #   envoy_cluster_upstream_rq_xx{envoy_cluster_name, envoy_response_code_class}
+  #   envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name, le}  (ms)
+  # Envoy Gateway names one Envoy cluster per HTTPRoute rule,
+  # `httproute/<namespace>/<route>/rule/<n>`, so `envoy_cluster_name` is the
+  # per-route label. Not namespaced: a route's namespace is in its name, so
+  # select routes with `routeSelector`.
+  envoyRoutes:
+    enabled: false
+    # -- A regular expression over the `job` of the Envoy proxies' metrics.
+    job: envoy-gateway-system/envoy-proxy
+    # -- A regular expression over `envoy_cluster_name`. Anchored by the
+    # matcher itself. Narrow it to `httproute/(ns1|ns2)/.*` for product routes.
+    routeSelector: "httproute/.*"
+    window: 5m
+    for: 10m
+    # -- Share of upstream responses that are 5xx.
+    warningRatio: 0.05
+    criticalRatio: 0.25
+    # -- p99 upstream response time, milliseconds.
+    warningLatencyMs: 2000
+    criticalLatencyMs: 10000
+    # -- Traffic guard: a route below this rate (requests per second over
+    # `window`) never alerts, so a route that sees a request an hour cannot
+    # page on one failure.
+    minRequestsPerSecond: 0.1
+    warningSeverity: warning
+    criticalSeverity: critical
+    # -- Keep the series' own `clusterLabel` (see `pendingPods.keepClusterLabel`).
+    keepClusterLabel: false
+
+  # cert-manager Certificates: expiry and readiness.
+  #
+  # Off by default. Reads, from cert-manager's controller metrics:
+  #   certmanager_certificate_expiration_timestamp_seconds{name, exported_namespace}
+  #   certmanager_certificate_ready_status{name, exported_namespace, condition}
+  certificates:
+    enabled: false
+    # -- A regular expression over the Certificate's namespace
+    # (`exported_namespace`). Empty inherits the top-level `namespaceSelector`.
+    namespaceSelector: ""
+    warningDays: 14
+    criticalDays: 3
+    notReadyFor: 15m
+    warningSeverity: warning
+    criticalSeverity: critical
+    keepClusterLabel: false
+
+  # OOM kills and restart rate (kube-state-metrics' `pods` collector).
+  #
+  # Off by default. Reads
+  #   kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}
+  #   kube_pod_container_status_restarts_total
+  restarts:
+    enabled: false
+    namespaceSelector: ""
+    # -- An OOM-killed container counts while it has restarted within this
+    # window.
+    window: 15m
+    oomSeverity: warning
+    restartWindow: 1h
+    # -- Restarts within `restartWindow` above which the second alert fires.
+    maxRestarts: 5
+    restartSeverity: warning
+    keepClusterLabel: false
+
+  # Deployments with nothing running.
+  #
+  # Off by default. Reads kube_deployment_status_replicas_available and
+  # kube_deployment_spec_replicas. Scope it with `namespaceSelector`.
+  workloadAbsent:
+    enabled: false
+    namespaceSelector: ""
+    for: 10m
+    severity: critical
     keepClusterLabel: false
