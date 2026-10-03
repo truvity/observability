@@ -156,6 +156,19 @@
         }
       }
     },
+    "unmapped": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Shapes CloudEventUnmapped so the routing tree can route it. Names are checked again in templates/_validate.tpl, which also refuses `alertname` and `severity`.",
+      "properties": {
+        "severity": { "type": "string", "description": "Empty means warning." },
+        "labels": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
     "heartbeat": {
       "type": "object",
       "additionalProperties": false,

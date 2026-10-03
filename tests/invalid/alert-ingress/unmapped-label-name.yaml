@@ -1,0 +1,21 @@
+# expect: is refused: it must be a Prometheus label name
+# A dash is not allowed in a Prometheus label name; Alertmanager would reject
+# the alert. See templates/_validate.tpl#validate.unmapped.
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.0.0"
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics:
+  - "<the security-alerts topic ARN>"
+unmapped:
+  labels:
+    my-label: x
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager

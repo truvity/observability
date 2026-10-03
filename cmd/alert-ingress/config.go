@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"go.yaml.in/yaml/v3"
@@ -74,6 +76,21 @@ type Heartbeat struct {
 	Interval Duration          `yaml:"interval"`
 }
 
+// Unmapped shapes the CloudEventUnmapped alert, so that the tree can route
+// it. Labels are static strings, never templates: the unmapped path exists
+// for bodies this service does not understand, and it must stay free of
+// the template step. An absent block is today's behaviour: severity
+// warning and no label beyond alertname.
+type Unmapped struct {
+	Severity string            `yaml:"severity"`
+	Labels   map[string]string `yaml:"labels"`
+}
+
+// promLabelName is a Prometheus label name, the shape Alertmanager accepts.
+var promLabelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// Unmapped shapes the CloudEventUnmapped alert so the routing tree can
+// route it. Labels are static strings, never templates: the unmapped path
 // Config is exactly what the chart renders into the mounted ConfigMap.
 // Nothing here names an estate: every particular is a value this file was
 // handed.
@@ -88,6 +105,7 @@ type Config struct {
 	Topics    []string  `yaml:"topics"`
 	Mappings  []Mapping `yaml:"mappings"`
 	Heartbeat Heartbeat `yaml:"heartbeat"`
+	Unmapped  Unmapped  `yaml:"unmapped"`
 	// ResolveAfter is how long after `startsAt` an alert's `endsAt` is
 	// set. Cloud events do not resolve themselves — nothing tells this
 	// service a GuardDuty finding stopped being true — so the alert
@@ -150,6 +168,34 @@ func (c Config) Validate() error {
 
 		if m.Alert.Severity == "" {
 			return fmt.Errorf("mappings[%d] (%s) has no alert.severity, which routes it to the default tier by accident", i, m.Name)
+		}
+	}
+
+	return c.Unmapped.validate()
+}
+
+// validate refuses an unmapped label Alertmanager would reject or that
+// would shadow a field this service owns: `alertname` is fixed and
+// `severity` has its own field, as in AlertSpec. An empty severity means
+// the default, warning.
+func (u Unmapped) validate() error {
+	keys := make([]string, 0, len(u.Labels))
+	for k := range u.Labels {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		switch {
+		case k == "":
+			return fmt.Errorf("unmapped.labels has an empty label name")
+		case !promLabelName.MatchString(k):
+			return fmt.Errorf("unmapped.labels %q is not a valid Prometheus label name", k)
+		case strings.HasPrefix(k, "__"):
+			return fmt.Errorf("unmapped.labels %q is reserved: names starting with __ are internal", k)
+		case k == "alertname" || k == "severity":
+			return fmt.Errorf("unmapped.labels %q is reserved: alertname is fixed and severity is set by unmapped.severity", k)
 		}
 	}
 

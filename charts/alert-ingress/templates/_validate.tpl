@@ -9,6 +9,8 @@ matches docs/alert-ingress.md#refusals exactly:
   - `heartbeat.match` empty               -> validate.heartbeat
   - `networkPolicy.alertmanagerPeer` empty while enabled -> validate.networkPolicy
   - `service.metricsPort` equal to `service.port` -> validate.ports
+  - an `unmapped.labels` name that is not a Prometheus label name, starts
+    with `__`, or is `alertname`/`severity`   -> validate.unmapped
 
 `mappings` itself being EMPTY is deliberately absent from this list. The
 design page calls it out for the same reason a `stores: []` platform-alerts
@@ -29,6 +31,21 @@ values.yaml rather than blocked here.
 {{- include "alert-ingress.validate.heartbeat" . -}}
 {{- include "alert-ingress.validate.networkPolicy" . -}}
 {{- include "alert-ingress.validate.ports" . -}}
+{{- include "alert-ingress.validate.unmapped" . -}}
+{{- end -}}
+
+{{/*
+A static label on CloudEventUnmapped that Alertmanager would reject or that
+would shadow a field the service owns. `alertname` is fixed and `severity`
+is its own value (`unmapped.severity`), the same rule a mapping's `labels`
+follows. The binary re-checks the same rule when it loads the ConfigMap.
+*/}}
+{{- define "alert-ingress.validate.unmapped" -}}
+{{- range $k, $v := (.Values.unmapped.labels | default dict) -}}
+{{- if or (not (regexMatch "^[a-zA-Z_][a-zA-Z0-9_]*$" $k)) (hasPrefix "__" $k) (eq $k "alertname") (eq $k "severity") -}}
+{{- fail (printf "alert-ingress: `unmapped.labels` name %q is refused: it must be a Prometheus label name (letters, digits, underscore; not starting with a digit or `__`) and must not be `alertname` or `severity` (the latter is set by `unmapped.severity`)." $k) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

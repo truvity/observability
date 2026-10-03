@@ -1,0 +1,278 @@
+---
+# Source: alert-ingress/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alert-ingress
+  labels:
+    app.kubernetes.io/name: alert-ingress
+    app.kubernetes.io/instance: alert-ingress
+    app.kubernetes.io/managed-by: Helm
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alert-ingress
+      app.kubernetes.io/instance: alert-ingress
+  policyTypes:
+    - Egress
+  egress:
+    # 1. Alertmanager. The one thing this service is FOR reaching.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vmalertmanager
+      ports:
+        - protocol: TCP
+          port: 9093
+    # 2. DNS, or rule 1 above cannot even be resolved. With no
+    # `networkPolicy.egress.dns` this is port 53 to ANY destination (no `to`):
+    # the cluster resolver is not a kube-system pod on every cluster.
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # 3. The cloud provider itself, for signature verification and
+    # subscription confirmation. See the comment above this block.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Source: alert-ingress/templates/deployment.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alert-ingress
+  labels:
+    app.kubernetes.io/name: alert-ingress
+    app.kubernetes.io/instance: alert-ingress
+    app.kubernetes.io/managed-by: Helm
+automountServiceAccountToken: false
+
+---
+# Source: alert-ingress/templates/deployment.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-ingress
+  labels:
+    app.kubernetes.io/name: alert-ingress
+    app.kubernetes.io/instance: alert-ingress
+    app.kubernetes.io/managed-by: Helm
+data:
+  config.yaml: |
+    alertmanager:
+      url: "http://vmalertmanager-observability-stack.observability.svc:9093"
+    topics:
+      - <the security-alerts topic ARN>
+    mappings:
+      []
+    heartbeat:
+      match:
+        source: alert-ingress-heartbeat
+      interval: "15m"
+    unmapped:
+      severity: "info"
+      labels:
+        k8s_cluster_name: cloud
+        source: unmapped
+    resolveAfter: "1h"
+
+---
+# Source: alert-ingress/templates/deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-ingress
+  labels:
+    app.kubernetes.io/name: alert-ingress
+    app.kubernetes.io/instance: alert-ingress
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    app.kubernetes.io/name: alert-ingress
+    app.kubernetes.io/instance: alert-ingress
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: alert-ingress/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-ingress
+  labels:
+    app.kubernetes.io/name: alert-ingress
+    app.kubernetes.io/instance: alert-ingress
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alert-ingress
+      app.kubernetes.io/instance: alert-ingress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alert-ingress
+        app.kubernetes.io/instance: alert-ingress
+        app.kubernetes.io/managed-by: Helm
+      annotations:
+        # The configuration's own checksum, so a change to `topics`,
+        # `mappings` or `heartbeat` restarts the pods. Without it a
+        # ConfigMap edit lands on disk and the running process keeps the
+        # configuration it read at startup — a values change that
+        # applied, synced, and did nothing.
+        alert-ingress/config-checksum: a1ec68756df9b86050934bd6e5a7242822e051f92a48e8f58c4adfbf90d4e410
+    spec:
+      serviceAccountName: alert-ingress
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alert-ingress
+          image: "ghcr.io/truvity/observability/alert-ingress:0.0.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/alert-ingress/config.yaml
+            - "--listen-addr=:8080"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # A static binary FROM SCRATCH has no shell for exec probes and
+          # needs none: /healthz answers before the configuration is even
+          # re-read, so a probe here can only ever report "the process is
+          # up", which is exactly what a liveness/readiness probe is for.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 25m
+              memory: 32Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alert-ingress
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: alert-ingress
+
+---
+# Source: alert-ingress/templates/deployment.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: alert-ingress
+  labels:
+    app.kubernetes.io/name: alert-ingress
+    app.kubernetes.io/instance: alert-ingress
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alert-ingress
+      app.kubernetes.io/instance: alert-ingress
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+
+---
+# Source: alert-ingress/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: alert-ingress
+  labels:
+    app.kubernetes.io/name: alert-ingress
+    app.kubernetes.io/instance: alert-ingress
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: alert-ingress.heartbeat
+      # Evaluated far more often than the heartbeat interval itself: the
+      # window this rule watches is what makes it tolerant of a single
+      # missed or delayed ping, not a slow evaluation cadence.
+      interval: 1m
+      rules:
+        # `absent_over_time` catches the counter (and the series
+        # entirely) disappearing — this Deployment gone, or scraping
+        # broken. `increase(...) == 0` catches the series still existing
+        # but not advancing — the heartbeat recognised once, long ago,
+        # and never again. Either half firing alone is the same failure
+        # from this rule's point of view: nothing has proven the path is
+        # alive in two heartbeat intervals.
+        #
+        # Summed across the replicas (`without (pod, instance)`): the
+        # provider delivers each heartbeat to ONE pod behind the Service, so
+        # per pod a quiet replica's counter stands still while the path is
+        # perfectly alive. Only the whole Deployment counting nothing is a
+        # missing heartbeat.
+        - alert: AlertIngressHeartbeatMissing
+          expr: >-
+            absent_over_time(alert_ingress_messages_total{mapping="heartbeat"}[30m])
+            or
+            sum without (pod, instance) (increase(alert_ingress_messages_total{mapping="heartbeat"}[30m])) == 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "alert-ingress has not counted its own heartbeat in 30m"
+            description: >-
+              No message matching `heartbeat.match` has been recognised in
+              30m (15m x 2). Either the
+              estate's scheduled heartbeat event stopped publishing, the
+              cloud provider's own topic stopped delivering, or this
+              Deployment is not running at all — from outside, every one
+              of those looks like an estate that is simply quiet, which is
+              the entire reason this rule exists.
+    - name: alert-ingress.rejected
+      interval: 1m
+      rules:
+        # Every refusal is counted with its reason (signature, unknown_topic,
+        # malformed, confirmation, unsupported_type). A burst of one or two is
+        # a scanner finding the public route; a SUSTAINED rate is either an
+        # attacker working at it, or the estate's own topic misconfigured
+        # (a new topic nobody allow-listed, a changed signing region) so that
+        # real alerts are being turned away.
+        - alert: AlertIngressMessagesRejected
+          expr: >-
+            sum by (reason) (rate(alert_ingress_rejected_total[5m])) > 0.05
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "alert-ingress is rejecting messages ({{ $labels.reason }})"
+            description: >-
+              Messages refused with a 403 for reason
+              `{{ $labels.reason }}` at {{ $value | humanize }}/s,
+              above 0.05/s for 15m. `signature`
+              and `malformed` mean something that is not the cloud provider is
+              posting to the public route; `unknown_topic` usually means a
+              topic that was never added to `topics`, so its real alerts are
+              being dropped.

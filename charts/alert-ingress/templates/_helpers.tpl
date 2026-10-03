@@ -71,5 +71,17 @@ heartbeat:
   match:
     {{- toYaml .Values.heartbeat.match | nindent 4 }}
   interval: {{ .Values.heartbeat.interval | quote }}
+{{- with .Values.unmapped }}
+{{- if or .severity .labels }}
+unmapped:
+  {{- if .severity }}
+  severity: {{ .severity | quote }}
+  {{- end }}
+  {{- if .labels }}
+  labels:
+    {{- toYaml .labels | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
 resolveAfter: {{ .Values.resolveAfter | quote }}
 {{- end -}}

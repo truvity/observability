@@ -4,6 +4,17 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **feat(alert-ingress): static labels on unmapped events.** A new
+  `unmapped` value (`unmapped.labels`, a map of static strings, and
+  `unmapped.severity`) is added to every `CloudEventUnmapped` alert, so the
+  routing tree can route it, for example on the same `k8s_cluster_name` key
+  the mappings use. Names must be Prometheus label names; `alertname`,
+  `severity` and names starting with `__` are refused, at render time and
+  again when the binary loads its configuration. The defaults (no labels,
+  severity warning) render exactly what earlier versions did.
+
 ## v0.44.1
 
 - **Behaviour change: `platform-alerts` absent guards ignore series without
