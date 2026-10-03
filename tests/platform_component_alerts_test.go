@@ -74,7 +74,11 @@ func labelsOf(t *testing.T, golden, group, alert string) map[string]string {
 // not now, or the whole-store absent() when it never existed in the window.
 func absentGuard(sel, cur string, by ...string) string {
 	l := strings.Join(append([]string{"k8s_cluster_name"}, by...), ", ")
-	return `(group by (` + l + `) (max_over_time(` + sel + `[1d])) unless group by (` + l + `) (` + sel + cur + `)) or ` +
+	sc := sel + `{k8s_cluster_name!=""}`
+	if strings.HasSuffix(sel, "}") {
+		sc = strings.TrimSuffix(sel, "}") + `, k8s_cluster_name!=""}`
+	}
+	return `(group by (` + l + `) (max_over_time(` + sc + `[1d])) unless group by (` + l + `) (` + sc + cur + `)) or ` +
 		`(absent(` + sel + cur + `) unless on() group(max_over_time(` + sel + `[1d])))`
 }
 
@@ -136,8 +140,8 @@ func TestACKAlertsRenderTheirExpressions(t *testing.T) {
 	named := groupAlerts(t, "golden/platform-alerts/ack-expected-namespaces.yaml", "platform-alerts.ack")
 	const union = `up{namespace=~"example-ack-one|example-ack-two"}`
 	clause := func(ns string) string {
-		return `(label_replace(group by (k8s_cluster_name) (max_over_time(` + union + `[1d])), "namespace", "` + ns + `", "", "") ` +
-			`unless group by (k8s_cluster_name, namespace) (up{namespace="` + ns + `"})) or ` +
+		return `(label_replace(group by (k8s_cluster_name) (max_over_time(up{namespace=~"example-ack-one|example-ack-two", k8s_cluster_name!=""}[1d])), "namespace", "` + ns + `", "", "") ` +
+			`unless group by (k8s_cluster_name, namespace) (up{namespace="` + ns + `", k8s_cluster_name!=""})) or ` +
 			`(absent(up{namespace="` + ns + `"}) unless on() group(max_over_time(` + union + `[1d])))`
 	}
 	assert.Equal(t, clause("example-ack-one")+` or `+clause("example-ack-two"), strings.Join(strings.Fields(named["ACKControllerAbsent"].expr), " "))

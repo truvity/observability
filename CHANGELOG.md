@@ -4,6 +4,21 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change: `platform-alerts` absent guards ignore series without
+  the cluster label.** With `clusterLabel` set, every `*Absent` alert (the
+  probe, ACK, ESO, Argo CD, NATS, node-claim and Kargo ones) compared the
+  series seen within `absentLookback` against the ones present now, per
+  cluster. A stale series that lacks the cluster label (left over from
+  before a relabel) landed in the lookback side under a label set the
+  current side could never match, so the alert fired, with the probe
+  healthy, until it aged out of the window. The per-cluster comparison now
+  requires `<clusterLabel>!=""` on both sides; the whole-store `absent()`
+  line is unchanged. Alerts for a series that was labelled and stopped
+  still fire. No opt-out: the previous expression paged on a healthy
+  target.
+
 ## v0.44.0
 
 - **`platform-alerts` gains four generic groups, all off by default, and

@@ -41,7 +41,7 @@ spec:
         # (`expectedNamespaces`) to also catch one that never came up.
         - alert: ACKControllerAbsent
           expr: >-
-            (group by (k8s_cluster_name, namespace) (max_over_time(up{namespace=~"ack-.*"}[1d])) unless group by (k8s_cluster_name, namespace) (up{namespace=~"ack-.*"})) or (absent(up{namespace=~"ack-.*"}) unless on() group(max_over_time(up{namespace=~"ack-.*"}[1d])))
+            (group by (k8s_cluster_name, namespace) (max_over_time(up{namespace=~"ack-.*", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name, namespace) (up{namespace=~"ack-.*", k8s_cluster_name!=""})) or (absent(up{namespace=~"ack-.*"}) unless on() group(max_over_time(up{namespace=~"ack-.*"}[1d])))
           for: 10m
           labels:
             severity: critical

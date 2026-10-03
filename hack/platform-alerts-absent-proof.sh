@@ -13,6 +13,8 @@
 #
 #   both     the series is current on a AND b       -> no alert
 #   b-gone   current on a; b's last sample is 2h old -> one alert, cluster b
+#   stale-unlabelled  a, b current plus an old series with NO cluster label
+#                                                     -> no alert
 #   never    the series exists nowhere              -> one alert, no cluster
 #                                                      label (whole store)
 #
@@ -121,6 +123,14 @@ guard() { # alert flags... -- series-lines
     [ -s "$out" ] && load "$out" || true
   }
   seed 0 0;        check "$alert both-present" "<none>" "$(query "$new_expr")"
+  # A stale series WITHOUT the cluster label (pre-relabel) next to healthy
+  # labelled ones must not fire; it used to, until it aged out of the lookback.
+  wipe
+  { sed -e "s/@C@/k8s_cluster_name=\"a\",/g" -e "s/@T@/$(ms 0)/g" <<<"$lines"
+    sed -e "s/@C@/k8s_cluster_name=\"b\",/g" -e "s/@T@/$(ms 0)/g" <<<"$lines"
+    sed -e "s/@C@//g" -e "s/@T@/$(ms $old)/g" <<<"$lines"; } > "$work/seed.prom"
+  load "$work/seed.prom"
+  check "$alert unlabelled-stale-beside-healthy" "<none>" "$(query "$new_expr")"
   seed 0 $old;     check "$alert b-gone" "b/${ONLY_NS:--}" "$(query "$new_expr")"
                    check "$alert b-gone (bare absent, the old rule)" "<none>" "$(query "$bare_expr")"
   seed none none;  check "$alert never" "${NEVER:--/-}" "$(query "$new_expr")"
