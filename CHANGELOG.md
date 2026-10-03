@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.48.0
+
 - **feat(alert-ingress): CloudWatch alarm notifications map to Alertmanager
   alerts, and a mapping can resolve one.** An alarm's SNS message (JSON:
   `AlarmName`, `NewStateValue`, `NewStateReason`, `Trigger`, ...) matches
