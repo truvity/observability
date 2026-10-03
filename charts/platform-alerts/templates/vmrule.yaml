@@ -91,6 +91,7 @@ spec:
     */}}
     {{- $ignoreSuspended := ternary $g.ignoreSuspended true (hasKey $g "ignoreSuspended") }}
     {{- $bns := default $ns $g.namespaceSelector }}
+    {{- $bomit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
     - name: platform-alerts.backups
       interval: {{ .Values.interval }}
       rules:
@@ -109,7 +110,7 @@ spec:
               kube_cronjob_spec_suspend{namespace=~"{{ $bns }}"} == 1
             {{- end }}
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $bomit) | nindent 12 }}
           annotations:
             summary: "CronJob {{`{{ $labels.namespace }}`}}/{{`{{ $labels.cronjob }}`}} has not succeeded within {{ $g.maxSuccessAge }}"
             description: >-
@@ -161,7 +162,7 @@ spec:
               )
             ) > 0
           labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.failedSeverity) | nindent 12 }}
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.failedSeverity "omit" $bomit) | nindent 12 }}
           annotations:
             summary: "Job {{`{{ $labels.namespace }}`}}/{{`{{ $labels.job_name }}`}} failed"
             description: >-

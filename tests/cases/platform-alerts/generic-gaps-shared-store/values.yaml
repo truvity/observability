@@ -8,6 +8,7 @@ groups:
   backups:
     enabled: true
     namespaceSelector: "^(platform|product-a)$"
+    keepClusterLabel: true
   writePath:
     enabled: false
   volumes:

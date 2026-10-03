@@ -26,7 +26,6 @@ spec:
             unless on (k8s_cluster_name, namespace, cronjob)
               kube_cronjob_spec_suspend{namespace=~"^(platform|product-a)$"} == 1
           labels:
-            k8s_cluster_name: kernel
             severity: critical
           annotations:
             summary: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded within 26h"
@@ -75,7 +74,6 @@ spec:
               )
             ) > 0
           labels:
-            k8s_cluster_name: kernel
             severity: warning
           annotations:
             summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed"

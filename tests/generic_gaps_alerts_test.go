@@ -75,10 +75,10 @@ func TestGenericGapsKeepTheSeriesClusterLabel(t *testing.T) {
 		"platform-alerts.certificates":    "CertificateNotReady",
 		"platform-alerts.restarts":        "ContainerOOMKilled",
 		"platform-alerts.workload-absent": "DeploymentNoAvailableReplicas",
+		"platform-alerts.backups":         "CronJobNotSucceeding",
 	} {
 		labels := labelsOf(t, g, group, alert)
 		require.NotNil(t, labels)
 		assert.NotContains(t, labels, "k8s_cluster_name", alert)
-		assert.Equal(t, "kernel", labelsOf(t, "golden/platform-alerts/generic-gaps-shared-store.yaml", "platform-alerts.backups", "CronJobNotSucceeding")["k8s_cluster_name"])
 	}
 }
