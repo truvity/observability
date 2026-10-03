@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## v0.45.1
+## v0.46.0
 
 - **feat(observability-stack): opt-in `selfAlerts.sourceAbsent`.** Every
   self-alert reads `rate()` of a store or writer counter, and an empty
@@ -21,6 +21,8 @@ must be done first, and whether a default moved. Newest first, one
   `severity` (`warning`). Refused with `selfAlerts.enabled` off, or with no
   metric name set. A metric name that never existed on the store fires the
   whole-store branch, so unset names you do not want watched.
+
+## v0.45.1
 
 - **Behaviour change: `observability-stack` self-alerts keep the cluster
   label.** On a store that holds several clusters' series, the self-alert
