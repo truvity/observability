@@ -4,6 +4,29 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **feat(lambdaext): the generic Lambda OTLP extension now lives here.** It
+  moved from `truvity/access-roster` (`internal/lambdaext`), because it is
+  not specific to that issuer: any Lambda function in any language can
+  export OpenTelemetry data with its IAM role's identity and no stored
+  secret. It asks STS for the role's identity token
+  (`sts:GetWebIdentityToken`), trades it at the issuer (RFC 8693) for a
+  token audienced at the OTLP endpoint, runs an OTLP/HTTP proxy on
+  `127.0.0.1:4318` that adds the bearer, and forwards Lambda Telemetry API
+  platform events as OTLP logs. The protocol and every `ACCESS_ROSTER_*`
+  setting are unchanged, so a function moves between the two layers by
+  swapping the layer alone.
+  - New public package `github.com/truvity/observability/lambdaext` and
+    command `cmd/otlp-lambda`. The token exchange is a small client inside
+    the package: this module does not import access-roster.
+  - The release now attaches `otlp-lambda-layer_<version>_linux_amd64.zip`
+    and `..._linux_arm64.zip` (root: `extensions/otlp-lambda`), covered by
+    `checksums.txt`. The release publishes no layer version; the consumer
+    does, from the zip.
+  - See [docs/integrations/aws-lambda.md](docs/integrations/aws-lambda.md).
+    No chart render changes.
+
 ## v0.46.0
 
 - **feat(observability-stack): opt-in `selfAlerts.sourceAbsent`.** Every

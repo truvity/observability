@@ -21,6 +21,7 @@ everything still looks green.
 | `charts/observability-grafana` | One Grafana as the read UI over several stores: a datasource set per store, OIDC sign-in, a database of its own, dashboards from git only. See [docs/grafana.md](docs/grafana.md). | released |
 | `charts/observability-mcp` + `cmd/mcp-aggregator` | Read-only Model Context Protocol connectors so an agent can read the estate: one per Victoria store (metrics, logs and traces tools in one server, prefixed, allowlisted) and one for Grafana's dashboards. Each is the stock server(s) on loopback behind a proxy that validates the caller's access token and holds the only credential the store sees. See [docs/mcp.md](docs/mcp.md). | released |
 | `charts/observability-rum` | Browser telemetry for an estate's web apps: Grafana Faro receivers on a self-hosted Alloy, one per app and stamping its own identity, writing to the OTLP gateway with an error fingerprint on every exception so "issues" are built on the log store, with alerts for new and regressed issues, two dashboards, and source maps served from an OCI registry by `smctl serve`. See [docs/frontend.md](docs/frontend.md). | released |
+| `lambdaext` (Go) + `cmd/otlp-lambda` | The AWS Lambda extension that exports a function's OpenTelemetry data with its IAM role's identity and no stored secret: STS identity token, RFC 8693 exchange at the issuer, a loopback OTLP/HTTP proxy that adds the bearer, and Lambda platform events as OTLP logs. Released as `otlp-lambda-layer_<version>_linux_<arch>.zip` with `checksums.txt`. See [docs/integrations/aws-lambda.md](docs/integrations/aws-lambda.md). | released |
 
 Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
 the release that adds it, the same tag is the Go module
@@ -235,6 +236,9 @@ charts take as Secret names, delivered through External Secrets.
   how it is proven.
 - [docs/external-ingest.md](docs/external-ingest.md) — OTLP from outside the
   cluster (an AWS Lambda): identity from the gateway's headers, never the payload.
+- [docs/integrations/aws-lambda.md](docs/integrations/aws-lambda.md) — the
+  Lambda extension layer: telemetry with the function role's identity, its
+  settings, the IAM it needs and how to attach the layer.
 - [docs/emitting.md](docs/emitting.md) — for whoever wires a service's
   SDK: the one address, which attributes are theirs and which are taken
   from them, and how to ask the store rather than trust a 200.
