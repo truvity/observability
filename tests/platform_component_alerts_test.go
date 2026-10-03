@@ -140,7 +140,8 @@ func TestACKAlertsRenderTheirExpressions(t *testing.T) {
 	named := groupAlerts(t, "golden/platform-alerts/ack-expected-namespaces.yaml", "platform-alerts.ack")
 	const union = `up{namespace=~"example-ack-one|example-ack-two"}`
 	clause := func(ns string) string {
-		return `(label_replace(group by (k8s_cluster_name) (max_over_time(up{namespace=~"example-ack-one|example-ack-two", k8s_cluster_name!=""}[1d])), "namespace", "` + ns + `", "", "") ` +
+		return `(label_replace(group by (k8s_cluster_name) ` +
+			`(max_over_time(up{namespace=~"example-ack-one|example-ack-two", k8s_cluster_name!=""}[1d])), "namespace", "` + ns + `", "", "") ` +
 			`unless group by (k8s_cluster_name, namespace) (up{namespace="` + ns + `", k8s_cluster_name!=""})) or ` +
 			`(absent(up{namespace="` + ns + `"}) unless on() group(max_over_time(` + union + `[1d])))`
 	}
