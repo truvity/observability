@@ -105,14 +105,14 @@ and `cloud.region`.
 **Function and extension logs are off by default.** A function that already
 exports its logs through OpenTelemetry would then send each line twice (once
 through its SDK, once as a Telemetry API `function` record), and would pay for
-it twice. Turn `ACCESS_ROSTER_FUNCTION_LOGS` on for a function that writes to
+it twice. Turn `SLUIS_FUNCTION_LOGS` on for a function that writes to
 stdout and has no OTel logs SDK: it is then the way those lines reach the
 log store without CloudWatch. Platform events are never in the SDK's logs, so
 they have no duplicate. Note that Lambda still writes the same lines to
 CloudWatch Logs unless the function role's logging is denied there; the
 extension does not turn that off.
 
-The queue is bounded in memory (`ACCESS_ROSTER_TELEMETRY_BUFFER_QUEUE_ITEMS`,
+The queue is bounded in memory (`SLUIS_TELEMETRY_BUFFER_QUEUE_ITEMS`,
 5000 records, a few MB at most). If exports cannot keep up, the **oldest**
 records are dropped and the next export starts with a WARN record saying how
 many were. The export is fail-open like the rest: with no token or a failing
@@ -149,28 +149,31 @@ logged.
 
 ## Configuration
 
-All settings are environment variables on the function. They keep the
-`ACCESS_ROSTER_` prefix they had when the extension lived in access-roster, so a
-function moves between the two layers without touching its configuration.
+All settings are environment variables on the function. Each is named
+`SLUIS_<NAME>` and is also read as `ACCESS_ROSTER_<NAME>`, the prefix it had
+when the extension lived in access-roster and the issuer had that name: both
+work, and `SLUIS_*` wins when both are set (an empty `SLUIS_*` value does not
+shadow the old one). A function configured with the old names needs no change
+to move between the two layers, or to take this release.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ACCESS_ROSTER_ISSUER` | required | The issuer's base URL. |
-| `ACCESS_ROSTER_AUDIENCE` | required | The audience asked of STS for the identity token. What the issuer's AWS verifier expects; the role policy pins it (below). |
-| `ACCESS_ROSTER_OTLP_ENDPOINT` | required | The OTLP/HTTP base URL, `https`. The extension appends `/v1/traces`, `/v1/metrics`, `/v1/logs`. Plain `http` is accepted only for a loopback host. |
-| `ACCESS_ROSTER_OTLP_AUDIENCE` | `otlp` | The exchange's audience and client id: the roster client that the OTLP endpoint accepts. |
-| `ACCESS_ROSTER_LISTEN` | `127.0.0.1:4318` | The proxy's address. |
-| `ACCESS_ROSTER_STS_DURATION_SECONDS` | `300` | Lifetime asked of the STS token (60 to 3600). It is used once, for the exchange. |
-| `ACCESS_ROSTER_STS_ALGORITHM` | `ES384` | Signing algorithm asked of STS (`ES384` or `RS256`). |
-| `ACCESS_ROSTER_PLATFORM_LOGS` | `true` | Subscribe to Telemetry API `platform` events and forward them as OTLP logs. |
-| `ACCESS_ROSTER_FUNCTION_LOGS` | `false` | Also forward `function` logs (the function's stdout/stderr). Duplicates logs the function exports itself; see [Platform logs](#platform-logs). |
-| `ACCESS_ROSTER_EXTENSION_LOGS` | `false` | Also forward `extension` logs (other extensions' output). |
-| `ACCESS_ROSTER_TELEMETRY_LISTEN` | `sandbox.localdomain:4243` | The Telemetry API destination. Bound on all interfaces of the sandbox at that port when the host is `sandbox.localdomain`. |
-| `ACCESS_ROSTER_TELEMETRY_BUFFER_MAX_ITEMS` | `1000` | The platform's batch size in events (1000 to 10000). |
-| `ACCESS_ROSTER_TELEMETRY_BUFFER_MAX_BYTES` | `262144` | The platform's batch size in bytes (262144 to 1048576). |
-| `ACCESS_ROSTER_TELEMETRY_BUFFER_TIMEOUT_MS` | `1000` | The platform's longest wait before delivering a batch (25 to 30000). |
-| `ACCESS_ROSTER_TELEMETRY_BUFFER_QUEUE_ITEMS` | `5000` | Records held in the extension waiting for an export (100 to 1000000); beyond it the oldest are dropped and counted. |
-| `ACCESS_ROSTER_TOKEN_FILE` | unset | If set, each access token is also written here (mode 0600, replaced atomically; the directory is created 0700). For a function that runs its own collector with a bearer-token-from-file extension. Off by default. Use a path under `/tmp`. |
+| `SLUIS_ISSUER` | required | The issuer's base URL. |
+| `SLUIS_AUDIENCE` | required | The audience asked of STS for the identity token. What the issuer's AWS verifier expects; the role policy pins it (below). |
+| `SLUIS_OTLP_ENDPOINT` | required | The OTLP/HTTP base URL, `https`. The extension appends `/v1/traces`, `/v1/metrics`, `/v1/logs`. Plain `http` is accepted only for a loopback host. |
+| `SLUIS_OTLP_AUDIENCE` | `otlp` | The exchange's audience and client id: the roster client that the OTLP endpoint accepts. |
+| `SLUIS_LISTEN` | `127.0.0.1:4318` | The proxy's address. |
+| `SLUIS_STS_DURATION_SECONDS` | `300` | Lifetime asked of the STS token (60 to 3600). It is used once, for the exchange. |
+| `SLUIS_STS_ALGORITHM` | `ES384` | Signing algorithm asked of STS (`ES384` or `RS256`). |
+| `SLUIS_PLATFORM_LOGS` | `true` | Subscribe to Telemetry API `platform` events and forward them as OTLP logs. |
+| `SLUIS_FUNCTION_LOGS` | `false` | Also forward `function` logs (the function's stdout/stderr). Duplicates logs the function exports itself; see [Platform logs](#platform-logs). |
+| `SLUIS_EXTENSION_LOGS` | `false` | Also forward `extension` logs (other extensions' output). |
+| `SLUIS_TELEMETRY_LISTEN` | `sandbox.localdomain:4243` | The Telemetry API destination. Bound on all interfaces of the sandbox at that port when the host is `sandbox.localdomain`. |
+| `SLUIS_TELEMETRY_BUFFER_MAX_ITEMS` | `1000` | The platform's batch size in events (1000 to 10000). |
+| `SLUIS_TELEMETRY_BUFFER_MAX_BYTES` | `262144` | The platform's batch size in bytes (262144 to 1048576). |
+| `SLUIS_TELEMETRY_BUFFER_TIMEOUT_MS` | `1000` | The platform's longest wait before delivering a batch (25 to 30000). |
+| `SLUIS_TELEMETRY_BUFFER_QUEUE_ITEMS` | `5000` | Records held in the extension waiting for an export (100 to 1000000); beyond it the oldest are dropped and counted. |
+| `SLUIS_TOKEN_FILE` | unset | If set, each access token is also written here (mode 0600, replaced atomically; the directory is created 0700). For a function that runs its own collector with a bearer-token-from-file extension. Off by default. Use a path under `/tmp`. |
 
 STS needs a **regional** endpoint (the global one does not support the
 call): the SDK picks it from `AWS_REGION`, which Lambda sets. The extension

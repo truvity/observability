@@ -18,21 +18,45 @@ import (
 	"time"
 )
 
-// Environment variable names.
+// Environment variable names. Each is read as written (SLUIS_*) first, and as
+// the ACCESS_ROSTER_* name it had before the rename of the issuer to sluis
+// second: both work, and the SLUIS_* one wins when both are set. The names in
+// this file and in telemetry.go are the SLUIS_* ones; see withLegacyNames.
 const (
-	EnvIssuer        = "ACCESS_ROSTER_ISSUER"
-	EnvAudience      = "ACCESS_ROSTER_AUDIENCE"
-	EnvOTLPAudience  = "ACCESS_ROSTER_OTLP_AUDIENCE"
-	EnvOTLPEndpoint  = "ACCESS_ROSTER_OTLP_ENDPOINT"
-	EnvListen        = "ACCESS_ROSTER_LISTEN"
-	EnvSTSDuration   = "ACCESS_ROSTER_STS_DURATION_SECONDS"
-	EnvSTSAlgorithm  = "ACCESS_ROSTER_STS_ALGORITHM"
-	EnvTokenFile     = "ACCESS_ROSTER_TOKEN_FILE"
+	EnvIssuer        = "SLUIS_ISSUER"
+	EnvAudience      = "SLUIS_AUDIENCE"
+	EnvOTLPAudience  = "SLUIS_OTLP_AUDIENCE"
+	EnvOTLPEndpoint  = "SLUIS_OTLP_ENDPOINT"
+	EnvListen        = "SLUIS_LISTEN"
+	EnvSTSDuration   = "SLUIS_STS_DURATION_SECONDS"
+	EnvSTSAlgorithm  = "SLUIS_STS_ALGORITHM"
+	EnvTokenFile     = "SLUIS_TOKEN_FILE"
 	defaultListen    = "127.0.0.1:4318"
 	defaultAlgorithm = "ES384"
 	defaultOTLPAud   = "otlp"
 	defaultDuration  = 300
 )
+
+const (
+	envPrefix       = "SLUIS_"
+	legacyEnvPrefix = "ACCESS_ROSTER_"
+)
+
+// withLegacyNames makes a SLUIS_* lookup fall back to the ACCESS_ROSTER_* name
+// the setting had before the rename: a function configured for the old names
+// keeps working, and a function that sets both gets the SLUIS_* value. Names
+// outside the SLUIS_ family (AWS_*, OTEL_*) are read as they are.
+func withLegacyNames(getenv func(string) string) func(string) string {
+	return func(name string) string {
+		if v := getenv(name); strings.TrimSpace(v) != "" {
+			return v
+		}
+		if rest, ok := strings.CutPrefix(name, envPrefix); ok {
+			return getenv(legacyEnvPrefix + rest)
+		}
+		return ""
+	}
+}
 
 // Config is the extension's settings, all from the environment.
 type Config struct {
@@ -59,6 +83,7 @@ type Config struct {
 // LoadConfig reads the environment through getenv. The error names every
 // missing or invalid setting at once.
 func LoadConfig(getenv func(string) string) (Config, error) {
+	getenv = withLegacyNames(getenv)
 	get := func(name, fallback string) string {
 		if v := strings.TrimSpace(getenv(name)); v != "" {
 			return v

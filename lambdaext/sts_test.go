@@ -117,7 +117,7 @@ func TestConfig(t *testing.T) {
 	env["ACCESS_ROSTER_STS_DURATION_SECONDS"] = "5"
 	delete(env, "ACCESS_ROSTER_ISSUER")
 	_, err = lambdaext.LoadConfig(get)
-	for _, want := range []string{"ACCESS_ROSTER_ISSUER is not set", "must be https", "60..3600"} {
+	for _, want := range []string{"SLUIS_ISSUER is not set", "must be https", "60..3600"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("want %q in %v", want, err)
 		}

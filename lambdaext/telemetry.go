@@ -16,14 +16,14 @@ import (
 
 // Telemetry API settings and their AWS-documented bounds.
 const (
-	EnvPlatformLogs     = "ACCESS_ROSTER_PLATFORM_LOGS"
-	EnvFunctionLogs     = "ACCESS_ROSTER_FUNCTION_LOGS"
-	EnvExtensionLogs    = "ACCESS_ROSTER_EXTENSION_LOGS"
-	EnvTelemetryListen  = "ACCESS_ROSTER_TELEMETRY_LISTEN"
-	EnvBufferMaxItems   = "ACCESS_ROSTER_TELEMETRY_BUFFER_MAX_ITEMS"
-	EnvBufferMaxBytes   = "ACCESS_ROSTER_TELEMETRY_BUFFER_MAX_BYTES"
-	EnvBufferTimeoutMs  = "ACCESS_ROSTER_TELEMETRY_BUFFER_TIMEOUT_MS"
-	EnvBufferQueueItems = "ACCESS_ROSTER_TELEMETRY_BUFFER_QUEUE_ITEMS"
+	EnvPlatformLogs     = "SLUIS_PLATFORM_LOGS"
+	EnvFunctionLogs     = "SLUIS_FUNCTION_LOGS"
+	EnvExtensionLogs    = "SLUIS_EXTENSION_LOGS"
+	EnvTelemetryListen  = "SLUIS_TELEMETRY_LISTEN"
+	EnvBufferMaxItems   = "SLUIS_TELEMETRY_BUFFER_MAX_ITEMS"
+	EnvBufferMaxBytes   = "SLUIS_TELEMETRY_BUFFER_MAX_BYTES"
+	EnvBufferTimeoutMs  = "SLUIS_TELEMETRY_BUFFER_TIMEOUT_MS"
+	EnvBufferQueueItems = "SLUIS_TELEMETRY_BUFFER_QUEUE_ITEMS"
 
 	telemetryAPIPath    = "/2022-07-01/telemetry"
 	telemetrySchema     = "2022-12-13"
@@ -82,6 +82,7 @@ func (c TelemetryConfig) types() []string {
 // LoadTelemetryConfig reads the Telemetry API settings; the error names
 // every invalid one.
 func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
+	getenv = withLegacyNames(getenv)
 	c := TelemetryConfig{
 		Platform: true, Listen: defaultTelemetryAdr,
 		MaxItems: 1000, MaxBytes: 262144, TimeoutMs: 1000, QueueItems: 5000,
