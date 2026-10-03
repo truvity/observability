@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.43.3
 
 - **Behaviour change: `alert-ingress`'s `AlertIngressHeartbeatMissing` sums
   the heartbeat counter across replicas.** The provider delivers each
