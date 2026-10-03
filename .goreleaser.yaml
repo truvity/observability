@@ -30,6 +30,20 @@ builds:
     ldflags:
       - -s -w -X main.version={{ .Version }}
 
+  # The Lambda extension: a layer's zip root is /opt, so the binary is built
+  # as extensions/otlp-lambda (the file name is the extension's name to the
+  # Lambda platform). Linux only, both Lambda architectures (amd64 is
+  # x86_64). Not an image.
+  - id: otlp-lambda
+    main: ./cmd/otlp-lambda
+    binary: extensions/otlp-lambda
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+
 archives:
   # What an operator pulls to run the service outside a container —
   # access-roster's own "binaries" archive is the same shape for its
@@ -42,6 +56,18 @@ archives:
     ids: [mcp-aggregator]
     formats: [tar.gz]
     name_template: "mcp-aggregator_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  # The layer zip, one per architecture (a layer is published with its
+  # compatible architectures and the binary is arch-specific). The zip root
+  # is the layer root: extensions/otlp-lambda. docs/integrations/aws-lambda.md.
+  - id: otlp-lambda-layer
+    ids: [otlp-lambda]
+    formats: [zip]
+    wrap_in_directory: false
+    # Nothing but the extension: the zip root IS /opt in the function, and a
+    # README or LICENSE there is clutter in somebody else's layer.
+    files: ["none*"]
+    name_template: "otlp-lambda-layer_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 kos:
   # base_import_paths appends the cmd directory's basename, so with the
@@ -103,6 +129,7 @@ release:
     | alert-ingress chart | `oci://ghcr.io/truvity/charts/alert-ingress:{{ .Version }}` (image.tag defaults to it) |
     | mcp-aggregator image | `ghcr.io/truvity/observability/mcp-aggregator:{{ .Version }}` |
     | observability-mcp chart | `oci://ghcr.io/truvity/charts/observability-mcp:{{ .Version }}` (`aggregator.image.tag` defaults to it) |
+    | Lambda extension layer | `otlp-lambda-layer_{{ .Version }}_linux_{{ "{amd64,arm64}" }}.zip`, verified by `checksums.txt` ([docs/integrations/aws-lambda.md](https://github.com/truvity/observability/blob/master/docs/integrations/aws-lambda.md)) |
     | Go | `go get github.com/truvity/observability@{{ .Tag }}` |
   # setup.sh is a release asset, not a build output: a box's cloud-init
   # (rendered by pkg/statusbox.CloudInit) downloads THIS exact file from
