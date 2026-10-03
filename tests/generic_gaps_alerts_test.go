@@ -31,8 +31,18 @@ func TestGenericGapsRenderTheirExpressions(t *testing.T) {
 			` and on (` + c + `, envoy_cluster_name) ` + traffic + ` >= 0.1`
 	}
 	exp := func(days string) string {
-		return `max by (` + c + `, exported_namespace, name) (certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"^(platform)$"} > 0) - time() < ` + days + ` * 86400`
+		return `max by (` + c + `, exported_namespace, name) (` +
+			`certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~"^(platform)$"} > 0) - time() < ` + days + ` * 86400`
 	}
+
+	ready := `certmanager_certificate_ready_status{exported_namespace=~"^(platform)$", condition="True"}`
+	oom := `kube_pod_container_status_last_terminated_reason{namespace=~"^(product-a)$", reason="OOMKilled"}`
+	restarts := func(w string) string {
+		return `increase(kube_pod_container_status_restarts_total{namespace=~"^(product-a)$"}[` + w + `])`
+	}
+	pod := c + `, namespace, pod, container`
+	dep := c + `, namespace, deployment`
+	const prod = `{namespace=~"^(product-a|product-b)$"}`
 
 	cases := map[string]map[string]alertRow{
 		"platform-alerts.envoy-routes": {
@@ -44,16 +54,20 @@ func TestGenericGapsRenderTheirExpressions(t *testing.T) {
 		"platform-alerts.certificates": {
 			"CertificateExpiringSoon":   {exp("14"), "", "warning"},
 			"CertificateExpiryCritical": {exp("3"), "", "critical"},
-			"CertificateNotReady":       {`max by (` + c + `, exported_namespace, name) (certmanager_certificate_ready_status{exported_namespace=~"^(platform)$", condition="True"}) == 0`, "15m", "warning"},
+			"CertificateNotReady": {
+				`max by (` + c + `, exported_namespace, name) (` + ready + `) == 0`, "15m", "warning"},
 		},
 		"platform-alerts.restarts": {
-			"ContainerOOMKilled": {`max by (` + c + `, namespace, pod, container) (kube_pod_container_status_last_terminated_reason{namespace=~"^(product-a)$", reason="OOMKilled"} == 1)` +
-				` and on (` + c + `, namespace, pod, container) max by (` + c + `, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(product-a)$"}[15m])) > 0`, "", "warning"},
-			"ContainerRestartingOften": {`max by (` + c + `, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(product-a)$"}[1h])) > 5`, "", "warning"},
+			"ContainerOOMKilled": {
+				`max by (` + pod + `) (` + oom + ` == 1) and on (` + pod + `) max by (` + pod + `) (` + restarts("15m") + `) > 0`,
+				"", "warning"},
+			"ContainerRestartingOften": {`max by (` + pod + `) (` + restarts("1h") + `) > 5`, "", "warning"},
 		},
 		"platform-alerts.workload-absent": {
-			"DeploymentNoAvailableReplicas": {`max by (` + c + `, namespace, deployment) (kube_deployment_status_replicas_available{namespace=~"^(product-a|product-b)$"}) == 0` +
-				` and on (` + c + `, namespace, deployment) max by (` + c + `, namespace, deployment) (kube_deployment_spec_replicas{namespace=~"^(product-a|product-b)$"}) > 0`, "10m", "critical"},
+			"DeploymentNoAvailableReplicas": {
+				`max by (` + dep + `) (kube_deployment_status_replicas_available` + prod + `) == 0` +
+					` and on (` + dep + `) max by (` + dep + `) (kube_deployment_spec_replicas` + prod + `) > 0`,
+				"10m", "critical"},
 		},
 	}
 	for group, want := range cases {
