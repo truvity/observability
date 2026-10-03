@@ -15,7 +15,7 @@ mappings:
         source: cloudwatch
         k8s_cluster_name: cloud-security
         account: '{{ .AWSAccountId }}'
-        region: '{{ reFind "^arn:aws[a-z-]*:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
+        region: '{{ reFind "^arn:[a-z-]+:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
       annotations:
         summary: '{{ .AlarmName }} is {{ .NewStateValue }}'
         reason: '{{ .NewStateReason }}'
