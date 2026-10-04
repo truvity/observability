@@ -4,6 +4,24 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change (feat(observability-emitters)): no pod-level
+  kube-state-metrics series for CI namespaces.** By default every
+  `kube_pod_*` series of a pod in a namespace matching `arc-runners-.*|ci-.*`
+  is dropped at scrape time, except `kube_pod_status_unschedulable`,
+  `kube_pod_container_status_last_terminated_reason` and
+  `kube_pod_container_status_restarts_total` (what the PodUnschedulable,
+  ContainerOOMKilled and restart alerts read). Other namespaces and the
+  non-pod kube-state-metrics families are untouched. In those namespaces the
+  upstream KubePodCrashLooping, KubePodNotReady and KubeContainerWaiting
+  alerts have nothing to read, the `kube_pod_info` based namespace and pod
+  selectors of the Kubernetes views dashboards stop listing them, and the
+  `k8s.rules` recordings that join the pod series have no output there.
+  Opt out with `metrics.scrape.kubeStateMetricsDrop.ephemeralNamespaces: ""`
+  (the previous render, byte for byte) or `enabled: false`; widen the keep
+  list with `extraEphemeralKeepMetrics`.
+
 ## v0.51.1
 
 - **Behaviour change (fix(observability-emitters)): the CI node-pool helper

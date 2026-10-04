@@ -694,6 +694,21 @@ metadata:
 spec:
   disableSelfServiceScrape: true
   globalScrapeMetricRelabelConfigs:
+  - action: replace
+    regex: ^(kube_pod_status_unschedulable|kube_pod_container_status_last_terminated_reason|kube_pod_container_status_restarts_total)$
+    replacement: "yes"
+    sourceLabels:
+    - __name__
+    targetLabel: __ksm_keep_ephemeral__
+  - action: drop
+    regex: ^kube_pod_.*;(?:arc-runners-.*|ci-.*);$
+    separator: ;
+    sourceLabels:
+    - __name__
+    - exported_namespace
+    - __ksm_keep_ephemeral__
+  - action: labeldrop
+    regex: __ksm_keep_ephemeral__
   - action: labeldrop
     regex: exported_(k8s_cluster_name|k8s_namespace_name|deployment_environment_name)
   image:

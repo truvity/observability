@@ -402,6 +402,35 @@
                 }
               }
             },
+            "kubeStateMetricsDrop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "description": "A default DROP of the pod-level kube-state-metrics series (`kube_pod_*`) of ephemeral namespaces, except a keep list \u2014 see this chart's own values.yaml comment on `metrics.scrape.kubeStateMetricsDrop`.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "ephemeralNamespaces": {
+                  "type": "string",
+                  "description": "Regex (unanchored; the chart anchors it) matched against the pod's namespace; empty disables."
+                },
+                "ephemeralKeepMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraEphemeralKeepMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
             "cadvisorDrop": {
               "type": "object",
               "additionalProperties": false,
