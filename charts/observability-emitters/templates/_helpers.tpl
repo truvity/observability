@@ -500,6 +500,14 @@ override is valid: an empty step 1 drops nothing by name, and an empty
 {{- end -}}
 {{- $steps = append $steps "- action: drop\n  source_labels: [__name__, __cadvisor_keep_bucket__]\n  separator: \";\"\n  regex: ^.*_bucket;$" -}}
 {{- $steps = append $steps "- action: labeldrop\n  regex: __cadvisor_keep_bucket__" -}}
+{{- if $cd.ephemeralNamespaces -}}
+{{- $ekeep := concat ($cd.ephemeralKeepMetrics | default list) ($cd.extraEphemeralKeepMetrics | default list) -}}
+{{- if $ekeep -}}
+{{- $steps = append $steps (printf "- action: replace\n  source_labels: [__name__]\n  regex: ^(%s)$\n  target_label: __cadvisor_keep_ephemeral__\n  replacement: \"yes\"" (join "|" $ekeep)) -}}
+{{- end -}}
+{{- $steps = append $steps (printf "- action: drop\n  source_labels: [namespace, __cadvisor_keep_ephemeral__]\n  separator: \";\"\n  regex: ^(?:%s);$" $cd.ephemeralNamespaces) -}}
+{{- $steps = append $steps "- action: labeldrop\n  regex: __cadvisor_keep_ephemeral__" -}}
+{{- end -}}
 {{- $steps = append $steps "- action: replace\n  source_labels: [container, id]\n  regex: (.+);.+\n  target_label: id\n  replacement: \"\"" -}}
 {{- join "\n" $steps -}}
 {{- end -}}
@@ -590,9 +598,15 @@ job has its own (`cadvisorDrop`).
 {{- $kd := .Values.metrics.scrape.kubeletDrop -}}
 {{- if $kd.enabled -}}
 {{- $names := concat ($kd.metricNames | default list) ($kd.extraMetricNames | default list) -}}
+{{- $buckets := concat ($kd.bucketMetrics | default list) ($kd.extraBucketMetrics | default list) -}}
+{{- $rules := list -}}
 {{- if $names -}}
-{{- printf "- action: drop\n  source_labels: [__name__]\n  regex: ^(%s)$" (join "|" $names) -}}
+{{- $rules = append $rules (printf "- action: drop\n  source_labels: [__name__]\n  regex: ^(%s)$" (join "|" $names)) -}}
 {{- end -}}
+{{- if $buckets -}}
+{{- $rules = append $rules (printf "- action: drop\n  source_labels: [__name__]\n  regex: ^(%s)$" (join "|" $buckets)) -}}
+{{- end -}}
+{{- join "\n" $rules -}}
 {{- end -}}
 {{- end -}}
 

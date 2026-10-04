@@ -703,6 +703,9 @@ spec:
         - action: drop
           source_labels: [__name__]
           regex: ^(kubernetes_feature_enabled|kubelet_example_metric_total)$
+        - action: drop
+          source_labels: [__name__]
+          regex: ^(rest_client_rate_limiter_duration_seconds_bucket|rest_client_response_size_bytes_bucket|rest_client_request_size_bytes_bucket|volume_operation_total_seconds_bucket|kubelet_http_requests_duration_seconds_bucket|csi_operations_seconds_bucket|workqueue_queue_duration_seconds_bucket|workqueue_work_duration_seconds_bucket)$
     - job_name: cadvisor
       scheme: https
       honor_labels: false
@@ -742,6 +745,17 @@ spec:
           regex: ^.*_bucket;$
         - action: labeldrop
           regex: __cadvisor_keep_bucket__
+        - action: replace
+          source_labels: [__name__]
+          regex: ^(container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_memory_usage_bytes|container_memory_cache|container_memory_rss|container_memory_swap|container_cpu_cfs_periods_total|container_cpu_cfs_throttled_periods_total|container_cpu_cfs_throttled_seconds_total|container_oom_events_total|container_network_receive_bytes_total|container_network_receive_errors_total|container_network_receive_packets_dropped_total|container_network_receive_packets_total|container_network_transmit_bytes_total|container_network_transmit_errors_total|container_network_transmit_packets_dropped_total|container_network_transmit_packets_total)$
+          target_label: __cadvisor_keep_ephemeral__
+          replacement: "yes"
+        - action: drop
+          source_labels: [namespace, __cadvisor_keep_ephemeral__]
+          separator: ";"
+          regex: ^(?:arc-runners-.*|ci-.*);$
+        - action: labeldrop
+          regex: __cadvisor_keep_ephemeral__
         - action: replace
           source_labels: [container, id]
           regex: (.+);.+
