@@ -774,6 +774,104 @@ otlp:
     enabled: true
     extraLabels: {}
 
+# -- Logs that live in AWS CloudWatch Logs, read through the
+# `awscloudwatch` receiver and written to the same log destinations as the
+# gateway's (`otlp.destinations.logs`, or `remote`). Off by default: nothing
+# renders and no existing render moves.
+#
+# Built for ONE source today, an EKS control plane's API-server AUDIT log
+# (EKS offers no other way out of CloudWatch), narrowed to the events that
+# carry one phrase: the Pod Security `audit` mode's own annotation
+# `pod-security.kubernetes.io/audit-violations`, which is how a namespace
+# that is still `warn`/`audit` learns what `enforce` would reject. The
+# receiver cannot filter on the server side, so every audit event is READ
+# and all but the matching ones are dropped here, before anything is
+# queued or written; the store holds only the violations. Set `match` to
+# widen it.
+#
+# A StatefulSet of exactly ONE replica, never the gateway: the receiver has
+# no leader election, so a second replica reads and writes everything
+# twice. Its read position survives a restart on the volume (`queue`).
+#
+# AWS credentials are ambient. The pod's ServiceAccount (`serviceAccount`)
+# is bound to an IAM role by the estate (EKS Pod Identity or IRSA); the
+# chart writes no credential. The role needs, on the log group:
+# `logs:FilterLogEvents`, `logs:GetLogEvents`, `logs:DescribeLogStreams`,
+# and `logs:DescribeLogGroups` on the account's log groups.
+#
+# Everything is filed under ONE namespace (`namespace`), never the
+# namespace the audit event is about: an audit event names users and
+# objects of every namespace, so it is platform data, and the scoping key a
+# read grant selects on must not hand it to a tenant. The event's own
+# namespace is a field (`audit.namespace`) for alerts and for people who
+# may read the platform's namespace.
+cloudwatchLogs:
+  enabled: false
+  # -- The AWS region of the log group. Required when enabled.
+  region: ""
+  # -- The log group to read. Required when enabled; matched as a PREFIX by
+  # the receiver's discovery, so name the whole group, e.g.
+  # `/aws/eks/<cluster>/cluster`.
+  logGroup: ""
+  # -- Only streams whose name starts with one of these are read. The EKS
+  # control-plane group holds one stream family per log type; this picks
+  # the audit one.
+  streamPrefixes:
+    - kube-apiserver-audit-
+  # -- Keep only events whose text contains this phrase (matched literally).
+  # Empty keeps every event: an EKS audit log is large, and the store is
+  # not sized for it.
+  match: pod-security.kubernetes.io/audit-violations
+  # -- The namespace the data is filed under: `k8s.namespace.name` and
+  # `kubernetes.pod_namespace`, the scoping key. Static. Grant readers this
+  # value.
+  namespace: kube-audit
+  # -- `service.name` of the records.
+  serviceName: kube-apiserver-audit
+  # -- How often the log group is polled.
+  pollInterval: 1m
+  # -- How far back the FIRST start reads. Later starts resume from the
+  # position on the volume.
+  initialLookback: 10m
+  # -- Events per CloudWatch request (the API caps a response at 10000
+  # events or 1 MB).
+  maxEventsPerRequest: 1000
+  serviceAccount:
+    # -- Empty: `<fullname>-cloudwatch`. Name it explicitly when an IAM
+    # binding must match it byte for byte.
+    name: ""
+    annotations: {}
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.161.0
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 256Mi
+  podSecurityContext:
+    fsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  nodeSelector: {}
+  tolerations: []
+  # -- The volume holding the read position and the on-disk send queue.
+  queue:
+    size: 1Gi
+    storageClassName: ""
+  podMonitor:
+    enabled: true
+    extraLabels: {}
+
 # -- The blackbox exporter that answers `metrics.scrape.probes`. Off by
 # default: a cluster with no probes runs nothing extra. The upstream image,
 # not a chart: the exporter is one stateless Deployment, and neither the

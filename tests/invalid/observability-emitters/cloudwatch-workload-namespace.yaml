@@ -1,0 +1,45 @@
+# expect: a namespace workloads run in
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The CloudWatch reader (`cloudwatchLogs`): an EKS control plane's audit
+# log, narrowed to the Pod Security audit violations, written to the same
+# log destination as the gateway. Written the way a central-install cluster
+# writes (`remote`), since that is where an estate's second and third
+# clusters are.
+tenancy:
+  cluster: example-cluster
+  environment: production
+
+remote:
+  url: https://observability-write.example.private
+  tokenSecret: {name: example-write-token, key: token}
+  caSecret: {name: example-private-ca, key: ca.crt}
+  name: central
+
+# The data is filed under this namespace; a grant on it would read the audit log.
+cloudwatchLogs: {enabled: true, region: eu-central-1, logGroup: /aws/eks/example-cluster/cluster, namespace: default}
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: remote-write-tls
+      projected:
+        sources:
+          - secret:
+              name: example-private-ca
+              items: [{key: ca.crt, path: ca.crt}]
+          - secret:
+              name: example-write-token
+              items: [{key: token, path: token}]
+  extraVolumeMounts:
+    - name: remote-write-tls
+      mountPath: /etc/observability-emitters/tls
+      readOnly: true
+  remoteWrite:
+    - url: https://observability-write.example.private
+      tlsCAFile: /etc/observability-emitters/tls/ca.crt
+      bearerTokenFile: /etc/observability-emitters/tls/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"production"}'

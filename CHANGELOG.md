@@ -6,6 +6,18 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **feat: Pod Security audit violations from an EKS audit log.**
+  `observability-emitters` gains `cloudwatchLogs` (off by default): a
+  one-replica reader of an AWS CloudWatch log group through the
+  `awscloudwatch` receiver, which keeps only the events carrying a phrase
+  (default `pod-security.kubernetes.io/audit-violations`) and writes them to
+  the gateway's log destinations under a namespace of its own
+  (`kube-audit`), with the event's namespace in `audit.namespace`.
+  `platform-alerts` gains `groups.podSecurityAudit` (off by default), the
+  warning `PodSecurityAuditViolations`, per cluster and namespace over 24h.
+  Both are new keys, refused by an older chart's schema, so gate their use on
+  the pin; an install that sets neither renders exactly as before.
+
 ## v0.49.0
 
 - **Behaviour change (feat): `platform-alerts` `groups.restarts` gains

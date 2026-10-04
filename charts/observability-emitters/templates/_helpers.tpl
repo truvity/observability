@@ -1157,3 +1157,154 @@ computed for a chart this one does not template.
 {{- printf "%s-customresourcestate-config" (include "observability-emitters.kubeStateMetrics.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The CloudWatch reader's names and labels (`cloudwatchLogs`): its own
+`app.kubernetes.io/name`, the same shape as the gateway's, so no selector
+matches another component's pods.
+*/}}
+{{- define "observability-emitters.cloudwatch.fullname" -}}
+{{- printf "%s-cloudwatch" (include "observability-emitters.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "observability-emitters.cloudwatch.serviceAccountName" -}}
+{{- default (include "observability-emitters.cloudwatch.fullname" .) .Values.cloudwatchLogs.serviceAccount.name -}}
+{{- end -}}
+
+{{- define "observability-emitters.cloudwatch.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "observability-emitters.name" . }}-cloudwatch
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "observability-emitters.cloudwatch.labels" -}}
+{{ include "observability-emitters.cloudwatch.selectorLabels" . }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: observability-emitters
+{{- end -}}
+
+{{/*
+The CloudWatch reader's collector configuration.
+
+ONE pipeline: the `awscloudwatch` receiver, a filter that keeps only the
+events carrying `cloudwatchLogs.match`, a transform that lifts the few
+fields an alert needs out of the audit JSON, the tenancy stamp, and the
+same OTLP log exporters the gateway has.
+
+The receiver reads EVERY event of the matching streams (it has no
+server-side filter), so the filter is the first processor: nothing it
+drops is parsed, queued or written.
+
+Tenancy is stamped by `set`, over whatever the receiver wrote: the cluster
+and tier from this values file, and a STATIC namespace
+(`cloudwatchLogs.namespace`), never the namespace the audit event is about
+(see values.yaml). The event's own namespace is `audit.namespace`.
+*/}}
+{{- define "observability-emitters.cloudwatch.config" -}}
+{{- $root := . -}}
+{{- $t := .Values.tenancy -}}
+{{- $c := .Values.cloudwatchLogs -}}
+{{- $effLogsDestinations := include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" "logs") | fromYamlArray -}}
+extensions:
+  file_storage:
+    directory: /var/lib/otelcol/queue
+    create_directory: true
+    recreate: true
+    compaction:
+      on_start: true
+      directory: /var/lib/otelcol/queue
+
+receivers:
+  awscloudwatch:
+    region: {{ $c.region | quote }}
+    # The read position, so a restart resumes instead of re-reading
+    # (`initialLookback` applies to the very first start only).
+    storage: file_storage
+    logs:
+      poll_interval: {{ $c.pollInterval }}
+      max_events_per_request: {{ $c.maxEventsPerRequest | int }}
+      initial_lookback: {{ $c.initialLookback }}
+      groups:
+        autodiscover:
+          limit: 10
+          prefix: {{ $c.logGroup | quote }}
+          streams:
+            prefixes:
+              {{- range $c.streamPrefixes }}
+              - {{ . | quote }}
+              {{- end }}
+
+processors:
+{{- if $c.match }}
+  # Keep only the events whose text contains the phrase; the phrase is
+  # matched literally.
+  filter/match:
+    error_mode: ignore
+    logs:
+      log_record:
+        - {{ printf "not IsMatch(body.string, %q)" (regexQuoteMeta $c.match) | toJson }}
+{{- end }}
+  # The audit event is one JSON object in the body. Four fields are lifted
+  # so an alert can group and a person can search without parsing; the body
+  # stays whole. A field the event lacks (a cluster-scoped object has no
+  # namespace) is skipped, not an error.
+  transform/audit:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(cache["e"], ParseJSON(body.string))
+          - set(attributes["audit.namespace"], cache["e"]["objectRef"]["namespace"])
+          - set(attributes["audit.resource"], cache["e"]["objectRef"]["resource"])
+          - set(attributes["audit.verb"], cache["e"]["verb"])
+          - set(attributes["audit.user"], cache["e"]["user"]["username"])
+          - set(attributes["audit.id"], cache["e"]["auditID"])
+          - set(attributes["audit.violations"], cache["e"]["annotations"]["pod-security.kubernetes.io/audit-violations"])
+  transform/tenancy:
+    error_mode: ignore
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["k8s.cluster.name"], {{ $t.cluster | quote }})
+          - set(attributes["deployment.environment.name"], {{ $t.environment | quote }})
+          - set(attributes["k8s.namespace.name"], {{ $c.namespace | quote }})
+          - set(attributes["kubernetes.pod_namespace"], {{ $c.namespace | quote }})
+          - set(attributes["service.name"], {{ $c.serviceName | quote }})
+  batch: {}
+
+exporters:
+{{- range $d := $effLogsDestinations }}
+  otlp_http/logs-{{ $d.name }}:
+    logs_endpoint: {{ printf "%s/insert/opentelemetry/v1/logs" (trimSuffix "/" $d.url) | quote }}
+    headers:
+      Authorization: "Bearer ${env:{{ include "observability-emitters.otlp.tokenEnv" (dict "signal" "logs" "d" $d) }}}"
+      # The same stream fields as the gateway, and for the same reason: with
+      # none VictoriaLogs makes every resource attribute a stream field.
+      VL-Stream-Fields: {{ join "," $root.Values.otlp.streamFields | quote }}
+    {{- if $d.caSecret }}
+    tls:
+      ca_file: {{ include "observability-emitters.otlp.caFile" (dict "signal" "logs" "name" $d.name) | quote }}
+    {{- end }}
+    sending_queue:
+      enabled: true
+      storage: file_storage
+    retry_on_failure:
+      enabled: true
+{{- end }}
+
+service:
+  extensions:
+    - file_storage
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    logs:
+      receivers: [awscloudwatch]
+      processors: [{{ if $c.match }}filter/match, {{ end }}transform/audit, transform/tenancy, batch]
+      exporters: [{{ range $i, $d := $effLogsDestinations }}{{ if $i }}, {{ end }}otlp_http/logs-{{ $d.name }}{{ end }}]
+{{- end -}}
