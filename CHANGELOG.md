@@ -6,6 +6,34 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **Behaviour change (feat(observability-emitters)): more per-node series
+  dropped on CI node pools.** Only on nodes of `kubeletDrop.ciNodePools`
+  (default empty, so nothing moves without it): the `_bucket` series of
+  `kubelet_pod_worker_duration_seconds`, `kubelet_cgroup_manager_duration_seconds`,
+  `kubelet_pod_start_duration_seconds`, `kubelet_pod_start_total_duration_seconds`,
+  `kubelet_pod_start_sli_duration_seconds`, `kubelet_image_pull_duration_seconds`,
+  `dra_operations_duration_seconds` and
+  `authentication_token_cache_request_duration_seconds` (`_sum`/`_count` stay;
+  `ciNodePoolBucketMetrics`), and, new, the cadvisor `container_fs_*` series
+  and the per-interface network packet/error counters
+  (`ciNodePoolCadvisorMetrics`; `container_network_*_bytes_total` stay). The
+  kubelet dashboard's quantile panels for the dropped histograms and the
+  packet/error network panels have no data for short-lived CI nodes; long-lived
+  nodes are unchanged. Reason: every replaced CI node minted ~2k such series,
+  which on a CI-heavy store was most of the day's new series.
+
+- **feat(observability-stack): a per-cluster threshold for
+  `TooHighChurnRate24h`.** The vmsingle self-monitoring alert fires when 24h
+  of new series exceeds three times the hourly active series, which a store
+  holding short-lived CI workloads reaches without anything being wrong. Set
+  `victoria-metrics-k8s-stack.defaultRules.rules.TooHighChurnRate24h.spec.expr`
+  to upstream's expression with a higher factor (see `docs/reference.md`).
+  The alert keeps its name, `for`, labels and annotations, so silences and
+  routes still match. Nothing is set by default: the render is unchanged and
+  upstream's factor of 3 applies. (A chart-level factor value is not
+  possible: the sync job reads the rule override from the subchart's own
+  values, which Helm cannot compute from the parent's.)
+
 ## v0.52.1
 
 - Dependency updates.
