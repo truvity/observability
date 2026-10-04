@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.50.0
+
 - **feat: Pod Security audit violations from an EKS audit log.**
   `observability-emitters` gains `cloudwatchLogs` (off by default): a
   one-replica reader of an AWS CloudWatch log group through the
