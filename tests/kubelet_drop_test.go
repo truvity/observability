@@ -133,7 +133,9 @@ func TestCadvisorEphemeralNamespaceAllowlist(t *testing.T) {
 			_, scratch := got["__cadvisor_keep_ephemeral__"]
 			assert.False(t, scratch, "scratch label must not leak")
 		}
-		for _, dropped := range []string{"container_fs_reads_total", "container_spec_cpu_shares", "container_last_seen", "container_fs_usage_bytes", "container_memory_rss", "container_memory_cache", "container_memory_usage_bytes"} {
+		for _, dropped := range []string{"container_fs_reads_total", "container_spec_cpu_shares", "container_last_seen",
+			"container_fs_usage_bytes", "container_memory_rss", "container_memory_cache", "container_memory_usage_bytes",
+		} {
 			_, keep := applyCadvisorRelabel(cfgs, series(dropped, ns))
 			assert.Falsef(t, keep, "%s in %s is off the allowlist", dropped, ns)
 		}
