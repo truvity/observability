@@ -432,6 +432,52 @@ metrics:
         - container_network_transmit_packets_total
       # -- Added to `ephemeralKeepMetrics` above rather than replacing it.
       extraEphemeralKeepMetrics: []
+    # -- A default DROP for the POD-level kube-state-metrics series of
+    # EPHEMERAL namespaces (CI runner pods). Every runner pod mints a
+    # fresh set of `kube_pod_*` series (status reason and phase, qos,
+    # tolerations, labels, owner, container info, resources ...) that
+    # nothing reads a second time once the pod is gone; measured on one
+    # cluster, about 98% of the pod-level series of the CI namespaces were
+    # never read by a rule. In a namespace matching `ephemeralNamespaces`
+    # every `kube_pod_*` series is dropped EXCEPT the names in
+    # `ephemeralKeepMetrics`; other namespaces and every non-pod
+    # kube-state-metrics family (deployments, jobs, nodes ...) are
+    # untouched. Set `ephemeralNamespaces: ""` (or `enabled: false`) to
+    # store everything as before (the pre-change render).
+    #
+    # Applied as a GLOBAL scrape-level rule of the metrics agent, which
+    # runs BEFORE a job's own relabeling, so the object's namespace is read
+    # from `exported_namespace` (see the kube-state-metrics
+    # `metricRelabelings` below for why it is there). A kube-state-metrics
+    # scraped some other way, where no such label exists, is not matched.
+    #
+    # What stops existing for CI namespaces: the pod-status upstream alerts
+    # (KubePodCrashLooping, KubePodNotReady, KubeContainerWaiting) have no
+    # series to read there, the `kube_pod_info` based namespace/pod
+    # selectors of the Kubernetes views dashboards no longer list them, and
+    # the `k8s.rules` recordings that join `kube_pod_info`, `kube_pod_owner`
+    # or the pod resources have no CI output.
+    kubeStateMetricsDrop:
+      enabled: true
+      # -- Regular expression matched, fully anchored, against the pod's
+      # namespace (write it WITHOUT `^`/`$`). "" turns the drop off.
+      ephemeralNamespaces: "arc-runners-.*|ci-.*"
+      # -- The `kube_pod_*` metrics kept in an ephemeral namespace, only
+      # what a shipped rule reads AND that is meaningful for a CI pod:
+      #   kube_pod_status_unschedulable                  PodUnschedulable (a runner
+      #                                                  that cannot be placed; a
+      #                                                  series exists only while
+      #                                                  it is unschedulable)
+      #   kube_pod_container_status_last_terminated_reason  ContainerOOMKilled
+      #   kube_pod_container_status_restarts_total       ContainerOOMKilled and the
+      #                                                  restart alerts
+      # Replaced wholesale if set; widen with `extraEphemeralKeepMetrics`.
+      ephemeralKeepMetrics:
+        - kube_pod_status_unschedulable
+        - kube_pod_container_status_last_terminated_reason
+        - kube_pod_container_status_restarts_total
+      # -- Added to `ephemeralKeepMetrics` above rather than replacing it.
+      extraEphemeralKeepMetrics: []
     # -- A default DROP for the KUBELET scrape's own series that no
     # dashboard or rule here reads and that cost the most. Today one:
     # `kubernetes_feature_enabled`, the kubelet's feature-gate gauge, one

@@ -331,6 +331,32 @@ _validate.tpl can inspect the MERGED result: a check against the values
 file alone would miss everything the escape hatch changed, which is
 exactly where a security property gets turned off by accident.
 */}}
+{{/*
+The pod-level kube-state-metrics churn drop for ephemeral (CI) namespaces,
+as scrape-level rules of the metrics agent (see
+`metrics.scrape.kubeStateMetricsDrop` in values.yaml). Empty when off.
+
+A global scrape rule runs before the job's own relabeling, when the object's
+namespace is still `exported_namespace` (the target's `namespace` is the
+kube-state-metrics pod's). Same scratch-label shape as the cadvisor drop,
+since RE2 has no negative lookahead: stamp the kept names, drop
+`kube_pod_*` of a matching namespace whose scratch label is empty, remove
+the scratch label.
+*/}}
+{{- define "observability-emitters.scrapeConfig.kubeStateMetricsDropRelabelConfigs" -}}
+{{- $kd := .Values.metrics.scrape.kubeStateMetricsDrop -}}
+{{- if and $kd.enabled $kd.ephemeralNamespaces -}}
+{{- $keep := concat ($kd.ephemeralKeepMetrics | default list) ($kd.extraEphemeralKeepMetrics | default list) -}}
+{{- $steps := list -}}
+{{- if $keep -}}
+{{- $steps = append $steps (printf "- action: replace\n  sourceLabels: [__name__]\n  regex: ^(%s)$\n  targetLabel: __ksm_keep_ephemeral__\n  replacement: \"yes\"" (join "|" $keep)) -}}
+{{- end -}}
+{{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__, exported_namespace, __ksm_keep_ephemeral__]\n  separator: \";\"\n  regex: ^kube_pod_.*;(?:%s);$" $kd.ephemeralNamespaces) -}}
+{{- $steps = append $steps "- action: labeldrop\n  regex: __ksm_keep_ephemeral__" -}}
+{{- join "\n" $steps -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "observability-emitters.vmagent.spec" -}}
 {{- $root := . -}}
 {{- $v := .Values.metrics -}}
@@ -390,6 +416,9 @@ OTLP gateway below, this chart writes no volume for it.
         "action" "labeldrop"
         "regex" "exported_(k8s_cluster_name|k8s_namespace_name|deployment_environment_name)"))
 -}}
+{{- with (include "observability-emitters.scrapeConfig.kubeStateMetricsDropRelabelConfigs" $root) -}}
+{{- $_ := set $base "globalScrapeMetricRelabelConfigs" (concat (fromYamlArray .) $base.globalScrapeMetricRelabelConfigs) -}}
+{{- end -}}
 {{- if $root.Values.tenancy.owners -}}
 {{- $_ := set $base "inlineRelabelConfig" (fromYamlArray (include "observability-emitters.owners.metricRelabelConfigs" $root)) -}}
 {{- end -}}
