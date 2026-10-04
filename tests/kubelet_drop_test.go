@@ -133,7 +133,7 @@ func TestCadvisorEphemeralNamespaceAllowlist(t *testing.T) {
 			_, scratch := got["__cadvisor_keep_ephemeral__"]
 			assert.False(t, scratch, "scratch label must not leak")
 		}
-		for _, dropped := range []string{"container_fs_reads_total", "container_spec_cpu_shares", "container_last_seen", "container_fs_usage_bytes"} {
+		for _, dropped := range []string{"container_fs_reads_total", "container_spec_cpu_shares", "container_last_seen", "container_fs_usage_bytes", "container_memory_rss", "container_memory_cache", "container_memory_usage_bytes"} {
 			_, keep := applyCadvisorRelabel(cfgs, series(dropped, ns))
 			assert.Falsef(t, keep, "%s in %s is off the allowlist", dropped, ns)
 		}
@@ -146,4 +146,55 @@ func TestCadvisorEphemeralNamespaceAllowlist(t *testing.T) {
 	// Node-level series carry no namespace and are untouched.
 	_, keep := applyCadvisorRelabel(cfgs, map[string]string{"__name__": "container_fs_reads_total", "id": "/"})
 	assert.True(t, keep)
+}
+
+// ciNodePools: on nodes of the named Karpenter pools the three kept
+// histograms lose their buckets; other pools, other metrics and the _sum and
+// _count are untouched; and the temporary pool label never survives.
+func TestKubeletCINodePoolBucketDrop(t *testing.T) {
+	const tmp = "kubelet_ci_nodepool_tmp"
+	cfgs := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/kubelet-ci-nodepools.yaml", "kubelet")
+	run := func(pool, name string) (map[string]string, bool) {
+		in := map[string]string{"__name__": name, "node": "n1"}
+		if pool != "" {
+			in[tmp] = pool
+		}
+		lb := labels.NewBuilder(labels.FromMap(in))
+		keep := relabel.ProcessBuilder(lb, cfgs...)
+		return lb.Labels().Map(), keep
+	}
+	for _, name := range []string{
+		"kubelet_runtime_operations_duration_seconds_bucket",
+		"storage_operation_duration_seconds_bucket",
+		"rest_client_request_duration_seconds_bucket",
+	} {
+		for _, pool := range []string{"ci-runners", "buildkit"} {
+			_, keep := run(pool, name)
+			assert.Falsef(t, keep, "%s on pool %s is dropped", name, pool)
+		}
+		got, keep := run("general", name)
+		require.Truef(t, keep, "%s on another pool is kept", name)
+		_, leaked := got[tmp]
+		assert.False(t, leaked, "the temporary pool label must not reach a stored series")
+		_, keep = run("", name)
+		assert.Truef(t, keep, "%s on a node with no pool label is kept", name)
+	}
+	for _, name := range []string{"storage_operation_duration_seconds_sum", "storage_operation_duration_seconds_count", "kubelet_running_pods"} {
+		got, keep := run("ci-runners", name)
+		require.Truef(t, keep, "%s on a CI pool is kept", name)
+		_, leaked := got[tmp]
+		assert.False(t, leaked, "the temporary pool label must not reach a stored series")
+	}
+	// A name that merely contains a pool name is not a pool.
+	_, keep := run("my-ci-runners-x", "storage_operation_duration_seconds_bucket")
+	assert.True(t, keep)
+}
+
+// Default: no ciNodePools means no node-label capture and no extra rules.
+func TestKubeletCINodePoolsDefaultIsNoop(t *testing.T) {
+	docs := renderedDocs(t, "golden/observability-emitters/minimal.yaml")
+	agent := findDoc(t, docs, "VMAgent", nil)
+	inline := agent["spec"].(map[string]any)["inlineScrapeConfig"].(string)
+	assert.NotContains(t, inline, "kubelet_ci_nodepool_tmp")
+	assert.NotContains(t, inline, "karpenter_sh_nodepool")
 }

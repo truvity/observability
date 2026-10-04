@@ -4,7 +4,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: observability-emitters-victoria-logs-collector
-  namespace: default
+  namespace: observability
   labels: 
     app.kubernetes.io/instance: observability-emitters
     app.kubernetes.io/managed-by: Helm
@@ -60,7 +60,7 @@ data:
       k8s_leader_elector:
         auth_type: serviceAccount
         lease_name: observability-emitters-gateway
-        lease_namespace: default
+        lease_namespace: observability
     
     receivers:
       otlp:
@@ -300,7 +300,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: observability-emitters-victoria-logs-collector
-    namespace: default
+    namespace: observability
 roleRef:
   kind: ClusterRole
   name: observability-emitters-victoria-logs-collector
@@ -320,7 +320,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: observability-emitters-gateway
-    namespace: default
+    namespace: observability
 roleRef:
   kind: ClusterRole
   name: observability-emitters-gateway
@@ -356,7 +356,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: observability-emitters-gateway
-    namespace: default
+    namespace: observability
 roleRef:
   kind: Role
   name: observability-emitters-gateway
@@ -414,7 +414,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: observability-emitters-victoria-logs-collector
-  namespace: default
+  namespace: observability
   labels: 
     app.kubernetes.io/instance: observability-emitters
     app.kubernetes.io/managed-by: Helm
@@ -529,7 +529,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: observability-emitters
       annotations:
-        observability-emitters/config-checksum: 6c9d216d0e0b1ee9f7be61e37f55ac11a3f6c4d7fc7de18c06680ef2a07e6c39
+        observability-emitters/config-checksum: 12405bdda9e2f8f3316138279343f1cfa8af188517b18265400158d76b1c87da
     spec:
       serviceAccountName: observability-emitters-gateway
       securityContext:
@@ -608,7 +608,7 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - default
+      - observability
   selector:
     matchLabels: 
       app.kubernetes.io/instance: observability-emitters
@@ -696,6 +696,8 @@ spec:
           replacement: "development"
         - source_labels: [__metrics_path__]
           target_label: metrics_path
+        - source_labels: [__meta_kubernetes_node_label_karpenter_sh_nodepool]
+          target_label: kubelet_ci_nodepool_tmp
       metric_relabel_configs:
         - source_labels: [namespace]
           regex: (.+)
@@ -706,6 +708,12 @@ spec:
         - action: drop
           source_labels: [__name__]
           regex: ^(rest_client_rate_limiter_duration_seconds_bucket|rest_client_response_size_bytes_bucket|rest_client_request_size_bytes_bucket|volume_operation_total_seconds_bucket|kubelet_http_requests_duration_seconds_bucket|csi_operations_seconds_bucket|workqueue_queue_duration_seconds_bucket|workqueue_work_duration_seconds_bucket)$
+        - action: drop
+          source_labels: [kubelet_ci_nodepool_tmp, __name__]
+          separator: ";"
+          regex: ^(ci-runners|buildkit);(kubelet_runtime_operations_duration_seconds_bucket|storage_operation_duration_seconds_bucket|rest_client_request_duration_seconds_bucket)$
+        - action: labeldrop
+          regex: kubelet_ci_nodepool_tmp
     - job_name: cadvisor
       scheme: https
       honor_labels: false
@@ -733,10 +741,10 @@ spec:
           target_label: k8s_namespace_name
         - action: drop
           source_labels: [__name__]
-          regex: ^(container_spec_memory_reservation_limit_bytes)$
+          regex: ^(container_tasks_state|container_memory_failures_total|container_blkio_device_usage_total)$
         - action: replace
           source_labels: [__name__]
-          regex: ^(my_own_component_latency_seconds_bucket)$
+          regex: ^(go_sched_latencies_seconds_bucket)$
           target_label: __cadvisor_keep_bucket__
           replacement: "yes"
         - action: drop

@@ -402,24 +402,26 @@ metrics:
       # is dropped; every other namespace is untouched. Set to "" to turn
       # this off (the pre-change render).
       ephemeralNamespaces: "arc-runners-.*|ci-.*"
-      # -- The cadvisor metrics kept in an ephemeral namespace: exactly the
-      # ones a shipped rule or dashboard reads (CPU and working-set memory
-      # for the usage views and the k8s-stack recording rules, memory
-      # cache/rss/swap for the same recordings, CFS throttling for
-      # `CPUThrottlingHigh`, network counters for the network dashboards,
-      # OOM events). Replaced wholesale if set; widen with
-      # `extraEphemeralKeepMetrics`.
+      # -- The cadvisor metrics kept in an ephemeral namespace: only what
+      # a shipped rule, a recording rule or a dashboard panel reads.
+      #   container_cpu_usage_seconds_total, container_memory_working_set_bytes
+      #     usage dashboards, the k8s-stack `k8s.rules` recordings, memory alerts
+      #   container_oom_events_total             OOM panels
+      #   container_cpu_cfs_throttled_seconds_total  throttling panels
+      #   container_cpu_cfs_periods_total, container_cpu_cfs_throttled_periods_total
+      #                                          the `CPUThrottlingHigh` alert
+      #   container_network_{receive,transmit}_{bytes,packets,packets_dropped,errors}_total
+      #                                          the pod and namespace network panels
+      # Not kept: memory usage/cache/rss/swap (only an unread recording
+      # reads cache/rss/swap) and everything else cadvisor emits. Replaced
+      # wholesale if set; widen with `extraEphemeralKeepMetrics`.
       ephemeralKeepMetrics:
         - container_cpu_usage_seconds_total
         - container_memory_working_set_bytes
-        - container_memory_usage_bytes
-        - container_memory_cache
-        - container_memory_rss
-        - container_memory_swap
+        - container_oom_events_total
+        - container_cpu_cfs_throttled_seconds_total
         - container_cpu_cfs_periods_total
         - container_cpu_cfs_throttled_periods_total
-        - container_cpu_cfs_throttled_seconds_total
-        - container_oom_events_total
         - container_network_receive_bytes_total
         - container_network_receive_errors_total
         - container_network_receive_packets_dropped_total
@@ -473,6 +475,20 @@ metrics:
         - workqueue_work_duration_seconds_bucket
       # -- Added to `bucketMetrics` above rather than replacing it.
       extraBucketMetrics: []
+      # -- Karpenter NodePool names whose nodes are short-lived CI nodes.
+      # Every replaced node re-creates the histograms below per node, so on
+      # these nodes only, `ciNodePoolBucketMetrics` have their `_bucket`
+      # series dropped (`_sum` and `_count` are kept). The node's
+      # `karpenter.sh/nodepool` label is read at target relabeling into a
+      # temporary label that is removed again before storage, so no new
+      # label reaches a stored series. Empty (the default) renders nothing.
+      ciNodePools: []
+      # -- The kept-by-default kubelet histograms (the kubelet dashboard
+      # takes a p99 of each) that are dropped on `ciNodePools` nodes only.
+      ciNodePoolBucketMetrics:
+        - kubelet_runtime_operations_duration_seconds_bucket
+        - storage_operation_duration_seconds_bucket
+        - rest_client_request_duration_seconds_bucket
   # -- Anything else in the VMAgent spec, merged over what this chart
   # renders.
   #
