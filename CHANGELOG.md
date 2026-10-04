@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.52.0
+
 - **Behaviour change (feat(observability-emitters)): no pod-level
   kube-state-metrics series for CI namespaces.** By default every
   `kube_pod_*` series of a pod in a namespace matching `arc-runners-.*|ci-.*`
