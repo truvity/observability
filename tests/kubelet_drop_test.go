@@ -124,7 +124,10 @@ func TestCadvisorEphemeralNamespaceAllowlist(t *testing.T) {
 		return map[string]string{"__name__": name, "namespace": ns, "pod": "p", "container": "c", "id": "/kubepods/x"}
 	}
 	for _, ns := range []string{"arc-runners-org", "ci-build-1"} {
-		for _, kept := range []string{"container_cpu_usage_seconds_total", "container_memory_working_set_bytes", "container_cpu_cfs_throttled_periods_total", "container_oom_events_total"} {
+		for _, kept := range []string{
+			"container_cpu_usage_seconds_total", "container_memory_working_set_bytes",
+			"container_cpu_cfs_throttled_periods_total", "container_oom_events_total",
+		} {
 			got, keep := applyCadvisorRelabel(cfgs, series(kept, ns))
 			require.Truef(t, keep, "%s in %s is on the allowlist", kept, ns)
 			_, scratch := got["__cadvisor_keep_ephemeral__"]
