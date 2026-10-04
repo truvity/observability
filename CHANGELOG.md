@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.49.0
+
 - **Behaviour change (feat): `platform-alerts` `groups.restarts` gains
   `ContainerRestartingSlowly`, a slow crash
   loop.** A container that dies every hour or two restarts successfully each
