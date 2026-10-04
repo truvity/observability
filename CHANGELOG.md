@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.51.0
+
 - **Behaviour change (feat(observability-emitters)): less series churn from
   CI pods and replaced nodes.** Default drops on the node scrapes.
   (1) The kubelet job no longer stores eight histogram `_bucket` families
