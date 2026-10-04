@@ -53,7 +53,10 @@ func churnRuleExprs(t *testing.T, golden string) []string {
 func TestChurnRate24hFactorOverride(t *testing.T) {
 	exprs := churnRuleExprs(t, "golden/observability-stack/churn-rate-factor.yaml")
 	require.Len(t, exprs, 1)
-	assert.Equal(t, `sum(increase(vm_new_timeseries_created_total[24h])) by(instance) > (sum(vm_cache_entries{type="storage/hour_metric_ids"}) by(instance) * 6)`, exprs[0])
+	assert.Equal(t,
+		`sum(increase(vm_new_timeseries_created_total[24h])) by(instance) > `+
+			`(sum(vm_cache_entries{type="storage/hour_metric_ids"}) by(instance) * 6)`,
+		exprs[0])
 }
 
 func TestChurnRate24hUntouchedByDefault(t *testing.T) {
