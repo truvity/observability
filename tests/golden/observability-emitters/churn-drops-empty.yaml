@@ -1,20 +1,4 @@
 ---
-# Source: observability-emitters/charts/kube-state-metrics/templates/serviceaccount.yaml
-apiVersion: v1
-kind: ServiceAccount
-automountServiceAccountToken: true
-metadata:
-  labels:    
-    helm.sh/chart: kube-state-metrics-7.5.3
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: metrics
-    app.kubernetes.io/part-of: kube-state-metrics
-    app.kubernetes.io/name: kube-state-metrics
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/version: "2.19.1"
-  name: observability-emitters-kube-state-metrics
-  namespace: observability
----
 # Source: observability-emitters/charts/victoria-logs-collector/templates/serviceaccount.yaml
 apiVersion: v1
 kind: ServiceAccount
@@ -260,142 +244,6 @@ data:
           exporters: [otlp_http/traces-primary]
 
 ---
-# Source: observability-emitters/templates/kubestatemetrics-customresourcestate.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: observability-emitters-kube-state-metrics-customresourcestate-config
-  labels:
-    app.kubernetes.io/name: observability-emitters
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/part-of: observability-emitters
-data:
-  config.yaml: |
-    kind: CustomResourceStateMetrics
-    spec:
-      resources:
-        - groupVersionKind:
-            group: kargo.akuity.io
-            version: v1alpha1
-            kind: Stage
-          metricNamePrefix: ""
-          labelsFromPath:
-            namespace: [metadata, namespace]
-            stage: [metadata, name]
-          metrics:
-            - name: kargo_stage_condition
-              help: >-
-                Kargo Stage status condition, from status.conditions: 1
-                if the condition's own status is True, 0 if False or
-                Unknown.
-              each:
-                type: Gauge
-                gauge:
-                  path: [status, conditions]
-                  labelsFromPath:
-                    type: ["type"]
-                    reason: ["reason"]
-                  valueFrom: ["status"]
-        - groupVersionKind:
-            group: kargo.akuity.io
-            version: v1alpha1
-            kind: Promotion
-          metricNamePrefix: ""
-          labelsFromPath:
-            namespace: [metadata, namespace]
-            promotion: [metadata, name]
-            stage: [spec, stage]
-          metrics:
-            - name: kargo_promotion_phase
-              help: >-
-                Kargo Promotion phase, from status.phase, as a StateSet:
-                1 for the Promotion's current phase, 0 for the other
-                five.
-              each:
-                type: StateSet
-                stateSet:
-                  path: [status, phase]
-                  labelName: phase
-                  list: [Pending, Running, Succeeded, Failed, Errored, Aborted]
-
----
-# Source: observability-emitters/charts/kube-state-metrics/templates/role.yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  labels:    
-    helm.sh/chart: kube-state-metrics-7.5.3
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: metrics
-    app.kubernetes.io/part-of: kube-state-metrics
-    app.kubernetes.io/name: kube-state-metrics
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/version: "2.19.1"
-  name: observability-emitters-kube-state-metrics
-rules:
-
-- apiGroups: ["batch"]
-  resources:
-  - cronjobs
-  verbs: ["list", "watch"]
-
-- apiGroups: ["apps"]
-  resources:
-  - daemonsets
-  verbs: ["list", "watch"]
-
-- apiGroups: ["apps"]
-  resources:
-  - deployments
-  verbs: ["list", "watch"]
-
-- apiGroups: ["autoscaling"]
-  resources:
-  - horizontalpodautoscalers
-  verbs: ["list", "watch"]
-
-- apiGroups: ["batch"]
-  resources:
-  - jobs
-  verbs: ["list", "watch"]
-
-- apiGroups: [""]
-  resources:
-  - namespaces
-  verbs: ["list", "watch"]
-
-- apiGroups: [""]
-  resources:
-  - nodes
-  verbs: ["list", "watch"]
-
-- apiGroups: [""]
-  resources:
-  - persistentvolumeclaims
-  verbs: ["list", "watch"]
-
-- apiGroups: [""]
-  resources:
-  - pods
-  verbs: ["list", "watch"]
-
-- apiGroups: ["apps"]
-  resources:
-  - replicasets
-  verbs: ["list", "watch"]
-
-- apiGroups: ["apps"]
-  resources:
-  - statefulsets
-  verbs: ["list", "watch"]
-
-- apiGroups: ["apiextensions.k8s.io"]
-  resources:
-    - customresourcedefinitions
-  verbs: ["list", "watch"]
-
----
 # Source: observability-emitters/charts/victoria-logs-collector/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -438,44 +286,6 @@ rules:
     verbs: ["get", "list", "watch"]
 
 ---
-# Source: observability-emitters/templates/kubestatemetrics-kargo-rbac.yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: observability-emitters-kube-state-metrics-kargo
-  labels:
-    app.kubernetes.io/name: observability-emitters
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/part-of: observability-emitters
-rules:
-  - apiGroups: ["kargo.akuity.io"]
-    resources: ["stages", "promotions"]
-    verbs: ["get", "list", "watch"]
-
----
-# Source: observability-emitters/charts/kube-state-metrics/templates/clusterrolebinding.yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  labels:    
-    helm.sh/chart: kube-state-metrics-7.5.3
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: metrics
-    app.kubernetes.io/part-of: kube-state-metrics
-    app.kubernetes.io/name: kube-state-metrics
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/version: "2.19.1"
-  name: observability-emitters-kube-state-metrics
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: observability-emitters-kube-state-metrics
-subjects:
-- kind: ServiceAccount
-  name: observability-emitters-kube-state-metrics
-  namespace: observability
----
 # Source: observability-emitters/charts/victoria-logs-collector/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -517,26 +327,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
-# Source: observability-emitters/templates/kubestatemetrics-kargo-rbac.yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: observability-emitters-kube-state-metrics-kargo
-  labels:
-    app.kubernetes.io/name: observability-emitters
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/part-of: observability-emitters
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: observability-emitters-kube-state-metrics-kargo
-subjects:
-  - kind: ServiceAccount
-    name: observability-emitters-kube-state-metrics
-    namespace: observability
-
----
 # Source: observability-emitters/templates/gateway.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -571,35 +361,6 @@ roleRef:
   kind: Role
   name: observability-emitters-gateway
   apiGroup: rbac.authorization.k8s.io
-
----
-# Source: observability-emitters/charts/kube-state-metrics/templates/service.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: observability-emitters-kube-state-metrics
-  namespace: observability
-  labels:    
-    helm.sh/chart: kube-state-metrics-7.5.3
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: metrics
-    app.kubernetes.io/part-of: kube-state-metrics
-    app.kubernetes.io/name: kube-state-metrics
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/version: "2.19.1"
-  annotations:
-    prometheus.io/scrape: 'true'
-spec:
-  type: "ClusterIP"
-  ports:
-  - name: http
-    protocol: TCP
-    port: 8080
-    targetPort: http
-  
-  selector:    
-    app.kubernetes.io/name: kube-state-metrics
-    app.kubernetes.io/instance: observability-emitters
 
 ---
 # Source: observability-emitters/templates/gateway.yaml
@@ -740,109 +501,6 @@ spec:
           hostPath:
             path: /var/lib/vl-collector
         
-
----
-# Source: observability-emitters/charts/kube-state-metrics/templates/deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: observability-emitters-kube-state-metrics
-  namespace: observability
-  labels:    
-    helm.sh/chart: kube-state-metrics-7.5.3
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: metrics
-    app.kubernetes.io/part-of: kube-state-metrics
-    app.kubernetes.io/name: kube-state-metrics
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/version: "2.19.1"
-spec:
-  selector:
-    matchLabels:      
-      app.kubernetes.io/name: kube-state-metrics
-      app.kubernetes.io/instance: observability-emitters
-  replicas: 1
-  strategy:
-    type: RollingUpdate
-  revisionHistoryLimit: 10
-  template:
-    metadata:
-      labels:        
-        helm.sh/chart: kube-state-metrics-7.5.3
-        app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: metrics
-        app.kubernetes.io/part-of: kube-state-metrics
-        app.kubernetes.io/name: kube-state-metrics
-        app.kubernetes.io/instance: observability-emitters
-        app.kubernetes.io/version: "2.19.1"
-    spec:
-      automountServiceAccountToken: true
-      hostNetwork: false
-      serviceAccountName: observability-emitters-kube-state-metrics
-      securityContext:
-        fsGroup: 65534
-        runAsGroup: 65534
-        runAsNonRoot: true
-        runAsUser: 65534
-        seccompProfile:
-          type: RuntimeDefault
-      dnsPolicy: ClusterFirst
-      containers:
-      - name: kube-state-metrics
-        args:
-        - --port=8080
-        - --resources=cronjobs,jobs,pods,nodes,deployments,replicasets,statefulsets,daemonsets,namespaces,persistentvolumeclaims,horizontalpodautoscalers
-        - --custom-resource-state-config-file=/etc/customresourcestate/config.yaml
-        volumeMounts:
-        - name: customresourcestate-config
-          mountPath: /etc/customresourcestate
-          readOnly: true
-        imagePullPolicy: IfNotPresent
-        image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1
-        ports:
-        - containerPort: 8080
-          name: http
-        - containerPort: 8081
-          name: metrics
-        livenessProbe:
-          failureThreshold: 3
-          httpGet:
-            httpHeaders:
-            path: /livez
-            port: http
-            scheme: HTTP
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          successThreshold: 1
-          timeoutSeconds: 5
-        readinessProbe:
-          failureThreshold: 3
-          httpGet:
-            httpHeaders:
-            path: /readyz
-            port: metrics
-            scheme: HTTP
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          successThreshold: 1
-          timeoutSeconds: 5
-        resources:
-          limits:
-            cpu: 100m
-            memory: 256Mi
-          requests:
-            cpu: 100m
-            memory: 256Mi
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-          readOnlyRootFilesystem: true
-      volumes:
-        - name: customresourcestate-config
-          configMap:
-            name: observability-emitters-kube-state-metrics-customresourcestate-config
 
 ---
 # Source: observability-emitters/templates/gateway.yaml
@@ -1001,62 +659,6 @@ spec:
       interval: 30s
 
 ---
-# Source: observability-emitters/charts/kube-state-metrics/templates/servicemonitor.yaml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: observability-emitters-kube-state-metrics
-  namespace: observability
-  labels:    
-    helm.sh/chart: kube-state-metrics-7.5.3
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: metrics
-    app.kubernetes.io/part-of: kube-state-metrics
-    app.kubernetes.io/name: kube-state-metrics
-    app.kubernetes.io/instance: observability-emitters
-    app.kubernetes.io/version: "2.19.1"
-spec:
-  jobLabel: app.kubernetes.io/name  
-  selector:
-    matchLabels:      
-      app.kubernetes.io/name: kube-state-metrics
-      app.kubernetes.io/instance: observability-emitters
-  endpoints:
-    - port: http
-      metricRelabelings:
-        - action: labeldrop
-          regex: k8s_namespace_name
-        - action: labeldrop
-          regex: (namespace|pod|container|service)
-        - action: replace
-          regex: (.+)
-          sourceLabels:
-          - exported_namespace
-          targetLabel: namespace
-        - action: replace
-          regex: (.+)
-          sourceLabels:
-          - exported_pod
-          targetLabel: pod
-        - action: replace
-          regex: (.+)
-          sourceLabels:
-          - exported_container
-          targetLabel: container
-        - action: replace
-          regex: (.+)
-          sourceLabels:
-          - exported_service
-          targetLabel: service
-        - action: labeldrop
-          regex: exported_(namespace|pod|container|service)
-        - action: replace
-          regex: (.+)
-          sourceLabels:
-          - namespace
-          targetLabel: k8s_namespace_name
-
----
 # Source: observability-emitters/templates/vmagent.yaml
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMAgent
@@ -1101,9 +703,6 @@ spec:
         - action: drop
           source_labels: [__name__]
           regex: ^(kubernetes_feature_enabled)$
-        - action: drop
-          source_labels: [__name__]
-          regex: ^(rest_client_rate_limiter_duration_seconds_bucket|rest_client_response_size_bytes_bucket|rest_client_request_size_bytes_bucket|volume_operation_total_seconds_bucket|kubelet_http_requests_duration_seconds_bucket|csi_operations_seconds_bucket|workqueue_queue_duration_seconds_bucket|workqueue_work_duration_seconds_bucket)$
     - job_name: cadvisor
       scheme: https
       honor_labels: false
@@ -1143,17 +742,6 @@ spec:
           regex: ^.*_bucket;$
         - action: labeldrop
           regex: __cadvisor_keep_bucket__
-        - action: replace
-          source_labels: [__name__]
-          regex: ^(container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_memory_usage_bytes|container_memory_cache|container_memory_rss|container_memory_swap|container_cpu_cfs_periods_total|container_cpu_cfs_throttled_periods_total|container_cpu_cfs_throttled_seconds_total|container_oom_events_total|container_network_receive_bytes_total|container_network_receive_errors_total|container_network_receive_packets_dropped_total|container_network_receive_packets_total|container_network_transmit_bytes_total|container_network_transmit_errors_total|container_network_transmit_packets_dropped_total|container_network_transmit_packets_total)$
-          target_label: __cadvisor_keep_ephemeral__
-          replacement: "yes"
-        - action: drop
-          source_labels: [namespace, __cadvisor_keep_ephemeral__]
-          separator: ";"
-          regex: ^(?:arc-runners-.*|ci-.*);$
-        - action: labeldrop
-          regex: __cadvisor_keep_ephemeral__
         - action: replace
           source_labels: [container, id]
           regex: (.+);.+

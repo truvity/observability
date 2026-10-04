@@ -76,3 +76,71 @@ func TestKubeletDropExtraNameIsAddedNotReplacing(t *testing.T) {
 	assert.False(t, survives(cfgs, "kubelet_example_metric_total"), "the consumer's own name is dropped beside it")
 	assert.True(t, survives(cfgs, "kubelet_running_pods"))
 }
+
+// The unused kubelet histogram buckets are dropped by default, with their
+// _sum and _count kept, and the three buckets the kubelet dashboard takes a
+// quantile of are kept.
+func TestKubeletBucketDropDefault(t *testing.T) {
+	cfgs := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/minimal.yaml", "kubelet")
+	for _, dropped := range []string{
+		"rest_client_rate_limiter_duration_seconds_bucket",
+		"rest_client_response_size_bytes_bucket",
+		"rest_client_request_size_bytes_bucket",
+		"volume_operation_total_seconds_bucket",
+		"kubelet_http_requests_duration_seconds_bucket",
+		"csi_operations_seconds_bucket",
+		"workqueue_queue_duration_seconds_bucket",
+		"workqueue_work_duration_seconds_bucket",
+	} {
+		assert.Falsef(t, survives(cfgs, dropped), "%s is read by nothing and is dropped by default", dropped)
+	}
+	for _, kept := range []string{
+		"kubelet_runtime_operations_duration_seconds_bucket",
+		"storage_operation_duration_seconds_bucket",
+		"rest_client_request_duration_seconds_bucket",
+		"rest_client_response_size_bytes_sum",
+		"rest_client_response_size_bytes_count",
+		"workqueue_depth",
+	} {
+		assert.Truef(t, survives(cfgs, kept), "%s is used or is not a dropped bucket and must survive", kept)
+	}
+}
+
+// Emptying the new values restores the previous render byte for byte, which
+// the golden diff proves; here the behaviour is checked too.
+func TestChurnDropsEmptyRestoresOldRender(t *testing.T) {
+	cfgs := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/churn-drops-empty.yaml", "kubelet")
+	assert.True(t, survives(cfgs, "csi_operations_seconds_bucket"))
+	assert.False(t, survives(cfgs, "kubernetes_feature_enabled"), "the older default is untouched")
+
+	cad := cadvisorMetricRelabelConfigs(t, "golden/observability-emitters/churn-drops-empty.yaml")
+	_, keep := applyCadvisorRelabel(cad, map[string]string{"__name__": "container_fs_reads_total", "namespace": "ci-build-1", "container": "x", "id": "/a"})
+	assert.True(t, keep, "ephemeralNamespaces: \"\" stores every cadvisor series in a CI namespace again")
+}
+
+func TestCadvisorEphemeralNamespaceAllowlist(t *testing.T) {
+	cfgs := cadvisorMetricRelabelConfigs(t, "golden/observability-emitters/minimal.yaml")
+	series := func(name, ns string) map[string]string {
+		return map[string]string{"__name__": name, "namespace": ns, "pod": "p", "container": "c", "id": "/kubepods/x"}
+	}
+	for _, ns := range []string{"arc-runners-org", "ci-build-1"} {
+		for _, kept := range []string{"container_cpu_usage_seconds_total", "container_memory_working_set_bytes", "container_cpu_cfs_throttled_periods_total", "container_oom_events_total"} {
+			got, keep := applyCadvisorRelabel(cfgs, series(kept, ns))
+			require.Truef(t, keep, "%s in %s is on the allowlist", kept, ns)
+			_, scratch := got["__cadvisor_keep_ephemeral__"]
+			assert.False(t, scratch, "scratch label must not leak")
+		}
+		for _, dropped := range []string{"container_fs_reads_total", "container_spec_cpu_shares", "container_last_seen", "container_fs_usage_bytes"} {
+			_, keep := applyCadvisorRelabel(cfgs, series(dropped, ns))
+			assert.Falsef(t, keep, "%s in %s is off the allowlist", dropped, ns)
+		}
+	}
+	// Other namespaces, including names that merely contain the pattern, are untouched.
+	for _, ns := range []string{"team-a", "kube-system", "my-ci-tools", "arc-systems", "xci-1"} {
+		_, keep := applyCadvisorRelabel(cfgs, series("container_fs_reads_total", ns))
+		assert.Truef(t, keep, "%s is not an ephemeral namespace: nothing dropped", ns)
+	}
+	// Node-level series carry no namespace and are untouched.
+	_, keep := applyCadvisorRelabel(cfgs, map[string]string{"__name__": "container_fs_reads_total", "id": "/"})
+	assert.True(t, keep)
+}

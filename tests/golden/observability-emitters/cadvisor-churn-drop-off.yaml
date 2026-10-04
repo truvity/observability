@@ -703,6 +703,9 @@ spec:
         - action: drop
           source_labels: [__name__]
           regex: ^(kubernetes_feature_enabled)$
+        - action: drop
+          source_labels: [__name__]
+          regex: ^(rest_client_rate_limiter_duration_seconds_bucket|rest_client_response_size_bytes_bucket|rest_client_request_size_bytes_bucket|volume_operation_total_seconds_bucket|kubelet_http_requests_duration_seconds_bucket|csi_operations_seconds_bucket|workqueue_queue_duration_seconds_bucket|workqueue_work_duration_seconds_bucket)$
     - job_name: cadvisor
       scheme: https
       honor_labels: false

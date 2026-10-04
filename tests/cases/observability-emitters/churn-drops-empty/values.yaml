@@ -1,0 +1,54 @@
+# The cluster's DNS suffix is an input, and this file sets it to a neutral
+# placeholder: a golden render is a tracked file in a public repository,
+# and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# The minimal case with the churn drops emptied: `kubeletDrop.bucketMetrics`
+# and `cadvisorDrop.ephemeralNamespaces` set to empty. The render goes back
+# to what it was before those two values existed.
+tenancy:
+  cluster: example-cluster
+  environment: development
+
+writeCredentials:
+  secretName: example-write-token
+
+metrics:
+  destinations:
+    - name: primary
+      url: https://metrics.example/api/v1/write
+  scrape:
+    kubeletDrop:
+      bucketMetrics: []
+    cadvisorDrop:
+      ephemeralNamespaces: ""
+
+otlp:
+  destinations:
+    metrics:
+      - name: primary
+        url: https://metrics.example
+    logs:
+      - name: primary
+        url: https://logs.example
+    traces:
+      - name: primary
+        url: https://traces.example
+
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: example-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: https://logs.example
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'

@@ -392,6 +392,44 @@ metrics:
         - go_sched_latencies_seconds_bucket
       # -- Added to `keepBucketMetrics` above rather than replacing it.
       extraKeepBucketMetrics: []
+      # -- Churn drop for EPHEMERAL namespaces (CI runner pods), a
+      # regular expression matched, fully anchored, against the series'
+      # `namespace` label (write it WITHOUT `^`/`$`; the chart anchors it).
+      # Every runner pod is a fresh set of per-container cadvisor series,
+      # so a CI namespace mints series all day that nothing ever reads
+      # twice. In a namespace this matches, only the metrics in
+      # `ephemeralKeepMetrics` are stored and every other cadvisor series
+      # is dropped; every other namespace is untouched. Set to "" to turn
+      # this off (the pre-change render).
+      ephemeralNamespaces: "arc-runners-.*|ci-.*"
+      # -- The cadvisor metrics kept in an ephemeral namespace: exactly the
+      # ones a shipped rule or dashboard reads (CPU and working-set memory
+      # for the usage views and the k8s-stack recording rules, memory
+      # cache/rss/swap for the same recordings, CFS throttling for
+      # `CPUThrottlingHigh`, network counters for the network dashboards,
+      # OOM events). Replaced wholesale if set; widen with
+      # `extraEphemeralKeepMetrics`.
+      ephemeralKeepMetrics:
+        - container_cpu_usage_seconds_total
+        - container_memory_working_set_bytes
+        - container_memory_usage_bytes
+        - container_memory_cache
+        - container_memory_rss
+        - container_memory_swap
+        - container_cpu_cfs_periods_total
+        - container_cpu_cfs_throttled_periods_total
+        - container_cpu_cfs_throttled_seconds_total
+        - container_oom_events_total
+        - container_network_receive_bytes_total
+        - container_network_receive_errors_total
+        - container_network_receive_packets_dropped_total
+        - container_network_receive_packets_total
+        - container_network_transmit_bytes_total
+        - container_network_transmit_errors_total
+        - container_network_transmit_packets_dropped_total
+        - container_network_transmit_packets_total
+      # -- Added to `ephemeralKeepMetrics` above rather than replacing it.
+      extraEphemeralKeepMetrics: []
     # -- A default DROP for the KUBELET scrape's own series that no
     # dashboard or rule here reads and that cost the most. Today one:
     # `kubernetes_feature_enabled`, the kubelet's feature-gate gauge, one
@@ -414,6 +452,27 @@ metrics:
         - kubernetes_feature_enabled
       # -- Added to `metricNames` above rather than replacing it.
       extraMetricNames: []
+      # -- Histogram `_bucket` series dropped by exact name. Every new node
+      # re-creates each bucket series, and these are the large histograms
+      # nothing here reads: no dashboard in charts/observability-dashboards,
+      # no rule in charts/platform-alerts and none of the k8s-stack default
+      # rules selects them. Their `_sum` and `_count` are kept. The
+      # buckets the kubelet dashboard takes a quantile of
+      # (`kubelet_runtime_operations_duration_seconds`,
+      # `storage_operation_duration_seconds`,
+      # `rest_client_request_duration_seconds`) are deliberately NOT here.
+      # Set to `[]` to store them all again.
+      bucketMetrics:
+        - rest_client_rate_limiter_duration_seconds_bucket
+        - rest_client_response_size_bytes_bucket
+        - rest_client_request_size_bytes_bucket
+        - volume_operation_total_seconds_bucket
+        - kubelet_http_requests_duration_seconds_bucket
+        - csi_operations_seconds_bucket
+        - workqueue_queue_duration_seconds_bucket
+        - workqueue_work_duration_seconds_bucket
+      # -- Added to `bucketMetrics` above rather than replacing it.
+      extraBucketMetrics: []
   # -- Anything else in the VMAgent spec, merged over what this chart
   # renders.
   #

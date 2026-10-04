@@ -4,6 +4,25 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change (feat(observability-emitters)): less series churn from
+  CI pods and replaced nodes.** Two new default drops on the node scrapes.
+  (1) The kubelet job no longer stores eight histogram `_bucket` families
+  that no shipped rule or dashboard reads
+  (`rest_client_rate_limiter_duration_seconds`,
+  `rest_client_response_size_bytes`, `rest_client_request_size_bytes`,
+  `volume_operation_total_seconds`, `kubelet_http_requests_duration_seconds`,
+  `csi_operations_seconds`, `workqueue_queue_duration_seconds`,
+  `workqueue_work_duration_seconds`); their `_sum` and `_count` stay, and the
+  buckets the kubelet dashboard takes a quantile of stay too. (2) The
+  cadvisor job, in namespaces matching `^(arc-runners-.*|ci-.*)$`, keeps only
+  CPU, memory, CPU throttling, network and OOM series and drops the rest.
+  Other namespaces are untouched. Opt out with
+  `metrics.scrape.kubeletDrop.bucketMetrics: []` and
+  `metrics.scrape.cadvisorDrop.ephemeralNamespaces: ""`; widen with
+  `extraBucketMetrics` / `extraEphemeralKeepMetrics`.
+
 ## v0.50.1
 
 - **Behaviour change (fix): `PodSecurityAuditViolations` counted the audit

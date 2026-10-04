@@ -370,6 +370,20 @@
                     "type": "string",
                     "minLength": 1
                   }
+                },
+                "bucketMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraBucketMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 }
               }
             },
@@ -404,6 +418,24 @@
                   }
                 },
                 "extraKeepBucketMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "ephemeralNamespaces": {
+                  "type": "string",
+                  "description": "Regex (unanchored; the chart anchors it) matched against the namespace label; empty disables."
+                },
+                "ephemeralKeepMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraEphemeralKeepMetrics": {
                   "type": "array",
                   "items": {
                     "type": "string",
