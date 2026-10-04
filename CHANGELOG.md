@@ -7,7 +7,7 @@ must be done first, and whether a default moved. Newest first, one
 ## Unreleased
 
 - **Behaviour change (feat(observability-emitters)): less series churn from
-  CI pods and replaced nodes.** Two new default drops on the node scrapes.
+  CI pods and replaced nodes.** Default drops on the node scrapes.
   (1) The kubelet job no longer stores eight histogram `_bucket` families
   that no shipped rule or dashboard reads
   (`rest_client_rate_limiter_duration_seconds`,
@@ -16,12 +16,17 @@ must be done first, and whether a default moved. Newest first, one
   `csi_operations_seconds`, `workqueue_queue_duration_seconds`,
   `workqueue_work_duration_seconds`); their `_sum` and `_count` stay, and the
   buckets the kubelet dashboard takes a quantile of stay too. (2) The
-  cadvisor job, in namespaces matching `^(arc-runners-.*|ci-.*)$`, keeps only
-  CPU, memory, CPU throttling, network and OOM series and drops the rest.
-  Other namespaces are untouched. Opt out with
-  `metrics.scrape.kubeletDrop.bucketMetrics: []` and
+  cadvisor job, in namespaces matching `arc-runners-.*|ci-.*`, keeps only
+  CPU usage, working-set memory, OOM events, CPU throttling and network
+  series (the ones a rule or dashboard reads) and drops everything else,
+  including memory usage, cache, rss and swap. Other namespaces are
+  untouched. Opt out with `metrics.scrape.kubeletDrop.bucketMetrics: []` and
   `metrics.scrape.cadvisorDrop.ephemeralNamespaces: ""`; widen with
-  `extraBucketMetrics` / `extraEphemeralKeepMetrics`.
+  `extraBucketMetrics` / `extraEphemeralKeepMetrics`. New and off by
+  default: `metrics.scrape.kubeletDrop.ciNodePools` (Karpenter NodePool
+  names); on those nodes only, the `_bucket` series of the three kept
+  kubelet histograms are dropped too. A render that sets none of the new
+  values to a non-default is unchanged by that key.
 
 ## v0.50.1
 

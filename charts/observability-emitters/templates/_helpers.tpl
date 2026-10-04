@@ -606,6 +606,12 @@ job has its own (`cadvisorDrop`).
 {{- if $buckets -}}
 {{- $rules = append $rules (printf "- action: drop\n  source_labels: [__name__]\n  regex: ^(%s)$" (join "|" $buckets)) -}}
 {{- end -}}
+{{- if and $kd.ciNodePools $kd.ciNodePoolBucketMetrics -}}
+{{- $rules = append $rules (printf "- action: drop\n  source_labels: [%s, __name__]\n  separator: \";\"\n  regex: ^(%s);(%s)$" "kubelet_ci_nodepool_tmp" (join "|" $kd.ciNodePools) (join "|" $kd.ciNodePoolBucketMetrics)) -}}
+{{- end -}}
+{{- if $kd.ciNodePools -}}
+{{- $rules = append $rules "- action: labeldrop\n  regex: kubelet_ci_nodepool_tmp" -}}
+{{- end -}}
 {{- join "\n" $rules -}}
 {{- end -}}
 {{- end -}}
@@ -624,6 +630,10 @@ job has its own (`cadvisorDrop`).
 {{ include "observability-emitters.nodeLabelRelabelConfigs" . | indent 4 }}
 {{ include "observability-emitters.tenancy.clusterScopedRelabelConfigs" . | indent 4 }}
 {{ include "observability-emitters.nodeMetricsPathRelabelConfig" . | indent 4 }}
+{{- if and .Values.metrics.scrape.kubeletDrop.enabled .Values.metrics.scrape.kubeletDrop.ciNodePools }}
+    - source_labels: [__meta_kubernetes_node_label_karpenter_sh_nodepool]
+      target_label: kubelet_ci_nodepool_tmp
+{{- end }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
 {{- with (include "observability-emitters.scrapeConfig.kubeletDropMetricRelabelConfigs" .) }}
