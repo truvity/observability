@@ -251,14 +251,20 @@ func TestCINodePoolFurtherDrops(t *testing.T) {
 	}
 	const g = "golden/observability-emitters/kubelet-ci-nodepools.yaml"
 	kub := scrapeJobMetricRelabelConfigs(t, g, "kubelet")
-	for _, name := range []string{"kubelet_pod_worker_duration_seconds_bucket", "kubelet_image_pull_duration_seconds_bucket", "dra_operations_duration_seconds_bucket", "kubelet_pod_start_duration_seconds_bucket"} {
+	for _, name := range []string{
+		"kubelet_pod_worker_duration_seconds_bucket", "kubelet_image_pull_duration_seconds_bucket",
+		"dra_operations_duration_seconds_bucket", "kubelet_pod_start_duration_seconds_bucket",
+	} {
 		_, keep := run(kub, "ci-runners", name)
 		assert.Falsef(t, keep, "%s on a CI pool is dropped", name)
 		_, keep = run(kub, "general", name)
 		assert.Truef(t, keep, "%s on another pool is kept", name)
 	}
 	cad := scrapeJobMetricRelabelConfigs(t, g, "cadvisor")
-	for _, name := range []string{"container_fs_reads_total", "container_fs_usage_bytes", "container_network_receive_packets_total", "container_network_transmit_errors_total"} {
+	for _, name := range []string{
+		"container_fs_reads_total", "container_fs_usage_bytes",
+		"container_network_receive_packets_total", "container_network_transmit_errors_total",
+	} {
 		_, keep := run(cad, "buildkit", name)
 		assert.Falsef(t, keep, "%s on a CI pool is dropped", name)
 		got, keep := run(cad, "general", name)
@@ -273,7 +279,7 @@ func TestCINodePoolFurtherDrops(t *testing.T) {
 		assert.False(t, leaked, "the temporary pool label must not reach a stored series")
 	}
 	// Without ciNodePools the cadvisor job carries no such rule.
-	min := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/minimal.yaml", "cadvisor")
-	_, keep := run(min, "ci-runners", "container_fs_reads_total")
+	plain := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/minimal.yaml", "cadvisor")
+	_, keep := run(plain, "ci-runners", "container_fs_reads_total")
 	assert.True(t, keep)
 }
