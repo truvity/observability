@@ -399,7 +399,19 @@ OTLP gateway below, this chart writes no volume for it.
 {{- if $scrapeConfigs -}}
 {{- $_ := set $base "inlineScrapeConfig" (printf "%s\n" (join "\n" $scrapeConfigs)) -}}
 {{- end -}}
-{{- toYaml (mergeOverwrite $base (deepCopy ($v.spec | default dict))) -}}
+{{- $spec := mergeOverwrite $base (deepCopy ($v.spec | default dict)) -}}
+{{- /*
+The node-pool helper label of `kubeletDrop.ciNodePools` is a TARGET label, so
+the per-target series the agent writes itself (`up`, `scrape_duration_seconds`,
+`scrape_samples_*`, ...) carry it, and metric_relabel_configs never apply to
+those. Only the global relabeling sees everything that leaves the agent. It is
+appended AFTER the merge, so it also holds when `metrics.spec` sets its own
+`inlineRelabelConfig` (a list: the merge replaces it).
+*/ -}}
+{{- if and $root.Values.metrics.scrape.kubeletDrop.enabled $root.Values.metrics.scrape.kubeletDrop.ciNodePools -}}
+{{- $_ := set $spec "inlineRelabelConfig" (append ($spec.inlineRelabelConfig | default list) (dict "action" "labeldrop" "regex" "kubelet_ci_nodepool_tmp")) -}}
+{{- end -}}
+{{- toYaml $spec -}}
 {{- end -}}
 
 {{/*

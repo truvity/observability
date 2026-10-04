@@ -677,6 +677,9 @@ spec:
   image:
     repository: victoriametrics/vmagent
     tag: v1.152.0
+  inlineRelabelConfig:
+  - action: labeldrop
+    regex: kubelet_ci_nodepool_tmp
   inlineScrapeConfig: |
     - job_name: kubelet
       scheme: https

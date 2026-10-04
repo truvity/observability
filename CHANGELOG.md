@@ -6,6 +6,18 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- fix(observability-emitters): the CI node-pool helper label never reaches
+  storage. `metrics.scrape.kubeletDrop.ciNodePools` (v0.51.0) copies the
+  node's pool into the temporary target label `kubelet_ci_nodepool_tmp` and
+  dropped it in the job's `metric_relabel_configs`, which never apply to the
+  series the agent generates per target (`up`, `scrape_duration_seconds`,
+  `scrape_samples_scraped`, ...); those stored the label, on every pool, and
+  so did recording rules built from them. The agent's global
+  `inlineRelabelConfig` now ends with a `labeldrop` of it, rendered only when
+  `ciNodePools` is set (the render is otherwise unchanged) and kept when
+  `metrics.spec` sets its own `inlineRelabelConfig`. Series already stored
+  keep the label until they age out.
+
 ## v0.51.0
 
 - **Behaviour change (feat(observability-emitters)): less series churn from

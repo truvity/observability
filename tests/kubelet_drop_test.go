@@ -192,6 +192,43 @@ func TestKubeletCINodePoolBucketDrop(t *testing.T) {
 	assert.True(t, keep)
 }
 
+// The helper label is a TARGET label, so the series the agent generates per
+// target itself (`up`, `scrape_duration_seconds`, `scrape_samples_scraped`, ...)
+// carry it, and metric_relabel_configs never apply to those series: the
+// metricRelabelConfigs test above does not cover them. Only the agent's GLOBAL
+// relabeling (`inlineRelabelConfig`) sees everything that leaves the agent, so
+// that is where the label must be dropped, and it is run here on such a series.
+func TestKubeletCINodePoolLabelDroppedGlobally(t *testing.T) {
+	const tmp = "kubelet_ci_nodepool_tmp"
+	agent := findDoc(t, renderedDocs(t, "golden/observability-emitters/kubelet-ci-nodepools.yaml"), "VMAgent", nil)
+	raw, ok := agent["spec"].(map[string]any)["inlineRelabelConfig"].([]any)
+	require.True(t, ok, "VMAgent has no inlineRelabelConfig")
+	var cfgs []*relabel.Config
+	for _, item := range raw {
+		b, err := yaml.Marshal(item)
+		require.NoError(t, err)
+		c := relabel.DefaultRelabelConfig
+		require.NoError(t, yaml.Unmarshal(b, &c))
+		require.NoError(t, c.Validate(model.UTF8Validation))
+		cfgs = append(cfgs, &c)
+	}
+	for _, name := range []string{"up", "scrape_duration_seconds", "scrape_samples_scraped", "scrape_series_added"} {
+		lb := labels.NewBuilder(labels.FromMap(map[string]string{"__name__": name, "job": "kubelet", tmp: "general"}))
+		require.Truef(t, relabel.ProcessBuilder(lb, cfgs...), "%s is kept", name)
+		_, leaked := lb.Labels().Map()[tmp]
+		assert.Falsef(t, leaked, "%s must not carry the temporary pool label", name)
+	}
+}
+
+// Without ciNodePools the global relabeling carries no such rule.
+func TestKubeletCINodePoolGlobalDropAbsentByDefault(t *testing.T) {
+	agent := findDoc(t, renderedDocs(t, "golden/observability-emitters/minimal.yaml"), "VMAgent", nil)
+	raw, _ := agent["spec"].(map[string]any)["inlineRelabelConfig"].([]any)
+	b, err := yaml.Marshal(raw)
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "kubelet_ci_nodepool_tmp")
+}
+
 // Default: no ciNodePools means no node-label capture and no extra rules.
 func TestKubeletCINodePoolsDefaultIsNoop(t *testing.T) {
 	docs := renderedDocs(t, "golden/observability-emitters/minimal.yaml")
