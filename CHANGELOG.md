@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.51.1
 
 - **Behaviour change (fix(observability-emitters)): the CI node-pool helper
   label never reaches storage.** Only with `ciNodePools` set; leaving it
