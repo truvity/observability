@@ -27,9 +27,15 @@ spec:
         # record itself is filed under a platform namespace, never the
         # tenant's). The annotation text (which control, which container) is
         # in `audit.violations` and in the body.
+        #
+        # The filter is the FIELD `audit.violations:*` (set only by the
+        # reader's `transform/audit`, and only when the event carries the
+        # annotation), never the phrase: a free-text match also counts any
+        # log line that merely mentions the annotation, such as the reader's
+        # own startup log of its OTTL config.
         - alert: PodSecurityAuditViolations
           expr: >-
-            _time:24h "pod-security.kubernetes.io/audit-violations"
+            _time:24h audit.violations:*
             | rename k8s.cluster.name as k8s_cluster_name, audit.namespace as namespace
             | stats by (k8s_cluster_name, namespace) count() as violations
           for: 0s

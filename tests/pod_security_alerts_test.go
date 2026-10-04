@@ -80,3 +80,52 @@ func TestPodSecurityAlertRendersAsALogsVMRule(t *testing.T) {
 	assert.Equal(t, 1, logs, "exactly one LogsQL VMRule")
 	assert.Zero(t, metrics, "no metrics VMRule when only the LogsQL group is on")
 }
+
+// The audit alert filters on the field `audit.violations`, which only a
+// forwarded audit event carries (the reader's `transform/audit` sets it from
+// the annotation). A free-text match on the annotation's name also matches a
+// log line that merely mentions it, such as the reader's own startup log of
+// its OTTL config: that line has the phrase but no `audit.violations` field.
+func TestPodSecurityAuditAlertFiltersOnTheFieldNotThePhrase(t *testing.T) {
+	var seen int
+
+	for _, doc := range splitDocs(t, "golden/platform-alerts/pod-security-audit-shared-store.yaml") {
+		var rule struct {
+			Kind string `yaml:"kind"`
+			Spec struct {
+				Groups []struct {
+					Rules []struct {
+						Alert string `yaml:"alert"`
+						Expr  string `yaml:"expr"`
+					} `yaml:"rules"`
+				} `yaml:"groups"`
+			} `yaml:"spec"`
+		}
+		if yaml.Unmarshal(doc, &rule) != nil || rule.Kind != "VMRule" {
+			continue
+		}
+
+		for _, g := range rule.Spec.Groups {
+			for _, r := range g.Rules {
+				if r.Alert != "PodSecurityAuditViolations" {
+					continue
+				}
+
+				seen++
+
+				expr := strings.Join(strings.Fields(r.Expr), " ")
+				// A forwarded event (field set) matches.
+				assert.Contains(t, expr, "audit.violations:*")
+				// A collector startup line (phrase in the text, no field) does not.
+				assert.NotContains(t, expr, "pod-security.kubernetes.io/audit-violations")
+				assert.Equal(t,
+					`_time:24h audit.violations:*`+
+						` | rename k8s.cluster.name as k8s_cluster_name, audit.namespace as namespace`+
+						` | stats by (k8s_cluster_name, namespace) count() as violations`,
+					expr)
+			}
+		}
+	}
+
+	assert.Equal(t, 1, seen)
+}

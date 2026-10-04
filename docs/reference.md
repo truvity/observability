@@ -225,8 +225,8 @@ VMRule, `<release>-platform-alerts-logs`, carrying
 
 Off by default. One LogsQL alert, `PodSecurityAuditViolations`, over the API
 server's audit events in the log store (`observability-emitters`
-`cloudwatchLogs`): any event carrying the annotation
-`pod-security.kubernetes.io/audit-violations` in the window, counted per
+`cloudwatchLogs`): any event with a non-empty
+`audit.violations` field (the annotation `pod-security.kubernetes.io/audit-violations`, lifted by the reader) in the window, counted per
 cluster and namespace (`audit.namespace`). It is the worklist to clear before
 a namespace's Pod Security level goes from `warn`/`audit` to `enforce`. Rendered
 into the same `<release>-platform-alerts-logs` VMRule as `groups.podSecurity`.
