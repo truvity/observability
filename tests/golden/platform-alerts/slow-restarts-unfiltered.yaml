@@ -1,0 +1,64 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.restarts
+      interval: 1m
+      rules:
+        # A container whose last termination was an OOM kill AND that has
+        # restarted within `window`. `last_terminated_reason` keeps reading
+        # OOMKilled for as long as the pod lives, so on its own it would
+        # fire forever on a container that was killed once last week.
+        - alert: ContainerOOMKilled
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (kube_pod_container_status_last_terminated_reason{namespace=~"^(platform)$", reason="OOMKilled"} == 1)
+            and on (k8s_cluster_name, namespace, pod, container)
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(platform)$"}[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} was OOM-killed"
+            description: >-
+              The container restarted within the last 15m and its last
+              termination reason is OOMKilled: its memory limit is too low or it leaks.
+            runbook_url: "https://runbooks.example.com/ContainerOOMKilled"
+        - alert: ContainerRestartingOften
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(platform)$"}[1h])) > 5
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 5 times in 1h"
+            description: >-
+              A restart rate this high that is not a crash loop yet (the upstream
+              crash-loop alert needs the container to be waiting in back-off at the
+              moment it evaluates) still means the container cannot stay up.
+            runbook_url: "https://runbooks.example.com/ContainerRestartingOften"
+        # A crash loop too slow for the one above and for the upstream
+        # KubePodCrashLooping: a container that dies every hour or two
+        # restarts successfully each time, so it is never waiting in
+        # back-off at the moment a rule looks and the back-off resets.
+        # Only the restart counter over a long window sees it. Namespaces
+        # matching `slowRestartExcludeNamespaces` (CI runners restart pods
+        # by design) are left out; an empty value excludes nothing.
+        - alert: ContainerRestartingSlowly
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(platform)$"}[12h])) > 5
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 5 times in 12h"
+            description: >-
+              The container keeps dying and coming back, slowly enough that the
+              crash-loop alerts never fire. Check `kubectl logs --previous` and
+              the last termination reason and exit code of the container.
+            runbook_url: "https://runbooks.example.com/ContainerRestartingSlowly"

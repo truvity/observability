@@ -6,6 +6,23 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **Behaviour change (feat): `platform-alerts` `groups.restarts` gains
+  `ContainerRestartingSlowly`, a slow crash
+  loop.** A container that dies every hour or two restarts successfully each
+  time and resets its back-off, so neither the upstream `KubePodCrashLooping`
+  nor `ContainerRestartingOften` (1h window) ever fires. The new alert, in
+  `groups.restarts`, fires for 15m when
+  `increase(kube_pod_container_status_restarts_total[6h]) > 3`, per cluster,
+  namespace, pod and container, severity `warning`. New keys, all in
+  `groups.restarts`: `slowRestartWindow` (6h), `slowMaxRestarts` (3),
+  `slowRestartFor` (15m), `slowRestartSeverity` (warning) and
+  `slowRestartExcludeNamespaces`, a regular expression of namespaces to skip,
+  default `arc-.*|ci-.*` (CI runner namespaces restart pods by design); set
+  it empty to exclude nothing. The group stays off by default, so an install
+  that has not enabled `groups.restarts` renders exactly as before; one that
+  has gains this alert. The chart schema accepts the new keys; an older
+  chart's schema refuses them, so gate their use on the pin.
+
 ## v0.48.0
 
 - **feat(alert-ingress): CloudWatch alarm notifications map to Alertmanager

@@ -62,6 +62,9 @@ func TestGenericGapsRenderTheirExpressions(t *testing.T) {
 				`max by (` + pod + `) (` + oom + ` == 1) and on (` + pod + `) max by (` + pod + `) (` + restarts("15m") + `) > 0`,
 				"", "warning"},
 			"ContainerRestartingOften": {`max by (` + pod + `) (` + restarts("1h") + `) > 5`, "", "warning"},
+			"ContainerRestartingSlowly": {
+				`max by (` + pod + `) (increase(kube_pod_container_status_restarts_total{namespace=~"^(product-a)$", namespace!~"arc-.*|ci-.*"}[6h])) > 3`,
+				"15m", "warning"},
 		},
 		"platform-alerts.workload-absent": {
 			"DeploymentNoAvailableReplicas": {
@@ -95,4 +98,18 @@ func TestGenericGapsKeepTheSeriesClusterLabel(t *testing.T) {
 		require.NotNil(t, labels)
 		assert.NotContains(t, labels, "k8s_cluster_name", alert)
 	}
+}
+
+// The slow crash loop alert skips CI runner namespaces by default, and an
+// emptied exclusion renders no exclusion matcher at all.
+func TestSlowRestartsNamespaceExclusion(t *testing.T) {
+	const group = "platform-alerts.restarts"
+	def := groupAlerts(t, "golden/platform-alerts/generic-gaps.yaml", group)["ContainerRestartingSlowly"]
+	assert.Contains(t, def.expr, `namespace!~"arc-.*|ci-.*"`)
+	assert.Contains(t, def.expr, `[6h])) > 3`)
+
+	open := groupAlerts(t, "golden/platform-alerts/slow-restarts-unfiltered.yaml", group)["ContainerRestartingSlowly"]
+	assert.NotContains(t, open.expr, `namespace!~`)
+	assert.Contains(t, open.expr, `[12h])) > 5`)
+	assert.Equal(t, "15m", open.hold)
 }

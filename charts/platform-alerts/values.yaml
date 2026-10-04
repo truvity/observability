@@ -671,6 +671,19 @@ groups:
     # -- Restarts within `restartWindow` above which the second alert fires.
     maxRestarts: 5
     restartSeverity: warning
+    # -- The slow crash loop alert (`ContainerRestartingSlowly`): more than
+    # `slowMaxRestarts` restarts within `slowRestartWindow`, for
+    # `slowRestartFor`. Catches a container that dies every hour or two,
+    # which resets the back-off each time and so never trips a crash-loop
+    # alert.
+    slowRestartWindow: 6h
+    slowMaxRestarts: 3
+    slowRestartFor: 15m
+    slowRestartSeverity: warning
+    # -- A regular expression (fully anchored, like every PromQL matcher)
+    # over namespaces the slow alert skips, on top of `namespaceSelector`:
+    # CI runner namespaces restart pods by design. Empty excludes nothing.
+    slowRestartExcludeNamespaces: "arc-.*|ci-.*"
     keepClusterLabel: false
 
   # Deployments with nothing running.

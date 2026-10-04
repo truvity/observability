@@ -390,6 +390,11 @@
             "restartWindow": { "$ref": "#/definitions/duration" },
             "maxRestarts": { "type": "number", "minimum": 0 },
             "restartSeverity": { "$ref": "#/definitions/severity" },
+            "slowRestartWindow": { "$ref": "#/definitions/duration" },
+            "slowMaxRestarts": { "type": "number", "minimum": 0 },
+            "slowRestartFor": { "$ref": "#/definitions/duration" },
+            "slowRestartSeverity": { "$ref": "#/definitions/severity" },
+            "slowRestartExcludeNamespaces": { "type": "string" },
             "keepClusterLabel": { "type": "boolean" }
           }
         },

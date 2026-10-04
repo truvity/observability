@@ -1430,6 +1430,26 @@ spec:
               crash-loop alert needs the container to be waiting in back-off at the
               moment it evaluates) still means the container cannot stay up.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ContainerRestartingOften")) }}{{ . | nindent 12 }}{{- end }}
+        # A crash loop too slow for the one above and for the upstream
+        # KubePodCrashLooping: a container that dies every hour or two
+        # restarts successfully each time, so it is never waiting in
+        # back-off at the moment a rule looks and the back-off resets.
+        # Only the restart counter over a long window sees it. Namespaces
+        # matching `slowRestartExcludeNamespaces` (CI runners restart pods
+        # by design) are left out; an empty value excludes nothing.
+        - alert: ContainerRestartingSlowly
+          expr: >-
+            max by ({{ $b }}namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"{{ $rns }}"{{ if $g.slowRestartExcludeNamespaces }}, namespace!~"{{ $g.slowRestartExcludeNamespaces }}"{{ end }}}[{{ $g.slowRestartWindow }}])) > {{ $g.slowMaxRestarts }}
+          for: {{ $g.slowRestartFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.slowRestartSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Container {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}}/{{`{{ $labels.container }}`}} restarted more than {{ $g.slowMaxRestarts }} times in {{ $g.slowRestartWindow }}"
+            description: >-
+              The container keeps dying and coming back, slowly enough that the
+              crash-loop alerts never fire. Check `kubectl logs --previous` and
+              the last termination reason and exit code of the container.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ContainerRestartingSlowly")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
     {{- if .Values.groups.workloadAbsent.enabled }}
     {{- $g := .Values.groups.workloadAbsent }}
