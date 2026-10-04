@@ -6,8 +6,6 @@ must be done first, and whether a default moved. Newest first, one
 
 ## v0.50.1
 
-## v0.50.1
-
 - **Behaviour change (fix): `PodSecurityAuditViolations` counted the audit
   reader's own startup log.** The expression matched the phrase
   `pod-security.kubernetes.io/audit-violations` anywhere in a log line, and
