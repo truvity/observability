@@ -109,7 +109,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "envoyRoutes", "certificates", "restarts", "workloadAbsent"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent"],
       "properties": {
         "backups": {
           "type": "object",
@@ -411,6 +411,18 @@
           }
         },
         "podSecurity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "podSecurityAudit": {
           "type": "object",
           "additionalProperties": false,
           "required": ["enabled"],

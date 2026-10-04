@@ -488,6 +488,39 @@
         }
       }
     },
+    "cloudwatchLogs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "region": { "type": "string" },
+        "logGroup": { "type": "string" },
+        "streamPrefixes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "match": { "type": "string" },
+        "namespace": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+        "serviceName": { "type": "string", "minLength": 1 },
+        "pollInterval": { "$ref": "#/definitions/duration" },
+        "initialLookback": { "$ref": "#/definitions/duration" },
+        "maxEventsPerRequest": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "name": { "type": "string" }, "annotations": { "type": "object" } }
+        },
+        "image": { "$ref": "#/definitions/image" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "type": "object" },
+        "containerSecurityContext": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "queue": { "$ref": "#/definitions/queue" },
+        "podMonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "enabled": { "type": "boolean" }, "extraLabels": { "type": "object" } }
+        }
+      }
+    },
     "blackboxExporter": {
       "type": "object",
       "additionalProperties": false,

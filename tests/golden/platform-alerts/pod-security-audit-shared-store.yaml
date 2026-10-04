@@ -1,0 +1,50 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts-logs
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.rule-type: vlogs
+spec:
+  groups:
+    - name: platform-alerts.pod-security-audit
+      type: vlogs
+      interval: 1m
+      rules:
+        # Requests that Pod Security `audit` mode says would be refused at
+        # `enforce`: the evidence to read BEFORE a namespace is switched.
+        #
+        # Evidence is the Kubernetes API server's audit log, which carries
+        # the annotation `pod-security.kubernetes.io/audit-violations` on
+        # the request that would have been refused. EKS offers no way out of
+        # CloudWatch for it, so `observability-emitters` `cloudwatchLogs`
+        # reads the audit stream, keeps only the events with that annotation
+        # and lifts the event's own namespace into `audit.namespace` (the
+        # record itself is filed under a platform namespace, never the
+        # tenant's). The annotation text (which control, which container) is
+        # in `audit.violations` and in the body.
+        - alert: PodSecurityAuditViolations
+          expr: >-
+            _time:24h "pod-security.kubernetes.io/audit-violations"
+            | rename k8s.cluster.name as k8s_cluster_name, audit.namespace as namespace
+            | stats by (k8s_cluster_name, namespace) count() as violations
+          for: 0s
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Pod Security audit violations in {{ $labels.namespace }}"
+            description: >-
+              Requests in namespace {{ $labels.namespace }} would be refused
+              if the namespace's Pod Security level were `enforce`: {{ $value }}
+              audited in the last 24h. Nothing is broken yet. The
+              annotation names every violated control and the container: search
+              the log store for `audit.namespace:"{{ $labels.namespace }}"` and
+              read `audit.violations`. Fix the workload before the namespace
+              switches to `enforce` (runAsNonRoot, allowPrivilegeEscalation=false,
+              capabilities drop ALL, seccompProfile RuntimeDefault). Clears by
+              itself 24h after the last violation.

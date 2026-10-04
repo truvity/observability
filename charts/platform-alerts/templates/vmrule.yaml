@@ -54,12 +54,12 @@ on it would add nothing but a way to fail.
 {{- if .Values.ownerLabel -}}{{- $b = printf "%s%s, " $c .Values.ownerLabel -}}{{- end -}}
 {{- /*
 The metrics VMRule renders when at least one group other than `podSecurity`
-is on. `podSecurity` is LogsQL and has an object of its own below: one
+is on. `podSecurity` and `podSecurityAudit` are LogsQL and have an object of their own below: one
 VMRule cannot serve both alerters, because the metrics vmalert takes every
 rule NOT marked `observability.rule-type: vlogs` and the logs one only
 those that are.
 */ -}}
-{{- $metricsGroups := without $enabled "podSecurity" -}}
+{{- $metricsGroups := without $enabled "podSecurity" "podSecurityAudit" -}}
 {{- if $metricsGroups }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
@@ -1478,16 +1478,7 @@ spec:
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "DeploymentNoAvailableReplicas")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
 {{- end }}
-{{- if .Values.groups.podSecurity.enabled }}
-{{- $g := .Values.groups.podSecurity }}
-{{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
-{{- $by := list }}
-{{- if .Values.clusterLabel }}{{- $by = append $by .Values.clusterLabel }}{{- end }}
-{{- $by = concat $by (list "namespace" "owner_kind" "owner_name") }}
-{{- if .Values.ownerLabel }}{{- $by = append $by .Values.ownerLabel }}{{- end }}
-{{- $renames := list }}
-{{- if .Values.clusterLabel }}{{- $renames = append $renames (printf "k8s.cluster.name as %s" .Values.clusterLabel) }}{{- end }}
-{{- $renames = concat $renames (list "k8s.namespace.name as namespace" "k8s.object.kind as owner_kind" "k8s.object.name as owner_name") }}
+{{- if or .Values.groups.podSecurity.enabled .Values.groups.podSecurityAudit.enabled }}
 ---
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
@@ -1500,6 +1491,16 @@ metadata:
     {{- toYaml (merge (dict "observability.rule-type" "vlogs") .Values.ruleLabels) | nindent 4 }}
 spec:
   groups:
+{{- if .Values.groups.podSecurity.enabled }}
+{{- $g := .Values.groups.podSecurity }}
+{{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+{{- $by := list }}
+{{- if .Values.clusterLabel }}{{- $by = append $by .Values.clusterLabel }}{{- end }}
+{{- $by = concat $by (list "namespace" "owner_kind" "owner_name") }}
+{{- if .Values.ownerLabel }}{{- $by = append $by .Values.ownerLabel }}{{- end }}
+{{- $renames := list }}
+{{- if .Values.clusterLabel }}{{- $renames = append $renames (printf "k8s.cluster.name as %s" .Values.clusterLabel) }}{{- end }}
+{{- $renames = concat $renames (list "k8s.namespace.name as namespace" "k8s.object.kind as owner_kind" "k8s.object.name as owner_name") }}
     - name: platform-alerts.pod-security
       type: vlogs
       interval: {{ .Values.interval }}
@@ -1548,4 +1549,52 @@ spec:
               cluster configuration. Clears by itself {{ $g.window }} after
               the last rejection.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "PodSecurityAdmissionRejected")) }}{{ . | nindent 12 }}{{- end }}
+{{- end }}
+{{- if .Values.groups.podSecurityAudit.enabled }}
+{{- $g := .Values.groups.podSecurityAudit }}
+{{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+{{- $by := list }}
+{{- if .Values.clusterLabel }}{{- $by = append $by .Values.clusterLabel }}{{- end }}
+{{- $by = append $by "namespace" }}
+{{- $renames := list }}
+{{- if .Values.clusterLabel }}{{- $renames = append $renames (printf "k8s.cluster.name as %s" .Values.clusterLabel) }}{{- end }}
+{{- $renames = append $renames "audit.namespace as namespace" }}
+    - name: platform-alerts.pod-security-audit
+      type: vlogs
+      interval: {{ .Values.interval }}
+      rules:
+        # Requests that Pod Security `audit` mode says would be refused at
+        # `enforce`: the evidence to read BEFORE a namespace is switched.
+        #
+        # Evidence is the Kubernetes API server's audit log, which carries
+        # the annotation `pod-security.kubernetes.io/audit-violations` on
+        # the request that would have been refused. EKS offers no way out of
+        # CloudWatch for it, so `observability-emitters` `cloudwatchLogs`
+        # reads the audit stream, keeps only the events with that annotation
+        # and lifts the event's own namespace into `audit.namespace` (the
+        # record itself is filed under a platform namespace, never the
+        # tenant's). The annotation text (which control, which container) is
+        # in `audit.violations` and in the body.
+        - alert: PodSecurityAuditViolations
+          expr: >-
+            _time:{{ $g.window }} "pod-security.kubernetes.io/audit-violations"
+            | rename {{ join ", " $renames }}
+            | stats by ({{ join ", " $by }}) count() as violations
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Pod Security audit violations in {{`{{ $labels.namespace }}`}}"
+            description: >-
+              Requests in namespace {{`{{ $labels.namespace }}`}} would be refused
+              if the namespace's Pod Security level were `enforce`: {{`{{ $value }}`}}
+              audited in the last {{ $g.window }}. Nothing is broken yet. The
+              annotation names every violated control and the container: search
+              the log store for `audit.namespace:"{{`{{ $labels.namespace }}`}}"` and
+              read `audit.violations`. Fix the workload before the namespace
+              switches to `enforce` (runAsNonRoot, allowPrivilegeEscalation=false,
+              capabilities drop ALL, seccompProfile RuntimeDefault). Clears by
+              itself {{ $g.window }} after the last violation.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "PodSecurityAuditViolations")) }}{{ . | nindent 12 }}{{- end }}
+{{- end }}
 {{- end }}

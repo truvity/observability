@@ -28,6 +28,7 @@ instead.
 {{- include "observability-emitters.validate.kubeStateMetrics" . -}}
 {{- include "observability-emitters.validate.nodeExporter" . -}}
 {{- include "observability-emitters.validate.otlp" . -}}
+{{- include "observability-emitters.validate.cloudwatchLogs" . -}}
 {{- include "observability-emitters.validate.probes" . -}}
 {{- include "observability-emitters.validate.licence" . -}}
 {{- end -}}
@@ -899,6 +900,39 @@ exporter answers 400 and no `probe_success` series is ever written.
 {{- if not (hasKey ($.Values.blackboxExporter.modules | default dict) $m) -}}
 {{- fail (printf "observability-emitters: probe %q names module %q, which is not a key of `blackboxExporter.modules` (%s). The exporter would answer 400 to every probe and write no `probe_success` series, so the alert on it could never fire. Name an existing module, or define it under `blackboxExporter.modules`." $p.name $m (keys $.Values.blackboxExporter.modules | sortAlpha | join ", ")) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The CloudWatch reader (`cloudwatchLogs`).
+
+Each of these is a reader that starts, reports healthy and reads nothing
+(or writes nowhere): an empty region or group is a poll that finds no log
+group, a missing destination is a pipeline with no exporter, and a missing
+stream-field list files every resource attribute as a stream field.
+*/}}
+{{- define "observability-emitters.validate.cloudwatchLogs" -}}
+{{- $c := .Values.cloudwatchLogs -}}
+{{- if $c.enabled -}}
+{{- if not $c.region -}}
+{{- fail "observability-emitters: `cloudwatchLogs.enabled` is true but `cloudwatchLogs.region` is empty. The receiver would poll no region and read nothing, while the pod stays Ready. Name the AWS region of the log group." -}}
+{{- end -}}
+{{- if not (hasPrefix "/" ($c.logGroup | default "")) -}}
+{{- fail "observability-emitters: `cloudwatchLogs.logGroup` must be the log group's name, starting with `/` (for an EKS control plane, `/aws/eks/<cluster>/cluster`). It is matched as a prefix when the receiver discovers groups, so a short or empty value would read every group the role can see." -}}
+{{- end -}}
+{{- if not $c.streamPrefixes -}}
+{{- fail "observability-emitters: `cloudwatchLogs.streamPrefixes` is empty, so the receiver would read EVERY stream of the log group: for an EKS control plane that is the API server, authenticator, controller manager and scheduler logs as well as the audit log, several times the volume, and not what `match` was written for. Name the stream prefix (`kube-apiserver-audit-`)." -}}
+{{- end -}}
+{{- $dest := include "observability-emitters.effectiveOtlpDestinations" (dict "root" . "signal" "logs") | fromYamlArray -}}
+{{- if not $dest -}}
+{{- fail "observability-emitters: `cloudwatchLogs.enabled` is true but there is no log destination (`otlp.destinations.logs` or `remote`). The pipeline would have no exporter, and everything it read would be discarded." -}}
+{{- end -}}
+{{- if not .Values.otlp.streamFields -}}
+{{- fail "observability-emitters: `cloudwatchLogs` writes through the gateway's `otlp.streamFields`, and that list is empty, so no `VL-Stream-Fields` header would be sent and VictoriaLogs would treat every resource attribute as a stream field. Name the fields (see `otlp.streamFields`)." -}}
+{{- end -}}
+{{- if has $c.namespace (list "kube-system" "default") -}}
+{{- fail (printf "observability-emitters: `cloudwatchLogs.namespace` is %q, a namespace workloads run in. Everything this reader writes is filed under it, and a read grant on that namespace would then read the API server's audit events. Use a namespace of its own (the default, `kube-audit`)." $c.namespace) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

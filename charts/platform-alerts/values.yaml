@@ -604,6 +604,27 @@ groups:
     # several clusters (the vmalert evaluating it names only its own).
     keepClusterLabel: false
 
+  # Pod Security `audit` violations, from the API server's audit log.
+  #
+  # Off by default. LogsQL, like `podSecurity`, and rendered into the same
+  # `<release>-platform-alerts-logs` VMRule (a logs vmalert evaluates it).
+  # One warning per cluster and namespace when any request in the window
+  # carried the annotation `pod-security.kubernetes.io/audit-violations`:
+  # what `enforce` would refuse, found before the switch. It needs the
+  # audit events in the log store: `observability-emitters`
+  # `cloudwatchLogs` (an EKS control plane's audit log, narrowed to those
+  # events), which also lifts the event's namespace into `audit.namespace`.
+  podSecurityAudit:
+    enabled: false
+    # -- Look-back, and so how long a namespace stays flagged after its last
+    # violation. A day: these are not incidents but a worklist.
+    window: 24h
+    # -- 0s: the evidence is already a day wide.
+    for: 0s
+    severity: warning
+    # -- Keep each event's own cluster label (see `podSecurity`).
+    keepClusterLabel: false
+
   # Per-route Envoy 5xx ratio and p99 latency.
   #
   # Off by default: it reads the Envoy Gateway data plane's own metrics. Names

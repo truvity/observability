@@ -221,6 +221,24 @@ VMRule, `<release>-platform-alerts-logs`, carrying
 | `severity` | string | `warning` | Severity label. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 
+### `groups.podSecurityAudit`
+
+Off by default. One LogsQL alert, `PodSecurityAuditViolations`, over the API
+server's audit events in the log store (`observability-emitters`
+`cloudwatchLogs`): any event carrying the annotation
+`pod-security.kubernetes.io/audit-violations` in the window, counted per
+cluster and namespace (`audit.namespace`). It is the worklist to clear before
+a namespace's Pod Security level goes from `warn`/`audit` to `enforce`. Rendered
+into the same `<release>-platform-alerts-logs` VMRule as `groups.podSecurity`.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | bool | `false` | Render the group. |
+| `window` | duration | `24h` | Look-back; also how long a namespace stays flagged after its last violation. |
+| `for` | duration | `0s` | Hold time. |
+| `severity` | string | `warning` | Severity label. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
+
 ### `groups.nodeClaims`
 
 Off by default. For a cluster whose nodes Karpenter provisions (including
@@ -1179,6 +1197,35 @@ subchart unchanged (the operator, the stores, Grafana), where the API
 server reads it as a CPU limit of 0 and refuses the pod; the chart
 refuses that render first. Give those a whole-number limit well above
 the request.
+
+
+## `cloudwatchLogs`
+
+Reads an AWS CloudWatch log group through the collector's `awscloudwatch`
+receiver (alpha upstream) and writes it to the gateway's log destinations.
+Built for an EKS control plane's API-server AUDIT log, narrowed to the events
+carrying `match` (default: the Pod Security audit annotation). Off by default;
+no existing render moves. One replica, with a volume for the read position and
+send queue; the receiver has no leader election. AWS credentials are ambient:
+bind the ServiceAccount to a role that may `logs:FilterLogEvents`,
+`logs:GetLogEvents`, `logs:DescribeLogStreams` on the group and
+`logs:DescribeLogGroups`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Render the reader. |
+| `region`, `logGroup` | required | Region and the whole name of the log group (`/aws/eks/<cluster>/cluster`). |
+| `streamPrefixes` | `[kube-apiserver-audit-]` | Streams read; refused empty. |
+| `match` | `pod-security.kubernetes.io/audit-violations` | Literal phrase an event must contain; empty keeps everything. |
+| `namespace` | `kube-audit` | The namespace every record is filed under (the scoping key), never the event's own, which is the field `audit.namespace`. Refused: `default`, `kube-system`. |
+| `serviceName` | `kube-apiserver-audit` | `service.name`. |
+| `pollInterval`, `initialLookback`, `maxEventsPerRequest` | `1m`, `10m`, `1000` | Receiver settings; the lookback is the first start only. |
+| `serviceAccount.name` / `.annotations` | `<fullname>-cloudwatch` / `{}` | Name it explicitly when an IAM binding must match byte for byte. |
+| `image`, `resources`, `podSecurityContext`, `containerSecurityContext`, `nodeSelector`, `tolerations`, `queue`, `podMonitor` | as the gateway | Same shapes as `otlp.*`. |
+
+Fields written on each record: `audit.namespace`, `audit.resource`,
+`audit.verb`, `audit.user`, `audit.id`, `audit.violations`; the body is the
+whole audit event.
 
 ## `charts/observability-emitters`
 
