@@ -1,0 +1,18 @@
+# The slow crash loop alert with its namespace exclusion emptied (nothing
+# excluded) and its thresholds moved.
+namespaceSelector: "^(platform)$"
+runbookBaseUrl: https://runbooks.example.com/
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  restarts:
+    enabled: true
+    slowRestartExcludeNamespaces: ""
+    slowRestartWindow: 12h
+    slowMaxRestarts: 5
