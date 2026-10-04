@@ -6,6 +6,18 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **feat(observability-stack): a per-cluster threshold for
+  `TooHighChurnRate24h`.** The vmsingle self-monitoring alert fires when 24h
+  of new series exceeds three times the hourly active series, which a store
+  holding short-lived CI workloads reaches without anything being wrong. Set
+  `victoria-metrics-k8s-stack.defaultRules.rules.TooHighChurnRate24h.spec.expr`
+  to upstream's expression with a higher factor (see `docs/reference.md`).
+  The alert keeps its name, `for`, labels and annotations, so silences and
+  routes still match. Nothing is set by default: the render is unchanged and
+  upstream's factor of 3 applies. (A chart-level factor value is not
+  possible: the sync job reads the rule override from the subchart's own
+  values, which Helm cannot compute from the parent's.)
+
 ## v0.52.0
 
 - **Behaviour change (feat(observability-emitters)): no pod-level
