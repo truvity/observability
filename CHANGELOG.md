@@ -6,8 +6,9 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
-- fix(observability-emitters): the CI node-pool helper label never reaches
-  storage. `metrics.scrape.kubeletDrop.ciNodePools` (v0.51.0) copies the
+- **Behaviour change (fix(observability-emitters)): the CI node-pool helper
+  label never reaches storage.** Only with `ciNodePools` set; leaving it
+  unset restores the previous render. `metrics.scrape.kubeletDrop.ciNodePools` (v0.51.0) copies the
   node's pool into the temporary target label `kubelet_ci_nodepool_tmp` and
   dropped it in the job's `metric_relabel_configs`, which never apply to the
   series the agent generates per target (`up`, `scrape_duration_seconds`,
