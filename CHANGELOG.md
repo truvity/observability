@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.53.0
+
 - **Behaviour change (feat(observability-emitters)): more per-node series
   dropped on CI node pools.** Only on nodes of `kubeletDrop.ciNodePools`
   (default empty, so nothing moves without it): the `_bucket` series of
