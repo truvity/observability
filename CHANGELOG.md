@@ -6,6 +6,10 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.52.1
+
+- Dependency updates.
+
 ## v0.52.0
 
 - **Behaviour change (feat(observability-emitters)): no pod-level
