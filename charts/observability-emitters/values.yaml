@@ -535,6 +535,27 @@ metrics:
         - kubelet_runtime_operations_duration_seconds_bucket
         - storage_operation_duration_seconds_bucket
         - rest_client_request_duration_seconds_bucket
+        # The kubelet dashboard reads these for the long-lived nodes; every
+        # replaced CI node mints a fresh set (measured: a CI-heavy store
+        # created ~410 nodes a day, ~2k kubelet and cadvisor series each).
+        # `_sum` and `_count` stay.
+        - kubelet_pod_worker_duration_seconds_bucket
+        - kubelet_cgroup_manager_duration_seconds_bucket
+        - kubelet_pod_start_duration_seconds_bucket
+        - kubelet_pod_start_total_duration_seconds_bucket
+        - kubelet_pod_start_sli_duration_seconds_bucket
+        - kubelet_image_pull_duration_seconds_bucket
+        - dra_operations_duration_seconds_bucket
+        - authentication_token_cache_request_duration_seconds_bucket
+      # -- Cadvisor series (metric-name regex alternatives, matched whole)
+      # dropped on `ciNodePools` nodes only: per-container filesystem
+      # counters (nothing here reads them) and the per-interface network
+      # packet/error counters (the dashboards keep the byte counters).
+      # Non-CI nodes are unchanged. Needs `ciNodePools`; empty list
+      # renders nothing.
+      ciNodePoolCadvisorMetrics:
+        - container_fs_.*
+        - container_network_(receive|transmit)_(packets|errors|packets_dropped)_total
   # -- Anything else in the VMAgent spec, merged over what this chart
   # renders.
   #
