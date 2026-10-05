@@ -237,3 +237,43 @@ func TestKubeletCINodePoolsDefaultIsNoop(t *testing.T) {
 	assert.NotContains(t, inline, "kubelet_ci_nodepool_tmp")
 	assert.NotContains(t, inline, "karpenter_sh_nodepool")
 }
+
+// ciNodePools: the further kubelet histograms and the cadvisor fs/network
+// series are dropped on CI pool nodes only; the byte counters, the other
+// pools and every other metric are untouched, and the temporary pool label
+// never survives on the cadvisor job either.
+func TestCINodePoolFurtherDrops(t *testing.T) {
+	const tmp = "kubelet_ci_nodepool_tmp"
+	run := func(cfgs []*relabel.Config, pool, name string) (map[string]string, bool) {
+		lb := labels.NewBuilder(labels.FromMap(map[string]string{"__name__": name, "node": "n1", tmp: pool}))
+		keep := relabel.ProcessBuilder(lb, cfgs...)
+		return lb.Labels().Map(), keep
+	}
+	const g = "golden/observability-emitters/kubelet-ci-nodepools.yaml"
+	kub := scrapeJobMetricRelabelConfigs(t, g, "kubelet")
+	for _, name := range []string{"kubelet_pod_worker_duration_seconds_bucket", "kubelet_image_pull_duration_seconds_bucket", "dra_operations_duration_seconds_bucket", "kubelet_pod_start_duration_seconds_bucket"} {
+		_, keep := run(kub, "ci-runners", name)
+		assert.Falsef(t, keep, "%s on a CI pool is dropped", name)
+		_, keep = run(kub, "general", name)
+		assert.Truef(t, keep, "%s on another pool is kept", name)
+	}
+	cad := scrapeJobMetricRelabelConfigs(t, g, "cadvisor")
+	for _, name := range []string{"container_fs_reads_total", "container_fs_usage_bytes", "container_network_receive_packets_total", "container_network_transmit_errors_total"} {
+		_, keep := run(cad, "buildkit", name)
+		assert.Falsef(t, keep, "%s on a CI pool is dropped", name)
+		got, keep := run(cad, "general", name)
+		require.Truef(t, keep, "%s on another pool is kept", name)
+		_, leaked := got[tmp]
+		assert.False(t, leaked, "the temporary pool label must not reach a stored series")
+	}
+	for _, name := range []string{"container_network_receive_bytes_total", "container_cpu_usage_seconds_total"} {
+		got, keep := run(cad, "ci-runners", name)
+		require.Truef(t, keep, "%s on a CI pool is kept", name)
+		_, leaked := got[tmp]
+		assert.False(t, leaked, "the temporary pool label must not reach a stored series")
+	}
+	// Without ciNodePools the cadvisor job carries no such rule.
+	min := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/minimal.yaml", "cadvisor")
+	_, keep := run(min, "ci-runners", "container_fs_reads_total")
+	assert.True(t, keep)
+}

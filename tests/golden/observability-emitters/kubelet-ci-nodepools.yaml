@@ -729,7 +729,7 @@ spec:
         - action: drop
           source_labels: [kubelet_ci_nodepool_tmp, __name__]
           separator: ";"
-          regex: ^(ci-runners|buildkit);(kubelet_runtime_operations_duration_seconds_bucket|storage_operation_duration_seconds_bucket|rest_client_request_duration_seconds_bucket)$
+          regex: ^(ci-runners|buildkit);(kubelet_runtime_operations_duration_seconds_bucket|storage_operation_duration_seconds_bucket|rest_client_request_duration_seconds_bucket|kubelet_pod_worker_duration_seconds_bucket|kubelet_cgroup_manager_duration_seconds_bucket|kubelet_pod_start_duration_seconds_bucket|kubelet_pod_start_total_duration_seconds_bucket|kubelet_pod_start_sli_duration_seconds_bucket|kubelet_image_pull_duration_seconds_bucket|dra_operations_duration_seconds_bucket|authentication_token_cache_request_duration_seconds_bucket)$
         - action: labeldrop
           regex: kubelet_ci_nodepool_tmp
     - job_name: cadvisor
@@ -753,6 +753,8 @@ spec:
           target_label: metrics_path
         - target_label: job
           replacement: kubelet
+        - source_labels: [__meta_kubernetes_node_label_karpenter_sh_nodepool]
+          target_label: kubelet_ci_nodepool_tmp
       metric_relabel_configs:
         - source_labels: [namespace]
           regex: (.+)
@@ -787,6 +789,12 @@ spec:
           regex: (.+);.+
           target_label: id
           replacement: ""
+        - action: drop
+          source_labels: [kubelet_ci_nodepool_tmp, __name__]
+          separator: ";"
+          regex: ^(ci-runners|buildkit);(container_fs_.*|container_network_(receive|transmit)_(packets|errors|packets_dropped)_total)$
+        - action: labeldrop
+          regex: kubelet_ci_nodepool_tmp
   overrideHonorLabels: true
   remoteWrite:
   - bearerTokenSecret:

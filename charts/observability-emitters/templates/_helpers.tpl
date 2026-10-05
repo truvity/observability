@@ -700,10 +700,23 @@ job has its own (`cadvisorDrop`).
 {{- if .Values.metrics.scrape.cadvisorAsKubeletJob }}
 {{ include "observability-emitters.cadvisorJobLabelRelabelConfig" . | indent 4 }}
 {{- end }}
+{{- if and .Values.metrics.scrape.kubeletDrop.enabled .Values.metrics.scrape.kubeletDrop.ciNodePools .Values.metrics.scrape.kubeletDrop.ciNodePoolCadvisorMetrics }}
+    - source_labels: [__meta_kubernetes_node_label_karpenter_sh_nodepool]
+      target_label: kubelet_ci_nodepool_tmp
+{{- end }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
 {{- with (include "observability-emitters.scrapeConfig.cadvisorChurnDropMetricRelabelConfigs" .) }}
 {{ . | indent 4 }}
+{{- end }}
+{{- $kd := .Values.metrics.scrape.kubeletDrop }}
+{{- if and $kd.enabled $kd.ciNodePools $kd.ciNodePoolCadvisorMetrics }}
+    - action: drop
+      source_labels: [kubelet_ci_nodepool_tmp, __name__]
+      separator: ";"
+      regex: ^({{ join "|" $kd.ciNodePools }});({{ join "|" $kd.ciNodePoolCadvisorMetrics }})$
+    - action: labeldrop
+      regex: kubelet_ci_nodepool_tmp
 {{- end }}
 {{- end -}}
 
