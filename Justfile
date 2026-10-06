@@ -2,7 +2,7 @@
 # check workflow (truvity/ci-workflows) runs each one as its own job, so a
 # laptop and CI run the same thing.
 
-charts := "observability-crds observability-emitters observability-stack platform-alerts alert-ingress observability-dashboards observability-grafana observability-mcp observability-rum"
+charts := "observability-crds observability-emitters observability-stack platform-alerts alert-ingress observability-dashboards observability-grafana observability-mcp observability-rum observability-projects"
 
 # The parent workspace would otherwise interfere with this standalone
 # module.

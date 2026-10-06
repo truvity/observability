@@ -1,0 +1,5 @@
+# expect: is listed twice
+# A namespace is one row.
+projects:
+  - name: shop
+  - name: shop
