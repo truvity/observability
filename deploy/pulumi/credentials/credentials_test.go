@@ -167,10 +167,10 @@ func TestMetricsBackupRole(t *testing.T) {
 	m, _ := run(t, func(p *aws.Provider) Inputs {
 		in := kernelInputs(nil, p)
 		in.Kernel.MetricsBackup = &MetricsBackup{
-			ClusterName: "hub", Region: "eu-west-1", AccountID: "123456789012",
-			PermissionsBoundary: "arn:aws:iam::123456789012:policy/boundary",
+			ClusterName: "hub", ClusterARN: "cluster-arn", Region: "eu-west-1", AccountID: "acct",
+			PermissionsBoundary: "boundary-arn",
 			Namespace:           "observability", ServiceAccount: "backup", RoleName: "hub-metrics-backup",
-			Prefix: "metrics", BucketARN: "arn:aws:s3:::bucket", KMSKeyARN: "arn:aws:kms:eu-west-1:123456789012:key/k",
+			Prefix: "metrics", BucketARN: "bucket-arn", KMSKeyARN: "key-arn",
 			BucketName: "bucket",
 		}
 
@@ -184,12 +184,12 @@ func TestMetricsBackupRole(t *testing.T) {
 }
 
 func TestMetricsBackupPolicyScopedToPrefix(t *testing.T) {
-	doc, err := metricsBackupPolicy("pfx", "arn:aws:s3:::b", "arn:aws:kms:r:1:key/k")
+	doc, err := metricsBackupPolicy("pfx", "bucket-arn", "key-arn")
 	require.NoError(t, err)
 
 	for _, want := range []string{
-		`"arn:aws:s3:::b/pfx/*"`, `"s3:PutObject"`, `"s3:GetObject"`, `"s3:DeleteObject"`, `"s3:ListBucket"`,
-		`"kms:Decrypt"`, `"arn:aws:kms:r:1:key/k"`, `"s3:prefix"`, `"pfx"`,
+		`"bucket-arn/pfx/*"`, `"s3:PutObject"`, `"s3:GetObject"`, `"s3:DeleteObject"`, `"s3:ListBucket"`,
+		`"kms:Decrypt"`, `"key-arn"`, `"s3:prefix"`, `"pfx"`,
 	} {
 		assert.Contains(t, doc, want)
 	}

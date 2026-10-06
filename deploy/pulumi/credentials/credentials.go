@@ -149,7 +149,9 @@ type (
 	// MetricsBackup is the role the metrics store's backup jobs run as, through
 	// EKS Pod Identity, with no static key.
 	MetricsBackup struct {
-		ClusterName         string
+		ClusterName string
+		// ClusterARN is the cluster's ARN, which the association is bound to.
+		ClusterARN          string
 		Region              string
 		AccountID           string
 		PermissionsBoundary string
@@ -425,7 +427,7 @@ func mintMetricsBackupRole(ctx *pulumi.Context, logger *slog.Logger, provider *a
 		RoleName:            b.RoleName,
 		PermissionsBoundary: b.PermissionsBoundary,
 		AccountID:           b.AccountID,
-		ClusterARN:          fmt.Sprintf("arn:aws:eks:%s:%s:cluster/%s", b.Region, b.AccountID, b.ClusterName),
+		ClusterARN:          b.ClusterARN,
 		InlinePolicy:        &podidentity.InlinePolicy{Name: "observability-metrics-backup", Document: pulumi.String(policy)},
 		LegacyTopLevel:      true,
 		Names: func(c podidentity.Child) string {
