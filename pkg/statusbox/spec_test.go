@@ -38,7 +38,10 @@ func TestSpecValidate(t *testing.T) {
 			s.Entities = map[string]statusbox.EntitySpec{"acme": {DisplayName: "x"}}
 			s.TunnelHosts = nil
 		}, "entities.acme.hostname is required"},
-		"tunnel":     {func(s *statusbox.Spec) { s.TunnelHosts = []string{"status.nowhere.example"} }, `tunnel_hosts[0] "status.nowhere.example" names no entities.*.hostname`},
+		"tunnel": {
+			func(s *statusbox.Spec) { s.TunnelHosts = []string{"status.nowhere.example"} },
+			`tunnel_hosts[0] "status.nowhere.example" names no entities.*.hostname`,
+		},
 		"empty host": {func(s *statusbox.Spec) { s.TunnelHosts = []string{""} }, "tunnel_hosts[0] is empty"},
 	} {
 		s := ok
