@@ -6,26 +6,7 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
-## v0.54.0
-
-`deploy/pulumi/status`: the status box's Pulumi mechanism moves in from the
-estate repository (no chart change). It renders both Gatus instances from one
-catalogue (`OpsCatalogue`, `PlatformHosts`, `HostsByCompany`), mints the box's
-one-shot tailnet join key and creates the Lightsail machine. Providers, host
-groups, secrets and the tunnel token are the caller's `Inputs`.
-
-`deploy/pulumi/credentials`: the install's credentials (store basic-auth
-password, write token, the management cluster's status-box and evaluator
-bearers, the metrics-backup Pod Identity role) move in from the estate
-repository (no chart change). Resource types and logical names are unchanged;
-rotation levers, SSM paths and namespaces are the caller's `Inputs`.
-
-Pulumi packages move in from the estate repository (no chart change):
-`deploy/pulumi/releaseassets` (verified release-asset download),
-`deploy/pulumi/otlplayer` (publishes the OTLP Lambda layer) and
-`deploy/pulumi/lambdaprobe` (the layer plus a heartbeat probe function; the
-caller passes a `Config`, the permissions-boundary ARN and the provider).
-Resource types and logical names are unchanged from the code they replace.
+## v0.55.0
 
 - **feat(charts): chart presets, values files shipped inside the chart.** A
   subchart's values cannot be computed from the parent's, so a value that is
@@ -52,6 +33,27 @@ Resource types and logical names are unchanged from the code they replace.
   derive a subchart value. Each preset case in `tests/cases` is rendered beside
   the same values written out in full and the two goldens must be equal
   (`tests/presets_test.go`); `hack/golden.sh` takes a `presets` file per case.
+
+## v0.54.0
+
+`deploy/pulumi/status`: the status box's Pulumi mechanism moves in from the
+estate repository (no chart change). It renders both Gatus instances from one
+catalogue (`OpsCatalogue`, `PlatformHosts`, `HostsByCompany`), mints the box's
+one-shot tailnet join key and creates the Lightsail machine. Providers, host
+groups, secrets and the tunnel token are the caller's `Inputs`.
+
+`deploy/pulumi/credentials`: the install's credentials (store basic-auth
+password, write token, the management cluster's status-box and evaluator
+bearers, the metrics-backup Pod Identity role) move in from the estate
+repository (no chart change). Resource types and logical names are unchanged;
+rotation levers, SSM paths and namespaces are the caller's `Inputs`.
+
+Pulumi packages move in from the estate repository (no chart change):
+`deploy/pulumi/releaseassets` (verified release-asset download),
+`deploy/pulumi/otlplayer` (publishes the OTLP Lambda layer) and
+`deploy/pulumi/lambdaprobe` (the layer plus a heartbeat probe function; the
+caller passes a `Config`, the permissions-boundary ARN and the provider).
+Resource types and logical names are unchanged from the code they replace.
 
 ## v0.53.0
 
