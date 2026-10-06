@@ -6,6 +6,12 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+`deploy/pulumi/credentials`: the install's credentials (store basic-auth
+password, write token, the management cluster's status-box and evaluator
+bearers, the metrics-backup Pod Identity role) move in from the estate
+repository (no chart change). Resource types and logical names are unchanged;
+rotation levers, SSM paths and namespaces are the caller's `Inputs`.
+
 ## v0.53.0
 
 - **Behaviour change (feat(observability-emitters)): more per-node series
