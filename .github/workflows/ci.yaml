@@ -42,7 +42,7 @@ jobs:
       # job summary, and fails this job when a rule fails.
       policy-conformance: true
       policy-conformance-strict: true
-      recipes: '["lint", "test", "leak-canary", "dashboard-lint", "rulecheck", "apply", "reconcile", "statusbox", "statusbox-debian"]'
+      recipes: '["lint", "test", "portal", "leak-canary", "dashboard-lint", "rulecheck", "apply", "reconcile", "statusbox", "statusbox-debian"]'
 
   # Pull-request only: a change to an existing golden is a default-render
   # change and must be declared in CHANGELOG.md. See

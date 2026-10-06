@@ -6,6 +6,17 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+`observability-portal` (new chart) and `apps/portal` (new app): the entrypoint
+page of an estate. A TypeScript, React and Vite single-page app with a generic
+built-in catalog and no estate data, behind an unprivileged nginx, published as
+`ghcr.io/truvity/observability/portal` at every tag beside the charts. An estate
+adds its entries and sections through `portal.extraEntries`, `orientation`,
+`commandLine` and `guides` in the chart's values, which render a ConfigMap the
+page loads at runtime as `/config/portal.json`; the document has a JSON Schema
+(`apps/portal/schema/portal.schema.json`) the page, the chart and the tests all
+use. See [docs/portal.md](docs/portal.md). No existing render changes. The
+toolchain adds `nodejs` 26 and `yarn-berry` 4.14.1 to `devbox.json`.
+
 ## v0.56.1
 
 `deploy/pulumi/status` requires `pulumi-tailscale/sdk` v0.29.0 (it had pulled in

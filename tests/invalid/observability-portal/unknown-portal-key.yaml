@@ -1,0 +1,3 @@
+# expect: additional properties 'bogus' not allowed
+portal:
+  bogus: 1

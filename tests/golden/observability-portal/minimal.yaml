@@ -1,0 +1,136 @@
+---
+# Source: observability-portal/templates/portal.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-portal
+  labels:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+    app.kubernetes.io/managed-by: Helm
+automountServiceAccountToken: false
+
+---
+# Source: observability-portal/templates/portal.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-portal-config
+  labels:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+    app.kubernetes.io/managed-by: Helm
+data:
+  portal.json: |
+    {
+      "version": 1
+    }
+
+---
+# Source: observability-portal/templates/portal.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-portal
+  labels:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: observability-portal/templates/portal.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-portal
+  labels:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: observability-portal
+      app.kubernetes.io/instance: observability-portal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: observability-portal
+        app.kubernetes.io/instance: observability-portal
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: observability-portal
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      # The entrypoint is most wanted when a node is unhappy. A soft
+      # constraint: one node is still better than none.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability-portal
+              app.kubernetes.io/instance: observability-portal
+      containers:
+        - name: portal
+          image: "ghcr.io/truvity/observability/portal:0.0.0"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            limits:
+              memory: 96Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          volumeMounts:
+            # The catalog is read per request (the page fetches it with
+            # no-cache), so a ConfigMap change shows on the next load and
+            # needs no restart.
+            - name: config
+              mountPath: /config
+              readOnly: true
+            # A read-only root filesystem: nginx's temp paths, pid file and
+            # proxy caches are the only writable directories.
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+      volumes:
+        - name: config
+          configMap:
+            name: observability-portal-config
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}

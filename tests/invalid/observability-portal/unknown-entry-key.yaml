@@ -1,0 +1,8 @@
+# expect: additional properties 'entires' not allowed
+portal:
+  extraEntries:
+    - name: x
+      title: X
+      url: https://x.example.test/
+      tier: ops
+      entires: 1

@@ -2,7 +2,7 @@
 # check workflow (truvity/ci-workflows) runs each one as its own job, so a
 # laptop and CI run the same thing.
 
-charts := "observability-crds observability-emitters observability-stack platform-alerts alert-ingress observability-dashboards observability-grafana observability-mcp observability-rum observability-projects"
+charts := "observability-crds observability-emitters observability-stack platform-alerts alert-ingress observability-dashboards observability-grafana observability-mcp observability-rum observability-projects observability-portal"
 
 # The parent workspace would otherwise interfere with this standalone
 # module.
@@ -62,6 +62,17 @@ lint:
 test:
     hack/golden.sh
     go test ./... -coverprofile=coverage.out
+
+# The portal's single-page app (apps/portal): install exactly what the
+# lockfile says, type-check, run its tests (the published schema, the
+# merge of the built-in catalog with /config/portal.json, the rendered
+# page), and build the static site the image copies. The release job runs
+# the same install and build as goreleaser hooks.
+portal:
+    yarn --cwd apps/portal install --immutable
+    yarn --cwd apps/portal typecheck
+    yarn --cwd apps/portal test
+    yarn --cwd apps/portal build
 
 # Regenerate the golden renders — review the diff before committing.
 golden:
@@ -417,4 +428,4 @@ fmt:
     golangci-lint fmt ./...
 
 # Everything CI runs on a pull request.
-check: lint test leak-canary dashboard-lint rulecheck
+check: lint test portal leak-canary dashboard-lint rulecheck

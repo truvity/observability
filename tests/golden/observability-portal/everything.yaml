@@ -1,0 +1,209 @@
+---
+# Source: observability-portal/templates/portal.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-portal
+  labels:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: platform
+automountServiceAccountToken: false
+
+---
+# Source: observability-portal/templates/portal.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-portal-config
+  labels:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: platform
+data:
+  portal.json: |
+    {
+      "commandLine": [
+        {
+          "body": "Reach the API.",
+          "command": "kubectl get pods -A",
+          "title": "Cluster"
+        }
+      ],
+      "entries": [
+        {
+          "description": "Metrics, logs and traces.",
+          "host": "dash.example.test",
+          "name": "dash",
+          "requires": [
+            "ops:viewer"
+          ],
+          "runbook": "https://docs.example.test/dash",
+          "tier": "ops",
+          "title": "Dashboards",
+          "url": "https://dash.example.test/"
+        },
+        {
+          "name": "console",
+          "tailnet": true,
+          "tier": "dev",
+          "title": "Console",
+          "url": "https://console.dev.example.test/"
+        },
+        {
+          "catalog": true,
+          "name": "api.example.test",
+          "tier": "dev",
+          "title": "api.example.test",
+          "url": "/api/"
+        }
+      ],
+      "guides": [
+        {
+          "links": [
+            {
+              "title": "Handbook",
+              "url": "https://docs.example.test/"
+            }
+          ],
+          "title": "Docs"
+        }
+      ],
+      "issuer": "https://login.example.test",
+      "lede": "What example.test serves.",
+      "orientation": [
+        {
+          "body": "Start with the dashboards.",
+          "title": "Welcome"
+        }
+      ],
+      "replaceDefaults": true,
+      "tierOrder": [
+        "ops",
+        "dev"
+      ],
+      "title": "Example estate",
+      "version": 1
+    }
+
+---
+# Source: observability-portal/templates/portal.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-portal
+  labels:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: platform
+spec:
+  selector:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: observability-portal/templates/portal.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observability-portal
+  labels:
+    app.kubernetes.io/name: observability-portal
+    app.kubernetes.io/instance: observability-portal
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: observability-portal
+      app.kubernetes.io/instance: observability-portal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: observability-portal
+        app.kubernetes.io/instance: observability-portal
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/part-of: platform
+        team: platform
+      annotations:
+        example.test/note: x
+    spec:
+      serviceAccountName: observability-portal
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      tolerations:
+        - key: arch
+          operator: Exists
+      # The entrypoint is most wanted when a node is unhappy. A soft
+      # constraint: one node is still better than none.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability-portal
+              app.kubernetes.io/instance: observability-portal
+      containers:
+        - name: portal
+          image: "registry.example.test/mirror/portal:9.9.9"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            limits:
+              memory: 96Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          volumeMounts:
+            # The catalog is read per request (the page fetches it with
+            # no-cache), so a ConfigMap change shows on the next load and
+            # needs no restart.
+            - name: config
+              mountPath: /config
+              readOnly: true
+            # A read-only root filesystem: nginx's temp paths, pid file and
+            # proxy caches are the only writable directories.
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+      volumes:
+        - name: config
+          configMap:
+            name: observability-portal-config
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}

@@ -1,0 +1,71 @@
+# observability-portal — the page an engineer starts at.
+#
+# The image is a built single-page app (apps/portal) behind an unprivileged
+# nginx. It carries a GENERIC default catalog and nothing about any estate;
+# everything estate-specific is the `portal` block below, which this chart
+# renders into /config/portal.json for the page to load. See
+# docs/portal.md for the schema and apps/portal/schema/portal.schema.json for
+# the machine-readable form.
+
+# -- Name overrides for the objects this chart renders.
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # -- The image the release workflow builds from apps/portal/Dockerfile
+  # (.goreleaser.yaml dockers_v2). An estate behind a pull-through cache
+  # names its cache's path here.
+  repository: ghcr.io/truvity/observability/portal
+  # -- Empty: .Chart.AppVersion, stamped at release, so an install that
+  # never sets this tracks the chart's own version exactly.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 96Mi
+
+service:
+  port: 8080
+
+# -- Extra labels on every object.
+labels: {}
+# -- Extra labels and annotations on the pods.
+podLabels: {}
+podAnnotations: {}
+
+# -- Scheduling. Empty by default: a cluster with a mixed fleet names its own.
+nodeSelector: {}
+tolerations: []
+# -- Spread the replicas over nodes (a soft constraint: one node is better
+# than none).
+spreadAcrossNodes: true
+
+# -- What the page loads from /config/portal.json. Every key is optional;
+# with none of them set the page shows only the built-in catalog.
+portal:
+  # -- The page heading (default "Platform").
+  title: ""
+  # -- The sentence under the heading.
+  lede: ""
+  # -- The sign-in URL shown in the footer.
+  issuer: ""
+  # -- Drop the built-in catalog's own notes instead of adding to them.
+  replaceDefaults: false
+  # -- Tier names in display order; tiers not listed follow in order of
+  # first appearance.
+  tierOrder: []
+  # -- Things somebody can open. Each: name, title, url, tier (required);
+  # description, host, tailnet, catalog, requires, runbook (optional).
+  extraEntries: []
+  # -- Notes shown first, under "Start here": [{title, body}].
+  orientation: []
+  # -- Terminal recipes: [{title, body, command}].
+  commandLine: []
+  # -- Documentation links: [{title, links: [{title, url}]}].
+  guides: []

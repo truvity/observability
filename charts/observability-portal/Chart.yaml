@@ -1,0 +1,17 @@
+apiVersion: v2
+name: observability-portal
+description: >-
+  The entrypoint page of an estate: a built-in generic catalog plus the
+  entries and sections the estate adds through values, rendered into a
+  ConfigMap the page loads at runtime. One static server, no state.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - portal
+  - entrypoint
+  - catalog
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability

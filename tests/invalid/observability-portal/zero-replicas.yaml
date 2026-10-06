@@ -1,0 +1,2 @@
+# expect: minimum: got 0, want 1
+replicaCount: 0

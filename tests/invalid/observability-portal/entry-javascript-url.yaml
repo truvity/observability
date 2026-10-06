@@ -1,0 +1,7 @@
+# expect: does not match pattern
+portal:
+  extraEntries:
+    - name: x
+      title: X
+      url: "javascript:alert(1)"
+      tier: ops
