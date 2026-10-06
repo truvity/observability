@@ -1,0 +1,290 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "observability-portal values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "resources": {
+      "type": "object"
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "podLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "podAnnotations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tolerations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "spreadAcrossNodes": {
+      "type": "boolean"
+    },
+    "portal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "lede": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "issuer": {
+          "oneOf": [
+            {
+              "const": ""
+            },
+            {
+              "description": "The sign-in URL shown in the footer, when the estate wants one.",
+              "type": "string",
+              "pattern": "^https?://[^\\s]+$"
+            }
+          ]
+        },
+        "replaceDefaults": {
+          "type": "boolean"
+        },
+        "tierOrder": {
+          "description": "Tier names in the order the page shows them. Tiers not listed follow, in the order their first entry appears.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "extraEntries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/entry"
+          }
+        },
+        "orientation": {
+          "description": "Short notes shown first, under \"Start here\".",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/note"
+          }
+        },
+        "commandLine": {
+          "description": "Terminal recipes: a sentence and a command somebody can paste.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/recipe"
+          }
+        },
+        "guides": {
+          "description": "Documentation links, grouped under a heading each.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/guide"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "url": {
+      "description": "An http(s) URL or a path on this host. Never a javascript: or data: URL.",
+      "type": "string",
+      "pattern": "^(https?://[^\\s]+|/[^\\s]*)$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "title",
+        "url",
+        "tier"
+      ],
+      "properties": {
+        "name": {
+          "description": "A unique, stable name. A later entry with the same name replaces an earlier one, which is how an estate overrides a built-in.",
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "url": {
+          "$ref": "#/definitions/url"
+        },
+        "host": {
+          "description": "The host it answers on, shown under the title.",
+          "type": "string"
+        },
+        "tier": {
+          "description": "The heading it is listed under: a cluster, an environment, a team, anything.",
+          "type": "string",
+          "minLength": 1
+        },
+        "tailnet": {
+          "description": "Shown with a badge: reachable only over the private network.",
+          "type": "boolean"
+        },
+        "catalog": {
+          "description": "Shown with an `api` badge: a host that is served but is not a page somebody signs in to.",
+          "type": "boolean"
+        },
+        "requires": {
+          "description": "The groups that are admitted, shown as \"held by ...\".",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "runbook": {
+          "$ref": "#/definitions/url"
+        }
+      }
+    },
+    "note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "body"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "body",
+        "command"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "guide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "links"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "links": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "url"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "url": {
+                "$ref": "#/definitions/url"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

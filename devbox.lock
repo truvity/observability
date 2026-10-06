@@ -438,6 +438,92 @@
           "store_path": "/nix/store/i46k66p14ci9yvr402cki6g6hqhb8raw-kubernetes-helm-4.3.0"
         }
       }
+    },
+    "nodejs@26": {
+      "last_modified": "2026-10-04T16:11:07Z",
+      "resolved": "github:NixOS/nixpkgs/9013764fcc0ea99fa16cf7aa7decf8a5c3889dd2#nodejs_26",
+      "source": "devbox-search",
+      "version": "26.10.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/vfqy70m0warvbvf3p5avkwk04l4ca5d6-nodejs-26.10.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/vfqy70m0warvbvf3p5avkwk04l4ca5d6-nodejs-26.10.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/h3k7l0n49l27nhzvfijlvxhhzzicjiqr-nodejs-26.10.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/h3k7l0n49l27nhzvfijlvxhhzzicjiqr-nodejs-26.10.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/gb4x0fqprmdzr981nm1fnqbc40lxdjzq-nodejs-26.10.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/gb4x0fqprmdzr981nm1fnqbc40lxdjzq-nodejs-26.10.0"
+        }
+      }
+    },
+    "yarn-berry@4.14.1": {
+      "last_modified": "2026-09-28T13:04:38Z",
+      "resolved": "github:NixOS/nixpkgs/f45c6f04c2f013f004bf94e284e95d72898d9393#yarn-berry",
+      "source": "devbox-search",
+      "version": "4.14.1",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/r5096n45srshnfrw4hfnxgj8kysw1k7k-yarn-berry-4.14.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/r5096n45srshnfrw4hfnxgj8kysw1k7k-yarn-berry-4.14.1"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/hpd7yzqqhjr7bcgmpvf2xjhzrm8bi80z-yarn-berry-4.14.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/hpd7yzqqhjr7bcgmpvf2xjhzrm8bi80z-yarn-berry-4.14.1"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/w9000r08px9ys3iw8a1fjbhn71j3nr2k-yarn-berry-4.14.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/w9000r08px9ys3iw8a1fjbhn71j3nr2k-yarn-berry-4.14.1"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/q4hcidvwgk7v0svla1nr2rhv2ir48nd9-yarn-berry-4.14.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/q4hcidvwgk7v0svla1nr2rhv2ir48nd9-yarn-berry-4.14.1"
+        }
+      }
     }
   }
 }

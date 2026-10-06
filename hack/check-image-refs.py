@@ -47,6 +47,12 @@ def expected_images() -> tuple[str, set[str]]:
             sys.exit(f"::error::.goreleaser.yaml kos entry names an unknown build {ko.get('build')!r}")
         basename = build["main"].rstrip("/").rsplit("/", 1)[-1]
         images.add(f"{ko_docker_repo}/{basename}")
+
+    # dockers_v2 images (the portal's nginx image, which has a Dockerfile
+    # rather than a Go main) name their repository literally.
+    for docker in goreleaser.get("dockers_v2", []):
+        for image in docker.get("images", []):
+            images.add(image)
     return ko_docker_repo, images
 
 
@@ -83,7 +89,7 @@ def main() -> int:
                 print(
                     f"::error::charts/{chart_dir.name}/values.yaml sets {where}.repository={repository!r}, "
                     f"which .goreleaser.yaml's kos (as ko-docker-repo {ko_docker_repo!r}) "
-                    f"does not build: {sorted(expected) or '(no images built)'}",
+                    f"and dockers_v2 do not build: {sorted(expected) or '(no images built)'}",
                     file=sys.stderr,
                 )
                 failed = True

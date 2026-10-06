@@ -11,6 +11,14 @@
 # person's own machine.
 version: 2
 
+# The portal's page is built before anything else: its image is assembled
+# from apps/portal/dist (see dockers_v2 below). The release job runs this
+# under devbox, which supplies node and yarn at the versions devbox.json pins.
+before:
+  hooks:
+    - yarn --cwd apps/portal install --immutable
+    - yarn --cwd apps/portal build
+
 builds:
   - id: alert-ingress
     main: ./cmd/alert-ingress
@@ -109,6 +117,26 @@ kos:
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.source: https://github.com/truvity/observability
 
+# The portal: a built single-page app behind an unprivileged nginx, not a Go
+# binary, so it has a Dockerfile rather than a ko entry. `extra_files` stages
+# each path into the build context KEEPING it, which is why the Dockerfile's
+# COPY lines start at the repository root. Published to
+# ghcr.io/truvity/observability/portal, what charts/observability-portal's
+# `image.repository` defaults to (hack/check-image-refs.py compares the two).
+dockers_v2:
+  - id: portal
+    images: ["ghcr.io/truvity/observability/portal"]
+    dockerfile: apps/portal/Dockerfile
+    platforms: [linux/amd64, linux/arm64]
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .IsSnapshot }}latest{{ end }}"
+    extra_files:
+      - apps/portal/dist
+      - apps/portal/server/default.conf
+    labels:
+      org.opencontainers.image.version: "{{ .Version }}"
+
 changelog:
   sort: asc
   filters:
@@ -129,6 +157,8 @@ release:
     | alert-ingress chart | `oci://ghcr.io/truvity/charts/alert-ingress:{{ .Version }}` (image.tag defaults to it) |
     | mcp-aggregator image | `ghcr.io/truvity/observability/mcp-aggregator:{{ .Version }}` |
     | observability-mcp chart | `oci://ghcr.io/truvity/charts/observability-mcp:{{ .Version }}` (`aggregator.image.tag` defaults to it) |
+    | portal image | `ghcr.io/truvity/observability/portal:{{ .Version }}` |
+    | observability-portal chart | `oci://ghcr.io/truvity/charts/observability-portal:{{ .Version }}` (`image.tag` defaults to it) |
     | Lambda extension layer | `otlp-lambda-layer_{{ .Version }}_linux_{{ "{amd64,arm64}" }}.zip`, verified by `checksums.txt` ([docs/integrations/aws-lambda.md](https://github.com/truvity/observability/blob/master/docs/integrations/aws-lambda.md)) |
     | Go | `go get github.com/truvity/observability@{{ .Tag }}` |
   # setup.sh is a release asset, not a build output: a box's cloud-init

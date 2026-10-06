@@ -1,0 +1,52 @@
+image:
+  repository: registry.example.test/mirror/portal
+  tag: "9.9.9"
+replicaCount: 3
+nodeSelector:
+  kubernetes.io/arch: arm64
+tolerations:
+  - key: arch
+    operator: Exists
+labels:
+  app.kubernetes.io/part-of: platform
+podLabels:
+  team: platform
+podAnnotations:
+  example.test/note: "x"
+portal:
+  title: Example estate
+  lede: What example.test serves.
+  issuer: https://login.example.test
+  replaceDefaults: true
+  tierOrder: [ops, dev]
+  extraEntries:
+    - name: dash
+      title: Dashboards
+      description: Metrics, logs and traces.
+      url: https://dash.example.test/
+      host: dash.example.test
+      tier: ops
+      requires: ["ops:viewer"]
+      runbook: https://docs.example.test/dash
+    - name: console
+      title: Console
+      url: https://console.dev.example.test/
+      tier: dev
+      tailnet: true
+    - name: api.example.test
+      title: api.example.test
+      url: /api/
+      tier: dev
+      catalog: true
+  orientation:
+    - title: Welcome
+      body: Start with the dashboards.
+  commandLine:
+    - title: Cluster
+      body: Reach the API.
+      command: kubectl get pods -A
+  guides:
+    - title: Docs
+      links:
+        - title: Handbook
+          url: https://docs.example.test/

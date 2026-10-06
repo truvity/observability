@@ -1,19 +1,24 @@
 {
-  "packages": [
-    "go@1.27.0",
-    "golangci-lint@2.13.1",
-    "gopls@0.23.0",
-    "goreleaser@2.17.1",
-    "govulncheck@1.7.0",
-    "just-lsp@0.9.0",
-    "just@1.58.0",
-    "kubernetes-helm@4.3.0",
-    "kind@0.32.0",
-    "kubectl@1.37.0"
-  ],
+  "packages": {
+    "go": "1.27.0",
+    "golangci-lint": "2.13.1",
+    "gopls": "0.23.0",
+    "goreleaser": "2.17.1",
+    "govulncheck": "1.7.0",
+    "just-lsp": "0.9.0",
+    "just": "1.58.0",
+    "kubernetes-helm": "4.3.0",
+    "kind": "0.32.0",
+    "kubectl": "1.37.0",
+    "nodejs": {
+      "version": "26",
+      "disable_plugin": true
+    },
+    "yarn-berry": "4.14.1"
+  },
   "env": {},
   "shell": {
     "init_hook": [],
-    "scripts":   {}
+    "scripts": {}
   }
 }

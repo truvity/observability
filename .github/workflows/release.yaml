@@ -32,10 +32,12 @@ jobs:
       # (see .goreleaser.yaml) and cuts the GitHub release + changelog; every chart below is then
       # packaged at the tag's version and pushed to
       # oci://ghcr.io/truvity/charts/<name>.
-      charts: '["observability-crds", "observability-emitters", "observability-stack", "platform-alerts", "alert-ingress", "observability-dashboards", "observability-grafana", "observability-mcp", "observability-rum", "observability-projects"]'
+      charts: '["observability-crds", "observability-emitters", "observability-stack", "platform-alerts", "alert-ingress", "observability-dashboards", "observability-grafana", "observability-mcp", "observability-rum", "observability-projects", "observability-portal"]'
       # ko names each image after its cmd directory
       # (base_import_paths in .goreleaser.yaml), so this nests them as
       # ghcr.io/truvity/observability/alert-ingress and
       # .../mcp-aggregator — the repositories charts/alert-ingress and
       # charts/observability-mcp default to.
       ko-docker-repo: ghcr.io/truvity/observability
+      # .goreleaser.yaml's dockers_v2 also builds the portal's nginx image
+      # (apps/portal) with a Dockerfile, to .../portal at the same tag.

@@ -1,0 +1,3 @@
+# The smallest values file that renders: nothing set, so the page shows only
+# its built-in catalog and portal.json is {"version": 1}.
+{}
