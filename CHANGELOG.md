@@ -12,6 +12,13 @@ bearers, the metrics-backup Pod Identity role) move in from the estate
 repository (no chart change). Resource types and logical names are unchanged;
 rotation levers, SSM paths and namespaces are the caller's `Inputs`.
 
+Pulumi packages move in from the estate repository (no chart change):
+`deploy/pulumi/releaseassets` (verified release-asset download),
+`deploy/pulumi/otlplayer` (publishes the OTLP Lambda layer) and
+`deploy/pulumi/lambdaprobe` (the layer plus a heartbeat probe function; the
+caller passes a `Config`, the permissions-boundary ARN and the provider).
+Resource types and logical names are unchanged from the code they replace.
+
 ## v0.53.0
 
 - **Behaviour change (feat(observability-emitters)): more per-node series
