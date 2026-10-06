@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.58.0
 
 `pkg/statusbox`: `Spec.Validate` (new). An estate's status pages (entities by code, the public page's OIDC issuer and client, the tunnel's hostnames) are checked when the estate's configuration is loaded, by the rules `Args.validate` applies at deploy time: a public page needs an issuer and a client, an entity code is a valid instance name, each entity has a display name and a hostname, and the tunnel carries only hostnames an entity has. Nothing in the render changes.
 
