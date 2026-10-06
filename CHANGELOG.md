@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.56.0
+
 `observability-projects` (new chart): the generic alerts of every project
 namespace from a list of rows (`projects: [{name}]`), for an L3 `-projects`
 Application: restarts (OOM kill, restart rate, slow crash loop) and a
