@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.54.0
+
 `deploy/pulumi/status`: the status box's Pulumi mechanism moves in from the
 estate repository (no chart change). It renders both Gatus instances from one
 catalogue (`OpsCatalogue`, `PlatformHosts`, `HostsByCompany`), mints the box's
