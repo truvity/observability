@@ -6,6 +6,12 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+`deploy/pulumi/status`: the status box's Pulumi mechanism moves in from the
+estate repository (no chart change). It renders both Gatus instances from one
+catalogue (`OpsCatalogue`, `PlatformHosts`, `HostsByCompany`), mints the box's
+one-shot tailnet join key and creates the Lightsail machine. Providers, host
+groups, secrets and the tunnel token are the caller's `Inputs`.
+
 ## v0.53.0
 
 - **Behaviour change (feat(observability-emitters)): more per-node series

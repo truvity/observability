@@ -14,6 +14,7 @@ require (
 	github.com/prometheus/common v0.71.0
 	github.com/prometheus/prometheus v0.315.0
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.48.0
+	github.com/pulumi/pulumi-tailscale/sdk v0.29.1
 	github.com/pulumi/pulumi/sdk/v3 v3.264.0
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/proto/otlp v1.11.0
