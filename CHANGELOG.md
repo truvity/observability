@@ -6,6 +6,12 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+`deploy/pulumi/status`: the status box's Pulumi mechanism moves in from the
+estate repository (no chart change). It renders both Gatus instances from one
+catalogue (`OpsCatalogue`, `PlatformHosts`, `HostsByCompany`), mints the box's
+one-shot tailnet join key and creates the Lightsail machine. Providers, host
+groups, secrets and the tunnel token are the caller's `Inputs`.
+
 `deploy/pulumi/credentials`: the install's credentials (store basic-auth
 password, write token, the management cluster's status-box and evaluator
 bearers, the metrics-backup Pod Identity role) move in from the estate
