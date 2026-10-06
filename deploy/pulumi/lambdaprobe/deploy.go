@@ -30,8 +30,7 @@ import (
 )
 
 const (
-	basicExecutionPolicyARN = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-	logRetentionDays        = 14
+	logRetentionDays = 14
 
 	assumeRolePolicy = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}`
 )
@@ -126,7 +125,7 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, cfg *Config, in Inputs) erro
 
 	if _, err := iam.NewRolePolicyAttachment(c, "role-basic-execution", &iam.RolePolicyAttachmentArgs{
 		Role:      role.Name,
-		PolicyArn: pulumi.String(basicExecutionPolicyARN),
+		PolicyArn: pulumi.String(string(iam.ManagedPolicyAWSLambdaBasicExecutionRole)),
 	}, opt); err != nil {
 		return fmt.Errorf("attach basic execution: %w", err)
 	}

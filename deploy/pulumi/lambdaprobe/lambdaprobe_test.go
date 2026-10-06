@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
@@ -123,8 +124,9 @@ func TestDeployCreatesLayersRoleFunctionAndSchedule(t *testing.T) {
 	role := "aws:iam/role:Role"
 	assert.Equal(t, "lambda-otel-probe", m.input(role, "role", "name"))
 	assert.Empty(t, m.input(role, "role", "path"), "role path stays the default /")
-	assert.Equal(t, "arn:aws:iam::123456789012:policy/boundary", m.input(role, "role", "permissionsBoundary"))
-	assert.Equal(t, basicExecutionPolicyARN, m.input("aws:iam/rolePolicyAttachment:RolePolicyAttachment", "role-basic-execution", "policyArn"))
+	assert.Equal(t, "boundary-arn", m.input(role, "role", "permissionsBoundary"))
+	attachment := m.input("aws:iam/rolePolicyAttachment:RolePolicyAttachment", "role-basic-execution", "policyArn")
+	assert.Equal(t, string(iam.ManagedPolicyAWSLambdaBasicExecutionRole), attachment)
 
 	// ONE audience: the policy, the layer's STS audience and the issuer URL.
 	audience := cfg.Probe.STSAudience()
@@ -172,7 +174,7 @@ func runErr(t *testing.T, cfg *Config, account string, m *mocks, fetch releaseas
 
 		return Deploy(c, slog.New(slog.DiscardHandler), cfg, Inputs{
 			Account:             account,
-			PermissionsBoundary: "arn:aws:iam::123456789012:policy/boundary",
+			PermissionsBoundary: "boundary-arn",
 			Provider:            p,
 			Fetch:               fetch,
 			CacheDir:            t.TempDir(),
@@ -199,7 +201,7 @@ func (m *mocks) NewResource(args pulumi.MockResourceArgs) (string, resource.Prop
 	m.resources = append(m.resources, recorded{args.TypeToken, args.Name, args.Inputs})
 
 	out := args.Inputs.Copy()
-	out["arn"] = resource.NewStringProperty("arn:aws:mock:::" + args.Name)
+	out["arn"] = resource.NewStringProperty("mock-arn/" + args.Name)
 
 	return args.Name + "-id", out, nil
 }
