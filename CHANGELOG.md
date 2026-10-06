@@ -6,6 +6,13 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+`observability-projects` (new chart): the generic alerts of every project
+namespace from a list of rows (`projects: [{name}]`), for an L3 `-projects`
+Application: restarts (OOM kill, restart rate, slow crash loop) and a
+Deployment with no available replica, one VMRule, the namespace matcher built
+from the rows. The same rules as `platform-alerts`' `restarts` and
+`workloadAbsent` groups, which a consumer moving onto this chart turns off.
+
 ## v0.55.0
 
 - **feat(charts): chart presets, values files shipped inside the chart.** A
@@ -591,7 +598,6 @@ tracker (see docs/frontend.md). Nothing existing renders differently.
   leaves the group off: the existing VMRule renders byte for byte as before.
   Enable it only where a logs vmalert runs. `warn`-mode violations are not
   Events and are not matched.
-
 
 ## v0.37.0
 
@@ -4128,7 +4134,6 @@ repository being created and this tag. Nobody ran them.
 They are written up anyway, at length, because the mechanisms are the
 ones an operator has to understand to run this safely, and because each
 one is a shape that could come back.
-
 
 - **`pkg/tenancy` and `charts/observability-stack`** — the proxy now
   APPLIES the filters it renders. **This is an authorization fix: before

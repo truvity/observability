@@ -1,0 +1,22 @@
+apiVersion: v2
+name: observability-projects
+description: >-
+  The generic alerts of every project namespace of a cluster, from a list of
+  project rows: restarts (OOM kills, restart rate, slow crash loops) and a
+  Deployment with no available replica, as one VMRule for vmalert. One
+  Application renders every project's rows; a project's own alerts ship in
+  its own chart.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: 0.0.0
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability
+keywords:
+  - vmalert
+  - alerts
+  - multi-tenancy
+maintainers:
+  - name: Truvity
+    url: https://github.com/truvity

@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "observability-projects values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+          }
+        }
+      }
+    },
+    "ruleLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "clusterLabel": {
+      "type": "string"
+    },
+    "keepClusterLabel": {
+      "type": "boolean"
+    },
+    "ownerLabel": {
+      "type": "string"
+    },
+    "interval": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h|d)$"
+    },
+    "runbookBaseUrl": {
+      "type": "string"
+    },
+    "restarts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "window": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "oomSeverity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "restartWindow": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "maxRestarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "restartSeverity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slowRestartWindow": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "slowMaxRestarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "slowRestartFor": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "slowRestartSeverity": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "workloadAbsent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "for": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h|d)$"
+        },
+        "severity": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

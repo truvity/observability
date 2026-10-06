@@ -1,0 +1,65 @@
+---
+# Source: observability-projects/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-projects
+  labels:
+    app.kubernetes.io/name: observability-projects
+    app.kubernetes.io/instance: observability-projects
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: observability-projects.restarts
+      interval: 1m
+      rules:
+        - alert: ContainerOOMKilled
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (kube_pod_container_status_last_terminated_reason{namespace=~"^(shop)$", reason="OOMKilled"} == 1)
+            and on (k8s_cluster_name, namespace, pod, container)
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(shop)$"}[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} was OOM-killed"
+            description: >-
+              The container restarted within the last 15m and its last
+              termination reason is OOMKilled: its memory limit is too low or it leaks.
+        - alert: ContainerRestartingOften
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(shop)$"}[1h])) > 5
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 5 times in 1h"
+            description: >-
+              A restart rate this high that is not a crash loop yet still means the
+              container cannot stay up.
+        - alert: ContainerRestartingSlowly
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"^(shop)$"}[6h])) > 3
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 3 times in 6h"
+            description: >-
+              The container keeps dying and coming back, slowly enough that the
+              crash-loop alerts never fire. Check `kubectl logs --previous` and
+              the last termination reason and exit code of the container.
+    - name: observability-projects.workload-absent
+      interval: 1m
+      rules:
+        - alert: DeploymentNoAvailableReplicas
+          expr: >-
+            max by (k8s_cluster_name, namespace, deployment) (kube_deployment_status_replicas_available{namespace=~"^(shop)$"}) == 0
+            and on (k8s_cluster_name, namespace, deployment)
+            max by (k8s_cluster_name, namespace, deployment) (kube_deployment_spec_replicas{namespace=~"^(shop)$"}) > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has no available replicas for 10m"
+            description: >-
+              The Deployment wants replicas and none is available: the workload is
+              down. Its pods' events and the ReplicaSet's conditions name why.

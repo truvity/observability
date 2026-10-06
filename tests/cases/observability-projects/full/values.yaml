@@ -1,0 +1,10 @@
+# Two projects, routing labels, a runbook base, the
+# cluster label kept for a shared store.
+projects:
+  - name: shop
+  - name: billing
+ruleLabels: {example.com/ruler: platform}
+commonLabels: {k8s_cluster_name: example}
+keepClusterLabel: true
+ownerLabel: owner
+runbookBaseUrl: https://runbooks.example.com/alerts/

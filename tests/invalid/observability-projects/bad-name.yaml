@@ -1,0 +1,4 @@
+# expect: at '/projects/0/name'
+# A row's name is a namespace.
+projects:
+  - name: Shop_1

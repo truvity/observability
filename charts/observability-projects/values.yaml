@@ -1,0 +1,42 @@
+# Nothing here names an estate. The render produces nothing until a row is
+# listed.
+
+# One per project namespace:
+#
+#   projects:
+#     - name: shop                      # the namespace
+projects: []
+
+# Labels on the VMRule object (the operator's ruleSelector) and on every
+# rule (routing); a rule's `severity` is set per rule.
+ruleLabels: {}
+commonLabels: {}
+
+# The label that tells clusters apart in a shared store; every aggregation
+# keeps it. Empty for a single-cluster store.
+clusterLabel: k8s_cluster_name
+# Keep the cluster label on the alert (a store holding several clusters).
+keepClusterLabel: false
+# The label an aggregation must keep for routing (the emitters' `owner`).
+ownerLabel: ""
+
+interval: 1m
+runbookBaseUrl: ""
+
+restarts:
+  enabled: true
+  # An OOM-killed container counts while it has restarted within this window.
+  window: 15m
+  oomSeverity: warning
+  restartWindow: 1h
+  maxRestarts: 5
+  restartSeverity: warning
+  slowRestartWindow: 6h
+  slowMaxRestarts: 3
+  slowRestartFor: 15m
+  slowRestartSeverity: warning
+
+workloadAbsent:
+  enabled: true
+  for: 10m
+  severity: critical

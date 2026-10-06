@@ -1,0 +1,6 @@
+# expect: both groups are disabled
+# A release with no group renders no rules.
+projects:
+  - name: shop
+restarts: {enabled: false}
+workloadAbsent: {enabled: false}

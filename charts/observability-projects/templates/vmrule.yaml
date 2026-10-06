@@ -1,0 +1,108 @@
+{{- /*
+One VMRule with the generic alerts of every listed project namespace. The
+namespace matcher is the anchored alternation of the rows' names, so a row is
+the only way a namespace is covered. Routing by owner keeps the series' own
+`owner` label through the aggregations (`ownerLabel`).
+*/ -}}
+{{- $v := .Values -}}
+{{- if $v.projects -}}
+{{- $names := list -}}
+{{- range $p := $v.projects -}}
+{{- if has $p.name $names }}{{ fail (printf "projects: %s is listed twice" $p.name) }}{{ end -}}
+{{- $names = append $names $p.name -}}
+{{- end -}}
+{{- if not (or $v.restarts.enabled $v.workloadAbsent.enabled) -}}
+{{- fail "observability-projects: both groups are disabled, so this release would render no rules" -}}
+{{- end -}}
+{{- $ns := printf "^(%s)$" (join "|" (sortAlpha $names)) -}}
+{{- $c := "" -}}
+{{- if $v.clusterLabel }}{{ $c = printf "%s, " $v.clusterLabel }}{{ end -}}
+{{- $b := $c -}}
+{{- if $v.ownerLabel }}{{ $b = printf "%s%s, " $c $v.ownerLabel }}{{ end -}}
+{{- $labels := deepCopy ($v.commonLabels | default dict) -}}
+{{- if and $v.clusterLabel (not $v.keepClusterLabel) }}{{ $_ := unset $labels $v.clusterLabel }}{{ end -}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ .Release.Name | trunc 63 | trimSuffix "-" }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- with $v.ruleLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- if $v.restarts.enabled }}
+    {{- $g := $v.restarts }}
+    - name: observability-projects.restarts
+      interval: {{ $v.interval }}
+      rules:
+        - alert: ContainerOOMKilled
+          expr: >-
+            max by ({{ $b }}namespace, pod, container) (kube_pod_container_status_last_terminated_reason{namespace=~"{{ $ns }}", reason="OOMKilled"} == 1)
+            and on ({{ $c }}namespace, pod, container)
+            max by ({{ $c }}namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"{{ $ns }}"}[{{ $g.window }}])) > 0
+          labels:
+            {{- toYaml (merge (dict "severity" $g.oomSeverity) $labels) | nindent 12 }}
+          annotations:
+            summary: "Container {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}}/{{`{{ $labels.container }}`}} was OOM-killed"
+            description: >-
+              The container restarted within the last {{ $g.window }} and its last
+              termination reason is OOMKilled: its memory limit is too low or it leaks.
+            {{- with $v.runbookBaseUrl }}
+            runbook_url: {{ printf "%s/ContainerOOMKilled" (trimSuffix "/" .) | quote }}
+            {{- end }}
+        - alert: ContainerRestartingOften
+          expr: >-
+            max by ({{ $b }}namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"{{ $ns }}"}[{{ $g.restartWindow }}])) > {{ $g.maxRestarts }}
+          labels:
+            {{- toYaml (merge (dict "severity" $g.restartSeverity) $labels) | nindent 12 }}
+          annotations:
+            summary: "Container {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}}/{{`{{ $labels.container }}`}} restarted more than {{ $g.maxRestarts }} times in {{ $g.restartWindow }}"
+            description: >-
+              A restart rate this high that is not a crash loop yet still means the
+              container cannot stay up.
+            {{- with $v.runbookBaseUrl }}
+            runbook_url: {{ printf "%s/ContainerRestartingOften" (trimSuffix "/" .) | quote }}
+            {{- end }}
+        - alert: ContainerRestartingSlowly
+          expr: >-
+            max by ({{ $b }}namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~"{{ $ns }}"}[{{ $g.slowRestartWindow }}])) > {{ $g.slowMaxRestarts }}
+          for: {{ $g.slowRestartFor }}
+          labels:
+            {{- toYaml (merge (dict "severity" $g.slowRestartSeverity) $labels) | nindent 12 }}
+          annotations:
+            summary: "Container {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}}/{{`{{ $labels.container }}`}} restarted more than {{ $g.slowMaxRestarts }} times in {{ $g.slowRestartWindow }}"
+            description: >-
+              The container keeps dying and coming back, slowly enough that the
+              crash-loop alerts never fire. Check `kubectl logs --previous` and
+              the last termination reason and exit code of the container.
+            {{- with $v.runbookBaseUrl }}
+            runbook_url: {{ printf "%s/ContainerRestartingSlowly" (trimSuffix "/" .) | quote }}
+            {{- end }}
+    {{- end }}
+    {{- if $v.workloadAbsent.enabled }}
+    {{- $g := $v.workloadAbsent }}
+    - name: observability-projects.workload-absent
+      interval: {{ $v.interval }}
+      rules:
+        - alert: DeploymentNoAvailableReplicas
+          expr: >-
+            max by ({{ $b }}namespace, deployment) (kube_deployment_status_replicas_available{namespace=~"{{ $ns }}"}) == 0
+            and on ({{ $c }}namespace, deployment)
+            max by ({{ $c }}namespace, deployment) (kube_deployment_spec_replicas{namespace=~"{{ $ns }}"}) > 0
+          for: {{ $g.for }}
+          labels:
+            {{- toYaml (merge (dict "severity" $g.severity) $labels) | nindent 12 }}
+          annotations:
+            summary: "Deployment {{`{{ $labels.namespace }}`}}/{{`{{ $labels.deployment }}`}} has no available replicas for {{ $g.for }}"
+            description: >-
+              The Deployment wants replicas and none is available: the workload is
+              down. Its pods' events and the ReplicaSet's conditions name why.
+            {{- with $v.runbookBaseUrl }}
+            runbook_url: {{ printf "%s/DeploymentNoAvailableReplicas" (trimSuffix "/" .) | quote }}
+            {{- end }}
+    {{- end }}
+{{- end }}
