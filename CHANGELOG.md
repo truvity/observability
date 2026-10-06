@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.57.0
+
 `observability-portal` (new chart) and `apps/portal` (new app): the entrypoint
 page of an estate. A TypeScript, React and Vite single-page app with a generic
 built-in catalog and no estate data, behind an unprivileged nginx, published as
