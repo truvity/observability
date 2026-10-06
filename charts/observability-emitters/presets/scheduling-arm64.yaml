@@ -1,0 +1,17 @@
+# Preset: the metrics agent and the blackbox exporter on arm64 nodes.
+#
+# For an estate whose cluster has arm64 nodes tainted `arch=arm64:NoSchedule`.
+# The metrics agent takes it through `metrics.spec` (merged into the VMAgent
+# custom resource). List the file BEFORE your own values. Nothing reads it
+# unless it is listed.
+metrics:
+  spec:
+    nodeSelector:
+      kubernetes.io/arch: arm64
+    tolerations:
+      - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+blackboxExporter:
+  nodeSelector:
+    kubernetes.io/arch: arm64
+  tolerations:
+    - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}

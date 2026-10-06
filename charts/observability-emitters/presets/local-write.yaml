@@ -1,0 +1,50 @@
+# Preset: write to the store of an observability-stack release installed in
+# this cluster, with the stack's default names.
+#
+# Assumes the stack release is called `observability-stack` and runs in the
+# `observability` namespace (the proxy Service is then
+# `vmauth-observability-stack.observability.svc:8427`), and that the write
+# credential is the Secret `observability-write-token` (key `token`) in the
+# emitters' namespace. It wires every writer the same way: the metrics agent,
+# the OTLP gateway's three signals, and the container-log agent (the Secret
+# mounted as a file, `bearerTokenFile`, re-read on rotation).
+#
+# The container-log agent's `collector.extraFields` is NOT in this file: Helm
+# cannot compute a subchart's values from a parent's, and the value mirrors
+# `tenancy` (cluster and environment), which is yours. The chart checks the two
+# agree.
+#
+# A cluster that writes to a store elsewhere sets `remote` instead (see
+# `logs-collector-remote.yaml` for the log agent's half). List the file BEFORE
+# your own values; your own values still win key by key. Nothing reads it
+# unless it is listed.
+writeCredentials:
+  secretName: observability-write-token
+metrics:
+  destinations:
+    - name: local
+      url: http://vmauth-observability-stack.observability.svc:8427/api/v1/write
+otlp:
+  destinations:
+    metrics:
+      - name: local
+        url: http://vmauth-observability-stack.observability.svc:8427
+    logs:
+      - name: local
+        url: http://vmauth-observability-stack.observability.svc:8427
+    traces:
+      - name: local
+        url: http://vmauth-observability-stack.observability.svc:8427
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: observability-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: http://vmauth-observability-stack.observability.svc:8427
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB

@@ -1,0 +1,9 @@
+# Preset: the browser-telemetry collector on arm64 nodes (nodes tainted
+# `arch=arm64:NoSchedule`). List the file BEFORE your own values. Nothing reads
+# it unless it is listed.
+alloy:
+  controller:
+    nodeSelector:
+      kubernetes.io/arch: arm64
+    tolerations:
+      - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}

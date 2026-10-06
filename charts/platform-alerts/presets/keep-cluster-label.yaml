@@ -1,0 +1,34 @@
+# Preset: keep each series' own cluster label through the aggregating rules of
+# the cluster-scoped groups.
+#
+# Needed where one metrics store holds several clusters' series: an alert that
+# aggregates away the cluster label would merge the clusters' series and name
+# none of them. A single-cluster store does not need it (the chart then stamps
+# `commonLabels` instead). Sets `keepClusterLabel: true` on every group that has
+# the key and carries cluster-scoped series; groups not listed (and the `absent`
+# alerts, which always keep their own label) are untouched. Setting it on a group
+# you leave disabled renders nothing. List the file BEFORE your own values; your
+# own values still win key by key. Nothing reads it unless it is listed.
+groups:
+  backups:
+    keepClusterLabel: true
+  pendingPods:
+    keepClusterLabel: true
+  nodeClaims:
+    keepClusterLabel: true
+  eso:
+    keepClusterLabel: true
+  ack:
+    keepClusterLabel: true
+  podSecurity:
+    keepClusterLabel: true
+  podSecurityAudit:
+    keepClusterLabel: true
+  envoyRoutes:
+    keepClusterLabel: true
+  certificates:
+    keepClusterLabel: true
+  restarts:
+    keepClusterLabel: true
+  workloadAbsent:
+    keepClusterLabel: true

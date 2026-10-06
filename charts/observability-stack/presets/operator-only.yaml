@@ -1,0 +1,28 @@
+# Preset: a cluster that runs NOTHING of the stack but the vendored operator
+# (`mode: operator-only`), so the emitters have a controller to reconcile their
+# VMAgent custom resource while the store lives in another cluster.
+#
+# `mode: operator-only` REFUSES to render unless every component it does not run
+# is turned off explicitly: the three stores, the sync Job, Grafana, the backup
+# and the self-alerts are each a real subchart's (or an independent) value that
+# the chart cannot compute from `mode`. This file writes those `false`s once.
+# The proxy, the ruler, the alerting and the self-scrape resolve themselves in
+# this mode; `tenancy` must stay unset. Pair it with `scheduling-arm64` where the
+# operator runs on arm64 nodes. List the file BEFORE your own values. Nothing
+# reads it unless it is listed.
+mode: operator-only
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  syncJob:
+    enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false

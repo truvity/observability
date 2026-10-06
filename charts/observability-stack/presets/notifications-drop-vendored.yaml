@@ -1,0 +1,25 @@
+# Preset: keep the vendored victoria-metrics-k8s-stack default alert groups out
+# of `notifications` routing, so only your own rules reach a person.
+#
+# The chart has no allow-list, only `notifications.drop`, a deny-list by the
+# rule's `alertgroup` label. These are the vendored groups an estate that
+# routes its own alerts drops: the general and kube-prometheus-style groups
+# (general.rules, kubernetes-resources, kubernetes-storage, kubernetes-system,
+# node-network) and the VictoriaMetrics family's own health groups (vm-health,
+# vmoperator, vmsingle). The groups `vmalert` and `alertmanager.rules` are NOT
+# dropped: the alerting machinery's own failures must reach people.
+#
+# A list is replaced, not merged, so your own `notifications.drop` REPLACES
+# this one: copy the entries you still want. Re-read the groups your store
+# evaluates after a k8s-stack bump: a new vendored group is routed until it is
+# listed. Nothing reads this file unless it is listed.
+notifications:
+  drop:
+    - {alertgroup: general.rules}
+    - {alertgroup: kubernetes-resources}
+    - {alertgroup: kubernetes-storage}
+    - {alertgroup: kubernetes-system}
+    - {alertgroup: node-network}
+    - {alertgroup: vm-health}
+    - {alertgroup: vmoperator}
+    - {alertgroup: vmsingle}

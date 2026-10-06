@@ -1,0 +1,5 @@
+# The preset case: `operator-only` writes the mode and every explicit `false`
+# the mode demands, and `scheduling-arm64` the operator's node placement.
+global:
+  cluster:
+    dnsDomain: cluster.example.

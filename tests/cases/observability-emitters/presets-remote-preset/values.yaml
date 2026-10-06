@@ -1,0 +1,24 @@
+# The preset case: `logs-collector-remote` supplies the log agent's mounts; this
+# file is the remote destination and the agent's own entry, which name a URL.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+tenancy:
+  cluster: example-cluster
+  environment: development
+remote:
+  url: https://write.example
+  name: central
+  tokenSecret:
+    name: observability-write-token
+  caSecret:
+    name: observability-write-ca
+    key: ca.crt
+victoria-logs-collector:
+  remoteWrite:
+    - url: https://write.example
+      tlsCAFile: /etc/observability-write-ca/ca.crt
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'

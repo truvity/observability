@@ -1,0 +1,38 @@
+# The same values as the `presets-remote-preset` case, written out in full: the golden of
+# this case must equal that case's (tests/presets_test.go).
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: observability-write-token
+    - name: write-ca
+      secret:
+        secretName: observability-write-ca
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+    - name: write-ca
+      mountPath: /etc/observability-write-ca
+      readOnly: true
+  remoteWrite:
+    - url: https://write.example
+      tlsCAFile: /etc/observability-write-ca/ca.crt
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+global:
+  cluster:
+    dnsDomain: cluster.example.
+tenancy:
+  cluster: example-cluster
+  environment: development
+remote:
+  url: https://write.example
+  name: central
+  tokenSecret:
+    name: observability-write-token
+  caSecret:
+    name: observability-write-ca
+    key: ca.crt

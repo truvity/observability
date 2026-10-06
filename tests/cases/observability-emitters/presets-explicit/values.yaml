@@ -1,0 +1,61 @@
+# The same values as the `presets-preset` case, written out in full: the golden of
+# this case must equal that case's (tests/presets_test.go).
+writeCredentials:
+  secretName: observability-write-token
+metrics:
+  destinations:
+    - name: local
+      url: http://vmauth-observability-stack.observability.svc:8427/api/v1/write
+  spec:
+    nodeSelector:
+      kubernetes.io/arch: arm64
+    tolerations:
+      - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+otlp:
+  destinations:
+    metrics:
+      - name: local
+        url: http://vmauth-observability-stack.observability.svc:8427
+    logs:
+      - name: local
+        url: http://vmauth-observability-stack.observability.svc:8427
+    traces:
+      - name: local
+        url: http://vmauth-observability-stack.observability.svc:8427
+  nodeSelector:
+    karpenter.sh/nodepool: durable
+  tolerations:
+    - {key: durable, operator: Equal, value: "true", effect: NoSchedule}
+    - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: observability-write-token
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+  remoteWrite:
+    - url: http://vmauth-observability-stack.observability.svc:8427
+      bearerTokenFile: /etc/observability-write-token/token
+      maxDiskUsagePerURL: 5GB
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'
+blackboxExporter:
+  nodeSelector:
+    kubernetes.io/arch: arm64
+  tolerations:
+    - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+cloudwatchLogs:
+  nodeSelector:
+    karpenter.sh/nodepool: durable
+  tolerations:
+    - {key: durable, operator: Equal, value: "true", effect: NoSchedule}
+    - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+global:
+  cluster:
+    dnsDomain: cluster.example.
+tenancy:
+  cluster: example-cluster
+  environment: development

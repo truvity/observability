@@ -1,0 +1,20 @@
+# Preset: the OTLP gateway and the CloudWatch logs receiver on a "durable" node
+# pool (on-demand, never consolidated, arm64, tainted `durable=true:NoSchedule`
+# and `arch=arm64:NoSchedule`).
+#
+# The gateway is a StatefulSet with a ReadWriteOnce queue volume, and the
+# CloudWatch receiver owns a volume too: a queue that is being moved is
+# telemetry nobody is buffering. List the file BEFORE your own values. Nothing
+# reads it unless it is listed.
+otlp:
+  nodeSelector:
+    karpenter.sh/nodepool: durable
+  tolerations:
+    - {key: durable, operator: Equal, value: "true", effect: NoSchedule}
+    - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+cloudwatchLogs:
+  nodeSelector:
+    karpenter.sh/nodepool: durable
+  tolerations:
+    - {key: durable, operator: Equal, value: "true", effect: NoSchedule}
+    - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}

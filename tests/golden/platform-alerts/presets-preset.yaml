@@ -1,0 +1,802 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.backups
+      interval: 1m
+      rules:
+        # A CronJob that has not SUCCEEDED within its schedule plus slack.
+        # This is the rule that matters: a CronJob which stops being
+        # scheduled at all never produces a failed Job, so a rule watching
+        # failures reports healthy while nothing runs. Measured healthy
+        # range for a daily job: age resets below 24h on every run.
+        - alert: CronJobNotSucceeding
+          expr: >-
+            time() - max by (k8s_cluster_name, namespace, cronjob) (
+              kube_cronjob_status_last_successful_time{namespace=~".*"}
+            ) > 26h
+            unless on (k8s_cluster_name, namespace, cronjob)
+              kube_cronjob_spec_suspend{namespace=~".*"} == 1
+          labels:
+            severity: critical
+          annotations:
+            summary: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded within 26h"
+            description: >-
+              No successful run in 26h. A job that has stopped being
+              scheduled produces no failures at all, so this is the only rule that
+              can see it. Check that the CronJob exists, is not suspended, and that
+              its last Job completed.
+        # A Job that failed outright — but only the NEWEST Job of each
+        # CronJob. `failedJobsHistoryLimit` keeps failed Job objects
+        # around long after a later run of the same CronJob has
+        # succeeded, and `kube_job_status_failed` never expires that
+        # memory on its own: reading it directly fires forever on a
+        # failure a later run already fixed. "Newest" is decided by
+        # `kube_job_created` — every Job object carries it from the
+        # instant it exists, unlike `kube_job_status_start_time`, which
+        # stays unset until a pod actually runs and so cannot outrank an
+        # older failure while the new run is merely pending. See
+        # docs/safety.md.
+        #
+        # Scoped to Jobs owned by a CronJob
+        # (`kube_job_owner{owner_kind="CronJob"}`): a standalone Job has
+        # no schedule and so no later run to supersede it, and this
+        # rule's whole intent — see its name — is backup CronJobs. A
+        # standalone Job that fails no longer raises THIS alert.
+        - alert: BackupJobFailed
+          expr: >-
+            WITH (
+              cronjob_jobs = (
+                kube_job_created{namespace=~".*"}
+                * on (k8s_cluster_name, namespace, job_name) group_left(owner_name)
+                kube_job_owner{namespace=~".*", owner_kind="CronJob"}
+              ),
+              newest_per_cronjob = max by (k8s_cluster_name, namespace, owner_name) (cronjob_jobs),
+              suspended_cronjobs = label_replace(
+                kube_cronjob_spec_suspend{namespace=~".*"} == 1,
+                "owner_name", "$1", "cronjob", "(.+)"
+              )
+            )
+            max by (k8s_cluster_name, namespace, job_name) (
+              kube_job_status_failed{namespace=~".*"}
+              and on (k8s_cluster_name, namespace, job_name) (
+                cronjob_jobs == on (k8s_cluster_name, namespace, owner_name) group_left() newest_per_cronjob
+                unless on (k8s_cluster_name, namespace, owner_name) suspended_cronjobs
+              )
+            ) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed"
+            description: >-
+              The Job reported a failed pod. If it is a backup, treat the last
+              successful run as the real recovery point until this is resolved.
+    - name: platform-alerts.write-path
+      interval: 1m
+      rules:
+        # The write-path deadman for metrics.
+        #
+        # An alert on a store's read-only FLAG cannot fire in its own
+        # headline case: that sample is written INTO the store that is
+        # refusing writes. Reads keep working when writes do not, so
+        # watching the rows counter stop is the only rule that sees it.
+        #
+        # `or vector(0)` makes the rule fire for both shapes of the
+        # failure: the counter stops moving, and the counter disappears
+        # because the store is gone.
+        - alert: WritePathDead
+          expr: >-
+            (sum(rate(vm_rows_inserted_total[5m])) or vector(0)) == 0
+          for: 10m
+          labels:
+            severity: critical
+            store: "metrics"
+          annotations:
+            summary: "No rows written to the metrics store for 10m"
+            description: >-
+              vm_rows_inserted_total has not advanced in 10m. The store may be
+              read-only, out of disk, or gone; reads can keep working throughout, so
+              nothing else will report this.
+        # The write-path deadman for logs.
+        #
+        # An alert on a store's read-only FLAG cannot fire in its own
+        # headline case: that sample is written INTO the store that is
+        # refusing writes. Reads keep working when writes do not, so
+        # watching the rows counter stop is the only rule that sees it.
+        #
+        # `or vector(0)` makes the rule fire for both shapes of the
+        # failure: the counter stops moving, and the counter disappears
+        # because the store is gone.
+        - alert: WritePathDead
+          expr: >-
+            (sum(rate(vl_rows_ingested_total[5m])) or vector(0)) == 0
+          for: 10m
+          labels:
+            severity: critical
+            store: "logs"
+          annotations:
+            summary: "No rows written to the logs store for 10m"
+            description: >-
+              vl_rows_ingested_total has not advanced in 10m. The store may be
+              read-only, out of disk, or gone; reads can keep working throughout, so
+              nothing else will report this.
+    - name: platform-alerts.volumes
+      interval: 1m
+      rules:
+        # A mounted filesystem far smaller than the claim that satisfied it
+        # cannot legitimately happen: it means the real volume is not
+        # mounted and the pod is writing to the node's root filesystem
+        # while reporting 1/1 Running. Measured healthy range is 0.95-0.99
+        # of the claim (filesystem overhead); the threshold sits well below
+        # it so overhead can never reach it and a wrong mount always does.
+        - alert: VolumeSmallerThanClaimed
+          expr: >-
+            kubelet_volume_stats_capacity_bytes{namespace=~".*"}
+            / on (k8s_cluster_name, namespace, persistentvolumeclaim)
+            kube_persistentvolumeclaim_resource_requests_storage_bytes{namespace=~".*"}
+            < 0.5
+          labels:
+            severity: critical
+          annotations:
+            summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is mounted on a filesystem far smaller than it claimed"
+            description: >-
+              The mounted filesystem is under 0.5 of the claim. The
+              volume is probably not mounted at all and the pod is writing to the
+              node's root filesystem. Data written since it started is not on the
+              volume.
+    - name: platform-alerts.store-limits
+      interval: 1m
+      rules:
+        # Read from the store's OWN exported limit, never a constant
+        # written here: a guessed constant is how a rule never fires or
+        # always does. Fires while there is still headroom to act.
+        - alert: StoreApproachingReadOnly
+          expr: >-
+            vm_free_disk_space_bytes / vm_free_disk_space_limit_bytes < 2
+          labels:
+            severity: warning
+            store: "metrics"
+          annotations:
+            summary: "The metrics store is approaching its read-only limit"
+            description: >-
+              Free space is under 2x the limit at which this store stops
+              accepting writes. It is still serving reads and will keep doing so
+              after it stops writing, so nothing else will report this.
+    - name: platform-alerts.pending-pods
+      interval: 1m
+      rules:
+        # A pod the scheduler has declared unschedulable for `for`.
+        #
+        # `kube_pod_status_unschedulable` is 1 while the pod's PodScheduled
+        # condition is False with reason Unschedulable and has no series
+        # otherwise, so `== 1` only states what the series already means
+        # (it keeps the rule right if a kube-state-metrics version emits 0
+        # instead of omitting). On a cluster that adds nodes on demand this
+        # is the signal that provisioning did not happen: the pod is what
+        # the provisioner reacts to, and it is still waiting.
+        - alert: PodUnschedulable
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod) (
+              kube_pod_status_unschedulable{namespace=~".*"} == 1
+            )
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been unschedulable for 10m"
+            description: >-
+              The scheduler has not been able to place this pod for 10m.
+              On a cluster that provisions nodes on demand that means no node was
+              added for it (a provisioning failure, a quota or capacity limit, or
+              a request no node type can satisfy); on any cluster it can also be
+              an affinity, taint or quota the pod can never meet. The pod's
+              events name the scheduler's reason.
+    - name: platform-alerts.node-claims
+      interval: 1m
+      rules:
+        # A NodeClaim whose Launched, Registered or Initialized condition is
+        # not True for `for`.
+        #
+        # `nodeclaim_status_condition` is a gauge kube-state-metrics'
+        # customResourceState exports from each NodeClaim's
+        # `.status.conditions`: 1 while the condition is True, 0 while it is
+        # False or Unknown. A claim that is still being created has no
+        # condition yet and so no series: the rule sees it only once
+        # Karpenter has written the condition, which is when it starts to
+        # count as not-True. Ready is left out on purpose: it is the
+        # conjunction of these three, so it would only repeat them.
+        - alert: NodeClaimNotReady
+          expr: >-
+            max by (k8s_cluster_name, nodeclaim, nodepool, type) (
+              nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} == 0
+            )
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "NodeClaim {{ $labels.nodeclaim }} ({{ $labels.nodepool }}) has not reached {{ $labels.type }} for 10m"
+            description: >-
+              Karpenter created this NodeClaim but its {{ $labels.type }}
+              condition has not become True in 10m. Launched means the
+              instance was created, Registered that it joined the cluster as a
+              node, Initialized that it is ready for pods. Karpenter deletes a
+              claim that has not registered after 15 minutes and tries again, so
+              an alert that clears by itself is a retry. `kubectl describe
+              nodeclaim` shows the condition's reason and message.
+        # The deadman for the rule above: the series not being exported at
+        # all (the preset never applied, or the scrape is dark) reads as
+        # healthy to a rule that compares its values.
+        - alert: NodeClaimMetricsAbsent
+          expr: >-
+            (group by (k8s_cluster_name) (max_over_time(nodeclaim_status_condition{type="Launched", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (nodeclaim_status_condition{type="Launched", k8s_cluster_name!=""})) or (absent(nodeclaim_status_condition{type="Launched"}) unless on() group(max_over_time(nodeclaim_status_condition{type="Launched"}[1d])))
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "kube-state-metrics has not exported NodeClaim conditions for 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              nodeclaim_status_condition{type="Launched"} has not been seen in
+              30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so NodeClaimNotReady cannot fire even if a
+              node is failing to come up. Check that
+              `kubeStateMetrics.customResources.nodeClaims` is on in
+              observability-emitters and that the scrape is up. On a cluster
+              that can have no NodeClaims at all this alert is expected.
+    - name: platform-alerts.eso
+      interval: 1m
+      rules:
+        # The admission webhook is down.
+        #
+        # Both validating webhooks of External Secrets Operator
+        # (ExternalSecret and SecretStore validation) fail closed
+        # (`failurePolicy: Fail`): while the webhook pod does not answer,
+        # the API server refuses every create and update of an ExternalSecret,
+        # SecretStore and ClusterSecretStore, which blocks every deploy that
+        # carries one. Highest severity in the group.
+        - alert: ESOWebhookDown
+          expr: >-
+            max by (k8s_cluster_name, pod) (up{namespace="external-secrets", job=~"external-secrets-webhook.*"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The External Secrets webhook {{ $labels.pod }} has not answered its scrape for 5m"
+            description: >-
+              The webhook pod {{ $labels.pod }} does not answer. The
+              webhooks fail closed, so writes of ExternalSecrets, SecretStores
+              and ClusterSecretStores are being refused cluster-wide. Check the
+              pod in namespace external-secrets, its events and its log; as a last
+              resort the webhook configurations can be set to ignore failures.
+        # No webhook is reporting at all: the pod is gone or no longer scraped.
+        # The same outage as above, which `== 0` cannot see once the series is
+        # stale.
+        - alert: ESOWebhookAbsent
+          expr: >-
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="external-secrets", job=~"external-secrets-webhook.*", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{namespace="external-secrets", job=~"external-secrets-webhook.*", k8s_cluster_name!=""})) or (absent(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}) unless on() group(max_over_time(up{namespace="external-secrets", job=~"external-secrets-webhook.*"}[1d])))
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No External Secrets webhook has been scraped for 5m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              up{namespace="external-secrets", job=~"external-secrets-webhook.*"} has not
+              been seen in 5m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}: the webhook Deployment is
+              gone or not scraped. If it is gone the webhooks fail closed and
+              writes of ExternalSecrets and SecretStores are refused.
+        # An ExternalSecret that is not Ready.
+        #
+        # `externalsecret_status_condition` is 1 on the series of the
+        # condition the ExternalSecret currently has. The series' own
+        # `namespace` is the ExternalSecret's, which collides with the scrape's
+        # and survives as `exported_namespace` under `honor_labels: false`,
+        # which is how this chart's emitters scrape.
+        - alert: ESOExternalSecretNotReady
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (
+              externalsecret_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ExternalSecret {{ $labels.exported_namespace }}/{{ $labels.name }} has not been Ready for 15m"
+            description: >-
+              The ExternalSecret is not syncing: the Kubernetes Secret it
+              owns is stale or was never created. `kubectl describe
+              externalsecret` shows the reason: a missing remote key, a store
+              that denies the read, or a template that does not render.
+        # A SecretStore that is not Ready.
+        #
+        # A store that cannot validate its provider silently stales every
+        # ExternalSecret that reads it.
+        - alert: ESOSecretStoreNotReady
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (
+              secretstore_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SecretStore {{ $labels.exported_namespace }}/{{ $labels.name }} has not been Ready for 10m"
+            description: >-
+              The store cannot validate its provider, so every ExternalSecret
+              that reads it goes stale. `kubectl describe secretstore` shows
+              why: unreachable provider, rejected credentials or a bad
+              configuration.
+        # A ClusterSecretStore that is not Ready.
+        - alert: ESOClusterSecretStoreNotReady
+          expr: >-
+            max by (k8s_cluster_name, name) (
+              clustersecretstore_status_condition{condition="Ready", status="False"}
+            ) == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ClusterSecretStore {{ $labels.name }} has not been Ready for 10m"
+            description: >-
+              The cluster-wide store cannot validate its provider, so every
+              ExternalSecret that reads it, in any namespace, goes stale.
+              `kubectl describe clustersecretstore` shows why.
+        # Reconciles that ended in an error, per controller.
+        #
+        # controller-runtime pre-initialises the counter at 0 for every
+        # controller, so `increase` sees the first error. `for` equal to the
+        # window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: ESOReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, controller) (
+              increase(controller_runtime_reconcile_errors_total{namespace="external-secrets"}[15m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "External Secrets controller {{ $labels.controller }} keeps failing to reconcile"
+            description: >-
+              The {{ $labels.controller }} controller has recorded reconcile
+              errors for 15m. Read the operator's log
+              for the object and the error; the not-Ready alerts name the
+              objects that are affected.
+        # Calls to the secret provider's API that fail.
+        #
+        # `externalsecret_provider_api_calls_count` carries `provider`, `call`
+        # and `status` (`success` or `error`). Same shape as the rule above:
+        # the errors must keep arriving for `for`.
+        - alert: ESOProviderAPIErrors
+          expr: >-
+            sum by (k8s_cluster_name, provider) (
+              increase(externalsecret_provider_api_calls_count{status="error"}[10m])
+            ) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Calls to the {{ $labels.provider }} secret provider keep failing"
+            description: >-
+              API calls to the provider {{ $labels.provider }} have kept
+              failing for 10m: the provider is
+              unreachable or throttling, or has rejected the operator's
+              credentials. ExternalSecrets that read from it go stale.
+        # A work queue that does not drain.
+        - alert: ESOWorkqueueStuck
+          expr: >-
+            max by (k8s_cluster_name, name) (workqueue_depth{namespace="external-secrets"}) > 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "External Secrets work queue {{ $labels.name }} has not drained for 30m"
+            description: >-
+              The queue {{ $labels.name }} has held items for
+              30m: secret delivery is delayed. The operator is
+              slower than the changes arriving, or a worker is stuck.
+        # The deadman for the rules above: nothing in the operator's
+        # namespace is scraped (the chart's `serviceMonitor.enabled` is off,
+        # the pods are gone, the scrape is blocked).
+        - alert: ESOMetricsAbsent
+          expr: >-
+            (group by (k8s_cluster_name) (max_over_time(up{namespace="external-secrets", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{namespace="external-secrets", k8s_cluster_name!=""})) or (absent(up{namespace="external-secrets"}) unless on() group(max_over_time(up{namespace="external-secrets"}[1d])))
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No External Secrets target has been scraped for 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              up{namespace="external-secrets"} has not been seen in 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }},
+              so none of the External Secrets rules can fire. Check that the
+              operator chart's `serviceMonitor.enabled` is on and the pods are
+              running.
+    - name: platform-alerts.ack
+      interval: 1m
+      rules:
+        # An AWS Controllers for Kubernetes controller that does not answer.
+        #
+        # ACK controllers are what makes AWS resources converge on their
+        # Kubernetes objects, and a down controller is silent otherwise: the
+        # objects stay as they were.
+        - alert: ACKControllerDown
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod) (up{namespace=~"ack-.*"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The ACK controller {{ $labels.pod }} in {{ $labels.namespace }} has not answered its scrape for 5m"
+            description: >-
+              The controller does not answer its metrics scrape: it is down,
+              crash-looping or not ready. AWS resources it owns are not being
+              created, updated or deleted. Check the pod in
+              {{ $labels.namespace }}, its events and its log.
+        # A controller that is not reporting at all.
+        #
+        # With no `expectedNamespaces`, a controller that reported within
+        # `absentLookback` and no longer does fires per cluster and per
+        # namespace; "no ACK controller reports at all" fires through the
+        # whole-store `absent()`. Name the controllers' namespaces
+        # (`expectedNamespaces`) to also catch one that never came up.
+        - alert: ACKControllerAbsent
+          expr: >-
+            (group by (k8s_cluster_name, namespace) (max_over_time(up{namespace=~"ack-.*", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name, namespace) (up{namespace=~"ack-.*", k8s_cluster_name!=""})) or (absent(up{namespace=~"ack-.*"}) unless on() group(max_over_time(up{namespace=~"ack-.*"}[1d])))
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "An ACK controller has not been scraped for 10m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              No `up` series has been seen for an ACK controller in
+              10m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}: its Deployment is gone, its pod is not
+              scheduled, or the PodMonitor is no longer applied. AWS resources
+              it owns are not being reconciled.
+        # Reconciles that ended in an error and will be retried.
+        #
+        # controller-runtime pre-initialises the counter at 0 for every
+        # controller, so `increase` sees the first error. `for` equal to the
+        # window means one isolated error never fires: errors must keep
+        # arriving.
+        - alert: ACKReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_reconcile_errors_total{namespace=~"ack-.*"}[15m])
+            ) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} keeps failing to reconcile {{ $labels.controller }}"
+            description: >-
+              The controller in {{ $labels.namespace }} has recorded reconcile
+              errors on {{ $labels.controller }} for 15m.
+              The resources are retried and may be failing on AWS permissions,
+              throttling or a bad spec: the controller's log names the
+              resource.
+        # Terminal reconcile errors: a resource that needs a human.
+        #
+        # A terminal error is one the controller will not retry (an invalid
+        # spec, a name that is taken). The counter only moves when the error
+        # is first found, so the alert lasts `window` and then clears with the
+        # resource still broken: the Terminal condition on the object is what
+        # stays.
+        - alert: ACKTerminalReconcileErrors
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_terminal_reconcile_errors_total{namespace=~"ack-.*"}[1h])
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} hit a terminal error on {{ $labels.controller }}"
+            description: >-
+              A resource of kind {{ $labels.controller }} reached a terminal
+              error in {{ $labels.namespace }} within the last
+              1h. The controller will not retry it:
+              `kubectl get` the resources of that kind and read the
+              `ACK.Terminal` condition's message.
+        # A controller that panicked in a reconcile.
+        #
+        # controller-runtime recovers the panic and counts it; the object is
+        # retried, and the bug is the controller's.
+        - alert: ACKReconcilePanics
+          expr: >-
+            sum by (k8s_cluster_name, namespace, controller) (
+              increase(controller_runtime_reconcile_panics_total{namespace=~"ack-.*"}[15m])
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ACK controller {{ $labels.namespace }} panicked while reconciling {{ $labels.controller }}"
+            description: >-
+              The controller in {{ $labels.namespace }} recovered from a
+              panic reconciling {{ $labels.controller }} within the last
+              15m. It is a defect in that controller version:
+              find the resource in the log and check for a newer release.
+    - name: platform-alerts.envoy-routes
+      interval: 1m
+      rules:
+        # The share of a route's upstream responses that are 5xx.
+        #
+        # Envoy Gateway names one Envoy cluster per HTTPRoute rule
+        # (`httproute/<namespace>/<route>/rule/<n>`), so `envoy_cluster_name`
+        # IS the per-route label, and `envoy_response_code_class` is the
+        # class digit. Both thresholds read the same ratio; the traffic
+        # guard keeps a route that sees a request an hour from paging on one
+        # failed request. A route with no 5xx series has an empty numerator
+        # and stays silent, which is the healthy case.
+        - alert: EnvoyRoute5xxRatioHigh
+          expr: >-
+            sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*", envoy_response_code_class="5"}[5m]))
+            / sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) > 0.05
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} returns more than 0.05 5xx"
+            description: >-
+              More than 0.05 of the upstream responses of this route were
+              5xx over 5m, at a rate above 0.1 requests per
+              second. The name is `httproute/<namespace>/<route>/rule/<n>`: the
+              route's backend is failing or refusing connections.
+        - alert: EnvoyRoute5xxRatioCritical
+          expr: >-
+            sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*", envoy_response_code_class="5"}[5m]))
+            / sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) > 0.25
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} returns more than 0.25 5xx"
+            description: >-
+              More than 0.25 of the upstream responses of this route were
+              5xx over 5m: the route is effectively down.
+        # p99 of the upstream response time per route. Envoy's histogram is
+        # in milliseconds.
+        - alert: EnvoyRouteP99LatencyHigh
+          expr: >-
+            histogram_quantile(0.99, sum by (k8s_cluster_name, envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m]))) > 2000
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} p99 latency is above 2000ms"
+            description: >-
+              The 99th percentile of upstream response time for this route is above
+              2000ms over 5m.
+        - alert: EnvoyRouteP99LatencyCritical
+          expr: >-
+            histogram_quantile(0.99, sum by (k8s_cluster_name, envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m]))) > 10000
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} p99 latency is above 10000ms"
+            description: >-
+              The 99th percentile of upstream response time for this route is above
+              10000ms over 5m.
+    - name: platform-alerts.certificates
+      interval: 1m
+      rules:
+        # cert-manager's own series. A Certificate's namespace is the
+        # `exported_namespace` label (the scrape's own `namespace` is
+        # cert-manager's), which the emitters keep under honor_labels: false.
+        # `> 0` skips a Certificate that has not been issued yet (0 means no
+        # expiry known; NotReady below covers it).
+        - alert: CertificateExpiringSoon
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~".*"} > 0)
+            - time() < 14 * 86400
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} expires in under 14 days"
+            description: >-
+              cert-manager renews well before expiry, so a certificate this close has
+              not been renewed: check the Certificate's conditions and its issuer.
+        - alert: CertificateExpiryCritical
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (certmanager_certificate_expiration_timestamp_seconds{exported_namespace=~".*"} > 0)
+            - time() < 3 * 86400
+          labels:
+            severity: critical
+          annotations:
+            summary: "Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} expires in under 3 days"
+            description: >-
+              The certificate is about to expire (or has). Whatever serves it will
+              start failing TLS handshakes.
+        - alert: CertificateNotReady
+          expr: >-
+            max by (k8s_cluster_name, exported_namespace, name) (certmanager_certificate_ready_status{exported_namespace=~".*", condition="True"}) == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.exported_namespace }}/{{ $labels.name }} has not been Ready for 15m"
+            description: >-
+              The Certificate's Ready condition is not True. `kubectl describe
+              certificate` and its CertificateRequest name the reason.
+    - name: platform-alerts.restarts
+      interval: 1m
+      rules:
+        # A container whose last termination was an OOM kill AND that has
+        # restarted within `window`. `last_terminated_reason` keeps reading
+        # OOMKilled for as long as the pod lives, so on its own it would
+        # fire forever on a container that was killed once last week.
+        - alert: ContainerOOMKilled
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (kube_pod_container_status_last_terminated_reason{namespace=~".*", reason="OOMKilled"} == 1)
+            and on (k8s_cluster_name, namespace, pod, container)
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~".*"}[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} was OOM-killed"
+            description: >-
+              The container restarted within the last 15m and its last
+              termination reason is OOMKilled: its memory limit is too low or it leaks.
+        - alert: ContainerRestartingOften
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~".*"}[1h])) > 5
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 5 times in 1h"
+            description: >-
+              A restart rate this high that is not a crash loop yet (the upstream
+              crash-loop alert needs the container to be waiting in back-off at the
+              moment it evaluates) still means the container cannot stay up.
+        # A crash loop too slow for the one above and for the upstream
+        # KubePodCrashLooping: a container that dies every hour or two
+        # restarts successfully each time, so it is never waiting in
+        # back-off at the moment a rule looks and the back-off resets.
+        # Only the restart counter over a long window sees it. Namespaces
+        # matching `slowRestartExcludeNamespaces` (CI runners restart pods
+        # by design) are left out; an empty value excludes nothing.
+        - alert: ContainerRestartingSlowly
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace=~".*", namespace!~"arc-.*|ci-.*"}[6h])) > 3
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 3 times in 6h"
+            description: >-
+              The container keeps dying and coming back, slowly enough that the
+              crash-loop alerts never fire. Check `kubectl logs --previous` and
+              the last termination reason and exit code of the container.
+    - name: platform-alerts.workload-absent
+      interval: 1m
+      rules:
+        # A Deployment that is supposed to run (spec replicas above zero)
+        # and has none available. The upstream replicas-mismatch alert needs
+        # the Deployment to have SOME replicas missing; this is the whole
+        # workload gone, from a failed rollout, a quota, or a scale-down.
+        - alert: DeploymentNoAvailableReplicas
+          expr: >-
+            max by (k8s_cluster_name, namespace, deployment) (kube_deployment_status_replicas_available{namespace=~".*"}) == 0
+            and on (k8s_cluster_name, namespace, deployment)
+            max by (k8s_cluster_name, namespace, deployment) (kube_deployment_spec_replicas{namespace=~".*"}) > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has no available replicas for 10m"
+            description: >-
+              The Deployment wants replicas and none is available: the workload is
+              down. Its pods' events and the ReplicaSet's conditions name why.
+
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts-logs
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.rule-type: vlogs
+spec:
+  groups:
+    - name: platform-alerts.pod-security
+      type: vlogs
+      interval: 1m
+      rules:
+        # A controller (ReplicaSet, StatefulSet, Job, DaemonSet) whose pod
+        # create was refused by Pod Security admission.
+        #
+        # Evidence is the Kubernetes Event the controller records, which
+        # `observability-emitters` ships to the log store (`otlp.events`,
+        # the `k8s_events` receiver; fields `k8s.event.reason`,
+        # `k8s.namespace.name`, `k8s.object.kind` / `.name` are the involved
+        # object, here the controller). It is the only trace of the
+        # rejection: kube-state-metrics exports no Event series, and the
+        # Pod never exists, so nothing metric-shaped can see it. A bare Pod
+        # create gets the error straight back and leaves no Event, so this
+        # covers controllers, which is where it matters.
+        #
+        # `warn`-mode violations ("would violate") are not Events and are
+        # not matched: only `enforce` makes the message "violates
+        # PodSecurity". The window is longer than an eval because the
+        # controller's Events are rate-limited on retry (about one per five
+        # minutes once it backs off) and a rejection must not blink out
+        # between two of them.
+        - alert: PodSecurityAdmissionRejected
+          expr: >-
+            _time:15m k8s.event.reason:="FailedCreate" "violates PodSecurity"
+            | rename k8s.cluster.name as k8s_cluster_name, k8s.namespace.name as namespace, k8s.object.kind as owner_kind, k8s.object.name as owner_name
+            | stats by (k8s_cluster_name, namespace, owner_kind, owner_name) count() as rejections
+          for: 0s
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod Security admission rejected pods of {{ $labels.owner_kind }} {{ $labels.namespace }}/{{ $labels.owner_name }}"
+            description: >-
+              {{ $labels.owner_kind }} {{ $labels.namespace }}/{{ $labels.owner_name }}
+              could not create a pod in the last 15m: the namespace
+              enforces a Pod Security level the pod template does not meet, so
+              the workload is not running (or not at full strength). The Event's
+              message names every violated control; `kubectl -n {{ $labels.namespace }}
+              describe {{ $labels.owner_kind }} {{ $labels.owner_name }}` shows it
+              ("violates PodSecurity ...: <control> (<container> must set ...)").
+              Fix it in the workload by giving it a restricted securityContext
+              (runAsNonRoot, allowPrivilegeEscalation=false, capabilities
+              drop ALL, seccompProfile RuntimeDefault), or, if the workload
+              needs more, give the namespace a reasoned, lower level in the
+              cluster configuration. Clears by itself 15m after
+              the last rejection.
+    - name: platform-alerts.pod-security-audit
+      type: vlogs
+      interval: 1m
+      rules:
+        # Requests that Pod Security `audit` mode says would be refused at
+        # `enforce`: the evidence to read BEFORE a namespace is switched.
+        #
+        # Evidence is the Kubernetes API server's audit log, which carries
+        # the annotation `pod-security.kubernetes.io/audit-violations` on
+        # the request that would have been refused. EKS offers no way out of
+        # CloudWatch for it, so `observability-emitters` `cloudwatchLogs`
+        # reads the audit stream, keeps only the events with that annotation
+        # and lifts the event's own namespace into `audit.namespace` (the
+        # record itself is filed under a platform namespace, never the
+        # tenant's). The annotation text (which control, which container) is
+        # in `audit.violations` and in the body.
+        #
+        # The filter is the FIELD `audit.violations:*` (set only by the
+        # reader's `transform/audit`, and only when the event carries the
+        # annotation), never the phrase: a free-text match also counts any
+        # log line that merely mentions the annotation, such as the reader's
+        # own startup log of its OTTL config.
+        - alert: PodSecurityAuditViolations
+          expr: >-
+            _time:24h audit.violations:*
+            | rename k8s.cluster.name as k8s_cluster_name, audit.namespace as namespace
+            | stats by (k8s_cluster_name, namespace) count() as violations
+          for: 0s
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod Security audit violations in {{ $labels.namespace }}"
+            description: >-
+              Requests in namespace {{ $labels.namespace }} would be refused
+              if the namespace's Pod Security level were `enforce`: {{ $value }}
+              audited in the last 24h. Nothing is broken yet. The
+              annotation names every violated control and the container: search
+              the log store for `audit.namespace:"{{ $labels.namespace }}"` and
+              read `audit.violations`. Fix the workload before the namespace
+              switches to `enforce` (runAsNonRoot, allowPrivilegeEscalation=false,
+              capabilities drop ALL, seccompProfile RuntimeDefault). Clears by
+              itself 24h after the last violation.
