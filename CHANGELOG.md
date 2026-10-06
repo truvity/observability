@@ -6,6 +6,9 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+`deploy/pulumi/status` requires `pulumi-tailscale/sdk` v0.29.0 (it had pulled in
+v0.29.1), so a consumer on v0.29.0 keeps its provider plugin version.
+
 `observability-projects` (new chart): the generic alerts of every project
 namespace from a list of rows (`projects: [{name}]`), for an L3 `-projects`
 Application: restarts (OOM kill, restart rate, slow crash loop) and a
