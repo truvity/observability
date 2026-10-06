@@ -12,6 +12,13 @@ catalogue (`OpsCatalogue`, `PlatformHosts`, `HostsByCompany`), mints the box's
 one-shot tailnet join key and creates the Lightsail machine. Providers, host
 groups, secrets and the tunnel token are the caller's `Inputs`.
 
+Pulumi packages move in from the estate repository (no chart change):
+`deploy/pulumi/releaseassets` (verified release-asset download),
+`deploy/pulumi/otlplayer` (publishes the OTLP Lambda layer) and
+`deploy/pulumi/lambdaprobe` (the layer plus a heartbeat probe function; the
+caller passes a `Config`, the permissions-boundary ARN and the provider).
+Resource types and logical names are unchanged from the code they replace.
+
 ## v0.53.0
 
 - **Behaviour change (feat(observability-emitters)): more per-node series
