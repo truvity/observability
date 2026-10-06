@@ -1,0 +1,19 @@
+# The same values as the `presets-preset` case, written out in full: the golden of
+# this case must equal that case's (tests/presets_test.go).
+alloy:
+  controller:
+    nodeSelector:
+      kubernetes.io/arch: arm64
+    tolerations:
+      - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+global:
+  observabilityRum:
+    otlp:
+      endpoint: http://otlp-gateway.example.svc:4318
+    apps:
+      - name: shop
+        apiKeySecret:
+          name: shop-rum-key
+          key: key
+        allowedOrigins:
+          - https://shop.example

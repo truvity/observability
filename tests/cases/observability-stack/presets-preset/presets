@@ -1,0 +1,6 @@
+scheduling-durable
+scheduling-arm64
+self-alerts-victoria
+rules-no-apiserver
+rules-on-demand-nodes
+notifications-drop-vendored

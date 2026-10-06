@@ -25,6 +25,32 @@ Pulumi packages move in from the estate repository (no chart change):
 caller passes a `Config`, the permissions-boundary ARN and the provider).
 Resource types and logical names are unchanged from the code they replace.
 
+- **feat(charts): chart presets, values files shipped inside the chart.** A
+  subchart's values cannot be computed from the parent's, so a value that is
+  the same on every estate of a given shape used to be written out again in
+  every consumer. Each file in `charts/<chart>/presets/` is a values file a
+  consumer lists BEFORE its own (Argo CD `helm.valueFiles: [presets/<name>.yaml]`,
+  or `helm -f`); its own values still win key by key. Nothing reads a preset
+  unless it is listed, so no default moves and every existing render is
+  byte-identical (the existing goldens do not change). New:
+  `observability-stack` `operator-only` (the `mode: operator-only` explicit
+  `false`s), `self-alerts-victoria` (the verified metric names of
+  every `selfAlerts` rule that has an upstream series), `rules-no-apiserver`
+  and `rules-on-demand-nodes` (the vendored rules a managed control plane and
+  an on-demand node fleet cannot feed), `notifications-drop-vendored` (the
+  vendored alert groups kept out of routing; a list, so it replaces your own
+  `notifications.drop`), `scheduling-durable` and `scheduling-arm64`;
+  `observability-emitters` `local-write` (writer wiring to a stack installed in
+  the same cluster with the stack's default names, including the container-log
+  agent's mounts and `remoteWrite`), `logs-collector-remote` (the log agent's
+  mounts for the `remote` form), `scheduling-durable` and `scheduling-arm64`;
+  `observability-grafana` and `observability-rum` `scheduling-arm64`;
+  `platform-alerts` `stores-victoria` and `keep-cluster-label`. The log agent's
+  `collector.extraFields` still mirrors `tenancy` in your values: Helm cannot
+  derive a subchart value. Each preset case in `tests/cases` is rendered beside
+  the same values written out in full and the two goldens must be equal
+  (`tests/presets_test.go`); `hack/golden.sh` takes a `presets` file per case.
+
 ## v0.53.0
 
 - **Behaviour change (feat(observability-emitters)): more per-node series

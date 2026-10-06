@@ -1,0 +1,11 @@
+# The preset case: the presets listed in `presets` supply the write wiring and
+# the scheduling; this file is only what no preset can know.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+tenancy:
+  cluster: example-cluster
+  environment: development
+victoria-logs-collector:
+  collector:
+    extraFields: '{"k8s.cluster.name":"example-cluster","deployment.environment.name":"development"}'

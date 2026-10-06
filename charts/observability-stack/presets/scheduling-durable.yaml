@@ -1,0 +1,45 @@
+# Preset: the stateful components on a "durable" node pool.
+#
+# For an estate whose Kubernetes cluster runs an on-demand, never-consolidated
+# node pool named `durable` (arm64, tainted `durable=true:NoSchedule` and
+# `arch=arm64:NoSchedule`). An EBS-style ReadWriteOnce volume on a pool that
+# is consolidated all day moves with it, and a store that is being moved is a
+# gap in the data nobody can tell from an outage.
+#
+# Sets the metrics, log and trace stores and the backup Jobs (the backup Jobs
+# carry a hard pod affinity onto the metrics store's pod, so they must
+# select and tolerate the same pool). Use it by listing the file as a values
+# file BEFORE your own values; your own values still win key by key:
+#
+#   helm install ... -f charts/observability-stack/presets/scheduling-durable.yaml -f my-values.yaml
+#
+# Nothing reads this file unless it is listed, so a consumer that does not list
+# it renders exactly what it rendered before.
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      nodeSelector:
+        karpenter.sh/nodepool: durable
+      tolerations:
+        - {key: durable, operator: Equal, value: "true", effect: NoSchedule}
+        - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+victoria-logs-single:
+  server:
+    nodeSelector:
+      karpenter.sh/nodepool: durable
+    tolerations:
+      - {key: durable, operator: Equal, value: "true", effect: NoSchedule}
+      - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+victoria-traces-single:
+  server:
+    nodeSelector:
+      karpenter.sh/nodepool: durable
+    tolerations:
+      - {key: durable, operator: Equal, value: "true", effect: NoSchedule}
+      - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+backup:
+  nodeSelector:
+    karpenter.sh/nodepool: durable
+  tolerations:
+    - {key: durable, operator: Equal, value: "true", effect: NoSchedule}
+    - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}

@@ -1,0 +1,30 @@
+# The same values as the `presets-preset` case, written out in full: the golden of
+# this case must equal that case's (tests/presets_test.go).
+grafana:
+  nodeSelector:
+    kubernetes.io/arch: arm64
+  tolerations:
+    - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+  admin:
+    existingSecret: grafana-admin
+global:
+  observabilityGrafana:
+    rootUrl: https://grafana.example.org
+    stores:
+      - name: store-a
+        url: https://store-a.example.org
+        default: true
+      - name: store-b
+        url: https://store-b.example.org
+    oauth:
+      issuer: https://issuer.example.org
+      clientId: grafana
+      clientSecretRef:
+        name: grafana-client
+      roleAttributePath: "contains(groups[*], 'example:admin') && 'Admin' || 'Editor'"
+    database:
+      host: postgres.example.org:5432
+      secretRef:
+        name: grafana-pg-app
+    secretKeyRef:
+      name: grafana-secret-key

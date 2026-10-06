@@ -1,0 +1,15 @@
+# Preset: turn off the vendored `kube-apiserver-availability.rules` recording
+# group.
+#
+# Its inputs are `apiserver_request_total` and
+# `apiserver_request_sli_duration_seconds_*`. A managed control plane (EKS) is
+# not scrapeable and the chart's `kubeApiServer` scrape is off, so vmalert
+# evaluates the group, gets an empty result every time, and
+# `RecordingRulesNoData` fires once per rule. Re-enable the group if you add an
+# apiserver scrape job. List the file BEFORE your own values; your own values
+# still win key by key. Nothing reads it unless it is listed.
+victoria-metrics-k8s-stack:
+  defaultRules:
+    groups:
+      kube-apiserver-availability.rules:
+        enabled: false

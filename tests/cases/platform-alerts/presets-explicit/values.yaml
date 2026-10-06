@@ -1,0 +1,43 @@
+# The same values as the `presets-preset` case, written out in full: the golden of
+# this case must equal that case's (tests/presets_test.go).
+stores:
+  - name: metrics
+    rowsMetric: vm_rows_inserted_total
+    freeSpaceMetric: vm_free_disk_space_bytes
+    freeSpaceLimitMetric: vm_free_disk_space_limit_bytes
+  - name: logs
+    rowsMetric: vl_rows_ingested_total
+groups:
+  backups:
+    keepClusterLabel: true
+    enabled: true
+  pendingPods:
+    keepClusterLabel: true
+    enabled: true
+  nodeClaims:
+    keepClusterLabel: true
+    enabled: true
+  eso:
+    keepClusterLabel: true
+    enabled: true
+  ack:
+    keepClusterLabel: true
+    enabled: true
+  podSecurity:
+    keepClusterLabel: true
+    enabled: true
+  podSecurityAudit:
+    keepClusterLabel: true
+    enabled: true
+  envoyRoutes:
+    keepClusterLabel: true
+    enabled: true
+  certificates:
+    keepClusterLabel: true
+    enabled: true
+  restarts:
+    keepClusterLabel: true
+    enabled: true
+  workloadAbsent:
+    keepClusterLabel: true
+    enabled: true

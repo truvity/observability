@@ -18,9 +18,20 @@ for values in "$root"/tests/cases/*/*/values.yaml; do
   chart="$(basename "$(dirname "$case_dir")")"
   golden="$root/tests/golden/$chart/$case_name.yaml"
 
+  # A case may list chart presets (charts/<chart>/presets/<name>.yaml), one
+  # name per line in `presets`: they are values files listed BEFORE the
+  # case's own values, the way a consumer lists them, so the case's values win.
+  preset_args=()
+  if [ -f "$case_dir/presets" ]; then
+    while IFS= read -r preset; do
+      [ -n "$preset" ] || continue
+      preset_args+=(-f "$root/charts/$chart/presets/$preset.yaml")
+    done < "$case_dir/presets"
+  fi
+
   rendered="$(helm template "$chart" "$root/charts/$chart" \
       --namespace "$(cat "$case_dir/namespace" 2>/dev/null || echo default)" \
-      -f "$values")"
+      ${preset_args[@]+"${preset_args[@]}"} -f "$values")"
 
   if [ "$mode" = update ]; then
     mkdir -p "$(dirname "$golden")"

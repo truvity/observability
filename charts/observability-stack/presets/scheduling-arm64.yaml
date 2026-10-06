@@ -1,0 +1,11 @@
+# Preset: the operator on arm64 nodes.
+#
+# For an estate whose cluster has arm64 nodes tainted `arch=arm64:NoSchedule`.
+# List the file as a values file BEFORE your own values; your own values
+# still win key by key. Nothing reads it unless it is listed.
+victoria-metrics-k8s-stack:
+  victoria-metrics-operator:
+    nodeSelector:
+      kubernetes.io/arch: arm64
+    tolerations:
+      - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}

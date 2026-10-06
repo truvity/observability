@@ -1,0 +1,15 @@
+# Preset: the metric names of a VictoriaMetrics family store for `stores`.
+#
+# The metrics store (rows inserted, free disk space and its guard limit) and the
+# log store (rows ingested). Traces are deliberately not listed: a trace store
+# that is merely idle would fire the write-path alert on healthy data; add the
+# entry yourself once the volume justifies it. A list is replaced, not merged,
+# so your own `stores` REPLACES this one. List the file BEFORE your own values.
+# Nothing reads it unless it is listed.
+stores:
+  - name: metrics
+    rowsMetric: vm_rows_inserted_total
+    freeSpaceMetric: vm_free_disk_space_bytes
+    freeSpaceLimitMetric: vm_free_disk_space_limit_bytes
+  - name: logs
+    rowsMetric: vl_rows_ingested_total

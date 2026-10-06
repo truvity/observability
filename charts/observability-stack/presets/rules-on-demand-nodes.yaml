@@ -1,0 +1,18 @@
+# Preset: turn off the two vendored overcommit alerts on a cluster whose nodes
+# are provisioned on demand.
+#
+# Where a node autoscaler (Karpenter, EKS Auto Mode) creates a node when a pod
+# does not fit, requests above allocatable is the normal state and
+# `KubeCPUOvercommit` / `KubeMemoryOvercommit` fire for nothing. Pair it with
+# the pending-pod alert of `platform-alerts` (`groups.pendingPods`), which
+# says the thing that matters. `KubeCPUQuotaOvercommit` and
+# `KubeMemoryQuotaOvercommit` (namespace ResourceQuotas) are a different thing
+# and stay on. `enabled: false` is the sync job's per-alert off switch.
+# List the file BEFORE your own values. Nothing reads it unless it is listed.
+victoria-metrics-k8s-stack:
+  defaultRules:
+    rules:
+      KubeCPUOvercommit:
+        enabled: false
+      KubeMemoryOvercommit:
+        enabled: false

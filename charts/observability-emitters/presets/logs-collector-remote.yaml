@@ -1,0 +1,32 @@
+# Preset: the container-log agent's mounts for a store written to ACROSS a
+# network (the `remote` form), where the agent reads both its bearer token and
+# the CA that signs the store's certificate from files.
+#
+# Mounts the Secret `observability-write-token` at
+# `/etc/observability-write-token` and the Secret `observability-write-ca`
+# at `/etc/observability-write-ca`. The agent's own `remoteWrite` entry (the URL
+# is yours) points at them:
+#
+#   victoria-logs-collector:
+#     remoteWrite:
+#       - url: https://<your write URL>
+#         tlsCAFile: /etc/observability-write-ca/ca.crt
+#         bearerTokenFile: /etc/observability-write-token/token
+#         maxDiskUsagePerURL: 5GB
+#
+# List the file BEFORE your own values. Nothing reads it unless it is listed.
+victoria-logs-collector:
+  extraVolumes:
+    - name: write-token
+      secret:
+        secretName: observability-write-token
+    - name: write-ca
+      secret:
+        secretName: observability-write-ca
+  extraVolumeMounts:
+    - name: write-token
+      mountPath: /etc/observability-write-token
+      readOnly: true
+    - name: write-ca
+      mountPath: /etc/observability-write-ca
+      readOnly: true

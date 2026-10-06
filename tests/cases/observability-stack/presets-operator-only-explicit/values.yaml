@@ -1,0 +1,26 @@
+# The same values as the `presets-operator-only-preset` case, written out in full: the
+# golden of this case must equal that case's (tests/presets_test.go).
+mode: operator-only
+victoria-metrics-k8s-stack:
+  vmsingle:
+    enabled: false
+  syncJob:
+    enabled: false
+  victoria-metrics-operator:
+    nodeSelector:
+      kubernetes.io/arch: arm64
+    tolerations:
+      - {key: arch, operator: Equal, value: arm64, effect: NoSchedule}
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false
+grafana:
+  enabled: false
+backup:
+  enabled: false
+selfAlerts:
+  enabled: false
+global:
+  cluster:
+    dnsDomain: cluster.example.

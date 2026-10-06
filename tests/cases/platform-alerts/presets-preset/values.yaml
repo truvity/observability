@@ -1,0 +1,26 @@
+# The preset case: `stores-victoria` supplies the store list and
+# `keep-cluster-label` the label on the cluster-scoped groups. The groups below
+# are enabled so the label shows in the render.
+groups:
+  backups:
+    enabled: true
+  pendingPods:
+    enabled: true
+  nodeClaims:
+    enabled: true
+  eso:
+    enabled: true
+  ack:
+    enabled: true
+  podSecurity:
+    enabled: true
+  podSecurityAudit:
+    enabled: true
+  envoyRoutes:
+    enabled: true
+  certificates:
+    enabled: true
+  restarts:
+    enabled: true
+  workloadAbsent:
+    enabled: true
