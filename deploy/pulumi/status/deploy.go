@@ -21,6 +21,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
 	"github.com/truvity/observability/pkg/statusbox"
+	"github.com/truvity/observability/pkg/statusbox/ec2"
 	"github.com/truvity/observability/pkg/statusbox/lightsail"
 )
 
@@ -35,6 +36,22 @@ const (
 	// publicInstanceName / privateInstanceName are the two ops instances.
 	publicInstanceName  = "ops"
 	privateInstanceName = "ops-breakglass"
+)
+
+// Backend is where the box runs.
+type Backend string
+
+const (
+	// BackendLightsail is the default (the empty value means it): one
+	// Lightsail instance, secrets baked into its cloud-init, joined to a
+	// tailnet.
+	BackendLightsail Backend = "lightsail"
+
+	// BackendEC2 is an Auto Scaling group of one with a warm pool, Gatus and
+	// cloudflared as systemd units, SQLite replicated to S3 by Litestream and
+	// secrets read from SSM Parameter Store at boot (docs/statusbox.md, "EC2
+	// backend"). It mints no tailnet key and installs no Tailscale.
+	BackendEC2 Backend = "ec2"
 )
 
 type (
@@ -78,8 +95,47 @@ type (
 		DeadmanSlackToken pulumi.StringInput
 		OIDCClientSecret  pulumi.StringInput
 		TunnelToken       pulumi.StringInput
+
+		// Backend selects where the box runs; empty is BackendLightsail, and
+		// the render with it empty is exactly what it was before the field
+		// existed. With BackendEC2, EC2 is required and the Lightsail-only
+		// inputs (AvailabilityZone, Hostname, TailscaleProvider, TailscaleTag,
+		// Generation) and every secret VALUE above are unused: the secrets
+		// arrive as the SSM parameter names in EC2.
+		Backend Backend
+		EC2     EC2Inputs
+	}
+
+	// EC2Inputs are the EC2 backend's own inputs.
+	EC2Inputs struct {
+		// VPCID and SubnetIDs are the caller's network: public subnets only,
+		// in two or more zones.
+		VPCID     pulumi.StringInput
+		SubnetIDs []pulumi.StringInput
+		// PrivateIngressCIDRs may reach the private page (PrivatePort), for
+		// instance a peered VPC.
+		PrivateIngressCIDRs []string
+
+		// Bucket and BucketPrefix hold the Litestream replicas; KMSKeyARN is
+		// the optional customer-managed key for the parameters and the bucket.
+		Bucket       string
+		BucketPrefix string
+		KMSKeyARN    string
+
+		// InstanceType defaults to the package's (t4g.nano).
+		InstanceType string
+
+		// The SSM parameter NAMES of the box's secrets. TunnelTokenParameter
+		// and OIDCClientSecretParameter are required with a public page; the
+		// other two always.
+		AlertsReadTokenParameter   string
+		DeadmanSlackTokenParameter string
+		OIDCClientSecretParameter  string
+		TunnelTokenParameter       string
 	}
 )
+
+func (b Backend) isEC2() bool { return b == BackendEC2 }
 
 func (in Inputs) catalogue(public bool) CatalogueInputs {
 	return CatalogueInputs{
@@ -93,8 +149,19 @@ func (in Inputs) catalogue(public bool) CatalogueInputs {
 func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 	ctx := c.Context()
 
-	if in.PublicHostname != "" && (in.OIDCClientSecret == nil || in.TunnelToken == nil) {
+	switch in.Backend {
+	case "", BackendLightsail:
+	case BackendEC2:
+	default:
+		return fmt.Errorf("status: unknown Backend %q (want %q or %q)", in.Backend, BackendLightsail, BackendEC2)
+	}
+
+	if !in.Backend.isEC2() && in.PublicHostname != "" && (in.OIDCClientSecret == nil || in.TunnelToken == nil) {
 		return errors.New("status: a public page needs OIDCClientSecret and TunnelToken")
+	}
+
+	if in.Backend.isEC2() && in.PublicHostname != "" && (in.EC2.OIDCClientSecretParameter == "" || in.EC2.TunnelTokenParameter == "") {
+		return errors.New("status: a public page needs EC2.OIDCClientSecretParameter and EC2.TunnelTokenParameter")
 	}
 
 	// Both instances render from the SAME inputs, differing only in the
@@ -123,6 +190,10 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 		hostnames[publicInstanceName] = in.PublicHostname
 	} else {
 		logger.InfoContext(ctx, "status: no public hostname: no tunnel, every instance private")
+	}
+
+	if in.Backend.isEC2() {
+		return deployEC2(c, logger, in, instances, hostnames)
 	}
 
 	// boxShape names the Lightsail machine requested below. Built once and
@@ -187,6 +258,55 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 	logger.InfoContext(ctx, "status box deployed",
 		slog.Int("instances", len(instances)),
 		slog.String("availability_zone", in.AvailabilityZone),
+		slog.String("observability_version", in.Version),
+		slog.String("alerts_read_host", in.AlertsReadHost),
+	)
+
+	return nil
+}
+
+// deployEC2 provisions the EC2 backend: no tailnet key, no secret value in the
+// render, only the names of the SSM parameters the instance reads at boot.
+func deployEC2(c *pulumi.Context, logger *slog.Logger, in Inputs, instances []statusbox.Instance, hostnames map[string]string) error {
+	args := &ec2.Args{
+		Version:    in.Version,
+		Instances:  instances,
+		Hostnames:  hostnames,
+		TrustedCAs: in.TrustedCAs,
+		AlertURLParameters: map[string]string{
+			AlertsReadTokenKey:   in.EC2.AlertsReadTokenParameter,
+			DeadmanSlackTokenKey: in.EC2.DeadmanSlackTokenParameter,
+		},
+		VPCID:               in.EC2.VPCID,
+		SubnetIDs:           in.EC2.SubnetIDs,
+		PrivateIngressCIDRs: in.EC2.PrivateIngressCIDRs,
+		Bucket:              in.EC2.Bucket,
+		BucketPrefix:        in.EC2.BucketPrefix,
+		KMSKeyARN:           in.EC2.KMSKeyARN,
+		InstanceType:        in.EC2.InstanceType,
+		Provider:            in.BoxProvider,
+	}
+
+	if in.PublicHostname != "" {
+		args.TunnelTokenParameter = in.EC2.TunnelTokenParameter
+		args.EnvParameters = map[string]string{OIDCClientSecretEnvKey: in.EC2.OIDCClientSecretParameter}
+	}
+
+	var opts []pulumi.ResourceOption
+	if in.BoxProvider != nil {
+		opts = append(opts, pulumi.Provider(in.BoxProvider))
+	}
+
+	box, err := ec2.NewEC2(c, "status", args, opts...)
+	if err != nil {
+		return fmt.Errorf("status: create ec2 box: %w", err)
+	}
+
+	c.Export("statusBoxAutoScalingGroup", box.Group.Name)
+
+	logger.InfoContext(c.Context(), "status box deployed",
+		slog.String("backend", string(BackendEC2)),
+		slog.Int("instances", len(instances)),
 		slog.String("observability_version", in.Version),
 		slog.String("alerts_read_host", in.AlertsReadHost),
 	)
