@@ -56,7 +56,6 @@ func main() {
 	handler, opsHandler := newHandlers(webhook, registry, *metricsAddr != "")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	if cfg.Input.UsesSQS() {
 		client, err := NewSQSClient(ctx, cfg.Input.SQS.Region)
@@ -106,6 +105,7 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
+		stop()
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

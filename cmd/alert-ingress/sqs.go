@@ -89,11 +89,14 @@ func (c *SQSConsumer) sleep(ctx context.Context, d time.Duration) {
 // error is the receive error, already counted and logged.
 func (c *SQSConsumer) PollOnce(ctx context.Context) error {
 	out, err := c.Client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:                    aws.String(c.Config.QueueURL),
-		MaxNumberOfMessages:         int32(c.Config.MaxMessages),
-		WaitTimeSeconds:             int32(c.Config.WaitTimeSeconds),
-		VisibilityTimeout:           int32(c.Config.VisibilityTimeoutSeconds),
-		MessageSystemAttributeNames: []types.MessageSystemAttributeName{types.MessageSystemAttributeNameSentTimestamp, types.MessageSystemAttributeNameApproximateFirstReceiveTimestamp},
+		QueueUrl:            aws.String(c.Config.QueueURL),
+		MaxNumberOfMessages: int32(c.Config.MaxMessages),
+		WaitTimeSeconds:     int32(c.Config.WaitTimeSeconds),
+		VisibilityTimeout:   int32(c.Config.VisibilityTimeoutSeconds),
+		MessageSystemAttributeNames: []types.MessageSystemAttributeName{
+			types.MessageSystemAttributeNameSentTimestamp,
+			types.MessageSystemAttributeNameApproximateFirstReceiveTimestamp,
+		},
 	})
 	if err != nil {
 		if ctx.Err() == nil {

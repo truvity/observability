@@ -51,7 +51,7 @@ metadata:
     app.kubernetes.io/instance: alert-ingress
     app.kubernetes.io/managed-by: Helm
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/alert-ingress
+    eks.amazonaws.com/role-arn: <the IRSA role ARN>
 automountServiceAccountToken: false
 
 ---

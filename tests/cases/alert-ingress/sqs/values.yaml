@@ -19,7 +19,7 @@ input:
 
 serviceAccount:
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/alert-ingress
+    eks.amazonaws.com/role-arn: "<the IRSA role ARN>"
 
 rules:
   sqsReceiveFailing:

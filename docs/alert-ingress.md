@@ -346,8 +346,8 @@ the values.
     "Effect": "Allow",
     "Principal": {"Service": "sns.amazonaws.com"},
     "Action": "sns:SendMessage",
-    "Resource": "arn:aws:sqs:eu-west-1:ACCOUNT:alerts",
-    "Condition": {"ArnEquals": {"aws:SourceArn": "arn:aws:sns:eu-west-1:ACCOUNT:security-alerts"}}
+    "Resource": "<the queue ARN>",
+    "Condition": {"ArnEquals": {"aws:SourceArn": "<the topic ARN>"}}
   }]
 }
 ```
