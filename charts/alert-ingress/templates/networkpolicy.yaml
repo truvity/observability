@@ -82,4 +82,14 @@ spec:
         - protocol: TCP
           port: 443
     {{- end }}
+    {{- if and (ne .Values.input.mode "http") .Values.networkPolicy.egress.podIdentityAgent }}
+    # 5. The EKS Pod Identity agent, for the queue input's AWS credentials: it
+    # answers on a link-local address over plain HTTP (IRSA needs only 443).
+    - to:
+        - ipBlock:
+            cidr: 169.254.170.23/32
+      ports:
+        - protocol: TCP
+          port: 80
+    {{- end }}
 {{- end }}
