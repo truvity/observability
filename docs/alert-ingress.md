@@ -352,7 +352,7 @@ the values.
   "Statement": [{
     "Effect": "Allow",
     "Principal": {"Service": "sns.amazonaws.com"},
-    "Action": "sns:SendMessage",
+    "Action": "sqs:SendMessage",
     "Resource": "<the queue ARN>",
     "Condition": {"ArnEquals": {"aws:SourceArn": "<the topic ARN>"}}
   }]
@@ -371,6 +371,73 @@ Keep the visibility timeout above how long a batch can take to deliver
 **IAM** for the pod's role, on the queue: `sqs:ReceiveMessage`,
 `sqs:DeleteMessage`, `sqs:GetQueueAttributes`; plus `kms:Decrypt` on the key when
 the queue uses SSE-KMS with a customer key.
+
+### Provisioning the queue with deploy/pulumi/alertqueue
+
+The Pulumi Go package `github.com/truvity/observability/deploy/pulumi/alertqueue`
+creates everything above that belongs to the consumer, so an install does not
+hand-write it. Call it from a stack that has an AWS provider for the queue's
+account and region:
+
+```go
+out, err := alertqueue.Deploy(ctx, alertqueue.Inputs{
+    Name: "alerts",
+    TopicARNs: []string{
+        "arn:aws:sns:eu-west-1:111111111111:security",
+        "arn:aws:sns:us-east-1:111111111111:budgets", // another region is fine
+    },
+    AlarmTopicARN: "arn:aws:sns:eu-west-1:111111111111:security", // optional
+}, pulumi.Provider(provider))
+```
+
+| Input | Default | Meaning |
+|---|---|---|
+| `Name` | required | queue name; the dead-letter queue is `<Name>-dlq` |
+| `TopicARNs` | required, non-empty | topics allowed to publish (any account, any region); each must be an SNS topic ARN, no duplicates |
+| `KMSKeyARN` | empty | customer key (`key/<id>`) for both queues; empty means SQS-managed SSE |
+| `MaxReceiveCount` | 100 | redrive threshold, 1-1000 |
+| `VisibilityTimeoutSeconds` | 300 | 0-43200 |
+| `RetentionSeconds` | 1209600 (14 days) | on both queues, 60-1209600 |
+| `AlarmTopicARN` | empty | no alarm when empty; must be in the queue's region |
+
+It creates the queue, the dead-letter queue (both encrypted), the redrive
+policy, and one queue policy that allows `sqs:SendMessage` from
+`sns.amazonaws.com` only when `aws:SourceArn` is one of `TopicARNs`. Outputs:
+`QueueARN`, `QueueURL` (the value for `input.sqs.queueURL`), `DeadLetterQueueARN`
+and `ConsumerPolicy`, an IAM policy document (JSON) for the polling role:
+`sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes` on the queue,
+plus `kms:Decrypt` on the key when `KMSKeyARN` is set. Attach it to the role
+the chart's ServiceAccount assumes. The package creates no role and no Pod
+Identity association, and no SNS subscription: the owner of each topic
+subscribes the queue's ARN (protocol `sqs`, raw message delivery off).
+
+**Customer key.** The key is the caller's, so its key policy is too. SNS must be
+allowed to encrypt what it delivers to the queue:
+
+```json
+{
+  "Sid": "AllowSNSToUseTheKey",
+  "Effect": "Allow",
+  "Principal": {"Service": "sns.amazonaws.com"},
+  "Action": ["kms:GenerateDataKey*", "kms:Decrypt"],
+  "Resource": "*"
+}
+```
+
+When a topic is itself encrypted with a customer key, that key's policy must let
+the publisher (for a CloudWatch alarm, `cloudwatch.amazonaws.com`) use it, as
+for any encrypted topic.
+
+**Dead-letter alarm.** With `AlarmTopicARN` set, a CloudWatch alarm
+`<Name>-dlq-not-empty` watches the dead-letter queue's
+`ApproximateNumberOfMessagesVisible` (maximum over 5 minutes, greater than 0;
+missing data is not breaching) and notifies that topic on both ALARM and OK.
+Pointing it at a topic that is itself in `TopicARNs` is fine: the notification
+is delivered through the main queue, and alert-ingress maps CloudWatch alarms
+(see "CloudWatch alarms"), so a mapping on `AlarmName` turns it into an
+Alertmanager alert. The one case it cannot cover is the main queue being
+unreadable, since then the alarm travels the same path; keep the deadman and the
+`rules.sqsReceiveFailing` / `rules.sqsMessageAge` rules for that.
 
 **Network.** The NetworkPolicy already allows HTTPS to anywhere
 (`networkPolicy.allowCloudHTTPS`), which covers the SQS endpoint. If you turn
