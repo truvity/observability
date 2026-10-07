@@ -70,8 +70,11 @@ func newConsumer(t *testing.T, srv *Server, fake *fakeSQS) *SQSConsumer {
 	t.Helper()
 
 	return &SQSConsumer{
-		Client:  fake,
-		Config:  SQSConfig{QueueURL: "https://sqs.eu-west-1.amazonaws.com/ACCOUNT/alerts", MaxMessages: 10, WaitTimeSeconds: 20, VisibilityTimeoutSeconds: 60, Concurrency: 1},
+		Client: fake,
+		Config: SQSConfig{
+			QueueURL: "https://sqs.eu-west-1.amazonaws.com/ACCOUNT/alerts", MaxMessages: 10,
+			WaitTimeSeconds: 20, VisibilityTimeoutSeconds: 60, Concurrency: 1,
+		},
 		Server:  srv,
 		Metrics: srv.Metrics,
 		Logger:  srv.Logger,
@@ -198,7 +201,7 @@ func TestSQSConfirmationsAreLoggedAndDeleted(t *testing.T) {
 	srv := newTestServer(t, fixture, baseConfig(), am)
 
 	followed := false
-	confirmServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { followed = true }))
+	confirmServer := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { followed = true }))
 	t.Cleanup(confirmServer.Close)
 
 	sub := fixture.sign(t, Envelope{
