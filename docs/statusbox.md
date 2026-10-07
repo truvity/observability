@@ -420,6 +420,46 @@ CI runs it on a plain Ubuntu runner with a fixture config and asserts
 every instance answers `/health`. The first run of the script must not
 be on the box, on a bad day.
 
+## EC2 backend
+
+`pkg/statusbox/ec2` is a second place to run the same pages: an Amazon Linux 2023 instance in an Auto Scaling group of exactly one, with a warm pool of one stopped instance. The Lightsail backend is unchanged and stays the default; an estate opts in. It has no Docker, no Tailscale and no attached disk, and no secret in user-data.
+
+```mermaid
+flowchart LR
+  subgraph vpc["the caller's VPC: public subnets in two zones, no NAT"]
+    asg["Auto Scaling group<br/>min = max = desired = 1"]
+    inst["the instance (dynamic public IPv4)<br/>gatus@&lt;name&gt;.service per instance<br/>cloudflared.service"]
+    warm["warm pool: one stopped, installed instance"]
+  end
+  asg --> inst
+  warm -. "scale-out: boot, hook" .-> inst
+  inst -- "litestream replicate, every 60s" --> s3["S3 bucket / prefix / instance"]
+  inst -- "ssm get-parameter --with-decryption<br/>(role scoped to the named parameters)" --> ssm["SSM Parameter Store"]
+```
+
+**What it creates.** A launch template (Amazon Linux 2023 image from the public SSM parameter for the architecture, IMDSv2 required, an encrypted gp3 root volume, a public IPv4 address and no Elastic IP), an instance profile and role, a security group with no inbound rule except the private page's port from `PrivateIngressCIDRs`, and the Auto Scaling group with its launch hook declared on the group, so the hook exists before the first launch. `InstanceType` defaults to `t4g.nano`; a Graviton family is arm64, anything else amd64. The image is looked up when Pulumi runs and pinned in the launch template, so a newer Amazon Linux release shows up as a diff and a rolling refresh, never as a change on the next launch.
+
+**The input is parameter names, not secrets.** `TunnelTokenParameter`, `AlertURLParameters` (the Config's `${ALERT_URL_<KEY>}`, the alerts-read token and a deadman's chat token among them) and `EnvParameters` (a whole variable name, such as `OIDC_CLIENT_SECRET`) are SSM Parameter Store names. The instance reads them at boot with `aws ssm get-parameter --with-decryption` and writes them to a tmpfs under `/run`, mode 0600, never to the root volume. The role's policy names exactly those parameter ARNs, the bucket's prefix, the one Auto Scaling group and, if `KMSKeyARN` is given, that one key; there is no managed policy on it. A test fails if `Args` ever grows a field a secret value could be handed in through.
+
+**Gatus and cloudflared are systemd units.** `gatus@<instance>.service` runs each instance as `litestream replicate -exec gatus` under a dedicated user, with the instance's directory bind-mounted at `/data` so a Config's `storage.path: /data/ops.db` is the same path a container would have had. The Config must say `storage.type: sqlite` with a file directly under `/data`; `Args.validate` refuses anything else. The listener is not the Config's: the setup script writes a second file into the instance's config directory, which Gatus merges over the first, binding a public instance to `127.0.0.1` (where cloudflared dials it) and the private one to every interface (where the security group admits the peer). `cloudflared.service` runs `cloudflared tunnel run` with the token from the environment. Both are `Restart=always`. Neither unit is enabled: only the boot phase starts them, which is what the next section depends on.
+
+**The binaries are pinned.** Gatus is built in this repository's release from the upstream tag `GatusVersion` (the same version `setup.sh` pins as the Lightsail image; a test keeps the two equal) for linux/arm64 and linux/amd64, attached as `gatus_<tag>_linux_<arch>` and listed in `checksums.txt`. The checksum is read from that file when Pulumi runs and rendered into the user-data, like `setup.sh`'s. Litestream and cloudflared are downloaded from their upstream releases; their versions and sha256 sums per architecture are constants in `pkg/statusbox/ec2/pins.go`. Every download is verified before it is installed.
+
+**Storage: SQLite on the root volume, replicated by Litestream.** Gatus opens its SQLite database in WAL mode (`PRAGMA journal_mode=WAL` in its store, set when it opens the file), which is the mode Litestream requires, so no change to Gatus is needed. Each instance replicates to `s3://<Bucket>/<BucketPrefix>/<instance>` with `sync-interval: 60s`: a replaced instance loses at most the last minute of probe history. Gatus is not a source of truth, so that is the accepted window.
+
+**One writer, by construction.** The user-data installs everything on the first boot, then a `statusbox-boot` unit runs on every boot and reads the Auto Scaling group's target lifecycle state from the metadata service.
+
+- A warm-pool instance (`Warmed:*`) completes its launch hook and stops. It restores nothing, starts nothing and reads no secret.
+- An instance going `InService` (a scale-out from the warm pool, or a cold launch) reads the secrets, runs `litestream restore -if-replica-exists` for each database, and only then starts the Gatus units and cloudflared. It completes the hook once every instance answers `/health`, then turns on the health timer. If any step fails it abandons the launch, and the group replaces the instance.
+
+The replica is therefore written only by the one in-service instance. The group is `min = max = desired = 1` and the instance refresh uses `MinHealthyPercentage: 0`, so a replacement stops the old instance before the new one launches. A restore goes to a temporary file and replaces the local database only if it produced one, so a first-ever start with no replica begins empty and a failed restore never leaves half a database.
+
+**Health.** `Restart=always` handles a crashing process. A timer runs a local check every minute: each Gatus unit active and answering `/health`, and cloudflared active when there is a tunnel. If that fails continuously for `HealthFailMinutes` (default 5), the instance calls `aws autoscaling set-instance-health --health-status Unhealthy` on itself and the group replaces it. A 1 GiB swap file and a 100 MiB journald cap keep a nano instance alive.
+
+**Not in this backend.** Tailscale: the instance reaches its peer over private routing (VPC peering) that the caller provides, and the private page is reachable on its own port from `PrivateIngressCIDRs`, not over a tailnet on port 80. Outside checks, the Gatus metrics push, healthchecks.io and Telegram follow separately.
+
+**Proof.** The package's tests cover `Args.validate`, a golden of the rendered user-data, the resource shapes (group, launch template, security group, role policy) and the absence of any secret value from it. `just statusbox-ec2` runs the setup script inside an `amazonlinux:2023` container: the pinned downloads, the units and Litestream configs, a database round trip through `litestream replicate` and the script's restore, and the boot phase's ordering with `systemctl`, `aws` and the metadata service replaced by shims. It does not run systemd or an instance; the first real boot is the one thing left unproved.
+
 ## Immutable, by construction
 
 The provider's user-data is applied once, at creation. So a change to
