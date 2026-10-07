@@ -389,72 +389,8 @@ func (a Args) validate() error {
 			"is refused rather than escaped", a.Hostname, instanceNameRE))
 	}
 
-	if len(a.Instances) == 0 {
-		errs = append(errs, errors.New("statusbox: no instances: a box with nothing to run is not a box worth provisioning"))
-	}
-
-	names := map[string]bool{}
-	ports := map[int]string{}
-	anyPublic := false
-	var privateNames []string
-
-	for i, inst := range a.Instances {
-		where := fmt.Sprintf("statusbox: instance[%d]", i)
-		if inst.Name != "" {
-			where = fmt.Sprintf("statusbox: instance %q", inst.Name)
-		}
-
-		switch {
-		case inst.Name == "":
-			errs = append(errs, fmt.Errorf("%s: Name is empty", where))
-		case !instanceNameRE.MatchString(inst.Name):
-			errs = append(errs, fmt.Errorf("%s: Name %q is not a valid name (%s): it becomes a heredoc delimiter and a file path in the rendered script, so a name "+
-				"outside this shape could end the heredoc early and run whatever follows as a command", where, inst.Name, instanceNameRE))
-		case names[inst.Name]:
-			errs = append(errs, fmt.Errorf("%s: appears twice; the second instance would silently overwrite the first one's staged files under the same name", where))
-		default:
-			names[inst.Name] = true
-		}
-
-		if inst.Port <= 0 || inst.Port > 65535 {
-			errs = append(errs, fmt.Errorf("%s: Port %d is not a valid TCP port", where, inst.Port))
-		} else if other, ok := ports[inst.Port]; ok {
-			errs = append(errs, fmt.Errorf("%s: Port %d is also used by instance %q. Two Gatus instances cannot share a port: setup.sh publishes each one at "+
-				"127.0.0.1:<Port>, and the second would either fail to bind or replace the first in the compose file", where, inst.Port, other))
-		} else {
-			ports[inst.Port] = inst.Name
-		}
-
-		if strings.TrimSpace(inst.Config) == "" {
-			errs = append(errs, fmt.Errorf("%s: Config is empty: there is no Gatus YAML to stage, which is indistinguishable from a caller that forgot to render "+
-				"one", where))
-		}
-
-		if inst.Public {
-			anyPublic = true
-			if strings.TrimSpace(a.Hostnames[inst.Name]) == "" {
-				errs = append(errs, fmt.Errorf("%s: Public is true but Hostnames[%q] is empty. A public instance with no hostname is a page this box is about to serve "+
-					"with no tunnel ingress rule pointed at it — add the hostname to Args.Hostnames (setup.sh itself never sees it; the tunnel ingress is the estate's own "+
-					"edge configuration to own)", where, inst.Name))
-			}
-		} else if inst.Name != "" {
-			privateNames = append(privateNames, inst.Name)
-		}
-	}
-
-	if len(privateNames) > 1 {
-		errs = append(errs, fmt.Errorf("statusbox: %d instances are not Public (%s): this box serves at most one private instance. setup.sh forwards it to the "+
-			"tailnet on port 80 — the one port that needs no port in the URL an operator loads, http://<Hostname>/ — and a second private instance would need that "+
-			"same port 80 on the same box and cannot have it. Make every instance but one Public, or run the extra private instance on a second "+
-			"box", len(privateNames), strings.Join(privateNames, ", ")))
-	}
-
-	for name := range a.Hostnames {
-		if name != "" && !names[name] {
-			errs = append(errs, fmt.Errorf("statusbox: Hostnames[%q] names no instance in Args.Instances: it would never be used, which is the likeliest sign of a "+
-				"typo in one or the other", name))
-		}
-	}
+	anyPublic, instanceErrs := validateInstances(a.Instances, a.Hostnames)
+	errs = append(errs, instanceErrs...)
 
 	for k := range a.Secrets.AlertURLs {
 		if !alertKeyRE.MatchString(k) {
@@ -496,6 +432,80 @@ func (a Args) validate() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// validateInstances is the part of validate that concerns the instances and
+// the hostnames of the public ones. It is shared with the EC2 backend
+// (ValidateInstances) so both refuse the same shapes with the same
+// messages. anyPublic reports whether some instance is Public.
+func validateInstances(instances []Instance, hostnames map[string]string) (anyPublic bool, errs []error) {
+	if len(instances) == 0 {
+		errs = append(errs, errors.New("statusbox: no instances: a box with nothing to run is not a box worth provisioning"))
+	}
+
+	names := map[string]bool{}
+	ports := map[int]string{}
+	var privateNames []string
+
+	for i, inst := range instances {
+		where := fmt.Sprintf("statusbox: instance[%d]", i)
+		if inst.Name != "" {
+			where = fmt.Sprintf("statusbox: instance %q", inst.Name)
+		}
+
+		switch {
+		case inst.Name == "":
+			errs = append(errs, fmt.Errorf("%s: Name is empty", where))
+		case !instanceNameRE.MatchString(inst.Name):
+			errs = append(errs, fmt.Errorf("%s: Name %q is not a valid name (%s): it becomes a heredoc delimiter and a file path in the rendered script, so a name "+
+				"outside this shape could end the heredoc early and run whatever follows as a command", where, inst.Name, instanceNameRE))
+		case names[inst.Name]:
+			errs = append(errs, fmt.Errorf("%s: appears twice; the second instance would silently overwrite the first one's staged files under the same name", where))
+		default:
+			names[inst.Name] = true
+		}
+
+		if inst.Port <= 0 || inst.Port > 65535 {
+			errs = append(errs, fmt.Errorf("%s: Port %d is not a valid TCP port", where, inst.Port))
+		} else if other, ok := ports[inst.Port]; ok {
+			errs = append(errs, fmt.Errorf("%s: Port %d is also used by instance %q. Two Gatus instances cannot share a port: setup.sh publishes each one at "+
+				"127.0.0.1:<Port>, and the second would either fail to bind or replace the first in the compose file", where, inst.Port, other))
+		} else {
+			ports[inst.Port] = inst.Name
+		}
+
+		if strings.TrimSpace(inst.Config) == "" {
+			errs = append(errs, fmt.Errorf("%s: Config is empty: there is no Gatus YAML to stage, which is indistinguishable from a caller that forgot to render "+
+				"one", where))
+		}
+
+		if inst.Public {
+			anyPublic = true
+			if strings.TrimSpace(hostnames[inst.Name]) == "" {
+				errs = append(errs, fmt.Errorf("%s: Public is true but Hostnames[%q] is empty. A public instance with no hostname is a page this box is about to serve "+
+					"with no tunnel ingress rule pointed at it — add the hostname to Args.Hostnames (setup.sh itself never sees it; the tunnel ingress is the estate's own "+
+					"edge configuration to own)", where, inst.Name))
+			}
+		} else if inst.Name != "" {
+			privateNames = append(privateNames, inst.Name)
+		}
+	}
+
+	if len(privateNames) > 1 {
+		errs = append(errs, fmt.Errorf("statusbox: %d instances are not Public (%s): this box serves at most one private instance. setup.sh forwards it to the "+
+			"tailnet on port 80 — the one port that needs no port in the URL an operator loads, http://<Hostname>/ — and a second private instance would need that "+
+			"same port 80 on the same box and cannot have it. Make every instance but one Public, or run the extra private instance on a second "+
+			"box", len(privateNames), strings.Join(privateNames, ", ")))
+	}
+
+	for name := range hostnames {
+		if name != "" && !names[name] {
+			errs = append(errs, fmt.Errorf("statusbox: Hostnames[%q] names no instance in Args.Instances: it would never be used, which is the likeliest sign of a "+
+				"typo in one or the other", name))
+		}
+	}
+
+	return anyPublic, errs
 }
 
 // manifestInstance is the shape setup.sh reads back out of
