@@ -166,7 +166,14 @@ func (c *SQSConsumer) handle(ctx context.Context, m types.Message) {
 		return
 	}
 
-	res := c.Server.Handle(env, false)
+	// A SubscriptionConfirmation is followed only when enabled; Handle
+	// verifies the signature and the allow-list first and then confirms
+	// through Verifier.Confirm (the SubscribeURL host check included), the
+	// same code the webhook runs. Everything else is handled as before:
+	// an UnsubscribeConfirmation is logged and deleted, never acted on.
+	confirm := c.Config.Confirms() && env.Type == "SubscriptionConfirmation"
+
+	res := c.Server.Handle(env, confirm)
 
 	switch res.verdict {
 	case verdictRejected:
@@ -176,6 +183,11 @@ func (c *SQSConsumer) handle(ctx context.Context, m types.Message) {
 		c.Logger.Warn("alertmanager did not accept the alert; leaving the message for redelivery",
 			"messageId", id, "topic", res.topic)
 	default:
+		if confirm && res.verdict == verdictOK {
+			c.Metrics.SQSConfirmed.Inc()
+			c.Logger.Info("confirmed a subscription found in the queue", "messageId", id, "topic", res.topic)
+		}
+
 		c.Metrics.SQSProcessed.Inc()
 		c.delete(ctx, m)
 	}
@@ -183,18 +195,18 @@ func (c *SQSConsumer) handle(ctx context.Context, m types.Message) {
 
 // reject counts and logs a rejection, then decides the message's fate.
 // A message that can never succeed and carries nothing worth keeping
-// (malformed, an unsupported type, a confirmation) is deleted. A message
-// rejected for its topic or its signature is KEPT: a topic missing from the
+// (malformed, an unsupported type) is deleted. A message
+// rejected for its topic or its signature, or whose confirmation failed, is KEPT: a topic missing from the
 // allow-list is usually our own configuration mistake, and the alert it
 // carries must not be lost (it can be redriven from the dead-letter queue
-// once the list is fixed); a bad signature is evidence. Left on the queue,
+// once the list is fixed); a bad signature is evidence; a failed confirmation (network or AWS error) must be retried. Left on the queue,
 // it returns after the visibility timeout until the queue's redrive policy
 // moves it to the dead-letter queue.
 func (c *SQSConsumer) reject(ctx context.Context, m types.Message, topic, reason, detail string) {
 	c.Server.countRejected(topic, reason, detail)
 	c.Metrics.SQSRejected.WithLabelValues(reason).Inc()
 
-	if reason == ReasonTopic || reason == ReasonSignature {
+	if reason == ReasonTopic || reason == ReasonSignature || reason == ReasonConfirmation {
 		c.Logger.Warn("queue message rejected and kept for the dead-letter queue", "messageId", aws.ToString(m.MessageId), "reason", reason)
 		return
 	}

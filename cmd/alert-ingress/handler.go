@@ -108,11 +108,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in its own way.
 //
 // confirm is true for HTTP, where the provider expects a
-// SubscriptionConfirmation to be followed. A queue subscription needs no
-// confirmation, so with confirm false a confirmation message is logged and
-// ignored, never followed: following a SubscribeURL on the strength of a
-// queue message would be a request this service made for whoever can write
-// to the queue.
+// SubscriptionConfirmation to be followed, and for the queue input when
+// input.sqs.confirmSubscriptions is on (a cross-account subscription made
+// by the topic owner stays pending until the queue owner confirms). It is
+// safe there because the signature and the allow-list are checked first and
+// Verifier.Confirm pins the SubscribeURL host. With confirm false a
+// confirmation message is logged and ignored, never followed.
 func (s *Server) Handle(env Envelope, confirm bool) result {
 	// 1. Verify the signature. Everything below trusts the envelope's
 	// own fields, so nothing above this line may.

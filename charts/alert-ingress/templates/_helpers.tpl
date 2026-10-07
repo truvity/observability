@@ -96,5 +96,6 @@ input:
     maxMessages: {{ .Values.input.sqs.maxMessages | int }}
     visibilityTimeoutSeconds: {{ .Values.input.sqs.visibilityTimeoutSeconds | int }}
     concurrency: {{ .Values.input.sqs.concurrency | int }}
+    confirmSubscriptions: {{ .Values.input.sqs.confirmSubscriptions }}
 {{- end }}
 {{- end -}}

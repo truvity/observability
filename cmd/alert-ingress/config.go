@@ -108,7 +108,14 @@ type SQSConfig struct {
 	MaxMessages              int    `yaml:"maxMessages"`
 	VisibilityTimeoutSeconds int    `yaml:"visibilityTimeoutSeconds"`
 	Concurrency              int    `yaml:"concurrency"`
+	// ConfirmSubscriptions makes a signed, allow-listed
+	// SubscriptionConfirmation found in the queue be confirmed (through the
+	// same Verifier.Confirm the webhook uses). Nil means true.
+	ConfirmSubscriptions *bool `yaml:"confirmSubscriptions"`
 }
+
+// Confirms reports whether queue confirmations are followed (default true).
+func (q SQSConfig) Confirms() bool { return q.ConfirmSubscriptions == nil || *q.ConfirmSubscriptions }
 
 // validate applies the defaults and refuses what cannot work.
 func (i *Input) validate() error {
