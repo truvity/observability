@@ -6,7 +6,7 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
-**Behaviour change** `alert-ingress`: in `sqs` and `both` mode, a `SubscriptionConfirmation` found in the queue is now confirmed when its SNS signature verifies and its topic is on the allow-list (the same `SubscribeURL` host check as the webhook), then deleted and counted in the new `alert_ingress_sqs_confirmed_total`; a failed confirmation leaves the message for retry and the dead-letter queue. Before, such messages were deleted unconfirmed, which left a cross-account subscription made by the topic owner pending. Opt out with `input.sqs.confirmSubscriptions: false` (new, default `true`; it renders into the config in `sqs` and `both` mode, so those goldens move; `http` mode renders as before). Unsubscribe confirmations are still logged and deleted. See [docs/alert-ingress.md](docs/alert-ingress.md#sqs-input).
+- **Behaviour change** `alert-ingress`: in `sqs` and `both` mode, a `SubscriptionConfirmation` found in the queue is now confirmed when its SNS signature verifies and its topic is on the allow-list (the same `SubscribeURL` host check as the webhook), then deleted and counted in the new `alert_ingress_sqs_confirmed_total`; a failed confirmation leaves the message for retry and the dead-letter queue. Before, such messages were deleted unconfirmed, which left a cross-account subscription made by the topic owner pending. Opt out with `input.sqs.confirmSubscriptions: false` (new, default `true`; it renders into the config in `sqs` and `both` mode, so those goldens move; `http` mode renders as before). Unsubscribe confirmations are still logged and deleted. See [docs/alert-ingress.md](docs/alert-ingress.md#sqs-input).
 
 ## v0.61.0
 
