@@ -325,9 +325,16 @@ redrive policy's `maxReceiveCount` receives, SQS moves it to the dead-letter
 queue. That policy, the queue and the subscriptions belong to whoever owns the
 queue; alert-ingress only consumes.
 
-A message that fails the signature or the allow-list, or is not an envelope, can
-never succeed: it is deleted, counted as rejected (by reason) and logged by
-message id and reason only, never with its body. A `SubscriptionConfirmation` or
+A rejected message is counted (`alert_ingress_sqs_rejected_total{reason}` and
+`alert_ingress_rejected_total{reason}`) and logged by message id and reason only,
+never with its body. What happens to it depends on why. A message that is not an
+envelope (or has no body), or has an unsupported type, can never succeed and
+carries nothing worth keeping: it is deleted. A message whose topic is not on the
+allow-list, or whose signature does not verify, is **kept**: it is left on the
+queue and ends in the dead-letter queue through the redrive policy. A topic
+missing from `topics` is usually our own configuration mistake and the alert it
+carries must not be lost (fix the list, then redrive the dead-letter queue); a
+bad signature is evidence worth keeping. A `SubscriptionConfirmation` or
 `UnsubscribeConfirmation` inside the queue is logged and deleted, never
 followed: an SNS to SQS subscription needs no confirmation, and following a URL
 because of a queue message would be a request made for whoever can write to the
@@ -353,10 +360,13 @@ the values.
 ```
 
 **Dead-letter queue.** Give the queue a redrive policy
-(`deadLetterTargetArn`, `maxReceiveCount` of 5 or so) pointing at a second queue,
-and alarm on that queue's depth. Keep the visibility timeout above how long a
-batch can take to deliver (`maxMessages` times Alertmanager's 10s timeout, in
-the worst case).
+(`deadLetterTargetArn`) pointing at a second queue. Use a high `maxReceiveCount`,
+for example 100 with a 300 s visibility timeout, which is about 8 hours of
+retries, so that an Alertmanager outage does not push real alerts into the
+dead-letter queue; what does arrive there is then mostly the rejected-but-kept
+messages above. The queue's owner should alarm on the dead-letter queue's depth.
+Keep the visibility timeout above how long a batch can take to deliver
+(`maxMessages` times Alertmanager's 10s timeout, in the worst case).
 
 **IAM** for the pod's role, on the queue: `sqs:ReceiveMessage`,
 `sqs:DeleteMessage`, `sqs:GetQueueAttributes`; plus `kms:Decrypt` on the key when

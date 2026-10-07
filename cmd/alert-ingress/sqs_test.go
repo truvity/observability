@@ -163,11 +163,12 @@ func TestSQSRejectionsAreDeleted(t *testing.T) {
 		name   string
 		msg    types.Message
 		reason string
+		kept   bool
 	}{
-		{"signature", sqsMessage(t, "h1", badSig), ReasonSignature},
-		{"topic", sqsMessage(t, "h2", offList), ReasonTopic},
-		{"malformed", types.Message{MessageId: aws.String("m3"), ReceiptHandle: aws.String("h3"), Body: aws.String("SECRET-BODY not json")}, ReasonMalformed},
-		{"nobody", types.Message{MessageId: aws.String("m4"), ReceiptHandle: aws.String("h4")}, ReasonMalformed},
+		{"signature", sqsMessage(t, "h1", badSig), ReasonSignature, true},
+		{"topic", sqsMessage(t, "h2", offList), ReasonTopic, true},
+		{"malformed", types.Message{MessageId: aws.String("m3"), ReceiptHandle: aws.String("h3"), Body: aws.String("SECRET-BODY not json")}, ReasonMalformed, false},
+		{"nobody", types.Message{MessageId: aws.String("m4"), ReceiptHandle: aws.String("h4")}, ReasonMalformed, false},
 	}
 
 	for _, tc := range cases {
@@ -184,11 +185,21 @@ func TestSQSRejectionsAreDeleted(t *testing.T) {
 
 			require.NoError(t, c.PollOnce(context.Background()))
 
-			assert.Equal(t, []string{aws.ToString(tc.msg.ReceiptHandle)}, fake.deleted)
+			if tc.kept {
+				assert.Empty(t, fake.deleted, "a topic or signature rejection stays on the queue for the dead-letter queue")
+			} else {
+				assert.Equal(t, []string{aws.ToString(tc.msg.ReceiptHandle)}, fake.deleted)
+			}
+
 			assert.Empty(t, am.posts)
 			assert.Equal(t, float64(1), value(t, srv.Metrics.SQSRejected.WithLabelValues(tc.reason)))
 			assert.Equal(t, float64(1), value(t, srv.Metrics.Rejected.WithLabelValues(tc.reason)))
-			assert.Equal(t, float64(1), value(t, srv.Metrics.SQSDeleted))
+			if tc.kept {
+				assert.Equal(t, float64(0), value(t, srv.Metrics.SQSDeleted))
+			} else {
+				assert.Equal(t, float64(1), value(t, srv.Metrics.SQSDeleted))
+			}
+
 			assert.NotContains(t, logs.String(), "SECRET-BODY")
 		})
 	}
