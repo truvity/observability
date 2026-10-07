@@ -7,6 +7,10 @@ metadata:
   name: {{ $full }}
   labels:
     {{- include "alert-ingress.labels" . | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 automountServiceAccountToken: false
 ---
 apiVersion: v1

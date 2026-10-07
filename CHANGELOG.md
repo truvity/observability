@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+`alert-ingress`: an SQS input mode. `input.mode` is `http` (the default, so an existing install renders byte-identical), `sqs` or `both`; with `sqs` or `both` the pods poll one SQS queue that SNS topics publish to (raw message delivery off) and put each message through the same pipeline as the webhook: signature, topic allow-list, mappings, Alertmanager. A message is deleted only after Alertmanager accepts the alert, so a failure retries after the visibility timeout and the queue's redrive policy decides when it goes to the dead-letter queue; messages that fail verification or the allow-list are deleted and counted. Confirmation messages in the queue are logged and deleted, never followed. Credentials are the default AWS chain only (Pod Identity, or IRSA through the new `serviceAccount.annotations`). New values: `input.*`, `networkPolicy.egress.sqs`, and two rules, `rules.sqsReceiveFailing` and `rules.sqsMessageAge`, both off by default. New series `alert_ingress_sqs_*`. The new keys are not in older chart versions' schema, so a consumer sets them only after bumping its pin to this release. See [docs/alert-ingress.md](docs/alert-ingress.md#sqs-input).
+
 ## v0.59.0
 
 `pkg/tenancy`: `DeriveMachineReaders` and `DeriveStoreReaders` (new). From an estate's machine identities (groups of the form `<cluster>:<namespace>:<role>`) they derive which workloads may read the stores: one namespace of one cluster for a given role, or every namespace of every served cluster for a connector role. The roles and the middle segment are inputs; the output carries yaml tags matching the telemetry proxy's reader values. Nothing in any render changes.

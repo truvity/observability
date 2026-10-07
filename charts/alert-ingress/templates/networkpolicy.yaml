@@ -74,4 +74,12 @@ spec:
         - protocol: TCP
           port: 443
     {{- end }}
+    {{- if and (ne .Values.input.mode "http") .Values.networkPolicy.egress.sqs }}
+    # 4. The SQS endpoint, for the queue input (input.mode sqs or both).
+    - to:
+        {{- toYaml .Values.networkPolicy.egress.sqs | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
 {{- end }}

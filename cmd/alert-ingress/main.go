@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,7 +46,38 @@ func main() {
 		Logger:  logger,
 	}
 
-	handler, opsHandler := newHandlers(srv, registry, *metricsAddr != "")
+	// In sqs mode the webhook is off: the port still serves /healthz and
+	// /metrics, and answers 404 to anything else.
+	var webhook http.Handler = srv
+	if !cfg.Input.HTTP() {
+		webhook = http.NotFoundHandler()
+	}
+
+	handler, opsHandler := newHandlers(webhook, registry, *metricsAddr != "")
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if cfg.Input.UsesSQS() {
+		client, err := NewSQSClient(ctx, cfg.Input.SQS.Region)
+		if err != nil {
+			logger.Error("creating the SQS client", "error", err)
+			os.Exit(1)
+		}
+
+		consumer := &SQSConsumer{
+			Client:       client,
+			Config:       cfg.Input.SQS,
+			Server:       srv,
+			Metrics:      metrics,
+			Logger:       logger,
+			ErrorBackoff: 5 * time.Second,
+		}
+
+		logger.Info("alert-ingress polling the queue", "queue", cfg.Input.SQS.QueueURL, "mode", cfg.Input.Mode)
+
+		go consumer.Run(ctx)
+	}
 
 	if *metricsAddr != "" {
 		ops := &http.Server{
@@ -69,7 +104,16 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	if err := server.ListenAndServe(); err != nil {
+	go func() {
+		<-ctx.Done()
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("serving", "error", err)
 		os.Exit(1)
 	}

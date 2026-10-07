@@ -1,0 +1,42 @@
+# Queue input: SNS topics publish to one SQS queue and alert-ingress polls it
+# (input.mode both). Credentials come from the default AWS chain; the SQS
+# alert rules are on.
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+topics:
+  - "<the security-alerts topic ARN>"
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+
+input:
+  mode: both
+  sqs:
+    queueURL: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/alerts
+    concurrency: 2
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/alert-ingress
+
+rules:
+  sqsReceiveFailing:
+    enabled: true
+  sqsMessageAge:
+    enabled: true
+    minutes: 10
+
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
+
+mappings:
+  - name: guardduty
+    match: {"detail-type": "GuardDuty Finding"}
+    alert:
+      alertname: CloudSecurityFinding
+      severity: critical

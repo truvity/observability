@@ -66,6 +66,41 @@ service:
 # alert_ingress_messages_total exists and nothing ever reads it.
 selfMonitor: true
 
+# -- Where messages come from. `http` (the default) is the SNS HTTPS webhook
+# on `service.port`. `sqs` polls one SQS queue that the SNS topics publish to
+# (raw message delivery OFF, so each body is the SNS envelope): the same
+# signature check, topic allow-list and mappings apply, and the webhook
+# answers 404. `both` runs the two side by side, for a cutover. In `sqs` mode
+# the Service and its gateway route can stay (they serve /healthz and
+# /metrics) but the public route is no longer needed and can be removed.
+# See docs/alert-ingress.md, "SQS input".
+#
+# Credentials are the default AWS SDK chain only (EKS Pod Identity, or IRSA
+# with `serviceAccount.annotations`); there is no place for a static key.
+input:
+  mode: http
+  sqs:
+    # -- Required when `mode` is `sqs` or `both`.
+    queueURL: ""
+    # -- Derived from `queueURL` when empty.
+    region: ""
+    # -- Long polling, 0-20 seconds.
+    waitTimeSeconds: 20
+    # -- Messages per receive, 1-10.
+    maxMessages: 10
+    # -- How long a received message is hidden; a message Alertmanager did
+    # not accept returns after this. Keep it above Alertmanager's own timeout
+    # times `maxMessages`.
+    visibilityTimeoutSeconds: 60
+    # -- Polling workers per pod.
+    concurrency: 1
+
+# -- ServiceAccount extras.
+serviceAccount:
+  # -- Annotations on the ServiceAccount, for example the role annotation
+  # IRSA needs. Not needed for EKS Pod Identity.
+  annotations: {}
+
 # -- Alertmanager's own alert API. This chart renders a NetworkPolicy that
 # allows egress to it and, within the limit vanilla Kubernetes
 # NetworkPolicy can express, to nowhere else in the cluster — see
@@ -193,6 +228,25 @@ rules:
     # -- How long the rate must stay above the threshold.
     for: 15m
 
+  sqsReceiveFailing:
+    # -- AlertIngressSQSReceiveFailing (warning): ReceiveMessage keeps failing
+    # (permissions, a deleted queue, no route to the SQS endpoint). Off by
+    # default; refused while `input.mode` is `http`.
+    enabled: false
+    # -- Rate window.
+    window: 5m
+    # -- How long it must keep failing.
+    for: 10m
+  sqsMessageAge:
+    # -- AlertIngressSQSMessageAge (warning): the oldest message seen is older
+    # than `minutes`: the consumer is stuck or Alertmanager is refusing
+    # alerts. Off by default; refused while `input.mode` is `http`.
+    enabled: false
+    # -- Age in minutes above which it fires.
+    minutes: 15
+    # -- How long the age must stay above it.
+    for: 5m
+
 # -- How long after `startsAt` an alert's `endsAt` is set. Cloud events do
 # not resolve themselves — nothing tells this service a GuardDuty finding
 # stopped being true — so every alert this service posts expires on a
@@ -232,6 +286,16 @@ networkPolicy:
     #         matchLabels:
     #           kubernetes.io/metadata.name: kube-system
     dns: []
+    # -- Optional, for `input.mode` `sqs` or `both`. Peers the pods may reach on
+    # 443 for the SQS endpoint, passed through verbatim (an ipBlock for a VPC
+    # endpoint's addresses, or the peer a FQDN-aware CNI exposes). Needed only
+    # when `allowCloudHTTPS` is false, which already allows 443 to anywhere;
+    # with SQS polling and both empty, the render is refused.
+    #
+    #   sqs:
+    #     - ipBlock:
+    #         cidr: <the SQS VPC endpoint's subnet CIDR>
+    sqs: []
   # -- Egress on 443 to anywhere, needed for the two outbound calls this
   # service makes to the cloud provider itself: fetching the signing
   # certificate that Verify checks every message against, and the one GET

@@ -1,0 +1,22 @@
+# expect: needs HTTPS egress to the SQS endpoint
+# NetworkPolicy with no 443 egress at all blocks the queue.
+image:
+  repository: ghcr.io/example/alert-ingress
+  tag: "1.0.0"
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+topics:
+  - "<the security-alerts topic ARN>"
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+networkPolicy:
+  allowCloudHTTPS: false
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
+input:
+  mode: sqs
+  sqs:
+    queueURL: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/alerts

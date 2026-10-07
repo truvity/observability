@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -78,6 +79,110 @@ type Mapping struct {
 	ResolveAfter Duration `yaml:"resolveAfter"`
 }
 
+// The input modes.
+const (
+	ModeHTTP = "http"
+	ModeSQS  = "sqs"
+	ModeBoth = "both"
+)
+
+// Input is `input`: which of the two ways in this process listens on.
+type Input struct {
+	Mode string    `yaml:"mode"`
+	SQS  SQSConfig `yaml:"sqs"`
+}
+
+// HTTP reports whether the webhook accepts deliveries.
+func (i Input) HTTP() bool { return i.Mode != ModeSQS }
+
+// UsesSQS reports whether the queue is polled.
+func (i Input) UsesSQS() bool { return i.Mode == ModeSQS || i.Mode == ModeBoth }
+
+// SQSConfig is `input.sqs`. Credentials are never configured here: the
+// default AWS SDK chain (pod identity, IRSA) is the only source.
+type SQSConfig struct {
+	QueueURL string `yaml:"queueURL"`
+	// Region is derived from QueueURL when empty.
+	Region                   string `yaml:"region"`
+	WaitTimeSeconds          int    `yaml:"waitTimeSeconds"`
+	MaxMessages              int    `yaml:"maxMessages"`
+	VisibilityTimeoutSeconds int    `yaml:"visibilityTimeoutSeconds"`
+	Concurrency              int    `yaml:"concurrency"`
+}
+
+// validate applies the defaults and refuses what cannot work.
+func (i *Input) validate() error {
+	switch i.Mode {
+	case "":
+		i.Mode = ModeHTTP
+	case ModeHTTP, ModeSQS, ModeBoth:
+	default:
+		return fmt.Errorf("input.mode %q is not one of http, sqs, both", i.Mode)
+	}
+
+	if !i.UsesSQS() {
+		return nil
+	}
+
+	q := &i.SQS
+	if q.QueueURL == "" {
+		return fmt.Errorf("input.sqs.queueURL is empty: input.mode %q has no queue to poll", i.Mode)
+	}
+
+	if q.Region == "" {
+		q.Region = regionFromQueueURL(q.QueueURL)
+		if q.Region == "" {
+			return fmt.Errorf("input.sqs.region is empty and cannot be derived from queueURL %q", q.QueueURL)
+		}
+	}
+
+	if q.WaitTimeSeconds == 0 {
+		q.WaitTimeSeconds = 20
+	}
+
+	if q.MaxMessages == 0 {
+		q.MaxMessages = 10
+	}
+
+	if q.VisibilityTimeoutSeconds == 0 {
+		q.VisibilityTimeoutSeconds = 60
+	}
+
+	if q.Concurrency == 0 {
+		q.Concurrency = 1
+	}
+
+	switch {
+	case q.WaitTimeSeconds < 0 || q.WaitTimeSeconds > 20:
+		return fmt.Errorf("input.sqs.waitTimeSeconds %d is outside 0..20", q.WaitTimeSeconds)
+	case q.MaxMessages < 1 || q.MaxMessages > 10:
+		return fmt.Errorf("input.sqs.maxMessages %d is outside 1..10", q.MaxMessages)
+	case q.VisibilityTimeoutSeconds < 0 || q.VisibilityTimeoutSeconds > 43200:
+		return fmt.Errorf("input.sqs.visibilityTimeoutSeconds %d is outside 0..43200", q.VisibilityTimeoutSeconds)
+	case q.Concurrency < 1:
+		return fmt.Errorf("input.sqs.concurrency %d is below 1", q.Concurrency)
+	}
+
+	return nil
+}
+
+// regionFromQueueURL reads the region out of an SQS queue URL of the form
+// https://sqs.<region>.amazonaws.com/<account>/<name> (or the .com.cn
+// partition), and returns "" for anything else.
+func regionFromQueueURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+
+	parts := strings.Split(u.Hostname(), ".")
+	if len(parts) >= 4 && parts[0] == "sqs" && parts[2] == "amazonaws" {
+		return parts[1]
+	}
+
+	return ""
+}
+
 // Heartbeat recognises the estate's own scheduled proof-of-life message.
 // It carries no `alert:` field, on purpose: a heartbeat is COUNTED, never
 // posted to Alertmanager. Its only job is to keep
@@ -124,6 +229,9 @@ type Config struct {
 	// service a GuardDuty finding stopped being true — so the alert
 	// expires on a timer rather than lingering in Alertmanager forever.
 	ResolveAfter Duration `yaml:"resolveAfter"`
+	// Input chooses where messages come from. Absent, it is http: today's
+	// behaviour.
+	Input Input `yaml:"input"`
 }
 
 // LoadConfig reads and validates the configuration the chart mounted.
@@ -155,7 +263,7 @@ func LoadConfig(path string) (Config, error) {
 // same mistake Config.RenderClaim in pkg/tenancy refuses to make: a
 // validated shape three steps upstream is not evidence about the bytes on
 // disk right now.
-func (c Config) Validate() error {
+func (c *Config) Validate() error {
 	if c.Alertmanager.URL == "" {
 		return fmt.Errorf("alertmanager.url is empty: there is nowhere to POST an alert")
 	}
@@ -186,6 +294,10 @@ func (c Config) Validate() error {
 		if m.Alert.Severity == "" {
 			return fmt.Errorf("mappings[%d] (%s) has no alert.severity, which routes it to the default tier by accident", i, m.Name)
 		}
+	}
+
+	if err := c.Input.validate(); err != nil {
+		return err
 	}
 
 	return c.Unmapped.validate()
