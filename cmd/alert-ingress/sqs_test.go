@@ -205,34 +205,116 @@ func TestSQSRejectionsAreDeleted(t *testing.T) {
 	}
 }
 
-// A confirmation inside the queue is never followed, and is deleted.
-func TestSQSConfirmationsAreLoggedAndDeleted(t *testing.T) {
-	fixture := newSigningFixture(t)
-	am := newFakeAlertmanager(t)
-	srv := newTestServer(t, fixture, baseConfig(), am)
+// confirmFixture is a consumer whose Verifier may reach a stand-in for the
+// SubscribeURL host; status is what that host answers.
+type confirmFixture struct {
+	fixture *signingFixture
+	srv     *Server
+	hits    int
+	status  int
+	url     string
+}
 
-	followed := false
-	confirmServer := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { followed = true }))
+func newConfirmFixture(t *testing.T) *confirmFixture {
+	t.Helper()
+
+	cf := &confirmFixture{fixture: newSigningFixture(t), status: http.StatusOK}
+	am := newFakeAlertmanager(t)
+
+	confirmServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cf.hits++
+		w.WriteHeader(cf.status)
+	}))
 	t.Cleanup(confirmServer.Close)
 
-	sub := fixture.sign(t, Envelope{
-		Type: "SubscriptionConfirmation", MessageID: "a", TopicArn: testTopic, Message: "x",
-		Timestamp: "2026-01-01T00:00:00.000Z", Token: "t", SubscribeURL: confirmServer.URL + "/confirm",
-	})
-	unsub := fixture.sign(t, Envelope{
-		Type: "UnsubscribeConfirmation", MessageID: "b", TopicArn: testTopic, Message: "x",
-		Timestamp: "2026-01-01T00:00:00.000Z", Token: "t", SubscribeURL: confirmServer.URL + "/confirm",
-	})
+	cf.srv = newTestServer(t, cf.fixture, baseConfig(), am)
+	certHost := mustHostname(t, cf.fixture.server.URL)
+	confirmHost := mustHostname(t, confirmServer.URL)
+	cf.srv.Verifier.allowedHost = func(h string) bool { return h == certHost || h == confirmHost }
+	cf.url = confirmServer.URL + "/confirm"
 
-	fake := &fakeSQS{batch: []types.Message{sqsMessage(t, "h1", sub), sqsMessage(t, "h2", unsub)}}
-	c := newConsumer(t, srv, fake)
+	return cf
+}
+
+func (cf *confirmFixture) envelope(t *testing.T, typ, topic string) Envelope {
+	t.Helper()
+
+	return cf.fixture.sign(t, Envelope{
+		Type: typ, MessageID: "a", TopicArn: topic, Message: "x",
+		Timestamp: "2026-01-01T00:00:00.000Z", Token: "t", SubscribeURL: cf.url,
+	})
+}
+
+// A signed, allow-listed SubscriptionConfirmation in the queue is confirmed
+// through Verifier.Confirm (the default), then deleted and counted.
+func TestSQSConfirmsAllowlistedSignedSubscription(t *testing.T) {
+	cf := newConfirmFixture(t)
+	fake := &fakeSQS{batch: []types.Message{sqsMessage(t, "h1", cf.envelope(t, "SubscriptionConfirmation", testTopic))}}
+	c := newConsumer(t, cf.srv, fake)
 
 	require.NoError(t, c.PollOnce(context.Background()))
 
-	assert.False(t, followed, "the SubscribeURL must never be fetched for a queue message")
-	assert.Equal(t, []string{"h1", "h2"}, fake.deleted)
-	assert.Empty(t, am.posts)
-	assert.Equal(t, float64(2), counterValue(t, srv, "ignored", "confirmation"))
+	assert.Equal(t, 1, cf.hits)
+	assert.Equal(t, []string{"h1"}, fake.deleted)
+	assert.Equal(t, float64(1), value(t, cf.srv.Metrics.SQSConfirmed))
+}
+
+// A failed confirmation leaves the message for the visibility timeout and
+// the redrive policy.
+func TestSQSConfirmFailureKeepsMessage(t *testing.T) {
+	cf := newConfirmFixture(t)
+	cf.status = http.StatusInternalServerError
+	fake := &fakeSQS{batch: []types.Message{sqsMessage(t, "h1", cf.envelope(t, "SubscriptionConfirmation", testTopic))}}
+	c := newConsumer(t, cf.srv, fake)
+
+	require.NoError(t, c.PollOnce(context.Background()))
+
+	assert.Equal(t, 1, cf.hits)
+	assert.Empty(t, fake.deleted)
+	assert.Equal(t, float64(0), value(t, cf.srv.Metrics.SQSConfirmed))
+}
+
+// A confirmation for a topic off the allow-list, or with a bad signature,
+// is never followed and is kept for the dead-letter queue.
+func TestSQSConfirmationRejectionsAreKept(t *testing.T) {
+	cf := newConfirmFixture(t)
+
+	offList := cf.envelope(t, "SubscriptionConfirmation", "<some other topic ARN>")
+	badSig := cf.envelope(t, "SubscriptionConfirmation", testTopic)
+	badSig.Signature = "AAAA"
+
+	fake := &fakeSQS{batch: []types.Message{sqsMessage(t, "h1", offList), sqsMessage(t, "h2", badSig)}}
+	c := newConsumer(t, cf.srv, fake)
+
+	require.NoError(t, c.PollOnce(context.Background()))
+
+	assert.Zero(t, cf.hits, "the SubscribeURL must not be fetched")
+	assert.Empty(t, fake.deleted)
+}
+
+// With the option off, the old behaviour: log and delete, never follow.
+// An UnsubscribeConfirmation is deleted without action in either setting.
+func TestSQSConfirmationsIgnoredWhenOptionOff(t *testing.T) {
+	for _, off := range []bool{true, false} {
+		cf := newConfirmFixture(t)
+		sub := cf.envelope(t, "SubscriptionConfirmation", testTopic)
+		unsub := cf.envelope(t, "UnsubscribeConfirmation", testTopic)
+
+		fake := &fakeSQS{batch: []types.Message{sqsMessage(t, "h1", sub), sqsMessage(t, "h2", unsub)}}
+		c := newConsumer(t, cf.srv, fake)
+
+		wantHits := 1
+
+		if off {
+			c.Config.ConfirmSubscriptions = aws.Bool(false)
+			wantHits = 0
+		}
+
+		require.NoError(t, c.PollOnce(context.Background()))
+
+		assert.Equal(t, wantHits, cf.hits)
+		assert.Equal(t, []string{"h1", "h2"}, fake.deleted)
+	}
 }
 
 func TestSQSReceiveErrorAndAge(t *testing.T) {

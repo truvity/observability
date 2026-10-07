@@ -334,11 +334,25 @@ allow-list, or whose signature does not verify, is **kept**: it is left on the
 queue and ends in the dead-letter queue through the redrive policy. A topic
 missing from `topics` is usually our own configuration mistake and the alert it
 carries must not be lost (fix the list, then redrive the dead-letter queue); a
-bad signature is evidence worth keeping. A `SubscriptionConfirmation` or
-`UnsubscribeConfirmation` inside the queue is logged and deleted, never
-followed: an SNS to SQS subscription needs no confirmation, and following a URL
-because of a queue message would be a request made for whoever can write to the
-queue. The webhook still confirms as before.
+bad signature is evidence worth keeping. An
+`UnsubscribeConfirmation` inside the queue is logged and deleted, no action.
+
+**Subscription confirmation.** A subscription created from the queue owner's own
+account confirms itself. A cross-account one, created by the topic owner, stays
+`PendingConfirmation` until the queue owner confirms it, and SNS delivers a
+`SubscriptionConfirmation` message into the queue for that. With
+`input.sqs.confirmSubscriptions` (default `true`) alert-ingress confirms it, but
+only when the message's SNS signature verifies and its `TopicArn` is on `topics`,
+and by the same step the webhook uses (a GET to the `SubscribeURL`, whose host
+must be `sns.<region>.amazonaws.com`). The message is then deleted and counted in
+`alert_ingress_sqs_confirmed_total`. If the confirmation fails (network or AWS
+error) the message is not deleted: it returns after the visibility timeout and,
+after `maxReceiveCount` receives, goes to the dead-letter queue, like a topic or
+signature rejection. A confirmation for a topic off the list, or with a bad
+signature, is kept for the dead-letter queue the same way. Set
+`confirmSubscriptions: false` to log and delete confirmations without acting on
+them. The alternative that needs no confirmation at all is to create the
+subscription from the queue owner's account.
 
 **Credentials** are the default AWS SDK chain only: EKS Pod Identity, or IRSA
 (set `serviceAccount.annotations` to the role annotation). There is no key in
@@ -449,7 +463,7 @@ and metrics; the public route to the webhook can be removed.
 **Metrics.** `alert_ingress_sqs_received_total`, `_processed_total`,
 `_deleted_total`, `_failed_total` (left for retry), `_rejected_total{reason}`,
 `_receive_errors_total`, `_delete_errors_total`, and the gauge
-`alert_ingress_sqs_oldest_message_age_seconds` (by `SentTimestamp`, 0 after an
+`alert_ingress_sqs_confirmed_total`, `alert_ingress_sqs_oldest_message_age_seconds` (by `SentTimestamp`, 0 after an
 empty receive). A queue rejection is also counted in
 `alert_ingress_rejected_total{reason}`. Two rules, both off by default and
 refused while `input.mode` is `http`: `rules.sqsReceiveFailing`

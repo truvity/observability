@@ -45,6 +45,7 @@ type Metrics struct {
 	SQSReceived      prometheus.Counter
 	SQSProcessed     prometheus.Counter
 	SQSDeleted       prometheus.Counter
+	SQSConfirmed     prometheus.Counter
 	SQSFailed        prometheus.Counter
 	SQSRejected      *prometheus.CounterVec
 	SQSReceiveErrors prometheus.Counter
@@ -84,6 +85,10 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		Name: "alert_ingress_sqs_deleted_total",
 		Help: "Queue messages deleted after being processed or rejected.",
 	})
+	m.SQSConfirmed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "alert_ingress_sqs_confirmed_total",
+		Help: "SNS subscription confirmations found in the queue and confirmed.",
+	})
 	m.SQSFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "alert_ingress_sqs_failed_total",
 		Help: "Queue messages left on the queue because Alertmanager did not accept the alert; they return after the visibility timeout.",
@@ -109,7 +114,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.SQSRejected.WithLabelValues(r)
 	}
 
-	reg.MustRegister(m.Messages, m.Rejected, m.SQSReceived, m.SQSProcessed, m.SQSDeleted, m.SQSFailed,
+	reg.MustRegister(m.Messages, m.Rejected, m.SQSReceived, m.SQSProcessed, m.SQSDeleted, m.SQSConfirmed, m.SQSFailed,
 		m.SQSRejected, m.SQSReceiveErrors, m.SQSDeleteErrors, m.SQSOldestAge)
 
 	return m

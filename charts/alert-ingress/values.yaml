@@ -94,6 +94,11 @@ input:
     visibilityTimeoutSeconds: 60
     # -- Polling workers per pod.
     concurrency: 1
+    # -- Confirm an SNS SubscriptionConfirmation found in the queue when its
+    # signature verifies and its topic is on `topics`. A cross-account
+    # subscription made by the topic owner stays pending until the queue
+    # owner confirms it. `false` logs and deletes such messages instead.
+    confirmSubscriptions: true
 
 # -- ServiceAccount extras.
 serviceAccount:
