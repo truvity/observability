@@ -91,6 +91,7 @@ data:
         maxMessages: 10
         visibilityTimeoutSeconds: 60
         concurrency: 2
+        confirmSubscriptions: true
 
 ---
 # Source: alert-ingress/templates/deployment.yaml
@@ -140,7 +141,7 @@ spec:
         # ConfigMap edit lands on disk and the running process keeps the
         # configuration it read at startup — a values change that
         # applied, synced, and did nothing.
-        alert-ingress/config-checksum: e8bc2b5f199a44b26e12366e89371a85ca4d94de0d64aa66549ee55f4c212b09
+        alert-ingress/config-checksum: ce4c83793bade6d7e6487a4ebf75b1050382d9b167c14a8a1d6c46b045689390
     spec:
       serviceAccountName: alert-ingress
       automountServiceAccountToken: false
