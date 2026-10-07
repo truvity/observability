@@ -49,6 +49,7 @@ func (a Args) params(box names, gatusSHA map[string]string) (string, error) {
 	b.WriteString(shellLine("SB_PREFIX", a.BucketPrefix))
 	b.WriteString(shellLine("SB_HEALTH_MINUTES", fmt.Sprint(a.healthMinutes())))
 	b.WriteString(shellLine("SB_TUNNEL_PARAM", a.TunnelTokenParameter))
+	b.WriteString(shellLine("SB_PING_PARAM", a.PingURLParameter))
 
 	// The environment a Gatus Config references: an AlertURLs key becomes
 	// ALERT_URL_<KEY>, an Env key is the whole name.

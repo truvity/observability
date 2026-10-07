@@ -93,8 +93,12 @@ type (
 		// page.
 		AlertsReadToken   pulumi.StringInput
 		DeadmanSlackToken pulumi.StringInput
-		OIDCClientSecret  pulumi.StringInput
-		TunnelToken       pulumi.StringInput
+		// TelegramToken and TelegramChatID (Lightsail) enable the optional
+		// Telegram alert channel; both or neither.
+		TelegramToken    pulumi.StringInput
+		TelegramChatID   pulumi.StringInput
+		OIDCClientSecret pulumi.StringInput
+		TunnelToken      pulumi.StringInput
 
 		// Backend selects where the box runs; empty is BackendLightsail, and
 		// the render with it empty is exactly what it was before the field
@@ -132,6 +136,16 @@ type (
 		DeadmanSlackTokenParameter string
 		OIDCClientSecretParameter  string
 		TunnelTokenParameter       string
+
+		// TelegramTokenParameter and TelegramChatIDParameter are the SSM
+		// parameters (SecureString) of the optional Telegram alert channel:
+		// the bot token and the chat id. Both or neither; empty renders no
+		// telegram provider.
+		TelegramTokenParameter  string
+		TelegramChatIDParameter string
+		// PingURLParameter is the SSM SecureString holding the dead-man ping
+		// URL (healthchecks.io style). Empty: no ping units on the box.
+		PingURLParameter string
 	}
 )
 
@@ -142,7 +156,18 @@ func (in Inputs) catalogue(public bool) CatalogueInputs {
 		PlatformHosts: in.PlatformHosts, ByCompany: in.ByCompany, Entities: in.Entities,
 		AlertsReadHost: in.AlertsReadHost, DeadmanChannel: in.DeadmanChannel,
 		Public: public, PublicHostname: in.PublicHostname, OIDC: in.OIDC,
+		Telegram: in.telegramEnabled(),
 	}
+}
+
+// telegramEnabled reports whether the optional Telegram channel is configured
+// for the selected backend.
+func (in Inputs) telegramEnabled() bool {
+	if in.Backend.isEC2() {
+		return in.EC2.TelegramTokenParameter != "" && in.EC2.TelegramChatIDParameter != ""
+	}
+
+	return in.TelegramToken != nil && in.TelegramChatID != nil
 }
 
 // Deploy renders every Gatus instance and provisions the box that runs them.
@@ -154,6 +179,14 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 	case BackendEC2:
 	default:
 		return fmt.Errorf("status: unknown Backend %q (want %q or %q)", in.Backend, BackendLightsail, BackendEC2)
+	}
+
+	if in.Backend.isEC2() && (in.EC2.TelegramTokenParameter == "") != (in.EC2.TelegramChatIDParameter == "") {
+		return errors.New("status: EC2.TelegramTokenParameter and EC2.TelegramChatIDParameter go together")
+	}
+
+	if !in.Backend.isEC2() && (in.TelegramToken == nil) != (in.TelegramChatID == nil) {
+		return errors.New("status: TelegramToken and TelegramChatID go together")
 	}
 
 	if !in.Backend.isEC2() && in.PublicHostname != "" && (in.OIDCClientSecret == nil || in.TunnelToken == nil) {
@@ -218,6 +251,16 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 		return fmt.Errorf("status: mint tailnet key: %w", err)
 	}
 
+	alertURLs := map[string]pulumi.StringInput{
+		AlertsReadTokenKey:   in.AlertsReadToken,
+		DeadmanSlackTokenKey: in.DeadmanSlackToken,
+	}
+
+	if in.telegramEnabled() {
+		alertURLs[DeadmanTelegramTokenKey] = in.TelegramToken
+		alertURLs[DeadmanTelegramChatIDKey] = in.TelegramChatID
+	}
+
 	var tunnelToken pulumi.StringInput
 	if in.PublicHostname != "" {
 		tunnelToken = in.TunnelToken
@@ -237,11 +280,8 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 				// nil with no public page: statusbox.Args.validate requires it
 				// only when some Instance is Public.
 				TunnelToken: tunnelToken,
-				AlertURLs: map[string]pulumi.StringInput{
-					AlertsReadTokenKey:   in.AlertsReadToken,
-					DeadmanSlackTokenKey: in.DeadmanSlackToken,
-				},
-				Env: envSecrets,
+				AlertURLs:   alertURLs,
+				Env:         envSecrets,
 			},
 		},
 		AvailabilityZone: boxShape.AvailabilityZone,
@@ -277,6 +317,7 @@ func deployEC2(c *pulumi.Context, logger *slog.Logger, in Inputs, instances []st
 			AlertsReadTokenKey:   in.EC2.AlertsReadTokenParameter,
 			DeadmanSlackTokenKey: in.EC2.DeadmanSlackTokenParameter,
 		},
+		PingURLParameter:    in.EC2.PingURLParameter,
 		VPCID:               in.EC2.VPCID,
 		SubnetIDs:           in.EC2.SubnetIDs,
 		PrivateIngressCIDRs: in.EC2.PrivateIngressCIDRs,
@@ -285,6 +326,11 @@ func deployEC2(c *pulumi.Context, logger *slog.Logger, in Inputs, instances []st
 		KMSKeyARN:           in.EC2.KMSKeyARN,
 		InstanceType:        in.EC2.InstanceType,
 		Provider:            in.BoxProvider,
+	}
+
+	if in.telegramEnabled() {
+		args.AlertURLParameters[DeadmanTelegramTokenKey] = in.EC2.TelegramTokenParameter
+		args.AlertURLParameters[DeadmanTelegramChatIDKey] = in.EC2.TelegramChatIDParameter
 	}
 
 	if in.PublicHostname != "" {

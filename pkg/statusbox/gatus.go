@@ -148,6 +148,15 @@ type (
 		// using Providers, as before. See DeadmanChecks.
 		Deadman DeadmanChecks
 
+		// Telegram is the OPTIONAL Gatus-native Telegram provider
+		// (`alerting.telegram`). Nil renders no telegram provider. When set,
+		// EVERY endpoint that alerts through the deadman group (the deadman
+		// itself, the Alertmanager watchdog and each NotFiring check) alerts
+		// to it as well, with the same threshold and send-on-resolved as
+		// the deadman's other channel; the company signals join only when
+		// Providers.Telegram is true.
+		Telegram *TelegramProvider
+
 		// InternalChecks are internal infrastructure alerts pulled from
 		// the alerting pipeline but NEVER forwarded as alerts — they are
 		// displayed on the status page only, in the "platform" group.
@@ -268,6 +277,20 @@ type (
 	DeadmanProviders struct {
 		SlackKey     string
 		PagerDutyKey string
+		// Telegram makes the company signals alert to Catalogue.Telegram
+		// too. It needs Catalogue.Telegram to be set.
+		Telegram bool
+	}
+
+	// TelegramProvider is Gatus's native `alerting.telegram`: a bot token
+	// and the chat id the bot writes to. Both are Secrets.AlertURLs keys
+	// (${ALERT_URL_<KEY>}), never literals: the chat id is not a secret
+	// strictly, but it is estate data that stays out of this repository.
+	TelegramProvider struct {
+		// TokenKey is the AlertURLs key whose value is the bot token.
+		TokenKey string
+		// IDKey is the AlertURLs key whose value is the chat id.
+		IDKey string
 	}
 
 	// DeadmanChecks is the deadman group: the checks that say the
@@ -387,6 +410,7 @@ type (
 
 	gatusAlerting struct {
 		Slack     *gatusSlackAlerting     `yaml:"slack,omitempty"`
+		Telegram  *gatusTelegramAlerting  `yaml:"telegram,omitempty"`
 		Custom    *gatusCustomAlerting    `yaml:"custom,omitempty"`
 		PagerDuty *gatusPagerDutyAlerting `yaml:"pagerduty,omitempty"`
 	}
@@ -403,6 +427,11 @@ type (
 
 	gatusSlackAlerting struct {
 		WebhookURL string `yaml:"webhook-url"`
+	}
+
+	gatusTelegramAlerting struct {
+		Token string `yaml:"token"`
+		ID    string `yaml:"id"`
 	}
 
 	gatusPagerDutyAlerting struct {
@@ -463,6 +492,22 @@ func RenderGatus(c Catalogue) (string, error) {
 		alerting.PagerDuty = &gatusPagerDutyAlerting{IntegrationKey: alertVar(c.Providers.PagerDutyKey)}
 	}
 
+	if c.Telegram != nil {
+		if !alertKeyRE.MatchString(c.Telegram.TokenKey) || !alertKeyRE.MatchString(c.Telegram.IDKey) {
+			return "", fmt.Errorf("statusbox: RenderGatus: Telegram.TokenKey %q and Telegram.IDKey %q must be valid Secrets.AlertURLs keys",
+				c.Telegram.TokenKey, c.Telegram.IDKey)
+		}
+
+		alerting = ensureAlerting(alerting)
+		alerting.Telegram = &gatusTelegramAlerting{Token: alertVar(c.Telegram.TokenKey), ID: alertVar(c.Telegram.IDKey)}
+
+		if c.Providers.Telegram {
+			alerts = append(alerts, gatusAlertRef{Type: "telegram", SendOnResolved: true})
+		}
+	} else if c.Providers.Telegram {
+		return "", fmt.Errorf("statusbox: RenderGatus: Providers.Telegram is set but Catalogue.Telegram is nil")
+	}
+
 	deadmanAlerts := alerts
 
 	if c.Deadman.Post != nil {
@@ -472,6 +517,17 @@ func RenderGatus(c Catalogue) (string, error) {
 		if err != nil {
 			return "", err
 		}
+	}
+
+	if c.Telegram != nil && (c.Deadman.Post != nil || !c.Providers.Telegram) {
+		ref := gatusAlertRef{Type: "telegram", SendOnResolved: true}
+		if c.Deadman.Post != nil {
+			ref.Description = deadmanTriggeredText
+			ref.FailureThreshold = deadmanFailureThreshold
+		}
+
+		// A fresh slice: deadmanAlerts may alias alerts.
+		deadmanAlerts = append(append([]gatusAlertRef(nil), deadmanAlerts...), ref)
 	}
 
 	endpoints := make([]gatusEndpoint, 0, len(c.PlatformHosts)+2*len(c.Companies)+len(c.InternalChecks)+1)
@@ -591,7 +647,7 @@ func RenderGatus(c Catalogue) (string, error) {
 		return "", err
 	}
 
-	if len(alerts) == 0 && c.Deadman.Post == nil {
+	if len(alerts) == 0 && c.Deadman.Post == nil && c.Telegram == nil {
 		out = "# statusbox: no alert providers configured (Catalogue.Providers is empty) " +
 			"— nobody is notified if the deadman or a company's own signal goes red.\n" + out
 	}
