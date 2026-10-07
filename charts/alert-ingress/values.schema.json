@@ -114,7 +114,52 @@
             "window": { "$ref": "#/definitions/duration" },
             "for": { "$ref": "#/definitions/duration" }
           }
+        },
+        "sqsReceiveFailing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" }
+          }
+        },
+        "sqsMessageAge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "minutes": { "type": "integer", "minimum": 1 },
+            "for": { "$ref": "#/definitions/duration" }
+          }
         }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where messages come from. `sqs` and `both` need `sqs.queueURL`, refused empty at render time (templates/_validate.tpl).",
+      "properties": {
+        "mode": { "enum": ["http", "sqs", "both"] },
+        "sqs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "queueURL": { "type": "string" },
+            "region": { "type": "string" },
+            "waitTimeSeconds": { "type": "integer", "minimum": 0, "maximum": 20 },
+            "maxMessages": { "type": "integer", "minimum": 1, "maximum": 10 },
+            "visibilityTimeoutSeconds": { "type": "integer", "minimum": 0, "maximum": 43200 },
+            "concurrency": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
       }
     },
     "selfMonitor": {
@@ -210,6 +255,11 @@
               "type": "array",
               "items": { "$ref": "#/definitions/networkPolicyPeer" },
               "description": "Optional. Narrows the DNS egress rule (UDP+TCP 53) to these NetworkPolicy peers. Empty (the default): port 53 to any destination."
+            },
+            "sqs": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/networkPolicyPeer" },
+              "description": "Optional. Peers the pods may reach on 443 for the SQS endpoint; needed only when `allowCloudHTTPS` is false and `input.mode` polls SQS."
             }
           }
         },

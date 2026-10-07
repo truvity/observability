@@ -84,4 +84,17 @@ unmapped:
 {{- end }}
 {{- end }}
 resolveAfter: {{ .Values.resolveAfter | quote }}
+{{- if ne .Values.input.mode "http" }}
+input:
+  mode: {{ .Values.input.mode | quote }}
+  sqs:
+    queueURL: {{ .Values.input.sqs.queueURL | quote }}
+    {{- with .Values.input.sqs.region }}
+    region: {{ . | quote }}
+    {{- end }}
+    waitTimeSeconds: {{ .Values.input.sqs.waitTimeSeconds | int }}
+    maxMessages: {{ .Values.input.sqs.maxMessages | int }}
+    visibilityTimeoutSeconds: {{ .Values.input.sqs.visibilityTimeoutSeconds | int }}
+    concurrency: {{ .Values.input.sqs.concurrency | int }}
+{{- end }}
 {{- end -}}

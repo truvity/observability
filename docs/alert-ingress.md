@@ -296,6 +296,102 @@ CloudWatch sends, with `ARN_PREFIX` and `ACCOUNT_ID` standing in for the ARN
 prefix and account id that the test fills in (this repository is public and
 carries no ARN or account id), and `cloudwatch-mapping.yaml` there is the text above.
 
+## SQS input
+
+The webhook is one way in. The other is a queue: the topics publish to one SQS
+queue and alert-ingress polls it, so no public endpoint is needed. Set
+`input.mode` to `sqs` (queue only), `both` (queue and webhook), or leave the
+default `http`, which renders exactly as before.
+
+```yaml
+input:
+  mode: sqs
+  sqs:
+    queueURL: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/alerts   # required
+    region: ""                    # derived from the URL when empty
+    waitTimeSeconds: 20           # long polling, 0-20
+    maxMessages: 10               # 1-10 per receive
+    visibilityTimeoutSeconds: 60  # a failed message returns after this
+    concurrency: 1                # polling workers per pod
+```
+
+**The flow.** Each SQS message body is the SNS notification envelope (create the
+subscription with raw message delivery OFF). It goes through the same pipeline
+as an HTTP delivery: verify the signature, check the topic allow-list, apply
+the mappings, POST to Alertmanager. The message is deleted only after
+Alertmanager answered 2xx. If it did not, the message is left alone, becomes
+visible again after the visibility timeout, and is retried; after the queue's
+redrive policy's `maxReceiveCount` receives, SQS moves it to the dead-letter
+queue. That policy, the queue and the subscriptions belong to whoever owns the
+queue; alert-ingress only consumes.
+
+A message that fails the signature or the allow-list, or is not an envelope, can
+never succeed: it is deleted, counted as rejected (by reason) and logged by
+message id and reason only, never with its body. A `SubscriptionConfirmation` or
+`UnsubscribeConfirmation` inside the queue is logged and deleted, never
+followed: an SNS to SQS subscription needs no confirmation, and following a URL
+because of a queue message would be a request made for whoever can write to the
+queue. The webhook still confirms as before.
+
+**Credentials** are the default AWS SDK chain only: EKS Pod Identity, or IRSA
+(set `serviceAccount.annotations` to the role annotation). There is no key in
+the values.
+
+**Queue policy** (lets the topic send to the queue; one statement per topic):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"Service": "sns.amazonaws.com"},
+    "Action": "sns:SendMessage",
+    "Resource": "arn:aws:sqs:eu-west-1:ACCOUNT:alerts",
+    "Condition": {"ArnEquals": {"aws:SourceArn": "arn:aws:sns:eu-west-1:ACCOUNT:security-alerts"}}
+  }]
+}
+```
+
+**Dead-letter queue.** Give the queue a redrive policy
+(`deadLetterTargetArn`, `maxReceiveCount` of 5 or so) pointing at a second queue,
+and alarm on that queue's depth. Keep the visibility timeout above how long a
+batch can take to deliver (`maxMessages` times Alertmanager's 10s timeout, in
+the worst case).
+
+**IAM** for the pod's role, on the queue: `sqs:ReceiveMessage`,
+`sqs:DeleteMessage`, `sqs:GetQueueAttributes`; plus `kms:Decrypt` on the key when
+the queue uses SSE-KMS with a customer key.
+
+**Network.** The NetworkPolicy already allows HTTPS to anywhere
+(`networkPolicy.allowCloudHTTPS`), which covers the SQS endpoint. If you turn
+that off, list the peers that reach SQS (for example a VPC endpoint's subnet)
+in `networkPolicy.egress.sqs`; the render is refused with neither. Default-deny
+stays. In `sqs` mode the webhook answers 404, and the Service stays for health
+and metrics; the public route to the webhook can be removed.
+
+**Metrics.** `alert_ingress_sqs_received_total`, `_processed_total`,
+`_deleted_total`, `_failed_total` (left for retry), `_rejected_total{reason}`,
+`_receive_errors_total`, `_delete_errors_total`, and the gauge
+`alert_ingress_sqs_oldest_message_age_seconds` (by `SentTimestamp`, 0 after an
+empty receive). A queue rejection is also counted in
+`alert_ingress_rejected_total{reason}`. Two rules, both off by default and
+refused while `input.mode` is `http`: `rules.sqsReceiveFailing`
+(`AlertIngressSQSReceiveFailing`, receive errors for 10m) and
+`rules.sqsMessageAge` (`AlertIngressSQSMessageAge`, the oldest message older than
+`minutes`).
+
+**Cutover recipe.**
+
+1. Create the queue, dead-letter queue, queue policy and the SNS subscriptions
+   (raw delivery off), and the pod's IAM.
+2. Set `input.mode: both` with the queue URL, and enable the two SQS rules.
+   Alerts now arrive on both paths; Alertmanager de-duplicates on the label set.
+3. Verify: `alert_ingress_sqs_processed_total` and `_deleted_total` move, the
+   heartbeat counter moves, `_rejected_total` and `_failed_total` stay flat, the
+   dead-letter queue is empty.
+4. Set `input.mode: sqs`, remove the topics' HTTPS subscriptions and the public
+   route.
+
 ## What it does with a message, in order
 
 1. **Verify the signature.** Every message carries one; the certificate
@@ -357,6 +453,7 @@ not expose), `selfMonitor` (true: a `PodMonitor` on the metrics port),
 `alertmanager.url` (required), `topics`, `mappings`, `unmapped.{severity,labels}` (empty: warning, no extra labels),
 `heartbeat.{match,interval}`,
 `rules.heartbeat.enabled` and `rules.rejectedMessages.{enabled,ratePerSecond,window,for}`,
+`input.{mode,sqs.*}` (see "SQS input"), `serviceAccount.annotations`, `rules.sqsReceiveFailing.{enabled,window,for}`, `rules.sqsMessageAge.{enabled,minutes,for}`, `networkPolicy.egress.sqs`,
 `resolveAfter` (1h; also per mapping, `mappings[].resolveAfter`), `mappings[].alert.resolved` (a template; `true` ends the alert), `networkPolicy.{enabled,alertmanagerPeer,egress.dns,egress.allowCloudHTTPS}`.
 A `match` value of `"*"` tests only that the path is present.
 
@@ -371,6 +468,7 @@ Each has a fixture under `tests/invalid/alert-ingress/`.
 | `heartbeat.match` empty | the path can die unnoticed |
 | `networkPolicy.alertmanagerPeer` empty while `networkPolicy.enabled` | an egress rule with no peer admits nothing, and the render looks scoped |
 | `service.metricsPort` equal to `service.port` | the second port would not be a second port |
+| `input.mode` `sqs`/`both` with no `input.sqs.queueURL`, a queue URL with no derivable region and no `region`, `maxMessages` outside 1-10, an SQS rule enabled in `http` mode, or SQS polling with no HTTPS egress | a consumer that cannot poll, rules on series that never move, an endpoint the NetworkPolicy blocks |
 | an `unmapped.labels` name that is not a Prometheus label name, starts with `__`, or is `alertname`/`severity` | a label Alertmanager rejects, or one that shadows a field the service owns |
 | `alertmanager.url` or `image.repository` empty; an unknown key (schema) | nowhere to post, nothing to pull, a setting that applies to nothing |
 

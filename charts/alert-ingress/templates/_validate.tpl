@@ -9,6 +9,9 @@ matches docs/alert-ingress.md#refusals exactly:
   - `heartbeat.match` empty               -> validate.heartbeat
   - `networkPolicy.alertmanagerPeer` empty while enabled -> validate.networkPolicy
   - `service.metricsPort` equal to `service.port` -> validate.ports
+  - `input.mode` sqs/both without `input.sqs.queueURL`, a malformed queue
+    URL with no `region`, `maxMessages` outside 1-10, an SQS rule enabled in
+    `http` mode, or SQS polling with no HTTPS egress -> validate.input
   - an `unmapped.labels` name that is not a Prometheus label name, starts
     with `__`, or is `alertname`/`severity`   -> validate.unmapped
 
@@ -32,6 +35,7 @@ values.yaml rather than blocked here.
 {{- include "alert-ingress.validate.networkPolicy" . -}}
 {{- include "alert-ingress.validate.ports" . -}}
 {{- include "alert-ingress.validate.unmapped" . -}}
+{{- include "alert-ingress.validate.input" . -}}
 {{- end -}}
 
 {{/*
@@ -134,5 +138,30 @@ the Deployment would crash-loop. Refused at render time instead.
 {{- define "alert-ingress.validate.ports" -}}
 {{- if and .Values.service.metricsPort (eq (.Values.service.metricsPort | int) (.Values.service.port | int)) -}}
 {{- fail "alert-ingress: `service.metricsPort` equals `service.port`. Set `metricsPort` to a different port to serve /metrics and /healthz separately, or 0 to serve them on `port` as before." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The queue input's own refusals. A queue mode with no queue URL starts a
+process that cannot poll; an SQS rule in http mode watches series that
+never move (the age rule would stay silent forever, the one failure it
+exists to catch); and a NetworkPolicy with neither `allowCloudHTTPS` nor
+`networkPolicy.egress.sqs` blocks the SQS endpoint, so every receive fails.
+*/}}
+{{- define "alert-ingress.validate.input" -}}
+{{- $in := .Values.input -}}
+{{- $sqs := ne $in.mode "http" -}}
+{{- if $sqs -}}
+{{- if not $in.sqs.queueURL -}}
+{{- fail (printf "alert-ingress: `input.mode` is %q but `input.sqs.queueURL` is empty, so there is no queue to poll." $in.mode) -}}
+{{- end -}}
+{{- if and (not $in.sqs.region) (not (regexMatch "^https://sqs\\.[a-z0-9-]+\\.amazonaws\\.com(\\.cn)?/" $in.sqs.queueURL)) -}}
+{{- fail "alert-ingress: `input.sqs.region` is empty and cannot be derived from `input.sqs.queueURL` (expected https://sqs.<region>.amazonaws.com/<account>/<name>). Set `input.sqs.region`." -}}
+{{- end -}}
+{{- if and .Values.networkPolicy.enabled (not .Values.networkPolicy.allowCloudHTTPS) (not .Values.networkPolicy.egress.sqs) -}}
+{{- fail "alert-ingress: the queue input needs HTTPS egress to the SQS endpoint, but `networkPolicy.allowCloudHTTPS` is false and `networkPolicy.egress.sqs` is empty. Set one of them." -}}
+{{- end -}}
+{{- else if or .Values.rules.sqsReceiveFailing.enabled .Values.rules.sqsMessageAge.enabled -}}
+{{- fail "alert-ingress: `rules.sqsReceiveFailing` / `rules.sqsMessageAge` are enabled but `input.mode` is `http`, so the series they watch never move. Set `input.mode` to `sqs` or `both`, or turn the rules off." -}}
 {{- end -}}
 {{- end -}}
