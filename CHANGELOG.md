@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.62.1
 
 - **Behaviour change** (fix(alert-ingress)): in `sqs` and `both` mode the NetworkPolicy also allows TCP 80 to the EKS Pod Identity agent (`169.254.170.23/32`), which serves the pod's AWS credentials over plain HTTP on a link-local address. Without it, a CNI that enforces the policy blocks the credential call and every queue receive fails with `dial tcp 169.254.170.23:80: i/o timeout`. New value `networkPolicy.egress.podIdentityAgent` (default `true`); set it `false` when the pod gets credentials another way (IRSA needs only the 443 rule). `http` mode renders as before.
 
