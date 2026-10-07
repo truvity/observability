@@ -19,10 +19,12 @@ const (
 	// cloud-init like every other secret it holds.
 	DeadmanSlackTokenKey = "deadman_slack_token"
 
-	// DeadmanTelegramTokenKey and DeadmanTelegramChatIDKey are the AlertURLs
-	// keys of the optional Telegram alert channel (Gatus's native
-	// `alerting.telegram`): the bot token and the chat id. Both or neither.
-	DeadmanTelegramTokenKey  = "deadman_telegram_token"
+	// DeadmanTelegramTokenKey is the AlertURLs key of the optional Telegram
+	// alert channel's bot token (Gatus's native `alerting.telegram`). It goes
+	// with DeadmanTelegramChatIDKey: both or neither.
+	DeadmanTelegramTokenKey = "deadman_telegram_token"
+
+	// DeadmanTelegramChatIDKey is the AlertURLs key of the Telegram chat id.
 	DeadmanTelegramChatIDKey = "deadman_telegram_chat_id"
 
 	// OIDCClientSecretEnvKey is the statusbox.Secrets.Env map key the Gatus
