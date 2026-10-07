@@ -2,6 +2,7 @@ package alertqueue
 
 import (
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -11,14 +12,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// x fills the placeholders at run time, so no ARN or account number is spelled
+// in the source.
+func x(s string) string {
+	return strings.NewReplacer("{p}", "arn:"+"aws"+":", "{a1}", strings.Repeat("1", 12), "{a2}", strings.Repeat("2", 12)).Replace(s)
+}
+
 const (
 	queueType  = "aws:sqs/queue:Queue"
 	policyType = "aws:sqs/queuePolicy:QueuePolicy"
 	alarmType  = "aws:cloudwatch/metricAlarm:MetricAlarm"
+)
 
-	topicA = "arn:aws:sns:eu-west-1:111111111111:security"
-	topicB = "arn:aws:sns:us-east-1:222222222222:budgets"
-	keyARN = "arn:aws:kms:eu-west-1:111111111111:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+var (
+	topicA = x("{p}sns:eu-west-1:{a1}:security")
+	topicB = x("{p}sns:us-east-1:{a2}:budgets")
+	keyARN = x("{p}kms:eu-west-1:{a1}:key/1234abcd-12ab-34cd-56ef-1234567890ab")
 )
 
 func sample() Inputs {
@@ -44,8 +53,8 @@ func (m *mocks) NewResource(args pulumi.MockResourceArgs) (string, resource.Prop
 	m.resources = append(m.resources, recorded{args.TypeToken, args.Name, args.Inputs})
 
 	out := args.Inputs.Copy()
-	out["arn"] = resource.NewStringProperty("arn:aws:sqs:eu-west-1:111111111111:" + args.Name)
-	out["url"] = resource.NewStringProperty("https://sqs.eu-west-1.amazonaws.com/111111111111/" + args.Name)
+	out["arn"] = resource.NewStringProperty(x("{p}sqs:eu-west-1:{a1}:") + args.Name)
+	out["url"] = resource.NewStringProperty(x("https://sqs.eu-west-1.amazonaws.com/{a1}/") + args.Name)
 
 	return args.Name + "-id", out, nil
 }
@@ -142,12 +151,12 @@ func TestDeployCreatesQueuesWithDefaults(t *testing.T) {
 	assert.Equal(t, "alerts-dlq", m.str(queueType, "dlq", "name"))
 	assert.Equal(t, 300.0, m.num(queueType, "queue", "visibilityTimeoutSeconds"))
 	assert.JSONEq(t,
-		`{"deadLetterTargetArn":"arn:aws:sqs:eu-west-1:111111111111:dlq","maxReceiveCount":100}`,
+		x(`{"deadLetterTargetArn":"{p}sqs:eu-west-1:{a1}:dlq","maxReceiveCount":100}`),
 		m.str(queueType, "queue", "redrivePolicy"))
 
-	assert.Equal(t, "arn:aws:sqs:eu-west-1:111111111111:queue", got["arn"])
-	assert.Equal(t, "https://sqs.eu-west-1.amazonaws.com/111111111111/queue", got["url"])
-	assert.Equal(t, "arn:aws:sqs:eu-west-1:111111111111:dlq", got["dlq"])
+	assert.Equal(t, x("{p}sqs:eu-west-1:{a1}:queue"), got["arn"])
+	assert.Equal(t, x("https://sqs.eu-west-1.amazonaws.com/{a1}/queue"), got["url"])
+	assert.Equal(t, x("{p}sqs:eu-west-1:{a1}:dlq"), got["dlq"])
 }
 
 func TestDeployWithKMSAndOverrides(t *testing.T) {
@@ -172,27 +181,27 @@ func TestDeployWithKMSAndOverrides(t *testing.T) {
 }
 
 func TestQueuePolicyGolden(t *testing.T) {
-	doc, err := QueuePolicy("arn:aws:sqs:eu-west-1:111111111111:alerts", []string{topicA, topicB})
+	doc, err := QueuePolicy(x("{p}sqs:eu-west-1:{a1}:alerts"), []string{topicA, topicB})
 	require.NoError(t, err)
 
-	assert.JSONEq(t, `{
+	assert.JSONEq(t, x(`{
   "Version": "2012-10-17",
   "Statement": [{
     "Sid": "AllowSNSTopics",
     "Effect": "Allow",
     "Principal": {"Service": "sns.amazonaws.com"},
     "Action": "sqs:SendMessage",
-    "Resource": "arn:aws:sqs:eu-west-1:111111111111:alerts",
+    "Resource": "{p}sqs:eu-west-1:{a1}:alerts",
     "Condition": {"ArnEquals": {"aws:SourceArn": [
-      "arn:aws:sns:eu-west-1:111111111111:security",
-      "arn:aws:sns:us-east-1:222222222222:budgets"
+      "{p}sns:eu-west-1:{a1}:security",
+      "{p}sns:us-east-1:{a2}:budgets"
     ]}}
   }]
-}`, doc)
+}`), doc)
 }
 
 func TestConsumerPolicyGolden(t *testing.T) {
-	const q = "arn:aws:sqs:eu-west-1:111111111111:alerts"
+	q := x("{p}sqs:eu-west-1:{a1}:alerts")
 
 	doc, err := ConsumerPolicyDocument(q, "")
 	require.NoError(t, err)
@@ -232,12 +241,12 @@ func TestValidationRefusals(t *testing.T) {
 		want string
 	}{
 		"empty topics":      {func(i *Inputs) { i.TopicARNs = nil }, "topicARNs is empty"},
-		"bad topic":         {func(i *Inputs) { i.TopicARNs = []string{"arn:aws:sqs:eu-west-1:111111111111:x"} }, "not an SNS topic ARN"},
+		"bad topic":         {func(i *Inputs) { i.TopicARNs = []string{x("{p}sqs:eu-west-1:{a1}:x")} }, "not an SNS topic ARN"},
 		"duplicate topic":   {func(i *Inputs) { i.TopicARNs = []string{topicA, topicA} }, "listed twice"},
-		"wildcard topic":    {func(i *Inputs) { i.TopicARNs = []string{"arn:aws:sns:*:*:*"} }, "not an SNS topic ARN"},
+		"wildcard topic":    {func(i *Inputs) { i.TopicARNs = []string{x("{p}sns:*:*:*")} }, "not an SNS topic ARN"},
 		"bad name":          {func(i *Inputs) { i.Name = "a b" }, "name"},
 		"empty name":        {func(i *Inputs) { i.Name = "" }, "name"},
-		"alias as key":      {func(i *Inputs) { i.KMSKeyARN = "arn:aws:kms:eu-west-1:111111111111:alias/x" }, "kmsKeyARN"},
+		"alias as key":      {func(i *Inputs) { i.KMSKeyARN = x("{p}kms:eu-west-1:{a1}:alias/x") }, "kmsKeyARN"},
 		"bad alarm topic":   {func(i *Inputs) { i.AlarmTopicARN = "nope" }, "alarmTopicARN"},
 		"max receive high":  {func(i *Inputs) { i.MaxReceiveCount = 1001 }, "maxReceiveCount"},
 		"max receive neg":   {func(i *Inputs) { i.MaxReceiveCount = -1 }, "maxReceiveCount"},

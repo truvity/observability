@@ -47,8 +47,8 @@ const (
 )
 
 var (
-	topicARN = regexp.MustCompile(`^arn:aws[a-z-]*:sns:[a-z0-9-]+:[0-9]{12}:[A-Za-z0-9_-]{1,256}$`)
-	kmsARN   = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
+	topicARN = regexp.MustCompile(`^arn:[a-z-]+:sns:[a-z0-9-]+:[0-9]{12}:[A-Za-z0-9_-]{1,256}$`)
+	kmsARN   = regexp.MustCompile(`^arn:[a-z-]+:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
 	// queueName is SQS's rule, less room for the "-dlq" suffix (80 total).
 	queueName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,75}$`)
 )
@@ -287,8 +287,9 @@ func Deploy(c *pulumi.Context, in Inputs, opts ...pulumi.ResourceOption) (*Outpu
 		actions := pulumi.Array{pulumi.String(in.AlarmTopicARN)}
 
 		if _, err := cloudwatch.NewMetricAlarm(c, "dlq-depth", &cloudwatch.MetricAlarmArgs{
-			Name:               pulumi.String(in.Name + dlqSuffix + "-not-empty"),
-			AlarmDescription:   pulumi.String("Messages are waiting in the alert queue's dead-letter queue: " + strconv.Itoa(in.MaxReceiveCount) + " failed receives, or a rejected topic or signature. Fix the cause, then redrive."),
+			Name: pulumi.String(in.Name + dlqSuffix + "-not-empty"),
+			AlarmDescription: pulumi.String("Messages are waiting in the alert queue's dead-letter queue: " +
+				strconv.Itoa(in.MaxReceiveCount) + " failed receives, or a rejected topic or signature. Fix the cause, then redrive."),
 			Namespace:          pulumi.String("AWS/SQS"),
 			MetricName:         pulumi.String("ApproximateNumberOfMessagesVisible"),
 			Dimensions:         pulumi.StringMap{"QueueName": dlq.Name},

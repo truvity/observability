@@ -383,10 +383,10 @@ account and region:
 out, err := alertqueue.Deploy(ctx, alertqueue.Inputs{
     Name: "alerts",
     TopicARNs: []string{
-        "arn:aws:sns:eu-west-1:111111111111:security",
-        "arn:aws:sns:us-east-1:111111111111:budgets", // another region is fine
+        "<security-topic-arn>",
+        "<budgets-topic-arn>", // another region or account is fine
     },
-    AlarmTopicARN: "arn:aws:sns:eu-west-1:111111111111:security", // optional
+    AlarmTopicARN: "<alarm-topic-arn>", // optional
 }, pulumi.Provider(provider))
 ```
 
