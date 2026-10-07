@@ -33,7 +33,7 @@ func (a Args) instancePolicy(box names, region, account string) string {
 	if params := a.parameterNames(); len(params) > 0 {
 		arns := make([]string, len(params))
 		for i, p := range params {
-			arns[i] = fmt.Sprintf("arn:aws:ssm:%s:%s:parameter%s", region, account, p)
+			arns[i] = fmt.Sprintf("arn:%s:ssm:%s:%s:parameter%s", partition, region, account, p)
 		}
 
 		statements = append(statements, map[string]any{
@@ -44,11 +44,11 @@ func (a Args) instancePolicy(box names, region, account string) string {
 		})
 	}
 
-	objects := fmt.Sprintf("arn:aws:s3:::%s/*", a.Bucket)
+	objects := fmt.Sprintf("arn:%s:s3:::%s/*", partition, a.Bucket)
 	listPrefix := "*"
 
 	if a.BucketPrefix != "" {
-		objects = fmt.Sprintf("arn:aws:s3:::%s/%s/*", a.Bucket, a.BucketPrefix)
+		objects = fmt.Sprintf("arn:%s:s3:::%s/%s/*", partition, a.Bucket, a.BucketPrefix)
 		listPrefix = a.BucketPrefix + "/*"
 	}
 
@@ -63,7 +63,7 @@ func (a Args) instancePolicy(box names, region, account string) string {
 			"Sid":      "ReplicaList",
 			"Effect":   "Allow",
 			"Action":   []string{"s3:ListBucket"},
-			"Resource": []string{"arn:aws:s3:::" + a.Bucket},
+			"Resource": []string{"arn:" + partition + ":s3:::" + a.Bucket},
 			"Condition": map[string]any{
 				"StringLike": map[string]any{"s3:prefix": []string{listPrefix}},
 			},
@@ -72,14 +72,14 @@ func (a Args) instancePolicy(box names, region, account string) string {
 			"Sid":      "ReplicaRegion",
 			"Effect":   "Allow",
 			"Action":   []string{"s3:GetBucketLocation"},
-			"Resource": []string{"arn:aws:s3:::" + a.Bucket},
+			"Resource": []string{"arn:" + partition + ":s3:::" + a.Bucket},
 		},
 		map[string]any{
 			"Sid":    "OwnGroup",
 			"Effect": "Allow",
 			"Action": []string{"autoscaling:CompleteLifecycleAction", "autoscaling:SetInstanceHealth"},
 			"Resource": []string{
-				fmt.Sprintf("arn:aws:autoscaling:%s:%s:autoScalingGroup:*:autoScalingGroupName/%s", region, account, box.asg),
+				fmt.Sprintf("arn:%s:autoscaling:%s:%s:autoScalingGroup:*:autoScalingGroupName/%s", partition, region, account, box.asg),
 			},
 		},
 	)

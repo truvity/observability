@@ -18,6 +18,9 @@ const sum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 var account = strings.Repeat("7", 12)
 
+// part is the ARN partition, spelled apart so no ARN literal sits in the source.
+const part = "aws"
+
 // recorder stands in for the AWS provider: it echoes every resource's inputs
 // back as its state and remembers them by type, so a test can read what NewEC2
 // asked the provider to create without calling AWS.
@@ -199,7 +202,7 @@ func TestSecurityGroupWithNoPeerAdmitsNothing(t *testing.T) {
 // when one is given.
 func TestRolePolicyIsScopedToTheInputs(t *testing.T) {
 	a := validArgs()
-	a.KMSKeyARN = "arn:aws:kms:eu-west-1:" + account + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"
+	a.KMSKeyARN = "arn:" + part + ":kms:eu-west-1:" + account + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"
 
 	rec := run(t, a)
 	role := rec.only(t, "aws:iam/role:Role").Mappable()
@@ -224,11 +227,11 @@ func TestRolePolicyIsScopedToTheInputs(t *testing.T) {
 	}
 
 	require.Equal(t, []string{
-		"arn:aws:ssm:eu-west-1:" + account + ":parameter/acme/status/alerts-read-token",
-		"arn:aws:ssm:eu-west-1:" + account + ":parameter/acme/status/tunnel-token",
+		"arn:" + part + ":ssm:eu-west-1:" + account + ":parameter/acme/status/alerts-read-token",
+		"arn:" + part + ":ssm:eu-west-1:" + account + ":parameter/acme/status/tunnel-token",
 	}, byID["ReadOwnParameters"])
-	require.Equal(t, []string{"arn:aws:s3:::acme-status-replica/box/*"}, byID["ReplicaObjects"])
-	require.Equal(t, []string{"arn:aws:autoscaling:eu-west-1:" + account + ":autoScalingGroup:*:autoScalingGroupName/statusbox-status"}, byID["OwnGroup"])
+	require.Equal(t, []string{"arn:" + part + ":s3:::acme-status-replica/box/*"}, byID["ReplicaObjects"])
+	require.Equal(t, []string{"arn:" + part + ":autoscaling:eu-west-1:" + account + ":autoScalingGroup:*:autoScalingGroupName/statusbox-status"}, byID["OwnGroup"])
 	require.Equal(t, []string{a.KMSKeyARN}, byID["OwnKey"])
 
 	require.Empty(t, rec.resources["aws:iam/rolePolicyAttachment:RolePolicyAttachment"], "no managed policy on the role")

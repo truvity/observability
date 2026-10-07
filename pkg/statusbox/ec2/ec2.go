@@ -26,6 +26,9 @@ import (
 	"github.com/truvity/observability/pkg/statusbox"
 )
 
+// partition is the ARN partition of the policies the module renders.
+const partition = "aws"
+
 const (
 	// DefaultInstanceType is what an estate gets for free: a Graviton nano,
 	// enough for a handful of Gatus processes and the swap file behind them.
@@ -54,7 +57,7 @@ var (
 	// letter prefix, the generation digits, then a 'g' among the attributes.
 	gravitonRE = regexp.MustCompile(`^[a-z]+[0-9]+g[a-z]*\.`)
 	dbFileRE   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-	kmsARNRE   = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
+	kmsARNRE   = regexp.MustCompile(`^arn:[a-z-]+:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
 )
 
 // Args is NewEC2's whole input. Unlike statusbox.Args it holds no secret
@@ -186,7 +189,8 @@ func databaseFile(inst statusbox.Instance) (string, error) {
 	}
 
 	if cfg.Storage.Type != "sqlite" {
-		return "", fmt.Errorf("statusbox/ec2: instance %q: Config needs `storage.type: sqlite` (it is %q): Litestream replicates a SQLite file", inst.Name, cfg.Storage.Type)
+		return "", fmt.Errorf("statusbox/ec2: instance %q: Config needs `storage.type: sqlite` (it is %q): "+
+			"Litestream replicates a SQLite file", inst.Name, cfg.Storage.Type)
 	}
 
 	file, ok := strings.CutPrefix(cfg.Storage.Path, dataDir)
@@ -203,7 +207,8 @@ func (a Args) validate() error {
 	var errs []error
 
 	if !versionRE.MatchString(a.Version) {
-		errs = append(errs, fmt.Errorf("statusbox/ec2: Version %q is not a release tag shape (%s): the Gatus binaries and checksums.txt are fetched from that release", a.Version, versionRE))
+		errs = append(errs, fmt.Errorf("statusbox/ec2: Version %q is not a release tag shape (%s): "+
+			"the Gatus binaries and checksums.txt are fetched from that release", a.Version, versionRE))
 	}
 
 	errs = append(errs, a.validateInstances()...)
@@ -251,7 +256,8 @@ func (a Args) validateSecrets() []error {
 
 	switch {
 	case a.anyPublic() && a.TunnelTokenParameter == "":
-		errs = append(errs, errors.New("statusbox/ec2: at least one instance is Public but TunnelTokenParameter is empty: a public page needs the tunnel that carries its ingress rule"))
+		errs = append(errs, errors.New("statusbox/ec2: at least one instance is Public but TunnelTokenParameter is empty: "+
+			"a public page needs the tunnel that carries its ingress rule"))
 	case !a.anyPublic() && a.TunnelTokenParameter != "":
 		errs = append(errs, errors.New("statusbox/ec2: TunnelTokenParameter is set but no instance is Public: nothing would use the tunnel"))
 	case a.TunnelTokenParameter != "":
@@ -281,7 +287,8 @@ func (a Args) validateNetwork() []error {
 	}
 
 	if len(a.SubnetIDs) < 2 {
-		errs = append(errs, fmt.Errorf("statusbox/ec2: %d subnet(s): the group needs subnets in two Availability Zones so a zone outage can be replaced", len(a.SubnetIDs)))
+		errs = append(errs, fmt.Errorf("statusbox/ec2: %d subnet(s): the group needs subnets in two Availability Zones "+
+			"so a zone outage can be replaced", len(a.SubnetIDs)))
 	}
 
 	for i, s := range a.SubnetIDs {
