@@ -236,3 +236,71 @@ func (m *mocks) tags(name string) string {
 
 	return ""
 }
+
+func deployEC2With(t *testing.T, public bool) *mocks {
+	t.Helper()
+
+	previous := statusbox.FetchChecksums
+	statusbox.FetchChecksums = func(string) (string, error) {
+		sum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+		return sum + "  gatus_v5.37.0_linux_arm64\n" + sum + "  gatus_v5.37.0_linux_amd64\n", nil
+	}
+
+	t.Cleanup(func() { statusbox.FetchChecksums = previous })
+
+	m := &mocks{}
+
+	require.NoError(t, pulumi.RunErr(func(c *pulumi.Context) error {
+		in := Inputs{
+			Backend:       BackendEC2,
+			Version:       "v0.7.0",
+			PlatformHosts: PlatformHosts(groups()), ByCompany: HostsByCompany(groups()),
+			Entities: []Entity{{Code: "acme", DisplayName: "Acme"}}, AlertsReadHost: "alerts.example.test", DeadmanChannel: "#deadman",
+			EC2: EC2Inputs{
+				VPCID:                      pulumi.String("vpc-0example"),
+				SubnetIDs:                  []pulumi.StringInput{pulumi.String("subnet-0a"), pulumi.String("subnet-0b")},
+				Bucket:                     "acme-status-replica",
+				BucketPrefix:               "box",
+				AlertsReadTokenParameter:   "/acme/status/alerts-read-token",
+				DeadmanSlackTokenParameter: "/acme/status/deadman-token",
+			},
+		}
+		if public {
+			in.PublicHostname = "status.example.com"
+			in.OIDC = OIDC{IssuerURL: "https://issuer.example.com", ClientID: "status"}
+			in.EC2.OIDCClientSecretParameter = "/acme/status/oidc-client-secret"
+			in.EC2.TunnelTokenParameter = "/acme/status/tunnel-token"
+		}
+
+		return Deploy(c, slog.New(slog.DiscardHandler), in)
+	}, pulumi.WithMocks("proj", "stack", m)))
+
+	return m
+}
+
+// The EC2 backend mints no tailnet key and creates no Lightsail instance: it is
+// an Auto Scaling group, and no secret value is an input at all.
+func TestDeployEC2CreatesAGroupAndNoKey(t *testing.T) {
+	for _, public := range []bool{false, true} {
+		m := deployEC2With(t, public)
+
+		assert.Equal(t, []string{"status"}, m.names("aws:autoscaling/group:Group"))
+		assert.Empty(t, m.names("tailscale:index/tailnetKey:TailnetKey"))
+		assert.Empty(t, m.names("aws:lightsail/instance:Instance"))
+	}
+}
+
+func TestDeployEC2PublicPageNeedsItsParameters(t *testing.T) {
+	err := pulumi.RunErr(func(c *pulumi.Context) error {
+		return Deploy(c, slog.New(slog.DiscardHandler), Inputs{Backend: BackendEC2, PublicHostname: "status.example.com"})
+	}, pulumi.WithMocks("proj", "stack", &mocks{}))
+	require.ErrorContains(t, err, "EC2.OIDCClientSecretParameter and EC2.TunnelTokenParameter")
+}
+
+func TestDeployRefusesAnUnknownBackend(t *testing.T) {
+	err := pulumi.RunErr(func(c *pulumi.Context) error {
+		return Deploy(c, slog.New(slog.DiscardHandler), Inputs{Backend: "gce"})
+	}, pulumi.WithMocks("proj", "stack", &mocks{}))
+	require.ErrorContains(t, err, `unknown Backend "gce"`)
+}

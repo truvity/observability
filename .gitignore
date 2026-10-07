@@ -1,6 +1,7 @@
 # Build / release output
 bin/
 dist/
+build/
 
 # IDE
 .idea/
