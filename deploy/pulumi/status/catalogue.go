@@ -19,6 +19,12 @@ const (
 	// cloud-init like every other secret it holds.
 	DeadmanSlackTokenKey = "deadman_slack_token"
 
+	// DeadmanTelegramTokenKey and DeadmanTelegramChatIDKey are the AlertURLs
+	// keys of the optional Telegram alert channel (Gatus's native
+	// `alerting.telegram`): the bot token and the chat id. Both or neither.
+	DeadmanTelegramTokenKey  = "deadman_telegram_token"
+	DeadmanTelegramChatIDKey = "deadman_telegram_chat_id"
+
 	// OIDCClientSecretEnvKey is the statusbox.Secrets.Env map key the Gatus
 	// config references as ${OIDC_CLIENT_SECRET}: the whole variable name,
 	// unlike an AlertURLs key.
@@ -74,6 +80,10 @@ type (
 		AlertsReadHost string
 		// DeadmanChannel is where the deadman pages.
 		DeadmanChannel string
+		// Telegram adds the Telegram channel (keys above) to every endpoint
+		// the deadman pages through. Like the chat post it only takes effect
+		// on the instance that pages (not Public).
+		Telegram bool
 		// Public says this is the public instance: it shows every check and
 		// pages nobody, behind OIDC when PublicHostname is set.
 		Public         bool
@@ -204,6 +214,11 @@ func OpsCatalogue(in CatalogueInputs) statusbox.Catalogue { //nolint:misspell //
 		}
 	}
 
+	var telegram *statusbox.TelegramProvider
+	if in.Telegram && !in.Public {
+		telegram = &statusbox.TelegramProvider{TokenKey: DeadmanTelegramTokenKey, IDKey: DeadmanTelegramChatIDKey}
+	}
+
 	var security *statusbox.OIDCSecurity
 	if in.Public && in.PublicHostname != "" {
 		security = &statusbox.OIDCSecurity{
@@ -218,6 +233,7 @@ func OpsCatalogue(in CatalogueInputs) statusbox.Catalogue { //nolint:misspell //
 		Companies:     companies,
 		AlertsRead:    statusbox.AlertsRead{Host: in.AlertsReadHost, TokenEnvKey: AlertsReadTokenKey},
 		Deadman:       deadman,
+		Telegram:      telegram,
 		Security:      security,
 		StoragePath:   opsStoragePath,
 	}

@@ -83,6 +83,13 @@ type Args struct {
 	// holding it, with statusbox.Secrets.AlertURLs's key rules. This is where
 	// the alerts-read token and a deadman's chat token go.
 	AlertURLParameters map[string]string
+	// PingURLParameter is the optional SSM parameter (a SecureString) holding
+	// a dead-man ping URL of the healthchecks.io kind. When set, a systemd
+	// timer GETs it every minute while the local Gatus answers /health, and
+	// GETs <url>/fail when it does not. The URL is a secret: it is read at
+	// boot into a root-only file under /run, never into a unit file or a log.
+	// Empty: no ping units are installed.
+	PingURLParameter string
 	// EnvParameters maps a whole environment variable name a Config references
 	// (OIDC_CLIENT_SECRET) to its SSM parameter.
 	EnvParameters map[string]string
@@ -264,6 +271,10 @@ func (a Args) validateSecrets() []error {
 		checkParam("TunnelTokenParameter", a.TunnelTokenParameter)
 	}
 
+	if a.PingURLParameter != "" {
+		checkParam("PingURLParameter", a.PingURLParameter)
+	}
+
 	for _, k := range sortedKeys(a.AlertURLParameters) {
 		checkParam(fmt.Sprintf("AlertURLParameters[%q]", k), a.AlertURLParameters[k])
 	}
@@ -344,6 +355,10 @@ func (a Args) parameterNames() []string {
 
 	if a.TunnelTokenParameter != "" {
 		set[a.TunnelTokenParameter] = true
+	}
+
+	if a.PingURLParameter != "" {
+		set[a.PingURLParameter] = true
 	}
 
 	for _, p := range a.AlertURLParameters {

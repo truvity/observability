@@ -22,7 +22,8 @@
 #            Gatus runs. An instance going InService reads the secrets,
 #            restores each SQLite database from the Litestream replica, starts
 #            Gatus under `litestream replicate`, starts cloudflared, completes
-#            the hook and turns on the health timer.
+#            the hook and turns on the health timer (and, when a ping URL
+#            parameter is configured, the dead-man ping timer).
 #
 # That ordering is what keeps the replica single-writer: the replica is only
 # ever written by the one InService instance, and a warm instance never
@@ -233,8 +234,37 @@ EOF
   done
 }
 
+# write_ping_units: the dead-man ping, only when SB_PING_PARAM is set. The URL
+# is a secret and is in neither unit: the service runs `statusbox-setup ping`,
+# which reads it from a root-only file under /run.
+write_ping_units() {
+  [ -n "$SB_PING_PARAM" ] || return 0
+  cat >"$UNITS/statusbox-ping.service" <<'EOF'
+[Unit]
+Description=statusbox dead-man ping
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/statusbox-setup ping
+EOF
+
+  cat >"$UNITS/statusbox-ping.timer" <<'EOF'
+[Unit]
+Description=statusbox dead-man ping, every minute
+
+[Timer]
+OnActiveSec=5s
+OnUnitActiveSec=60s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+EOF
+}
+
 write_units() {
   mkdir -p "$UNITS"
+  write_ping_units
   cat >"$UNITS/gatus@.service" <<'EOF'
 [Unit]
 Description=statusbox Gatus instance %i (under litestream replicate)
@@ -384,6 +414,11 @@ fetch_secrets() {
       value="$(ssm_get "$SB_TUNNEL_PARAM")"
       env_line TUNNEL_TOKEN "$value" >"$RUN/tunnel.env"
     fi
+    if [ -n "$SB_PING_PARAM" ]; then
+      value="$(ssm_get "$SB_PING_PARAM")"
+      case "$value" in *$'\n'*) log "the ping URL contains a newline"; return 1 ;; esac
+      printf '%s' "$value" >"$RUN/ping.url"
+    fi
   )
 }
 
@@ -437,6 +472,7 @@ go_in_service() {
   [ -z "$SB_TUNNEL_PARAM" ] || systemctl start cloudflared.service
   wait_healthy
   systemctl start statusbox-health.timer
+  [ -z "$SB_PING_PARAM" ] || systemctl start statusbox-ping.timer
 }
 
 boot_phase() {
@@ -507,13 +543,42 @@ health_phase() {
   fi
 }
 
+# ------------------------------------------------------------------- ping
+
+# ping_phase runs from the timer, every minute. It is the box's dead-man
+# switch: a GET to the ping URL while every local Gatus answers /health with
+# 200, a GET to <url>/fail when one does not. If the box (or its network) is
+# gone, the pings stop and the external service alerts. The URL is a secret:
+# it is read from a root-only file, handed to curl on stdin (never on the
+# command line, where `ps` shows it), and never logged.
+ping_phase() {
+  local entry ok=1 url
+  load_params
+  [ -n "$SB_PING_PARAM" ] || return 0
+  [ -s "$RUN/ping.url" ] || { log "ping: no ping URL on this boot"; return 0; }
+  url="$(head -n 1 "$RUN/ping.url")"
+  url="${url%/}"
+  for entry in "${SB_INSTANCES[@]}"; do
+    instance_fields "$entry"
+    curl -fsS -m 5 -o /dev/null "http://127.0.0.1:$INST_PORT/health" 2>/dev/null || ok=0
+  done
+  [ "$ok" = 1 ] || url="$url/fail"
+  if printf 'url = "%s"\n' "$url" | curl -K - -fsS -m 10 --connect-timeout 5 --retry 3 --retry-delay 2 -o /dev/null 2>/dev/null; then
+    [ "$ok" = 1 ] || log "ping: sent the failure ping, a local Gatus is not healthy"
+  else
+    log "ping: the ping request failed"
+    return 1
+  fi
+}
+
 main() {
   case "${1:-}" in
     install) install_phase ;;
     boot) boot_phase ;;
     health) health_phase ;;
+    ping) ping_phase ;;
     *)
-      echo "usage: statusbox-setup install|boot|health" >&2
+      echo "usage: statusbox-setup install|boot|health|ping" >&2
       return 2
       ;;
   esac

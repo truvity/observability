@@ -590,3 +590,105 @@ func TestDeadmanChecksWithoutAPostStillRenderButPageNobody(t *testing.T) {
 
 	assert.True(t, names["deadman"] && names["alertmanager-watchdog"] && names["slack-notifications"])
 }
+
+func telegramProvider() *TelegramProvider {
+	return &TelegramProvider{TokenKey: "deadman_telegram_token", IDKey: "deadman_telegram_chat_id"}
+}
+
+// TestTelegramJoinsEveryDeadmanEndpoint: every endpoint that alerts through
+// the deadman's own provider alerts to Telegram as well, with the same
+// threshold and send-on-resolved; the company signals do not.
+func TestTelegramJoinsEveryDeadmanEndpoint(t *testing.T) {
+	c := deadmanCatalogue()
+	c.Telegram = telegramProvider()
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	var parsed gatusConfig
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
+
+	require.NotNil(t, parsed.Alerting.Telegram)
+	assert.Equal(t, "${ALERT_URL_DEADMAN_TELEGRAM_TOKEN}", parsed.Alerting.Telegram.Token)
+	assert.Equal(t, "${ALERT_URL_DEADMAN_TELEGRAM_CHAT_ID}", parsed.Alerting.Telegram.ID)
+	assert.NotNil(t, parsed.Alerting.Custom)
+
+	want := []gatusAlertRef{
+		{Type: "custom", Description: deadmanTriggeredText, FailureThreshold: 2, SendOnResolved: true},
+		{Type: "telegram", Description: deadmanTriggeredText, FailureThreshold: 2, SendOnResolved: true},
+	}
+
+	for _, e := range parsed.Endpoints {
+		switch {
+		case e.Name == "deadman" || e.Name == "alertmanager-watchdog" || e.Name == "slack-notifications":
+			assert.Equal(t, want, e.Alerts, e.Name)
+		case strings.HasSuffix(e.Name, "-customer-facing"):
+			require.Len(t, e.Alerts, 1, e.Name)
+			assert.Equal(t, "slack", e.Alerts[0].Type)
+		}
+	}
+
+	assert.NotContains(t, out, "nobody is notified")
+}
+
+func TestTelegramAbsentRendersNoProvider(t *testing.T) {
+	out, err := RenderGatus(deadmanCatalogue())
+	require.NoError(t, err)
+	assert.NotContains(t, out, "telegram")
+}
+
+// TestTelegramWithoutAPostPagesLikeSlack: no custom deadman provider, so the
+// deadman endpoints use the shared Providers, Telegram among them.
+func TestTelegramWithoutAPostPagesLikeSlack(t *testing.T) {
+	c := testCatalogue()
+	c.Providers = DeadmanProviders{SlackKey: "slack", Telegram: true}
+	c.Telegram = telegramProvider()
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	var parsed gatusConfig
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
+
+	for _, e := range parsed.Endpoints {
+		if e.Name == "deadman" || strings.HasSuffix(e.Name, "-customer-facing") {
+			require.Len(t, e.Alerts, 2, e.Name)
+			assert.Equal(t, "slack", e.Alerts[0].Type)
+			assert.Equal(t, gatusAlertRef{Type: "telegram", SendOnResolved: true}, e.Alerts[1], e.Name)
+		}
+	}
+}
+
+// TestTelegramAloneAlertsOnlyTheDeadman: Telegram set but not in Providers,
+// no Post: the deadman alerts to it, the company signal does not.
+func TestTelegramAloneAlertsOnlyTheDeadman(t *testing.T) {
+	c := testCatalogue()
+	c.Telegram = telegramProvider()
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	var parsed gatusConfig
+	require.NoError(t, yaml.Unmarshal([]byte(out), &parsed))
+
+	for _, e := range parsed.Endpoints {
+		switch {
+		case e.Name == "deadman":
+			assert.Equal(t, []gatusAlertRef{{Type: "telegram", SendOnResolved: true}}, e.Alerts)
+		case strings.HasSuffix(e.Name, "-customer-facing"):
+			assert.Empty(t, e.Alerts)
+		}
+	}
+}
+
+func TestTelegramRefusals(t *testing.T) {
+	c := testCatalogue()
+	c.Providers = DeadmanProviders{Telegram: true}
+	_, err := RenderGatus(c)
+	require.ErrorContains(t, err, "Providers.Telegram")
+
+	c = testCatalogue()
+	c.Telegram = &TelegramProvider{TokenKey: "a-b", IDKey: "id"}
+	_, err = RenderGatus(c)
+	require.ErrorContains(t, err, "Telegram.TokenKey")
+}

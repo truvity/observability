@@ -104,6 +104,15 @@ differently (`placeholders.ALERT_TRIGGERED_OR_RESOLVED`): a recovery says
   only: see `tenancy.alertReaders[].alertmanager`;
 - one check per `NotFiring` entry: that alert is NOT firing in vmalert.
 
+**Telegram (optional).** `Catalogue.Telegram` (a `TelegramProvider`: two
+`Secrets.AlertURLs` keys, the bot token and the chat id) renders Gatus's
+native `alerting.telegram` and adds a `telegram` alert to every endpoint the
+deadman group pages through, with the same failure threshold and
+send-on-resolved as the deadman's other channel. `Providers.Telegram` adds it
+to the company signals as well. Nil renders no telegram provider. In
+`deploy/pulumi/status` the keys are `deadman_telegram_token` and
+`deadman_telegram_chat_id`, enabled only on the instance that pages.
+
 A chat API answers 200 even for a refusal (Slack's `not_in_channel`),
 which Gatus cannot see: the bot must already be in the channel.
 `hack/gatus-deadman-proof.sh` proves the three checks, the threshold, the
@@ -456,7 +465,9 @@ The replica is therefore written only by the one in-service instance. The group 
 
 **Health.** `Restart=always` handles a crashing process. A timer runs a local check every minute: each Gatus unit active and answering `/health`, and cloudflared active when there is a tunnel. If that fails continuously for `HealthFailMinutes` (default 5), the instance calls `aws autoscaling set-instance-health --health-status Unhealthy` on itself and the group replaces it. A 1 GiB swap file and a 100 MiB journald cap keep a nano instance alive.
 
-**Not in this backend.** Tailscale: the instance reaches its peer over private routing (VPC peering) that the caller provides, and the private page is reachable on its own port from `PrivateIngressCIDRs`, not over a tailnet on port 80. Outside checks, the Gatus metrics push, healthchecks.io and Telegram follow separately.
+**Telegram and the dead-man ping (optional).** `AlertURLParameters` may carry the Telegram bot token and chat id (the keys above; see "The deadman group"), and `PingURLParameter` is an SSM SecureString holding a healthchecks.io-style ping URL. With the latter, the setup script installs `statusbox-ping.service` and `.timer`; the boot phase reads the URL into `/run/statusbox/ping.url` (mode 0600, root) and starts the timer once the instance is in service. Every 60 seconds the service GETs the URL when every local Gatus answers `/health` with 200, and `<url>/fail` otherwise. curl gets the URL on stdin (never on its command line), with a 5 s connect and 10 s total timeout and three retries; the URL appears in no unit file and no log. If the box dies, the pings stop and the external service alerts. Empty `PingURLParameter`: no ping units. In `deploy/pulumi/status`, `EC2Inputs.TelegramTokenParameter` and `TelegramChatIDParameter` (both or neither) and `EC2Inputs.PingURLParameter` carry them; on Lightsail, `Inputs.TelegramToken` and `TelegramChatID` enable Telegram (no ping).
+
+**Not in this backend.** Tailscale: the instance reaches its peer over private routing (VPC peering) that the caller provides, and the private page is reachable on its own port from `PrivateIngressCIDRs`, not over a tailnet on port 80. Outside checks and the Gatus metrics push follow separately.
 
 **Proof.** The package's tests cover `Args.validate`, a golden of the rendered user-data, the resource shapes (group, launch template, security group, role policy) and the absence of any secret value from it. `just statusbox-ec2` runs the setup script inside an `amazonlinux:2023` container: the pinned downloads, the units and Litestream configs, a database round trip through `litestream replicate` and the script's restore, and the boot phase's ordering with `systemctl`, `aws` and the metadata service replaced by shims. It does not run systemd or an instance; the first real boot is the one thing left unproved.
 

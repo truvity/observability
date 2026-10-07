@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -82,6 +83,7 @@ func TestValidateRefusals(t *testing.T) {
 		"public without host":    {func(a *Args) { a.Hostnames = nil }, "Hostnames"},
 		"public without tunnel":  {func(a *Args) { a.TunnelTokenParameter = "" }, "TunnelTokenParameter is empty"},
 		"tunnel without public":  {func(a *Args) { a.Instances[0].Public = false; a.Hostnames = nil }, "no instance is Public"},
+		"ping param not a path":  {func(a *Args) { a.PingURLParameter = "ping" }, "PingURLParameter"},
 		"tunnel not a path":      {func(a *Args) { a.TunnelTokenParameter = "tunnel" }, "SSM parameter name"},
 		"alert param not a path": {func(a *Args) { a.AlertURLParameters["ops_alerts_read_token"] = "x y" }, "SSM parameter name"},
 		"env name reserved":      {func(a *Args) { a.EnvParameters["TUNNEL_TOKEN"] = "/acme/x" }, "reserved"},
@@ -335,4 +337,107 @@ func TestSetupScriptHasNoBootstrapDelimiter(t *testing.T) {
 	_, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
 	require.NoError(t, err)
 	require.NotContains(t, setupScript, "\nSTATUSBOX_SETUP\n")
+}
+
+func pingArgs() Args {
+	a := validArgs()
+	a.PingURLParameter = "/acme/status/ping-url"
+
+	return a
+}
+
+// TestPingIsOptional: without PingURLParameter the params carry an empty name
+// and the role reads no extra parameter; with it, the role may read exactly it.
+func TestPingIsOptional(t *testing.T) {
+	off, err := validArgs().params(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.Contains(t, off, "SB_PING_PARAM=''\n")
+	require.NotContains(t, validArgs().parameterNames(), "/acme/status/ping-url")
+
+	on, err := pingArgs().params(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.Contains(t, on, "SB_PING_PARAM='/acme/status/ping-url'\n")
+	require.Contains(t, pingArgs().parameterNames(), "/acme/status/ping-url")
+	require.NoError(t, pingArgs().validate())
+}
+
+// TestPingUnitsCarryNoURL: the units are written by the setup script only when
+// a parameter is configured, and the URL never appears in the user-data.
+func TestPingUnitsCarryNoURL(t *testing.T) {
+	require.Contains(t, setupScript, "statusbox-ping.service")
+	require.Contains(t, setupScript, "statusbox-ping.timer")
+	require.Contains(t, setupScript, "OnUnitActiveSec=60s")
+	require.Contains(t, setupScript, `[ -n "$SB_PING_PARAM" ] || return 0`)
+
+	got, err := pingArgs().bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.Contains(t, got, "ExecStart=/usr/local/sbin/statusbox-setup ping")
+	require.Contains(t, got, "SB_PING_PARAM='/acme/status/ping-url'")
+}
+
+// TestPingPhase runs the embedded ping function against a stub curl: healthy
+// Gatus pings the URL, an unhealthy one pings <url>/fail, and the URL reaches
+// curl on stdin, never on its command line.
+func TestPingPhase(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not available")
+	}
+
+	for name, tc := range map[string]struct {
+		healthy bool
+		want    string
+	}{
+		"healthy":   {true, "https://ping.example.test/uuid"},
+		"unhealthy": {false, "https://ping.example.test/uuid/fail"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			root := filepath.Join(dir, "root")
+			bin := filepath.Join(dir, "bin")
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/statusbox"), 0o755))
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "run/statusbox"), 0o700))
+			require.NoError(t, os.MkdirAll(bin, 0o755))
+
+			require.NoError(t, os.WriteFile(filepath.Join(root, "etc/statusbox/params.sh"),
+				[]byte("SB_PING_PARAM=/acme/status/ping-url\nSB_INSTANCES=('ops:8082:true:ops.db')\n"), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "run/statusbox/ping.url"), []byte("https://ping.example.test/uuid/\n"), 0o600))
+
+			stub := "#!/bin/bash\n" +
+				"for a in \"$@\"; do case \"$a\" in http://127.0.0.1*) [ \"$HEALTHY\" = 1 ] && exit 0 || exit 22 ;; esac; done\n" +
+				"printf '%s\\n' \"$*\" >>\"$OUT/args\"\n" +
+				"cat >\"$OUT/stdin\"\n"
+			require.NoError(t, os.WriteFile(filepath.Join(bin, "curl"), []byte(stub), 0o755))
+
+			healthy := "0"
+			if tc.healthy {
+				healthy = "1"
+			}
+
+			cmd := exec.Command(bash, "-c", `. "$SCRIPT"; ping_phase`)
+			cmd.Env = append(os.Environ(),
+				"STATUSBOX_SOURCE_ONLY=1", "STATUSBOX_ROOT="+root, "SCRIPT="+scriptPath(t, dir),
+				"PATH="+bin+":"+os.Getenv("PATH"), "HEALTHY="+healthy, "OUT="+dir)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+
+			stdin, err := os.ReadFile(filepath.Join(dir, "stdin"))
+			require.NoError(t, err)
+			require.Equal(t, `url = "`+tc.want+`"`+"\n", string(stdin))
+
+			args, err := os.ReadFile(filepath.Join(dir, "args"))
+			require.NoError(t, err)
+			require.NotContains(t, string(args), "ping.example.test", "the URL must not be on the command line")
+			require.NotContains(t, string(out), "ping.example.test", "the URL must not be logged")
+		})
+	}
+}
+
+func scriptPath(t *testing.T, dir string) string {
+	t.Helper()
+
+	p := filepath.Join(dir, "setup.sh")
+	require.NoError(t, os.WriteFile(p, []byte(setupScript), 0o755))
+
+	return p
 }

@@ -4,6 +4,14 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+### Added
+
+- **Added** `pkg/statusbox`: optional Telegram alerting. `Catalogue.Telegram` (`TelegramProvider`: two `Secrets.AlertURLs` keys, the bot token and the chat id) renders Gatus's native `alerting.telegram` and adds a `telegram` alert (same failure threshold, send-on-resolved) to every endpoint the deadman group pages through; `Providers.Telegram` adds the company signals too. Nil renders exactly what it did.
+- **Added** `deploy/pulumi/status`: `EC2Inputs.TelegramTokenParameter` and `TelegramChatIDParameter` (SSM SecureStrings, both or neither; Lightsail: `Inputs.TelegramToken` and `TelegramChatID`) enable it on the paging instance.
+- **Added** `pkg/statusbox/ec2`: `Args.PingURLParameter` (`EC2Inputs.PingURLParameter`), an SSM SecureString with a healthchecks.io-style ping URL. A systemd timer GETs it every 60 s while every local Gatus answers `/health`, and `<url>/fail` otherwise; the URL lives only in a root-only file under `/run`. Unset installs no units. The role may read the extra parameter. The rendered user-data changes by one `SB_PING_PARAM` line and the setup script.
+
 ## v0.62.1
 
 - **Behaviour change** (fix(alert-ingress)): in `sqs` and `both` mode the NetworkPolicy also allows TCP 80 to the EKS Pod Identity agent (`169.254.170.23/32`), which serves the pod's AWS credentials over plain HTTP on a link-local address. Without it, a CNI that enforces the policy blocks the credential call and every queue receive fails with `dial tcp 169.254.170.23:80: i/o timeout`. New value `networkPolicy.egress.podIdentityAgent` (default `true`); set it `false` when the pod gets credentials another way (IRSA needs only the 443 rule). `http` mode renders as before.

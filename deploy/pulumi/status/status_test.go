@@ -3,6 +3,7 @@ package status
 import (
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -303,4 +304,39 @@ func TestDeployRefusesAnUnknownBackend(t *testing.T) {
 		return Deploy(c, slog.New(slog.DiscardHandler), Inputs{Backend: "gce"})
 	}, pulumi.WithMocks("proj", "stack", &mocks{}))
 	require.ErrorContains(t, err, `unknown Backend "gce"`)
+}
+
+// Telegram is optional: absent, nothing renders; present, only the paging
+// (private) instance carries the provider and every deadman endpoint alerts
+// to it.
+func TestTelegramIsOptionalAndOnlyThePagingInstanceHasIt(t *testing.T) {
+	off, err := statusbox.RenderGatus(OpsCatalogue(catalogueInputs(false)))
+	require.NoError(t, err)
+	assert.NotContains(t, off, "telegram")
+
+	in := catalogueInputs(false)
+	in.Telegram = true
+
+	private, err := statusbox.RenderGatus(OpsCatalogue(in))
+	require.NoError(t, err)
+
+	for _, want := range []string{"telegram:", "token: ${ALERT_URL_DEADMAN_TELEGRAM_TOKEN}", "id: ${ALERT_URL_DEADMAN_TELEGRAM_CHAT_ID}", "type: telegram"} {
+		assert.Contains(t, private, want)
+	}
+
+	assert.Equal(t, 3, strings.Count(private, "type: telegram"), "deadman, alertmanager-watchdog and slack-notifications")
+
+	in = catalogueInputs(true)
+	in.Telegram = true
+
+	public, err := statusbox.RenderGatus(OpsCatalogue(in))
+	require.NoError(t, err)
+	assert.NotContains(t, public, "telegram")
+}
+
+func TestTelegramEnabledNeedsBothInputs(t *testing.T) {
+	assert.False(t, Inputs{Backend: BackendEC2, EC2: EC2Inputs{TelegramTokenParameter: "/x/t"}}.telegramEnabled())
+	assert.True(t, Inputs{Backend: BackendEC2, EC2: EC2Inputs{TelegramTokenParameter: "/x/t", TelegramChatIDParameter: "/x/i"}}.telegramEnabled())
+	assert.False(t, Inputs{}.telegramEnabled())
+	assert.True(t, Inputs{TelegramToken: pulumi.String("t"), TelegramChatID: pulumi.String("i")}.telegramEnabled())
 }
