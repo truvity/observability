@@ -301,6 +301,12 @@ networkPolicy:
     #     - ipBlock:
     #         cidr: <the SQS VPC endpoint's subnet CIDR>
     sqs: []
+    # -- For `input.mode` `sqs` or `both`: also allow TCP 80 to the EKS Pod
+    # Identity agent (169.254.170.23), which serves the pod's AWS credentials
+    # over plain HTTP on a link-local address. Without it, an enforcing CNI
+    # blocks the credential call and every receive fails. Set false when the
+    # pod gets credentials another way (IRSA needs only the 443 rule).
+    podIdentityAgent: true
   # -- Egress on 443 to anywhere, needed for the two outbound calls this
   # service makes to the cloud provider itself: fetching the signing
   # certificate that Verify checks every message against, and the one GET

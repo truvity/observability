@@ -39,6 +39,14 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    # 5. The EKS Pod Identity agent, for the queue input's AWS credentials: it
+    # answers on a link-local address over plain HTTP (IRSA needs only 443).
+    - to:
+        - ipBlock:
+            cidr: 169.254.170.23/32
+      ports:
+        - protocol: TCP
+          port: 80
 
 ---
 # Source: alert-ingress/templates/deployment.yaml

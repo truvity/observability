@@ -261,6 +261,10 @@
               "type": "array",
               "items": { "$ref": "#/definitions/networkPolicyPeer" },
               "description": "Optional. Peers the pods may reach on 443 for the SQS endpoint; needed only when `allowCloudHTTPS` is false and `input.mode` polls SQS."
+            },
+            "podIdentityAgent": {
+              "type": "boolean",
+              "description": "For input.mode sqs or both: allow TCP 80 to the EKS Pod Identity agent (169.254.170.23/32). Default true."
             }
           }
         },

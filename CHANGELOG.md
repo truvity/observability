@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+- **Behaviour change** (fix(alert-ingress)): in `sqs` and `both` mode the NetworkPolicy also allows TCP 80 to the EKS Pod Identity agent (`169.254.170.23/32`), which serves the pod's AWS credentials over plain HTTP on a link-local address. Without it, a CNI that enforces the policy blocks the credential call and every queue receive fails with `dial tcp 169.254.170.23:80: i/o timeout`. New value `networkPolicy.egress.podIdentityAgent` (default `true`); set it `false` when the pod gets credentials another way (IRSA needs only the 443 rule). `http` mode renders as before.
+
 ## v0.62.0
 
 - **Behaviour change** `alert-ingress`: in `sqs` and `both` mode, a `SubscriptionConfirmation` found in the queue is now confirmed when its SNS signature verifies and its topic is on the allow-list (the same `SubscribeURL` host check as the webhook), then deleted and counted in the new `alert_ingress_sqs_confirmed_total`; a failed confirmation leaves the message for retry and the dead-letter queue. Before, such messages were deleted unconfirmed, which left a cross-account subscription made by the topic owner pending. Opt out with `input.sqs.confirmSubscriptions: false` (new, default `true`; it renders into the config in `sqs` and `both` mode, so those goldens move; `http` mode renders as before). Unsubscribe confirmations are still logged and deleted. See [docs/alert-ingress.md](docs/alert-ingress.md#sqs-input).
