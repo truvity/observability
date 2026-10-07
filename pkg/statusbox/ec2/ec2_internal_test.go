@@ -312,14 +312,14 @@ func TestPinsAreWellFormed(t *testing.T) {
 
 func TestInstancePolicyIsScoped(t *testing.T) {
 	a := validArgs()
-	a.KMSKeyARN = "arn:aws:kms:eu-west-1:" + strings.Repeat("7", 12) + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"
+	a.KMSKeyARN = "arn:" + partition + ":kms:eu-west-1:" + strings.Repeat("7", 12) + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"
 	doc := a.instancePolicy(namesFor("status"), "eu-west-1", strings.Repeat("7", 12))
 
 	for _, p := range a.parameterNames() {
 		require.Contains(t, doc, "parameter"+p)
 	}
 
-	require.Contains(t, doc, "arn:aws:s3:::acme-status-replica/box/*")
+	require.Contains(t, doc, "arn:"+partition+":s3:::acme-status-replica/box/*")
 	require.Contains(t, doc, "box/*")
 	require.Contains(t, doc, "autoScalingGroupName/statusbox-status")
 	require.Contains(t, doc, a.KMSKeyARN)
