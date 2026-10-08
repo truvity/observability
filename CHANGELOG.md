@@ -4,9 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
-
-### Added
+## v0.63.0
 
 - **Added** `pkg/statusbox`: optional Telegram alerting. `Catalogue.Telegram` (`TelegramProvider`: two `Secrets.AlertURLs` keys, the bot token and the chat id) renders Gatus's native `alerting.telegram` and adds a `telegram` alert (same failure threshold, send-on-resolved) to every endpoint the deadman group pages through; `Providers.Telegram` adds the company signals too. Nil renders exactly what it did.
 - **Added** `deploy/pulumi/status`: `EC2Inputs.TelegramTokenParameter` and `TelegramChatIDParameter` (SSM SecureStrings, both or neither; Lightsail: `Inputs.TelegramToken` and `TelegramChatID`) enable it on the paging instance.
