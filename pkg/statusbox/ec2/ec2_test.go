@@ -215,7 +215,7 @@ func TestSecurityGroupAdmitsSSHOnlyWhenSet(t *testing.T) {
 	}
 
 	sg := run(t, a).only(t, "aws:ec2/securityGroup:SecurityGroup").Mappable()
-	require.Contains(t, sg["description"], "SSH")
+	require.Equal(t, "statusbox: no inbound except the private page and SSH (opkssh) from the listed networks", sg["description"])
 
 	ingress := sg["ingress"].([]any)
 	require.Len(t, ingress, 2, "the private page and SSH")

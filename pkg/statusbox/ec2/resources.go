@@ -352,7 +352,7 @@ func (a Args) securityGroup(ctx *pulumi.Context, name string, physical names, ch
 	if cidrs := a.sshCIDRs(); len(cidrs) > 0 {
 		// A security group's description cannot change in place, so it moves
 		// only for a box that turns SSH on (that box's group is replaced).
-		description = "statusbox: no inbound except the private page and SSH from the listed networks"
+		description = "statusbox: no inbound except the private page and SSH (opkssh) from the listed networks"
 
 		sshCIDRs := make(pulumi.StringArray, len(cidrs))
 		for i, c := range cidrs {
@@ -360,7 +360,7 @@ func (a Args) securityGroup(ctx *pulumi.Context, name string, physical names, ch
 		}
 
 		ingress = append(ingress, awsec2.SecurityGroupIngressArgs{
-			Description: pulumi.String("SSH (opkssh and host certificates), from the listed networks"),
+			Description: pulumi.String("SSH (opkssh), from the listed networks"),
 			Protocol:    pulumi.String("tcp"),
 			FromPort:    pulumi.Int(sshPort),
 			ToPort:      pulumi.Int(sshPort),
