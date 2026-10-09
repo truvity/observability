@@ -257,6 +257,7 @@ derivation — into this package too:
 // alerts-read path answers).
 type Catalogue struct {
     PlatformHosts []string          // infrastructure hosts, the "platform" group
+    HostProbes    map[string]Probe  // optional per-host probe {Path, ExpectStatus}; absent = GET / expecting 200
     Companies     []Company         // one group per company, in render order
     AlertsRead    AlertsRead        // the one pull path — see "internal → status, pulled"
     Providers     DeadmanProviders  // optional Slack/PagerDuty AlertURLs keys (company signals)

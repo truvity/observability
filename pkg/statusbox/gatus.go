@@ -38,6 +38,7 @@ package statusbox
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -121,6 +122,14 @@ type (
 		// check. Deduplicated and sorted is the caller's job; RenderGatus
 		// renders them in the order given.
 		PlatformHosts []string
+
+		// HostProbes optionally overrides how a platform host is probed,
+		// keyed by the exact PlatformHosts entry. A host with no entry
+		// (the usual case) is probed with GET on the bare host and the
+		// strict statusCondition, exactly as before. Use it for a host
+		// that is POST-only or path-only by design and so never answers
+		// 200 at "/". An entry for a host not in PlatformHosts is ignored.
+		HostProbes map[string]Probe
 
 		// Companies is every company this page shows a group for, in
 		// the order their groups should render. A company with no hosts
@@ -224,6 +233,19 @@ type (
 		// stays the bare host and the condition is the lenient one —
 		// see probeConditions.
 		StatusPath string
+		// ExpectStatus is the status StatusPath must answer, 0 for the
+		// default 200. It only applies when StatusPath is set.
+		ExpectStatus int
+	}
+
+	// Probe is one host's declared health probe: GET Path, expecting
+	// ExpectStatus. The zero value of each field means the default: the
+	// bare host ("/") and 200. A non-200 expectation is for a host whose
+	// healthy answer to an unauthenticated GET is itself an error status,
+	// e.g. a 404 that still proves DNS, TLS and the route.
+	Probe struct {
+		Path         string
+		ExpectStatus int
 	}
 
 	// AlertsRead is the one pull path every alerts-read endpoint reads
@@ -533,12 +555,14 @@ func RenderGatus(c Catalogue) (string, error) {
 	endpoints := make([]gatusEndpoint, 0, len(c.PlatformHosts)+2*len(c.Companies)+len(c.InternalChecks)+1)
 
 	for _, host := range c.PlatformHosts {
+		probe := c.HostProbes[host]
+
 		endpoints = append(endpoints, gatusEndpoint{
 			Name:       host,
 			Group:      "platform",
-			URL:        "https://" + host,
+			URL:        "https://" + host + probe.Path,
 			Interval:   opsProbeInterval,
-			Conditions: []string{statusCondition, certExpiryCondition},
+			Conditions: []string{expectStatusCondition(probe.ExpectStatus), certExpiryCondition},
 		})
 	}
 
@@ -726,7 +750,17 @@ func probeConditions(host CompanyHost) []string {
 		return []string{lenientStatusCondition, certExpiryCondition}
 	}
 
-	return []string{statusCondition, certExpiryCondition}
+	return []string{expectStatusCondition(host.ExpectStatus), certExpiryCondition}
+}
+
+// expectStatusCondition is the strict condition for a declared status; 0
+// means the default 200, which is the statusCondition constant byte for byte.
+func expectStatusCondition(status int) string {
+	if status == 0 || status == http.StatusOK {
+		return statusCondition
+	}
+
+	return fmt.Sprintf("[STATUS] == %d", status)
 }
 
 // ensureAlerting returns a, or a fresh *gatusAlerting if a is nil — the
