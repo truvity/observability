@@ -108,14 +108,19 @@ func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOp
 		return a.instancePolicy(physical, v[0].(string), v[1].(string))
 	}).(pulumi.StringOutput)
 
-	role, err := iam.NewRole(ctx, name, &iam.RoleArgs{
+	roleArgs := &iam.RoleArgs{
 		Name:             pulumi.String(physical.role),
 		AssumeRolePolicy: pulumi.String(assumeRolePolicy()),
 		InlinePolicies: iam.RoleInlinePolicyArray{
 			iam.RoleInlinePolicyArgs{Name: pulumi.String("statusbox"), Policy: policy},
 		},
 		Tags: a.tags(physical.role),
-	}, childOpts...)
+	}
+	if a.PermissionsBoundary != "" {
+		roleArgs.PermissionsBoundary = pulumi.String(a.PermissionsBoundary)
+	}
+
+	role, err := iam.NewRole(ctx, name, roleArgs, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): role: %w", name, err)
 	}

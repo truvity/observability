@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `pkg/statusbox/ec2`: optional `Args.PermissionsBoundary` (`deploy/pulumi/status`: `EC2Inputs.PermissionsBoundary`), the full ARN of an IAM permissions boundary set on the instance role `<prefix>-status`. Accounts that deny `iam:CreateRole` for a role without their boundary failed the apply; set it there. Empty keeps the role as before, so existing stacks do not change. The Lightsail backend creates no IAM role.
+
 ## v0.63.0
 
 - **Added** `pkg/statusbox`: optional Telegram alerting. `Catalogue.Telegram` (`TelegramProvider`: two `Secrets.AlertURLs` keys, the bot token and the chat id) renders Gatus's native `alerting.telegram` and adds a `telegram` alert (same failure threshold, send-on-resolved) to every endpoint the deadman group pages through; `Providers.Telegram` adds the company signals too. Nil renders exactly what it did.

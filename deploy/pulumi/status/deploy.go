@@ -126,6 +126,10 @@ type (
 		BucketPrefix string
 		KMSKeyARN    string
 
+		// PermissionsBoundary is the full ARN of the IAM permissions boundary
+		// the instance role carries; empty means none.
+		PermissionsBoundary string
+
 		// InstanceType defaults to the package's (t4g.nano).
 		InstanceType string
 
@@ -324,6 +328,7 @@ func deployEC2(c *pulumi.Context, logger *slog.Logger, in Inputs, instances []st
 		Bucket:              in.EC2.Bucket,
 		BucketPrefix:        in.EC2.BucketPrefix,
 		KMSKeyARN:           in.EC2.KMSKeyARN,
+		PermissionsBoundary: in.EC2.PermissionsBoundary,
 		InstanceType:        in.EC2.InstanceType,
 		Provider:            in.BoxProvider,
 	}
