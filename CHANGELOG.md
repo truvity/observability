@@ -4,10 +4,9 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.67.0
 
 - **Added** `pkg/statusbox/ec2`, `deploy/pulumi/status`: the private (break-glass) page can answer on a port below 1024, in particular plain HTTP port 80. `EC2Inputs.PrivatePort` (default 0, meaning the existing 8081, so every existing render and golden is unchanged) sets the private instance's port; the security group opens that port to `PrivateIngressCIDRs`, and the health, ping and lifecycle probes already dial the instance's own port. For a port below 1024 `setup.sh` writes a per-instance systemd drop-in giving that Gatus `AmbientCapabilities=CAP_NET_BIND_SERVICE` (bounded to that one capability; the unit still runs unprivileged with `NoNewPrivileges`); other instances are unchanged. Changing the port changes the user-data (the instance rolls) and the security group rule; the group's description does not change. Lightsail ignores the field (its page is already served on 80 by `tailscale serve`). See `docs/statusbox.md`, "EC2 backend".
-
 - **Added** `pkg/statusbox/ec2`: SSH without OpenBAO. `SSHArgs.HostCert` is now a pointer and optional: nil renders opkssh only (`HOST_CERT="false"`, no `openbao-hostcert`, no host certificate), which `pkg/hostaccess` v1.24.2 supports. New `SSHArgs.HostKeyParameter` (an absolute SSM SecureString name): the instance role may read exactly that parameter (`ReadOwnParameters`; the existing `KMSKeyARN` statement covers decryption), and at boot, before sshd is restarted, the box restores it as `/etc/ssh/ssh_host_ed25519_key` (0600, root), derives the `.pub` with `ssh-keygen -y` and writes a `HostKey` drop-in (`/etc/ssh/sshd_config.d/05-statusbox-hostkey.conf`) so sshd presents only that key; clients pin one plain `known_hosts` line. Fail-safe: on any failure it logs, removes the drop-in and sshd keeps its generated key, and the box still comes InService. **Breaking for Go callers of `SSHArgs`:** `HostCert` changes from `hostaccess.HostCertPreset` to `*hostaccess.HostCertPreset` (take the address). Nil `SSH` and an `SSH` with a `HostCert` and no `HostKeyParameter` render exactly as before. See `docs/statusbox.md`, "SSH (optional)".
 
 ## v0.66.1
