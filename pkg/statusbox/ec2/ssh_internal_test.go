@@ -19,7 +19,7 @@ func validSSH() *SSHArgs {
 			User:     "ec2-user",
 			Group:    "ops",
 		},
-		HostCert: hostaccess.HostCertPreset{
+		HostCert: &hostaccess.HostCertPreset{
 			Address:           "https://bao.example.test",
 			Namespace:         "acme",
 			AuthMount:         "aws",
@@ -114,4 +114,68 @@ func TestUserDataWithSSHIsWithinTheLimit(t *testing.T) {
 	t.Logf("user-data bytes: %d without SSH, %d with SSH (limit %d)", len(without), len(with), userDataLimit)
 	require.Less(t, len(with), userDataLimit)
 	require.Less(t, len(with)-len(without), 2*1024, "SSH should cost about a kilobyte of user-data (the script is downloaded, not embedded)")
+}
+
+func opksshOnlyArgs() Args {
+	a := sshArgs()
+	a.SSH.HostCert = nil
+	a.SSH.HostKeyParameter = "/acme/status/ssh-host-key"
+
+	return a
+}
+
+func TestSSHOpksshOnlyHasNoHostCert(t *testing.T) {
+	a := opksshOnlyArgs()
+	require.NoError(t, a.validate())
+
+	got, err := a.bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.Contains(t, got, "OPKSSH=\"true\"")
+	require.Contains(t, got, "HOST_CERT=\"false\"")
+	require.NotContains(t, got, "openbao-hostcert")
+	require.NotContains(t, got, "HOST_CERT_ADDRESS")
+}
+
+func TestSSHHostKeyRestoreRunsBeforeSshdSetup(t *testing.T) {
+	got, err := opksshOnlyArgs().bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+
+	for _, want := range []string{
+		"aws ssm get-parameter --name /acme/status/ssh-host-key --with-decryption",
+		"ssh-keygen -y -f",
+		"install -m 0600 -o root -g root \"$tmp/key\" /etc/ssh/ssh_host_ed25519_key",
+		"HostKey /etc/ssh/ssh_host_ed25519_key",
+		"host key restore failed; sshd keeps its generated key",
+	} {
+		require.Contains(t, got, want)
+	}
+
+	require.Less(t, strings.Index(got, "ssh-keygen -y"), strings.Index(got, "hostaccess-setup-v"+HostaccessVersion), "the key is restored before the hostaccess setup restarts sshd")
+
+	without, err := sshArgs().bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.NotContains(t, without, "ssh-keygen")
+}
+
+func TestSSHHostKeyParameterIsReadableByTheRole(t *testing.T) {
+	a := opksshOnlyArgs()
+	require.Contains(t, a.parameterNames(), "/acme/status/ssh-host-key")
+	require.Contains(t, a.instancePolicy(namesFor("status"), "eu-west-3", "ACCOUNT"), "parameter/acme/status/ssh-host-key")
+	require.NotContains(t, sshArgs().parameterNames(), "/acme/status/ssh-host-key")
+
+	a.SSH.HostKeyParameter = "relative/name"
+	require.Error(t, a.validate())
+}
+
+func TestUserDataOpksshOnlyIsWithinTheLimit(t *testing.T) {
+	previous := statusbox.FetchChecksums
+	statusbox.FetchChecksums = func(string) (string, error) {
+		return fakeSHA64 + "  gatus_" + GatusVersion + "_linux_arm64\n" + fakeSHA64 + "  gatus_" + GatusVersion + "_linux_amd64\n", nil
+	}
+
+	t.Cleanup(func() { statusbox.FetchChecksums = previous })
+
+	got, err := opksshOnlyArgs().UserData("status")
+	require.NoError(t, err)
+	require.Less(t, len(got), 12*1024)
 }
