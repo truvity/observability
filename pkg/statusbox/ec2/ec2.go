@@ -103,6 +103,11 @@ type Args struct {
 	// private instance's port. Empty: nothing may.
 	PrivateIngressCIDRs []string
 
+	// SSH, when set, adds SSH access through opkssh and OpenBAO host
+	// certificates (see SSHArgs) and TCP 22 to the security group. Nil changes
+	// nothing: the render is byte-identical to one without the field.
+	SSH *SSHArgs
+
 	// Bucket and BucketPrefix are where Litestream keeps the replicas, as
 	// <Bucket>/<BucketPrefix>/<instance name>. The bucket is the caller's.
 	Bucket       string
@@ -233,6 +238,7 @@ func (a Args) validate() error {
 	errs = append(errs, a.validateSecrets()...)
 	errs = append(errs, a.validateNetwork()...)
 	errs = append(errs, a.validateStorageAndSize()...)
+	errs = append(errs, a.validateSSH()...)
 
 	return errors.Join(errs...)
 }
