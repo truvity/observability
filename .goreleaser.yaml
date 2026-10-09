@@ -7,7 +7,7 @@
 # (cmd/mcp-aggregator, charts/observability-mcp) are Kubernetes-only HTTP
 # services — no laptop CLI use case, so linux/amd64 and linux/arm64 only,
 # unlike a credential helper such as cloudflare's r2broker or
-# access-roster's accessctl, which also build darwin/windows for a
+# sluis's sluisctl, which also build darwin/windows for a
 # person's own machine.
 version: 2
 
