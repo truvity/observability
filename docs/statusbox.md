@@ -446,7 +446,7 @@ flowchart LR
   inst -- "ssm get-parameter --with-decryption<br/>(role scoped to the named parameters)" --> ssm["SSM Parameter Store"]
 ```
 
-**What it creates.** A launch template (Amazon Linux 2023 image from the public SSM parameter for the architecture, IMDSv2 required, an encrypted gp3 root volume, a public IPv4 address and no Elastic IP), an instance profile and role, a security group with no inbound rule except the private page's port from `PrivateIngressCIDRs`, and the Auto Scaling group with its launch hook declared on the group, so the hook exists before the first launch. `InstanceType` defaults to `t4g.nano`; a Graviton family is arm64, anything else amd64. The image is looked up when Pulumi runs and pinned in the launch template, so a newer Amazon Linux release shows up as a diff and a rolling refresh, never as a change on the next launch.
+**What it creates.** A launch template (Amazon Linux 2023 image from the public SSM parameter for the architecture, IMDSv2 required, an encrypted gp3 root volume, a public IPv4 address and no Elastic IP), an instance profile and role, a security group with no inbound rule except the private page's port from `PrivateIngressCIDRs` (and TCP 22 from `SSH.IngressCIDRs` when SSH is on, below), and the Auto Scaling group with its launch hook declared on the group, so the hook exists before the first launch. `InstanceType` defaults to `t4g.nano`; a Graviton family is arm64, anything else amd64. The image is looked up when Pulumi runs and pinned in the launch template, so a newer Amazon Linux release shows up as a diff and a rolling refresh, never as a change on the next launch.
 
 **The input is parameter names, not secrets.** `TunnelTokenParameter`, `AlertURLParameters` (the Config's `${ALERT_URL_<KEY>}`, the alerts-read token and a deadman's chat token among them) and `EnvParameters` (a whole variable name, such as `OIDC_CLIENT_SECRET`) are SSM Parameter Store names. The instance reads them at boot with `aws ssm get-parameter --with-decryption` and writes them to a tmpfs under `/run`, mode 0600, never to the root volume. The role's policy names exactly those parameter ARNs, the bucket's prefix, the one Auto Scaling group and, if `KMSKeyARN` is given, that one key; there is no managed policy on it unless `SessionManager` is set (below). A test fails if `Args` ever grows a field a secret value could be handed in through.
 
@@ -474,6 +474,34 @@ The replica is therefore written only by the one in-service instance. The group 
 **Session Manager shell (optional).** `Args.SessionManager` (`EC2Inputs.SessionManager`) attaches the AWS managed policy `AmazonSSMManagedInstanceCore` to the instance role, so the SSM agent that Amazon Linux 2023 ships registers the instance with Systems Manager and `aws ssm start-session --target <instance-id>` gives a break-glass shell with no inbound port; no user-data change is needed. Without it the agent logs credential errors and the instance has no shell. Default false, so existing stacks do not change on upgrade. A permissions boundary on the role (see above) is the caller's: it must allow the `ssm:`, `ssmmessages:` and `ec2messages:` actions, or the attached policy is capped to nothing.
 
 **Proof.** The package's tests cover `Args.validate`, a golden of the rendered user-data, the resource shapes (group, launch template, security group, role policy) and the absence of any secret value from it. `just statusbox-ec2` runs the setup script inside an `amazonlinux:2023` container: the pinned downloads, the units and Litestream configs, a database round trip through `litestream replicate` and the script's restore, and the boot phase's ordering with `systemctl`, `aws` and the metadata service replaced by shims. It does not run systemd or an instance; the first real boot is the one thing left unproved.
+
+### SSH (optional)
+
+`Args.SSH` (`EC2Inputs.SSH`, an `*ec2.SSHArgs`) gives the box SSH through the estate's opkssh (OIDC sign-in) and OpenBAO-signed host certificates, installed by `pkg/hostaccess` of `github.com/truvity/tailscale` (pinned at v1.24.2; `ec2.HostaccessVersion` is the same number, and a test fails if it drifts from `go.mod`). Nil changes nothing: the user-data, the security group and its description are exactly what they were. The `ec2-user` key pair stays off, so opkssh is the only way in.
+
+**Inputs.**
+
+- `SSH.OPKSSH` (`hostaccess.OPKSSHPreset`): `Issuer`, `ClientID`, `Expiration` (empty: 24h), `User` (`ec2-user`) and `Group` (admitted as `oidc:groups:<Group>`).
+- `SSH.HostCert` (`hostaccess.HostCertPreset`): OpenBAO `Address`, `CABundle`, `Namespace`, `AuthMount`, `AuthRole`, `ServerIDHeader`, `SSHMount`, `SSHRole` and `PrincipalPatterns`. The principal is the instance's private DNS name, from IMDS `local-hostname`, so the patterns are of the form `ip-*.<region>.compute.internal`.
+- `SSH.IngressCIDRs`: the networks allowed to reach TCP 22. Required, IPv4 only, never `/0`.
+
+The pinned opkssh and host-certificate builds are arm64, so SSH needs a Graviton `InstanceType` (the default `t4g.nano` is one); an x86 type with SSH set is refused at validation.
+
+**What the box does.** The bootstrap writes `Bundle.Files` (under `/etc/hostaccess`), then runs one small program that installs `Bundle.Packages` with `dnf` and runs `Bundle.Commands`: it downloads `hostaccess-setup-v1.24.2.sh` from the truvity/tailscale release, refuses it unless its sha256 is the one computed from the embedded copy, and runs it. That happens before the setup script's install phase, which is what starts the boot phase that completes the Auto Scaling lifecycle hook, so an instance is InService only after SSH setup was attempted. It is fail-safe: every step logs and carries on, and the whole program is limited to ten minutes, so a failed SSH setup leaves a box without SSH, never a box that does not come in service. A warm-pool instance gets it too, on its first boot. Delivery is by download, so SSH costs about 1.1 KB of the 16 KiB user-data limit (11,582 bytes gzip-wrapped in the test fixture against 10,498 without SSH); a test asserts it stays under the limit.
+
+**Security group.** TCP 22 from `SSH.IngressCIDRs` only. The group's description then reads "no inbound except the private page and SSH from the listed networks". A description cannot change in place, so a box that turns SSH on has its security group replaced; a box without SSH keeps the old description and is untouched.
+
+**IAM and egress.** Nothing is added to the instance role. The box authenticates to OpenBAO's AWS auth method with `sts:GetCallerIdentity`, which every role may call. It downloads the setup script and the opkssh and host-certificate artifacts from github.com; the security group already allows all egress, and OpenBAO must be reachable from the box at `HostCert.Address`.
+
+**Operator flow.**
+
+```sh
+opkssh login --provider="https://<issuer>,opkssh"
+sluisctl ssh known-hosts
+ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ecdsa ec2-user@<host>
+```
+
+`https://<issuer>` is `SSH.OPKSSH.Issuer`, and `<host>` is the instance's private DNS name (the host-certificate principal), reachable from one of `IngressCIDRs`. `sluisctl ssh known-hosts` trusts the OpenBAO host CA, so the first connection needs no fingerprint prompt.
 
 ## Immutable, by construction
 

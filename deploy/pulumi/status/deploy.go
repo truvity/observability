@@ -138,6 +138,11 @@ type (
 		// InstanceType defaults to the package's (t4g.nano).
 		InstanceType string
 
+		// SSH, when set, adds SSH access through opkssh and OpenBAO host
+		// certificates, and TCP 22 from SSH.IngressCIDRs. Nil changes nothing.
+		// It needs a Graviton InstanceType.
+		SSH *ec2.SSHArgs
+
 		// The SSM parameter NAMES of the box's secrets. TunnelTokenParameter
 		// and OIDCClientSecretParameter are required with a public page; the
 		// other two always.
@@ -336,6 +341,7 @@ func deployEC2(c *pulumi.Context, logger *slog.Logger, in Inputs, instances []st
 		PermissionsBoundary: in.EC2.PermissionsBoundary,
 		SessionManager:      in.EC2.SessionManager,
 		InstanceType:        in.EC2.InstanceType,
+		SSH:                 in.EC2.SSH,
 		Provider:            in.BoxProvider,
 	}
 

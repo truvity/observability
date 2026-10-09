@@ -9,6 +9,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/require"
+	"github.com/truvity/tailscale/pkg/hostaccess"
 
 	"github.com/truvity/observability/pkg/statusbox"
 	statusboxec2 "github.com/truvity/observability/pkg/statusbox/ec2"
@@ -187,6 +188,31 @@ func TestSecurityGroupAdmitsOnlyThePrivatePortFromThePeer(t *testing.T) {
 	require.EqualValues(t, 8081, rule["fromPort"], "the private instance's port, not the public one")
 	require.EqualValues(t, 8081, rule["toPort"])
 	require.Equal(t, []any{"10.20.0.0/16"}, rule["cidrBlocks"])
+}
+
+func TestSecurityGroupAdmitsSSHOnlyWhenSet(t *testing.T) {
+	a := validArgs()
+	a.SSH = &statusboxec2.SSHArgs{
+		OPKSSH:       hostaccess.OPKSSHPreset{Issuer: "https://issuer.example.test", ClientID: "opkssh", User: "ec2-user", Group: "ops"},
+		HostCert:     hostaccess.HostCertPreset{Address: "https://bao.example.test", AuthMount: "aws", AuthRole: "hostcert", ServerIDHeader: "bao.example.test", SSHMount: "ssh-host", SSHRole: "host", PrincipalPatterns: []string{"ip-*.eu-west-3.compute.internal"}},
+		IngressCIDRs: []string{"10.30.0.0/16"},
+	}
+
+	sg := run(t, a).only(t, "aws:ec2/securityGroup:SecurityGroup").Mappable()
+	require.Contains(t, sg["description"], "SSH")
+
+	ingress := sg["ingress"].([]any)
+	require.Len(t, ingress, 2, "the private page and SSH")
+
+	rule := ingress[1].(map[string]any)
+	require.EqualValues(t, 22, rule["fromPort"])
+	require.EqualValues(t, 22, rule["toPort"])
+	require.Equal(t, "tcp", rule["protocol"])
+	require.Equal(t, []any{"10.30.0.0/16"}, rule["cidrBlocks"])
+
+	// Without SSH the group, description included, is what it was.
+	plain := run(t, validArgs()).only(t, "aws:ec2/securityGroup:SecurityGroup").Mappable()
+	require.Equal(t, "statusbox: no inbound except the private page from the listed networks", plain["description"])
 }
 
 func TestSecurityGroupWithNoPeerAdmitsNothing(t *testing.T) {
