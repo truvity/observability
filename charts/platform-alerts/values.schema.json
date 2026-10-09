@@ -423,6 +423,7 @@
             "staleAfter": { "$ref": "#/definitions/duration" },
             "staleLookback": { "$ref": "#/definitions/duration" },
             "staleSeverity": { "$ref": "#/definitions/severity" },
+            "runbookUrl": { "type": "string" },
             "keepClusterLabel": { "type": "boolean" }
           }
         },

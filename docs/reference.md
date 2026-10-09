@@ -250,8 +250,8 @@ is the number of stacks.
 
 | Series | Meaning |
 |---|---|
-| `pulumi_stack_drift_changes{scope, stack}` | Planned creates, updates, deletes and replaces; `0` when the stack is clean. |
-| `pulumi_stack_diff_error{scope, stack}` | `1` when the preview itself failed, `0` otherwise. |
+| `pulumi_stack_drift_changes{scope, stack}` | Planned creates, updates, deletes and replaces; `0` when the stack is clean. Sent only when the preview worked. |
+| `pulumi_stack_diff_error{scope, stack}` | `1` when the preview itself failed, `0` otherwise. Sent for every stack on every run. |
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
@@ -263,11 +263,12 @@ is the number of stacks.
 | `staleAfter` | duration | `36h` | `PulumiDriftSignalStale` fires for a stack last seen longer ago than this. |
 | `staleLookback` | duration | `7d` | How far back the deadman looks; a stack unseen for longer ages out. |
 | `staleSeverity` | enum | `warning` | Severity of `PulumiDriftSignalStale`. |
+| `runbookUrl` | string | `""` | One runbook link on all three alerts, instead of `runbookBaseUrl` + the alert name. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 
 Alerts: `max by (scope, stack) (last_over_time(pulumi_stack_drift_changes[lookback])) > 0`
 for `for`; the same over `pulumi_stack_diff_error`; and
-`time() - max by (scope, stack) (tlast_over_time(pulumi_stack_drift_changes[staleLookback])) > staleAfter`,
+`time() - max by (scope, stack) (tlast_over_time(pulumi_stack_diff_error[staleLookback])) > staleAfter`,
 the deadman for a job that stopped running.
 
 ### `groups.nodeClaims`

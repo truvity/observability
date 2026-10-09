@@ -1,0 +1,16 @@
+# One runbook page for the three drift alerts, overriding the base-URL
+# convention (the base is set too, to prove the override wins).
+runbookBaseUrl: https://runbooks.example.com/
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  pulumiDrift:
+    enabled: true
+    for: 3d
+    runbookUrl: https://docs.example.com/pulumi-drift
