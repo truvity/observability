@@ -83,13 +83,9 @@ func estateEC2Inputs(t *testing.T) Inputs {
 			TelegramChatIDParameter:    "/acme/status/telegram-chat-id",
 			PingURLParameter:           "/acme/status/ping-url",
 			SSH: &ec2.SSHArgs{
-				OPKSSH: hostaccess.OPKSSHPreset{Issuer: "https://issuer.platform.example.test/realms/acme", ClientID: "opkssh", User: "ec2-user", Group: "ops"},
-				HostCert: hostaccess.HostCertPreset{
-					Address: "https://bao.platform.example.test", Namespace: "acme", AuthMount: "aws", AuthRole: "hostcert",
-					ServerIDHeader: "bao.platform.example.test", SSHMount: "ssh-host", SSHRole: "host",
-					PrincipalPatterns: []string{"ip-*.eu-west-3.compute.internal"},
-				},
-				IngressCIDRs: []string{"10.30.0.0/16"},
+				OPKSSH:           hostaccess.OPKSSHPreset{Issuer: "https://issuer.platform.example.test/realms/acme", ClientID: "opkssh", User: "ec2-user", Group: "ops"},
+				HostKeyParameter: "/acme/status/ssh-host-key",
+				IngressCIDRs:     []string{"10.30.0.0/16"},
 			},
 			SelfRegister: &ec2.SelfRegisterArgs{
 				RoleARN:      "arn:" + "aws" + ":iam::" + strings.Repeat("7", 12) + ":role/dns-writer",
