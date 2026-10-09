@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change** `observability-stack`: every full metrics reader principal's route (the vmauth `VMUser` `src_paths`) and `pkg/tenancy`'s `MetricsReadPaths` now also admit `/prometheus/api/v1/rules`, `/prometheus/api/v1/query_exemplars` and `/prometheus/api/v1/format_query`. Grafana's Prometheus datasource calls the first two when Explore opens and the third from the format button. vmauth answered each of those calls from a verified JWT user with 401 and `WWW-Authenticate: Basic`, the same as a request with no credentials, so the browser opened a sign-in prompt that no password satisfies. The store, without `-vmalert.proxyURL`, answers `rules` and `query_exemplars` from empty placeholders and does not implement `format_query` (400 `unsupported path requested`), so the change reads no series. `metricsQueryOnly` readers are unchanged. Every golden with a reader `VMUser` gains the three lines. No values change, and no value restores the previous render: the paths are fixed, as the rest of the read route is. To keep the old routes, stay on the previous release.
+
 ## v0.63.1
 
 - **Added** `pkg/statusbox/ec2`: optional `Args.PermissionsBoundary` (`deploy/pulumi/status`: `EC2Inputs.PermissionsBoundary`), the full ARN of an IAM permissions boundary set on the instance role `<prefix>-status`. Accounts that deny `iam:CreateRole` for a role without their boundary failed the apply; set it there. Empty keeps the role as before, so existing stacks do not change. The Lightsail backend creates no IAM role.
