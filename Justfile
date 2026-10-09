@@ -19,7 +19,7 @@ export GOWORK := "off"
 lint:
     #!/usr/bin/env bash
     set -euo pipefail
-    golangci-lint run ./...
+    GOTOOLCHAIN=local golangci-lint run ./...
     for chart in {{ charts }}; do
       # A chart renders with WHATEVER archive is in its charts/ directory:
       # move the version in Chart.yaml and leave the vendored archive
