@@ -3565,6 +3565,9 @@ spec:
         - /prometheus/api/v1/label/[^/]+/values
         - /prometheus/api/v1/status/tsdb
         - /prometheus/api/v1/status/buildinfo
+        - /prometheus/api/v1/rules
+        - /prometheus/api/v1/query_exemplars
+        - /prometheus/api/v1/format_query
         - /prometheus/vmui.*
         - /prometheus/api/v1/metadata
       query_args:

@@ -794,6 +794,22 @@ function:
   in the store. None of the four takes a filter. `/status/buildinfo` does
   not either and is kept, because it carries the store's version and
   nothing from any namespace.
+- **Grafana's own calls are routed, though they read nothing.**
+  Grafana's Prometheus datasource calls `/api/v1/rules` and
+  `/api/v1/query_exemplars` when Explore opens, and `/api/v1/format_query`
+  from the format button. The store, running without
+  `-vmalert.proxyURL`, answers the first two from fixed placeholders
+  (`{"groups":[]}` and `[]`). It does not implement the third and answers
+  400 `unsupported path requested`. None of them returns a series.
+  They are routed because of what vmauth does with an unrouted path.
+  When a request carries a token vmauth has verified, but its path
+  matches no route, vmauth answers 401 with `WWW-Authenticate: Basic`,
+  the same response as a request with no credentials. It does not count
+  the request in `missing_route` and it logs nothing. Grafana relays the
+  header, and the browser opens a sign-in prompt that no password
+  satisfies. If an install ever sets `-vmalert.proxyURL` on the store,
+  `/api/v1/rules` starts returning every rule group and its expression to
+  every principal, and it then needs the same switch as `/api/v1/metadata`.
 
 #### What the proxy cannot defend against, and who has to
 
