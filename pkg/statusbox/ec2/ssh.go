@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"regexp"
 	"strings"
 
 	"github.com/truvity/tailscale/pkg/hostaccess"
@@ -33,10 +34,19 @@ type SSHArgs struct {
 	// OPKSSH says whom the box trusts and admits (issuer, client id, the local
 	// user, the group).
 	OPKSSH hostaccess.OPKSSHPreset
-	// HostCert says where the OpenBAO host CA is and which principals the box
-	// may ask a certificate for. The principal is the instance's private DNS
-	// name (IMDS local-hostname).
-	HostCert hostaccess.HostCertPreset
+	// HostCert, when set, says where the OpenBAO host CA is and which
+	// principals the box may ask a certificate for. The principal is the
+	// instance's private DNS name (IMDS local-hostname). Nil: opkssh only, no
+	// host certificate and nothing of the OpenBAO setup is rendered.
+	HostCert *hostaccess.HostCertPreset
+	// HostKeyParameter, when set, is the name of an SSM SecureString holding
+	// the box's one ed25519 host key (OpenSSH private-key format). The
+	// instance role may read exactly that parameter. At boot, before sshd is
+	// restarted, the box restores it as /etc/ssh/ssh_host_ed25519_key, derives
+	// the .pub and limits sshd to that key, so clients can pin one plain
+	// known_hosts line. Fail-safe: on any failure sshd keeps its own generated
+	// key. Empty: the box keeps whatever host key it generates.
+	HostKeyParameter string
 	// IngressCIDRs are the networks allowed to reach TCP 22. Required.
 	IngressCIDRs []string
 }
@@ -44,12 +54,42 @@ type SSHArgs struct {
 // hostaccessConfig is the Config the presets render. The principal source is
 // the package's default for an EC2 host, IMDS local-hostname.
 func (s SSHArgs) hostaccessConfig() hostaccess.Config {
-	return hostaccess.Config{
+	c := hostaccess.Config{
 		OPKSSH:          hostaccess.NewOPKSSH(s.OPKSSH),
-		HostCert:        hostaccess.NewHostCert(s.HostCert),
 		PrincipalSource: hostaccess.PrincipalIMDSHostname,
 	}
+
+	if s.HostCert != nil {
+		c.HostCert = hostaccess.NewHostCert(*s.HostCert)
+	}
+
+	return c
 }
+
+// hostKeyParameterRE is an absolute SSM parameter name, the characters SSM
+// allows minus anything a shell could read twice.
+var hostKeyParameterRE = regexp.MustCompile(`^/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$`)
+
+const (
+	sshHostKeyPath    = "/etc/ssh/ssh_host_ed25519_key"
+	sshHostKeyDropIn  = "/etc/ssh/sshd_config.d/05-statusbox-hostkey.conf"
+	sshHostKeyRestore = `# Host key: restore the one fixed key from SSM before sshd is restarted. Fail-safe.
+(
+  set -euo pipefail
+  umask 077
+  tok="$(curl -sf -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)"
+  region="$(curl -sf -H "X-aws-ec2-metadata-token: $tok" http://169.254.169.254/latest/meta-data/placement/region)"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  aws ssm get-parameter --name %[1]s --with-decryption --query Parameter.Value --output text --region "$region" >"$tmp/key"
+  ssh-keygen -y -f "$tmp/key" >"$tmp/key.pub"
+  install -m 0600 -o root -g root "$tmp/key" %[2]s
+  install -m 0644 -o root -g root "$tmp/key.pub" %[2]s.pub
+  printf 'HostKey %[2]s\n' >%[3]s
+  if sshd -t; then systemctl restart sshd; else rm -f %[3]s; exit 1; fi
+) || echo "statusbox ssh: host key restore failed; sshd keeps its generated key"
+`
+)
 
 func (s SSHArgs) bundle() (*hostaccess.Bundle, error) {
 	return hostaccess.Render(s.hostaccessConfig(), hostaccess.Options{
@@ -80,6 +120,10 @@ func (a Args) validateSSH() []error {
 		} else if p.Bits() == 0 {
 			errs = append(errs, fmt.Errorf("statusbox/ec2: SSH.IngressCIDRs entry %q opens SSH to the whole internet", c))
 		}
+	}
+
+	if p := a.SSH.HostKeyParameter; p != "" && !hostKeyParameterRE.MatchString(p) {
+		errs = append(errs, fmt.Errorf("statusbox/ec2: SSH.HostKeyParameter %q is not an absolute SSM parameter name", p))
 	}
 
 	if _, err := a.SSH.bundle(); err != nil {
@@ -126,6 +170,10 @@ func (a Args) sshBootstrap() (string, error) {
 
 	if len(bundle.Packages) > 0 {
 		fmt.Fprintf(&prog, "dnf install -y %s || echo \"statusbox ssh: package install failed\"\n", strings.Join(bundle.Packages, " "))
+	}
+
+	if p := a.SSH.HostKeyParameter; p != "" {
+		fmt.Fprintf(&prog, sshHostKeyRestore, p, sshHostKeyPath, sshHostKeyDropIn)
 	}
 
 	for _, c := range bundle.Commands {

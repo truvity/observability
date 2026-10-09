@@ -398,6 +398,10 @@ func (a Args) parameterNames() []string {
 		set[p] = true
 	}
 
+	if a.SSH != nil && a.SSH.HostKeyParameter != "" {
+		set[a.SSH.HostKeyParameter] = true
+	}
+
 	out := make([]string, 0, len(set))
 	for p := range set {
 		out = append(out, p)
