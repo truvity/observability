@@ -1,0 +1,64 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: platform-alerts.pulumi-drift
+      interval: 1m
+      rules:
+        # The gauges are PUSHED once per run (a nightly job), not scraped, so
+        # an instant selector would read nothing for all but a few minutes
+        # after each push. `last_over_time` over `lookback` is the value of
+        # the latest run, and a run that fixed the drift pushes 0, which
+        # clears the alert on the next evaluation.
+        - alert: PulumiDriftDetected
+          expr: >-
+            max by (k8s_cluster_name, scope, stack) (last_over_time(pulumi_stack_drift_changes[36h])) > 0
+          for: 2d
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pulumi stack {{ $labels.scope }}/{{ $labels.stack }} has differed from its program for 2d"
+            description: >-
+              The nightly preview of this stack has planned changes on every run for
+              2d: the program and the state disagree, because a change was
+              merged and never applied or because something was edited by hand.
+              The preview lists what.
+            runbook_url: "https://runbooks.example.com/PulumiDriftDetected"
+        # A preview that fails reports nothing about drift, so a stack that
+        # cannot be previewed would stay green here for ever.
+        - alert: PulumiDiffFailing
+          expr: >-
+            max by (k8s_cluster_name, scope, stack) (last_over_time(pulumi_stack_diff_error[36h])) > 0
+          for: 2d
+          labels:
+            severity: warning
+          annotations:
+            summary: "The preview of Pulumi stack {{ $labels.scope }}/{{ $labels.stack }} has failed for 2d"
+            description: >-
+              The nightly preview of this stack ends in an error on every run, so
+              nothing is known about its drift. The job's log has the error.
+            runbook_url: "https://runbooks.example.com/PulumiDiffFailing"
+        # The deadman: a job that stops running pushes nothing, and the two
+        # rules above go quiet with it. `tlast_over_time` is the timestamp of
+        # the stack's latest sample; a stack unseen for `staleLookback` ages
+        # out of this rule too, so a retired stack does not alert for ever.
+        - alert: PulumiDriftSignalStale
+          expr: >-
+            time() - max by (k8s_cluster_name, scope, stack) (tlast_over_time(pulumi_stack_drift_changes[7d])) > 36h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No Pulumi drift sample for {{ $labels.scope }}/{{ $labels.stack }} in over 36h"
+            description: >-
+              The nightly drift job has not reported this stack for more than
+              36h, so the drift alerts cannot see it. Check the
+              workflow's last runs.
+            runbook_url: "https://runbooks.example.com/PulumiDriftSignalStale"
