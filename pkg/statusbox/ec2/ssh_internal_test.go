@@ -150,7 +150,8 @@ func TestSSHHostKeyRestoreRunsBeforeSshdSetup(t *testing.T) {
 		require.Contains(t, got, want)
 	}
 
-	require.Less(t, strings.Index(got, "ssh-keygen -y"), strings.Index(got, "hostaccess-setup-v"+HostaccessVersion), "the key is restored before the hostaccess setup restarts sshd")
+	require.Less(t, strings.Index(got, "ssh-keygen -y"), strings.Index(got, "hostaccess-setup-v"+HostaccessVersion),
+		"the key is restored before the hostaccess setup restarts sshd")
 
 	without, err := sshArgs().bootstrap(namesFor("status"), fakeChecksums())
 	require.NoError(t, err)
