@@ -108,6 +108,12 @@ type Args struct {
 	// nothing: the render is byte-identical to one without the field.
 	SSH *SSHArgs
 
+	// SelfRegister, when set, makes the box UPSERT its private IP as an A
+	// record at every boot into InService (see SelfRegisterArgs) and grants the
+	// instance role sts:AssumeRole on exactly SelfRegister.RoleARN. Nil changes
+	// nothing: the render is byte-identical to one without the field.
+	SelfRegister *SelfRegisterArgs
+
 	// Bucket and BucketPrefix are where Litestream keeps the replicas, as
 	// <Bucket>/<BucketPrefix>/<instance name>. The bucket is the caller's.
 	Bucket       string
@@ -239,6 +245,7 @@ func (a Args) validate() error {
 	errs = append(errs, a.validateNetwork()...)
 	errs = append(errs, a.validateStorageAndSize()...)
 	errs = append(errs, a.validateSSH()...)
+	errs = append(errs, a.validateSelfRegister()...)
 
 	return errors.Join(errs...)
 }

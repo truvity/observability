@@ -144,6 +144,12 @@ type (
 		// It needs a Graviton InstanceType.
 		SSH *ec2.SSHArgs
 
+		// SelfRegister, when set, makes the box UPSERT its private IP as an A
+		// record into a Route 53 hosted zone at every boot into service, through
+		// the cross-account role it names; the instance role gains
+		// sts:AssumeRole on that role only. Nil changes nothing.
+		SelfRegister *ec2.SelfRegisterArgs
+
 		// The SSM parameter NAMES of the box's secrets. TunnelTokenParameter
 		// and OIDCClientSecretParameter are required with a public page; the
 		// other two always.
@@ -343,6 +349,7 @@ func deployEC2(c *pulumi.Context, logger *slog.Logger, in Inputs, instances []st
 		SessionManager:      in.EC2.SessionManager,
 		InstanceType:        in.EC2.InstanceType,
 		SSH:                 in.EC2.SSH,
+		SelfRegister:        in.EC2.SelfRegister,
 		Provider:            in.BoxProvider,
 	}
 

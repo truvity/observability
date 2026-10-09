@@ -93,6 +93,10 @@ func (a Args) instancePolicy(box names, region, account string) string {
 		})
 	}
 
+	if st := a.selfRegisterStatement(); st != nil {
+		statements = append(statements, st)
+	}
+
 	return mustJSON(map[string]any{"Version": iamVersion, "Statement": statements})
 }
 
