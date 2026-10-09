@@ -198,6 +198,28 @@ Prometheus datasource asks for it to decide which dialect it is talking
 to.
 */}}
 - /prometheus/api/v1/status/buildinfo
+{{- /*
+Three endpoints Grafana's Prometheus datasource calls on its own, none of
+which reads a series.
+
+`/rules` and `/query_exemplars` answer from fixed placeholders in the
+store (`{"groups":[]}` and `[]`), because the store runs without
+`-vmalert.proxyURL`. If an install ever sets that flag, `/rules` starts
+forwarding to vmalert and returns every rule group with its expression,
+for every principal; that would need the same switch as
+`/api/v1/metadata` below. `/format_query` is not implemented by the store
+at all, and it answers 400 `unsupported path requested`.
+
+They are routed anyway, because an unrouted path costs more than it
+seems. vmauth answers a VERIFIED JWT user whose request matches no route
+with the same 401 and `WWW-Authenticate: Basic` it sends a request with
+no credentials. Grafana relays that header, and the browser opens a
+sign-in prompt in Explore that no password can satisfy. Meanwhile the
+`missing_route` counter stays at zero and nothing is logged.
+*/}}
+- /prometheus/api/v1/rules
+- /prometheus/api/v1/query_exemplars
+- /prometheus/api/v1/format_query
 - /prometheus/vmui.*
 {{- /*
 `/api/v1/metadata` only when the estate has said so.

@@ -262,6 +262,18 @@ var (
 		// Grafana's Prometheus datasource asks for it to decide which
 		// dialect it is talking to.
 		"/prometheus/api/v1/status/buildinfo",
+		// Three endpoints Grafana's Prometheus datasource calls on its
+		// own, none of which reads a series. Without -vmalert.proxyURL
+		// the store answers `/rules` and `/query_exemplars` from fixed
+		// placeholders, and it does not implement `/format_query` (400
+		// `unsupported path requested`). They are routed because vmauth
+		// answers a verified JWT user's unrouted request with the same
+		// 401 and `WWW-Authenticate: Basic` as a request with no
+		// credentials. Grafana relays the header, and the browser opens
+		// a sign-in prompt that no password satisfies.
+		"/prometheus/api/v1/rules",
+		"/prometheus/api/v1/query_exemplars",
+		"/prometheus/api/v1/format_query",
 		"/prometheus/vmui.*",
 	)
 

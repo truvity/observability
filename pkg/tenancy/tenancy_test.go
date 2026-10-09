@@ -1051,6 +1051,27 @@ func TestMetricMetadataOptIn(t *testing.T) {
 	}
 }
 
+// Grafana's Prometheus datasource calls three endpoints on its own:
+// `/rules` and `/query_exemplars` when Explore opens, and `/format_query`
+// from the format button. vmauth answers a verified JWT user's unrouted
+// request with a 401 carrying `WWW-Authenticate: Basic`. Grafana relays
+// that header, and the browser opens a sign-in prompt that no password
+// satisfies. So every full metrics reader carries all three, whatever the
+// metadata switch says.
+func TestGrafanaCompanionEndpointsAreRouted(t *testing.T) {
+	t.Parallel()
+
+	for _, p := range []string{
+		"/prometheus/api/v1/rules",
+		"/prometheus/api/v1/query_exemplars",
+		"/prometheus/api/v1/format_query",
+	} {
+		assert.Containsf(t, tenancy.MetricsReadPaths, p,
+			"%q is missing from the metrics read route: Grafana's own call to it "+
+				"comes back as a Basic-auth challenge from the proxy", p)
+	}
+}
+
 // A principal selected by several groups renders ONE user whose group
 // claim matches each of them and nothing else, and every group is escaped
 // on its own so that the only unescaped `|` is the alternation.
