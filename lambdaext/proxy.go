@@ -27,7 +27,10 @@ type Proxy struct {
 	Tokens   Tokens
 	Client   *http.Client
 	Logf     func(format string, args ...any)
-	// TokenTimeout bounds waiting for a token; zero is 15 seconds.
+	// TokenTimeout bounds waiting for a token; zero is 2 seconds. The
+	// function's exporter waits for this answer before its invocation
+	// returns, so a missing token is a quick 503 and dropped telemetry,
+	// never a held response.
 	TokenTimeout time.Duration
 }
 
@@ -51,7 +54,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	timeout := p.TokenTimeout
 	if timeout == 0 {
-		timeout = 15 * time.Second
+		timeout = 2 * time.Second
 	}
 	tctx, cancel := context.WithTimeout(r.Context(), timeout)
 	token, err := p.Tokens.Token(tctx)

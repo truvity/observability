@@ -183,3 +183,51 @@ func TestOnTokenSeesEachNewToken(t *testing.T) {
 		t.Fatalf("OnToken fires per mint, got %v", seen)
 	}
 }
+
+// Every environment of a function fails together when the issuer is
+// saturated: the wait doubles with each failure in a row, is capped, is
+// jittered, and a success ends it.
+func TestTheBackoffDoublesToItsCapAndASuccessResetsIt(t *testing.T) {
+	h := newHarness(time.Hour)
+	h.src.Rand = func() float64 { return 0.999999 } // the top of the jitter
+	h.failNext.Store(true)
+	exchanges := func() int32 { return h.exchanges.Load() }
+	_, _ = h.src.Token(context.Background())
+	for i, wait := range []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second} {
+		h.clk.advance(wait - 10*time.Millisecond)
+		_, _ = h.src.Token(context.Background())
+		if got := exchanges(); got != int32(i+1) {
+			t.Fatalf("failure %d: an exchange %v after it, inside the backoff", i+1, wait-10*time.Millisecond)
+		}
+		h.clk.advance(10 * time.Millisecond)
+		_, _ = h.src.Token(context.Background())
+		if got := exchanges(); got != int32(i+2) {
+			t.Fatalf("failure %d: no exchange %v after it", i+1, wait)
+		}
+	}
+	for range 10 {
+		h.clk.advance(5 * time.Minute)
+		_, _ = h.src.Token(context.Background())
+	}
+	before := exchanges()
+	h.clk.advance(5*time.Minute - 10*time.Millisecond)
+	_, _ = h.src.Token(context.Background())
+	if exchanges() != before {
+		t.Fatal("the backoff grew past its cap's jitter window or did not hold")
+	}
+	h.clk.advance(10 * time.Millisecond)
+	h.failNext.Store(false)
+	if _, err := h.src.Token(context.Background()); err != nil {
+		t.Fatalf("after the cap: %v", err)
+	}
+	// Jitter takes the wait down to half of it, never further.
+	h2 := newHarness(time.Hour)
+	h2.src.Rand = func() float64 { return 0 }
+	h2.failNext.Store(true)
+	_, _ = h2.src.Token(context.Background())
+	h2.clk.advance(2500*time.Millisecond - time.Millisecond)
+	_, _ = h2.src.Token(context.Background())
+	if h2.exchanges.Load() != 1 {
+		t.Fatal("the jitter took the first wait below half of Backoff")
+	}
+}

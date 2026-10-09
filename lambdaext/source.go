@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -25,18 +26,29 @@ type Source struct {
 	Logf func(format string, args ...any)
 	// OnToken sees each newly minted token (the optional token file).
 	OnToken func(token string)
-	// RefreshTimeout bounds one refresh; zero is 10 seconds.
+	// RefreshTimeout bounds one refresh; zero is 5 seconds. A saturated
+	// issuer answers late or not at all, and a refresh in flight is what an
+	// export and the pre-freeze flush wait on.
 	RefreshTimeout time.Duration
 	// Backoff is how long after a failed refresh the next one waits; zero
 	// is 5 seconds. Exporters retry fast, and each retry must not be an
-	// STS call.
+	// STS call. It doubles with each failure in a row, up to MaxBackoff,
+	// and each wait is jittered down to half of it: every environment of
+	// a function fails together when the issuer is saturated, and must
+	// not retry in step against it.
 	Backoff time.Duration
+	// MaxBackoff caps the doubling; zero is 5 minutes.
+	MaxBackoff time.Duration
+	// Rand is uniform in [0, 1), for the jitter; nil is math/rand.
+	Rand func() float64
 
 	mu        sync.Mutex
 	token     string
 	refreshAt time.Time
 	expires   time.Time
 	failedAt  time.Time
+	wait      time.Duration // how long after failedAt the next refresh may run
+	failures  int           // failed refreshes in a row
 	lastErr   error
 	failing   bool
 	flight    singleflight.Group
@@ -62,10 +74,6 @@ var ErrNoToken = errors.New("lambdaext: no access token")
 // window is replaced first; if the replacement fails and the old token has
 // not expired, the old one is used.
 func (s *Source) Token(ctx context.Context) (string, error) {
-	backoff := s.Backoff
-	if backoff == 0 {
-		backoff = 5 * time.Second
-	}
 	s.mu.Lock()
 	now := s.now()
 	if s.token != "" && now.Before(s.refreshAt) {
@@ -73,7 +81,7 @@ func (s *Source) Token(ctx context.Context) (string, error) {
 		return s.token, nil
 	}
 	usable := s.token != "" && now.Add(time.Second).Before(s.expires)
-	if !s.failedAt.IsZero() && now.Sub(s.failedAt) < backoff {
+	if !s.failedAt.IsZero() && now.Sub(s.failedAt) < s.wait {
 		token, err := s.token, s.lastErr
 		s.mu.Unlock()
 		if usable {
@@ -107,7 +115,7 @@ func (s *Source) Token(ctx context.Context) (string, error) {
 func (s *Source) refresh() error {
 	timeout := s.RefreshTimeout
 	if timeout == 0 {
-		timeout = 10 * time.Second
+		timeout = 5 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -117,6 +125,8 @@ func (s *Source) refresh() error {
 	s.mu.Lock()
 	if err != nil {
 		s.failedAt, s.lastErr = s.now(), err
+		s.wait = s.nextWait()
+		s.failures++
 		first := !s.failing
 		s.failing = true
 		s.mu.Unlock()
@@ -128,7 +138,7 @@ func (s *Source) refresh() error {
 	now := s.now()
 	s.token, s.expires = token, now.Add(ttl)
 	s.refreshAt = now.Add(ttl - refreshMargin(ttl))
-	s.failedAt, s.lastErr = time.Time{}, nil
+	s.failedAt, s.lastErr, s.wait, s.failures = time.Time{}, nil, 0, 0
 	recovered := s.failing
 	s.failing = false
 	s.mu.Unlock()
@@ -139,6 +149,28 @@ func (s *Source) refresh() error {
 		s.OnToken(token)
 	}
 	return nil
+}
+
+// nextWait is the backoff after one more failure: Backoff doubled for each
+// failure in a row so far, capped at MaxBackoff, and jittered to between half
+// of it and all of it. Called with mu held.
+func (s *Source) nextWait() time.Duration {
+	base, ceiling := s.Backoff, s.MaxBackoff
+	if base == 0 {
+		base = 5 * time.Second
+	}
+	if ceiling == 0 {
+		ceiling = 5 * time.Minute
+	}
+	wait := ceiling
+	if s.failures < 30 && base<<s.failures < ceiling {
+		wait = base << s.failures
+	}
+	r := rand.Float64 //nolint:gosec // jitter, not a secret
+	if s.Rand != nil {
+		r = s.Rand
+	}
+	return wait/2 + time.Duration(r()*float64(wait/2))
 }
 
 func (s *Source) fetch(ctx context.Context) (string, time.Duration, error) {
@@ -163,7 +195,7 @@ func (s *Source) Invalidate(token string) {
 	defer s.mu.Unlock()
 	if s.token == token {
 		s.refreshAt = time.Time{}
-		s.failedAt = time.Time{}
+		s.failedAt, s.wait = time.Time{}, 0
 	}
 }
 
