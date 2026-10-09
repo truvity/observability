@@ -56,6 +56,8 @@ type (
 		// StatusPath is the product's probe path on this cluster, empty for
 		// the default.
 		StatusPath string
+		// ExpectStatus is the status StatusPath must answer, 0 for 200.
+		ExpectStatus int
 	}
 
 	// Entity is one entity's page: a code and the name a viewer sees.
@@ -74,6 +76,9 @@ type (
 	CatalogueInputs struct {
 		// PlatformHosts are the hosts no company owns.
 		PlatformHosts []string
+		// HostProbes optionally overrides the probe of a platform host,
+		// keyed by hostname. A host without an entry is probed as before.
+		HostProbes map[string]statusbox.Probe
 		// ByCompany buckets every company-owned host under its code.
 		ByCompany map[string][]statusbox.CompanyHost
 		// Entities are the entity pages, in the order they render.
@@ -136,7 +141,10 @@ func PlatformHosts(groups []HostGroup) []string {
 // them. PlatformHosts and HostsByCompany split the SAME groups on the SAME
 // field, so a host falls into exactly one of them.
 func HostsByCompany(groups []HostGroup) map[string][]statusbox.CompanyHost {
-	type hostInfo struct{ component, env, statusPath string }
+	type hostInfo struct {
+		component, env, statusPath string
+		expectStatus               int
+	}
 
 	byCompany := map[string]map[string]hostInfo{}
 
@@ -151,7 +159,7 @@ func HostsByCompany(groups []HostGroup) map[string][]statusbox.CompanyHost {
 
 		for _, host := range g.Hosts {
 			if !IsWildcardHostname(host) {
-				byCompany[g.Company][host] = hostInfo{g.Component, g.Cluster, g.StatusPath}
+				byCompany[g.Company][host] = hostInfo{g.Component, g.Cluster, g.StatusPath, g.ExpectStatus}
 			}
 		}
 	}
@@ -170,7 +178,7 @@ func HostsByCompany(groups []HostGroup) map[string][]statusbox.CompanyHost {
 
 		for _, host := range names {
 			info := hosts[host]
-			list = append(list, statusbox.CompanyHost{Host: host, Component: info.component, Env: info.env, StatusPath: info.statusPath})
+			list = append(list, statusbox.CompanyHost{Host: host, Component: info.component, Env: info.env, StatusPath: info.statusPath, ExpectStatus: info.expectStatus})
 		}
 
 		out[company] = list
@@ -232,6 +240,7 @@ func OpsCatalogue(in CatalogueInputs) statusbox.Catalogue { //nolint:misspell //
 
 	return statusbox.Catalogue{ //nolint:misspell // the library's own type name
 		PlatformHosts: in.PlatformHosts,
+		HostProbes:    in.HostProbes,
 		Companies:     companies,
 		AlertsRead:    statusbox.AlertsRead{Host: in.AlertsReadHost, TokenEnvKey: AlertsReadTokenKey},
 		Deadman:       deadman,

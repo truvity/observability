@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `pkg/statusbox`: a platform host can declare its own probe. `Catalogue.HostProbes` (`map[string]Probe`, keyed by the `PlatformHosts` entry; `deploy/pulumi/status`: `Inputs.HostProbes` and `CatalogueInputs.HostProbes`) carries `Probe{Path, ExpectStatus}`; the endpoint URL becomes `https://<host><Path>` and the condition `[STATUS] == <ExpectStatus>`, with the certificate-expiry condition kept. For a host that is POST-only or path-only by design, whose healthy answer to a GET is an error status (for example 404, which still proves DNS, TLS and the route). A company host gains the same through `CompanyHost.ExpectStatus` (`HostGroup.ExpectStatus`), applied when `StatusPath` is set. A host with no entry and a zero `ExpectStatus` renders exactly as before, so every golden is unchanged.
+
 ## v0.64.0
 
 - **Added** `platform-alerts`: `groups.pulumiDrift` (off by default), three alerts over the gauges a scheduled job pushes once per run, `pulumi_stack_drift_changes{scope,stack}` and `pulumi_stack_diff_error{scope,stack}`: `PulumiDriftDetected` (changes planned for `for`, default 2d), `PulumiDiffFailing` (the preview itself failed for `for`) and `PulumiDriftSignalStale` (no sample for `staleAfter`, the deadman). The expressions read `last_over_time` over `lookback` because the series are pushed, not scraped. New values `groups.pulumiDrift.*`; the schema gains the key. Nothing renders unless the group is enabled, so existing installs do not move.

@@ -692,3 +692,33 @@ func TestTelegramRefusals(t *testing.T) {
 	_, err = RenderGatus(c)
 	require.ErrorContains(t, err, "Telegram.TokenKey")
 }
+
+func TestRenderGatusHostProbeOverridesOnlyTheDeclaredPlatformHost(t *testing.T) {
+	c := testCatalogue()
+	c.PlatformHosts = []string{"plain.example.xyz", "ingest.example.xyz"}
+	c.HostProbes = map[string]Probe{
+		"ingest.example.xyz": {Path: "/", ExpectStatus: 404},
+	}
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "url: https://plain.example.xyz\n")
+	assert.Contains(t, out, "url: https://ingest.example.xyz/\n")
+	assert.Equal(t, 1, strings.Count(out, "[STATUS] == 404"))
+	assert.Contains(t, out, "[STATUS] == 200")
+	assert.Equal(t, 2, strings.Count(out, certExpiryCondition))
+
+	// No override renders exactly as without the field.
+	c.HostProbes = nil
+	base, err := RenderGatus(c)
+	require.NoError(t, err)
+	assert.NotContains(t, base, "[STATUS] == 404")
+}
+
+func TestProbeConditionsHonoursCompanyHostExpectStatus(t *testing.T) {
+	assert.Equal(t, []string{"[STATUS] == 401", certExpiryCondition},
+		probeConditions(CompanyHost{Host: "h", StatusPath: "/p", ExpectStatus: 401}))
+	assert.Equal(t, []string{statusCondition, certExpiryCondition},
+		probeConditions(CompanyHost{Host: "h", StatusPath: "/p"}))
+}

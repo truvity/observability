@@ -78,6 +78,7 @@ type (
 		// PlatformHosts, ByCompany, Entities, AlertsReadHost and DeadmanChannel
 		// are the page (see CatalogueInputs).
 		PlatformHosts  []string
+		HostProbes     map[string]statusbox.Probe
 		ByCompany      map[string][]statusbox.CompanyHost
 		Entities       []Entity
 		AlertsReadHost string
@@ -167,7 +168,7 @@ func (b Backend) isEC2() bool { return b == BackendEC2 }
 
 func (in Inputs) catalogue(public bool) CatalogueInputs {
 	return CatalogueInputs{
-		PlatformHosts: in.PlatformHosts, ByCompany: in.ByCompany, Entities: in.Entities,
+		PlatformHosts: in.PlatformHosts, HostProbes: in.HostProbes, ByCompany: in.ByCompany, Entities: in.Entities,
 		AlertsReadHost: in.AlertsReadHost, DeadmanChannel: in.DeadmanChannel,
 		Public: public, PublicHostname: in.PublicHostname, OIDC: in.OIDC,
 		Telegram: in.telegramEnabled(),
