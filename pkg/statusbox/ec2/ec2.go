@@ -112,6 +112,11 @@ type Args struct {
 	// and generate data keys. Empty: the AWS-managed defaults need no grant.
 	KMSKeyARN string
 
+	// PermissionsBoundary is the full ARN of the IAM permissions boundary the
+	// instance role carries; empty means none. An account that denies creating
+	// a role without its boundary needs it.
+	PermissionsBoundary string
+
 	// InstanceType defaults to DefaultInstanceType. The architecture follows
 	// from it: a Graviton family is arm64, anything else amd64.
 	InstanceType string

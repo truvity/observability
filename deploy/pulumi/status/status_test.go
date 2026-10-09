@@ -225,6 +225,19 @@ func (m *mocks) names(typ string) []string {
 	return out
 }
 
+func (m *mocks) input(typ, name, key string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, r := range m.resources {
+		if r.typ == typ && r.name == name {
+			return r.inputs[resource.PropertyKey(key)].StringValue()
+		}
+	}
+
+	return ""
+}
+
 func (m *mocks) tags(name string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -263,6 +276,7 @@ func deployEC2With(t *testing.T, public bool) *mocks {
 				SubnetIDs:                  []pulumi.StringInput{pulumi.String("subnet-0a"), pulumi.String("subnet-0b")},
 				Bucket:                     "acme-status-replica",
 				BucketPrefix:               "box",
+				PermissionsBoundary:        "boundary-arn",
 				AlertsReadTokenParameter:   "/acme/status/alerts-read-token",
 				DeadmanSlackTokenParameter: "/acme/status/deadman-token",
 			},
@@ -289,6 +303,7 @@ func TestDeployEC2CreatesAGroupAndNoKey(t *testing.T) {
 		assert.Equal(t, []string{"status"}, m.names("aws:autoscaling/group:Group"))
 		assert.Empty(t, m.names("tailscale:index/tailnetKey:TailnetKey"))
 		assert.Empty(t, m.names("aws:lightsail/instance:Instance"))
+		assert.Equal(t, "boundary-arn", m.input("aws:iam/role:Role", "status", "permissionsBoundary"))
 	}
 }
 

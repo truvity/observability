@@ -260,3 +260,18 @@ func TestRefusesABadComponentName(t *testing.T) {
 	}, pulumi.WithMocks("statusbox-ec2-test", "test", newRecorder()))
 	require.ErrorContains(t, err, "Auto Scaling group name")
 }
+
+// The instance role carries the permissions boundary when one is given, and
+// none otherwise.
+func TestRoleCarriesThePermissionsBoundaryWhenSet(t *testing.T) {
+	a := validArgs()
+	a.PermissionsBoundary = "boundary-arn"
+
+	role := run(t, a).only(t, "aws:iam/role:Role").Mappable()
+	require.Equal(t, "boundary-arn", role["permissionsBoundary"])
+}
+
+func TestRoleHasNoPermissionsBoundaryByDefault(t *testing.T) {
+	role := run(t, validArgs()).only(t, "aws:iam/role:Role").Mappable()
+	require.Nil(t, role["permissionsBoundary"])
+}
