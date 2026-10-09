@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.67.1
 
 - **Fixed** `pkg/statusbox/ec2`: turning SSH on (or any change to the security group's description) no longer fails the update with `DeleteSecurityGroup: DependencyViolation`. The group had the fixed name `<prefix>-status`, so Pulumi had to delete the old group before creating its replacement while the running and warm-pool instances still held network interfaces on it, and the update stopped before the launch template and group changes. The group now uses `namePrefix` (`<prefix>-status-`, a generated suffix) so the replacement is created first, the launch template and the group move to it and start the instance refresh, and the old group is deleted last; its delete timeout is 30 minutes so the provider keeps retrying `DependencyViolation` while the refresh (about 8 minutes, the warm pool too) terminates the old instances. The `Name` tag is unchanged. An existing stack's group name changes from `<prefix>-status` to `<prefix>-status-<suffix>`: the first deploy after upgrading replaces the group once, create-first, which also rolls the instance.
 
