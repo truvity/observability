@@ -15,8 +15,8 @@ SB_PING_PARAM=''
 SB_ENV_PARAMS=('ALERT_URL_OPS_ALERTS_READ_TOKEN=/acme/status/alerts-read-token' 'OIDC_CLIENT_SECRET=/acme/status/oidc-client-secret')
 SB_INSTANCES=('ops:8082:true:ops.db' 'ops-breakglass:8081:false:ops.db')
 SB_CONFIGS=('ops:a68760ad960944a7e40622edc1436c67bf87cab60b1a306e9939ac26e3a97953:box/config/a68760ad960944a7e40622edc1436c67bf87cab60b1a306e9939ac26e3a97953.yaml' 'ops-breakglass:a68760ad960944a7e40622edc1436c67bf87cab60b1a306e9939ac26e3a97953:box/config/a68760ad960944a7e40622edc1436c67bf87cab60b1a306e9939ac26e3a97953.yaml')
-SB_SETUP_KEY='box/config/4e857f473790c44a9fd4843e294bb011572b597336861ee5448dc97843374420.sh'
-SB_SETUP_SHA='4e857f473790c44a9fd4843e294bb011572b597336861ee5448dc97843374420'
+SB_SETUP_KEY='box/config/50227bb0ac6f26a70973fd7ca25a565278cf77e26685c491e7c483e9a504535d.sh'
+SB_SETUP_SHA='50227bb0ac6f26a70973fd7ca25a565278cf77e26685c491e7c483e9a504535d'
 SB_GATUS_URL_arm64='https://github.com/truvity/observability/releases/download/v1.0.0/gatus_v5.37.0_linux_arm64'
 SB_GATUS_SHA_arm64='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 SB_LITESTREAM_URL_arm64='https://github.com/benbjohnson/litestream/releases/download/v0.5.17/litestream-0.5.17-linux-arm64.tar.gz'

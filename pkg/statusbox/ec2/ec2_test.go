@@ -190,6 +190,19 @@ func TestSecurityGroupAdmitsOnlyThePrivatePortFromThePeer(t *testing.T) {
 	require.Equal(t, []any{"10.20.0.0/16"}, rule["cidrBlocks"])
 }
 
+func TestSecurityGroupAdmitsPort80WhenThePrivateInstanceListensThere(t *testing.T) {
+	a := validArgs()
+	a.Instances[1].Port = 80
+
+	ingress := run(t, a).only(t, "aws:ec2/securityGroup:SecurityGroup").Mappable()["ingress"].([]any)
+	require.Len(t, ingress, 1)
+
+	rule := ingress[0].(map[string]any)
+	require.EqualValues(t, 80, rule["fromPort"])
+	require.EqualValues(t, 80, rule["toPort"])
+	require.Equal(t, []any{"10.20.0.0/16"}, rule["cidrBlocks"])
+}
+
 func TestSecurityGroupAdmitsSSHOnlyWhenSet(t *testing.T) {
 	a := validArgs()
 	a.SSH = &statusboxec2.SSHArgs{

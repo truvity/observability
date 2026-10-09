@@ -344,6 +344,18 @@ func TestSetupScriptHasNoBootstrapDelimiter(t *testing.T) {
 	require.NotContains(t, setupScript, "\nSTATUSBOX_SETUP\n")
 }
 
+// TestLowPortGetsTheBindCapability: a Gatus below port 1024 (the private page
+// on plain port 80) gets CAP_NET_BIND_SERVICE as an ambient capability through
+// a per-instance drop-in, and only then; the health and ping probes already
+// follow INST_PORT.
+func TestLowPortGetsTheBindCapability(t *testing.T) {
+	require.Contains(t, setupScript, `if [ "$INST_PORT" -lt 1024 ]; then`)
+	require.Contains(t, setupScript, "gatus@$INST_NAME.service.d/10-low-port.conf")
+	require.Contains(t, setupScript, "AmbientCapabilities=CAP_NET_BIND_SERVICE")
+	require.Contains(t, setupScript, "CapabilityBoundingSet=CAP_NET_BIND_SERVICE")
+	require.Equal(t, 3, strings.Count(setupScript, `http://127.0.0.1:$INST_PORT/health`), "every probe uses the instance's own port")
+}
+
 func pingArgs() Args {
 	a := validArgs()
 	a.PingURLParameter = "/acme/status/ping-url"

@@ -227,6 +227,17 @@ web:
   port: $INST_PORT
 EOF
     chown -R "$SVC_USER:$SVC_USER" "$LIB/$INST_NAME" 2>/dev/null || true
+    # A port below 1024 (the private page on plain HTTP port 80) needs the
+    # bind capability for the unprivileged Gatus; the unit keeps NoNewPrivileges
+    # and gets nothing else, and only that instance's unit gets it.
+    if [ "$INST_PORT" -lt 1024 ]; then
+      mkdir -p "$UNITS/gatus@$INST_NAME.service.d"
+      cat >"$UNITS/gatus@$INST_NAME.service.d/10-low-port.conf" <<'EOF2'
+[Service]
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+EOF2
+    fi
   done
 }
 
