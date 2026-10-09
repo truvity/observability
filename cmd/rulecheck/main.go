@@ -29,6 +29,10 @@ func main() {
 }
 
 func run() int {
+	if len(os.Args) > 1 && os.Args[1] == "coverage" {
+		return runCoverage(os.Args[2:])
+	}
+
 	var (
 		vm     = flag.String("vm-version", "", "VictoriaMetrics release tag (default: the stack chart's)")
 		vl     = flag.String("vl-version", "", "VictoriaLogs release tag (default: the stack chart's)")
@@ -36,6 +40,9 @@ func run() int {
 		cache  = flag.String("cache-dir", "", "where downloaded binaries are cached (default: under the OS temp dir)")
 		stack  = flag.String("stack-charts", "charts/observability-stack/charts", "vendored dependency archives to read the default versions from")
 		silent = flag.Bool("q", false, "print findings only")
+		noLint = flag.Bool("no-lint", false, "parse only; skip the semantic checks")
+		label  = flag.String("cluster-label", rulecheck.DefaultClusterLabel, "the label naming a series' cluster")
+		reqSA  = flag.Bool("require-source-absent", false, "refuse a self-alert group without a SelfAlertSourceAbsent rule")
 	)
 
 	flag.Usage = func() {
@@ -108,7 +115,26 @@ func run() int {
 			len(rules), len(rules)-logsN, *vm, logsN, *vl, len(sources), len(findings))
 	}
 
-	if len(findings) > 0 {
+	var violations []rulecheck.Violation
+
+	if !*noLint {
+		violations, err = rulecheck.Lint(rules, rulecheck.LintOptions{ClusterLabel: *label, RequireSourceAbsent: *reqSA})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "rulecheck: %v\n", err)
+
+			return 2
+		}
+
+		for i := range violations {
+			fmt.Fprintln(os.Stderr, violations[i])
+		}
+
+		if !*silent {
+			fmt.Printf("rulecheck: semantic lint: %d violations\n", len(violations))
+		}
+	}
+
+	if len(findings) > 0 || len(violations) > 0 {
 		return 1
 	}
 
