@@ -109,7 +109,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "pulumiDrift"],
       "properties": {
         "backups": {
           "type": "object",
@@ -407,6 +407,22 @@
             "namespaceSelector": { "type": "string" },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "pulumiDrift": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "lookback": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/severity" },
+            "errorSeverity": { "$ref": "#/definitions/severity" },
+            "staleAfter": { "$ref": "#/definitions/duration" },
+            "staleLookback": { "$ref": "#/definitions/duration" },
+            "staleSeverity": { "$ref": "#/definitions/severity" },
             "keepClusterLabel": { "type": "boolean" }
           }
         },

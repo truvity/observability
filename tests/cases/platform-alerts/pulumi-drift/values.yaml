@@ -1,0 +1,14 @@
+# The Pulumi drift group at its own defaults, on a store that holds several
+# clusters (the usual home of a pushed signal).
+runbookBaseUrl: https://runbooks.example.com/
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  pulumiDrift:
+    enabled: true
