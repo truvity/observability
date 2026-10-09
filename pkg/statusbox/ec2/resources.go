@@ -2,6 +2,7 @@ package ec2
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/autoscaling"
@@ -323,6 +324,12 @@ func (a Args) configBucketObjects(ctx *pulumi.Context, name string, childOpts []
 	return out, nil
 }
 
+// sgDeleteTimeout bounds the provider's retry of DependencyViolation when the
+// replaced group is deleted. The old group is deleted at the end of the update,
+// while the instance refresh (about 8 minutes, the warm pool too) is still
+// terminating the instances that hold interfaces on it.
+const sgDeleteTimeout = "30m"
+
 // securityGroup admits nothing in but PrivateIngressCIDRs to the private
 // instances' ports and, with SSH, SSH.IngressCIDRs to TCP 22, and lets everything out (probes, S3, SSM, the tunnel).
 func (a Args) securityGroup(ctx *pulumi.Context, name string, physical names, childOpts []pulumi.ResourceOption) (*awsec2.SecurityGroup, error) {
@@ -369,7 +376,14 @@ func (a Args) securityGroup(ctx *pulumi.Context, name string, physical names, ch
 	}
 
 	sg, err := awsec2.NewSecurityGroup(ctx, name, &awsec2.SecurityGroupArgs{
-		Name:        pulumi.String(physical.asg),
+		// A generated name, never a fixed one: a change to the description
+		// replaces the group, and with a fixed name Pulumi would have to delete
+		// the old group first, while the running and warm-pool instances still
+		// hold network interfaces on it (DependencyViolation). With a prefix
+		// the replacement is created first, the launch template and the group
+		// move to it, and the old group is deleted last. The Name tag stays
+		// stable.
+		NamePrefix:  pulumi.String(physical.asg + "-"),
 		Description: pulumi.String(description),
 		VpcId:       a.VPCID,
 		Ingress:     ingress,
@@ -382,7 +396,7 @@ func (a Args) securityGroup(ctx *pulumi.Context, name string, physical names, ch
 			},
 		},
 		Tags: a.tags(physical.asg),
-	}, childOpts...)
+	}, append(slices.Clone(childOpts), pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: sgDeleteTimeout}))...)
 	if err != nil {
 		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): security group: %w", name, err)
 	}

@@ -29,10 +29,11 @@ type recorder struct {
 	mu        sync.Mutex
 	resources map[string][]resource.PropertyMap
 	names     map[string][]string
+	deletes   map[string]string
 }
 
 func newRecorder() *recorder {
-	return &recorder{resources: map[string][]resource.PropertyMap{}, names: map[string][]string{}}
+	return &recorder{resources: map[string][]resource.PropertyMap{}, names: map[string][]string{}, deletes: map[string]string{}}
 }
 
 func (r *recorder) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
@@ -41,6 +42,10 @@ func (r *recorder) NewResource(args pulumi.MockResourceArgs) (string, resource.P
 
 	r.resources[args.TypeToken] = append(r.resources[args.TypeToken], args.Inputs)
 	r.names[args.TypeToken] = append(r.names[args.TypeToken], args.Name)
+
+	if rpc := args.RegisterRPC; rpc != nil && rpc.GetCustomTimeouts() != nil {
+		r.deletes[args.TypeToken] = rpc.GetCustomTimeouts().GetDelete()
+	}
 
 	out := args.Inputs.Copy()
 	if args.TypeToken == "aws:ec2/launchTemplate:LaunchTemplate" {
@@ -188,6 +193,20 @@ func TestSecurityGroupAdmitsOnlyThePrivatePortFromThePeer(t *testing.T) {
 	require.EqualValues(t, 8081, rule["fromPort"], "the private instance's port, not the public one")
 	require.EqualValues(t, 8081, rule["toPort"])
 	require.Equal(t, []any{"10.20.0.0/16"}, rule["cidrBlocks"])
+}
+
+// TestSecurityGroupIsReplacedCreateFirst: a fixed name would make Pulumi delete
+// the old group first, while the instances still hold interfaces on it
+// (DependencyViolation). A prefix lets the replacement come first, and the
+// long delete timeout lets the old group's delete outlast the instance refresh.
+func TestSecurityGroupIsReplacedCreateFirst(t *testing.T) {
+	rec := run(t, validArgs())
+	sg := rec.only(t, "aws:ec2/securityGroup:SecurityGroup").Mappable()
+
+	require.Equal(t, "statusbox-status-", sg["namePrefix"])
+	require.NotContains(t, sg, "name")
+	require.Equal(t, "statusbox-status", sg["tags"].(map[string]any)["Name"], "the Name tag stays stable")
+	require.Equal(t, "30m", rec.deletes["aws:ec2/securityGroup:SecurityGroup"])
 }
 
 func TestSecurityGroupAdmitsPort80WhenThePrivateInstanceListensThere(t *testing.T) {
