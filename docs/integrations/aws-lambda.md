@@ -127,14 +127,28 @@ the extension logs one line and runs without it.
 
 ## What the extension does when something is wrong
 
-It is **fail-open**: telemetry never blocks, slows or crashes an invocation.
+It is **fail-open**: telemetry never crashes an invocation, and a missing
+token costs it at most a bounded wait.
 
-- No token (STS refused, the issuer is down or refuses the role): the proxy
-  answers `503` with `Retry-After`, which OTLP exporters treat as retryable,
-  and the extension logs **one line per failure window** (and one when it
-  recovers). After a failure it does not call STS again for 5 seconds, so an
-  exporter's retries are not a request storm. A token that is still valid is
-  used even if its replacement failed.
+- No token (STS refused, the issuer is down, saturated or refuses the role):
+  the proxy answers `503` with `Retry-After`, and the extension logs **one
+  line per failure window** (and one when it recovers). After a failure it
+  does not call STS or the issuer again for 5 seconds, doubling with each
+  failure in a row up to 5 minutes, each wait jittered down to half: the
+  environments of a function fail together and must not retry in step. A
+  token that is still valid is used even if its replacement failed.
+- How long a missing token can hold things: an export waits at most 2 seconds
+  for a token (`Proxy.TokenTimeout`), and one refresh at most 5 seconds
+  (`Source.RefreshTimeout`). The pre-freeze flush of platform logs, which holds
+  the environment after an invocation, is bounded at 2 seconds and is quick
+  inside a backoff. An exporter that honours `Retry-After` inside the
+  function's own flush waits until that flush's deadline: the function should
+  bound its flush and not retry (sluis v1.74.1 does both).
+- The issuer is the function itself: when the extension runs inside the
+  function that is its token issuer (sluis on Lambda), a saturated function
+  cannot issue the token that would report on it, and telemetry drops exactly
+  when it is wanted. Give such a function an issuer of another installation,
+  or rely on the platform's own CloudWatch metrics and logs for it.
 - Missing or invalid configuration, or the port is taken: one log line, and
   the extension keeps answering the platform (an extension that exits is
   reported by Lambda as a crash of the invocation). Exports then find nothing

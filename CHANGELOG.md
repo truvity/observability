@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change** `lambdaext` (the `otlp-lambda` layer): a failed token refresh backs off 5 s doubling to 5 min with jitter (was a fixed 5 s), so the environments of a function do not retry a saturated issuer in step. New `Source.MaxBackoff` (default 5 min) and `Source.Rand`. An export waits at most 2 s for a token (`Proxy.TokenTimeout`, was 15 s) and a refresh at most 5 s (`Source.RefreshTimeout`, was 10 s). [The Lambda integration](docs/integrations/aws-lambda.md#what-the-extension-does-when-something-is-wrong) says how long a missing token can hold an invocation, and why a function should not be its own token issuer.
+
 ## v0.63.0
 
 - **Added** `pkg/statusbox`: optional Telegram alerting. `Catalogue.Telegram` (`TelegramProvider`: two `Secrets.AlertURLs` keys, the bot token and the chat id) renders Gatus's native `alerting.telegram` and adds a `telegram` alert (same failure threshold, send-on-resolved) to every endpoint the deadman group pages through; `Providers.Telegram` adds the company signals too. Nil renders exactly what it did.
