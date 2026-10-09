@@ -262,6 +262,10 @@ func (a Args) validateInstances() []error {
 			continue
 		}
 
+		if inst.Name == configPrefix {
+			errs = append(errs, fmt.Errorf("statusbox/ec2: instance name %q is reserved: the %s/ directory of the replica prefix holds the box's rendered files", inst.Name, configPrefix))
+		}
+
 		if _, err := databaseFile(inst); err != nil {
 			errs = append(errs, err)
 		}

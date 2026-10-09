@@ -221,11 +221,11 @@ func TestUserDataCarriesNoSecret(t *testing.T) {
 	script, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
 	require.NoError(t, err)
 
-	// The script reads a value and writes it under /run, nowhere else, and
-	// never prints it.
-	require.Contains(t, script, "--with-decryption")
-	require.NotContains(t, script, "echo \"$value\"")
-	require.NotContains(t, script, "printf '%s\\n' \"$value\"")
+	// The setup script (an S3 object, pinned by sha256 in the user-data) reads
+	// a value and writes it under /run, nowhere else, and never prints it.
+	require.Contains(t, setupScript, "--with-decryption")
+	require.NotContains(t, setupScript, "echo \"$value\"")
+	require.NotContains(t, setupScript, "printf '%s\\n' \"$value\"")
 	require.Equal(t, 0, strings.Count(setupScript, "TS_AUTHKEY"), "no tailnet key on this backend")
 	require.NotContains(t, script, "tailscale up")
 
@@ -273,16 +273,21 @@ func TestUserDataRefusesOverTheLimit(t *testing.T) {
 	t.Cleanup(func() { statusbox.FetchChecksums = previous })
 
 	a := validArgs()
-	// Incompressible filler: random-looking, so gzip cannot shrink it.
-	var b strings.Builder
-
+	// Incompressible filler: random-looking, so gzip cannot shrink it. It
+	// comes in through the parameter maps, the only free-form text left in the
+	// user-data (a Config travels as an S3 object).
 	x := uint32(1)
-	for b.Len() < 40000 {
-		x = x*1664525 + 1013904223
-		b.WriteString(string(rune('a' + (x>>24)%26)))
+	for i := 0; i < 400; i++ {
+		var b strings.Builder
+
+		for b.Len() < 60 {
+			x = x*1664525 + 1013904223
+			b.WriteString(string(rune('a' + (x>>24)%26)))
+		}
+
+		a.EnvParameters["FILLER_"+b.String()[:8]] = "/acme/status/" + b.String()
 	}
 
-	a.Instances[0].Config = configOps + "# " + b.String() + "\n"
 	_, err := a.UserData("status")
 	require.ErrorContains(t, err, "over EC2's")
 }
@@ -371,7 +376,7 @@ func TestPingUnitsCarryNoURL(t *testing.T) {
 
 	got, err := pingArgs().bootstrap(namesFor("status"), fakeChecksums())
 	require.NoError(t, err)
-	require.Contains(t, got, "ExecStart=/usr/local/sbin/statusbox-setup ping")
+	require.Contains(t, setupScript, "ExecStart=/usr/local/sbin/statusbox-setup ping")
 	require.Contains(t, got, "SB_PING_PARAM='/acme/status/ping-url'")
 }
 
@@ -440,4 +445,112 @@ func scriptPath(t *testing.T, dir string) string {
 	require.NoError(t, os.WriteFile(p, []byte(setupScript), 0o755))
 
 	return p
+}
+
+// TestConfigsTravelAsObjects: no Config (and no setup script) is in the
+// user-data; it names each object's key and sha256, and the key is the sha.
+func TestConfigsTravelAsObjects(t *testing.T) {
+	a := validArgs()
+	a.TrustedCAs = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+	got, err := a.bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.NotContains(t, got, "endpoints:")
+	require.NotContains(t, got, "gz.b64")
+	require.NotContains(t, got, "--with-decryption", "the setup script is an object too")
+
+	for _, o := range a.bucketObjects() {
+		require.Len(t, o.SHA256(), 64)
+		require.Equal(t, "box/config/"+o.SHA256()+"."+o.Ext, o.Key("box"))
+	}
+
+	require.Contains(t, got, "SB_SETUP_SHA='"+a.setupObject().SHA256()+"'")
+	require.Contains(t, got, "ops:"+configObject{Content: configOps}.SHA256()+":box/config/"+configObject{Content: configOps}.SHA256()+".yaml")
+	require.Contains(t, got, "trusted-cas:", "the CA bundle is an object too")
+	require.Equal(t, "config/"+configObject{Content: "x", Ext: "yaml"}.SHA256()+".yaml", configObject{Content: "x", Ext: "yaml"}.Key(""))
+}
+
+// A changed Config is a new digest in the user-data, so the launch template
+// moves and the instance rolls, as it did when the Config was inline.
+func TestAChangedConfigChangesTheUserData(t *testing.T) {
+	a := validArgs()
+	before, err := a.bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+
+	a.Instances = append([]statusbox.Instance(nil), a.Instances...)
+	a.Instances[0].Config += "# changed\n"
+	after, err := a.bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.NotEqual(t, before, after)
+}
+
+func TestConfigIsAReservedInstanceName(t *testing.T) {
+	a := validArgs()
+	a.Instances = append([]statusbox.Instance(nil), a.Instances...)
+	a.Instances[1].Name = "config"
+	a.Hostnames = map[string]string{"ops": "status.example.test"}
+	require.ErrorContains(t, a.validate(), `instance name "config" is reserved`)
+}
+
+// TestFetchConfigs runs the embedded fetch_configs against a stub aws that
+// serves a directory standing in for the bucket: a good object is staged; a
+// digest mismatch or a failing fetch fails the function and stages nothing.
+func TestFetchConfigs(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not available")
+	}
+
+	good := "storage:\n  type: sqlite\n"
+	want := configObject{Content: good}.SHA256()
+
+	for name, tc := range map[string]struct {
+		serve, sha string
+		ok         bool
+	}{
+		"verified":      {good, want, true},
+		"wrong digest":  {"evil: true\n", want, false},
+		"fetch failure": {"", want, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			root := filepath.Join(dir, "root")
+			bin := filepath.Join(dir, "bin")
+			bucket := filepath.Join(dir, "bucket")
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/statusbox"), 0o755))
+			require.NoError(t, os.MkdirAll(filepath.Join(bucket, "box/config"), 0o755))
+			require.NoError(t, os.MkdirAll(bin, 0o755))
+
+			if tc.serve != "" {
+				require.NoError(t, os.WriteFile(filepath.Join(bucket, "box/config/"+want+".yaml"), []byte(tc.serve), 0o644))
+			}
+
+			// stub aws: `aws s3 cp [flags] s3://<bucket>/<key> <dest>`
+			stub := "#!/bin/bash\nsrc=\"\"; for a in \"$@\"; do case \"$a\" in s3://*) src=\"${a#s3://*/}\" ;; *) dest=\"$a\" ;; esac; done\n" +
+				"printf '%s\\n' \"$*\" >>\"$OUT/aws.log\"\ncp \"$BUCKET/$src\" \"$dest\"\n"
+			require.NoError(t, os.WriteFile(filepath.Join(bin, "aws"), []byte(stub), 0o755))
+
+			params := "SB_BUCKET=acme\nSB_CONFIGS=('ops:" + tc.sha + ":box/config/" + want + ".yaml')\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "etc/statusbox/params.sh"), []byte(params), 0o644))
+
+			cmd := exec.Command(bash, "-c", `. "$SCRIPT"; load_params; fetch_configs`)
+			cmd.Env = append(os.Environ(),
+				"STATUSBOX_SOURCE_ONLY=1", "STATUSBOX_ROOT="+root, "SCRIPT="+scriptPath(t, dir), "STATUSBOX_RETRY_SLEEP=0",
+				"PATH="+bin+":"+os.Getenv("PATH"), "BUCKET="+bucket, "OUT="+dir)
+			out, err := cmd.CombinedOutput()
+			staged := filepath.Join(root, "opt/statusbox/staged")
+
+			if tc.ok {
+				require.NoError(t, err, string(out))
+				b, rerr := os.ReadFile(filepath.Join(staged, "ops"))
+				require.NoError(t, rerr)
+				require.Equal(t, good, string(b))
+
+				return
+			}
+
+			require.Error(t, err, string(out))
+			require.NoFileExists(t, filepath.Join(staged, "ops"))
+			require.NoFileExists(t, filepath.Join(staged, "ops.part"))
+		})
+	}
 }

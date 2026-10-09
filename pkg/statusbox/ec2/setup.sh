@@ -5,16 +5,23 @@
 # This file is embedded in pkg/statusbox/ec2 and written to
 # /usr/local/sbin/statusbox-setup by the instance's user-data. The user-data
 # also writes /etc/statusbox/params.sh (everything this script needs to know:
-# names, ports, pinned download URLs and checksums, SSM parameter NAMES) and
-# stages every Gatus configuration. No secret is ever in either: secrets are
-# read from SSM Parameter Store through the instance role, at boot, into
-# /run (tmpfs), and never written to the root disk.
+# names, ports, pinned download URLs and checksums, SSM parameter NAMES, and
+# the S3 key + sha256 of every Gatus configuration). The configurations are
+# S3 objects, not user-data (16 KiB does not hold an estate's catalogue); the
+# install phase fetches each with the instance role and refuses a digest that
+# differs. No secret is ever in either: secrets are read from SSM Parameter
+# Store through the instance role, at boot, into /run (tmpfs), and never
+# written to the root disk.
 #
 # Two phases:
 #
 #   install  first boot only (the user-data runs it): swap, journald cap,
-#            the pinned binaries (checksum verified), the unit files. Then it
-#            starts statusbox-boot.service, which runs the second phase.
+#            the pinned binaries (checksum verified), the Gatus configurations
+#            (fetched from S3, digest verified; a failure abandons the
+#            launch, so a bad configuration never serves), the unit files.
+#            Then it starts statusbox-boot.service, which runs the second
+#            phase. A warm-pool instance does all of this at its first boot
+#            too.
 #   boot     EVERY boot (statusbox-boot.service): decides from the Auto
 #            Scaling group's target lifecycle state whether this instance is
 #            going in service. A warm-pool instance (Warmed:*) only completes
@@ -130,6 +137,31 @@ fetch_verify() {
   return 1
 }
 
+# fetch_configs downloads every SB_CONFIGS entry (name:sha256:key) from the
+# bucket with the instance role and stages it as $STAGED/<name>, but only if
+# its sha256 is the one in params.sh. Nothing unverified is ever staged. Any
+# failure after the retries is fatal to the caller.
+fetch_configs() {
+  local entry name want key i got
+  mkdir -p "$STAGED"
+  for entry in "${SB_CONFIGS[@]}"; do
+    IFS=: read -r name want key <<<"$entry"
+    for i in 1 2 3 4 5; do
+      if aws s3 cp --only-show-errors --cli-connect-timeout 10 --cli-read-timeout 30 "s3://$SB_BUCKET/$key" "$STAGED/$name.part" \
+        && got="$(sha256sum "$STAGED/$name.part" | cut -d' ' -f1)" && [ "$got" = "$want" ]; then
+        mv "$STAGED/$name.part" "$STAGED/$name"
+        break
+      fi
+      log "fetch of $key failed or did not match its sha256 (attempt $i)"
+      rm -f "$STAGED/$name.part"
+      if [ "$i" = 5 ]; then
+        return 1
+      fi
+      sleep "${STATUSBOX_RETRY_SLEEP:-5}"
+    done
+  done
+}
+
 # arch_key maps uname -m to the key the params use: arm64 or amd64.
 arch_key() {
   case "$(uname -m)" in
@@ -181,7 +213,7 @@ unpack_instances() {
   for entry in "${SB_INSTANCES[@]}"; do
     instance_fields "$entry"
     mkdir -p "$ETC/instances/$INST_NAME" "$LIB/$INST_NAME"
-    base64 -d "$STAGED/$INST_NAME.yaml.gz.b64" | gunzip >"$ETC/instances/$INST_NAME/config.yaml"
+    cp "$STAGED/$INST_NAME" "$ETC/instances/$INST_NAME/config.yaml"
     # Gatus merges every *.yaml in its config directory, later names winning:
     # the listener is the backend's to place, not the estate's Config's. A
     # public instance listens on loopback only (cloudflared dials it there);
@@ -199,9 +231,9 @@ EOF
 }
 
 setup_trusted_cas() {
-  [ -f "$STAGED/trusted-cas.pem.gz.b64" ] || return 0
+  [ -f "$STAGED/trusted-cas" ] || return 0
   mkdir -p "$ETC/ca"
-  base64 -d "$STAGED/trusted-cas.pem.gz.b64" | gunzip >"$ETC/ca/extra-roots.pem"
+  cp "$STAGED/trusted-cas" "$ETC/ca/extra-roots.pem"
   chmod 0644 "$ETC/ca/extra-roots.pem"
 }
 
@@ -352,6 +384,16 @@ install_phase() {
   setup_swap
   setup_journald
   install_binaries
+  # Before anything is unpacked or started: a configuration that cannot be
+  # fetched and verified abandons the launch (the group replaces the instance;
+  # a bad one never goes InService) instead of serving whatever is on disk.
+  AWS_REGION="$(imds meta-data/placement/region)"
+  export AWS_REGION
+  if ! fetch_configs; then
+    log "install: the configurations could not be fetched and verified; abandoning the launch"
+    complete_hook ABANDON
+    return 1
+  fi
   unpack_instances
   setup_trusted_cas
   write_common_env "$(imds meta-data/placement/region)"

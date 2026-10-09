@@ -318,3 +318,31 @@ func TestSessionManagerAttachesTheManagedPolicyOnlyWhenSet(t *testing.T) {
 
 	require.Empty(t, run(t, validArgs()).resources[kind])
 }
+
+// The rendered files are objects in the replica bucket under <prefix>/config/,
+// encrypted, and the instance role's existing prefix statement already lets it
+// read them: no IAM change is needed.
+func TestConfigObjectsLiveUnderTheRolesPrefix(t *testing.T) {
+	for _, kms := range []string{"", "arn:" + part + ":kms:eu-west-1:" + account + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"} {
+		a := validArgs()
+		a.KMSKeyARN = kms
+
+		rec := run(t, a)
+		objs := rec.resources["aws:s3/bucketObjectv2:BucketObjectv2"]
+		require.Len(t, objs, 2, "the setup script and the one distinct Config both instances share")
+
+		for _, o := range objs {
+			m := o.Mappable()
+			require.Equal(t, "acme-status-replica", m["bucket"])
+			require.Regexp(t, `^box/config/[0-9a-f]{64}\.(sh|yaml)$`, m["key"])
+			require.NotEmpty(t, m["content"])
+
+			if kms == "" {
+				require.Equal(t, "AES256", m["serverSideEncryption"])
+			} else {
+				require.Equal(t, "aws:kms", m["serverSideEncryption"])
+				require.Equal(t, kms, m["kmsKeyId"])
+			}
+		}
+	}
+}

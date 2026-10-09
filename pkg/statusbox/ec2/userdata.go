@@ -11,13 +11,20 @@ import (
 )
 
 // setupScript is /usr/local/sbin/statusbox-setup on the instance: see its own
-// header for the phases. It is embedded rather than fetched, so the user-data
-// IS the whole program (a change to it is a new launch template version, the
-// same "immutable by construction" the Lightsail box has) and nothing at boot
-// trusts a download except the binaries, which are checksum-pinned.
+// header for the phases. It is embedded in the package but travels as an S3
+// object (user-data is capped at 16 KiB and the script alone is over half of
+// it): the user-data pins it by sha256, so a change to it is still a new
+// launch template version, the same "immutable by construction" the Lightsail
+// box has, and nothing at boot trusts a download except by digest.
 //
 //go:embed setup.sh
 var setupScript string
+
+// fetchSetup is the part of the bootstrap that downloads setupScript from the
+// box's bucket and verifies its sha256 before running it.
+//
+//go:embed fetchsetup.sh
+var fetchSetup string
 
 // userDataLimit is EC2's ceiling on user-data, in bytes before base64.
 const userDataLimit = 16 * 1024
@@ -76,6 +83,9 @@ func (a Args) params(box names, gatusSHA map[string]string) (string, error) {
 	}
 
 	b.WriteString(shellArray("SB_INSTANCES", insts))
+	b.WriteString(shellArray("SB_CONFIGS", a.configEntries()))
+	b.WriteString(shellLine("SB_SETUP_KEY", a.setupObject().Key(a.BucketPrefix)))
+	b.WriteString(shellLine("SB_SETUP_SHA", a.setupObject().SHA256()))
 	b.WriteString(a.selfRegisterParams())
 
 	for _, arch := range architectures {
@@ -90,14 +100,13 @@ func (a Args) params(box names, gatusSHA map[string]string) (string, error) {
 	return b.String(), nil
 }
 
-// bootstrap renders the plain user-data script: it stages params.sh, every
-// Gatus configuration and the trusted CA bundle, writes the setup script, and
-// runs its install phase. Pure: no network, no Pulumi.
+// bootstrap renders the plain user-data script: it stages params.sh, fetches
+// and verifies the setup script, and runs its install phase. Neither the setup
+// script nor the Gatus configurations nor the trusted CA bundle are in it:
+// params.sh names their S3 objects and digests (see configObject), the stub
+// fetches the first and the install phase fetches the rest, each verified.
+// Pure: no network, no Pulumi.
 func (a Args) bootstrap(box names, gatusSHA map[string]string) (string, error) {
-	if strings.Contains(setupScript, "\nSTATUSBOX_SETUP\n") || strings.Contains(setupScript, "\nSTATUSBOX_PARAMS\n") {
-		return "", fmt.Errorf("statusbox/ec2: setup.sh contains a heredoc delimiter of the bootstrap")
-	}
-
 	params, err := a.params(box, gatusSHA)
 	if err != nil {
 		return "", err
@@ -109,25 +118,6 @@ func (a Args) bootstrap(box names, gatusSHA map[string]string) (string, error) {
 	b.WriteString("set -euo pipefail\n\n")
 	b.WriteString("mkdir -p /etc/statusbox /opt/statusbox/staged /usr/local/sbin\n\n")
 	fmt.Fprintf(&b, "cat > /etc/statusbox/params.sh <<'STATUSBOX_PARAMS'\n%sSTATUSBOX_PARAMS\n\n", params)
-
-	if a.TrustedCAs != "" {
-		gz, err := statusbox.GzipBase64(a.TrustedCAs)
-		if err != nil {
-			return "", fmt.Errorf("statusbox/ec2: gzip TrustedCAs: %w", err)
-		}
-
-		fmt.Fprintf(&b, "cat > /opt/statusbox/staged/trusted-cas.pem.gz.b64 <<'STATUSBOX_TRUSTED_CAS'\n%s\nSTATUSBOX_TRUSTED_CAS\n\n", gz)
-	}
-
-	for _, inst := range a.Instances {
-		gz, err := statusbox.GzipBase64(inst.Config)
-		if err != nil {
-			return "", fmt.Errorf("statusbox/ec2: gzip Config for instance %q: %w", inst.Name, err)
-		}
-
-		delim := "STATUSBOX_CFG_" + strings.ToUpper(strings.ReplaceAll(inst.Name, "-", "_"))
-		fmt.Fprintf(&b, "cat > /opt/statusbox/staged/%s.yaml.gz.b64 <<'%s'\n%s\n%s\n\n", inst.Name, delim, gz, delim)
-	}
 
 	ssh, err := a.sshBootstrap()
 	if err != nil {
@@ -146,8 +136,7 @@ func (a Args) bootstrap(box names, gatusSHA map[string]string) (string, error) {
 	// Before the install phase: its daemon-reload picks the drop-in up.
 	b.WriteString(selfRegister)
 
-	fmt.Fprintf(&b, "cat > /usr/local/sbin/statusbox-setup <<'STATUSBOX_SETUP'\n%sSTATUSBOX_SETUP\n", ensureNewline(setupScript))
-	b.WriteString("chmod 0755 /usr/local/sbin/statusbox-setup\n")
+	b.WriteString(ensureNewline(fetchSetup))
 	b.WriteString("exec /usr/local/sbin/statusbox-setup install\n")
 
 	return b.String(), nil
@@ -198,8 +187,8 @@ func (a Args) UserData(name string) (string, error) {
 	}
 
 	if len(wrapped) > userDataLimit {
-		return "", fmt.Errorf("statusbox/ec2: rendered user-data is %d bytes, over EC2's %d-byte limit: shrink an instance's Config or run fewer instances on "+
-			"this box", len(wrapped), userDataLimit)
+		return "", fmt.Errorf("statusbox/ec2: rendered user-data is %d bytes, over EC2's %d-byte limit: it carries parameter names, pins and "+
+			"scripts only, so something unusually large was passed in (SSH, SelfRegister or the parameter maps)", len(wrapped), userDataLimit)
 	}
 
 	return wrapped, nil
