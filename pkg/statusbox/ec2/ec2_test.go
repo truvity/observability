@@ -193,8 +193,11 @@ func TestSecurityGroupAdmitsOnlyThePrivatePortFromThePeer(t *testing.T) {
 func TestSecurityGroupAdmitsSSHOnlyWhenSet(t *testing.T) {
 	a := validArgs()
 	a.SSH = &statusboxec2.SSHArgs{
-		OPKSSH:       hostaccess.OPKSSHPreset{Issuer: "https://issuer.example.test", ClientID: "opkssh", User: "ec2-user", Group: "ops"},
-		HostCert:     hostaccess.HostCertPreset{Address: "https://bao.example.test", AuthMount: "aws", AuthRole: "hostcert", ServerIDHeader: "bao.example.test", SSHMount: "ssh-host", SSHRole: "host", PrincipalPatterns: []string{"ip-*.eu-west-3.compute.internal"}},
+		OPKSSH: hostaccess.OPKSSHPreset{Issuer: "https://issuer.example.test", ClientID: "opkssh", User: "ec2-user", Group: "ops"},
+		HostCert: hostaccess.HostCertPreset{
+			Address: "https://bao.example.test", AuthMount: "aws", AuthRole: "hostcert", ServerIDHeader: "bao.example.test",
+			SSHMount: "ssh-host", SSHRole: "host", PrincipalPatterns: []string{"ip-*.eu-west-3.compute.internal"},
+		},
 		IngressCIDRs: []string{"10.30.0.0/16"},
 	}
 
