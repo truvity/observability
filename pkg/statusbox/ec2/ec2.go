@@ -100,7 +100,8 @@ type Args struct {
 	VPCID     pulumi.StringInput
 	SubnetIDs []pulumi.StringInput
 	// PrivateIngressCIDRs are the networks (a peered VPC) allowed to reach the
-	// private instance's port. Empty: nothing may.
+	// private instance's port (its Instance.Port; 80 for a plain-HTTP page,
+	// which gives that Gatus the bind capability). Empty: nothing may.
 	PrivateIngressCIDRs []string
 
 	// SSH, when set, adds SSH access through opkssh and OpenBAO host

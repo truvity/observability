@@ -121,6 +121,13 @@ type (
 		// instance a peered VPC.
 		PrivateIngressCIDRs []string
 
+		// PrivatePort is the TCP port the private page listens on, and the one
+		// the security group opens to PrivateIngressCIDRs. Zero means the
+		// package's PrivatePort (8081), so existing stacks do not change. 80
+		// serves it on plain `http://<name>/`: the box then grants that
+		// instance's Gatus the bind capability for a port below 1024.
+		PrivatePort int
+
 		// Bucket and BucketPrefix hold the Litestream replicas; KMSKeyARN is
 		// the optional customer-managed key for the parameters and the bucket.
 		Bucket       string
@@ -171,6 +178,16 @@ type (
 )
 
 func (b Backend) isEC2() bool { return b == BackendEC2 }
+
+// privatePort is the port the private instance listens on: EC2.PrivatePort on
+// the EC2 backend when set, otherwise PrivatePort.
+func (in Inputs) privatePort() int {
+	if in.Backend.isEC2() && in.EC2.PrivatePort != 0 {
+		return in.EC2.PrivatePort
+	}
+
+	return PrivatePort
+}
 
 func (in Inputs) catalogue(public bool) CatalogueInputs {
 	return CatalogueInputs{
@@ -227,7 +244,7 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 
 	// ops-breakglass: the ONE private instance, for the day the issuer itself
 	// is down.
-	instances := []statusbox.Instance{{Name: privateInstanceName, Port: PrivatePort, Public: false, Config: breakglassConfig}}
+	instances := []statusbox.Instance{{Name: privateInstanceName, Port: in.privatePort(), Public: false, Config: breakglassConfig}}
 
 	envSecrets := map[string]pulumi.StringInput{}
 	hostnames := map[string]string{}

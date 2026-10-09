@@ -355,3 +355,9 @@ func TestTelegramEnabledNeedsBothInputs(t *testing.T) {
 	assert.False(t, Inputs{}.telegramEnabled())
 	assert.True(t, Inputs{TelegramToken: pulumi.String("t"), TelegramChatID: pulumi.String("i")}.telegramEnabled())
 }
+
+func TestPrivatePortDefaultsAndIsEC2Only(t *testing.T) {
+	assert.Equal(t, PrivatePort, Inputs{Backend: BackendEC2}.privatePort())
+	assert.Equal(t, 80, Inputs{Backend: BackendEC2, EC2: EC2Inputs{PrivatePort: 80}}.privatePort())
+	assert.Equal(t, PrivatePort, Inputs{EC2: EC2Inputs{PrivatePort: 80}}.privatePort(), "Lightsail ignores it: its page is served on 80 by tailscale")
+}
