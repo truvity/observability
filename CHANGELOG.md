@@ -7,6 +7,7 @@ must be done first, and whether a default moved. Newest first, one
 ## v0.63.1
 
 - **Added** `pkg/statusbox/ec2`: optional `Args.PermissionsBoundary` (`deploy/pulumi/status`: `EC2Inputs.PermissionsBoundary`), the full ARN of an IAM permissions boundary set on the instance role `<prefix>-status`. Accounts that deny `iam:CreateRole` for a role without their boundary failed the apply; set it there. Empty keeps the role as before, so existing stacks do not change. The Lightsail backend creates no IAM role.
+- **Fixed** (security): `golang.org/x/net` v0.59.0 -> v0.60.0 and the toolchain go1.27.1 -> go1.27.2, closing GO-2026-6617 and GO-2026-6613 (HTTP/2 in `golang.org/x/net` and in the standard library's `net/http`). No render change.
 
 ## v0.63.0
 
