@@ -85,8 +85,10 @@ func TestSelfRegisterRolePolicyHasExactlyOneAssumeRole(t *testing.T) {
 
 func TestSelfRegisterRefusals(t *testing.T) {
 	for name, mut := range map[string]func(*SelfRegisterArgs){
-		"role":      func(s *SelfRegisterArgs) { s.RoleARN = "arn:" + partition + ":iam::123:role/x" },
-		"wildcard":  func(s *SelfRegisterArgs) { s.RoleARN = "arn:" + partition + ":iam::" + strings.Repeat("1", 12) + ":role/*" },
+		"role": func(s *SelfRegisterArgs) { s.RoleARN = "arn:" + partition + ":iam::123:role/x" },
+		"wildcard": func(s *SelfRegisterArgs) {
+			s.RoleARN = "arn:" + partition + ":iam::" + strings.Repeat("1", 12) + ":role/*"
+		},
 		"zone":      func(s *SelfRegisterArgs) { s.HostedZoneID = "/hostedzone/Z1" },
 		"record":    func(s *SelfRegisterArgs) { s.RecordName = "Box.Example." },
 		"record2":   func(s *SelfRegisterArgs) { s.RecordName = "*.example.test" },
