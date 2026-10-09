@@ -78,6 +78,8 @@ spec:
         {{- $b := include "observability-stack.pair.otherReplica" . }}
         {{- $w := $sa.divergence.window }}
         {{- $t := $sa.divergence.threshold }}
+        {{- /* Keep the cluster label: a bare sum() drops it, and the alert reaches Alertmanager with no cluster to route on (the v0.45.1 class). Both sides group by it alone, so they still match one to one. */ -}}
+        {{- $sumBy := ternary (printf " by (%s)" .Values.tenancy.clusterLabel) "" (ne .Values.tenancy.clusterLabel "") }}
         {{- $stores := list }}
         {{- if and $vmks.enabled ($vmks.vmsingle).enabled }}
         {{- $matchers := ternary (printf ", %s" $sa.divergence.metrics.matchers) "" (ne $sa.divergence.metrics.matchers "") }}
@@ -105,9 +107,9 @@ spec:
           expr: >-
             abs(
               1 -
-              sum(rate({{ $s.metric }}{observability_replica={{ $a | quote }}{{ $s.matchers }}}[{{ $w }}]))
+              sum{{ $sumBy }}(rate({{ $s.metric }}{observability_replica={{ $a | quote }}{{ $s.matchers }}}[{{ $w }}]))
               /
-              sum(rate({{ $s.metric }}{observability_replica={{ $b | quote }}{{ $s.matchers }}}[{{ $w }}]))
+              sum{{ $sumBy }}(rate({{ $s.metric }}{observability_replica={{ $b | quote }}{{ $s.matchers }}}[{{ $w }}]))
             ) > {{ $t }}
           for: {{ $sa.divergence.for }}
           labels:

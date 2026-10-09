@@ -27,6 +27,15 @@
 // is away is a gate a bad rule can walk through. Options.BinDir names a
 // directory already holding `victoria-metrics-prod` and
 // `victoria-logs-prod` for offline use.
+//
+// Semantic lint (lint.go): parsing proves an expression is valid, not that
+// it is right on a store holding several clusters. Lint holds MetricsQL
+// rules to four checks -- aggregations keep the cluster label, every
+// absent() carries the per-cluster guard, no heartbeat is evaluated per
+// pod, every self-alert source is watched by SelfAlertSourceAbsent -- each
+// the bug class of a release that had to fix it (0.43.3, 0.44.1, 0.45.1,
+// 0.46.0). Coverage (coverage.go) reports, per cluster, the groups and
+// rules the catalog has and the cluster does not.
 package rulecheck
 
 import (
@@ -58,6 +67,8 @@ type Rule struct {
 	// Type is the group's `type` as written; empty means prometheus.
 	Type string
 	Expr string
+	// Record is true for a recording rule, false for an alert.
+	Record bool
 }
 
 // LogsQL reports whether the rule is a vlogs (LogsQL) rule; otherwise it is
@@ -156,7 +167,7 @@ func rulesIn(s Source) ([]Rule, error) {
 
 				out = append(out, Rule{
 					Source: s.Name, Resource: doc.Metadata.Name, Group: g.Name, Name: name,
-					Type: typ, Expr: r.Expr,
+					Type: typ, Expr: r.Expr, Record: r.Alert == "",
 				})
 			}
 		}

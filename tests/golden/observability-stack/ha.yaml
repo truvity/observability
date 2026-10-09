@@ -2801,9 +2801,9 @@ spec:
           expr: >-
             abs(
               1 -
-              sum(rate(vm_rows_inserted_total{observability_replica="a", type="promremotewrite"}[1h]))
+              sum by (k8s_cluster_name)(rate(vm_rows_inserted_total{observability_replica="a", type="promremotewrite"}[1h]))
               /
-              sum(rate(vm_rows_inserted_total{observability_replica="b", type="promremotewrite"}[1h]))
+              sum by (k8s_cluster_name)(rate(vm_rows_inserted_total{observability_replica="b", type="promremotewrite"}[1h]))
             ) > 0.25
           for: 30m
           labels:
@@ -2833,9 +2833,9 @@ spec:
           expr: >-
             abs(
               1 -
-              sum(rate(vl_rows_ingested_total{observability_replica="a"}[1h]))
+              sum by (k8s_cluster_name)(rate(vl_rows_ingested_total{observability_replica="a"}[1h]))
               /
-              sum(rate(vl_rows_ingested_total{observability_replica="b"}[1h]))
+              sum by (k8s_cluster_name)(rate(vl_rows_ingested_total{observability_replica="b"}[1h]))
             ) > 0.25
           for: 30m
           labels:
@@ -2865,9 +2865,9 @@ spec:
           expr: >-
             abs(
               1 -
-              sum(rate(vt_rows_ingested_total{observability_replica="a"}[1h]))
+              sum by (k8s_cluster_name)(rate(vt_rows_ingested_total{observability_replica="a"}[1h]))
               /
-              sum(rate(vt_rows_ingested_total{observability_replica="b"}[1h]))
+              sum by (k8s_cluster_name)(rate(vt_rows_ingested_total{observability_replica="b"}[1h]))
             ) > 0.25
           for: 30m
           labels:

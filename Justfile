@@ -119,7 +119,15 @@ dashboard-queries:
     DASHBOARD_VM=require go test ./tests -run 'AvailableMetrics|OperationalDashboard|TheAllowList' -v
 
 # Parse every VMRule expression on the REAL VictoriaMetrics / VictoriaLogs
-# binaries, at the versions charts/observability-stack pins (read from its
+# binaries, then hold the parsed rules to the semantic checks of
+# pkg/rulecheck/lint.go (aggregations keep the cluster label, every absent()
+# carries the per-cluster guard, no per-pod heartbeat, every self-alert
+# source is watched by SelfAlertSourceAbsent). Parsing proves a rule is
+# valid; the checks prove it is not one of the shapes releases 0.43.3,
+# 0.44.1, 0.45.1 and 0.46.0 had to fix. Intentional exceptions live in
+# DefaultAllowlist, each with its reason. `-require-source-absent` makes a
+# render without SelfAlertSourceAbsent a failure too (an estate that enables
+# it everywhere). The parse half: at the versions charts/observability-stack pins (read from its
 # vendored archives, so never written down twice). With no arguments, checks
 # the golden renders -- every rule the charts ship: platform-alerts, the
 # stack's own self-alerts and Watchdog, alert-ingress's. `just test`
@@ -146,6 +154,27 @@ rulecheck *paths:
       paths=(tests/golden)
     fi
     go run ./cmd/rulecheck "${paths[@]}"
+
+# Per-cluster rule coverage: which groups and rules each cluster does NOT
+# alert on, against every group and rule any of them renders. Here a
+# "cluster" is one golden render (tests/golden/<chart>/<case>.yaml), so the
+# report shows what each configuration leaves switched off; an estate runs
+# `rulecheck coverage` on its own per-cluster renders:
+#
+#   go run ./cmd/rulecheck coverage prod=rendered/prod.yaml dev=rendered/dev/
+#
+# Writes <out>/coverage.json and <out>/coverage.md (CI uploads both as the
+# `rulecheck-coverage` artifact and prints the markdown in the job
+# summary). Needs no parser binaries and no network.
+rulecheck-coverage out="rulecheck-coverage":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p {{ out }}
+    go run ./cmd/rulecheck coverage -format json -o {{ out }}/coverage.json tests/golden
+    go run ./cmd/rulecheck coverage -format markdown -o {{ out }}/coverage.md tests/golden
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+      head -c 900000 {{ out }}/coverage.md >> "$GITHUB_STEP_SUMMARY"
+    fi
 
 # Re-vendor one chart's pinned dependencies into its charts/ directory,
 # after moving a version in its Chart.yaml. The archives are committed on
