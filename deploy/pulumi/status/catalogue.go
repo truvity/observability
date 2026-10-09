@@ -178,7 +178,10 @@ func HostsByCompany(groups []HostGroup) map[string][]statusbox.CompanyHost {
 
 		for _, host := range names {
 			info := hosts[host]
-			list = append(list, statusbox.CompanyHost{Host: host, Component: info.component, Env: info.env, StatusPath: info.statusPath, ExpectStatus: info.expectStatus})
+			list = append(list, statusbox.CompanyHost{
+				Host: host, Component: info.component, Env: info.env,
+				StatusPath: info.statusPath, ExpectStatus: info.expectStatus,
+			})
 		}
 
 		out[company] = list
