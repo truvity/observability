@@ -423,6 +423,19 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### 0.66.1 → 0.67.0
+
+**`deploy/pulumi/status` / `pkg/statusbox/ec2`: `SSHArgs.HostCert` is a
+pointer.** A caller that set SSH passes `&preset` (or nil for SSH through
+opkssh alone, with a fixed host key from `SSHArgs.HostKeyParameter`, an
+SSM SecureString holding an OpenSSH-format private key). A stack without
+SSH builds unchanged. Turning SSH on replaces the box's security group
+once (its description changes) and rolls the instance; set the host-key
+parameter first, or the box keeps its own generated key until the next
+boot. `EC2Inputs.PrivatePort` (default 8081, unchanged) set to 80 moves
+the private page's security-group rule from 8081 to 80 and rolls the
+instance; update bookmarks and runbooks that name `:8081`.
+
 ### 0.39.0 → 0.40.0
 
 **`observability-rum`: `sourcemaps.sync` is gone, and the schema refuses
