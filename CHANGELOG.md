@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.63.2
+
+- Dependency updates.
+
 ## v0.64.0
 
 - **Added** `platform-alerts`: `groups.pulumiDrift` (off by default), three alerts over the gauges a scheduled job pushes once per run, `pulumi_stack_drift_changes{scope,stack}` and `pulumi_stack_diff_error{scope,stack}`: `PulumiDriftDetected` (changes planned for `for`, default 2d), `PulumiDiffFailing` (the preview itself failed for `for`) and `PulumiDriftSignalStale` (no sample for `staleAfter`, the deadman). The expressions read `last_over_time` over `lookback` because the series are pushed, not scraped. New values `groups.pulumiDrift.*`; the schema gains the key. Nothing renders unless the group is enabled, so existing installs do not move.
