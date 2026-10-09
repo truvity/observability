@@ -725,8 +725,10 @@ groups:
   # ingest, docs/external-ingest.md), so these rules read the latest sample
   # over `lookback` instead of an instant value:
   #   pulumi_stack_drift_changes{scope, stack}  planned creates + updates +
-  #                                              deletes + replaces; 0 when clean
-  #   pulumi_stack_diff_error{scope, stack}     1 when the preview itself failed
+  #                                              deletes + replaces; 0 when clean;
+  #                                              sent only when the preview worked
+  #   pulumi_stack_diff_error{scope, stack}     1 when the preview itself failed,
+  #                                              0 otherwise; sent for every stack
   # The labels are the program directory (`scope`) and the stack name, so
   # cardinality is the number of stacks.
   pulumiDrift:
@@ -749,4 +751,8 @@ groups:
     # -- How far back the deadman looks for a stack it should have seen.
     staleLookback: 7d
     staleSeverity: warning
+    # -- A runbook link for all three alerts, instead of the top-level
+    # `runbookBaseUrl` + the alert's name. For an estate whose runbook for
+    # this signal is one page. Empty keeps the convention.
+    runbookUrl: ""
     keepClusterLabel: false

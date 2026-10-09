@@ -21,31 +21,31 @@ spec:
         - alert: PulumiDriftDetected
           expr: >-
             max by (k8s_cluster_name, scope, stack) (last_over_time(pulumi_stack_drift_changes[36h])) > 0
-          for: 2d
+          for: 3d
           labels:
             severity: warning
           annotations:
-            summary: "Pulumi stack {{ $labels.scope }}/{{ $labels.stack }} has differed from its program for 2d"
+            summary: "Pulumi stack {{ $labels.scope }}/{{ $labels.stack }} has differed from its program for 3d"
             description: >-
               The nightly preview of this stack has planned changes on every run for
-              2d: the program and the state disagree, because a change was
+              3d: the program and the state disagree, because a change was
               merged and never applied or because something was edited by hand.
               The preview lists what.
-            runbook_url: "https://runbooks.example.com/PulumiDriftDetected"
+            runbook_url: "https://docs.example.com/pulumi-drift"
         # A preview that fails reports nothing about drift, so a stack that
         # cannot be previewed would stay green here for ever.
         - alert: PulumiDiffFailing
           expr: >-
             max by (k8s_cluster_name, scope, stack) (last_over_time(pulumi_stack_diff_error[36h])) > 0
-          for: 2d
+          for: 3d
           labels:
             severity: warning
           annotations:
-            summary: "The preview of Pulumi stack {{ $labels.scope }}/{{ $labels.stack }} has failed for 2d"
+            summary: "The preview of Pulumi stack {{ $labels.scope }}/{{ $labels.stack }} has failed for 3d"
             description: >-
               The nightly preview of this stack ends in an error on every run, so
               nothing is known about its drift. The job's log has the error.
-            runbook_url: "https://runbooks.example.com/PulumiDiffFailing"
+            runbook_url: "https://docs.example.com/pulumi-drift"
         # The deadman: a job that stops running pushes nothing, and the two
         # rules above go quiet with it. It reads the error gauge, which is sent
         # for every stack on every run (the drift gauge is sent only when the
@@ -63,4 +63,4 @@ spec:
               The nightly drift job has not reported this stack for more than
               36h, so the drift alerts cannot see it. Check the
               workflow's last runs.
-            runbook_url: "https://runbooks.example.com/PulumiDriftSignalStale"
+            runbook_url: "https://docs.example.com/pulumi-drift"
