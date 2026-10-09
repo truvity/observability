@@ -76,6 +76,7 @@ func (a Args) params(box names, gatusSHA map[string]string) (string, error) {
 	}
 
 	b.WriteString(shellArray("SB_INSTANCES", insts))
+	b.WriteString(a.selfRegisterParams())
 
 	for _, arch := range architectures {
 		b.WriteString(shellLine("SB_GATUS_URL_"+arch.key, statusbox.ReleaseURL(a.Version, gatusAsset(arch))))
@@ -136,6 +137,14 @@ func (a Args) bootstrap(box names, gatusSHA map[string]string) (string, error) {
 	// Before the install phase: that is what starts the boot phase, which
 	// completes the lifecycle hook.
 	b.WriteString(ssh)
+
+	selfRegister, err := a.selfRegisterBootstrap()
+	if err != nil {
+		return "", err
+	}
+
+	// Before the install phase: its daemon-reload picks the drop-in up.
+	b.WriteString(selfRegister)
 
 	fmt.Fprintf(&b, "cat > /usr/local/sbin/statusbox-setup <<'STATUSBOX_SETUP'\n%sSTATUSBOX_SETUP\n", ensureNewline(setupScript))
 	b.WriteString("chmod 0755 /usr/local/sbin/statusbox-setup\n")

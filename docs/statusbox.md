@@ -504,6 +504,23 @@ ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ecdsa ec2-user@<host>
 
 `https://<issuer>` is `SSH.OPKSSH.Issuer`, and `<host>` is the instance's private DNS name (the host-certificate principal), reachable from one of `IngressCIDRs`. `sluisctl ssh known-hosts` trusts the OpenBAO host CA, so the first connection needs no fingerprint prompt.
 
+### Self-registered DNS name (optional)
+
+`Args.SelfRegister` (`EC2Inputs.SelfRegister`, an `*ec2.SelfRegisterArgs`) keeps a stable name pointing at the current in-service instance. The private address changes on every instance replacement and every warm-pool takeover, so the box writes it into a Route 53 hosted zone itself, at every boot into service. Nil changes nothing: the user-data, the role policy and every golden are byte-identical.
+
+- `RoleARN`: the role to assume, usually in the account that owns the zone. It is the caller's to create. It must trust exactly the instance role (`<prefix>-status`), and should be limited to changing the one record (`route53:ChangeResourceRecordSets` on the zone, with the `route53:ChangeResourceRecordSetsNormalizedRecordNames`, `...RecordTypes` and `...Actions` condition keys pinned to the record name, `A` and `UPSERT`). `GetChange` is not needed: the box does not wait for the change to propagate.
+- `HostedZoneID`: the zone that holds the record (a private zone works).
+- `RecordName`: the one A record, lower case, no trailing dot.
+- `TTL`: seconds; 0 means 60.
+
+**IAM.** The instance role gains one statement, `sts:AssumeRole` on exactly `RoleARN`. If the role carries a permissions boundary, the boundary must allow `sts:AssumeRole`.
+
+**What the box does.** The bootstrap writes `/usr/local/sbin/statusbox-self-register` and a systemd drop-in on `statusbox-boot.service` with `ExecStartPost=-/usr/bin/timeout 120 ...`. `ExecStartPost` runs after the boot phase has completed the lifecycle hook, so the step can never delay InService, and the leading `-` makes its exit status irrelevant. The script does nothing unless IMDS says the target lifecycle state is `InService`, so a warm-pool instance that is only being pre-warmed never registers; the instance that takes over registers on its own boot. It reads the private IP from IMDSv2, assumes `RoleARN` with the AWS CLI that Amazon Linux 2023 ships, and UPSERTs the A record, three attempts five seconds apart. Failures are logged (to the journal, as `statusbox-self-register`) and swallowed; nothing secret is logged or written to disk, the temporary credentials live in the process environment. UPSERT on every boot means a failover heals the name. The old instance is not deregistered: the name always names the instance that booted last into service.
+
+**Cost.** About 1.7 KB of user-data (12,222 bytes against 10,498 in the test fixture, limit 16,384), asserted by a test.
+
+**Activation order.** Create the role in the zone's account first, then roll the new `SelfRegister` into the box. A box that boots before the role exists logs three failed attempts and carries on; the next boot (or a manual run of the script) registers it.
+
 ## Immutable, by construction
 
 The provider's user-data is applied once, at creation. So a change to
