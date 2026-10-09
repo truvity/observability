@@ -128,6 +128,15 @@ func (a Args) bootstrap(box names, gatusSHA map[string]string) (string, error) {
 		fmt.Fprintf(&b, "cat > /opt/statusbox/staged/%s.yaml.gz.b64 <<'%s'\n%s\n%s\n\n", inst.Name, delim, gz, delim)
 	}
 
+	ssh, err := a.sshBootstrap()
+	if err != nil {
+		return "", err
+	}
+
+	// Before the install phase: that is what starts the boot phase, which
+	// completes the lifecycle hook.
+	b.WriteString(ssh)
+
 	fmt.Fprintf(&b, "cat > /usr/local/sbin/statusbox-setup <<'STATUSBOX_SETUP'\n%sSTATUSBOX_SETUP\n", ensureNewline(setupScript))
 	b.WriteString("chmod 0755 /usr/local/sbin/statusbox-setup\n")
 	b.WriteString("exec /usr/local/sbin/statusbox-setup install\n")

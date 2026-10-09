@@ -35,7 +35,7 @@ type Box struct {
 	Role            *iam.Role
 	InstanceProfile *iam.InstanceProfile
 	// SecurityGroup admits nothing in except PrivateIngressCIDRs on the
-	// private instance's port.
+	// private instance's port, and SSH.IngressCIDRs on TCP 22 when SSH is set.
 	SecurityGroup *awsec2.SecurityGroup
 
 	// UserData is what the launch template carries (gzip-wrapped); it holds no
@@ -266,7 +266,7 @@ func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOp
 }
 
 // securityGroup admits nothing in but PrivateIngressCIDRs to the private
-// instances' ports, and lets everything out (probes, S3, SSM, the tunnel).
+// instances' ports and, with SSH, SSH.IngressCIDRs to TCP 22, and lets everything out (probes, S3, SSM, the tunnel).
 func (a Args) securityGroup(ctx *pulumi.Context, name string, physical names, childOpts []pulumi.ResourceOption) (*awsec2.SecurityGroup, error) {
 	var ingress awsec2.SecurityGroupIngressArray
 
@@ -289,9 +289,30 @@ func (a Args) securityGroup(ctx *pulumi.Context, name string, physical names, ch
 		})
 	}
 
+	description := "statusbox: no inbound except the private page from the listed networks"
+
+	if cidrs := a.sshCIDRs(); len(cidrs) > 0 {
+		// A security group's description cannot change in place, so it moves
+		// only for a box that turns SSH on (that box's group is replaced).
+		description = "statusbox: no inbound except the private page and SSH from the listed networks"
+
+		sshCIDRs := make(pulumi.StringArray, len(cidrs))
+		for i, c := range cidrs {
+			sshCIDRs[i] = pulumi.String(c)
+		}
+
+		ingress = append(ingress, awsec2.SecurityGroupIngressArgs{
+			Description: pulumi.String("SSH (opkssh and host certificates), from the listed networks"),
+			Protocol:    pulumi.String("tcp"),
+			FromPort:    pulumi.Int(sshPort),
+			ToPort:      pulumi.Int(sshPort),
+			CidrBlocks:  sshCIDRs,
+		})
+	}
+
 	sg, err := awsec2.NewSecurityGroup(ctx, name, &awsec2.SecurityGroupArgs{
 		Name:        pulumi.String(physical.asg),
-		Description: pulumi.String("statusbox: no inbound except the private page from the listed networks"),
+		Description: pulumi.String(description),
 		VpcId:       a.VPCID,
 		Ingress:     ingress,
 		Egress: awsec2.SecurityGroupEgressArray{
