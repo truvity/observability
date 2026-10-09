@@ -42,8 +42,8 @@ func lint(t *testing.T, o rulecheck.LintOptions, group string, alerts ...string)
 
 func checks(vs []rulecheck.Violation) []string {
 	var out []string
-	for _, v := range vs {
-		out = append(out, v.Check+":"+v.Name)
+	for i := range vs {
+		out = append(out, vs[i].Check+":"+vs[i].Name)
 	}
 
 	return out
@@ -98,7 +98,15 @@ spec:
 	assert.NotEmpty(t, vs, "an expression naming the configured label makes the VMRule cluster-aware")
 }
 
-const guarded = `(group by (k8s_cluster_name) (max_over_time(up{job="x", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{job="x", k8s_cluster_name!=""})) or (absent(up{job="x"}) unless on() group(max_over_time(up{job="x"}[1d])))`
+const (
+	lookbackSide = `group by (k8s_cluster_name) (max_over_time(up{job="x", k8s_cluster_name!=""}[1d]))`
+	currentSide  = `group by (k8s_cluster_name) (up{job="x", k8s_cluster_name!=""})`
+	lookbackBare = `group by (k8s_cluster_name) (max_over_time(up{job="x"}[1d]))`
+	currentBare  = `group by (k8s_cluster_name) (up{job="x"})`
+	wholeStore   = `(absent(up{job="x"}) unless on() group(max_over_time(up{job="x"}[1d])))`
+
+	guarded = `(` + lookbackSide + ` unless ` + currentSide + `) or ` + wholeStore
+)
 
 // v0.44.1: the per-cluster absent guard. A bare absent() is false while any
 // cluster still exports the series.
@@ -108,12 +116,15 @@ func TestAbsentNeedsThePerClusterGuard(t *testing.T) {
 		"BareWithComparison", `absent(up{job="x"} == 1)`,
 		"WholeStoreOnly", `absent(up{job="x"}) unless on() group(max_over_time(up{job="x"}[1d]))`,
 		"Guarded", guarded,
-		"GuardNoLabelFilter", `(group by (k8s_cluster_name) (max_over_time(up{job="x"}[1d])) unless group by (k8s_cluster_name) (up{job="x"})) or (absent(up{job="x"}) unless on() group(max_over_time(up{job="x"}[1d])))`,
-		"GuardOneSideLax", `(group by (k8s_cluster_name) (max_over_time(up{job="x", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (up{job="x"})) or (absent(up{job="x"}) unless on() group(max_over_time(up{job="x"}[1d])))`,
+		"GuardNoLabelFilter", `(`+lookbackBare+` unless `+currentBare+`) or `+wholeStore,
+		"GuardOneSideLax", `(`+lookbackSide+` unless `+currentBare+`) or `+wholeStore,
 		"GuardedLabelled", `label_replace(`+guarded+`, "source", "x", "", "")`,
 	)
 
-	assert.ElementsMatch(t, []string{"absent-guard:Bare", "absent-guard:BareWithComparison", "absent-guard:WholeStoreOnly", "absent-guard:GuardNoLabelFilter", "absent-guard:GuardOneSideLax"}, checks(vs))
+	assert.ElementsMatch(t, []string{
+		"absent-guard:Bare", "absent-guard:BareWithComparison", "absent-guard:WholeStoreOnly",
+		"absent-guard:GuardNoLabelFilter", "absent-guard:GuardOneSideLax",
+	}, checks(vs))
 }
 
 // v0.43.3: a heartbeat is delivered to ONE replica behind the Service.
@@ -160,7 +171,9 @@ func selfAlerts(sourceAbsent string) []string {
 func srcAbsent(names ...string) string {
 	var parts []string
 	for _, n := range names {
-		parts = append(parts, fmt.Sprintf(`label_replace((group by (k8s_cluster_name) (max_over_time(%[1]s{k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (%[1]s{k8s_cluster_name!=""})) or (absent(%[1]s) unless on() group(max_over_time(%[1]s[1d]))), "source", "%[1]s", "", "")`, n))
+		parts = append(parts, fmt.Sprintf(`label_replace((group by (k8s_cluster_name) (max_over_time(%[1]s{k8s_cluster_name!=""}[1d]))`+
+			` unless group by (k8s_cluster_name) (%[1]s{k8s_cluster_name!=""}))`+
+			` or (absent(%[1]s) unless on() group(max_over_time(%[1]s[1d]))), "source", "%[1]s", "", "")`, n))
 	}
 
 	return strings.Join(parts, " or ")
@@ -218,8 +231,8 @@ func TestRenderedGoldensPassTheSemanticLint(t *testing.T) {
 	vs, err := rulecheck.Lint(rules, rulecheck.LintOptions{})
 	require.NoError(t, err)
 
-	for _, v := range vs {
-		t.Error(v.String())
+	for i := range vs {
+		t.Error(vs[i].String())
 	}
 }
 
