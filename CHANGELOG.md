@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.66.0
 
 - **Added** `pkg/statusbox/ec2`: optional `Args.SelfRegister` (`deploy/pulumi/status`: `EC2Inputs.SelfRegister`, an `*ec2.SelfRegisterArgs` with `RoleARN`, `HostedZoneID`, `RecordName` and `TTL`, default 60). The instance role gains exactly one `sts:AssumeRole`, on `RoleARN`. At every boot into service the box reads its private IP from IMDSv2, assumes that role with the AWS CLI and UPSERTs the A record, three attempts, fail-safe. It runs as an `ExecStartPost` of `statusbox-boot.service`, after the lifecycle hook is completed, so it never delays InService, and only when the target lifecycle state is `InService`, so warm-pool pre-warming never registers. The name therefore follows every replacement and warm-spare takeover. About 1.7 KB of user-data. The cross-account role (trusting the instance role, limited to that one record) must exist before a box boots with the feature; otherwise the box logs the failures and the name stays stale. Nil changes nothing and every golden is byte-identical. See `docs/statusbox.md`, "Self-registered DNS name".
 
