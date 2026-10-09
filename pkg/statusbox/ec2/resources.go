@@ -7,6 +7,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/autoscaling"
 	awsec2 "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -37,6 +38,11 @@ type Box struct {
 	// SecurityGroup admits nothing in except PrivateIngressCIDRs on the
 	// private instance's port, and SSH.IngressCIDRs on TCP 22 when SSH is set.
 	SecurityGroup *awsec2.SecurityGroup
+
+	// ConfigObjects are the S3 objects holding the rendered Gatus
+	// configurations (and the extra CA bundle): content-addressed, in
+	// <Bucket>/<BucketPrefix>/config/. The box fetches them at its first boot.
+	ConfigObjects []*s3.BucketObjectv2
 
 	// UserData is what the launch template carries (gzip-wrapped); it holds no
 	// secret.
@@ -154,6 +160,23 @@ func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOp
 
 	box.SecurityGroup = sg
 
+	// The rendered files the user-data only names by digest. The launch
+	// template and the group depend on them: no instance may launch before the
+	// objects it will fetch exist.
+	objects, err := a.configBucketObjects(ctx, name, childOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	box.ConfigObjects = objects
+
+	objectDeps := make([]pulumi.Resource, len(objects))
+	for i, o := range objects {
+		objectDeps[i] = o
+	}
+
+	childOpts = append(childOpts, pulumi.DependsOn(objectDeps))
+
 	// The image is looked up from the public SSM parameter at deploy time and
 	// pinned in the launch template: a newer Amazon Linux release is a visible
 	// diff and a rolling refresh, never a silent change on the next launch.
@@ -263,6 +286,41 @@ func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOp
 	}
 
 	return box, nil
+}
+
+// configBucketObjects creates one object per configObject. Content-addressed:
+// a changed file is a new key (and a new digest in the user-data), the old
+// object goes once nothing references it. Encrypted like the replicas: with the
+// caller's key when one is given, else with the bucket's S3-managed keys. No
+// secret is in any of them (see configObject).
+func (a Args) configBucketObjects(ctx *pulumi.Context, name string, childOpts []pulumi.ResourceOption) ([]*s3.BucketObjectv2, error) {
+	var out []*s3.BucketObjectv2
+
+	for _, o := range a.bucketObjects() {
+		args := &s3.BucketObjectv2Args{
+			Bucket:      pulumi.String(a.Bucket),
+			Key:         pulumi.String(o.Key(a.BucketPrefix)),
+			Content:     pulumi.String(o.Content),
+			ContentType: pulumi.String("text/plain"),
+			Tags:        a.tags(name + "-" + o.Name),
+		}
+
+		if a.KMSKeyARN != "" {
+			args.ServerSideEncryption = pulumi.String("aws:kms")
+			args.KmsKeyId = pulumi.String(a.KMSKeyARN)
+		} else {
+			args.ServerSideEncryption = pulumi.String("AES256")
+		}
+
+		obj, err := s3.NewBucketObjectv2(ctx, name+"-"+o.resourceSuffix(), args, childOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): config object %q: %w", name, o.Name, err)
+		}
+
+		out = append(out, obj)
+	}
+
+	return out, nil
 }
 
 // securityGroup admits nothing in but PrivateIngressCIDRs to the private

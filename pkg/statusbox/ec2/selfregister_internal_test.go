@@ -140,5 +140,7 @@ func TestUserDataWithSelfRegisterIsWithinTheLimit(t *testing.T) {
 
 	t.Logf("user-data bytes: %d without, %d with self-register, %d with SSH and self-register (limit %d)", len(without), len(plain), len(with), userDataLimit)
 	require.Less(t, len(with), userDataLimit)
-	require.Less(t, len(plain)-len(without), 2*1024)
+	// The script is no longer compressed together with setup.sh (that travels
+	// as an S3 object), so its delta is its own gzip+base64.
+	require.Less(t, len(plain)-len(without), 3*1024)
 }

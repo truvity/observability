@@ -3,9 +3,11 @@
 # the instance's user-data) inside a plain amazonlinux:2023 container, the OS the
 # instance boots, and proves what can be proved without an instance:
 #
-#   - the user-data the Go package renders (its golden file) stages params.sh,
-#     the Gatus Configs and the setup script, and the script's install functions
-#     run on AL2023: the pinned Litestream and cloudflared downloads match their
+#   - the user-data the Go package renders (its golden file) writes params.sh and
+#     fetches the setup script from the bucket, refusing a wrong digest (the
+#     setup script and the Gatus Configs are S3 objects; a shim `aws` serves a
+#     directory standing in for the bucket), fetch_configs stages the Configs
+#     the same verified way, and the script's install functions run on AL2023: the pinned Litestream and cloudflared downloads match their
 #     checksums, the units and the Litestream configs are written, the units pass
 #     `systemd-analyze verify`, Litestream accepts its config;
 #   - the listener drop-in's content is the expected one (that Gatus merges it
@@ -29,6 +31,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 golden="$root/pkg/statusbox/ec2/testdata/bootstrap.golden.sh"
+setup="$root/pkg/statusbox/ec2/setup.sh"
 
 # STATUSBOX_EC2_IMAGE lets a laptop reuse an image that already has the packages
 # below (dnf is slow on a loaded machine); CI always pulls the real one.
@@ -39,6 +42,7 @@ echo "hack/statusbox-ec2-ci.sh: running the EC2 setup script inside amazonlinux:
 docker run --rm -i \
   "${pull[@]}" \
   -v "$golden:/golden.sh:ro" \
+  -v "$setup:/setup.sh:ro" \
   "${STATUSBOX_EC2_IMAGE:-amazonlinux:2023}" \
   bash -s <<'INNER'
 set -euo pipefail
@@ -48,17 +52,77 @@ ok() { echo "ok: $*"; }
 
 dnf install -y --setopt=install_weak_deps=False shadow-utils tar gzip sqlite systemd findutils >/dev/null
 
+# --- the S3 bucket and the metadata service, as shims for the fetches below.
+mkdir -p /early /bucket/box/config
+cat >/early/aws <<'SHIM'
+#!/bin/bash
+echo "aws $*" >>/tmp/early-calls
+[ "$1 $2" = "s3 cp" ] || exit 0
+for a in "$@"; do case "$a" in s3://*) src="${a#s3://*/}" ;; *) dest="$a" ;; esac; done
+cp "/bucket/$src" "$dest"
+SHIM
+cat >/early/curl <<'SHIM'
+#!/bin/bash
+for a in "$@"; do url="$a"; done
+case "$url" in
+*/api/token) echo tok ;;
+*/placement/region) echo eu-west-1 ;;
+*/instance-id) echo i-0example ;;
+*) exit 22 ;;
+esac
+SHIM
+printf '#!/bin/sh\nexit 0\n' >/early/sleep
+chmod +x /early/*
+PATH_ORIG="$PATH"
+
 # --- stage what the user-data stages: everything but its last line, the exec.
+# The setup script comes from the "bucket", pinned by the digest in params.sh.
 sed '$d' /golden.sh >/tmp/stage.sh
-bash /tmp/stage.sh
-[ -x /usr/local/sbin/statusbox-setup ] || fail "the setup script was not written"
+setup_key="$(sed -n "s/^SB_SETUP_KEY='\(.*\)'$/\1/p" /golden.sh)"
+[ -n "$setup_key" ] || fail "the golden names no setup script object"
+cp /setup.sh "/bucket/$setup_key"
+PATH="/early:$PATH_ORIG" bash /tmp/stage.sh
+[ -x /usr/local/sbin/statusbox-setup ] || fail "the setup script was not fetched"
 [ -f /etc/statusbox/params.sh ] || fail "params.sh was not written"
-[ -f /opt/statusbox/staged/ops.yaml.gz.b64 ] || fail "a Gatus Config was not staged"
-ok "user-data stages params.sh, the Configs and the setup script"
+ok "user-data writes params.sh and fetches the verified setup script"
+
+# A setup script with the wrong digest is refused, and the launch abandoned.
+rm -f /usr/local/sbin/statusbox-setup /tmp/early-calls
+echo '# tampered' >>"/bucket/$setup_key"
+if PATH="/early:$PATH_ORIG" bash /tmp/stage.sh 2>/dev/null; then
+  fail "a setup script with the wrong digest was accepted"
+fi
+[ ! -e /usr/local/sbin/statusbox-setup ] || fail "a tampered setup script was installed"
+grep -q 'complete-lifecycle-action.*ABANDON' /tmp/early-calls || fail "a tampered setup script must abandon the launch"
+cp /setup.sh "/bucket/$setup_key"
+PATH="/early:$PATH_ORIG" bash /tmp/stage.sh
+ok "a wrong setup digest is refused and abandons the launch"
 
 export STATUSBOX_SOURCE_ONLY=1
 # shellcheck disable=SC1091
 . /usr/local/sbin/statusbox-setup
+load_params
+
+# The Configs are objects too: serve placeholders under their own digests and
+# let fetch_configs stage them; a digest it was not given is refused.
+SB_CONFIGS=()
+for n in ops ops-breakglass; do
+  printf 'storage:\n  type: sqlite\n  path: /data/ops.db\n# %s\n' "$n" >"/tmp/$n.yaml"
+  sha="$(sha256sum "/tmp/$n.yaml" | cut -d' ' -f1)"
+  cp "/tmp/$n.yaml" "/bucket/box/config/$sha.yaml"
+  SB_CONFIGS+=("$n:$sha:box/config/$sha.yaml")
+done
+PATH="/early:$PATH_ORIG" fetch_configs
+{ [ -f /opt/statusbox/staged/ops ] && [ -f /opt/statusbox/staged/ops-breakglass ]; } || fail "a Gatus Config was not staged"
+ok "fetch_configs stages the verified Configs"
+rm -f /opt/statusbox/staged/ops
+SB_CONFIGS=("ops:$(printf 'x%.0s' $(seq 64)):box/config/$sha.yaml")
+if PATH="/early:$PATH_ORIG" fetch_configs 2>/dev/null; then
+  fail "fetch_configs accepted a wrong digest"
+fi
+[ ! -e /opt/statusbox/staged/ops ] || fail "an unverified Config was staged"
+cp "/tmp/ops.yaml" /opt/statusbox/staged/ops
+ok "a Config with the wrong digest is refused and not staged"
 load_params
 
 # The golden's Gatus release does not exist: a stub binary with its checksum
