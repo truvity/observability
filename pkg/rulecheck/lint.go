@@ -70,7 +70,9 @@ type Allow struct {
 var DefaultAllowlist = []Allow{
 	{
 		Check: CheckClusterLabel, Alert: "WritePathDead", Resource: "platform-alerts",
-		Reason: "Sums ONE store's own rows counter across that store's processes; a per-cluster split would also break the `or vector(0)` deadman. The store is the subject, not a cluster (the same exemption tests/platform_alerts_cluster_test.go carries).",
+		Reason: "Sums ONE store's own rows counter across that store's processes; a per-cluster split would also break the " +
+			"`or vector(0)` deadman. The store is the subject, not a cluster " +
+			"(the same exemption tests/platform_alerts_cluster_test.go carries).",
 	},
 	{
 		Check: CheckSourceAbsent, Alert: "SlackNotificationsFailing", Contains: "alertmanager_notifications_failed_total",
@@ -78,7 +80,9 @@ var DefaultAllowlist = []Allow{
 	},
 	{
 		Check: CheckSourceAbsent, Alert: sourceAbsentRule, Contains: "alertmanager_notifications_failed_total",
-		Reason: "SlackNotificationsFailing reads Alertmanager's own counter, a fixed name the chart states, not a metric name set under `selfAlerts`; SelfAlertSourceAbsent watches the configured names (v0.46.0). Alertmanager's absence is judged by the platform-alerts scrape rules, not by a self-alert source.",
+		Reason: "SlackNotificationsFailing reads Alertmanager's own counter, a fixed name the chart states, not a metric name " +
+			"set under `selfAlerts`; SelfAlertSourceAbsent watches the configured names (v0.46.0). Alertmanager's absence " +
+			"is judged by the platform-alerts scrape rules, not by a self-alert source.",
 	},
 }
 
@@ -148,7 +152,9 @@ func Lint(rules []Rule, o LintOptions) ([]Violation, error) {
 		out = append(out, Violation{Rule: r, Check: check, Msg: fmt.Sprintf(format, a...)})
 	}
 
-	for _, p := range all {
+	for i := range all {
+		p := &all[i]
+
 		if aware[resKey{p.Source, p.Resource}] {
 			clusterLabelCheck(p.e, cl, func(f string, a ...any) { add(p.Rule, CheckClusterLabel, f, a...) })
 			absentGuardCheck(p.e, cl, func(f string, a ...any) { add(p.Rule, CheckAbsentGuard, f, a...) })
@@ -162,13 +168,17 @@ func Lint(rules []Rule, o LintOptions) ([]Violation, error) {
 	// source-absent works per VMRule, over the self-alert group(s).
 	byRes := map[resKey][]Rule{}
 
-	for _, p := range all {
-		k := resKey{p.Source, p.Resource}
-		byRes[k] = append(byRes[k], p.Rule)
+	for i := range all {
+		k := resKey{all[i].Source, all[i].Resource}
+		byRes[k] = append(byRes[k], all[i].Rule)
 	}
 
 	for _, rs := range byRes {
-		for _, m := range sourceAbsentGaps(rs) {
+		gaps := sourceAbsentGaps(rs)
+
+		for i := range gaps {
+			m := &gaps[i]
+
 			if m.noRule && !o.RequireSourceAbsent {
 				continue
 			}
@@ -203,7 +213,9 @@ func filterAllowed(vs []Violation, allow []Allow) []Violation {
 	var out []Violation
 
 next:
-	for _, v := range vs {
+	for i := range vs {
+		v := &vs[i]
+
 		for _, a := range allow {
 			if a.Check == v.Check && a.Alert == v.Name &&
 				(a.Resource == "" || strings.HasSuffix(v.Resource, a.Resource)) &&
@@ -212,7 +224,7 @@ next:
 			}
 		}
 
-		out = append(out, v)
+		out = append(out, *v)
 	}
 
 	return out
@@ -408,12 +420,15 @@ func absentGuardCheck(e metricsql.Expr, cl string, report func(string, ...any)) 
 
 		switch {
 		case perCluster && lax:
-			report(`the per-cluster arm of this absent() guard does not require %s!="" on both sides: a stale series without the label holds the alert true on a healthy target`, cl)
+			report(`the per-cluster arm of this absent() guard does not require %s!="" on both sides: `+
+				"a stale series without the label holds the alert true on a healthy target", cl)
 		case perCluster:
 		case whole:
 			report("absent() has the whole-store lookback guard but no per-cluster arm: one cluster going dark is silent while another still exports the series")
 		default:
-			report("absent() has no per-cluster guard: it is false while any cluster still exports the series. Use `(group by (%s) (max_over_time(sel{%s!=\"\"}[lookback])) unless group by (%s) (sel{%s!=\"\"})) or (absent(sel) unless on() group(max_over_time(sel[lookback])))`", cl, cl, cl, cl)
+			report("absent() has no per-cluster guard: it is false while any cluster still exports the series. "+
+				"Use `(group by (%s) (max_over_time(sel{%s!=\"\"}[lookback])) unless group by (%s) (sel{%s!=\"\"})) "+
+				"or (absent(sel) unless on() group(max_over_time(sel[lookback])))`", cl, cl, cl, cl)
 		}
 	})
 }
@@ -504,7 +519,8 @@ func podHeartbeatCheck(r Rule, e metricsql.Expr, report func(string, ...any)) {
 		switch t := n.(type) {
 		case *metricsql.AggrFuncExpr:
 			if strings.EqualFold(t.Modifier.Op, "by") && (has(t.Modifier.Args, "pod") || has(t.Modifier.Args, "instance")) {
-				report("%s is keyed on pod identity: `by (%s)`. A heartbeat or absent alert must sum the replicas (`sum without (pod, instance) (...)`)", t.Name, strings.Join(t.Modifier.Args, ", "))
+				report("%s is keyed on pod identity: `by (%s)`. "+
+					"A heartbeat or absent alert must sum the replicas (`sum without (pod, instance) (...)`)", t.Name, strings.Join(t.Modifier.Args, ", "))
 			}
 		case *metricsql.MetricExpr:
 			if !hb {
@@ -522,7 +538,8 @@ func podHeartbeatCheck(r Rule, e metricsql.Expr, report func(string, ...any)) {
 				}
 			}
 
-			report("heartbeat series %s is evaluated per pod: wrap it in `sum without (pod, instance) (...)`, or the quieter replica pages while heartbeats arrive", selectorName(t))
+			report("heartbeat series %s is evaluated per pod: wrap it in `sum without (pod, instance) (...)`, "+
+				"or the quieter replica pages while heartbeats arrive", selectorName(t))
 		}
 	})
 }
@@ -671,7 +688,8 @@ func sourceAbsentGaps(rs []Rule) []sourceGap {
 		for _, n := range names {
 			r := firstRule(rs, sources[n][0])
 			out = append(out, sourceGap{rule: r, noRule: true,
-				msg: fmt.Sprintf("self-alert source %s (read by %s) has no sourceAbsent coverage: no SelfAlertSourceAbsent rule is rendered (selfAlerts.sourceAbsent.enabled)", n, strings.Join(sources[n], ", "))})
+				msg: fmt.Sprintf("self-alert source %s (read by %s) has no sourceAbsent coverage: "+
+					"no SelfAlertSourceAbsent rule is rendered (selfAlerts.sourceAbsent.enabled)", n, strings.Join(sources[n], ", "))})
 		}
 
 		return out
