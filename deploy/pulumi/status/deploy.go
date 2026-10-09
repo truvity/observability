@@ -130,6 +130,11 @@ type (
 		// the instance role carries; empty means none.
 		PermissionsBoundary string
 
+		// SessionManager attaches AmazonSSMManagedInstanceCore to the
+		// instance role for an SSM Session Manager shell; false changes
+		// nothing.
+		SessionManager bool
+
 		// InstanceType defaults to the package's (t4g.nano).
 		InstanceType string
 
@@ -329,6 +334,7 @@ func deployEC2(c *pulumi.Context, logger *slog.Logger, in Inputs, instances []st
 		BucketPrefix:        in.EC2.BucketPrefix,
 		KMSKeyARN:           in.EC2.KMSKeyARN,
 		PermissionsBoundary: in.EC2.PermissionsBoundary,
+		SessionManager:      in.EC2.SessionManager,
 		InstanceType:        in.EC2.InstanceType,
 		Provider:            in.BoxProvider,
 	}
