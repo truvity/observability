@@ -117,6 +117,12 @@ type Args struct {
 	// a role without its boundary needs it.
 	PermissionsBoundary string
 
+	// SessionManager attaches the AWS managed policy
+	// AmazonSSMManagedInstanceCore to the instance role, so the SSM agent
+	// Amazon Linux 2023 ships registers the instance and Session Manager can
+	// open a break-glass shell. False (the default) leaves the role as it was.
+	SessionManager bool
+
 	// InstanceType defaults to DefaultInstanceType. The architecture follows
 	// from it: a Graviton family is arm64, anything else amd64.
 	InstanceType string

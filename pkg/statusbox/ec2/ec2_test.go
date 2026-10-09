@@ -275,3 +275,17 @@ func TestRoleHasNoPermissionsBoundaryByDefault(t *testing.T) {
 	role := run(t, validArgs()).only(t, "aws:iam/role:Role").Mappable()
 	require.Nil(t, role["permissionsBoundary"])
 }
+
+// SessionManager attaches the AWS managed SSM core policy, built from the
+// partition, and nothing is attached otherwise.
+func TestSessionManagerAttachesTheManagedPolicyOnlyWhenSet(t *testing.T) {
+	const kind = "aws:iam/rolePolicyAttachment:RolePolicyAttachment"
+
+	a := validArgs()
+	a.SessionManager = true
+
+	att := run(t, a).only(t, kind).Mappable()
+	require.Equal(t, "arn:"+part+":iam::"+part+":policy/AmazonSSMManagedInstanceCore", att["policyArn"])
+
+	require.Empty(t, run(t, validArgs()).resources[kind])
+}

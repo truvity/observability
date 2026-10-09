@@ -127,6 +127,15 @@ func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOp
 
 	box.Role = role
 
+	if a.SessionManager {
+		if _, err := iam.NewRolePolicyAttachment(ctx, name+"-ssm-core", &iam.RolePolicyAttachmentArgs{
+			Role:      role.Name,
+			PolicyArn: pulumi.String("arn:" + partition + ":iam::" + partition + ":policy/AmazonSSMManagedInstanceCore"),
+		}, childOpts...); err != nil {
+			return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): Session Manager policy: %w", name, err)
+		}
+	}
+
 	profile, err := iam.NewInstanceProfile(ctx, name, &iam.InstanceProfileArgs{
 		Name: pulumi.String(physical.role),
 		Role: role.Name,
