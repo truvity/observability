@@ -239,6 +239,37 @@ into the same `<release>-platform-alerts-logs` VMRule as `groups.podSecurity`.
 | `severity` | string | `warning` | Severity label. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 
+### `groups.pulumiDrift`
+
+Off by default. Infrastructure-as-code drift, from a scheduled job that
+previews every Pulumi stack and pushes two gauges per stack **once per run**
+(OTLP through the store's [external ingest](external-ingest.md)); the rules
+therefore read the latest sample over `lookback`, not an instant value. The
+labels are the program directory (`scope`) and the stack name, so cardinality
+is the number of stacks.
+
+| Series | Meaning |
+|---|---|
+| `pulumi_stack_drift_changes{scope, stack}` | Planned creates, updates, deletes and replaces; `0` when the stack is clean. |
+| `pulumi_stack_diff_error{scope, stack}` | `1` when the preview itself failed, `0` otherwise. |
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | bool | `false` | Render the group. |
+| `lookback` | duration | `36h` | How far back the latest sample counts: a nightly job plus a late run. |
+| `for` | duration | `2d` | How long a gauge must stay above zero before `PulumiDriftDetected` and `PulumiDiffFailing` fire. |
+| `severity` | enum | `warning` | Severity of `PulumiDriftDetected`. |
+| `errorSeverity` | enum | `warning` | Severity of `PulumiDiffFailing`. |
+| `staleAfter` | duration | `36h` | `PulumiDriftSignalStale` fires for a stack last seen longer ago than this. |
+| `staleLookback` | duration | `7d` | How far back the deadman looks; a stack unseen for longer ages out. |
+| `staleSeverity` | enum | `warning` | Severity of `PulumiDriftSignalStale`. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
+
+Alerts: `max by (scope, stack) (last_over_time(pulumi_stack_drift_changes[lookback])) > 0`
+for `for`; the same over `pulumi_stack_diff_error`; and
+`time() - max by (scope, stack) (tlast_over_time(pulumi_stack_drift_changes[staleLookback])) > staleAfter`,
+the deadman for a job that stopped running.
+
 ### `groups.nodeClaims`
 
 Off by default. For a cluster whose nodes Karpenter provisions (including
