@@ -104,8 +104,9 @@ func Coverage(clusters []ClusterInput, catalog []Rule) Report {
 		}
 
 		for _, rs := range byRes {
-			for _, gap := range sourceAbsentGaps(rs) {
-				cc.UncoveredSelfAlertSources = append(cc.UncoveredSelfAlertSources, gap.msg)
+			gaps := sourceAbsentGaps(rs)
+			for i := range gaps {
+				cc.UncoveredSelfAlertSources = append(cc.UncoveredSelfAlertSources, gaps[i].msg)
 			}
 		}
 
@@ -132,11 +133,14 @@ func (r Report) WriteJSON(w io.Writer) error {
 func (r Report) WriteMarkdown(w io.Writer) error {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "## rulecheck coverage\n\nCatalog: %d groups, %d rules. A group or rule is *disabled* for a cluster when the catalog has it and the cluster renders none.\n\n", r.CatalogGroups, r.CatalogRules)
+	fmt.Fprintf(&b, "## rulecheck coverage\n\nCatalog: %d groups, %d rules. "+
+		"A group or rule is *disabled* for a cluster when the catalog has it and the cluster renders none.\n\n",
+		r.CatalogGroups, r.CatalogRules)
 	b.WriteString("| cluster | groups | rules | disabled groups | disabled rules | self-alert sources without sourceAbsent |\n|---|---:|---:|---:|---:|---:|\n")
 
 	for _, c := range r.Clusters {
-		fmt.Fprintf(&b, "| %s | %d | %d | %d | %d | %d |\n", c.Cluster, c.Groups, c.Rules, len(c.DisabledGroups), len(c.DisabledRules), len(c.UncoveredSelfAlertSources))
+		fmt.Fprintf(&b, "| %s | %d | %d | %d | %d | %d |\n",
+			c.Cluster, c.Groups, c.Rules, len(c.DisabledGroups), len(c.DisabledRules), len(c.UncoveredSelfAlertSources))
 	}
 
 	for _, c := range r.Clusters {
