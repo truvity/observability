@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.69.2
+
+- Dependency updates.
+
 ## v0.69.1
 
 - **Fixed** `observability-stack`: the logs and traces backup jobs no longer fail on every run against a bucket whose default encryption is SSE-KMS. An SSE-KMS object's S3 ETag is not an MD5, rclone read it as one, and `rclone sync --checksum` reported each single-part file as "corrupted on transfer: md5 hashes differ", deleted it, skipped the sync's deletes and exited non-zero (the snapshot was then never deleted either). New `backup.serverSideEncryption` (default `""`, which renders nothing, so every existing render and golden is unchanged) and `backup.sseKmsKeyId`: set `serverSideEncryption: aws:kms` and the job gets `RCLONE_S3_SERVER_SIDE_ENCRYPTION` (and `RCLONE_S3_SSE_KMS_KEY_ID`), rclone stores each file's MD5 in object metadata and verifies against that, so the integrity check stays on. `sseKmsKeyId` without `aws:kms` is refused at render time. Both are fix-keys recorded in `tests/stack-keys.yaml`. An install on an SSE-KMS bucket must set `backup.serverSideEncryption: aws:kms`.
