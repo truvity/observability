@@ -466,6 +466,11 @@ mode that cannot lose an alert: a short **duplicate**, never a **gap**.
    `health: err`, and `count by (alertname) (ALERTS{alertstate="firing"})`
    did not change. The rule counts in `upstream/PIN.yaml` are the expected
    number per group.
+   Argo CD: the pack renders recording rules as well as alerts. The VMRule
+   CRD defaults `alert: ""` on a rule item exactly as it defaults `record: ""`,
+   so an Application that already ignores `.spec.groups[]?.rules[]?.record` for
+   alert-only charts needs `.spec.groups[]?.rules[]?.alert` ignored too, or the
+   diff never resolves.
 3. **Then hand the stack over.** Upgrade `observability-stack` to 0.70.0 and
    list `presets/upstream-rules-platform-alerts.yaml` before your own values
    (it sets `upstreamRules.source: platform-alerts`,
