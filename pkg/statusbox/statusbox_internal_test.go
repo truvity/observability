@@ -116,7 +116,10 @@ func TestValidateInstancesRefusals(t *testing.T) {
 	}{
 		{"instance with no config", func(i *[]Instance, _ map[string]string) { (*i)[0].Config = "" }, `instance "example-co": Config is empty`},
 		{"two instances on one port", func(i *[]Instance, _ map[string]string) { (*i)[1].Port = (*i)[0].Port }, "is also used by instance"},
-		{"public instance with no hostname", func(_ *[]Instance, h map[string]string) { delete(h, "example-co") }, `Public is true but Hostnames["example-co"] is empty`},
+		{
+			"public instance with no hostname", func(_ *[]Instance, h map[string]string) { delete(h, "example-co") },
+			`Public is true but Hostnames["example-co"] is empty`,
+		},
 		{"two private instances", func(i *[]Instance, _ map[string]string) { (*i)[0].Public = false }, "at most one private instance"},
 		{"no instances", func(i *[]Instance, _ map[string]string) { *i = nil }, "no instances"},
 		{"instance name is not a valid shape", func(i *[]Instance, _ map[string]string) { (*i)[0].Name = "Example.Co" }, "is not a valid name"},
