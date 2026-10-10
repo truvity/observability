@@ -30,7 +30,7 @@ func archiveFiles(t *testing.T, path string) map[string][]byte {
 	t.Helper()
 	f, err := os.Open(path)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	require.NoError(t, err)
 	tr := tar.NewReader(gz)
