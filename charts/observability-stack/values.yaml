@@ -617,6 +617,28 @@ tenancy:
   # `allNamespaces: true`, written out. Needs the proxy (`mode: full`,
   # vmauth rendered); two readers sharing a `name` are refused.
   readers: []
+  # -- Per-cluster datasource users: one bearer-token VMUser per cluster the
+  # shared Grafana shows, for the datasources `<cluster>-metrics` and
+  # `<cluster>-logs` (docs/architecture/cluster-datasources.md). Off (empty)
+  # by default and renders nothing.
+  #
+  #   clusterDatasources:
+  #     - cluster: example-cluster
+  #       tokenSecret:
+  #         name: example-datasource-token
+  #         key: token
+  #
+  # The cluster is FORCED server-side: on the metrics route as a literal
+  # `extra_filters` selector on `tenancy.clusterLabel`, on the logs route as a
+  # literal `extra_stream_filters` stream filter on `tenancy.logsClusterField`.
+  # vmauth drops a client's clashing argument, so a query (or a dashboard's
+  # `k8s_cluster_name` matcher) cannot widen it, and
+  # (mergeQueryArgs naming either is already refused). The metrics
+  # route is the full dashboard read set (query, series, labels, label
+  # values), not the query-only reader's. No traces route: VictoriaTraces
+  # takes no filter argument (see the design page, decision D3), no write
+  # route. Needs the proxy; two entries for one cluster are refused.
+  clusterDatasources: []
   # -- Admit the alerts-reader route although nothing can scope it.
   #
   # vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster

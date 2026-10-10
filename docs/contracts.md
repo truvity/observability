@@ -150,8 +150,9 @@ the platform selects and checks on.
 Dashboards read three logical datasources: `metrics`, `logs`, `traces`.
 Which store answers each is the platform's business and changes across the
 restructure; a dashboard never says. From restructure R2.2 each cluster's
-datasource forces `k8s_cluster_name` on every query (planned), so a
-dashboard must not filter on it itself.
+datasource forces `k8s_cluster_name` on every query (planned; first slice
+in [architecture/cluster-datasources.md](architecture/cluster-datasources.md)),
+so a dashboard must not filter on it itself.
 
 ## Component side
 

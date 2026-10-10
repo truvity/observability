@@ -1,0 +1,4 @@
+# expect: datasources.clusters is set but datasources.enabled is false
+datasources:
+  clusters:
+    - {name: example-a, tokenSecret: {name: t, key: token}}

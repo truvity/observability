@@ -1,0 +1,57 @@
+{{- if .Values.datasources.enabled }}
+{{- /*
+The per-cluster datasources (docs/architecture/cluster-datasources.md): for
+each cluster in `datasources.clusters`, `<cluster>-metrics` and
+`<cluster>-logs`, each reaching its store THROUGH the proxy with the cluster's
+own bearer token. The cluster is forced by the proxy's VMUser for that token
+(observability-stack `tenancy.clusterDatasources`), not by anything here: the
+datasource carries no filter and a dashboard cannot ask for another
+cluster's data, because the token cannot read it.
+
+The uid equals the name, so a dashboard that resolves a datasource by name
+(the operator's `datasources` input mapping) and one that resolves it by uid
+reach the same object. The token is a reference to a Secret key, never a
+value: the operator substitutes it into the datasource at reconcile time.
+*/}}
+{{- $root := . }}
+{{- $proxy := trimSuffix "/" .Values.datasources.proxyUrl }}
+{{- range $c := .Values.datasources.clusters }}
+{{- range $signal := list "metrics" "logs" }}
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: {{ printf "%s-%s" $c.name $signal | quote }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "observability-cluster.labels" $root | nindent 4 }}
+    observability.truvity.io/datasource-cluster: {{ $c.name | quote }}
+spec:
+  instanceSelector:
+    matchLabels:
+      {{- include "observability-cluster.instanceLabels" $root | nindent 6 }}
+  datasource:
+    name: {{ printf "%s-%s" $c.name $signal | quote }}
+    uid: {{ printf "%s-%s" $c.name $signal | quote }}
+    access: proxy
+    {{- if eq $signal "metrics" }}
+    type: {{ $root.Values.datasources.metricsType | quote }}
+    url: {{ printf "%s/prometheus" $proxy | quote }}
+    {{- else }}
+    type: victoriametrics-logs-datasource
+    {{- /* The logs plugin appends /select/logsql/query itself: the root, not the path. */}}
+    url: {{ $proxy | quote }}
+    {{- end }}
+    jsonData:
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: {{ printf "Bearer ${%s}" $c.tokenSecret.key | quote }}
+  valuesFrom:
+    - targetPath: secureJsonData.httpHeaderValue1
+      valueFrom:
+        secretKeyRef:
+          name: {{ $c.tokenSecret.name | quote }}
+          key: {{ $c.tokenSecret.key | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

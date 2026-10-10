@@ -1,0 +1,4 @@
+# expect: 'a.*' does not match pattern
+tenancy:
+  clusterDatasources:
+    - {cluster: "a.*", tokenSecret: {name: t, key: token}}
