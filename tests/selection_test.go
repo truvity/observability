@@ -105,6 +105,11 @@ type vmalertDoc struct {
 	} `yaml:"spec"`
 }
 
+const (
+	evaluatorKey = "observability.truvity.io/evaluator"
+	ruleTypeKey  = "observability.truvity.io/rule-type"
+)
+
 // ruleShapes are the rules an install actually contains: the unlabelled
 // PromQL ones other charts ship, and the two this repository's own label
 // can carry.
@@ -115,10 +120,10 @@ var ruleShapes = []struct {
 	{"an unlabelled PromQL rule, as the metrics subchart ships 23 of", nil},
 	{"a rule marked as PromQL", map[string]string{"observability.rule-type": "prometheus"}},
 	{"a rule marked as LogsQL", map[string]string{"observability.rule-type": "vlogs"}},
-	{"a rule naming the metrics alerter", map[string]string{"observability.truvity.io/evaluator": "metrics"}},
-	{"a platform alert for the metrics alerter", map[string]string{"observability.truvity.io/evaluator": "metrics", "observability.truvity.io/rule-type": "alert"}},
-	{"a recording VMRule for the metrics alerter", map[string]string{"observability.truvity.io/evaluator": "metrics", "observability.truvity.io/rule-type": "recording"}},
-	{"a LogsQL rule carrying both spellings (as the charts emit them)", map[string]string{"observability.rule-type": "vlogs", "observability.truvity.io/evaluator": "logs"}},
+	{"a rule naming the metrics alerter", map[string]string{evaluatorKey: "metrics"}},
+	{"a platform alert for the metrics alerter", map[string]string{evaluatorKey: "metrics", ruleTypeKey: "alert"}},
+	{"a recording VMRule for the metrics alerter", map[string]string{evaluatorKey: "metrics", ruleTypeKey: "recording"}},
+	{"a LogsQL rule carrying both spellings (as the charts emit them)", map[string]string{"observability.rule-type": "vlogs", evaluatorKey: "logs"}},
 }
 
 // TestNoRuleReachesTwoAlerters is the check the crash-loop needed.
