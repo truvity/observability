@@ -53,6 +53,8 @@ metadata:
   name: {{ include "observability-stack.fullname" . }}-watchdog
   labels:
     {{- include "observability-stack.labels" . | nindent 4 }}
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: observability-stack.watchdog

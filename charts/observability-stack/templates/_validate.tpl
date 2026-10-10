@@ -2143,6 +2143,9 @@ nobody, or evaluates the same rule twice. docs/notifications.md,
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" (toString $e.name)) -}}
 {{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] name %q is not a DNS label (lower-case alphanumerics and hyphens, starting and ending with an alphanumeric)." $i (toString $e.name)) -}}
 {{- end -}}
+{{- if has (toString $e.name) (list "metrics" "logs") -}}
+{{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] is named %q, which is the value of `observability.truvity.io/evaluator` that the local alerters own (`metrics` is the local metrics alerter, `logs` the logs alerter). A rule carrying it would be evaluated locally, not by this evaluator. Pick another name." $i (toString $e.name)) -}}
+{{- end -}}
 {{- if gt (len (printf "%s-remote-%s" $fullname $e.name)) 52 -}}
 {{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] name %q makes the VMAlert name %q longer than 52 characters, which the pod and Service names derived from it cannot carry. Shorten it." $i (toString $e.name) (printf "%s-remote-%s" $fullname $e.name)) -}}
 {{- end -}}

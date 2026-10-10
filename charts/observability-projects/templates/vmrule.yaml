@@ -29,9 +29,7 @@ metadata:
     app.kubernetes.io/name: {{ .Chart.Name }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    {{- with $v.ruleLabels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- toYaml (merge (deepCopy ($v.ruleLabels | default dict)) (dict "observability.truvity.io/evaluator" "metrics" "observability.truvity.io/rule-type" "alert")) | nindent 4 }}
 spec:
   groups:
     {{- if $v.restarts.enabled }}

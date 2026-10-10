@@ -734,6 +734,16 @@ vmalert:
     # default holds every log-based alert back by 30 seconds it never
     # needed and nothing says why.
     evalDelay: 5s
+  # -- Rule-selection labels (docs/contracts.md, "Rule ownership labels").
+  # vmalert selects VMRules on `observability.truvity.io/evaluator`
+  # (`logs` for the logs alerter, `metrics` or absent for the local metrics
+  # alerter, a `remoteEvaluators` name for that evaluator). `true` (the
+  # default, for two minors) also accepts the old LogsQL marker
+  # `observability.rule-type: vlogs`: the logs alerter then takes that
+  # label rather than `evaluator: logs`, so a logs rule must carry it.
+  # `false` selects on the new labels only; set it once every logs rule
+  # carries `evaluator: logs`. The old spelling is removed in v0.72.
+  acceptLegacyRuleLabels: true
   # -- Where a person lands from an alert's source link. vmalert defaults
   # `-external.url` to its own pod hostname, which makes every alert's
   # link dead the moment it leaves the cluster. Empty renders no flag and

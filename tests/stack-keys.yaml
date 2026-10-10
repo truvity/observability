@@ -326,6 +326,7 @@ keys:
   - "schema:victoria-metrics-k8s-stack"
   - "schema:victoria-traces-single"
   - "schema:vmalert"
+  - "schema:vmalert.acceptLegacyRuleLabels" # planned restructure key (step 2, rule-ownership labels); drops with the old spelling in v0.72
   - "schema:vmalert.enabled"
   - "schema:vmalert.externalLabels"
   - "schema:vmalert.externalUrl"
@@ -923,6 +924,7 @@ keys:
   - "values:victoria-traces-single.server.serviceMonitor.basicAuth.username.name"
   - "values:victoria-traces-single.server.serviceMonitor.enabled"
   - "values:vmalert"
+  - "values:vmalert.acceptLegacyRuleLabels" # planned restructure key (step 2, rule-ownership labels); drops with the old spelling in v0.72
   - "values:vmalert.enabled"
   - "values:vmalert.externalLabels"
   - "values:vmalert.externalUrl"

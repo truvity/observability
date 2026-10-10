@@ -22,6 +22,8 @@ metadata:
   name: {{ include "alert-ingress.fullname" . }}
   labels:
     {{- include "alert-ingress.labels" . | nindent 4 }}
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     {{- if $hb }}

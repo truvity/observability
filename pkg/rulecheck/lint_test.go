@@ -270,3 +270,77 @@ func TestCoverageNamesDisabledGroupsAndRules(t *testing.T) {
 	assert.Contains(t, md.String(), "a/Two")
 	assert.Contains(t, js.String(), `"disabledGroups"`)
 }
+
+func labelled(labels string, groupType string) rulecheck.Source {
+	return rulecheck.Source{Name: "lb.yaml", YAML: []byte(`kind: VMRule
+metadata:
+  name: lb
+  labels: ` + labels + `
+spec:
+  groups:
+    - name: g
+      type: ` + groupType + `
+      rules:
+        - alert: A
+          expr: 'up == 0'
+        - alert: B
+          expr: 'up == 0'
+`)}
+}
+
+func lintLabels(t *testing.T, o rulecheck.LintOptions, s rulecheck.Source) []rulecheck.Violation {
+	t.Helper()
+
+	rules, err := rulecheck.Rules(s)
+	require.NoError(t, err)
+
+	vs, err := rulecheck.Lint(rules, o)
+	require.NoError(t, err)
+
+	var out []rulecheck.Violation
+
+	for i := range vs {
+		if vs[i].Check == rulecheck.CheckEvaluatorLabel || vs[i].Check == rulecheck.CheckRuleTypeLabel {
+			out = append(out, vs[i])
+		}
+	}
+
+	return out
+}
+
+// An unlabelled VMRule is fine until a consumer asks for the evaluator, and
+// then it is one finding per VMRule, not per rule.
+func TestEvaluatorLabelRequired(t *testing.T) {
+	assert.Empty(t, lintLabels(t, rulecheck.LintOptions{}, labelled("{}", "prometheus")))
+
+	vs := lintLabels(t, rulecheck.LintOptions{RequireEvaluator: true}, labelled("{}", "prometheus"))
+	require.Len(t, vs, 1)
+	assert.Equal(t, rulecheck.CheckEvaluatorLabel, vs[0].Check)
+
+	assert.Empty(t, lintLabels(t, rulecheck.LintOptions{RequireEvaluator: true},
+		labelled(`{observability.truvity.io/evaluator: metrics}`, "prometheus")))
+	assert.Empty(t, lintLabels(t, rulecheck.LintOptions{RequireEvaluator: true},
+		labelled(`{observability.truvity.io/evaluator: other-store}`, "prometheus")))
+}
+
+// A LogsQL rule is evaluated by the logs alerter only.
+func TestEvaluatorLabelLogsQL(t *testing.T) {
+	o := rulecheck.LintOptions{RequireEvaluator: true}
+
+	assert.Empty(t, lintLabels(t, o, labelled(`{observability.truvity.io/evaluator: logs}`, "vlogs")))
+
+	vs := lintLabels(t, o, labelled(`{observability.truvity.io/evaluator: metrics}`, "vlogs"))
+	require.Len(t, vs, 1)
+	assert.Contains(t, vs[0].Msg, "LogsQL")
+}
+
+// rule-type is checked whenever it is present, flag or not.
+func TestRuleTypeLabelValue(t *testing.T) {
+	for _, v := range []string{"alert", "recording"} {
+		assert.Empty(t, lintLabels(t, rulecheck.LintOptions{}, labelled(`{observability.truvity.io/rule-type: `+v+`}`, "prometheus")))
+	}
+
+	vs := lintLabels(t, rulecheck.LintOptions{}, labelled(`{observability.truvity.io/rule-type: alerts}`, "prometheus"))
+	require.Len(t, vs, 1)
+	assert.Equal(t, rulecheck.CheckRuleTypeLabel, vs[0].Check)
+}

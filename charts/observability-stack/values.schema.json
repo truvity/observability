@@ -720,6 +720,7 @@
             "type": "string"
           }
         },
+        "acceptLegacyRuleLabels": { "type": "boolean", "description": "Also accept the old LogsQL rule marker `observability.rule-type: vlogs` (default true, removed in v0.72). While true the logs alerter takes that label instead of `observability.truvity.io/evaluator: logs`; false selects on the new labels only. See docs/contracts.md." },
         "remoteEvaluators": {
           "type": "array",
           "description": "One extra VMAlert per entry: evaluates the VMRules labelled `observability.truvity.io/evaluator: <name>` against another metrics store and notifies through this install's Alertmanager. See docs/notifications.md, \"Evaluating another store's rules\".",

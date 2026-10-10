@@ -3078,6 +3078,10 @@ spec:
         - ALL
   ruleSelector:
     matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          - "logs"
       - key: observability.rule-type
         operator: NotIn
         values:
@@ -3151,6 +3155,11 @@ spec:
   ruleSelector:
     matchLabels:
       observability.rule-type: vlogs
+    matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          - "metrics"
   ruleNamespaceSelector: {}
   resources:
     limits:

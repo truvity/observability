@@ -24,6 +24,8 @@ metadata:
   name: {{ printf "%s-store-alerts" $fullname | trunc 63 | trimSuffix "-" }}
   labels:
     {{- include "observability-stack.labels" . | nindent 4 }}
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: observability-stack.stores

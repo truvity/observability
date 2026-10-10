@@ -20,7 +20,7 @@ package contracts
 // docs/contracts.md (tests/contracts_test.go checks it). It moves only
 // when a stable name changes meaning or a planned one becomes stable:
 // minor for additions, major for a removal or a change of meaning.
-const Version = "1.0"
+const Version = "1.1"
 
 // Metric label keys. A Prometheus label name cannot carry a dot, so the
 // OpenTelemetry names are spelled with underscores on metrics.
@@ -57,17 +57,33 @@ const (
 	// on a Kubernetes object.
 	KeyPrefix = "observability.truvity.io/"
 
-	// EvaluatorLabel on a VMRule names the vmalert that evaluates it
-	// (observability-stack `vmalert.remoteEvaluators`). Stable.
+	// EvaluatorLabel on a VMRule names the vmalert that evaluates it:
+	// EvaluatorMetrics, EvaluatorLogs, or the name of an
+	// observability-stack `vmalert.remoteEvaluators` entry. vmalert's
+	// ruleSelector reads it. Stable.
 	EvaluatorLabel = KeyPrefix + "evaluator"
 	// RuleTypeLabel on a VMRule says what kind of rule it holds, one of
-	// the RuleType values. Planned (restructure step 2).
+	// the RuleType values. Stable since contract 1.1 (restructure step 2):
+	// the charts stamp it and pkg/rulecheck validates it; vmalert does not
+	// select on it, because an alert and the recording it reads must be
+	// evaluated by the same vmalert.
 	RuleTypeLabel = KeyPrefix + "rule-type"
 )
 
-// RuleType values for RuleTypeLabel. Planned (restructure step 2).
+// Values of EvaluatorLabel owned by the local alerters; a
+// `vmalert.remoteEvaluators` entry may not use them. Stable.
 const (
-	// RuleTypeAlert marks a VMRule that holds alerting rules.
+	// EvaluatorMetrics is the local metrics vmalert. A VMRule with no
+	// evaluator label is evaluated there too.
+	EvaluatorMetrics = "metrics"
+	// EvaluatorLogs is the local logs vmalert (LogsQL rules).
+	EvaluatorLogs = "logs"
+)
+
+// RuleType values for RuleTypeLabel. Stable since contract 1.1.
+const (
+	// RuleTypeAlert marks a VMRule that holds alerting rules (it may also
+	// hold recording rules).
 	RuleTypeAlert = "alert"
 	// RuleTypeRecording marks a VMRule that holds recording rules only.
 	RuleTypeRecording = "recording"

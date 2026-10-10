@@ -9,6 +9,8 @@ metadata:
     app.kubernetes.io/instance: observability-projects
     app.kubernetes.io/managed-by: Helm
     example.com/ruler: platform
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: observability-projects.restarts

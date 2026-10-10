@@ -18,6 +18,9 @@ the VictoriaMetrics operator refuses the same combination itself
 (api/operator/v1beta1/vmalert_types.go, `validateNotifierConfigs`), so
 this mirrors what the CRD would refuse if it did not.
 */ -}}
+{{- $legacy := .Values.vmalert.acceptLegacyRuleLabels }}
+{{- $remoteNames := list }}
+{{- range .Values.vmalert.remoteEvaluators }}{{- $remoteNames = append $remoteNames .name }}{{- end }}
 {{- $evaluateOnly := eq ((.Values.notifications | default dict).mode | default "route") "evaluate-only" }}
 {{- /*
 Two vmalerts, because one process has one default rule type.
@@ -122,30 +125,52 @@ spec:
     marked. `NotIn` matches an object that does not carry the key at all --
     verified against an API server, not assumed.
 
-    A LogsQL rule MUST carry `observability.rule-type: vlogs` to be
-    evaluated. In platform-alerts that is the `ruleLabels` value.
+    A LogsQL rule MUST carry `observability.truvity.io/evaluator: logs`
+    to be evaluated; while `vmalert.acceptLegacyRuleLabels` is true (the
+    default, for two minors) the logs alerter instead takes the old
+    spelling `observability.rule-type: vlogs`, and a rule must carry that
+    one (platform-alerts and observability-rum emit both). One selector
+    cannot be a union of two labels, so the switch picks the label the
+    LOGS alerter requires; the metrics alerter accepts both spellings in
+    either mode. docs/contracts.md, "Rule ownership labels".
   */}}
   ruleSelector:
-    {{- if $isLogs }}
+    {{- if and $isLogs (not $legacy) }}
+    matchLabels:
+      observability.truvity.io/evaluator: logs
+    {{- else if $isLogs }}
     matchLabels:
       observability.rule-type: vlogs
-    {{- if $root.Values.vmalert.remoteEvaluators }}
     matchExpressions:
+      {{- /* Never a rule another evaluator owns. NotIn also matches a rule
+             that carries no evaluator label at all. */}}
       - key: observability.truvity.io/evaluator
-        operator: DoesNotExist
-    {{- end }}
+        operator: NotIn
+        values:
+          {{- range (concat (list "metrics") $remoteNames) }}
+          - {{ . | quote }}
+          {{- end }}
     {{- else }}
     matchExpressions:
+      {{- /* The local metrics alerter takes a rule that names it
+             (`evaluator: metrics`) AND every rule that names no evaluator
+             (the unlabelled rules other charts ship). One selector cannot
+             say "this value or no label", so it says what is refused:
+             NotIn the logs alerter and every remote evaluator. Rules owned
+             by a remote evaluator (below) are evaluated there, against the
+             store they were written for; here they would be evaluated
+             against the wrong one and see their metric absent. */}}
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          {{- range (concat (list "logs") $remoteNames) }}
+          - {{ . | quote }}
+          {{- end }}
+      {{- if $legacy }}
       - key: observability.rule-type
         operator: NotIn
         values:
           - vlogs
-      {{- if $root.Values.vmalert.remoteEvaluators }}
-      {{- /* Rules owned by a remote evaluator (below) are evaluated there,
-             against the store they were written for; here they would be
-             evaluated against the wrong one and see their metric absent. */}}
-      - key: observability.truvity.io/evaluator
-        operator: DoesNotExist
       {{- end }}
     {{- end }}
   {{- /* Empty selector: every namespace, which is what the release did
@@ -220,7 +245,7 @@ and notifying through THIS install's Alertmanager (docs/notifications.md,
 
 Disjointness: the main metrics alerter's selector refuses every rule that
 carries the `observability.truvity.io/evaluator` key, whatever its value,
-and each evaluator selects exactly one value of it, so no rule is ever
+and each evaluator selects exactly one value of it (`metrics` and `logs` are the local alerters' own and are refused as evaluator names), so no rule is ever
 evaluated by two alerters and none of these is evaluated against the
 local store. The selector cannot be empty by construction.
 
@@ -259,11 +284,13 @@ spec:
   ruleSelector:
     matchLabels:
       observability.truvity.io/evaluator: {{ $ev.name }}
+    {{- if $root.Values.vmalert.acceptLegacyRuleLabels }}
     matchExpressions:
       - key: observability.rule-type
         operator: NotIn
         values:
           - vlogs
+    {{- end }}
   ruleNamespaceSelector: {}
   resources:
     {{- include "observability-stack.resources" $root.Values.vmalert.resources | nindent 4 }}

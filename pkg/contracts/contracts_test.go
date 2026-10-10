@@ -21,6 +21,8 @@ func TestWireValues(t *testing.T) {
 	assert.Equal(t, "k8s_namespace_name", contracts.NamespaceLabel)
 	assert.Equal(t, "observability.truvity.io/evaluator", contracts.EvaluatorLabel)
 	assert.Equal(t, "observability.truvity.io/rule-type", contracts.RuleTypeLabel)
+	assert.Equal(t, "metrics", contracts.EvaluatorMetrics)
+	assert.Equal(t, "logs", contracts.EvaluatorLogs)
 	assert.Equal(t, []string{"metrics", "logs", "traces"}, contracts.Datasources())
 	assert.Equal(t, "datasource", contracts.DatasourceVariable)
 }
@@ -59,7 +61,7 @@ func TestDocMentionsEveryKey(t *testing.T) {
 		contracts.ClusterLabel, contracts.NamespaceLabel, contracts.EnvironmentLabel, contracts.OwnerLabel,
 		contracts.LogsClusterField, contracts.LogsNamespaceField, contracts.TracesClusterAttribute,
 		contracts.TracesNamespaceAttribute, contracts.EnvironmentAttribute,
-		contracts.EvaluatorLabel, contracts.RuleTypeLabel, contracts.RuleTypeAlert, contracts.RuleTypeRecording,
+		contracts.EvaluatorLabel, contracts.RuleTypeLabel, contracts.EvaluatorMetrics, contracts.EvaluatorLogs, contracts.RuleTypeAlert, contracts.RuleTypeRecording,
 		contracts.OwnerPlatform, contracts.OwnerComponent,
 		contracts.DatasourceMetrics, contracts.DatasourceLogs, contracts.DatasourceTraces,
 		string(contracts.IdentityHuman), string(contracts.IdentityMachine), string(contracts.IdentityStoreConnector),

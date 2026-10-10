@@ -1,0 +1,18 @@
+# expect: which is the value of `observability.truvity.io/evaluator` that the local alerters own
+# `logs` and `metrics` are the local alerters' own evaluator values.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+vmalert:
+  remoteEvaluators:
+    - name: logs
+      datasource:
+        url: https://metrics.other-store.example
+        auth:
+          bearer: {secretName: example-other-store-read, key: token}

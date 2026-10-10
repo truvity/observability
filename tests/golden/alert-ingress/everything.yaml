@@ -232,6 +232,8 @@ metadata:
     app.kubernetes.io/name: cloud-events
     app.kubernetes.io/instance: alert-ingress
     app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: alert-ingress.heartbeat
