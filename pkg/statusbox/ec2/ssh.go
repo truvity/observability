@@ -79,10 +79,10 @@ const (
 	// default list, so the defaults the installed OpenSSH ships stay current).
 	// Amazon Linux 2023's OpenSSH supports it. Fail-safe: sshd -t must pass
 	// with the drop-in, or the drop-in is removed and sshd keeps its defaults.
-	sshKexPrefer = `# Key exchange: prefer the post-quantum hybrid, then sshd's defaults. Fail-safe.
+	sshKexPrefer = `# Key exchange: prefer the standardised ML-KEM hybrid, then the sntrup hybrid, then sshd's defaults. Fail-safe.
 (
   set -euo pipefail
-  printf 'KexAlgorithms ^sntrup761x25519-sha512@openssh.com\n' >%[1]s
+  printf 'KexAlgorithms ^mlkem768x25519-sha256,sntrup761x25519-sha512@openssh.com\n' >%[1]s
   if sshd -t; then systemctl restart sshd; else rm -f %[1]s; exit 1; fi
 ) || { rm -f %[1]s; echo "statusbox ssh: post-quantum key exchange not enabled; sshd keeps its defaults"; }
 `
