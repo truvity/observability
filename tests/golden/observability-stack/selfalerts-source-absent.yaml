@@ -2163,6 +2163,10 @@ spec:
         - ALL
   ruleSelector:
     matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          - "logs"
       - key: observability.rule-type
         operator: NotIn
         values:
@@ -2234,6 +2238,11 @@ spec:
   ruleSelector:
     matchLabels:
       observability.rule-type: vlogs
+    matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          - "metrics"
   ruleNamespaceSelector: {}
   resources:
     limits:
@@ -2437,6 +2446,8 @@ metadata:
     app.kubernetes.io/instance: observability-stack
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: observability-stack
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: observability-stack.selfalerts

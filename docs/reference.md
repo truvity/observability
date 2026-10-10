@@ -211,7 +211,8 @@ Kubernetes Events in the log store (`observability-emitters` `otlp.events`):
 reason `FailedCreate` and "violates PodSecurity" in the message, grouped by
 cluster, namespace and the controller named in the Event. Renders a second
 VMRule, `<release>-platform-alerts-logs`, carrying
-`observability.rule-type: vlogs`, so only a logs vmalert evaluates it.
+`observability.rule-type: vlogs` and `observability.truvity.io/evaluator: logs`,
+so only a logs vmalert evaluates it.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
@@ -581,13 +582,17 @@ does not carry it is never evaluated.**
 
 | Rule carries | Loaded by |
 |---|---|
-| `observability.rule-type: vlogs` | the logs alerter, only |
-| any other value, or no label at all | the metrics alerter, only |
+| `observability.truvity.io/evaluator: logs` (or, while `vmalert.acceptLegacyRuleLabels` is `true`, `observability.rule-type: vlogs`) | the logs alerter, only |
+| `observability.truvity.io/evaluator: <remote evaluator name>` | that remote evaluator, only |
+| `observability.truvity.io/evaluator: metrics`, or no evaluator label | the metrics alerter, only |
 
-So a rule written in LogsQL **must** be labelled `observability.rule-type:
-vlogs` — in `platform-alerts` that is the `ruleLabels` value — and a PromQL
-rule needs no label, which is what keeps the rules other charts ship
-working without changing them.
+So a rule written in LogsQL **must** be labelled
+`observability.truvity.io/evaluator: logs` (and, until the old spelling is
+dropped in v0.72, also `observability.rule-type: vlogs`: the charts here
+emit both) — and a PromQL rule needs no label, which is what keeps the
+rules other charts ship working without changing them. The selection
+design, the two-minor deprecation window and `rule-type` are in
+[contracts.md](contracts.md), "Rule ownership labels".
 
 **A LogsQL rule needs a second thing, and the two are not the same.** Its
 group must also carry `type: vlogs`:

@@ -8,6 +8,8 @@ metadata:
     app.kubernetes.io/name: platform-alerts
     app.kubernetes.io/instance: platform-alerts
     app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: platform-alerts.backups
@@ -709,6 +711,8 @@ metadata:
     app.kubernetes.io/instance: platform-alerts
     app.kubernetes.io/managed-by: Helm
     observability.rule-type: vlogs
+    observability.truvity.io/evaluator: logs
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: platform-alerts.pod-security

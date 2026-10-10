@@ -2979,6 +2979,8 @@ metadata:
     app.kubernetes.io/instance: observability-rum
     app.kubernetes.io/managed-by: Helm
     observability.rule-type: vlogs
+    observability.truvity.io/evaluator: logs
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: observability-rum.issues

@@ -32,6 +32,12 @@ const (
 	CheckAbsentGuard  = "absent-guard"
 	CheckPodHeartbeat = "pod-heartbeat"
 	CheckSourceAbsent = "source-absent"
+
+	// CheckEvaluatorLabel: a VMRule carries `observability.truvity.io/evaluator`
+	// (LintOptions.RequireEvaluator); CheckRuleTypeLabel: when it carries
+	// `observability.truvity.io/rule-type`, the value is alert or recording.
+	CheckEvaluatorLabel = "evaluator-label"
+	CheckRuleTypeLabel  = "rule-type-label"
 )
 
 // DefaultClusterLabel is the label the charts stamp on every series
@@ -49,6 +55,14 @@ type LintOptions struct {
 	// most renders legitimately lack it); a SelfAlertSourceAbsent that
 	// leaves a source out is a violation either way.
 	RequireSourceAbsent bool
+	// RequireEvaluator makes a VMRule without the
+	// `observability.truvity.io/evaluator` label a violation, and a LogsQL
+	// rule whose evaluator is not `logs`. Off by default: the rules a
+	// vendored chart ships carry no such label and are still evaluated (the
+	// local metrics alerter takes an unlabelled rule), so the check is for
+	// a component chart that wants to be explicit, and for this repository's
+	// own charts (`just rulecheck` turns it on for them).
+	RequireEvaluator bool
 	// Allow are intentional exceptions; nil means DefaultAllowlist.
 	Allow []Allow
 }
@@ -130,6 +144,38 @@ func Lint(rules []Rule, o LintOptions) ([]Violation, error) {
 		aware = map[resKey]bool{}
 	)
 
+	var out []Violation
+
+	add := func(r Rule, check, format string, a ...any) {
+		out = append(out, Violation{Rule: r, Check: check, Msg: fmt.Sprintf(format, a...)})
+	}
+
+	// The rule-ownership labels sit on the VMRule, so one finding per VMRule
+	// (reported on its first rule), for metrics and LogsQL rules alike.
+	labelled := map[resKey]bool{}
+
+	for _, r := range rules {
+		k := resKey{r.Source, r.Resource}
+		if labelled[k] {
+			continue
+		}
+
+		labelled[k] = true
+
+		ev, hasEv := r.Labels[contracts.EvaluatorLabel]
+		if o.RequireEvaluator && (!hasEv || ev == "") {
+			add(r, CheckEvaluatorLabel, "the VMRule has no %s label, so it is not explicit which vmalert evaluates it", contracts.EvaluatorLabel)
+		}
+
+		if o.RequireEvaluator && hasEv && r.LogsQL() && ev != contracts.EvaluatorLogs {
+			add(r, CheckEvaluatorLabel, "a LogsQL rule must carry %s: %s; %q names another evaluator, so no vmalert would load it", contracts.EvaluatorLabel, contracts.EvaluatorLogs, ev)
+		}
+
+		if rt, ok := r.Labels[contracts.RuleTypeLabel]; ok && rt != contracts.RuleTypeAlert && rt != contracts.RuleTypeRecording {
+			add(r, CheckRuleTypeLabel, "%s is %q; it must be %q or %q", contracts.RuleTypeLabel, rt, contracts.RuleTypeAlert, contracts.RuleTypeRecording)
+		}
+	}
+
 	for _, r := range rules {
 		if r.LogsQL() {
 			continue
@@ -145,12 +191,6 @@ func Lint(rules []Rule, o LintOptions) ([]Violation, error) {
 		if strings.Contains(r.Expr, cl) {
 			aware[resKey{r.Source, r.Resource}] = true
 		}
-	}
-
-	var out []Violation
-
-	add := func(r Rule, check, format string, a ...any) {
-		out = append(out, Violation{Rule: r, Check: check, Msg: fmt.Sprintf(format, a...)})
 	}
 
 	for i := range all {

@@ -69,6 +69,9 @@ type Rule struct {
 	Expr string
 	// Record is true for a recording rule, false for an alert.
 	Record bool
+	// Labels are the labels of the VMRule object (metadata.labels), where
+	// vmalert's ruleSelector looks.
+	Labels map[string]string
 }
 
 // LogsQL reports whether the rule is a vlogs (LogsQL) rule; otherwise it is
@@ -119,7 +122,8 @@ func rulesIn(s Source) ([]Rule, error) {
 		var doc struct {
 			Kind     string `yaml:"kind"`
 			Metadata struct {
-				Name string `yaml:"name"`
+				Name   string            `yaml:"name"`
+				Labels map[string]string `yaml:"labels"`
 			} `yaml:"metadata"`
 			Spec struct {
 				Groups []struct {
@@ -167,7 +171,7 @@ func rulesIn(s Source) ([]Rule, error) {
 
 				out = append(out, Rule{
 					Source: s.Name, Resource: doc.Metadata.Name, Group: g.Name, Name: name,
-					Type: typ, Expr: r.Expr, Record: r.Alert == "",
+					Type: typ, Expr: r.Expr, Record: r.Alert == "", Labels: doc.Metadata.Labels,
 				})
 			}
 		}

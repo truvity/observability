@@ -62,6 +62,8 @@ metadata:
   name: {{ printf "%s-selfalerts" $fullname | trunc 63 | trimSuffix "-" }}
   labels:
     {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     - name: observability-stack.selfalerts

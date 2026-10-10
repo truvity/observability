@@ -1,0 +1,36 @@
+# `vmalert.acceptLegacyRuleLabels: false`: the old LogsQL marker
+# `observability.rule-type: vlogs` is no longer accepted. The logs alerter
+# selects `observability.truvity.io/evaluator: logs`, the metrics alerter
+# refuses `logs` and the remote evaluator, the evaluator selects its own name.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+vmalert:
+  externalUrl: https://grafana.example
+  acceptLegacyRuleLabels: false
+  remoteEvaluators:
+    - name: other-store
+      datasource:
+        url: https://metrics.other-store.example
+        auth:
+          bearer: {secretName: example-other-store-read, key: token}
+
+notifications:
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

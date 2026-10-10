@@ -193,7 +193,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: observability-stack-victoria-metrics-operator
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/instance: observability-stack
     app.kubernetes.io/managed-by: Helm
@@ -208,7 +208,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: observability-stack-victoria-metrics-k8s-stack-sync-job
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/component: syncJob
     app.kubernetes.io/instance: observability-stack
@@ -223,7 +223,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: observability-stack-victoria-metrics-k8s-stack-sync-job-config
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/component: syncJob
     app.kubernetes.io/instance: observability-stack
@@ -276,7 +276,7 @@ data:
               value: vmalertmanager-.*
             namespace:
               match: alertmanager-main
-              value: observability
+              value: default
         kube-apiserver-burnrate.rules:
           enabled: false
         kube-apiserver-histogram.rules:
@@ -759,7 +759,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: observability-stack-victoria-metrics-operator
-  namespace: observability
+  namespace: default
 roleRef:
   kind: ClusterRole
   name: observability-stack-victoria-metrics-operator
@@ -777,7 +777,7 @@ metadata:
     app.kubernetes.io/name: victoria-metrics-operator
     app.kubernetes.io/version: v0.74.1
     helm.sh/chart: victoria-metrics-operator-0.67.3
-  namespace: observability
+  namespace: default
 rules:
 - apiGroups:
   - coordination.k8s.io
@@ -794,7 +794,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: observability-stack-victoria-metrics-k8s-stack-sync-job
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/component: syncJob
     app.kubernetes.io/instance: observability-stack
@@ -816,7 +816,7 @@ kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: observability-stack-victoria-metrics-operator
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/instance: observability-stack
     app.kubernetes.io/managed-by: Helm
@@ -826,7 +826,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: observability-stack-victoria-metrics-operator
-  namespace: observability
+  namespace: default
 roleRef:
   kind: Role
   name: observability-stack-victoria-metrics-operator
@@ -837,7 +837,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: observability-stack-victoria-metrics-k8s-stack-sync-job
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/component: syncJob
     app.kubernetes.io/instance: observability-stack
@@ -852,7 +852,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: observability-stack-victoria-metrics-k8s-stack-sync-job
-    namespace: observability
+    namespace: default
 
 ---
 # Source: observability-stack/charts/victoria-logs-single/templates/service.yaml
@@ -867,7 +867,7 @@ metadata:
     app.kubernetes.io/version: v1.52.0
     helm.sh/chart: victoria-logs-single-0.13.9
   name: observability-stack-victoria-logs-single-server
-  namespace: observability
+  namespace: default
 spec:
   type: ClusterIP
   clusterIP: None
@@ -886,7 +886,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/instance: observability-stack
     app.kubernetes.io/managed-by: Helm
@@ -921,7 +921,7 @@ metadata:
     app.kubernetes.io/version: v0.11.0
     helm.sh/chart: victoria-traces-single-0.1.11
   name: observability-stack-vt-single-server
-  namespace: observability
+  namespace: default
 spec:
   type: ClusterIP
   clusterIP: None
@@ -941,7 +941,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: observability-stack-victoria-metrics-operator
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/instance: observability-stack
     app.kubernetes.io/managed-by: Helm
@@ -1067,7 +1067,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: observability-stack-victoria-logs-single-server
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/component: server
     app.kubernetes.io/instance: observability-stack
@@ -1181,7 +1181,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: observability-stack-vt-single-server
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/component: server
     app.kubernetes.io/instance: observability-stack
@@ -1295,8 +1295,8 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name:  observability-stack-victoria-metrics-operator-admission
   annotations:
-    certmanager.k8s.io/inject-ca-from: "observability/observability-stack-victoria-metrics-operator-validation"
-    cert-manager.io/inject-ca-from: "observability/observability-stack-victoria-metrics-operator-validation"
+    certmanager.k8s.io/inject-ca-from: "default/observability-stack-victoria-metrics-operator-validation"
+    cert-manager.io/inject-ca-from: "default/observability-stack-victoria-metrics-operator-validation"
   labels: 
     app.kubernetes.io/instance: observability-stack
     app.kubernetes.io/managed-by: Helm
@@ -1306,7 +1306,7 @@ metadata:
 webhooks:
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1-vlagent
         port: 9443
@@ -1332,7 +1332,7 @@ webhooks:
           - vlagents
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1-vlcluster
         port: 9443
@@ -1358,7 +1358,7 @@ webhooks:
           - vlclusters
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1alpha1-vldistributed
         port: 9443
@@ -1384,7 +1384,7 @@ webhooks:
           - vldistributed
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vlogs
         port: 9443
@@ -1410,7 +1410,7 @@ webhooks:
           - vlogs
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1-vlsingle
         port: 9443
@@ -1436,7 +1436,7 @@ webhooks:
           - vlsingles
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmagent
         port: 9443
@@ -1462,7 +1462,7 @@ webhooks:
           - vmagents
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmalertmanagerconfig
         port: 9443
@@ -1488,7 +1488,7 @@ webhooks:
           - vmalertmanagerconfigs
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmalertmanager
         port: 9443
@@ -1514,7 +1514,7 @@ webhooks:
           - vmalertmanagers
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmalert
         port: 9443
@@ -1540,7 +1540,7 @@ webhooks:
           - vmalerts
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1-vmanomaly
         port: 9443
@@ -1566,7 +1566,7 @@ webhooks:
           - vmanomalies
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1-vmanomalyconfig
         port: 9443
@@ -1592,7 +1592,7 @@ webhooks:
           - vmanomalyconfigs
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmauth
         port: 9443
@@ -1618,7 +1618,7 @@ webhooks:
           - vmauths
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmcluster
         port: 9443
@@ -1644,7 +1644,7 @@ webhooks:
           - vmclusters
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1alpha1-vmdistributed
         port: 9443
@@ -1670,7 +1670,7 @@ webhooks:
           - vmdistributed
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmnodescrape
         port: 9443
@@ -1696,7 +1696,7 @@ webhooks:
           - vmnodescrapes
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmpodscrape
         port: 9443
@@ -1722,7 +1722,7 @@ webhooks:
           - vmpodscrapes
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmprobe
         port: 9443
@@ -1748,7 +1748,7 @@ webhooks:
           - vmprobes
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmrule
         port: 9443
@@ -1774,7 +1774,7 @@ webhooks:
           - vmrules
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmscrapeconfig
         port: 9443
@@ -1800,7 +1800,7 @@ webhooks:
           - vmscrapeconfigs
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmservicescrape
         port: 9443
@@ -1826,7 +1826,7 @@ webhooks:
           - vmservicescrapes
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmsingle
         port: 9443
@@ -1852,7 +1852,7 @@ webhooks:
           - vmsingles
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmstaticscrape
         port: 9443
@@ -1878,7 +1878,7 @@ webhooks:
           - vmstaticscrapes
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1beta1-vmuser
         port: 9443
@@ -1904,7 +1904,7 @@ webhooks:
           - vmusers
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1-vtcluster
         port: 9443
@@ -1930,7 +1930,7 @@ webhooks:
           - vtclusters
   - clientConfig:
       service:
-        namespace: observability
+        namespace: default
         name: observability-stack-victoria-metrics-operator
         path: /validate-operator-victoriametrics-com-v1-vtsingle
         port: 9443
@@ -1961,7 +1961,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: observability-stack-victoria-metrics-operator-root-ca
-  namespace: observability
+  namespace: default
 spec:
   secretName: observability-stack-victoria-metrics-operator-root-ca
   duration: 63800h0m0s
@@ -1977,7 +1977,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: observability-stack-victoria-metrics-operator-validation
-  namespace: observability
+  namespace: default
 spec:
   secretName: observability-stack-victoria-metrics-operator-validation
   duration: 45800h0m0s
@@ -1985,9 +1985,9 @@ spec:
     name: observability-stack-victoria-metrics-operator-issuer
   dnsNames:
     - observability-stack-victoria-metrics-operator
-    - observability-stack-victoria-metrics-operator.observability
-    - observability-stack-victoria-metrics-operator.observability.svc
-    - observability-stack-victoria-metrics-operator.observability.svc.cluster.example.
+    - observability-stack-victoria-metrics-operator.default
+    - observability-stack-victoria-metrics-operator.default.svc
+    - observability-stack-victoria-metrics-operator.default.svc.cluster.example.
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/webhook.yaml
@@ -1995,7 +1995,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: observability-stack-victoria-metrics-operator-root
-  namespace: observability
+  namespace: default
 spec:
   selfSigned: {}
 
@@ -2005,7 +2005,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: observability-stack-victoria-metrics-operator-issuer
-  namespace: observability
+  namespace: default
 spec:
   ca:
     secretName: observability-stack-victoria-metrics-operator-root-ca
@@ -2026,7 +2026,7 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - observability
+      - default
   selector:
     matchLabels: 
       app.kubernetes.io/component: server
@@ -2060,7 +2060,7 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - observability
+      - default
   selector:
     matchLabels: 
       app.kubernetes.io/component: server
@@ -2091,7 +2091,7 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - observability
+      - default
   selector:
     matchLabels:
       app.kubernetes.io/name: vmalertmanager
@@ -2117,7 +2117,7 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - observability
+      - default
   selector:
     matchLabels:
       app.kubernetes.io/name: vmsingle
@@ -2167,10 +2167,7 @@ spec:
         operator: NotIn
         values:
           - "logs"
-      - key: observability.rule-type
-        operator: NotIn
-        values:
-          - vlogs
+          - "other-store"
   ruleNamespaceSelector: {}
   resources:
     limits:
@@ -2179,7 +2176,7 @@ spec:
       cpu: 50m
       memory: 512Mi
   datasource:
-    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
     basicAuth:
       username:
         name: "observability-store-credentials"
@@ -2188,7 +2185,7 @@ spec:
         name: "observability-store-credentials"
         key: "password"
   remoteWrite:
-    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
     basicAuth:
       username:
         name: "observability-store-credentials"
@@ -2197,7 +2194,7 @@ spec:
         name: "observability-store-credentials"
         key: "password"
   remoteRead:
-    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
     basicAuth:
       username:
         name: "observability-store-credentials"
@@ -2206,7 +2203,9 @@ spec:
         name: "observability-store-credentials"
         key: "password"
   notifiers:
-    - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
+    - url: "http://vmalertmanager-observability-stack.default.svc:9093"
+  extraArgs:
+    external.url: https://grafana.example
 
 ---
 # Source: observability-stack/templates/vmalert.yaml
@@ -2237,12 +2236,7 @@ spec:
         - ALL
   ruleSelector:
     matchLabels:
-      observability.rule-type: vlogs
-    matchExpressions:
-      - key: observability.truvity.io/evaluator
-        operator: NotIn
-        values:
-          - "metrics"
+      observability.truvity.io/evaluator: logs
   ruleNamespaceSelector: {}
   resources:
     limits:
@@ -2251,7 +2245,7 @@ spec:
       cpu: 50m
       memory: 512Mi
   datasource:
-    url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+    url: "http://observability-stack-victoria-logs-single-server.default.svc:9428"
     basicAuth:
       username:
         name: "observability-store-credentials"
@@ -2260,7 +2254,7 @@ spec:
         name: "observability-store-credentials"
         key: "password"
   remoteWrite:
-    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
     basicAuth:
       username:
         name: "observability-store-credentials"
@@ -2269,7 +2263,7 @@ spec:
         name: "observability-store-credentials"
         key: "password"
   remoteRead:
-    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
     basicAuth:
       username:
         name: "observability-store-credentials"
@@ -2278,10 +2272,77 @@ spec:
         name: "observability-store-credentials"
         key: "password"
   notifiers:
-    - url: "http://vmalertmanager-observability-stack.observability.svc:9093"
+    - url: "http://vmalertmanager-observability-stack.default.svc:9093"
   extraArgs:
+    external.url: https://grafana.example
     rule.defaultRuleType: vlogs
     rule.evalDelay: 5s
+
+---
+# Source: observability-stack/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-remote-other-store
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: prometheus
+    observability.truvity.io/evaluator: other-store
+spec:
+  replicaCount: 1
+  evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  ruleSelector:
+    matchLabels:
+      observability.truvity.io/evaluator: other-store
+  ruleNamespaceSelector: {}
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 512Mi
+  datasource:
+    url: "https://metrics.other-store.example"
+    bearerTokenSecret:
+      name: "example-other-store-read"
+      key: "token"
+  remoteWrite:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteRead:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack.default.svc:9093"
+  extraArgs:
+    external.url: "https://grafana.example"
 
 ---
 # Source: observability-stack/templates/vmalertmanager.yaml
@@ -2317,12 +2378,12 @@ spec:
   selectAllByDefault: false
   disableSelfServiceScrape: true
   volumes:
-    - name: notifications-telegram
+    - name: notifications-slack-acme
       secret:
-        secretName: "example-telegram-bot"
+        secretName: "example-acme-slack-bot"
   volumeMounts:
-    - name: notifications-telegram
-      mountPath: /etc/alertmanager/notifications-telegram
+    - name: notifications-slack-acme
+      mountPath: /etc/alertmanager/notifications-slack-acme
       readOnly: true
   configRawYaml: |
     route:
@@ -2340,46 +2401,46 @@ spec:
       group_interval: 5m
       repeat_interval: 4h
       routes:
+        # The Slack delivery self-alert, before everything else and with
+        # `continue: false`: it says Slack is not delivering, so it must
+        # never be routed to Slack, and no route below may claim it.
+        # `notifications.slack.failureReceiver` names where it goes; unset,
+        # it goes to the null receiver (docs/notifications.md).
+        - receiver: notifications-none
+          matchers:
+            - alertname = "SlackNotificationsFailing"
+          continue: false
         - match: {}
           receiver: notifications-none
           continue: true
           routes:
             - match:
                 severity: critical
-              receiver: telegram-n1000000000001
+              receiver: slack-acme--alerts-critical
             - match:
                 severity: warning
-              receiver: telegram-n1000000000001-42
+              receiver: slack-acme--alerts
     receivers:
       - name: notifications-none
-      - name: telegram-n1000000000001
-        telegram_configs:
-          - bot_token_file: /etc/alertmanager/notifications-telegram/token
-            chat_id: -1000000000001
-            parse_mode: "HTML"
+      - name: slack-acme--alerts
+        slack_configs:
+          - channel: "#alerts"
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            message: |-
-              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}
-              {{ range .Alerts }}
-              {{ .Annotations.summary }}
-              {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
+            title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
+            text: |-
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
-              {{ end }}
-      - name: telegram-n1000000000001-42
-        telegram_configs:
-          - bot_token_file: /etc/alertmanager/notifications-telegram/token
-            chat_id: -1000000000001
-            message_thread_id: 42
-            parse_mode: "HTML"
+      - name: slack-acme--alerts-critical
+        slack_configs:
+          - channel: "#alerts-critical"
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            message: |-
-              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}
-              {{ range .Alerts }}
-              {{ .Annotations.summary }}
-              {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
-              {{ end }}
-              Grafana: https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name }}{{ end }}
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
+            title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
+            text: |-
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
               {{ end }}
     inhibit_rules:
       - source_matchers:
@@ -2436,12 +2497,82 @@ spec:
     logInvalidAuthTokens: "true"
 
 ---
+# Source: observability-stack/templates/selfalerts.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-selfalerts
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: observability-stack.selfalerts
+      interval: 30s
+      rules:
+        # SlackNotificationsFailing. Alertmanager counts a failed Slack
+        # delivery (bad or revoked token, a channel the bot may not post
+        # in, Slack down) and keeps retrying; nothing else says a
+        # notification is being lost. `integration="slack"` is the
+        # Alertmanager label for `slack_configs`.
+        #
+        # This alert must NEVER be routed to Slack: templates/
+        # vmalertmanager.yaml puts a route for it at the top of the tree,
+        # to `notifications.slack.failureReceiver`, or to the null
+        # receiver when that is unset.
+        #
+        # Healthy range: 0. The series exists because templates/
+        # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
+        - alert: SlackNotificationsFailing
+          expr: >-
+            sum without (pod, instance) (increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Alertmanager is failing to deliver to Slack"
+            description: >-
+              alertmanager_notifications_failed_total{integration="slack"}
+              rose in the last 15m. Alerts routed to
+              Slack are not arriving: check the workspace's bot token
+              Secret, that the channel exists (a private channel needs the
+              bot invited) and Slack's own status.
+        # RemoteEvaluatorFailing. A remote evaluator (templates/vmalert.yaml,
+        # `vmalert.remoteEvaluators`) whose datasource is unreachable, or
+        # whose credential is refused, fails every rule evaluation: its
+        # rules never fire and nothing else says so. vmalert counts these
+        # on its own /metrics, which the local store scrapes like the main
+        # alerter's; the series are picked by the evaluator pods' name
+        # (`vmalert-<release>-remote-<name>-...`), and the three counter
+        # names are the ones vmalert has used for rule-evaluation errors
+        # (an absent name simply contributes nothing). Fires through the
+        # local Alertmanager. Healthy range: 0.
+        - alert: RemoteEvaluatorFailing
+          expr: >-
+            sum without (instance) (increase({__name__=~"vmalert_(alerting|recording)_rules_errors_total|vmalert_execution_errors_total", pod=~"vmalert-observability-stack-remote-.+"}[10m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "A remote evaluator is failing to evaluate its rules"
+            description: >-
+              {{ $labels.pod }} recorded rule evaluation errors in the
+              last 10m. Its rules, which live
+              against another store, are not being evaluated: check that
+              store's endpoint, the read credential Secret and the egress
+              from this namespace.
+
+---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/monitor.yaml
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMServiceScrape
 metadata:
   name: observability-stack-victoria-metrics-operator
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/instance: observability-stack
     app.kubernetes.io/managed-by: Helm
@@ -2457,7 +2588,7 @@ spec:
     - port: http
   namespaceSelector:
     matchNames:
-      - observability
+      - default
 
 ---
 # Source: observability-stack/charts/victoria-metrics-k8s-stack/templates/victoria-metrics-operator/vmsingle/vmsingle.yml
@@ -2465,7 +2596,7 @@ apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMSingle
 metadata:
   name: observability-stack-victoria-metrics-k8s-stack
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/component: vmsingle
     app.kubernetes.io/instance: observability-stack
@@ -2556,7 +2687,7 @@ spec:
     - 503
   targetRefs:
     - static:
-        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.observability.svc:8428"
+        url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
       paths:
         - /prometheus/api/v1/query
         - /prometheus/api/v1/query_range
@@ -2581,7 +2712,7 @@ spec:
           name: "observability-store-credentials"
           key: "password"
     - static:
-        url: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
+        url: "http://observability-stack-victoria-logs-single-server.default.svc:9428"
       paths:
         - /select/logsql/.*
         - /select/vmui.*
@@ -2597,7 +2728,7 @@ spec:
           name: "observability-store-credentials"
           key: "password"
     - static:
-        url: "http://observability-stack-vt-single-server.observability.svc:10428"
+        url: "http://observability-stack-vt-single-server.default.svc:10428"
       paths:
         - /select/jaeger/.*
         - /select/tempo/.*
@@ -2614,7 +2745,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: observability-stack-victoria-metrics-k8s-stack-sync-job
-  namespace: observability
+  namespace: default
   labels: 
     app.kubernetes.io/component: syncJob
     app.kubernetes.io/instance: observability-stack
