@@ -1373,6 +1373,13 @@ file for the stack cannot be passed whole.
 |---|---|---|---|
 | `stackReleaseName` | string | `""` | The Helm release name of the stack install this chart sits beside. Every name and the `app.kubernetes.io/instance` label are derived from it exactly as the stack derives them, so the objects match. Empty means this chart's own release name, right only when it is named like the stack's. The only key with no counterpart in the stack. |
 
+**Presets.** An Application lists presets in its `valueFiles`, so the chart that
+renders the plane carries the plane's halves of the stack's: `self-alerts-victoria`,
+`notifications-drop-vendored` (the same files as the stack's) and
+`upstream-rules-platform-alerts` (`upstreamRules.source` and the vendored
+`defaultRules` off, which this chart reads to decide on the Watchdog). A test
+holds them equal to the stack's.
+
 `tests/alerting_chart_test.go` renders the stack (switch off and on) and this
 chart for every case under `tests/cases/observability-stack` and holds the
 objects byte-identical; the helpers and templates are copies, and that test

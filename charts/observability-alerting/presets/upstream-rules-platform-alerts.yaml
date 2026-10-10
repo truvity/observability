@@ -1,0 +1,16 @@
+# Preset: the upstream rule sets come from charts/platform-alerts, not from the
+# stack's sync Job (the alerting-chart half of
+# observability-stack/presets/upstream-rules-platform-alerts.yaml).
+#
+# With `upstreamRules.source: platform-alerts` this chart renders no Watchdog of
+# its own: the pack's `general.rules` carries upstream's. The stack's own
+# install turns the Job and `defaultRules` off (its preset); the mirror here
+# says the same, because this chart reads it to decide on the Watchdog and
+# refuses the combination `platform-alerts` with the vendored rules still on.
+# Nothing reads this file unless it is listed.
+upstreamRules:
+  source: platform-alerts
+victoria-metrics-k8s-stack:
+  defaultRules:
+    enabled: false
+    create: false

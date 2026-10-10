@@ -34,6 +34,9 @@ func TestPresetsRenderWhatTheirValuesRender(t *testing.T) {
 			"alertgroup", "KubeCPUOvercommit",
 		}},
 		{"observability-stack", "presets-operator-only", []string{"kubernetes.io/arch: arm64"}},
+		{"observability-alerting", "presets", []string{
+			"vm_rows_ignored_total", "alertgroup",
+		}},
 		{"observability-emitters", "presets", []string{
 			"vmauth-observability-stack.observability.svc:8427", "--remoteWrite.bearerTokenFile=/etc/observability-write-token/token",
 			"karpenter.sh/nodepool: durable",
