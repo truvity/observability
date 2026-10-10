@@ -22,6 +22,12 @@
 # address and a genuine particular would be missed, which is why the
 # exclusion is an exact string and not a prefix.
 #
+# The same reasoning admits a second fixed address:
+# `/var/run/secrets/grafana.com/serviceaccount`, where the vendored
+# grafana-operator (charts/observability-cluster) mounts the projected token
+# it presents to the Kubernetes API. It is upstream's constant, identical on
+# every cluster, and it appears in the golden renders of that chart.
+#
 # Every chart value or module input that names a cluster, an account, a
 # hostname or a secret path is an INPUT with a neutral default; the
 # consuming estate supplies the particulars from its own repository.
@@ -52,7 +58,7 @@ patterns=(
 # Mechanism that the patterns above necessarily match. See the delta note
 # in the header: every entry here is an address that is identical in every
 # cluster and names nothing about any estate.
-mechanism='/var/run/secrets/kubernetes\.io/serviceaccount'
+mechanism='/var/run/secrets/(kubernetes\.io|grafana\.com)/serviceaccount'
 
 fail=0
 

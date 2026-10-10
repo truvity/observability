@@ -54,7 +54,11 @@ func TestClusterChartRendersWhatItWasAskedFor(t *testing.T) {
 	bare := clusterChartObjects(t, "folder-less")
 	assert.Equal(t, map[string]int{"Grafana": 1}, kindsOf(bare))
 
-	for name, objs := range map[string]map[string]string{"minimal": grafana, "operator": operator, "folder-less": bare, "everything": clusterChartObjects(t, "everything")} {
+	cases := map[string]map[string]string{
+		"minimal": grafana, "operator": operator, "folder-less": bare,
+		"everything": clusterChartObjects(t, "everything"),
+	}
+	for name, objs := range cases {
 		assert.NotContains(t, kindsOf(objs), "CustomResourceDefinition",
 			"%s: a CRD in the render would make this release a second owner of the Grafana CRDs", name)
 	}
