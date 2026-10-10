@@ -168,7 +168,9 @@ func Lint(rules []Rule, o LintOptions) ([]Violation, error) {
 		}
 
 		if o.RequireEvaluator && hasEv && r.LogsQL() && ev != contracts.EvaluatorLogs {
-			add(r, CheckEvaluatorLabel, "a LogsQL rule must carry %s: %s; %q names another evaluator, so no vmalert would load it", contracts.EvaluatorLabel, contracts.EvaluatorLogs, ev)
+			add(r, CheckEvaluatorLabel,
+				"a LogsQL rule must carry %s: %s; %q names another evaluator, so no vmalert would load it",
+				contracts.EvaluatorLabel, contracts.EvaluatorLogs, ev)
 		}
 
 		if rt, ok := r.Labels[contracts.RuleTypeLabel]; ok && rt != contracts.RuleTypeAlert && rt != contracts.RuleTypeRecording {
