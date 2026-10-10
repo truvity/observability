@@ -1,0 +1,8 @@
+# expect: groups.upstream is on but `clusterLabel` is empty
+clusterLabel: ""
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  upstream:
+    enabled: true

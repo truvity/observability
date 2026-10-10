@@ -132,10 +132,16 @@ what that leaves unverified.
 */}}
 {{- define "observability-stack.vendoredWatchdogPresent" -}}
 {{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- /* `upstreamRules.source: platform-alerts`: upstream's Watchdog comes from the
+       pack's `general.rules` group instead of the sync job; this chart's own
+       would be a second one. */ -}}
+{{- if eq (.Values.upstreamRules).source "platform-alerts" -}}true
+{{- else -}}
 {{- $dr := $vmks.defaultRules | default dict -}}
 {{- $rulesOn := and $vmks.enabled (or $dr.enabled $dr.create) -}}
 {{- $generalGroup := index ($dr.groups | default dict) "general.rules" | default dict -}}
 {{- if and $rulesOn (ne $generalGroup.enabled false) -}}true{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{- /*

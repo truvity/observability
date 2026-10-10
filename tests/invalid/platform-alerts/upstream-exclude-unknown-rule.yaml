@@ -1,0 +1,9 @@
+# expect: groups.upstream.kubernetes-apps.exclude names "KubeJobFaild"
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  upstream:
+    enabled: true
+    kubernetes-apps:
+      exclude: [KubeJobFaild]

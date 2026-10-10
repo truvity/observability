@@ -423,6 +423,82 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### 0.69.x → 0.70.0
+
+**Nothing moves on the bump.** `observability-stack`'s new
+`upstreamRules.source` defaults to `sync-job` and `platform-alerts`'
+`groups.upstream.enabled` to `false`: no golden changed. The upgrade is an
+opt-in, and a two-step one, because it changes **what applies the upstream
+rules** (`KubePodCrashLooping`, `TargetDown`, `Watchdog`, the `k8s.rules.*`
+recordings, ...): from `victoria-metrics-k8s-stack`'s sync Job, which fetches
+them from upstream's branch heads, to a copy vendored at pinned commits in
+`charts/platform-alerts` with a per-rule `exclude`
+([reference.md](reference.md), `groups.upstream`). The stack and
+`platform-alerts` are separate Applications that sync independently, so a
+single change cannot be made atomic. The order below picks the failure
+mode that cannot lose an alert: a short **duplicate**, never a **gap**.
+
+1. **Translate what the sync job was told.** Every
+   `victoria-metrics-k8s-stack.defaultRules.rules.<Alert>: {enabled: false}`
+   becomes `groups.upstream."<group>".exclude: [<Alert>]` (the group is the one
+   that rule is in: `kubernetes-apps`, `kubernetes-system-kubelet`,
+   `kubernetes-resources`, ... `upstream/PIN.yaml` lists each group's rules);
+   a `defaultRules.groups.<group>.enabled` becomes
+   `groups.upstream."<group>".enabled`; a per-rule `spec.expr` becomes
+   `groups.upstream."<group>".override.<Alert>.expr`; the presets
+   `rules-no-apiserver` and `rules-on-demand-nodes` become the same keys. An
+   install whose stack runs no Alertmanager (`alertmanager.enabled: false` /
+   a sync-job `alertmanager` source off) sets
+   `groups.upstream."alertmanager.rules".enabled: false`. Set
+   `groups.upstream.alertmanagerNamespace` when the Alertmanager is not in
+   the platform-alerts namespace. A misspelt rule name fails the render.
+2. **Turn the pack on first.** Upgrade `platform-alerts` to 0.70.0 with
+   `groups.upstream.enabled: true` and the keys from step 1, with the stack
+   still on `sync-job`. For as long as both run, every upstream group is
+   evaluated twice: one rule file from the sync job, one from the pack, same
+   group name, same rule names, same expressions, same labels. That is
+   harmless by construction: an alert is the same series with the same label
+   set (`alertgroup` included) from both, so Alertmanager sees one
+   fingerprint and notifies once, and vmsingle's `dedup.minScrapeInterval`
+   (MIRROR of `interval`, 30s) collapses the two writes of a recording. Check
+   before step 3: `kubectl get vmrule` lists the `*-upstream-*` objects,
+   vmalert's `/api/v1/rules` shows each group twice and no group with
+   `health: err`, and `count by (alertname) (ALERTS{alertstate="firing"})`
+   did not change. The rule counts in `upstream/PIN.yaml` are the expected
+   number per group.
+3. **Then hand the stack over.** Upgrade `observability-stack` to 0.70.0 and
+   list `presets/upstream-rules-platform-alerts.yaml` before your own values
+   (it sets `upstreamRules.source: platform-alerts`,
+   `victoria-metrics-k8s-stack.defaultRules.enabled: false` and `syncJob.enabled:
+   false`). The sync Job's ServiceAccount goes with the Job, and Kubernetes
+   garbage-collects the VMRules it owned: the pack's copies were already
+   evaluating, so the alerts that were firing keep firing from the pack's
+   instance (no resolve, no re-notification) and the recordings never stop.
+   The stack renders no `Watchdog` of its own from now on; the pack's
+   `general.rules` carries upstream's (**keep that group on**, and do not
+   exclude `Watchdog`). The stack refuses to render with `source:
+   platform-alerts` and the rule sync still on.
+
+**Do not reverse steps 2 and 3, and do not land both in one change.** With the
+stack handed over first, its Job's VMRules are collected before the pack's
+exist: for the minutes `platform-alerts` takes to sync and the operator and
+vmalert to reload, no upstream rule is evaluated, `Watchdog` included (the
+status box's deadman reads it), firing alerts resolve and re-notify after
+their `for`, and `for` timers restart. If one Kargo freight bumps both
+charts, bump both with the new keys *unset* (the bump itself is a no-op) and
+make steps 2 and 3 two promotions, the second after step 2's checks.
+
+**What differs from the sync job.** The pack is pinned (the Job followed
+upstream's `main`/`master` at every deploy); a refresh is a reviewed change
+(`hack/vendor-upstream-rules.sh update`, then re-run the checks above).
+Rules carry upstream's labels only: not `commonLabels`, not `runbookBaseUrl`.
+Sources the stack never rendered (kube-state-metrics, node-exporter, etcd,
+vmagent, vmcluster, VictoriaLogs/Traces) are not in the pack.
+
+**Rolling back** is the same order reversed: remove the preset (the sync Job
+returns and applies upstream's current heads; wait for `sync complete`), then
+turn `groups.upstream.enabled` off.
+
 ### 0.69.0 → 0.69.1
 
 **`observability-stack`, rule ownership: vmalert selects on

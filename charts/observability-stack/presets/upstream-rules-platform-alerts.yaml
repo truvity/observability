@@ -1,0 +1,34 @@
+# Preset: the upstream rule sets (kube-prometheus' kubernetes-mixin, the
+# VictoriaMetrics family's own) come from charts/platform-alerts'
+# `groups.upstream`, vendored at a pinned commit with per-rule `exclude`,
+# instead of from victoria-metrics-k8s-stack's sync Job.
+#
+# Sets both halves of the switch together, because Helm cannot turn a
+# subchart's value off from this chart's own and this chart refuses the
+# half-set combination (`observability-stack.validate.upstreamRules`):
+#
+#   upstreamRules.source: platform-alerts        who owns the rules
+#   victoria-metrics-k8s-stack.defaultRules      the sync Job has no rule source
+#   victoria-metrics-k8s-stack.syncJob           the sync Job is not installed
+#
+# Roll it out in the order docs/adoption.md (0.70.0) gives: platform-alerts
+# with `groups.upstream.enabled: true` FIRST, this preset second. Listed the
+# other way round it opens a gap in the upstream alerts, including `Watchdog`.
+# Turning the Job off is what REMOVES the VMRules it applied earlier: it does
+# not prune when it has no source (measured with the vendored sync-job image),
+# but every VMRule it made is owned by its ServiceAccount, and Argo CD / Helm
+# deleting that ServiceAccount has Kubernetes garbage-collect them. That is the
+# swap, and it leaves no gap only because the pack is already running.
+#
+# The Job also syncs dashboards (`defaultDashboards`, off by default). An
+# install that syncs them lists `syncJob.enabled: true` after this preset and
+# keeps the old VMRules until it removes them itself. List the file BEFORE
+# your own values. Nothing reads it unless it is listed.
+upstreamRules:
+  source: platform-alerts
+victoria-metrics-k8s-stack:
+  defaultRules:
+    enabled: false
+    create: false
+  syncJob:
+    enabled: false

@@ -1,0 +1,6 @@
+name: k8s.rules.container_cpu_requests
+rules:
+- expr: kube_pod_container_resource_requests{resource="cpu",job="kube-state-metrics"} * on(namespace,pod,__CLUSTER_LABEL__) group_left() max(kube_pod_status_phase{phase=~"Pending|Running"} == 1) by(namespace,pod,__CLUSTER_LABEL__)
+  record: cluster:namespace:pod_cpu:active:kube_pod_container_resource_requests
+- expr: sum(sum(max(kube_pod_container_resource_requests{resource="cpu",job="kube-state-metrics"}) by(namespace,pod,container,__CLUSTER_LABEL__) * on(namespace,pod,__CLUSTER_LABEL__) group_left() max(kube_pod_status_phase{phase=~"Pending|Running"} == 1) by(namespace,pod,__CLUSTER_LABEL__)) by(namespace,pod,__CLUSTER_LABEL__)) by(namespace,__CLUSTER_LABEL__)
+  record: namespace_cpu:kube_pod_container_resource_requests:sum

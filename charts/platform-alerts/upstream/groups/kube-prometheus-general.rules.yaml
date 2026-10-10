@@ -1,0 +1,6 @@
+name: kube-prometheus-general.rules
+rules:
+- expr: count(up == 1) without(instance,pod,node)
+  record: count:up1
+- expr: count(up == 0) without(instance,pod,node)
+  record: count:up0

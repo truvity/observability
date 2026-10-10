@@ -59,7 +59,8 @@ VMRule cannot serve both alerters, because the metrics vmalert takes every
 rule NOT marked `observability.rule-type: vlogs` (or `observability.truvity.io/evaluator: logs`) and the logs one only
 those that are.
 */ -}}
-{{- $metricsGroups := without $enabled "podSecurity" "podSecurityAudit" -}}
+{{- /* `upstream` is the vendored pack: its own objects, templates/upstream.yaml. */ -}}
+{{- $metricsGroups := without $enabled "podSecurity" "podSecurityAudit" "upstream" -}}
 {{- if $metricsGroups }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule

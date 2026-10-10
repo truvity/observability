@@ -1,0 +1,9 @@
+# expect: additional properties 'kubernetes-appz' not allowed
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  upstream:
+    enabled: true
+    kubernetes-appz:
+      enabled: true
