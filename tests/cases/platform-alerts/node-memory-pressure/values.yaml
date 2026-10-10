@@ -1,0 +1,13 @@
+# The nodeMemoryPressure group alone, at its own defaults (0.2 / 1m warning,
+# 0.5 / 1m critical).
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  nodeMemoryPressure:
+    enabled: true

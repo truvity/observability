@@ -137,7 +137,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "pulumiDrift", "upstream"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "nodeMemoryPressure", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "pulumiDrift", "upstream"],
       "properties": {
         "backups": {
           "type": "object",
@@ -263,6 +263,21 @@
             "severity": { "$ref": "#/definitions/severity" },
             "absentFor": { "$ref": "#/definitions/duration" },
             "absentSeverity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "nodeMemoryPressure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "threshold": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "for": { "$ref": "#/definitions/duration" },
+            "severity": { "$ref": "#/definitions/severity" },
+            "criticalThreshold": { "type": "number", "minimum": 0, "maximum": 1, "description": "0 renders no critical alert." },
+            "criticalFor": { "$ref": "#/definitions/duration" },
+            "criticalSeverity": { "$ref": "#/definitions/severity" },
             "keepClusterLabel": { "type": "boolean" }
           }
         },
