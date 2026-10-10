@@ -66,3 +66,24 @@ folder:
   # works from any namespace. At most 40 characters of letters, digits, `-`
   # and `_`.
   uid: ""
+
+datasources:
+  # -- Render, for each cluster in `clusters`, the datasources
+  # `<cluster>-metrics` and `<cluster>-logs` in the shared Grafana, through
+  # the proxy with that cluster's own token (docs/architecture/
+  # cluster-datasources.md). Needs `externalGrafana.enabled`. Meant for the
+  # release whose operator may create datasources (the platform's own, beside
+  # the stores), not for a cluster whose token is folder-scoped.
+  enabled: false
+  # -- The proxy's root URL as the shared Grafana reaches it (the metrics path
+  # `/prometheus` is appended for the metrics datasource). A data input.
+  proxyUrl: ""
+  # -- The Grafana plugin type of the metrics datasources.
+  metricsType: victoriametrics-metrics-datasource
+  # -- The clusters to render datasources for. `name` is the cluster, exactly
+  # as the stack's `tenancy.clusterDatasources[].cluster` spells it;
+  # `tokenSecret` names the Secret (in this release's namespace) and key that
+  # hold that cluster's bearer token, never the token.
+  #   - name: example-cluster
+  #     tokenSecret: {name: example-datasource-token, key: token}
+  clusters: []

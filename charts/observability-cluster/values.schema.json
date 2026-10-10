@@ -75,6 +75,42 @@
         }
       }
     },
+    "datasources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "proxyUrl": {
+          "type": "string",
+          "pattern": "^(https?://.+)?$",
+          "description": "The proxy's root URL as the shared Grafana reaches it."
+        },
+        "metricsType": {
+          "type": "string",
+          "enum": ["victoriametrics-metrics-datasource", "prometheus"]
+        },
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "tokenSecret"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", "maxLength": 40 },
+              "tokenSecret": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "key"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "key": { "type": "string", "pattern": "^[A-Za-z0-9_]+$" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "folder": {
       "type": "object",
       "additionalProperties": false,

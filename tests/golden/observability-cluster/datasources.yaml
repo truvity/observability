@@ -1,0 +1,163 @@
+---
+# Source: observability-cluster/templates/grafana.yaml
+# The shared Grafana, as this cluster's operator sees it. `spec.external`: the
+# operator deploys nothing for it. The credential is a reference to a Secret
+# this chart neither creates nor reads.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: default
+  labels:
+    app.kubernetes.io/name: observability-cluster
+    app.kubernetes.io/instance: observability-cluster
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability
+    helm.sh/chart: observability-cluster-0.0.0
+    observability.truvity.io/grafana: shared
+spec:
+  external:
+    url: "http://grafana.example.svc:3000"
+    apiKey:
+      name: "grafana-credentials"
+      key: "token"
+
+---
+# Source: observability-cluster/templates/datasources.yaml
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: "example-a-metrics"
+  namespace: default
+  labels:
+    app.kubernetes.io/name: observability-cluster
+    app.kubernetes.io/instance: observability-cluster
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability
+    helm.sh/chart: observability-cluster-0.0.0
+    observability.truvity.io/datasource-cluster: "example-a"
+spec:
+  instanceSelector:
+    matchLabels:
+      observability.truvity.io/grafana: shared
+  datasource:
+    name: "example-a-metrics"
+    uid: "example-a-metrics"
+    access: proxy
+    type: "victoriametrics-metrics-datasource"
+    url: "https://telemetry.example.org/prometheus"
+    jsonData:
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: "Bearer ${token}"
+  valuesFrom:
+    - targetPath: secureJsonData.httpHeaderValue1
+      valueFrom:
+        secretKeyRef:
+          name: "example-a-datasource-token"
+          key: "token"
+
+---
+# Source: observability-cluster/templates/datasources.yaml
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: "example-a-logs"
+  namespace: default
+  labels:
+    app.kubernetes.io/name: observability-cluster
+    app.kubernetes.io/instance: observability-cluster
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability
+    helm.sh/chart: observability-cluster-0.0.0
+    observability.truvity.io/datasource-cluster: "example-a"
+spec:
+  instanceSelector:
+    matchLabels:
+      observability.truvity.io/grafana: shared
+  datasource:
+    name: "example-a-logs"
+    uid: "example-a-logs"
+    access: proxy
+    type: victoriametrics-logs-datasource
+    url: "https://telemetry.example.org"
+    jsonData:
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: "Bearer ${token}"
+  valuesFrom:
+    - targetPath: secureJsonData.httpHeaderValue1
+      valueFrom:
+        secretKeyRef:
+          name: "example-a-datasource-token"
+          key: "token"
+
+---
+# Source: observability-cluster/templates/datasources.yaml
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: "example-b-metrics"
+  namespace: default
+  labels:
+    app.kubernetes.io/name: observability-cluster
+    app.kubernetes.io/instance: observability-cluster
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability
+    helm.sh/chart: observability-cluster-0.0.0
+    observability.truvity.io/datasource-cluster: "example-b"
+spec:
+  instanceSelector:
+    matchLabels:
+      observability.truvity.io/grafana: shared
+  datasource:
+    name: "example-b-metrics"
+    uid: "example-b-metrics"
+    access: proxy
+    type: "victoriametrics-metrics-datasource"
+    url: "https://telemetry.example.org/prometheus"
+    jsonData:
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: "Bearer ${token}"
+  valuesFrom:
+    - targetPath: secureJsonData.httpHeaderValue1
+      valueFrom:
+        secretKeyRef:
+          name: "example-b-datasource-token"
+          key: "token"
+
+---
+# Source: observability-cluster/templates/datasources.yaml
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: "example-b-logs"
+  namespace: default
+  labels:
+    app.kubernetes.io/name: observability-cluster
+    app.kubernetes.io/instance: observability-cluster
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability
+    helm.sh/chart: observability-cluster-0.0.0
+    observability.truvity.io/datasource-cluster: "example-b"
+spec:
+  instanceSelector:
+    matchLabels:
+      observability.truvity.io/grafana: shared
+  datasource:
+    name: "example-b-logs"
+    uid: "example-b-logs"
+    access: proxy
+    type: victoriametrics-logs-datasource
+    url: "https://telemetry.example.org"
+    jsonData:
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: "Bearer ${token}"
+  valuesFrom:
+    - targetPath: secureJsonData.httpHeaderValue1
+      valueFrom:
+        secretKeyRef:
+          name: "example-b-datasource-token"
+          key: "token"
