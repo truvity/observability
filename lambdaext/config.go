@@ -3,7 +3,7 @@
 //
 // The function exports to a proxy on 127.0.0.1 and holds no credential. The
 // proxy asks STS for an identity token for the role the function already
-// runs as, trades it at the access-roster issuer for a short-lived access
+// runs as, trades it at the sluis issuer for a short-lived access
 // token, and forwards each export with that token as a bearer. Everything is
 // fail-open: nothing here may block, slow or crash an invocation.
 package lambdaext
@@ -20,14 +20,14 @@ import (
 
 // Environment variable names.
 const (
-	EnvIssuer        = "ACCESS_ROSTER_ISSUER"
-	EnvAudience      = "ACCESS_ROSTER_AUDIENCE"
-	EnvOTLPAudience  = "ACCESS_ROSTER_OTLP_AUDIENCE"
-	EnvOTLPEndpoint  = "ACCESS_ROSTER_OTLP_ENDPOINT"
-	EnvListen        = "ACCESS_ROSTER_LISTEN"
-	EnvSTSDuration   = "ACCESS_ROSTER_STS_DURATION_SECONDS"
-	EnvSTSAlgorithm  = "ACCESS_ROSTER_STS_ALGORITHM"
-	EnvTokenFile     = "ACCESS_ROSTER_TOKEN_FILE"
+	EnvIssuer        = "SLUIS_ISSUER"
+	EnvAudience      = "SLUIS_AUDIENCE"
+	EnvOTLPAudience  = "SLUIS_OTLP_AUDIENCE"
+	EnvOTLPEndpoint  = "SLUIS_OTLP_ENDPOINT"
+	EnvListen        = "SLUIS_LISTEN"
+	EnvSTSDuration   = "SLUIS_STS_DURATION_SECONDS"
+	EnvSTSAlgorithm  = "SLUIS_STS_ALGORITHM"
+	EnvTokenFile     = "SLUIS_TOKEN_FILE"
 	defaultListen    = "127.0.0.1:4318"
 	defaultAlgorithm = "ES384"
 	defaultOTLPAud   = "otlp"
@@ -36,7 +36,7 @@ const (
 
 // Config is the extension's settings, all from the environment.
 type Config struct {
-	// Issuer is the access-roster issuer's base URL.
+	// Issuer is the sluis issuer's base URL.
 	Issuer string
 	// Audience is the audience asked of STS for the identity token. The
 	// issuer's AWS verifier decides what it must be; the function role's
@@ -54,13 +54,17 @@ type Config struct {
 	Algorithm string
 	// TokenFile, when set, receives each access token (0600, atomically).
 	TokenFile string
+	// Deprecated is the ACCESS_ROSTER_ names that were read because their
+	// SLUIS_ name was not set. Names only, never values.
+	Deprecated []string
 }
 
 // LoadConfig reads the environment through getenv. The error names every
 // missing or invalid setting at once.
 func LoadConfig(getenv func(string) string) (Config, error) {
+	env := newEnvReader(getenv)
 	get := func(name, fallback string) string {
-		if v := strings.TrimSpace(getenv(name)); v != "" {
+		if v := strings.TrimSpace(env.lookup(name)); v != "" {
 			return v
 		}
 		return fallback
@@ -84,18 +88,19 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		}
 	}
 	if raw := get(EnvSTSDuration, ""); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 60 || n > 3600 {
+		n, convErr := strconv.Atoi(raw)
+		if convErr != nil || n < 60 || n > 3600 {
 			problems = append(problems, fmt.Errorf("%s must be 60..3600, got %q", EnvSTSDuration, raw))
 		} else {
 			c.Duration = int32(n) //nolint:gosec // bounded above
 		}
 	}
 	if c.Endpoint != "" {
-		if err := checkUpstream(c.Endpoint); err != nil {
-			problems = append(problems, err)
+		if upErr := checkUpstream(c.Endpoint); upErr != nil {
+			problems = append(problems, upErr)
 		}
 	}
+	c.Deprecated = env.deprecated()
 	return c, errors.Join(problems...)
 }
 

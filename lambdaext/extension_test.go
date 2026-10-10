@@ -199,9 +199,9 @@ func baseEnv(rt *fakeRuntime, sts *fakeSTS, issuer *fakeIssuer, up *fakeUpstream
 		"AWS_LAMBDA_RUNTIME_API=" + strings.TrimPrefix(rt.URL, "http://"),
 		"AWS_REGION=eu-west-1", "AWS_ACCESS_KEY_ID=AKIDEXAMPLE", "AWS_SECRET_ACCESS_KEY=secret",
 		"AWS_SESSION_TOKEN=session", "AWS_ENDPOINT_URL_STS=" + sts.URL, "AWS_EC2_METADATA_DISABLED=true",
-		"ACCESS_ROSTER_ISSUER=" + issuer.URL, "ACCESS_ROSTER_AUDIENCE=" + issuer.URL,
-		"ACCESS_ROSTER_OTLP_ENDPOINT=" + up.URL, "ACCESS_ROSTER_LISTEN=" + addr,
-		"ACCESS_ROSTER_PLATFORM_LOGS=false", // the Telemetry API tests opt in
+		"SLUIS_ISSUER=" + issuer.URL, "SLUIS_AUDIENCE=" + issuer.URL,
+		"SLUIS_OTLP_ENDPOINT=" + up.URL, "SLUIS_LISTEN=" + addr,
+		"SLUIS_PLATFORM_LOGS=false", // the Telemetry API tests opt in
 	}
 }
 
@@ -210,7 +210,7 @@ func TestExtensionEndToEnd(t *testing.T) {
 	issuer := newFakeIssuer(t, 6) // refresh window opens after 4 seconds
 	addr := freeAddr(t)
 	tokenFile := filepath.Join(t.TempDir(), "sub", "token")
-	ext := startExtension(t, append(baseEnv(rt, sts, issuer, up, addr), "ACCESS_ROSTER_TOKEN_FILE="+tokenFile))
+	ext := startExtension(t, append(baseEnv(rt, sts, issuer, up, addr), "SLUIS_TOKEN_FILE="+tokenFile))
 
 	// Registered under the executable's own name, for both events.
 	eventually(t, "registration", func() bool { n, _, _ := rt.state(); return len(n) == 1 })
@@ -333,7 +333,7 @@ func TestExtensionWithoutConfigurationStillAnswersThePlatform(t *testing.T) {
 	if err := <-ext.exited; err != nil {
 		t.Fatalf("%v\n%s", err, ext.logs.String())
 	}
-	if !strings.Contains(ext.logs.String(), "ACCESS_ROSTER_ISSUER is not set") {
+	if !strings.Contains(ext.logs.String(), "SLUIS_ISSUER is not set") {
 		t.Fatalf("the misconfiguration must be named once:\n%s", ext.logs.String())
 	}
 }

@@ -446,7 +446,7 @@ func telemetryEnv(t *testing.T, rt *fakeRuntime, sts *fakeSTS, issuer *fakeIssue
 	env := append(baseEnv(rt, sts, issuer, up, freeAddr(t)),
 		"AWS_LAMBDA_FUNCTION_NAME=billing", "AWS_LAMBDA_FUNCTION_VERSION=$LATEST",
 		"AWS_LAMBDA_LOG_STREAM_NAME=2026/10/02/[$LATEST]abc", "AWS_REGION=eu-west-1",
-		"ACCESS_ROSTER_PLATFORM_LOGS=true", "ACCESS_ROSTER_TELEMETRY_LISTEN="+listen)
+		"SLUIS_PLATFORM_LOGS=true", "SLUIS_TELEMETRY_LISTEN="+listen)
 	return append(env, extra...)
 }
 
@@ -455,7 +455,7 @@ func TestExtensionForwardsPlatformLogs(t *testing.T) {
 	issuer := newFakeIssuer(t, 900)
 	listen := freeAddr(t)
 	ext := startExtension(t, telemetryEnv(t, rt, sts, issuer, up, listen,
-		"ACCESS_ROSTER_FUNCTION_LOGS=true", "ACCESS_ROSTER_TELEMETRY_BUFFER_TIMEOUT_MS=250"))
+		"SLUIS_FUNCTION_LOGS=true", "SLUIS_TELEMETRY_BUFFER_TIMEOUT_MS=250"))
 
 	eventually(t, "the subscription", func() bool { return len(rt.subscriptions()) == 1 })
 	var sub struct {
@@ -534,7 +534,7 @@ func TestExtensionSubscribesToPlatformOnlyByDefaultAndCanBeOff(t *testing.T) {
 	}
 
 	rt2 := newFakeRuntime(t)
-	ext := startExtension(t, telemetryEnv(t, rt2, sts, issuer, up, freeAddr(t), "ACCESS_ROSTER_PLATFORM_LOGS=false"))
+	ext := startExtension(t, telemetryEnv(t, rt2, sts, issuer, up, freeAddr(t), "SLUIS_PLATFORM_LOGS=false"))
 	eventually(t, "the first next", func() bool { _, _, n := rt2.state(); return n >= 1 })
 	time.Sleep(300 * time.Millisecond)
 	if len(rt2.subscriptions()) != 0 {
@@ -553,7 +553,7 @@ func TestExtensionKeepsRunningWhenTheSubscriptionIsRefused(t *testing.T) {
 	rt.subStatus = http.StatusForbidden
 	rt.mu.Unlock()
 	addr := freeAddr(t)
-	env := telemetryEnv(t, rt, sts, issuer, up, freeAddr(t), "ACCESS_ROSTER_LISTEN="+addr)
+	env := telemetryEnv(t, rt, sts, issuer, up, freeAddr(t), "SLUIS_LISTEN="+addr)
 	ext := startExtension(t, env)
 	eventually(t, "a log line", func() bool { return strings.Contains(ext.logs.String(), "Lambda telemetry logs are off") })
 	// The OTLP proxy is unaffected.

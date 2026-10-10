@@ -16,14 +16,14 @@ import (
 
 // Telemetry API settings and their AWS-documented bounds.
 const (
-	EnvPlatformLogs     = "ACCESS_ROSTER_PLATFORM_LOGS"
-	EnvFunctionLogs     = "ACCESS_ROSTER_FUNCTION_LOGS"
-	EnvExtensionLogs    = "ACCESS_ROSTER_EXTENSION_LOGS"
-	EnvTelemetryListen  = "ACCESS_ROSTER_TELEMETRY_LISTEN"
-	EnvBufferMaxItems   = "ACCESS_ROSTER_TELEMETRY_BUFFER_MAX_ITEMS"
-	EnvBufferMaxBytes   = "ACCESS_ROSTER_TELEMETRY_BUFFER_MAX_BYTES"
-	EnvBufferTimeoutMs  = "ACCESS_ROSTER_TELEMETRY_BUFFER_TIMEOUT_MS"
-	EnvBufferQueueItems = "ACCESS_ROSTER_TELEMETRY_BUFFER_QUEUE_ITEMS"
+	EnvPlatformLogs     = "SLUIS_PLATFORM_LOGS"
+	EnvFunctionLogs     = "SLUIS_FUNCTION_LOGS"
+	EnvExtensionLogs    = "SLUIS_EXTENSION_LOGS"
+	EnvTelemetryListen  = "SLUIS_TELEMETRY_LISTEN"
+	EnvBufferMaxItems   = "SLUIS_TELEMETRY_BUFFER_MAX_ITEMS"
+	EnvBufferMaxBytes   = "SLUIS_TELEMETRY_BUFFER_MAX_BYTES"
+	EnvBufferTimeoutMs  = "SLUIS_TELEMETRY_BUFFER_TIMEOUT_MS"
+	EnvBufferQueueItems = "SLUIS_TELEMETRY_BUFFER_QUEUE_ITEMS"
 
 	telemetryAPIPath    = "/2022-07-01/telemetry"
 	telemetrySchema     = "2022-12-13"
@@ -48,6 +48,9 @@ type TelemetryConfig struct {
 	// QueueItems bounds the records held here waiting for an export; beyond
 	// it the oldest are dropped and counted.
 	QueueItems int
+	// Deprecated is the ACCESS_ROSTER_ names that were read because their
+	// SLUIS_ name was not set. Names only, never values.
+	Deprecated []string
 }
 
 // Enabled reports whether any log type is subscribed to.
@@ -87,8 +90,9 @@ func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 		MaxItems: 1000, MaxBytes: 262144, TimeoutMs: 1000, QueueItems: 5000,
 	}
 	var problems []error
+	env := newEnvReader(getenv)
 	flag := func(name string, dst *bool) {
-		if raw := getenv(name); raw != "" {
+		if raw := env.lookup(name); raw != "" {
 			v, err := strconv.ParseBool(raw)
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s must be true or false, got %q", name, raw))
@@ -98,7 +102,7 @@ func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 		}
 	}
 	number := func(name string, dst *int, lo, hi int) {
-		if raw := getenv(name); raw != "" {
+		if raw := env.lookup(name); raw != "" {
 			n, err := strconv.Atoi(raw)
 			if err != nil || n < lo || n > hi {
 				problems = append(problems, fmt.Errorf("%s must be %d..%d, got %q", name, lo, hi, raw))
@@ -110,13 +114,14 @@ func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 	flag(EnvPlatformLogs, &c.Platform)
 	flag(EnvFunctionLogs, &c.Function)
 	flag(EnvExtensionLogs, &c.Extension)
-	if v := getenv(EnvTelemetryListen); v != "" {
+	if v := env.lookup(EnvTelemetryListen); v != "" {
 		c.Listen = v
 	}
 	number(EnvBufferMaxItems, &c.MaxItems, 1000, 10000)
 	number(EnvBufferMaxBytes, &c.MaxBytes, 262144, 1048576)
 	number(EnvBufferTimeoutMs, &c.TimeoutMs, 25, 30000)
 	number(EnvBufferQueueItems, &c.QueueItems, 100, 1000000)
+	c.Deprecated = env.deprecated()
 	return c, errors.Join(problems...)
 }
 
