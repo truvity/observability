@@ -173,11 +173,14 @@ What does not assume a cluster: routing (matchers are plain labels),
 both alerts as equal, and the default `requireLabels` makes a critical
 without them inhibit nothing), and the rule lint (`pkg/rulecheck`
 applies its cluster checks only to a VMRule that names the cluster
-label). What still does: the Slack and Telegram message templates print
-`k8s_cluster_name` and link Grafana with `var-cluster`, so a sourced
-alert shows an empty cluster in the title; the text is left alone here so
-the default render stays byte-identical. Add `source` to `groupBy` if
-two sources should not share one notification.
+label). The Slack title and the Telegram message name the cluster, or,
+for an alert with no `k8s_cluster_name`, its `source` (`FIRING
+GuardDutyFinding on aws-guardduty`); an alert with a cluster reads as it
+always did. The Grafana links still carry `var-cluster`, which is empty
+for a sourced alert. While `groupBy` is left at its default and
+`routeLabels` lists `source`, `source` is added to the grouping, so two
+sources do not share one notification; an explicit `groupBy` is used as
+written.
 
 ## Slack
 

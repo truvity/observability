@@ -2359,7 +2359,7 @@ spec:
             parse_mode: "HTML"
             send_resolved: true
             message: |-
-              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}
+              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ or .CommonLabels.k8s_cluster_name .CommonLabels.source }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}
               {{ range .Alerts }}
               {{ .Annotations.summary }}
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
@@ -2374,7 +2374,7 @@ spec:
             parse_mode: "HTML"
             send_resolved: true
             message: |-
-              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}
+              <b>{{ .Status | toUpper }}</b> {{ .CommonLabels.alertname }} on {{ or .CommonLabels.k8s_cluster_name .CommonLabels.source }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}
               {{ range .Alerts }}
               {{ .Annotations.summary }}
               {{ if .Annotations.runbook }}Runbook: https://runbooks.example/{{ .Annotations.runbook }}
