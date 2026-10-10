@@ -90,6 +90,12 @@ var DefaultAllowlist = []Allow{
 			"(the same exemption tests/platform_alerts_cluster_test.go carries).",
 	},
 	{
+		Check: CheckClusterLabel, Alert: "InfoInhibitor", Resource: "upstream-general-rules",
+		Reason: "Vendored upstream rule (platform-alerts groups.upstream), kept byte for byte so its identity matches what the " +
+			"sync job applied. It exists to inhibit info-severity alerts per namespace (upstream's design); changing its " +
+			"expression would change an alert identity the pack promises to keep.",
+	},
+	{
 		Check: CheckSourceAbsent, Alert: "SlackNotificationsFailing", Contains: "alertmanager_notifications_failed_total",
 		Reason: "The same counter, in a render with no SelfAlertSourceAbsent at all (only reported under RequireSourceAbsent).",
 	},
