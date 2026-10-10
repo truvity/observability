@@ -186,7 +186,7 @@ func TestSSHPrefersPostQuantumKeyExchangeFailSafe(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, want := range []string{
-		"KexAlgorithms ^sntrup761x25519-sha512@openssh.com",
+		"KexAlgorithms ^mlkem768x25519-sha256,sntrup761x25519-sha512@openssh.com",
 		"/etc/ssh/sshd_config.d/06-statusbox-kex.conf",
 		"if sshd -t; then systemctl restart sshd; else rm -f /etc/ssh/sshd_config.d/06-statusbox-kex.conf; exit 1; fi",
 		"post-quantum key exchange not enabled; sshd keeps its defaults",
