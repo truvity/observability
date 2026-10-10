@@ -423,7 +423,7 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
-### 0.69.x → 0.70.0
+### 0.69.2 → 0.70.0
 
 **Nothing moves on the bump.** `observability-stack`'s new
 `upstreamRules.source` defaults to `sync-job` and `platform-alerts`'
