@@ -1,0 +1,2 @@
+{{- /* Every refusal, in one place, rendering no object (same shape as observability-stack). */ -}}
+{{- include "observability-alerting.validate" . -}}

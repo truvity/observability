@@ -1,3 +1,4 @@
+{{- if eq (.Values.alerting.source | default "stack") "stack" }}
 {{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml }}
 {{- if $observabilityStackEffective.alertmanager }}
 {{- $fullname := include "observability-stack.fullname" . }}
@@ -544,4 +545,5 @@ spec:
           - {{ $l }}
           {{- end }}
     {{- end }}
+{{- end }}
 {{- end }}

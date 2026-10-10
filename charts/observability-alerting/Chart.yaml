@@ -1,0 +1,19 @@
+apiVersion: v2
+name: observability-alerting
+description: >-
+  The alerting plane of an observability-stack install: the vmalerts, the
+  Alertmanager and its notifications, karma, the Watchdog rule and the store
+  self-alerts, under the object names the stack renders today.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - alerting
+  - alertmanager
+  - victoriametrics
+  - vmalert
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability

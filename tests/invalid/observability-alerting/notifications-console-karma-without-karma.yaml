@@ -1,0 +1,21 @@
+# expect: karma.enabled is false
+# console: karma with karma off links to a console that is not there.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  console: karma
+  consoleUrl: https://karma.example.com

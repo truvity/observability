@@ -1,0 +1,25 @@
+# expect: sends to Slack without a `workspace`, and notifications.slack.workspaces declares 2
+# Two workspaces and a destination that names none: the same channel
+# name is a different place in each, so the workspace is required.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+    - name: globex
+      appTokenSecret:
+        name: example-globex-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+      workspace: acme
+    warning:
+      receiver: slack
+      channel: '#alerts'

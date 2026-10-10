@@ -1,0 +1,8 @@
+# expect: `selfAlerts.sourceAbsent.enabled` is true but `selfAlerts.enabled` is not
+#
+# SelfAlertSourceAbsent watches the metric names the self-alerts are
+# configured with; with the self-alerts off there is nothing to watch.
+stackReleaseName: observability-stack
+selfAlerts:
+  sourceAbsent:
+    enabled: true

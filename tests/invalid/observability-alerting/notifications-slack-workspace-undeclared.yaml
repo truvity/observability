@@ -1,0 +1,21 @@
+# expect: names workspace "initech", which no entry in notifications.slack.workspaces declares
+# A severity naming a workspace nothing declares: no bot token, so the
+# route looks wired up and reaches nobody.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+      workspace: initech
+    warning:
+      receiver: slack
+      channel: '#alerts'

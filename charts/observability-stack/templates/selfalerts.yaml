@@ -1,3 +1,4 @@
+{{- if eq (.Values.alerting.source | default "stack") "stack" }}
 {{- /*
 Store self-alerts: nineteen rules over this chart's own components. See
 values.yaml's own comment on `selfAlerts` for why every metric name below
@@ -636,4 +637,5 @@ spec:
               stopped being scheduled produces no failures at all — the
               same blind spot the metrics store's own rule exists for.
         {{- end }}
+{{- end }}
 {{- end }}

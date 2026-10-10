@@ -1,0 +1,13 @@
+# expect: (or a `catchAll` or `drop`)
+# Evaluate-only notifies nobody; a catch-all beside it looks wired up and
+# is never reached.
+# No proxy: no principals to admit, so none of the tenancy refusals
+# apply and none can preempt this fixture's own.
+stackReleaseName: observability-stack
+alertmanager:
+  enabled: false
+notifications:
+  mode: evaluate-only
+  catchAll:
+    receiver: example-webhook
+    channel: all

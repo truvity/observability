@@ -1,3 +1,4 @@
+{{- if eq (.Values.alerting.source | default "stack") "stack" }}
 {{- /*
 Alertmanager's own scrape object.
 
@@ -63,4 +64,5 @@ spec:
     - targetPort: 9093
       path: /metrics
       interval: {{ $root.Values.interval }}
+{{- end }}
 {{- end }}

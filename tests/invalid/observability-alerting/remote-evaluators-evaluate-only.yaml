@@ -1,0 +1,22 @@
+# expect: `notifications.mode` is `evaluate-only`
+# Nobody to notify.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  mode: evaluate-only
+alertmanager:
+  enabled: false
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      alertmanager:
+        enabled: false
+vmalert:
+  remoteEvaluators:
+  - name: other-store
+    datasource:
+      url: https://metrics.other-store.example
+      auth:
+        bearer:
+          secretName: example-other-store-read
+          key: token

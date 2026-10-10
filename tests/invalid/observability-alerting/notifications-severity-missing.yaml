@@ -1,0 +1,19 @@
+# expect: notifications.severities.warning` is not set
+# A receiver kind is configured but `severities.warning` is not. Every
+# route this chart renders falls back to a no-op receiver when nothing
+# more specific matches, so a warning alert with no default reaches
+# nobody and looks routed.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'

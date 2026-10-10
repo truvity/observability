@@ -1,0 +1,1572 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-alerting",
+  "description": "The alerting plane of an observability-stack install: vmalerts, Alertmanager, karma, the Watchdog rule and the store self-alerts. Strict like the stack's schema: an unknown key fails the render. Every key is the stack's, with the same shape; sections the plane does not read are not declared.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "interval",
+    "storeCredentials"
+  ],
+  "definitions": {
+    "remoteEvaluatorKeyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h|d|w|y)$",
+      "description": "A duration with a unit, e.g. 30s, 5m, 1h."
+    },
+    "retention": {
+      "type": "string",
+      "pattern": "^[0-9]+(h|d|w|M|y)$",
+      "description": "A retention period WITH A UNIT. A bare number is read as months by every store in this family, so the unit is required here rather than left to a default nobody expects. The month unit is a capital M."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "description": "A plain name. This is a security boundary rather than a style rule: cluster and namespace names are interpolated into a filter expression, so one carrying | or .* would widen the grant it appears in."
+    },
+    "optionalName": {
+      "type": "string",
+      "pattern": "^([a-z0-9]([a-z0-9-]*[a-z0-9])?)?$",
+      "description": "A plain name (see `name`), or empty. Empty is allowed by the schema and refused at render time only where leaving it empty actually costs something, the same way `audience` is \u2014 so the refusal can say what leaving it unset costs there, rather than the schema rejecting a legitimate default of \"unset\"."
+    },
+    "labelName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+    },
+    "logFieldName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$",
+      "description": "A LOG FIELD NAME, which is a different question from a plain name and has a different answer. A log agent names its own fields, and a real one carries dots: kubernetes.pod_namespace, k8s.cluster.name. The shape admits those and refuses everything that is stream-filter syntax - a quote, a brace, a comma, an equals sign, a pipe, a colon, whitespace - because the name is interpolated into the filter and one of those would widen the grant rather than look odd."
+    },
+    "audience": {
+      "type": "string",
+      "pattern": "^\\S*$",
+      "description": "An OAuth client id: the audience this proxy's tokens are minted for. It is whatever the issuer assigned - a UUID, a name, an <id>@<project> - and is escaped and anchored where it is rendered, so a dot or a pipe in it pins itself rather than a pattern. Only a value no issuer mints is refused here: one carrying whitespace or a newline, which is usually a value that arrived from the wrong place. Empty is allowed by the schema and refused at render time whenever a principal exists, so that the refusal can say what an unpinned audience costs."
+    },
+    "resources": {
+      "type": "object",
+      "description": "Kubernetes resource requirements; passed through untouched. Under `resources.policy: guaranteed` the chart refuses requests that differ from limits and a fractional CPU; under `burstable`, see `resources.policy`.",
+      "required": [
+        "requests",
+        "limits"
+      ],
+      "properties": {
+        "requests": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
+      }
+    },
+    "secretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "key"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "routeOverride": {
+      "description": "A route's per-tier override of a Slack destination: a channel string (the tier's workspace and mention are kept), or `{channel, workspace, mention}` to move that project to another channel and/or workspace. Either half omitted is taken from the tier.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "channel": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workspace": {
+              "$ref": "#/definitions/workspaceName"
+            },
+            "mention": {
+              "$ref": "#/definitions/slackMention"
+            }
+          }
+        }
+      ]
+    },
+    "slackMention": {
+      "type": "string",
+      "enum": [
+        "here",
+        "channel"
+      ],
+      "description": "Ping people from a Slack destination: `here` renders Slack's `<!here>` (people online in the channel), `channel` renders `<!channel>` (everyone in it), at the start of the message text, for FIRING notifications only. Unset means no mention. A destination with a mention is its own receiver, named `slack-<workspace>--<channel>--<mention>`."
+    },
+    "workspaceName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "A Slack workspace's short name in this chart: lower-case alphanumerics and single hyphens. It names the mounted Secret volume and is half of a Slack receiver's name, so a double hyphen (the separator between the two halves) is not allowed."
+    },
+    "severityTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where a severity tier lands when no route says otherwise. `receiver` names a configured receiver kind - `slack`, `telegram`, or the name of an entry in `notifications.webhook` - and `channel` is where the Slack template's channel and receiver-naming come from; a route may override it per project but never the receiver kind. A `telegram` tier takes no `channel`: it lands in `notifications.telegram.chatId`, or in its own `chatId`/`messageThreadId`.",
+      "required": [
+        "receiver"
+      ],
+      "properties": {
+        "receiver": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspaceName",
+          "description": "The Slack workspace (an entry of `notifications.slack.workspaces`) this destination posts in. Optional when exactly one is declared, required with two or more."
+        },
+        "mention": {
+          "$ref": "#/definitions/slackMention"
+        },
+        "chatId": {
+          "$ref": "#/definitions/telegramChatId"
+        },
+        "messageThreadId": {
+          "$ref": "#/definitions/telegramThreadId"
+        }
+      },
+      "if": {
+        "properties": {
+          "receiver": {
+            "const": "telegram"
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "channel"
+        ]
+      }
+    },
+    "telegramChatId": {
+      "type": "integer",
+      "not": {
+        "const": 0
+      },
+      "description": "A Telegram chat id, as Alertmanager's own `chat_id` takes it: an integer, negative for a group or channel. Not a credential - without the bot token it sends nothing - but still an estate's particular, so it lives in the estate's values, never in this chart."
+    },
+    "telegramThreadId": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "A forum topic's `message_thread_id`. `0` means the chat's general topic, the same as leaving it unset."
+    },
+    "subchart": {
+      "type": "object",
+      "description": "An upstream chart's own values. Left open on purpose: the vendor owns this surface."
+    },
+    "selfAlertSeverity": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "warning"
+      ],
+      "description": "This chart's own rules carry only `critical` and `warning`, the same convention docs/notifications.md documents for the routing tree: `critical` means look now, `warning` means look today. There is no `info` tier here: an alert that pages nobody belongs in Grafana, not in a VMRule this chart renders."
+    },
+    "optionalMetricPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A gauge and its limit, from the SAME component. Neither is defaulted; setting one without the other is refused, and leaving both empty renders no rule for it, which is the honest outcome for a name this chart could not confirm.",
+      "properties": {
+        "freeSpaceMetric": {
+          "type": "string"
+        },
+        "freeSpaceLimitMetric": {
+          "type": "string"
+        }
+      }
+    },
+    "storeAddress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "tag"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        }
+      }
+    },
+    "backupPrefix": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+      "description": "A path under `backup.destination`: relative, no leading or trailing `/`, and no empty segment or one starting with a dot. No two prefixes in use may be equal or nest; see `backup.destination`."
+    },
+    "matcherMap": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Alertmanager label matchers, exact-match only. At least one key: an empty matcher matches every alert."
+    },
+    "backupJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "schedule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prefix": {
+          "$ref": "#/definitions/backupPrefix"
+        },
+        "serviceAccount": {
+          "$ref": "#/definitions/backupServiceAccount"
+        }
+      }
+    },
+    "backupServiceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "This store's own backup ServiceAccount under `backup.auth.mode` `ambient`/`credentialProcess`. In effect when `create` is true or `name` is set; otherwise the store runs as `backup.auth.serviceAccount`. `create: true` renders it (empty `name` derives `<fullname>-backup-<store>`) with `annotations`; `create: false` with a `name` runs as an existing one.",
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "full",
+        "operator-only",
+        "replica"
+      ],
+      "description": "\"replica\": the second half of a high-availability pair \u2014 the three stores and nothing else; a CONTRACT like operator-only (docs/high-availability.md). \"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs \u2014 see charts/observability-crds) \u2014 no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, the three stores, and tenancy.principals/writers/readers/alertReaders left empty) \u2014 the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
+    },
+    "ha": {
+      "description": "Zone-redundant mode (docs/high-availability.md). Unset (null) or `false`: the single install. `true`: the legacy boolean, accepted and refused with fewer than two zones, nothing else. An object with `enabled: true`: this release is one half of a pair.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "$ref": "#/definitions/name"
+            },
+            "replica": {
+              "type": "string",
+              "enum": [
+                "",
+                "a",
+                "b"
+              ]
+            },
+            "peer": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metrics": {
+                  "type": "string",
+                  "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$"
+                },
+                "logs": {
+                  "type": "string",
+                  "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$"
+                },
+                "traces": {
+                  "type": "string",
+                  "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "interval": {
+      "$ref": "#/definitions/duration",
+      "description": "The scrape interval, the metrics store's deduplication window and both vmalerts' evaluation interval. One value."
+    },
+    "storeCredentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "secretName",
+        "usernameKey",
+        "passwordKey"
+      ],
+      "properties": {
+        "secretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "usernameKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passwordKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "stores": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "$ref": "#/definitions/storeAddress"
+        },
+        "logs": {
+          "$ref": "#/definitions/storeAddress"
+        },
+        "traces": {
+          "$ref": "#/definitions/storeAddress"
+        }
+      }
+    },
+    "upstreamRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who applies the upstream rule sets: the vendored sync Job (default) or charts/platform-alerts' vendored pack. See the key's comment in values.yaml and docs/adoption.md (0.70.0).",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "sync-job",
+            "platform-alerts"
+          ],
+          "description": "`sync-job` (default) or `platform-alerts`. `platform-alerts` is refused unless victoria-metrics-k8s-stack.defaultRules.enabled is false; list presets/upstream-rules-platform-alerts.yaml."
+        }
+      }
+    },
+    "vmalert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
+        },
+        "logs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "evalDelay": {
+              "$ref": "#/definitions/duration",
+              "description": "`-rule.evalDelay` for the logs alerter only. The 30s default exists to match `-search.latencyOffset`, a VictoriaMetrics flag that compensates for query-time data delay on the METRICS store; VictoriaLogs has no such offset, so inheriting it delays every log-based alert by 30s for a latency that store does not have."
+            }
+          }
+        },
+        "externalUrl": {
+          "type": "string"
+        },
+        "externalLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "acceptLegacyRuleLabels": {
+          "type": "boolean",
+          "description": "Also accept the old LogsQL rule marker `observability.rule-type: vlogs` (default true, removed in v0.72). While true the logs alerter takes that label instead of `observability.truvity.io/evaluator: logs`; false selects on the new labels only. See docs/contracts.md."
+        },
+        "remoteEvaluators": {
+          "type": "array",
+          "description": "One extra VMAlert per entry: evaluates the VMRules labelled `observability.truvity.io/evaluator: <name>` against another metrics store and notifies through this install's Alertmanager. See docs/notifications.md, \"Evaluating another store's rules\".",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "A DNS label; empty is refused at render time."
+              },
+              "evaluationInterval": {
+                "$ref": "#/definitions/duration"
+              },
+              "datasource": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "The other store's read endpoint; empty is refused at render time."
+                  },
+                  "auth": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "bearer": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "secretName": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "basic": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "secretName": {
+                            "type": "string"
+                          },
+                          "usernameKey": {
+                            "type": "string"
+                          },
+                          "passwordKey": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "caBundle": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "configMap": {
+                        "$ref": "#/definitions/remoteEvaluatorKeyRef"
+                      },
+                      "secret": {
+                        "$ref": "#/definitions/remoteEvaluatorKeyRef"
+                      }
+                    }
+                  }
+                }
+              },
+              "externalLabels": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "watchdog": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the Watchdog VMRule (templates/watchdog.yaml), always firing while the metrics alerter evaluates rules at all. Independent of alertmanager.* - read pushed (through alertmanager.watchdog's route) or pulled (tenancy.alertReaders), and only the former needs Alertmanager. Default true."
+            }
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
+      }
+    },
+    "alertmanager": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "podDisruptionBudget": {
+          "type": "object"
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "topologySpreadConstraints": {
+          "type": "array"
+        },
+        "cluster": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reconnectTimeout": {
+              "type": "string",
+              "description": "Go duration (`5m`, `90s`, `1h30m`). Only read when `replicaCount` > 1. How long a replica retries a lost peer before forgetting it; passed as `--cluster.reconnect-timeout`. Alertmanager's own default is `6h`."
+            }
+          }
+        },
+        "notifierUrl": {
+          "type": "string"
+        },
+        "watchdog": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repeatInterval": {
+              "$ref": "#/definitions/duration"
+            },
+            "tokenKey": {
+              "type": "string",
+              "description": "The key, in the same Secret as the URL, of a bearer token sent as `Authorization: Bearer <token>` (Alertmanager `http_config.authorization.credentials_file`). Empty: no Authorization header."
+            },
+            "timeout": {
+              "$ref": "#/definitions/duration",
+              "description": "The far end's OWN timeout for a missing heartbeat - not read from it, stated here so the chart can refuse a `repeatInterval` that would not arrive comfortably inside it. Optional: leave it unset and the chart trusts the operator to have set `repeatInterval` sanely, the way it always has."
+            }
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        }
+      }
+    },
+    "karma": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "karma, an alert console and silence proxy for Alertmanager. Off by default. With header authentication it rewrites every silence's author to the signed-in user and enforces silence ACLs. See docs/notifications.md, \"Console: karma\".",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "alertmanagers": {
+          "type": "array",
+          "description": "Extra Alertmanager servers, appended after this release's own, in karma's `alertmanager.servers` shape; passed through untouched. `name` and `uri` are required.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "authentication": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "none": {
+              "type": "boolean",
+              "description": "Explicit acknowledgement that karma runs with no authentication. Required to enable karma without `header.name`."
+            },
+            "header": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "valueRe": {
+                  "type": "string"
+                },
+                "groupName": {
+                  "type": "string"
+                },
+                "groupValueRe": {
+                  "type": "string"
+                },
+                "groupValueSeparator": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "authorization": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "members"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "members": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "acl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "silences": {
+              "type": "array",
+              "description": "karma silence ACL rules (docs/ACLs.md in karma), passed through.",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "history": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "uri": {
+              "type": "string"
+            }
+          }
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "type": "array",
+              "description": "Filters karma applies when the UI opens with no `?q=` (karma `filters.default`). Default hides the chart's Watchdog alert; a set list replaces it, `[]` applies none.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "extraConfig": {
+          "type": "object",
+          "description": "Raw karma configuration, deep-merged last. Unvalidated."
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "nodeSelector": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array"
+        },
+        "affinity": {
+          "type": "object"
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The one router: renders the Alertmanager configuration `alertmanager.enabled` needs so it never falls back to the `blackhole` shape. See docs/notifications.md.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "route",
+            "evaluate-only"
+          ],
+          "description": "`route` (default): today's behaviour, refused until a receiver is configured. `evaluate-only`: the explicit, named opt-out \u2014 vmalert keeps evaluating every rule and renders `-notifier.blackhole`; refused together with `alertmanager.enabled`, `alertmanager.notifierUrl`, or any receiver kind, route or severity below."
+        },
+        "externalUrl": {
+          "type": "string",
+          "description": "The base of the Grafana link this chart puts in every Slack message. Required the moment a receiver kind is configured; without it every link in a notification points at nothing a person can open."
+        },
+        "alertmanagerUrl": {
+          "type": "string",
+          "description": "The externally reachable base URL of THIS Alertmanager's UI, no trailing slash. Set, it is the VMAlertmanager `externalURL` and the base of the message's `Silence:` link. Empty (no default on purpose): the message carries no `Silence:` line, because the only address the chart could guess is the in-cluster pod, which nobody can open."
+        },
+        "console": {
+          "type": "string",
+          "enum": [
+            "alertmanager",
+            "karma"
+          ],
+          "description": "Which console the Slack message's `Silence:` link opens. `alertmanager` (default): today's link, byte for byte. `karma`: a link that opens karma's silence form prefilled with the alert's labels, plus a `View:` link filtered to the alert group; needs `consoleUrl` and `karma.enabled`."
+        },
+        "consoleUrl": {
+          "type": "string",
+          "description": "The externally reachable base URL of karma, no trailing slash. Required by `console: karma`."
+        },
+        "silenceMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How long the silence a `console: karma` link prefills lasts, in minutes."
+        },
+        "runbookBaseUrl": {
+          "type": "string",
+          "description": "Prefixed to a firing rule's `runbook` annotation to make the runbook link. Left empty, the chart renders no runbook line rather than a link to a base URL with nothing after it."
+        },
+        "groupWait": {
+          "$ref": "#/definitions/duration"
+        },
+        "groupInterval": {
+          "$ref": "#/definitions/duration"
+        },
+        "repeatInterval": {
+          "$ref": "#/definitions/duration"
+        },
+        "ownerLabel": {
+          "type": "string",
+          "pattern": "^([a-zA-Z_][a-zA-Z0-9_]*)?$",
+          "description": "OPT-IN. The label naming the owning company, as stamped by observability-emitters tenancy.owners (`owner`). Set, a route's `match` may use it. Empty changes nothing."
+        },
+        "routeLabels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "The ordered label names a `routes[].match` may use. Default: k8s_cluster_name, k8s_namespace_name (plus `ownerLabel` when set), which is what every route could match on before this key existed. Add `source` to route alerts that are born outside a cluster (alert-ingress mappings set it) without giving them a fake cluster. A match key outside this list, and `ownerLabel`, is refused at render time.",
+          "items": {
+            "$ref": "#/definitions/labelName"
+          }
+        },
+        "groupBy": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Alertmanager's `group_by` on the root route. Default: alertname, k8s_cluster_name, k8s_namespace_name. `[\"...\"]` groups by every label.",
+          "items": {
+            "type": "string",
+            "pattern": "^([a-zA-Z_][a-zA-Z0-9_]*|\\.\\.\\.)$"
+          }
+        },
+        "inhibit": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The one inhibit rule: a critical silences a warning whose values are equal for every label in `equal`. Alertmanager compares a label missing on both alerts as EQUAL; see docs/notifications.md, \"Inhibition\".",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "equal": {
+              "type": "array",
+              "minItems": 1,
+              "description": "Never empty: an inhibit rule with no `equal` lets any critical mute every warning.",
+              "items": {
+                "$ref": "#/definitions/labelName"
+              }
+            },
+            "requireLabels": {
+              "type": "boolean",
+              "description": "Default true: a source matcher `<label> =~ \".+\"` for every `equal` label, so a critical without them inhibits nothing. `false` renders the 0.10.0 rule."
+            }
+          }
+        },
+        "drop": {
+          "type": "array",
+          "description": "Alerts that reach nobody: routed to the null receiver ahead of every other route.",
+          "items": {
+            "$ref": "#/definitions/matcherMap"
+          }
+        },
+        "catchAll": {
+          "$ref": "#/definitions/severityTarget",
+          "description": "Where an alert lands when no severity tier claimed it: `info`, no severity at all, or a tier `severities` leaves out. Unset: nowhere."
+        },
+        "slack": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Slack as a receiver kind: one Slack app per workspace, posting with its bot token (Alertmanager's `app_token_file`). Unlike the incoming webhook it replaces, a token honours the `channel` each destination names.",
+          "properties": {
+            "workspaces": {
+              "type": "array",
+              "minItems": 1,
+              "description": "One entry per Slack workspace. Each destination (`severities.<tier>`, `catchAll`, a route's per-tier override) may name one with `workspace`; it may be omitted when exactly one workspace is declared and is required with two or more.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "appTokenSecret"
+                ],
+                "properties": {
+                  "name": {
+                    "$ref": "#/definitions/workspaceName"
+                  },
+                  "appTokenSecret": {
+                    "$ref": "#/definitions/secretRef",
+                    "description": "An EXISTING Secret holding this workspace's Slack app bot token (xoxb-...). Mounted and read with `app_token_file`; never interpolated into the config."
+                  }
+                }
+              }
+            },
+            "failureReceiver": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Where the `SlackNotificationsFailing` alert goes: the name of a `notifications.webhook` entry, or `telegram`. Never `slack` (refused) - the alert says Slack is not delivering. Unset, the alert is routed to the null receiver: it is visible in vmalert and reaches nobody."
+            },
+            "webhookSecret": {
+              "description": "REMOVED. One incoming webhook ignores the `channel` a message asks for, so it cannot serve several channels. Setting it is refused at render with the migration: use `workspaces`."
+            }
+          }
+        },
+        "telegram": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Telegram as a receiver kind: one bot, whose token is read from an existing Secret and mounted as `bot_token_file`, never interpolated. `severities.<tier>.receiver: telegram` sends a tier here; `chatId`/`messageThreadId` on that tier override the defaults below. The default chat is `chatId`, or `chatIdSecret` for an estate that keeps chat ids private: exactly one of the two.",
+          "required": [
+            "botTokenSecret"
+          ],
+          "oneOf": [
+            {
+              "required": [
+                "chatId"
+              ]
+            },
+            {
+              "required": [
+                "chatIdSecret"
+              ]
+            }
+          ],
+          "properties": {
+            "botTokenSecret": {
+              "$ref": "#/definitions/secretRef"
+            },
+            "chatId": {
+              "$ref": "#/definitions/telegramChatId"
+            },
+            "chatIdSecret": {
+              "$ref": "#/definitions/secretRef",
+              "description": "The default chat id, read from an existing Secret with Alertmanager's `chat_id_file` (Alertmanager v0.31.0 or later) rather than written here."
+            },
+            "messageThreadId": {
+              "$ref": "#/definitions/telegramThreadId"
+            },
+            "parseMode": {
+              "type": "string",
+              "enum": [
+                "HTML",
+                "MarkdownV2",
+                "Markdown"
+              ],
+              "description": "Telegram's `parse_mode`. Default `HTML`: the shipped message is written for it, and Alertmanager escapes every alert value itself in HTML mode. Any other mode requires `message`."
+            },
+            "sendResolved": {
+              "type": "boolean",
+              "description": "Alertmanager's `send_resolved`. Default `true`, the same as the Slack and webhook receivers."
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "description": "An Alertmanager template replacing the shipped message, written for `parseMode`. Required when `parseMode` is not `HTML`."
+            }
+          },
+          "if": {
+            "required": [
+              "parseMode"
+            ],
+            "properties": {
+              "parseMode": {
+                "not": {
+                  "const": "HTML"
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "message"
+            ]
+          }
+        },
+        "webhook": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "urlSecret"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "urlSecret": {
+                "$ref": "#/definitions/secretRef"
+              }
+            }
+          }
+        },
+        "severities": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "critical": {
+              "$ref": "#/definitions/severityTarget"
+            },
+            "warning": {
+              "$ref": "#/definitions/severityTarget"
+            }
+          }
+        },
+        "routes": {
+          "type": "array",
+          "description": "In order. The first entry whose `match` is satisfied wins, per severity; an entry naming only `critical` sends its warnings to `severities.warning`.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "match"
+            ],
+            "properties": {
+              "match": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Alertmanager label matchers, exact-match only. The vocabulary the collectors stamp on every alert is `k8s_cluster_name` and `k8s_namespace_name`; anything else matches nothing a rule actually carries."
+              },
+              "critical": {
+                "$ref": "#/definitions/routeOverride"
+              },
+              "warning": {
+                "$ref": "#/definitions/routeOverride"
+              }
+            }
+          }
+        },
+        "also": {
+          "type": "array",
+          "description": "Which alerts ALSO reach a webhook receiver or a Slack channel, beside their normal route. An entry is delivered in addition to, never instead of, the primary route.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receiver",
+              "match"
+            ],
+            "properties": {
+              "receiver": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The name of an entry in `notifications.webhook`, or `slack` to deliver to a Slack channel (then `channel` is required)."
+              },
+              "channel": {
+                "type": "string",
+                "description": "With `receiver: slack`: the channel to post in."
+              },
+              "workspace": {
+                "$ref": "#/definitions/workspaceName"
+              },
+              "mention": {
+                "$ref": "#/definitions/slackMention"
+              },
+              "match": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "selfAlerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The nineteen store self-alerts (and the Slack delivery alert, `slackDelivery`). See docs/notifications.md, \"Store self-alerts\", and values.yaml's own comments for which of the nineteen metric names this chart could confirm and which it could not.",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "ingest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "cardinality": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hourlyCurrentSeriesMetric": {
+              "type": "string"
+            },
+            "hourlyMaxSeriesMetric": {
+              "type": "string"
+            },
+            "dailyCurrentSeriesMetric": {
+              "type": "string"
+            },
+            "dailyMaxSeriesMetric": {
+              "type": "string"
+            },
+            "ratio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1,
+              "description": "Above 0 and below 1: at or above 1 the alert arrives at the moment the limit has already bitten."
+            },
+            "for": {
+              "$ref": "#/definitions/duration",
+              "description": "A ratio spikes transiently on a series burst that resolves on its own; long enough that such a burst does not page, short enough that a real climb toward the limit is still caught with margin before it bites."
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "logStore": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "traceStore": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "queueSizeMetric": {
+              "type": "string"
+            },
+            "queueCapacityMetric": {
+              "type": "string"
+            },
+            "queueRatio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "queueFor": {
+              "$ref": "#/definitions/duration"
+            },
+            "queueSeverity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            },
+            "exportFailedMetricPrefix": {
+              "type": "string"
+            },
+            "exportFailWindow": {
+              "$ref": "#/definitions/duration"
+            },
+            "exportFailFor": {
+              "$ref": "#/definitions/duration"
+            },
+            "exportFailSeverity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            },
+            "enqueueFailedMetricPrefix": {
+              "type": "string"
+            },
+            "enqueueFailWindow": {
+              "$ref": "#/definitions/duration"
+            },
+            "enqueueFailFor": {
+              "$ref": "#/definitions/duration"
+            },
+            "enqueueFailSeverity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "diskGuard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "headroomFactor": {
+              "type": "number",
+              "exclusiveMinimum": 1,
+              "description": "Above 1, or the alert arrives at the moment the store already stopped accepting writes. Mirrors platform-alerts' storeLimits.headroomFactor."
+            },
+            "for": {
+              "$ref": "#/definitions/duration",
+              "description": "Free space falls monotonically under normal operation, so a brief dip is a measurement artefact, not a trend. Minutes, not seconds."
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            },
+            "metrics": {
+              "$ref": "#/definitions/optionalMetricPair"
+            },
+            "logs": {
+              "$ref": "#/definitions/optionalMetricPair"
+            },
+            "traces": {
+              "$ref": "#/definitions/optionalMetricPair"
+            }
+          }
+        },
+        "snapshotAge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "for": {
+              "$ref": "#/definitions/duration",
+              "description": "The condition is inherently slow-moving -- a snapshot is hours old or it is not -- but the signal behind it, kube_cronjob_status_last_successful_time, can be briefly absent while a job is actively running. Long enough that a job in flight does not page."
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            },
+            "metrics": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "maxAge": {
+                  "$ref": "#/definitions/duration"
+                }
+              }
+            },
+            "logs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "maxAge": {
+                  "$ref": "#/definitions/duration"
+                }
+              }
+            },
+            "traces": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "maxAge": {
+                  "$ref": "#/definitions/duration"
+                }
+              }
+            }
+          }
+        },
+        "logStreamChurn": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streamsCreatedMetric": {
+              "type": "string"
+            },
+            "perSecond": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Streams created per second, averaged over an hour. A healthy install creates roughly a stream per pod per day; the default is two orders of magnitude above that."
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "traceStreamChurn": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streamsCreatedMetric": {
+              "type": "string"
+            },
+            "perSecond": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Streams created per second, averaged over an hour. A healthy install creates roughly a stream per pod per day; the default is two orders of magnitude above that."
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "writer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bufferMetric": {
+              "type": "string"
+            },
+            "bufferMetricsExtra": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "droppedPacketsMetricsExtra": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "droppedPacketsMetric": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "remoteEvaluator": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "slackDelivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "proxyConcurrency": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "limitedRequestsMetric": {
+              "type": "string"
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "sourceAbsent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "lookback": {
+              "$ref": "#/definitions/duration"
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "storeMemory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "ratio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            }
+          }
+        },
+        "divergence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            },
+            "threshold": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "for": {
+              "$ref": "#/definitions/duration"
+            },
+            "severity": {
+              "$ref": "#/definitions/selfAlertSeverity"
+            },
+            "metrics": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*$"
+                },
+                "matchers": {
+                  "type": "string"
+                }
+              }
+            },
+            "logs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*$"
+                }
+              }
+            },
+            "traces": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "victoria-logs-single": {
+      "$ref": "#/definitions/subchart",
+      "description": "MIRROR: the keys of the stack's section this chart reads (`enabled`, `fullnameOverride`/`nameOverride`, `server.fullnameOverride`, `defaultRules`, `vmsingle.enabled`); the vendor's surface stays open."
+    },
+    "victoria-traces-single": {
+      "$ref": "#/definitions/subchart",
+      "description": "MIRROR: the keys of the stack's section this chart reads (`enabled`, `fullnameOverride`/`nameOverride`, `server.fullnameOverride`, `defaultRules`, `vmsingle.enabled`); the vendor's surface stays open."
+    },
+    "victoria-metrics-k8s-stack": {
+      "$ref": "#/definitions/subchart",
+      "description": "MIRROR: the keys of the stack's section this chart reads (`enabled`, `fullnameOverride`/`nameOverride`, `server.fullnameOverride`, `defaultRules`, `vmsingle.enabled`); the vendor's surface stays open."
+    },
+    "stackReleaseName": {
+      "type": "string",
+      "description": "The Helm release name of the observability-stack install this chart belongs beside; every name this chart renders derives from it as the stack derives it. Empty: this chart's own release name."
+    },
+    "tenancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "clusterLabel": {
+          "$ref": "#/definitions/labelName",
+          "description": "The metrics label carrying the cluster. Default k8s_cluster_name, which is what charts/observability-emitters stamps."
+        }
+      },
+      "description": "MIRROR: only `clusterLabel` of the stack's `tenancy`."
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "logs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "traces": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "description": "MIRROR: the stack's backup switches (the self-alerts watch the backup jobs that are on)."
+    }
+  }
+}

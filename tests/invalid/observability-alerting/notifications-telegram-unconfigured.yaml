@@ -1,0 +1,19 @@
+# expect: notifications.severities.warning.receiver is "telegram", which is neither
+# A tier sent to `telegram` with no `notifications.telegram` configured
+# (and no webhook of that name): a route to nowhere.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: telegram

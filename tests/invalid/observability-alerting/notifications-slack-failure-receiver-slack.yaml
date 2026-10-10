@@ -1,0 +1,20 @@
+# expect: failureReceiver` is "slack"
+# The alert that says Slack is not delivering, routed to Slack.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+    failureReceiver: slack
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'

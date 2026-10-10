@@ -1,0 +1,20 @@
+# expect: `notifications.slack.failureReceiver` is set but `notifications.slack.workspaces` is empty
+# A failure receiver with no Slack workspace: no alert to route.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    failureReceiver: pager
+  webhook:
+  - name: pager
+    urlSecret:
+      name: example-pager-webhook
+      key: url
+  severities:
+    critical:
+      receiver: pager
+      channel: pager
+    warning:
+      receiver: pager
+      channel: pager

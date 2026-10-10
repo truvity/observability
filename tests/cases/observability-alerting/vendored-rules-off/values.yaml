@@ -1,0 +1,23 @@
+# The alerting plane of tests/cases/observability-stack/vendored-rules-off: that case's values
+# (presets merged) kept to the keys this chart declares. tests/alerting_chart_test.go
+# derives the same file for every stack case and holds the objects byte-identical.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+victoria-metrics-k8s-stack:
+  defaultRules:
+    enabled: false

@@ -1,0 +1,28 @@
+# expect: alertmanager.cluster.reconnectTimeout is "five minutes"
+# A reconnect timeout Alertmanager's flag parser would refuse at start.
+stackReleaseName: observability-stack
+tenancy: {}
+vmalert:
+  externalUrl: https://grafana.example
+notifications:
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+alertmanager:
+  replicaCount: 2
+  cluster:
+    reconnectTimeout: five minutes
+karma:
+  enabled: true
+  authentication:
+    none: true

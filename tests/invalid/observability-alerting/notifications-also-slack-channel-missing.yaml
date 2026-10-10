@@ -1,0 +1,30 @@
+# expect: sends to Slack with an empty `channel`
+# An `also` entry delivering to Slack names no channel.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+    - name: partner
+      appTokenSecret:
+        name: example-partner-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+      workspace: acme
+    warning:
+      receiver: slack
+      channel: '#alerts'
+      workspace: acme
+  also:
+  - receiver: slack
+    match:
+      k8s_cluster_name: my-cluster
+    workspace: acme

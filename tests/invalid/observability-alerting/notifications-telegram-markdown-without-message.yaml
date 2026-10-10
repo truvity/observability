@@ -1,0 +1,19 @@
+# expect: at '/notifications/telegram': missing property 'message'
+# A Markdown parse mode with the shipped message, which is written for
+# HTML: Markdown has no escaping, so one underscore in an alert name fails
+# the delivery. A non-HTML mode must bring its own `message`.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  telegram:
+    botTokenSecret:
+      name: example-telegram-bot
+      key: token
+    chatId: -1000000000001
+    parseMode: MarkdownV2
+  severities:
+    critical:
+      receiver: telegram
+    warning:
+      receiver: telegram

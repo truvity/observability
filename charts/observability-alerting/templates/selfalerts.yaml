@@ -1,0 +1,639 @@
+{{- /*
+Store self-alerts: nineteen rules over this chart's own components. See
+values.yaml's own comment on `selfAlerts` for why every metric name below
+is a value with NO default — measured against a live install, ten of the
+eleven `vm_`/`vl_`/`vt_`/`otelcol_`/`vmagent_`-family counters this design
+originally named were simply absent from this chart's own metrics store,
+a coverage gap rather than a spelling one for most of them. A rule whose
+metric name has not been confirmed renders NOTHING, never a guess.
+
+All nineteen are MetricsQL, evaluated by the metrics vmalert
+(templates/vmalert.yaml): every counter here lives on a component's own
+/metrics endpoint, so none carries `observability.rule-type: vlogs`, and
+none needs a special ruleSelector entry — the metrics alerter already
+takes everything that is not marked as LogsQL.
+
+Rules are named per store — `MetricStore`/`LogStore`/`TraceStore` — for
+every rule that watches one specific store: three stores exist, and a
+rule named just "Store..." does not say which one paged you at three in
+the morning. A rule stays generic (`WriterBufferGrowing`,
+`WriterDroppingPackets`, `ProxyAtConcurrencyLimit`) only where the
+failure genuinely is not about any one store.
+
+The chart refuses `selfAlerts.enabled: true` with an empty rule list
+rather than shipping something that looks like coverage and is not — see
+templates/_validate.tpl.
+*/ -}}
+{{- /*
+SlackNotificationsFailing is the one rule here that renders without
+`selfAlerts.enabled`: its metric is Alertmanager's own, a name this chart
+CAN state (unlike the store counters above), and it is the alert for the
+failure this chart's own Slack receivers introduce. It renders when at
+least one Slack workspace is declared and Alertmanager is rendered.
+*/ -}}
+{{- $slackWorkspaces := (((.Values.notifications | default dict).slack) | default dict).workspaces | default list -}}
+{{- $slackRule := and $slackWorkspaces .Values.selfAlerts.slackDelivery.enabled (include "observability-alerting.effectiveEnabled" . | fromYaml).alertmanager -}}
+{{- $remoteRule := and .Values.vmalert.remoteEvaluators .Values.selfAlerts.remoteEvaluator.enabled (include "observability-alerting.effectiveEnabled" . | fromYaml).vmalert -}}
+{{- if or .Values.selfAlerts.enabled $slackRule $remoteRule -}}
+{{- $root := . -}}
+{{- $fullname := include "observability-alerting.fullname" . -}}
+{{- $sa := .Values.selfAlerts -}}
+{{- $storeAlertPrefix := dict "metrics" "MetricStore" "logs" "LogStore" "traces" "TraceStore" -}}
+{{- /* The names SelfAlertSourceAbsent watches: every configured source series. */ -}}
+{{- $sourceNames := list -}}
+{{- if $sa.sourceAbsent.enabled -}}
+{{- range $m := concat
+    (list $sa.ingest.metric $sa.logStore.metric $sa.traceStore.metric
+          $sa.cardinality.hourlyCurrentSeriesMetric $sa.cardinality.dailyCurrentSeriesMetric
+          $sa.logStreamChurn.streamsCreatedMetric $sa.traceStreamChurn.streamsCreatedMetric
+          $sa.writer.bufferMetric $sa.writer.droppedPacketsMetric
+          $sa.gateway.queueSizeMetric $sa.proxyConcurrency.limitedRequestsMetric
+          $sa.diskGuard.metrics.freeSpaceMetric $sa.diskGuard.logs.freeSpaceMetric $sa.diskGuard.traces.freeSpaceMetric)
+    ($sa.writer.bufferMetricsExtra | default list) ($sa.writer.droppedPacketsMetricsExtra | default list) -}}
+{{- if and $m (not (has $m $sourceNames)) -}}{{- $sourceNames = append $sourceNames $m -}}{{- end -}}
+{{- end -}}
+{{- if not $sourceNames -}}
+{{- fail "observability-stack: `selfAlerts.sourceAbsent.enabled` is true but no metric name is set under `selfAlerts`, so there is no series for SelfAlertSourceAbsent to watch. Set at least one metric name, or leave `sourceAbsent.enabled: false`." -}}
+{{- end -}}
+{{- end -}}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ printf "%s-selfalerts" $fullname | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-alerting.labels" $root | nindent 4 }}
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: observability-stack.selfalerts
+      interval: {{ .Values.interval }}
+      rules:
+        {{- if $slackRule }}
+        # SlackNotificationsFailing. Alertmanager counts a failed Slack
+        # delivery (bad or revoked token, a channel the bot may not post
+        # in, Slack down) and keeps retrying; nothing else says a
+        # notification is being lost. `integration="slack"` is the
+        # Alertmanager label for `slack_configs`.
+        #
+        # This alert must NEVER be routed to Slack: templates/
+        # vmalertmanager.yaml puts a route for it at the top of the tree,
+        # to `notifications.slack.failureReceiver`, or to the null
+        # receiver when that is unset.
+        #
+        # Healthy range: 0. The series exists because templates/
+        # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
+        - alert: SlackNotificationsFailing
+          expr: >-
+            sum without (pod, instance) (increase(alertmanager_notifications_failed_total{integration="slack"}[{{ $sa.slackDelivery.window }}])) > 0
+          for: {{ $sa.slackDelivery.for }}
+          labels:
+            severity: {{ $sa.slackDelivery.severity }}
+          annotations:
+            summary: "Alertmanager is failing to deliver to Slack"
+            description: >-
+              alertmanager_notifications_failed_total{integration="slack"}
+              rose in the last {{ $sa.slackDelivery.window }}. Alerts routed to
+              Slack are not arriving: check the workspace's bot token
+              Secret, that the channel exists (a private channel needs the
+              bot invited) and Slack's own status.
+        {{- end }}
+
+        {{- if $remoteRule }}
+        # RemoteEvaluatorFailing. A remote evaluator (templates/vmalert.yaml,
+        # `vmalert.remoteEvaluators`) whose datasource is unreachable, or
+        # whose credential is refused, fails every rule evaluation: its
+        # rules never fire and nothing else says so. vmalert counts these
+        # on its own /metrics, which the local store scrapes like the main
+        # alerter's; the series are picked by the evaluator pods' name
+        # (`vmalert-<release>-remote-<name>-...`), and the three counter
+        # names are the ones vmalert has used for rule-evaluation errors
+        # (an absent name simply contributes nothing). Fires through the
+        # local Alertmanager. Healthy range: 0.
+        - alert: RemoteEvaluatorFailing
+          expr: >-
+            sum without (instance) (increase({__name__=~"vmalert_(alerting|recording)_rules_errors_total|vmalert_execution_errors_total", pod=~{{ printf "vmalert-%s-remote-.+" $fullname | quote }}}[{{ $sa.remoteEvaluator.window }}])) > 0
+          for: {{ $sa.remoteEvaluator.for }}
+          labels:
+            severity: {{ $sa.remoteEvaluator.severity }}
+          annotations:
+            summary: "A remote evaluator is failing to evaluate its rules"
+            description: >-
+              {{`{{ $labels.pod }}`}} recorded rule evaluation errors in the
+              last {{ $sa.remoteEvaluator.window }}. Its rules, which live
+              against another store, are not being evaluated: check that
+              store's endpoint, the read credential Secret and the egress
+              from this namespace.
+        {{- end }}
+
+        {{- if $sa.ingest.metric }}
+        # MetricStoreIgnoringRows.
+        #
+        # THE INCIDENT: a series past the metrics store's per-day label
+        # limit is discarded WHILE THE WRITE STILL ANSWERS 200 — a
+        # collector reported 888k rows written with zero errors while the
+        # store held none of them, and this counter sat at 9,748,387 with
+        # nothing else showing it. This is the rule that would have
+        # caught it. Confirmed for THIS install by whoever set
+        # selfAlerts.ingest.metric — see values.yaml.
+        #
+        # Healthy range: 0. The counter only advances when a sample is
+        # refused for exceeding a configured limit, so a write path that
+        # is not hitting one never touches it.
+        - alert: MetricStoreIgnoringRows
+          expr: >-
+            sum without (pod, instance) (rate({{ $sa.ingest.metric }}[{{ $sa.ingest.window }}])) > 0
+          for: {{ $sa.ingest.for }}
+          labels:
+            severity: {{ $sa.ingest.severity }}
+          annotations:
+            summary: "The metrics store is silently discarding rows"
+            description: >-
+              {{ $sa.ingest.metric }} is rising. Rows past a configured limit
+              (label count, cardinality) are dropped while the write still
+              answers 200: a sender can report a clean write with zero
+              errors while the store holds none of it. Measured on a live
+              install: 888k rows reported written, the store held none,
+              and this counter sat at 9,748,387.
+        {{- end }}
+
+        {{- if $sa.logStore.metric }}
+        # LogStoreDroppingRows. Confirmed for THIS install by whoever set
+        # selfAlerts.logStore.metric — see values.yaml; needs
+        # victoria-logs-single.server.serviceMonitor (or equivalent) to
+        # be scraping the log store into this metrics store at all.
+        #
+        # Healthy range: 0, the same as MetricStoreIgnoringRows above.
+        # Safe with the log store disabled: rate() of a counter no series
+        # carries returns no data, not zero, so an absent store never
+        # fires this.
+        - alert: LogStoreDroppingRows
+          expr: >-
+            sum without (pod, instance) (rate({{ $sa.logStore.metric }}[{{ $sa.logStore.window }}])) > 0
+          for: {{ $sa.logStore.for }}
+          labels:
+            severity: {{ $sa.logStore.severity }}
+          annotations:
+            summary: "The log store is dropping rows"
+            description: >-
+              {{ $sa.logStore.metric }} is rising. Rows are being discarded on
+              write; the ingesting collector sees a successful response
+              regardless.
+        {{- end }}
+
+        {{- if $sa.traceStore.metric }}
+        # TraceStoreDroppingRows. Same reasoning, the trace store.
+        # Confirmed for THIS install by whoever set
+        # selfAlerts.traceStore.metric — see values.yaml.
+        - alert: TraceStoreDroppingRows
+          expr: >-
+            sum without (pod, instance) (rate({{ $sa.traceStore.metric }}[{{ $sa.traceStore.window }}])) > 0
+          for: {{ $sa.traceStore.for }}
+          labels:
+            severity: {{ $sa.traceStore.severity }}
+          annotations:
+            summary: "The trace store is dropping rows"
+            description: >-
+              {{ $sa.traceStore.metric }} is rising. Spans are being discarded
+              on write; the ingesting collector sees a successful response
+              regardless.
+        {{- end }}
+
+        {{- if and $sa.cardinality.hourlyCurrentSeriesMetric $sa.cardinality.hourlyMaxSeriesMetric }}
+        # MetricStoreCardinalityNearLimit (hourly). Confirmed for THIS
+        # install by whoever set selfAlerts.cardinality.hourly* — see
+        # values.yaml.
+        #
+        # docs/notifications.md: "hourly or daily series at 90% of the
+        # limit". {{ $sa.cardinality.ratio }} is that headroom: comfortably
+        # under the cap at which new series stop being accepted for the
+        # rest of the window. A separate alert from the daily rule below
+        # — different window, different meaning, and a name that says
+        # which one fired rather than a `window` label a reader has to go
+        # look at.
+        - alert: MetricStoreCardinalityNearLimit
+          expr: >-
+            ({{ $sa.cardinality.hourlyMaxSeriesMetric }} > 0)
+            and
+            ({{ $sa.cardinality.hourlyCurrentSeriesMetric }} / {{ $sa.cardinality.hourlyMaxSeriesMetric }}) > {{ $sa.cardinality.ratio }}
+          for: {{ $sa.cardinality.for }}
+          labels:
+            severity: {{ $sa.cardinality.severity }}
+          annotations:
+            summary: "The metrics store is close to its hourly series limit"
+            description: >-
+              Hourly active series are above {{ mulf $sa.cardinality.ratio 100 }}% of
+              storage.maxHourlySeries. Above the limit, new series stop
+              being accepted for the rest of the hour — the exact shape of
+              an exporter that appears to have stopped exporting.
+        {{- end }}
+        {{- if and $sa.cardinality.dailyCurrentSeriesMetric $sa.cardinality.dailyMaxSeriesMetric }}
+        # MetricStoreDailyCardinalityNearLimit. Same reasoning as the
+        # hourly rule, the daily cap — churn over a day rather than a
+        # burst within an hour, which is why it is a second rule and not
+        # the same alert with a different label.
+        - alert: MetricStoreDailyCardinalityNearLimit
+          expr: >-
+            ({{ $sa.cardinality.dailyMaxSeriesMetric }} > 0)
+            and
+            ({{ $sa.cardinality.dailyCurrentSeriesMetric }} / {{ $sa.cardinality.dailyMaxSeriesMetric }}) > {{ $sa.cardinality.ratio }}
+          for: {{ $sa.cardinality.for }}
+          labels:
+            severity: {{ $sa.cardinality.severity }}
+          annotations:
+            summary: "The metrics store is close to its daily series limit"
+            description: >-
+              Daily active series are above {{ mulf $sa.cardinality.ratio 100 }}% of
+              storage.maxDailySeries. Above the limit, new series stop
+              being accepted for the rest of the day. A workload whose pod
+              names change on every deploy is the usual source of churn
+              this rule catches that the hourly one has not yet.
+        {{- end }}
+
+        {{- if $sa.logStreamChurn.streamsCreatedMetric }}
+        # LogStoreStreamsChurning.
+        #
+        # A stream field that is not constant for the life of a pod —
+        # `ip`, `user_id`, `trace_id`, or any per-request resource
+        # attribute an SDK sets — is the documented way to wreck the log
+        # store, and it looks fine for the first week: the count grows,
+        # queries slow, and nothing errors. Check `VL-Stream-Fields` on
+        # the writers and the log agent's own stream fields.
+        #
+        # Healthy range: a stream per pod per day. {{ $sa.logStreamChurn.perSecond }}
+        # streams/second, averaged over an hour, is two orders of
+        # magnitude above that baseline.
+        - alert: LogStoreStreamsChurning
+          expr: >-
+            sum without (pod, instance) (rate({{ $sa.logStreamChurn.streamsCreatedMetric }}[1h])) > {{ $sa.logStreamChurn.perSecond }}
+          for: {{ $sa.logStreamChurn.for }}
+          labels:
+            severity: {{ $sa.logStreamChurn.severity }}
+          annotations:
+            summary: "The log store is creating streams faster than pods explain"
+            description: >-
+              {{ $sa.logStreamChurn.streamsCreatedMetric }} is above
+              {{ $sa.logStreamChurn.perSecond }} streams/s averaged over an hour — a
+              stream field is varying when it should be constant.
+        {{- end }}
+        {{- if $sa.traceStreamChurn.streamsCreatedMetric }}
+        # TraceStoreStreamsChurning. Same failure, the trace store, which
+        # keys streams on `service.name` AND the span name — a span name
+        # carrying an id (a URL with a path parameter in it) is the usual
+        # cause there rather than a label copied from the pod.
+        - alert: TraceStoreStreamsChurning
+          expr: >-
+            sum without (pod, instance) (rate({{ $sa.traceStreamChurn.streamsCreatedMetric }}[1h])) > {{ $sa.traceStreamChurn.perSecond }}
+          for: {{ $sa.traceStreamChurn.for }}
+          labels:
+            severity: {{ $sa.traceStreamChurn.severity }}
+          annotations:
+            summary: "The trace store is creating streams faster than services explain"
+            description: >-
+              {{ $sa.traceStreamChurn.streamsCreatedMetric }} is above
+              {{ $sa.traceStreamChurn.perSecond }} streams/s averaged over an hour — a span
+              name is carrying an id rather than staying constant per service.
+        {{- end }}
+
+        {{- if $sa.writer.bufferMetric }}
+        # WriterBufferGrowing. Generic across writers on purpose: this
+        # chart's own vmalert remote-write client shares its metrics
+        # family with vmagent's, so whichever writer's buffer this name
+        # is confirmed against, the shape it watches is the same.
+        #
+        # Rate of change rather than a fixed byte threshold — a magnitude
+        # this chart has no basis to guess — so the rule fires on the
+        # buffer GROWING rather than on crossing a size nobody confirmed.
+        # Growth means the write path is blocked and the eventual loss is
+        # proportional to how long it takes somebody to look.
+        #
+        # Per destination: the buffer metric of every remote-write agent
+        # carries the destination's `url`, so a series (and an alert)
+        # exists per URL — a replica that is down fires for ITS url while
+        # the other half of an HA pair stays quiet. `bufferMetricsExtra`
+        # adds the other agents' names (the log agent's is not the metrics
+        # agent's) to the same rule.
+        {{- $bufNames := prepend ($sa.writer.bufferMetricsExtra | default list) $sa.writer.bufferMetric }}
+        - alert: WriterBufferGrowing
+          expr: >-
+            deriv({{ if gt (len $bufNames) 1 }}{__name__=~{{ join "|" $bufNames | quote }}}{{ else }}{{ $sa.writer.bufferMetric }}{{ end }}[15m]) > 0
+          for: {{ $sa.writer.for }}
+          labels:
+            severity: {{ $sa.writer.severity }}
+          annotations:
+            summary: "A writer's remote-write buffer is growing"
+            description: >-
+              The buffer for destination {{`{{ $labels.url }}`}}
+              ({{ join ", " $bufNames }}) has been increasing for
+              {{ $sa.writer.for }}. Nothing is lost yet — that is what the
+              buffer is for — and everything will be once it is full.
+              Check the destination and the network policy in front of it.
+        {{- end }}
+        {{- if $sa.writer.droppedPacketsMetric }}
+        # WriterDroppingPackets. Same `writer` block, the buffer already
+        # full: both remote-write agents in this family treat a 400 as
+        # permanent and drop the block, and the log agent does the same
+        # on a 404 — a wrong write path is unrecoverable loss, not a
+        # retry.
+        #
+        # Per destination, like the buffer rule: summed by `url`, so a
+        # drop toward one half of a pair names that half.
+        {{- $dropNames := prepend ($sa.writer.droppedPacketsMetricsExtra | default list) $sa.writer.droppedPacketsMetric }}
+        - alert: WriterDroppingPackets
+          expr: >-
+            sum without (pod, instance) (rate({{ if gt (len $dropNames) 1 }}{__name__=~{{ join "|" $dropNames | quote }}}{{ else }}{{ $sa.writer.droppedPacketsMetric }}{{ end }}[5m])) > 0
+          for: {{ $sa.writer.for }}
+          labels:
+            severity: {{ $sa.writer.severity }}
+          annotations:
+            summary: "A writer is dropping packets on its remote-write path"
+            description: >-
+              {{ join ", " $dropNames }} is rising for destination
+              {{`{{ $labels.url }}`}}. Data is being
+              discarded, not delayed: a 400 or 404 from the destination is
+              treated as permanent, and the block is gone, not retried.
+        {{- end }}
+
+        {{- if and $sa.gateway.queueSizeMetric $sa.gateway.queueCapacityMetric }}
+        # GatewayQueueFilling.
+        #
+        # THE INCIDENT (this week): a network policy change cut
+        # charts/observability-emitters' OpenTelemetry gateway off from
+        # its own proxy, and "sending queue is full" ran for hours with
+        # every pod Running and nothing reporting it. The gateway is a
+        # component of the sibling chart, not this one; this rule fires
+        # once its metrics reach THIS store (scraped, or remote-written,
+        # into vmsingle), and vmalert here reads them directly — never
+        # through the proxy, the same as every other rule in this file.
+        # Confirmed for THIS install by whoever set
+        # selfAlerts.gateway.queueSizeMetric / queueCapacityMetric — see
+        # values.yaml.
+        #
+        # Healthy range: comfortably under 1; a queue that is never
+        # exercised sits near 0. {{ $sa.gateway.queueRatio }} is the "queue
+        # above 80%" the incident report gives — headroom before the
+        # queue is full and the collector starts blocking or dropping.
+        - alert: GatewayQueueFilling
+          expr: >-
+            {{ $sa.gateway.queueSizeMetric }} / {{ $sa.gateway.queueCapacityMetric }} > {{ $sa.gateway.queueRatio }}
+          for: {{ $sa.gateway.queueFor }}
+          labels:
+            severity: {{ $sa.gateway.queueSeverity }}
+          annotations:
+            summary: "The OpenTelemetry gateway's export queue is filling"
+            description: >-
+              The queue of exporter {{`{{ $labels.exporter }}`}} (one per
+              destination and signal): {{ $sa.gateway.queueSizeMetric }} is above {{ mulf $sa.gateway.queueRatio 100 }}% of
+              {{ $sa.gateway.queueCapacityMetric }}. Once it is full the
+              collector blocks or drops, and "sending queue is full" is
+              exactly the failure that ran for hours unreported.
+        {{- end }}
+
+        {{- if $sa.gateway.exportFailedMetricPrefix }}
+        # GatewayExportFailing.
+        #
+        # Separate from GatewayEnqueueFailing below: a SEND failure is a
+        # destination refusing a batch the gateway already accepted, an
+        # ENQUEUE failure is the gateway's own queue refusing at the
+        # door. Different losses, and a single rule cannot tell an
+        # operator which one paged them.
+        #
+        # otelcol_exporter_send_failed_* and _enqueue_failed_* both carry
+        # a per-signal suffix (spans, metric_points, log_records) this
+        # session did not enumerate with confidence, so
+        # exportFailedMetricPrefix is matched by METRIC NAME PREFIX rather
+        # than a listed suffix — every signal the gateway exports for,
+        # without guessing which exist. Confirmed for THIS install by
+        # whoever set selfAlerts.gateway.exportFailedMetricPrefix — see
+        # values.yaml.
+        #
+        # Healthy range: 0. A send or enqueue failure is not something a
+        # healthy exporter path produces at any rate. Measured on a live
+        # install: a NOT-RETRYABLE export answering 400 for a month is
+        # how a trace store stayed empty while every pod was Healthy.
+        - alert: GatewayExportFailing
+          expr: >-
+            sum without (pod, instance) (rate({__name__=~{{ printf "%s.*" $sa.gateway.exportFailedMetricPrefix | quote }}}[{{ $sa.gateway.exportFailWindow }}])) > 0
+          for: {{ $sa.gateway.exportFailFor }}
+          labels:
+            severity: {{ $sa.gateway.exportFailSeverity }}
+          annotations:
+            summary: "The OpenTelemetry gateway is failing to export"
+            description: >-
+              A {{ $sa.gateway.exportFailedMetricPrefix }}* series is advancing for
+              exporter {{`{{ $labels.exporter }}`}}. Data the gateway
+              accepted is not reaching its destination.
+        {{- end }}
+
+        {{- if $sa.gateway.enqueueFailedMetricPrefix }}
+        # GatewayEnqueueFailing. Same `gateway` group, the OTHER queue
+        # failure: this one is the gateway itself refusing what a sender
+        # hands it, rather than the destination refusing what the
+        # gateway already accepted (GatewayExportFailing above). A sender
+        # that checks its own return code sees THIS one as an error —
+        # unlike every other rule in this group, which are all invisible
+        # to whoever is sending.
+        #
+        # Matched by metric-name PREFIX, same reasoning as
+        # exportFailedMetricPrefix: `_enqueue_failed_` carries the same
+        # per-signal suffix `_send_failed_` does, and this session did
+        # not enumerate them with confidence either. Confirmed for THIS
+        # install by whoever set
+        # selfAlerts.gateway.enqueueFailedMetricPrefix — see values.yaml.
+        #
+        # Healthy range: 0. An enqueue failure is not something a healthy
+        # exporter path produces at any rate.
+        - alert: GatewayEnqueueFailing
+          expr: >-
+            sum without (pod, instance) (rate({__name__=~{{ printf "%s.*" $sa.gateway.enqueueFailedMetricPrefix | quote }}}[{{ $sa.gateway.enqueueFailWindow }}])) > 0
+          for: {{ $sa.gateway.enqueueFailFor }}
+          labels:
+            severity: {{ $sa.gateway.enqueueFailSeverity }}
+          annotations:
+            summary: "The OpenTelemetry gateway is refusing what senders hand it"
+            description: >-
+              A {{ $sa.gateway.enqueueFailedMetricPrefix }}* series is advancing for
+              exporter {{`{{ $labels.exporter }}`}}. The queue is full, so
+              the gateway is rejecting at the door rather than accepting
+              and later failing to send.
+        {{- end }}
+
+        {{- if $sa.proxyConcurrency.limitedRequestsMetric }}
+        # ProxyAtConcurrencyLimit. Confirmed for THIS install by whoever
+        # set selfAlerts.proxyConcurrency.limitedRequestsMetric — see
+        # values.yaml. UNLIKE every other rule in this file, a live
+        # measurement found vmauth_concurrent_requests_limit_reached_total
+        # present on the store — the one counter with actual evidence
+        # behind it rather than a guess — but it is still not written in
+        # below; this chart holds every metric name to the same rule.
+        - alert: ProxyAtConcurrencyLimit
+          expr: >-
+            sum without (pod, instance) (rate({{ $sa.proxyConcurrency.limitedRequestsMetric }}[{{ $sa.proxyConcurrency.window }}])) > 0
+          for: {{ $sa.proxyConcurrency.for }}
+          labels:
+            severity: {{ $sa.proxyConcurrency.severity }}
+          annotations:
+            summary: "The proxy is refusing requests at its concurrency limit"
+            description: >-
+              {{ $sa.proxyConcurrency.limitedRequestsMetric }} is rising. Reads are
+              failing while every store is healthy, which is the shape
+              that gets diagnosed as the store for an hour first. Either
+              a caller is hammering it or the limit is too low for the
+              readers it now has.
+        {{- end }}
+
+        {{- range $store := list "metrics" "logs" "traces" }}
+        {{- $g := index $sa.diskGuard $store }}
+        {{- if and $g.freeSpaceMetric $g.freeSpaceLimitMetric }}
+        # {{ index $storeAlertPrefix $store }}DiskNearGuard. Confirmed for
+        # THIS install by whoever set selfAlerts.diskGuard.{{ $store }} —
+        # see values.yaml. headroomFactor mirrors platform-alerts'
+        # storeLimits.headroomFactor and its default (2): comfortably
+        # above the 1x at which the store already stopped accepting
+        # writes. A logs or traces store that fills its disk switches to
+        # read-only and does NOT drop data to recover, so arriving late
+        # here is arriving after an outage rather than before one.
+        #
+        # `for:` exists because free space falls MONOTONICALLY under
+        # normal operation, so one reading under the guard is a
+        # measurement artefact, not a trend — see selfAlerts.diskGuard.for
+        # in values.yaml.
+        - alert: {{ index $storeAlertPrefix $store }}DiskNearGuard
+          expr: >-
+            {{ $g.freeSpaceMetric }} / {{ $g.freeSpaceLimitMetric }} < {{ $sa.diskGuard.headroomFactor }}
+          for: {{ $sa.diskGuard.for }}
+          labels:
+            severity: {{ $sa.diskGuard.severity }}
+          annotations:
+            summary: "The {{ $store }} store is approaching its disk guard"
+            description: >-
+              Free space is under {{ $sa.diskGuard.headroomFactor }}x the
+              store's own minFreeDiskSpaceBytes guard. It is still serving
+              reads and will keep doing so after it stops writing.
+        {{- end }}
+        {{- end }}
+
+        {{- /*
+        SelfAlertSourceAbsent (`selfAlerts.sourceAbsent.enabled`).
+
+        THE INCIDENT: the self-alerts could not fire for a week because the
+        metrics store was not being scraped at all (a NetworkPolicy refused
+        the scraper), so every `rate()` above read an empty vector and an
+        empty vector is "healthy". A rule that watches a counter is silent
+        when the counter stops arriving; this is the rule that says so.
+
+        One expression over every metric name configured under
+        `selfAlerts` (the counters and gauges above, not the snapshot
+        rules, whose source is kube-state-metrics): per cluster, a series
+        seen within `lookback` that has none now. `<clusterLabel>!=""` is
+        required on both sides, so a stale series from before a relabel
+        cannot hold the alert true (the platform-alerts `*Absent` shape,
+        v0.44.1). The whole-store line (`absent()`) is silenced while the
+        per-cluster line can still see the series, so one outage is one
+        alert; it carries no cluster label. `source` names the metric.
+        */}}
+        {{- if $sourceNames }}
+        {{- $cl := $root.Values.tenancy.clusterLabel }}
+        {{- $lb := $sa.sourceAbsent.lookback }}
+        {{- $clauses := list }}
+        {{- range $m := $sourceNames }}
+        {{- if $cl }}
+        {{- $clauses = append $clauses (printf `label_replace((group by (%s) (max_over_time(%s{%s!=""}[%s])) unless group by (%s) (%s{%s!=""})) or (absent(%s) unless on() group(max_over_time(%s[%s]))), "source", "%s", "", "")` $cl $m $cl $lb $cl $m $cl $m $m $lb $m) }}
+        {{- else }}
+        {{- $clauses = append $clauses (printf `label_replace(absent(%s) unless on() group(max_over_time(%s[%s])), "source", "%s", "", "")` $m $m $lb $m) }}
+        {{- end }}
+        {{- end }}
+        - alert: SelfAlertSourceAbsent
+          expr: >-
+            {{ join "\n            or\n            " $clauses }}
+          for: {{ $sa.sourceAbsent.for }}
+          labels:
+            severity: {{ $sa.sourceAbsent.severity }}
+          annotations:
+            summary: "A store self-alert has lost the series it watches"
+            description: >-
+              {{`{{ $labels.source }}`}}{{ if $cl }}{{`{{ with $labels.`}}{{ $cl }}{{` }} on cluster {{ . }}{{ end }}`}}{{ end }}
+              was present within the last {{ $lb }} and no longer is. The
+              rules over it read an empty series as healthy, so every one
+              of them is silent while this is true: check the scrape
+              (the target's up, the NetworkPolicy in front of it, the
+              relabeling) before trusting a quiet dashboard.
+        {{- end }}
+
+        {{- /*
+        {Metric,Log,Trace}StoreSnapshotOlderThanWindow.
+
+        Not a store-exported counter: the newest-snapshot age this watches
+        is the age of the last SUCCESSFUL run of the backup CronJobs
+        templates/backup.yaml itself renders, read from
+        kube_cronjob_status_last_successful_time — a standard kube-state-
+        metrics field, not a guessed one, so it is not gated behind a
+        `metric` value the way the rest of this file is. What IS
+        unconfirmed is whether THIS release's own metrics store carries
+        kube-state-metrics data at all (kube-state-metrics.enabled is
+        false above, deliberately, so it is the estate's shared instance
+        or nothing) — see values.yaml and docs/safety.md. Scoped to this
+        release's own CronJob names and namespace, so it holds whether or
+        not a consumer also installs platform-alerts against this
+        namespace. Named per store, same as every other rule three stores
+        can trigger, rather than one alert distinguished only by a
+        `store` label.
+
+        `for:` exists because the underlying field,
+        kube_cronjob_status_last_successful_time, can be briefly absent
+        from a scrape while a job is actively running — see
+        selfAlerts.snapshotAge.for in values.yaml.
+        */}}
+        {{- if and $root.Values.backup.enabled $root.Values.backup.metrics.enabled }}
+        - alert: MetricStoreSnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-metrics-incremental" $fullname | trunc 52 | quote }}}
+            ) > {{ $sa.snapshotAge.metrics.maxAge }}
+          for: {{ $sa.snapshotAge.for }}
+          labels:
+            severity: {{ $sa.snapshotAge.severity }}
+          annotations:
+            summary: "The metrics store's newest backup snapshot is stale"
+            description: >-
+              No successful run of {{ printf "%s-backup-metrics-incremental" $fullname | trunc 52 }}
+              within {{ $sa.snapshotAge.metrics.maxAge }}. A CronJob that has stopped
+              being scheduled produces no failures at all, which is the
+              same reasoning platform-alerts' CronJobNotSucceeding rule
+              uses for any other CronJob.
+        {{- end }}
+        {{- if and $root.Values.backup.enabled $root.Values.backup.logs.enabled }}
+        - alert: LogStoreSnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-logs" $fullname | trunc 52 | quote }}}
+            ) > {{ $sa.snapshotAge.logs.maxAge }}
+          for: {{ $sa.snapshotAge.for }}
+          labels:
+            severity: {{ $sa.snapshotAge.severity }}
+          annotations:
+            summary: "The log store's newest backup snapshot is stale"
+            description: >-
+              No successful run of {{ printf "%s-backup-logs" $fullname | trunc 52 }}
+              within {{ $sa.snapshotAge.logs.maxAge }}. A CronJob that has
+              stopped being scheduled produces no failures at all — the
+              same blind spot the metrics store's own rule exists for.
+        {{- end }}
+        {{- if and $root.Values.backup.enabled $root.Values.backup.traces.enabled }}
+        - alert: TraceStoreSnapshotOlderThanWindow
+          expr: >-
+            time() - max(
+              kube_cronjob_status_last_successful_time{namespace={{ $root.Release.Namespace | quote }}, cronjob={{ printf "%s-backup-traces" $fullname | trunc 52 | quote }}}
+            ) > {{ $sa.snapshotAge.traces.maxAge }}
+          for: {{ $sa.snapshotAge.for }}
+          labels:
+            severity: {{ $sa.snapshotAge.severity }}
+          annotations:
+            summary: "The trace store's newest backup snapshot is stale"
+            description: >-
+              No successful run of {{ printf "%s-backup-traces" $fullname | trunc 52 }}
+              within {{ $sa.snapshotAge.traces.maxAge }}. A CronJob that has
+              stopped being scheduled produces no failures at all — the
+              same blind spot the metrics store's own rule exists for.
+        {{- end }}
+{{- end }}

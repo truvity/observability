@@ -1,0 +1,19 @@
+# expect: at '/notifications/slack/workspaces/0/appTokenSecret/key'
+# A workspace with an empty key: no file under the mounted Secret to read.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: ''
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'

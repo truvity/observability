@@ -1,0 +1,9 @@
+# expect: LogStoreDiskNearGuard would compare a gauge against nothing
+#
+# The log store's free-space metric without its limit: LogStoreDiskNearGuard
+# would compare a gauge against nothing.
+stackReleaseName: observability-stack
+selfAlerts:
+  diskGuard:
+    logs:
+      freeSpaceMetric: example_vl_free_disk_space_bytes

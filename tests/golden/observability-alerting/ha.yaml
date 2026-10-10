@@ -1,0 +1,708 @@
+---
+# Source: observability-alerting/templates/alertmanager-scrape.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: observability-stack-alertmanager-scrape
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - default
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmalertmanager
+      app.kubernetes.io/instance: observability-stack
+      app.kubernetes.io/component: monitoring
+      managed-by: vm-operator
+  endpoints:
+    - targetPort: 9093
+      path: /metrics
+      interval: 30s
+
+---
+# Source: observability-alerting/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-metrics
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: prometheus
+spec:
+  replicaCount: 1
+  podMetadata:
+    labels:
+      observability.vmalert: metrics
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          observability.vmalert: metrics
+  evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  ruleSelector:
+    matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          - "logs"
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
+  ruleNamespaceSelector: {}
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 512Mi
+  datasource:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteWrite:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteRead:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.default.svc:9093"
+    - url: "http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.default.svc:9093"
+  extraArgs:
+    external.url: https://alerts.example.com
+
+---
+# Source: observability-alerting/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-metrics-peer
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: prometheus
+spec:
+  replicaCount: 1
+  podMetadata:
+    labels:
+      observability.vmalert: metrics
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          observability.vmalert: metrics
+  evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  ruleSelector:
+    matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          - "logs"
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
+  ruleNamespaceSelector: {}
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 512Mi
+  datasource:
+    url: "http://vmsingle-replica-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteWrite:
+    url: "http://vmsingle-replica-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteRead:
+    url: "http://vmsingle-replica-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.default.svc:9093"
+    - url: "http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.default.svc:9093"
+  extraArgs:
+    external.url: https://alerts.example.com
+
+---
+# Source: observability-alerting/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-logs
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: vlogs
+spec:
+  replicaCount: 1
+  podMetadata:
+    labels:
+      observability.vmalert: logs
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          observability.vmalert: logs
+  evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  ruleSelector:
+    matchLabels:
+      observability.rule-type: vlogs
+    matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          - "metrics"
+  ruleNamespaceSelector: {}
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 512Mi
+  datasource:
+    url: "http://observability-stack-victoria-logs-single-server.default.svc:9428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteWrite:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteRead:
+    url: "http://vmsingle-observability-stack-victoria-metrics-k8s-stack.default.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.default.svc:9093"
+    - url: "http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.default.svc:9093"
+  extraArgs:
+    external.url: https://alerts.example.com
+    rule.defaultRuleType: vlogs
+    rule.evalDelay: 5s
+
+---
+# Source: observability-alerting/templates/vmalert.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: observability-stack-logs-peer
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.rule-type: vlogs
+spec:
+  replicaCount: 1
+  podMetadata:
+    labels:
+      observability.vmalert: logs
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          observability.vmalert: logs
+  evaluationInterval: 30s
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  ruleSelector:
+    matchLabels:
+      observability.rule-type: vlogs
+    matchExpressions:
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          - "metrics"
+  ruleNamespaceSelector: {}
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 512Mi
+  datasource:
+    url: "http://replica-victoria-logs-single-server.observability.svc:9428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteWrite:
+    url: "http://vmsingle-replica-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  remoteRead:
+    url: "http://vmsingle-replica-victoria-metrics-k8s-stack.observability.svc:8428"
+    basicAuth:
+      username:
+        name: "observability-store-credentials"
+        key: "username"
+      password:
+        name: "observability-store-credentials"
+        key: "password"
+  notifiers:
+    - url: "http://vmalertmanager-observability-stack-0.vmalertmanager-observability-stack.default.svc:9093"
+    - url: "http://vmalertmanager-observability-stack-1.vmalertmanager-observability-stack.default.svc:9093"
+  extraArgs:
+    external.url: https://alerts.example.com
+    rule.defaultRuleType: vlogs
+    rule.evalDelay: 5s
+
+---
+# Source: observability-alerting/templates/vmalertmanager.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlertmanager
+metadata:
+  name: observability-stack
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  replicaCount: 2
+  podDisruptionBudget:
+    maxUnavailable: 1
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: observability-stack
+                app.kubernetes.io/name: vmalertmanager
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: observability-stack
+          app.kubernetes.io/name: vmalertmanager
+  extraArgs:
+    cluster.reconnect-timeout: "5m"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: "1"
+      memory: 256Mi
+  selectAllByDefault: false
+  disableSelfServiceScrape: true
+  volumes:
+    - name: watchdog
+      secret:
+        secretName: "example-watchdog-receiver"
+    - name: notifications-slack-acme
+      secret:
+        secretName: "example-slack-bot"
+  volumeMounts:
+    - name: watchdog
+      mountPath: /etc/alertmanager/watchdog
+      readOnly: true
+    - name: notifications-slack-acme
+      mountPath: /etc/alertmanager/notifications-slack-acme
+      readOnly: true
+  configRawYaml: |
+    route:
+      # `notifications-none` is a receiver with no configs: Alertmanager
+      # accepts that as a legitimate "do not send" target. It is the root
+      # receiver and the catch-all for a severity this chart's routing
+      # tree does not know (there is deliberately no `info` route — see
+      # docs/notifications.md), never a route somebody forgot to write.
+      receiver: notifications-none
+      group_by:
+        - alertname
+        - k8s_cluster_name
+        - k8s_namespace_name
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # The Slack delivery self-alert, before everything else and with
+        # `continue: false`: it says Slack is not delivering, so it must
+        # never be routed to Slack, and no route below may claim it.
+        # `notifications.slack.failureReceiver` names where it goes; unset,
+        # it goes to the null receiver (docs/notifications.md).
+        - receiver: notifications-none
+          matchers:
+            - alertname = "SlackNotificationsFailing"
+          continue: false
+        # The heartbeat, first and matched on its own: it must never be
+        # grouped with anything, never inhibited and never silenced by a
+        # rule written for a real alert.
+        - receiver: watchdog
+          matchers:
+            - alertname = "Watchdog"
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 5m
+        - match: {}
+          receiver: notifications-none
+          continue: true
+          routes:
+            - match:
+                severity: critical
+              receiver: slack-acme--alerts-critical
+            - match:
+                severity: warning
+              receiver: slack-acme--alerts
+    receivers:
+      - name: notifications-none
+      - name: slack-acme--alerts
+        slack_configs:
+          - channel: "#alerts"
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
+            send_resolved: true
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ or .CommonLabels.k8s_cluster_name .CommonLabels.source }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
+            title_link: 'https://alerts.example.com/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
+            text: |-
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
+              {{ end }}
+      - name: slack-acme--alerts-critical
+        slack_configs:
+          - channel: "#alerts-critical"
+            app_token_file: /etc/alertmanager/notifications-slack-acme/token
+            send_resolved: true
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ or .CommonLabels.k8s_cluster_name .CommonLabels.source }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
+            title_link: 'https://alerts.example.com/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
+            text: |-
+              {{ range .Alerts }}{{ .Annotations.summary }} · <https://alerts.example.com/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
+              {{ end }}
+      - name: watchdog
+        webhook_configs:
+          - url_file: /etc/alertmanager/watchdog/url
+            send_resolved: false
+    inhibit_rules:
+      - source_matchers:
+          - severity = "critical"
+          - k8s_cluster_name =~ ".+"
+          - k8s_namespace_name =~ ".+"
+        target_matchers:
+          - severity = "warning"
+        equal:
+          - k8s_cluster_name
+          - k8s_namespace_name
+
+---
+# Source: observability-alerting/templates/selfalerts-ha.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-store-alerts
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: observability-stack.stores
+      interval: 30s
+      rules:
+        # StoreMemoryNearLimit. The working set of a store container is
+        # the number the kernel's OOM killer reads, and a store killed
+        # under its limit restarts with a cold cache; on a pair it also
+        # leaves a gap the writers' queues have to refill.
+        #
+        # Healthy range: under 0.8 of the limit. The
+        # stores fill the cache they are allowed, so a working set that
+        # stays above it is a limit that is too small.
+        - alert: StoreMemoryNearLimit
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod, container) (container_memory_working_set_bytes{namespace="default", container!="", pod=~"^(vmsingle-observability-stack-victoria-metrics-k8s-stack-.+|observability-stack-victoria-logs-single-server-[0-9]+|observability-stack-vt-single-server-[0-9]+)$"})
+            /
+            max by (k8s_cluster_name, namespace, pod, container) (kube_pod_container_resource_limits{namespace="default", resource="memory", pod=~"^(vmsingle-observability-stack-victoria-metrics-k8s-stack-.+|observability-stack-victoria-logs-single-server-[0-9]+|observability-stack-vt-single-server-[0-9]+)$"})
+            > 0.8
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "A store container is above 80% of its memory limit"
+            description: >-
+              {{ $labels.pod }} ({{ $labels.container }}) has been above
+              0.8 of its memory limit for 15m.
+              Raise the store's memory request and limit (they are equal), or
+              look for a query or a cardinality burst that is holding it.
+        # MetricStoreReplicaDivergence. The two metrics stores of the
+        # pair take the same writes, so over 1h the rows each ingested
+        # are the same up to the writers' queue skew. This fires when the
+        # ratio of replica "a" to replica "b" leaves 1 +/- 0.25: a
+        # tolerance, not an equality. A replica that is down has no series
+        # and fires nothing here (that is `up == 0`'s job); a writer that
+        # lost one destination, or a replica that dropped rows, does.
+        #
+        # MEASURE A WEEK FIRST: 0.25 is a conservative starting value, not
+        # a measured one. Healthy range: the ratio sits near 1, with
+        # excursions while a recovered replica's writers drain their queues.
+        - alert: MetricStoreReplicaDivergence
+          expr: >-
+            abs(
+              1 -
+              sum by (k8s_cluster_name)(rate(vm_rows_inserted_total{observability_replica="a", type="promremotewrite"}[1h]))
+              /
+              sum by (k8s_cluster_name)(rate(vm_rows_inserted_total{observability_replica="b", type="promremotewrite"}[1h]))
+            ) > 0.25
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The two metrics stores of the pair are ingesting different amounts"
+            description: >-
+              vm_rows_inserted_total over 1h differs between replica
+              "a" and replica "b" by more than 0.25 of the other.
+              One of them is not receiving what the writers send it (a lost
+              writer destination, a full queue, a store refusing rows) or
+              is still catching up after a restart. A recovered replica
+              lies until its writers' queues drain: reads stay on the
+              primary (`first_available`) meanwhile. docs/high-availability.md.
+        # LogStoreReplicaDivergence. The two log stores of the
+        # pair take the same writes, so over 1h the rows each ingested
+        # are the same up to the writers' queue skew. This fires when the
+        # ratio of replica "a" to replica "b" leaves 1 +/- 0.25: a
+        # tolerance, not an equality. A replica that is down has no series
+        # and fires nothing here (that is `up == 0`'s job); a writer that
+        # lost one destination, or a replica that dropped rows, does.
+        #
+        # MEASURE A WEEK FIRST: 0.25 is a conservative starting value, not
+        # a measured one. Healthy range: the ratio sits near 1, with
+        # excursions while a recovered replica's writers drain their queues.
+        - alert: LogStoreReplicaDivergence
+          expr: >-
+            abs(
+              1 -
+              sum by (k8s_cluster_name)(rate(vl_rows_ingested_total{observability_replica="a"}[1h]))
+              /
+              sum by (k8s_cluster_name)(rate(vl_rows_ingested_total{observability_replica="b"}[1h]))
+            ) > 0.25
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The two log stores of the pair are ingesting different amounts"
+            description: >-
+              vl_rows_ingested_total over 1h differs between replica
+              "a" and replica "b" by more than 0.25 of the other.
+              One of them is not receiving what the writers send it (a lost
+              writer destination, a full queue, a store refusing rows) or
+              is still catching up after a restart. A recovered replica
+              lies until its writers' queues drain: reads stay on the
+              primary (`first_available`) meanwhile. docs/high-availability.md.
+        # TraceStoreReplicaDivergence. The two trace stores of the
+        # pair take the same writes, so over 1h the rows each ingested
+        # are the same up to the writers' queue skew. This fires when the
+        # ratio of replica "a" to replica "b" leaves 1 +/- 0.25: a
+        # tolerance, not an equality. A replica that is down has no series
+        # and fires nothing here (that is `up == 0`'s job); a writer that
+        # lost one destination, or a replica that dropped rows, does.
+        #
+        # MEASURE A WEEK FIRST: 0.25 is a conservative starting value, not
+        # a measured one. Healthy range: the ratio sits near 1, with
+        # excursions while a recovered replica's writers drain their queues.
+        - alert: TraceStoreReplicaDivergence
+          expr: >-
+            abs(
+              1 -
+              sum by (k8s_cluster_name)(rate(vt_rows_ingested_total{observability_replica="a"}[1h]))
+              /
+              sum by (k8s_cluster_name)(rate(vt_rows_ingested_total{observability_replica="b"}[1h]))
+            ) > 0.25
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The two trace stores of the pair are ingesting different amounts"
+            description: >-
+              vt_rows_ingested_total over 1h differs between replica
+              "a" and replica "b" by more than 0.25 of the other.
+              One of them is not receiving what the writers send it (a lost
+              writer destination, a full queue, a store refusing rows) or
+              is still catching up after a restart. A recovered replica
+              lies until its writers' queues drain: reads stay on the
+              primary (`first_available`) meanwhile. docs/high-availability.md.
+
+---
+# Source: observability-alerting/templates/selfalerts.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-stack-selfalerts
+  labels:
+    app.kubernetes.io/name: observability-stack
+    app.kubernetes.io/instance: observability-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: observability-stack.selfalerts
+      interval: 30s
+      rules:
+        # SlackNotificationsFailing. Alertmanager counts a failed Slack
+        # delivery (bad or revoked token, a channel the bot may not post
+        # in, Slack down) and keeps retrying; nothing else says a
+        # notification is being lost. `integration="slack"` is the
+        # Alertmanager label for `slack_configs`.
+        #
+        # This alert must NEVER be routed to Slack: templates/
+        # vmalertmanager.yaml puts a route for it at the top of the tree,
+        # to `notifications.slack.failureReceiver`, or to the null
+        # receiver when that is unset.
+        #
+        # Healthy range: 0. The series exists because templates/
+        # alertmanager-scrape.yaml scrapes Alertmanager's own /metrics.
+        - alert: SlackNotificationsFailing
+          expr: >-
+            sum without (pod, instance) (increase(alertmanager_notifications_failed_total{integration="slack"}[15m])) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Alertmanager is failing to deliver to Slack"
+            description: >-
+              alertmanager_notifications_failed_total{integration="slack"}
+              rose in the last 15m. Alerts routed to
+              Slack are not arriving: check the workspace's bot token
+              Secret, that the channel exists (a private channel needs the
+              bot invited) and Slack's own status.

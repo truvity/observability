@@ -1,0 +1,6 @@
+# expect: `alerting.source` is "chart" with `mode: replica`
+# A replica never rendered the alerting plane, so there is nothing to hand
+# over; a leftover `chart` there is a mistake that would read as a decision.
+mode: replica
+alerting:
+  source: chart

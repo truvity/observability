@@ -1,0 +1,23 @@
+# expect: the sync job would keep applying the upstream rules
+# `upstreamRules.source: platform-alerts` without turning the sync job's rule
+# sources off (no preset listed): the same upstream alerts and recordings
+# would be evaluated twice.
+stackReleaseName: observability-stack
+upstreamRules:
+  source: platform-alerts
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'

@@ -1,0 +1,28 @@
+# expect: without karma.authentication.header.name
+# Groups with no header authentication never match anyone.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+karma:
+  enabled: true
+  authentication:
+    none: true
+  authorization:
+    groups:
+    - name: admins
+      members:
+      - alice@example.com
