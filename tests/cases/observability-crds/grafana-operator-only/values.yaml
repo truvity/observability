@@ -1,0 +1,8 @@
+# The set a cluster turns on before it enables the grafana-operator
+# (charts/observability-cluster): the grafana.integreatly.org kinds and
+# nothing else. Proves the set renders on its own and that the other two
+# render nothing when it is the only one on.
+sets:
+  victoriaMetrics: false
+  prometheusOperator: false
+  grafanaOperator: true

@@ -1,0 +1,13 @@
+# The grafana-operator's CRDs, fetched by ocictl's crdctl. hack/crds.sh keeps
+# all thirteen of them: unlike the Prometheus Operator, whose set is mostly
+# kinds this stack does not run, every grafana.integreatly.org kind is one the
+# operator reconciles, and a cluster that runs the operator needs the lot.
+#
+# The version is pinned by hand and must equal the grafana-operator chart
+# observability-cluster vendors (charts/observability-cluster/Chart.yaml): the
+# operator and the CRDs it reads are one release, and tests/crds_grafana_operator_test.go
+# fails when the two drift.
+repo: grafana/grafana-operator
+pinned_version: "5.25.0"
+paths:
+  - config/crd/bases

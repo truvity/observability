@@ -1,0 +1,8 @@
+# expect: grafana-operator.crds.immutable is false
+# The operator's chart can render its CRDs as templates of this release. They
+# belong to observability-crds, so the switch is refused.
+grafanaOperator:
+  enabled: true
+grafana-operator:
+  crds:
+    immutable: false

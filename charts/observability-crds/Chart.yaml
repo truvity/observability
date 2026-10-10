@@ -2,8 +2,8 @@ apiVersion: v2
 name: observability-crds
 description: >-
   The CustomResourceDefinitions this stack depends on, owned as their own
-  release: the VictoriaMetrics operator's, and the four Prometheus Operator
-  scrape kinds.
+  release: the VictoriaMetrics operator's, the four Prometheus Operator
+  scrape kinds, and (opt-in) the grafana-operator's.
 type: application
 # Stamped from the tag by the release workflow; never moved by hand.
 version: 0.0.0
@@ -12,6 +12,7 @@ keywords:
   - crds
   - victoriametrics
   - prometheus-operator
+  - grafana-operator
   - kubernetes
 home: https://github.com/truvity/observability
 sources:

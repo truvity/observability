@@ -24,6 +24,10 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | 
 {{- end -}}
 
 {{- define "observability-cluster.validate" -}}
+{{- /* The operator's own chart can render its CRDs as templates (crds.immutable: false). They are observability-crds' to apply, server-side; a second owner would overwrite the first. */ -}}
+{{- if and .Values.grafanaOperator.enabled (not (dig "crds" "immutable" true (index .Values "grafana-operator"))) -}}
+{{- fail "observability-cluster: grafana-operator.crds.immutable is false, which makes the operator's chart render the Grafana CRDs as templates of this release. They belong to observability-crds (sets.grafanaOperator), applied server-side before this release; leave grafana-operator.crds.immutable at its default" -}}
+{{- end -}}
 {{- if .Values.externalGrafana.enabled -}}
 {{- if not .Values.externalGrafana.url -}}
 {{- fail "observability-cluster: externalGrafana.enabled needs externalGrafana.url (the shared Grafana's root URL)" -}}

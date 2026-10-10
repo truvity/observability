@@ -9,8 +9,8 @@
     "sets": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["victoriaMetrics", "prometheusOperator"],
-      "description": "Which CRD sets this release installs. Both false is refused at render.",
+      "required": ["victoriaMetrics", "prometheusOperator", "grafanaOperator"],
+      "description": "Which CRD sets this release installs. All false is refused at render.",
       "properties": {
         "victoriaMetrics": {
           "type": "boolean",
@@ -19,6 +19,10 @@
         "prometheusOperator": {
           "type": "boolean",
           "description": "PodMonitor, ServiceMonitor, ScrapeConfig and Probe."
+        },
+        "grafanaOperator": {
+          "type": "boolean",
+          "description": "The grafana-operator's thirteen grafana.integreatly.org kinds. Off by default: nothing installs them until a cluster enables the operator (charts/observability-cluster)."
         }
       }
     },
