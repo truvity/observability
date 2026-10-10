@@ -1427,6 +1427,26 @@ backup:
   # job as environment variables. The chart never reads it. Only used
   # when `auth.mode` is `secret`; refused set under any other mode.
   credentialsSecret: ""
+  # -- Server-side encryption the destination bucket applies, for the
+  # logs/traces jobs (`rclone`) only; `vmbackup` (the metrics job) needs
+  # nothing. `""` (the default) renders nothing, as before. `aws:kms`
+  # for a bucket whose default encryption is SSE-KMS; `AES256` for
+  # SSE-S3.
+  #
+  # Why it matters for `aws:kms`: an SSE-KMS object's S3 ETag is NOT the
+  # MD5 of its data. rclone, told nothing, reads the ETag as an MD5 and
+  # `--checksum` then reports every small (single-part) file as
+  # "corrupted on transfer: md5 hashes differ", deletes it, skips the
+  # deletes of the sync and exits non-zero, on every run. Setting this
+  # tells rclone the ETag is not an MD5: it then stores the file's MD5 in
+  # object metadata (`X-Amz-Meta-Md5chksum`) and verifies against that,
+  # so the integrity check the job exists for stays ON. The bucket's own
+  # default key is used unless `sseKmsKeyId` names one.
+  serverSideEncryption: ""
+  # -- A KMS key id, alias or ARN for `serverSideEncryption: aws:kms`.
+  # Empty uses the bucket's default key. Refused set with any other
+  # `serverSideEncryption`.
+  sseKmsKeyId: ""
 
   # -- How every backup job's pod authenticates to the object store.
   # Three shapes, and they are not layered — pick one:

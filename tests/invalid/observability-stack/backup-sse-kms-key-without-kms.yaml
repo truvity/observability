@@ -1,0 +1,34 @@
+# expect: `backup.sseKmsKeyId` is set but `backup.serverSideEncryption` is not `aws:kms`
+tenancy:
+  # The trace store is enabled by default and `tenancy.principals` is
+  # set below, so without this the trace-tenancy refusal fires first
+  # (see docs/safety.md). Not the fixture's own check.
+  allowUnfilteredTraceReads: true
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true
+
+# A KMS key id only means something with `serverSideEncryption: aws:kms`.
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+backup:
+  enabled: true
+  destination: s3://example-backups/observability
+  credentialsSecret: example-backup-credentials
+  serverSideEncryption: AES256
+  sseKmsKeyId: alias/example-backups

@@ -7,6 +7,9 @@
 {{- if not .Values.backup.destination }}
 {{- fail "observability-stack: `backup.enabled` is true but `backup.destination` is empty. A backup job with no destination runs, finds nothing to do and exits zero — the exact shape of failure this repository exists to catch." }}
 {{- end }}
+{{- if and .Values.backup.sseKmsKeyId (ne (.Values.backup.serverSideEncryption | default "") "aws:kms") }}
+{{- fail "observability-stack: `backup.sseKmsKeyId` is set but `backup.serverSideEncryption` is not `aws:kms`. A KMS key id means nothing to any other encryption mode, and rclone would silently ignore it; set `backup.serverSideEncryption: aws:kms` or drop the key id." }}
+{{- end }}
 {{- if eq $authMode "secret" }}
 {{- if not .Values.backup.credentialsSecret }}
 {{- fail "observability-stack: `backup.enabled` is true but `backup.credentialsSecret` is empty. The object store's credentials are the estate's; this chart takes the NAME of a Secret and never a value. Set `backup.auth.mode: ambient` or `credentialProcess` for a backup with no static key at all." }}
@@ -438,6 +441,18 @@ spec:
                   value: {{ $url | quote }}
                 - name: DESTINATION
                   value: {{ printf "%s/%s" (include "observability-stack.backup.rcloneDestination" $root.Values.backup.destination) (index $root.Values.backup $store).prefix | quote }}
+                {{- with $root.Values.backup.serverSideEncryption }}
+                # rclone reads these as its S3 backend options. With
+                # `aws:kms` it knows the ETag is not an MD5 and verifies
+                # `--checksum` against the MD5 it stores in the object's
+                # metadata, so the check stays on (see values.yaml).
+                - name: RCLONE_S3_SERVER_SIDE_ENCRYPTION
+                  value: {{ . | quote }}
+                {{- end }}
+                {{- with $root.Values.backup.sseKmsKeyId }}
+                - name: RCLONE_S3_SSE_KMS_KEY_ID
+                  value: {{ . | quote }}
+                {{- end }}
                 - name: VM_USERNAME
                   valueFrom:
                     secretKeyRef:
