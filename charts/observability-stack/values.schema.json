@@ -1385,6 +1385,15 @@
         "credentialsSecret": {
           "type": "string"
         },
+        "serverSideEncryption": {
+          "type": "string",
+          "enum": ["", "AES256", "aws:kms"],
+          "description": "Server-side encryption the destination bucket applies, for the logs/traces (rclone) jobs. \"aws:kms\" makes rclone stop reading the S3 ETag as an MD5 and verify against the MD5 it stores in object metadata instead; empty renders nothing."
+        },
+        "sseKmsKeyId": {
+          "type": "string",
+          "description": "A KMS key id, alias or ARN for serverSideEncryption \"aws:kms\"; empty uses the bucket's default key."
+        },
         "activeDeadlineSeconds": {
           "type": "integer",
           "minimum": 1
