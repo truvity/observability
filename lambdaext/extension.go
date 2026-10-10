@@ -111,6 +111,7 @@ func Run(ctx context.Context, opt Options) error {
 // listening, which an OTLP exporter treats as a retryable failure.
 func start(ctx context.Context, opt Options) (*Source, *http.Server, Config, error) {
 	cfg, err := LoadConfig(opt.Getenv)
+	warnDeprecated(opt.Logf, cfg.Deprecated)
 	if err != nil {
 		return nil, nil, cfg, err
 	}
@@ -226,6 +227,7 @@ type teleServer struct {
 // and leaves the extension running without it.
 func startTelemetry(ctx context.Context, client *Client, opt Options, cfg Config, tokens Tokens) *teleServer {
 	tc, err := LoadTelemetryConfig(opt.Getenv)
+	warnDeprecated(opt.Logf, tc.Deprecated)
 	if err != nil {
 		opt.Logf("otlp-lambda: Lambda telemetry logs are off: %v", err)
 		return nil

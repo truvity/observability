@@ -101,8 +101,8 @@ func TestExchangeRefusalNamesTheReason(t *testing.T) {
 
 func TestConfig(t *testing.T) {
 	env := map[string]string{
-		"ACCESS_ROSTER_ISSUER": "https://access.example/", "ACCESS_ROSTER_AUDIENCE": "https://access.example",
-		"ACCESS_ROSTER_OTLP_ENDPOINT": "https://otlp.example/",
+		"SLUIS_ISSUER": "https://access.example/", "SLUIS_AUDIENCE": "https://access.example",
+		"SLUIS_OTLP_ENDPOINT": "https://otlp.example/",
 	}
 	get := func(k string) string { return env[k] }
 	c, err := lambdaext.LoadConfig(get)
@@ -113,18 +113,18 @@ func TestConfig(t *testing.T) {
 		c.Algorithm != "ES384" || c.Duration != 300 || c.OTLPAudience != "otlp" || c.TokenFile != "" {
 		t.Fatalf("defaults: %+v", c)
 	}
-	env["ACCESS_ROSTER_OTLP_ENDPOINT"] = "http://otlp.example"
-	env["ACCESS_ROSTER_STS_DURATION_SECONDS"] = "5"
-	delete(env, "ACCESS_ROSTER_ISSUER")
+	env["SLUIS_OTLP_ENDPOINT"] = "http://otlp.example"
+	env["SLUIS_STS_DURATION_SECONDS"] = "5"
+	delete(env, "SLUIS_ISSUER")
 	_, err = lambdaext.LoadConfig(get)
-	for _, want := range []string{"ACCESS_ROSTER_ISSUER is not set", "must be https", "60..3600"} {
+	for _, want := range []string{"SLUIS_ISSUER is not set", "must be https", "60..3600"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("want %q in %v", want, err)
 		}
 	}
-	env["ACCESS_ROSTER_OTLP_ENDPOINT"] = "http://127.0.0.1:9"
-	env["ACCESS_ROSTER_ISSUER"] = "https://x"
-	env["ACCESS_ROSTER_STS_DURATION_SECONDS"] = "120"
+	env["SLUIS_OTLP_ENDPOINT"] = "http://127.0.0.1:9"
+	env["SLUIS_ISSUER"] = "https://x"
+	env["SLUIS_STS_DURATION_SECONDS"] = "120"
 	if _, err = lambdaext.LoadConfig(get); err != nil {
 		t.Fatalf("loopback http is allowed for tests: %v", err)
 	}

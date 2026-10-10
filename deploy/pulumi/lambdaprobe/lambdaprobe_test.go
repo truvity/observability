@@ -137,6 +137,9 @@ func TestDeployCreatesLayersRoleFunctionAndSchedule(t *testing.T) {
 	assert.Equal(t, audience, env["ACCESS_ROSTER_AUDIENCE"])
 	assert.Equal(t, cfg.Probe.IssuerURL, env["ACCESS_ROSTER_ISSUER"])
 	assert.Equal(t, cfg.Probe.OTLPEndpoint, env["ACCESS_ROSTER_OTLP_ENDPOINT"])
+	assert.Equal(t, audience, env["SLUIS_AUDIENCE"])
+	assert.Equal(t, cfg.Probe.IssuerURL, env["SLUIS_ISSUER"])
+	assert.Equal(t, cfg.Probe.OTLPEndpoint, env["SLUIS_OTLP_ENDPOINT"])
 	assert.Equal(t, "lambda-otel-probe", env["OTEL_SERVICE_NAME"])
 }
 

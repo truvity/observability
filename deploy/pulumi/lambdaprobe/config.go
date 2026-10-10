@@ -11,7 +11,7 @@ const (
 	// Version is the only config shape this package understands.
 	Version = 1
 
-	// DefaultOTLPAudience is the layer's own default (ACCESS_ROSTER_OTLP_AUDIENCE).
+	// DefaultOTLPAudience is the layer's own default (SLUIS_OTLP_AUDIENCE).
 	DefaultOTLPAudience = "otlp"
 )
 
