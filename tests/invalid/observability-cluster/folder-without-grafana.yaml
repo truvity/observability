@@ -1,0 +1,2 @@
+# expect: the folder lives in the shared Grafana
+folder: {title: Example}

@@ -1,0 +1,3 @@
+# expect: needs externalGrafana.url
+cluster: example
+externalGrafana: {enabled: true, credentials: {secretName: s}}

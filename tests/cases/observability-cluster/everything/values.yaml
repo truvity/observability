@@ -1,0 +1,24 @@
+cluster: example-cluster
+grafanaOperator:
+  enabled: true
+grafana-operator:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  serviceMonitor:
+    enabled: true
+externalGrafana:
+  enabled: true
+  name: shared
+  url: https://grafana.example.org
+  credentials:
+    secretName: grafana-credentials
+    key: api-token
+  caSecret:
+    name: grafana-ca
+    namespace: cert-store
+folder:
+  title: Example Cluster
+  uid: example_cluster

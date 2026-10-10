@@ -172,6 +172,11 @@ change when the platform is split.
    filter: planned, R2.2) No store names, no datasource UIDs and no cluster
    filters in a dashboard: the per-cluster datasource forces
    `k8s_cluster_name`.
+   How a dashboard reaches the shared Grafana (an instance label, the
+   cluster's folder uid, cross-namespace import) is planned with
+   `charts/observability-cluster`
+   ([architecture/observability-cluster.md](architecture/observability-cluster.md));
+   it becomes stable, and this page's version moves, when that chart does.
 4. **Lint both with the published `rulecheck` and `dashboardlint`.**
    (the tools: stable; running them as a published gate in a component's CI:
    planned, R2.3) They are `cmd/rulecheck` and `cmd/dashboardlint`, and the

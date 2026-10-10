@@ -1,0 +1,67 @@
+# observability-cluster — the per-cluster observability frontend, first slice.
+#
+# Installed on EVERY cluster. This slice renders only what is new: the
+# grafana-operator (opt-in), the `Grafana` resource that points it at the one
+# shared Grafana, and the cluster's folder in that Grafana. It renders none of
+# observability-emitters' or observability-stack's objects; composing those is
+# a later slice (docs/architecture/observability-cluster.md, "Composition").
+#
+# Everything is off by default, so an empty values file renders no object.
+
+nameOverride: ""
+
+# -- The cluster this release runs on, exactly as `tenancy.cluster` of
+# observability-emitters spells it. It is the default title and uid of the
+# cluster's folder. Required when `externalGrafana.enabled`.
+cluster: ""
+
+grafanaOperator:
+  # -- Install the grafana-operator (upstream's chart, vendored at the exact
+  # version pinned in Chart.yaml). Its CRDs are NOT this release's to apply:
+  # see "CRDs" in docs/architecture/observability-cluster.md. Under Argo CD,
+  # set `helm.skipCrds: true` once the CRDs are owned elsewhere.
+  enabled: false
+
+# -- Values of the vendored grafana-operator chart, passed through as they are
+# (the subchart's own keys). Nothing is set by default.
+grafana-operator: {}
+
+externalGrafana:
+  # -- Render the `Grafana` resource that names the shared Grafana. The
+  # operator manages no Grafana Deployment for it (`spec.external`): it only
+  # talks to the Grafana API with the credential below.
+  enabled: false
+  # -- The name of the `Grafana` resource. A component never names it: its
+  # GrafanaDashboard selects the instance by the label
+  # `observability.truvity.io/grafana: shared`, which this chart stamps on it.
+  name: grafana
+  # -- The shared Grafana's root URL, as the operator in this cluster reaches
+  # it (http or https). A data input; there is no default.
+  url: ""
+  credentials:
+    # -- The Secret (in this release's namespace) holding the Grafana service
+    # account token this cluster's operator authenticates with. It is never
+    # rendered or created here: its provisioning is restructure R2.2 (a
+    # folder-scoped service account per cluster).
+    secretName: ""
+    # -- The key in that Secret holding the token.
+    key: token
+  # -- Optional: a Secret holding the CA that signed the shared Grafana's
+  # certificate (the operator's `external.tls.certSecretRef`). Verification
+  # cannot be switched off from here.
+  caSecret:
+    name: ""
+    # -- The Secret's namespace; empty means this release's namespace.
+    namespace: ""
+
+folder:
+  # -- Render the cluster's `GrafanaFolder`: the one folder this cluster's
+  # dashboards live in. Needs `externalGrafana.enabled`.
+  enabled: true
+  # -- The folder's title; empty means `cluster`.
+  title: ""
+  # -- The folder's uid, immutable once created; empty means `cluster`.
+  # Component dashboards refer to the folder by this uid (`folderUID`), which
+  # works from any namespace. At most 40 characters of letters, digits, `-`
+  # and `_`.
+  uid: ""
