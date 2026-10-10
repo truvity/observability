@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/VictoriaMetrics/metricsql"
+	"github.com/truvity/observability/pkg/contracts"
 )
 
 // The semantic checks. Parsing proves an expression is valid; it says
@@ -35,7 +36,7 @@ const (
 
 // DefaultClusterLabel is the label the charts stamp on every series
 // (observability-stack `tenancy.clusterLabel`).
-const DefaultClusterLabel = "k8s_cluster_name"
+const DefaultClusterLabel = contracts.ClusterLabel
 
 // LintOptions tune the semantic checks.
 type LintOptions struct {

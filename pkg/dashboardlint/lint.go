@@ -17,6 +17,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/truvity/observability/pkg/contracts"
 )
 
 // Finding is one rule violation, tied to the dashboard it was found in.
@@ -191,7 +193,7 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 	}
 
 	// Rule 1: a `datasource` variable, and every panel uses it.
-	dsVar, hasDS := byName["datasource"]
+	dsVar, hasDS := byName[contracts.DatasourceVariable]
 	if !hasDS || dsVar.Type != "datasource" {
 		add(1, "no template variable named `datasource` of type `datasource` — every panel needs one to point at, or it is pinned to whatever Grafana calls default")
 	}

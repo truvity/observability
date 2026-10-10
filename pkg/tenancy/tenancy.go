@@ -34,6 +34,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/truvity/observability/pkg/contracts"
 )
 
 // The vocabulary: what every writer stamps and every filter selects on,
@@ -52,29 +54,29 @@ const (
 	// DefaultClusterLabel and DefaultNamespaceLabel are the METRICS label
 	// keys, and what Config.ClusterLabel and Config.NamespaceLabel mean
 	// when empty.
-	DefaultClusterLabel   = "k8s_cluster_name"
-	DefaultNamespaceLabel = "k8s_namespace_name"
+	DefaultClusterLabel   = contracts.ClusterLabel
+	DefaultNamespaceLabel = contracts.NamespaceLabel
 
 	// DefaultLogsClusterField and DefaultLogsNamespaceField are the LOG
 	// stream fields, and what Config.LogsClusterField and
 	// Config.LogsNamespaceField mean when empty.
-	DefaultLogsClusterField   = "k8s.cluster.name"
-	DefaultLogsNamespaceField = "kubernetes.pod_namespace"
+	DefaultLogsClusterField   = contracts.LogsClusterField
+	DefaultLogsNamespaceField = contracts.LogsNamespaceField
 
 	// TracesClusterAttribute and TracesNamespaceAttribute are the span
 	// resource attributes. Nothing in this package filters on them — the
 	// trace store cannot be scoped, see AllowUnfilteredTraceReads — but
 	// they are the third column of the same table, and a writer that
 	// spells them differently is caught by the same test.
-	TracesClusterAttribute   = "k8s.cluster.name"
-	TracesNamespaceAttribute = "k8s.namespace.name"
+	TracesClusterAttribute   = contracts.TracesClusterAttribute
+	TracesNamespaceAttribute = contracts.TracesNamespaceAttribute
 
 	// EnvironmentLabel and EnvironmentAttribute carry the environment
 	// tier — `production`, `staging`, `development`, `test`, or whatever
 	// the estate calls one. Descriptive only: it is never a key, because
 	// two clusters can share a tier and a filter on it would select both.
-	EnvironmentLabel     = "deployment_environment_name"
-	EnvironmentAttribute = "deployment.environment.name"
+	EnvironmentLabel     = contracts.EnvironmentLabel
+	EnvironmentAttribute = contracts.EnvironmentAttribute
 )
 
 // nameRE is what a cluster or namespace name may look like: the
@@ -124,7 +126,7 @@ var fieldRE = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$`)
 // spelling of a spec-defined claim is not flexibility — it is a way to
 // pin nothing at all while the configuration reads as though something
 // were pinned.
-const AudienceClaim = "aud"
+const AudienceClaim = contracts.AudienceClaim
 
 // audienceRE is the little that is still asked of an audience: that it
 // is a token at all — one run of non-whitespace characters, and not a
