@@ -2558,7 +2558,7 @@ spec:
           - channel: "#alerts"
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ or .CommonLabels.k8s_cluster_name .CommonLabels.source }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>
@@ -2568,7 +2568,7 @@ spec:
           - channel: "#alerts-critical"
             app_token_file: /etc/alertmanager/notifications-slack-acme/token
             send_resolved: true
-            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ .CommonLabels.k8s_cluster_name }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
+            title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }} on {{ or .CommonLabels.k8s_cluster_name .CommonLabels.source }}{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}'
             title_link: 'https://grafana.example/?var-cluster={{ .CommonLabels.k8s_cluster_name | urlquery }}{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}'
             text: |-
               {{ range .Alerts }}{{ .Annotations.summary }} · <https://grafana.example/?var-cluster={{ .Labels.k8s_cluster_name | urlquery }}{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>

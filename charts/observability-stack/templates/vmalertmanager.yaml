@@ -24,7 +24,18 @@ in `helm get manifest`, and in whatever stores the release history.
 {{- $also := $n.also | default list }}
 {{- $drop := $n.drop | default list }}
 {{- $catchAll := $n.catchAll }}
-{{- $groupBy := $n.groupBy | default (list "alertname" "k8s_cluster_name" "k8s_namespace_name") }}
+{{- /*
+An alert born outside a cluster (alert-ingress) carries `source` instead
+of a cluster. When `notifications.routeLabels` lists it, the default
+grouping adds it, so two sourced alerts with one alertname do not fold
+into one notification. Without `source` in routeLabels, and for any
+`groupBy` that is not the default list, the grouping is exactly what it was.
+*/}}
+{{- $defaultGroupBy := list "alertname" "k8s_cluster_name" "k8s_namespace_name" }}
+{{- $groupBy := $n.groupBy | default $defaultGroupBy }}
+{{- if and (eq (toJson $groupBy) (toJson $defaultGroupBy)) (has "source" ($n.routeLabels | default list)) }}
+{{- $groupBy = append $groupBy "source" }}
+{{- end }}
 {{- $inhibit := $n.inhibit | default dict }}
 {{- $inhibitEnabled := ternary $inhibit.enabled true (hasKey $inhibit "enabled") }}
 {{- $inhibitEqual := $inhibit.equal | default (list "k8s_cluster_name" "k8s_namespace_name") }}
@@ -382,7 +393,7 @@ spec:
           - channel: {{ $target.channel | quote }}
             app_token_file: {{ printf "/etc/alertmanager/notifications-slack-%s/%s" $target.workspace (include "observability-stack.notifications.workspaceKey" (list $slackWorkspaces $target.workspace)) }}
             send_resolved: true
-            title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
+            title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} or .CommonLabels.k8s_cluster_name .CommonLabels.source {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
             title_link: '{{ if eq $console "karma" }}{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}{{ else }}{{ $externalUrl }}/?var-cluster={{ "{{" }} .CommonLabels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}&var-namespace={{ "{{" }} .CommonLabels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ end }}'
             text: |-
               {{ $mentionPrefix }}{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }} · <{{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}|Grafana>
@@ -463,7 +474,7 @@ spec:
             alert name fails the whole delivery.
             */}}
             message: |-
-              <b>{{ "{{" }} .Status | toUpper {{ "}}" }}</b> {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} .CommonLabels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}
+              <b>{{ "{{" }} .Status | toUpper {{ "}}" }}</b> {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} or .CommonLabels.k8s_cluster_name .CommonLabels.source {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}
               {{ "{{" }} range .Alerts {{ "}}" }}
               {{ "{{" }} .Annotations.summary {{ "}}" }}
               {{- if $n.runbookBaseUrl }}

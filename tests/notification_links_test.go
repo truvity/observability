@@ -118,7 +118,7 @@ func TestTitleAndGrafanaLinkSurviveAnEmptyNamespace(t *testing.T) {
 			for _, c := range r.SlackConfigs {
 				seen++
 				title := c["title"].(string)
-				wantTitle := "on {{ .CommonLabels.k8s_cluster_name }}" +
+				wantTitle := "on {{ or .CommonLabels.k8s_cluster_name .CommonLabels.source }}" +
 					"{{ if .CommonLabels.k8s_namespace_name }}/{{ .CommonLabels.k8s_namespace_name }}{{ end }}"
 				assert.Contains(t, title, wantTitle, "%s/%s", g, r.Name)
 				assert.NotContains(t, title, "}}/{{ .CommonLabels.k8s_namespace_name }}'", "%s/%s: unguarded namespace", g, r.Name)
@@ -133,6 +133,68 @@ func TestTitleAndGrafanaLinkSurviveAnEmptyNamespace(t *testing.T) {
 		}
 	}
 	assert.NotZero(t, seen)
+}
+
+// An alert born outside a cluster (alert-ingress) has `source` and no
+// cluster: the Slack title and the Telegram message name the source, and an
+// alert with a cluster reads exactly as it did.
+func TestTitleNamesTheSourceWhenThereIsNoCluster(t *testing.T) {
+	execute := func(text string, common amKV) string {
+		t.Helper()
+		tpl, err := template.New("t").Funcs(amFuncs).Parse(text)
+		require.NoError(t, err)
+		var buf bytes.Buffer
+		require.NoError(t, tpl.Execute(&buf, amData{Status: "firing", CommonLabels: common, Alerts: []amAlert{{Labels: common}}}))
+		return buf.String()
+	}
+	sourced := amKV{"alertname": "GuardDutyFinding", "source": "aws-guardduty"}
+	clustered := amKV{"alertname": "A", "k8s_cluster_name": "c1", "k8s_namespace_name": "ns", "source": "ignored"}
+
+	var titles, messages int
+	for _, c := range slackConfigsOf(t, "golden/observability-stack/notifications-route-labels.yaml") {
+		titles++
+		title := c["title"].(string)
+		assert.Equal(t, "FIRING GuardDutyFinding on aws-guardduty", execute(title, sourced))
+		assert.Equal(t, "FIRING A on c1/ns", execute(title, clustered))
+	}
+	_, cfg := renderedLinksAM(t, "golden/observability-stack/notifications-telegram.yaml")
+	for _, r := range cfg.Receivers {
+		for _, c := range r.TelegramCfgs {
+			messages++
+			msg := c["message"].(string)
+			assert.Contains(t, execute(msg, sourced), "<b>FIRING</b> GuardDutyFinding on aws-guardduty\n")
+			assert.Contains(t, execute(msg, clustered), "<b>FIRING</b> A on c1/ns\n")
+		}
+	}
+	assert.NotZero(t, titles)
+	assert.NotZero(t, messages)
+}
+
+// Listing `source` in routeLabels adds it to the default grouping, so two
+// sourced alerts with one alertname are not one notification; without it the
+// grouping is the default, unchanged.
+func TestSourceJoinsTheDefaultGroupByWhenRouted(t *testing.T) {
+	groupBy := func(golden string) []any {
+		for _, d := range renderedDocs(t, golden) {
+			if d["kind"] != "VMAlertmanager" {
+				continue
+			}
+			raw, _ := dig(d, "spec", "configRawYaml").(string)
+			var cfg struct {
+				Route struct {
+					GroupBy []any `yaml:"group_by"`
+				} `yaml:"route"`
+			}
+			require.NoError(t, yaml.Unmarshal([]byte(raw), &cfg))
+			return cfg.Route.GroupBy
+		}
+		t.Fatalf("%s: no VMAlertmanager", golden)
+		return nil
+	}
+	assert.Equal(t, []any{"alertname", "k8s_cluster_name", "k8s_namespace_name", "source"},
+		groupBy("golden/observability-stack/notifications-route-labels.yaml"))
+	assert.Equal(t, []any{"alertname", "k8s_cluster_name", "k8s_namespace_name"},
+		groupBy("golden/observability-stack/notifications-slack-one-workspace.yaml"))
 }
 
 // slackConfigs are the rendered Slack configs of a golden.

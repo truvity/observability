@@ -1110,6 +1110,8 @@ notifications:
   # label no alert carries does not fail, it groups every alert that
   # lacks it together, which reads as one noisy notification for
   # unrelated things. `["..."]` groups by every label (no grouping).
+  # While this is left at the default and `routeLabels` lists `source`,
+  # `source` is appended, so alerts with no cluster do not fold together.
   groupBy:
     - alertname
     - k8s_cluster_name
