@@ -1,0 +1,43 @@
+{{- if .Values.externalGrafana.enabled }}
+# The shared Grafana, as this cluster's operator sees it. `spec.external`: the
+# operator deploys nothing for it. The credential is a reference to a Secret
+# this chart neither creates nor reads.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: {{ .Values.externalGrafana.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-cluster.labels" . | nindent 4 }}
+    {{- include "observability-cluster.instanceLabels" . | nindent 4 }}
+spec:
+  external:
+    url: {{ .Values.externalGrafana.url | quote }}
+    apiKey:
+      name: {{ .Values.externalGrafana.credentials.secretName | quote }}
+      key: {{ .Values.externalGrafana.credentials.key | quote }}
+    {{- if .Values.externalGrafana.caSecret.name }}
+    tls:
+      certSecretRef:
+        name: {{ .Values.externalGrafana.caSecret.name | quote }}
+        namespace: {{ default .Release.Namespace .Values.externalGrafana.caSecret.namespace | quote }}
+    {{- end }}
+{{- if .Values.folder.enabled }}
+---
+# This cluster's folder in the shared Grafana. Component dashboards put
+# themselves in it by `folderUID`.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaFolder
+metadata:
+  name: {{ include "observability-cluster.folderUid" . | lower | replace "_" "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-cluster.labels" . | nindent 4 }}
+spec:
+  title: {{ include "observability-cluster.folderTitle" . | quote }}
+  uid: {{ include "observability-cluster.folderUid" . | quote }}
+  instanceSelector:
+    matchLabels:
+      {{- include "observability-cluster.instanceLabels" . | nindent 6 }}
+{{- end }}
+{{- end }}

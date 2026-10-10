@@ -1406,6 +1406,40 @@ chart for every case under `tests/cases/observability-stack` and holds the
 objects byte-identical; the helpers and templates are copies, and that test
 is what keeps them honest.
 
+## `charts/observability-cluster`
+
+The per-cluster observability frontend, first slice (restructure R2.1;
+design in [architecture/observability-cluster.md](architecture/observability-cluster.md)).
+Installed on every cluster, off by default: an empty values file renders no
+object. It renders none of the emitters' or the stack's objects; composing them
+is a later slice.
+
+| Object | Name | When |
+|---|---|---|
+| the grafana-operator (Deployment, ServiceAccount, RBAC, metrics Service) | upstream's, from the vendored `grafana-operator` 5.25.0 | `grafanaOperator.enabled` |
+| `Grafana` (`spec.external`) | `externalGrafana.name` (default `grafana`) | `externalGrafana.enabled` |
+| `GrafanaFolder` | the folder uid, lower-cased, `_` as `-` | `externalGrafana.enabled` and `folder.enabled` (default) |
+
+The `Grafana` and the folder carry `observability.truvity.io/grafana: shared`;
+a component's `GrafanaDashboard` selects the instance on that label.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `cluster` | string | `""` | The cluster, spelled as `tenancy.cluster` of the emitters. Default title and uid of the folder. |
+| `grafanaOperator.enabled` | bool | `false` | Install the vendored grafana-operator. Its CRDs are not this release's to apply (design, "CRDs"). |
+| `grafana-operator` | map | `{}` | Values of the vendored chart, passed through. |
+| `externalGrafana.enabled` | bool | `false` | Render the `Grafana` resource. Needs `url` and `credentials.secretName`. |
+| `externalGrafana.name` | string | `grafana` | The resource's name. |
+| `externalGrafana.url` | string | `""` | The shared Grafana's root URL, as this cluster reaches it. |
+| `externalGrafana.credentials.secretName`, `.key` | string | `""`, `token` | The Secret holding the Grafana service-account token. Never created or read here. |
+| `externalGrafana.caSecret.name`, `.namespace` | string | `""` | A Secret holding the CA that signed the Grafana's certificate. Verification cannot be disabled. |
+| `folder.enabled` | bool | `true` | Render the cluster's `GrafanaFolder`. |
+| `folder.title`, `folder.uid` | string | `""` | Default to `cluster`. The uid is immutable once created (at most 40 of letters, digits, `-`, `_`). |
+
+The schema is strict. Refusals (a URL and a credential Secret when the Grafana
+is on, a valid folder uid, a folder with no Grafana) are render-time `fail`s
+with fixtures under `tests/invalid/observability-cluster/`.
+
 ## `charts/observability-emitters`
 
 Per-cluster collection: three emitters on by default (the metrics agent,

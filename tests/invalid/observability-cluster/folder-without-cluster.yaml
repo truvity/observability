@@ -1,0 +1,2 @@
+# expect: the folder needs a uid
+externalGrafana: {enabled: true, url: "https://grafana.example.org", credentials: {secretName: s}}

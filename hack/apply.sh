@@ -82,6 +82,14 @@ fi
 
 echo "installing the CustomResourceDefinitions this repository ships"
 kubectl apply --server-side -f "$crds_golden" >/dev/null
+# The grafana-operator's definitions (charts/observability-cluster) are the
+# vendored upstream chart's own; observability-crds does not own them yet
+# (docs/architecture/observability-cluster.md, Q2). Read from the archive
+# so the objects are checked against exactly the version the chart pins.
+for archive in "$root"/charts/observability-cluster/charts/grafana-operator-*.tgz; do
+  tar -xzOf "$archive" --wildcards 'grafana-operator/charts/crds/crds/*.yaml' \
+    | kubectl apply --server-side -f - >/dev/null
+done
 kubectl wait --for=condition=Established --timeout=180s crd --all >/dev/null
 
 docs_dir="$(mktemp -d -t observability-apply.XXXXXX)"
