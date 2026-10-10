@@ -44,6 +44,8 @@ metadata:
   labels:
     {{- include "observability-rum.labels" . | nindent 4 }}
     observability.rule-type: vlogs
+    observability.truvity.io/evaluator: logs
+    observability.truvity.io/rule-type: alert
 spec:
   groups:
     {{- if or $ni.enabled $rg.enabled }}

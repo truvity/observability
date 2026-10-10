@@ -1,6 +1,6 @@
 # Contracts
 
-Contract version: 1.0
+Contract version: 1.1
 
 This is the contract between the observability platform and everything that
 runs on it. It is written so that it stays true while the platform is split
@@ -49,8 +49,52 @@ instead, and nothing may assume every alert has a cluster.
 
 | Key | On | Meaning | Status |
 |---|---|---|---|
-| `observability.truvity.io/evaluator` | `VMRule` label | Name of the vmalert that evaluates the rule (`vmalert.remoteEvaluators`). | stable |
-| `observability.truvity.io/rule-type` | `VMRule` label | `alert` or `recording`. | planned (restructure step 2) |
+| `observability.truvity.io/evaluator` | `VMRule` label | Which vmalert evaluates the rule: `metrics` (the local metrics alerter; also the default for a rule with no label), `logs` (the logs alerter), or a `vmalert.remoteEvaluators` name. | stable |
+| `observability.truvity.io/rule-type` | `VMRule` label | `alert` (the VMRule holds alerting rules, and may hold recordings too) or `recording` (recording rules only). | stable (since 1.1, restructure step 2) |
+
+#### Rule ownership labels
+
+A `VMRule` says which vmalert evaluates it with `evaluator`, and what it
+holds with `rule-type`. The observability-stack's two local vmalerts and
+every remote evaluator select on `evaluator` (`ruleSelector`); no
+selector reads `rule-type`, because an alert and the recording rule it reads
+must be evaluated together. `rule-type` is stamped by the charts and
+validated by `rulecheck` (the value must be `alert` or `recording`).
+`metrics` and `logs` are the local alerters' own values, so a
+`vmalert.remoteEvaluators` entry cannot use them.
+
+Selector design. One `ruleSelector` cannot be a union of two labels, so the
+selectors say what they refuse where they can, and a switch picks the one
+label the logs alerter requires:
+
+| Alerter | `vmalert.acceptLegacyRuleLabels: true` (default) | `false` |
+|---|---|---|
+| metrics | `evaluator` NotIn {`logs`, remote names} and `observability.rule-type` NotIn {`vlogs`} | `evaluator` NotIn {`logs`, remote names} |
+| logs | `observability.rule-type=vlogs` and `evaluator` NotIn {`metrics`, remote names} | `evaluator=logs` |
+| remote `<n>` | `evaluator=<n>` and `observability.rule-type` NotIn {`vlogs`} | `evaluator=<n>` |
+
+The metrics alerter accepts both spellings in either mode, and still takes
+an unlabelled rule (the rules a vendored chart ships carry no labels). The
+logs alerter is where the old and the new spelling cannot both be matched,
+so a LogsQL rule carries both spellings during the window (this
+repository's charts emit both). A rule that names an evaluator no alerter
+runs is evaluated by nobody; a typo in a remote name used to be that, and
+the metrics alerter now takes any unknown evaluator value (the cost of
+accepting `metrics` and no label with one selector).
+
+Deprecation window. The old spelling `observability.rule-type: vlogs` (the
+LogsQL marker; not the new `rule-type`, which has other values and another
+meaning) is accepted through v0.70 and v0.71 and removed in v0.72:
+`vmalert.acceptLegacyRuleLabels` and the old selector terms go in v0.72. A
+component sets `evaluator: logs` on its LogsQL rules now, keeps the old
+label until v0.72, and sets the switch to `false` in an install once no rule
+needs the old one.
+
+`rulecheck -require-evaluator` makes a `VMRule` without an `evaluator`
+label a violation (and a LogsQL rule whose evaluator is not `logs`). It is
+off by default, because vendored rules carry no label and are still
+evaluated; a component chart's CI turns it on. The `rule-type` value check
+is always on.
 
 ### Identity kinds (stable)
 
@@ -75,8 +119,10 @@ for it:
 | `platform` | Shipped by the platform charts: the stack's self-alerts, `platform-alerts`, `observability-dashboards`. |
 | `component` | Shipped by a component chart (`truvity/<component>`) for that component's own behaviour. |
 
-The ownership labels are introduced by restructure step 2, together with
-`rule-type`; until then ownership is by chart, not by label.
+Ownership is by chart, not by label: the `platform` and `component` values
+name who writes a rule or dashboard but are not stamped on objects yet.
+The `evaluator` and `rule-type` labels (restructure step 2, above) are what
+the platform selects and checks on.
 
 ### Logical datasources
 
@@ -98,7 +144,7 @@ change when the platform is split.
    (`docs/emitting.md`); a component does not stamp them and does not name a
    store.
 2. **Ship `VMRule`s with the ownership labels.** (rules: stable; ownership
-   labels `observability.truvity.io/{evaluator,rule-type}`: planned, step 2)
+   labels `observability.truvity.io/{evaluator,rule-type}`: stable since 1.1)
    A component's alerts and recordings are `VMRule` objects in its own
    chart, not entries in the platform's charts.
 3. **Ship `GrafanaDashboard`s that reference the logical datasources

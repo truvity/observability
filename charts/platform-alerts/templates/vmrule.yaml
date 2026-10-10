@@ -56,7 +56,7 @@ on it would add nothing but a way to fail.
 The metrics VMRule renders when at least one group other than `podSecurity`
 is on. `podSecurity` and `podSecurityAudit` are LogsQL and have an object of their own below: one
 VMRule cannot serve both alerters, because the metrics vmalert takes every
-rule NOT marked `observability.rule-type: vlogs` and the logs one only
+rule NOT marked `observability.rule-type: vlogs` (or `observability.truvity.io/evaluator: logs`) and the logs one only
 those that are.
 */ -}}
 {{- $metricsGroups := without $enabled "podSecurity" "podSecurityAudit" -}}
@@ -69,9 +69,10 @@ metadata:
     app.kubernetes.io/name: {{ .Chart.Name }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    {{- with .Values.ruleLabels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- /* `ruleLabels` wins, so `observability.truvity.io/evaluator` can name
+           a remote evaluator. The old LogsQL spelling is not set here: the
+           metrics alerter takes every rule not marked `vlogs`. */}}
+    {{- toYaml (merge (deepCopy .Values.ruleLabels) (dict "observability.truvity.io/evaluator" "metrics" "observability.truvity.io/rule-type" "alert")) | nindent 4 }}
 spec:
   groups:
     {{- if .Values.groups.backups.enabled }}
@@ -1558,7 +1559,10 @@ metadata:
     app.kubernetes.io/name: {{ .Chart.Name }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    {{- toYaml (merge (dict "observability.rule-type" "vlogs") .Values.ruleLabels) | nindent 4 }}
+    {{- /* Both spellings of "evaluated by the logs alerter": the old
+           `observability.rule-type` (accepted until v0.72) and the new
+           `observability.truvity.io/evaluator`. The chart's win over `ruleLabels`. */}}
+    {{- toYaml (merge (dict "observability.rule-type" "vlogs" "observability.truvity.io/evaluator" "logs" "observability.truvity.io/rule-type" "alert") .Values.ruleLabels) | nindent 4 }}
 spec:
   groups:
 {{- if .Values.groups.podSecurity.enabled }}

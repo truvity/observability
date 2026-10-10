@@ -42,6 +42,7 @@ func run() int {
 		silent = flag.Bool("q", false, "print findings only")
 		noLint = flag.Bool("no-lint", false, "parse only; skip the semantic checks")
 		label  = flag.String("cluster-label", rulecheck.DefaultClusterLabel, "the label naming a series' cluster")
+		reqEv  = flag.Bool("require-evaluator", false, "refuse a VMRule without the observability.truvity.io/evaluator label")
 		reqSA  = flag.Bool("require-source-absent", false, "refuse a self-alert group without a SelfAlertSourceAbsent rule")
 	)
 
@@ -118,7 +119,7 @@ func run() int {
 	var violations []rulecheck.Violation
 
 	if !*noLint {
-		violations, err = rulecheck.Lint(rules, rulecheck.LintOptions{ClusterLabel: *label, RequireSourceAbsent: *reqSA})
+		violations, err = rulecheck.Lint(rules, rulecheck.LintOptions{ClusterLabel: *label, RequireSourceAbsent: *reqSA, RequireEvaluator: *reqEv})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "rulecheck: %v\n", err)
 
