@@ -27,7 +27,7 @@ import (
 const stackKeysFile = "stack-keys.yaml"
 
 type stackKeys struct {
-	Keys  []string  `yaml:"keys"`
+	Keys  []string   `yaml:"keys"`
 	Fixes []stackFix `yaml:"fixes"`
 }
 
