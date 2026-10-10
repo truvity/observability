@@ -125,6 +125,12 @@ heartbeat:
   interval: 15m
 ```
 
+Set `source` on a cloud alert and route on it: list `source` in
+`notifications.routeLabels` of observability-stack and write
+`match: {source: aws-guardduty}` (docs/notifications.md, "Routing an alert
+that has no cluster"). A mapping that still sets `k8s_cluster_name` keeps
+working unchanged; the rest of this page shows that older spelling.
+
 `k8s_cluster_name` on a cloud alert is not a cluster; it is the routing
 key the tree groups and routes on, and `cloud` (or whatever the estate
 names it) is how those alerts get their own channel without a second

@@ -127,7 +127,7 @@ token is a token in git.
 | a route or a severity naming a receiver that is not configured | a route to nowhere looks like a route |
 | a receiver with no secret | a receiver that cannot send |
 | a leftover `slack.webhookSecret`; a `workspace` no entry declares; `workspace` left out with two or more declared; an empty channel; a `mention` on a non-Slack receiver or outside `here`/`channel`; a duplicate workspace name; a workspace with an empty secret name or key; `slack.failureReceiver` naming Slack or an unconfigured receiver | the Slack shapes that look wired up and deliver nowhere; see "Slack" |
-| a route matching on a label the collectors do not stamp (`tenant`, `env`, …) | matches nothing, pages nobody; the vocabulary is cluster × namespace |
+| a route matching on a label outside `notifications.routeLabels` (and `ownerLabel`): `tenant`, `env`, …, or `source` before it is listed | matches nothing, pages nobody; the vocabulary is `routeLabels`, by default cluster × namespace |
 | `externalUrl` unset | every link dead |
 | `karma.enabled` with no `karma.authentication.header.name` and no `authentication.none: true`; `none` beside a header name; a header name with no `valueRe`; a groups header with no `groupValueRe`; groups with no header; an ACL naming an undeclared group or an unknown action; no Alertmanager for karma to read; `history.enabled` with no `uri` | an anonymous console that silences pages, or a config karma refuses at start; see "Console: karma" |
 | `notifications.console: karma` without `consoleUrl` or without `karma.enabled`; a `consoleUrl` that is not an absolute `http(s)://` URL without a trailing slash | a silence link that points at nothing |
@@ -139,6 +139,45 @@ token is a token in git.
 | `catchAll` naming a receiver that is not configured | every alert no tier claimed routed to nowhere |
 
 Each has a fixture under `tests/invalid/observability-stack/`.
+
+## Routing an alert that has no cluster
+
+`notifications.routeLabels` is the ordered list of label names a
+`routes[].match` may use. The default is `[k8s_cluster_name,
+k8s_namespace_name]`, plus `ownerLabel` when set: the vocabulary a route
+always had, and the render of an install that does not set it is
+byte-for-byte unchanged.
+
+An alert born outside a cluster (a GuardDuty finding, a budget, a
+cost anomaly, through `alert-ingress`) has no cluster. Until now its
+mapping set a made-up `k8s_cluster_name` (`cloud-security`, `cloud-cost`)
+so the cluster-based router had something to match. Instead, the mapping
+sets `source`, and the router is told it may match on it:
+
+```yaml
+notifications:
+  routeLabels: [k8s_cluster_name, k8s_namespace_name, source]
+  routes:
+    - match: {source: aws-guardduty}
+      critical: "#alerts-security"
+      warning: "#alerts-security"
+    - match: {source: aws-cost}
+      warning: "#alerts-cost"
+```
+
+A match key outside the list is refused at render time, so a route on
+`source` with `source` unlisted cannot look wired up and match nothing.
+
+What does not assume a cluster: routing (matchers are plain labels),
+`groupBy` and `inhibit.equal` (Alertmanager compares a label missing on
+both alerts as equal, and the default `requireLabels` makes a critical
+without them inhibit nothing), and the rule lint (`pkg/rulecheck`
+applies its cluster checks only to a VMRule that names the cluster
+label). What still does: the Slack and Telegram message templates print
+`k8s_cluster_name` and link Grafana with `var-cluster`, so a sourced
+alert shows an empty cluster in the title; the text is left alone here so
+the default render stays byte-identical. Add `source` to `groupBy` if
+two sources should not share one notification.
 
 ## Slack
 

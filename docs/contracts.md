@@ -38,6 +38,13 @@ descriptive and never a key: two clusters can share a tier. `owner` is an
 optional metrics label derived from the namespace (`tenancy.owners`); see
 `docs/tenancy-owner.md`.
 
+`source` names where an alert that is not about a cluster came from
+(`aws-guardduty`, `aws-cost`). An alert-ingress mapping sets it, and the
+router matches on it when `notifications.routeLabels` lists it, so such an
+alert needs no made-up `k8s_cluster_name`. A rule that is about a cluster
+carries the cluster label; an alert born outside one carries `source`
+instead, and nothing may assume every alert has a cluster.
+
 ### Keys under `observability.truvity.io/`
 
 | Key | On | Meaning | Status |

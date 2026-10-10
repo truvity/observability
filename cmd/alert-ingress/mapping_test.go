@@ -15,6 +15,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/truvity/observability/pkg/contracts"
 )
 
 // exampleMappings mirrors the three mapping rules in docs/alert-ingress.md
@@ -220,4 +222,37 @@ func TestUnmappedLabelsValidation(t *testing.T) {
 
 	assert.NoError(t, Unmapped{Labels: map[string]string{"team": "platform", "k8s_cluster_name": "cloud"}}.validate())
 	assert.NoError(t, Unmapped{}.validate())
+}
+
+// A mapping may route an alert on `source` alone: the AWS-origin alert
+// then carries no k8s_cluster_name (no made-up cluster), and a mapping
+// that still sets one keeps rendering it. notifications.routeLabels in
+// observability-stack lets a route match on `source`.
+func TestMappingMaySetSourceWithoutAClusterLabel(t *testing.T) {
+	sourceOnly := AlertSpec{
+		Alertname: "CloudSecurityFinding",
+		Severity:  "warning",
+		Labels:    map[string]string{contracts.SourceLabel: "aws-guardduty", "account": "{{ .account }}"},
+	}
+	legacy := sourceOnly
+	legacy.Labels = map[string]string{
+		contracts.SourceLabel:  "guardduty",
+		contracts.ClusterLabel: "cloud-security",
+	}
+
+	body := map[string]any{"account": "example"}
+
+	labels, _, err := renderAlert(sourceOnly, body)
+	require.NoError(t, err)
+	assert.Equal(t, "aws-guardduty", labels[contracts.SourceLabel])
+	assert.NotContains(t, labels, contracts.ClusterLabel)
+
+	labels, _, err = renderAlert(legacy, body)
+	require.NoError(t, err)
+	assert.Equal(t, "cloud-security", labels[contracts.ClusterLabel], "an existing mapping keeps working")
+	assert.Equal(t, "guardduty", labels[contracts.SourceLabel])
+
+	labels, _ = unmappedAlert(Unmapped{Labels: map[string]string{contracts.SourceLabel: "unmapped"}}, "x")
+	assert.Equal(t, "unmapped", labels[contracts.SourceLabel])
+	assert.NotContains(t, labels, contracts.ClusterLabel)
 }

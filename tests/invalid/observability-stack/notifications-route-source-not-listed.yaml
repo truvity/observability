@@ -1,9 +1,8 @@
-# expect: may match only on a label in
-# A route matching on `tenant`, which no collector this chart's rules
-# run against stamps on an alert. The vocabulary is cluster ×
-# namespace; a route on anything else matches nothing a rule actually
-# carries and pages nobody while looking exactly like a route that
-# works.
+# expect: add it to `notifications.routeLabels`
+# A route matching on `source` while `routeLabels` is left at its default
+# (cluster and namespace). The label is real -- alert-ingress stamps it --
+# but the router was not told to match on it, so it is refused rather
+# than silently listing a route nothing configured can reach.
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client
@@ -22,5 +21,5 @@ notifications:
     critical: {receiver: slack, channel: "#alerts-critical"}
     warning: {receiver: slack, channel: "#alerts"}
   routes:
-    - match: {tenant: example-tenant}
-      critical: "#alerts-example-tenant"
+    - match: {source: aws-guardduty}
+      critical: "#alerts-security"

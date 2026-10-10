@@ -139,7 +139,9 @@ topics: []
 #         severity: '{{ if atLeast .detail.severity 7 }}critical{{ else }}warning{{ end }}'
 #         labels:
 #           source: guardduty
-#           k8s_cluster_name: cloud   # the routing key, not a real cluster
+#           # Route on `source` (notifications.routeLabels in
+#           # observability-stack lists it); no fake cluster is needed.
+#           # A mapping that still sets k8s_cluster_name keeps working.
 #           # Distinct findings must stay distinct alerts: Alertmanager
 #           # de-duplicates on the full label set, so put what tells two
 #           # findings apart in labels.
