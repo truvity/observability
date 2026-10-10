@@ -423,6 +423,39 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### 0.69.0 → 0.70.0
+
+**`observability-stack`, rule ownership: vmalert selects on
+`observability.truvity.io/evaluator`.** Upgrade the stack before the
+component charts (`platform-alerts`, `observability-projects`,
+`observability-rum`, `alert-ingress`) when `vmalert.remoteEvaluators` is
+set: an older stack refuses a rule labelled `evaluator: metrics`, so that
+rule is not evaluated until the stack is upgraded. Then check, in this
+order:
+
+1. A `vmalert.remoteEvaluators[].name` that no alerter runs (a typo) used
+   to be evaluated by nobody and is now evaluated by the local metrics
+   alerter. Look for such rules before the bump if that would page.
+2. `metrics` and `logs` are refused as a remote evaluator name; rename
+   any that use them.
+3. `vmalert.acceptLegacyRuleLabels` defaults to `true`, so the old
+   LogsQL marker `observability.rule-type: vlogs` is still accepted.
+   Move your own LogsQL rules to `observability.truvity.io/evaluator:
+   logs` and set the key to `false` while v0.70 and v0.71 are current: the
+   old spelling and the key are removed in v0.72.
+
+**`observability-stack`: `notifications.routeLabels`.** The default is
+unchanged (`k8s_cluster_name` and `k8s_namespace_name`, plus `ownerLabel`
+when set), so an install that does not set it renders as before. Listing
+`source` in it, to route alerts born outside a cluster on `source`
+instead of a made-up cluster name, changes those alerts' labels and so
+their fingerprints: every open alert of that kind re-fires once, as a new
+notification, when the mapping and the routes move. Do it in a quiet
+window, and move the routes and the mapping in the same rollout.
+
+Slack and Telegram titles name `source` when an alert has no cluster, and
+`source` joins the default `group_by` when it is listed in `routeLabels`.
+
 ### 0.67.1 → 0.68.0
 
 **`deploy/pulumi/status` / `pkg/statusbox`: the Lightsail backend is gone.**
