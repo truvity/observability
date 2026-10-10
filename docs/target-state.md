@@ -53,7 +53,7 @@ Every piece is released; the state column says where its design page is.
 | `pkg/tenancy` | one input, two shapes: the proxy's users or the issuer's claim | [reference.md](reference.md#pkgtenancy) |
 | `notifications:` in the stack chart | the one router: receivers, routing shape, template, refusals; the store self-alerts; evaluating another store's rules (`vmalert.remoteEvaluators`) | [notifications.md](notifications.md) |
 | `charts/alert-ingress` + `cmd/alert-ingress` | events born outside the cluster, into the same router | [alert-ingress.md](alert-ingress.md) |
-| `pkg/statusbox` + `setup.sh` | the watcher outside: deadman, external probes, status pages | [statusbox.md](statusbox.md) |
+| `pkg/statusbox` + `pkg/statusbox/ec2` | the watcher outside: deadman, external probes, status pages | [statusbox.md](statusbox.md) |
 | `charts/observability-dashboards` | the generic dashboards, and the lint every dashboard passes | [dashboards.md](dashboards.md) |
 | `charts/observability-grafana` | one Grafana over several installs | [grafana.md](grafana.md) |
 | `charts/observability-mcp` + `cmd/mcp-aggregator` | read-only MCP connectors over the stores and Grafana | [mcp.md](mcp.md) |
@@ -269,30 +269,31 @@ heartbeat:
 ```
 
 **The status box**: one Pulumi call with the release version, the
-secrets, and the instance list — each instance a Gatus configuration the
+names of its secrets, and the instance list — each instance a Gatus configuration the
 estate renders from wherever it keeps its hostnames (or hands to
 `statusbox.RenderGatus`). Today that list is ONE instance: a single
 private page carrying every company's own component alongside cluster
-infrastructure and the deadman group, reachable only over the tailnet —
+infrastructure and the deadman group, reachable only from the allowed networks —
 no tunnel token, no public ingress, because nothing here is public yet
 ([statusbox.md](statusbox.md#the-shape)).
 
 ```go
-statusbox.NewLightsail(ctx, "status", &statusbox.LightsailArgs{
-    AvailabilityZone: "us-east-1a",
-    Args: statusbox.Args{
-        Version:  "v1.0.0",
-        Hostname: "statusbox",
-        Secrets: statusbox.Secrets{
-            TailscaleAuthKey: tailnetKey,
-            // opsYAML references ${ALERT_URL_ALERTS_READ}: the bearer
-            // token tenancy.alertReaders minted, not a push URL — see
-            // statusbox.md, "internal → status, pulled".
-            AlertURLs: map[string]pulumi.StringInput{"alerts_read": alertsReadToken},
-        },
-        Instances: []statusbox.Instance{
-            {Name: "ops", Port: 8084, Public: false, Config: opsYAML},
-        },
+status.Deploy(c, logger, status.Inputs{
+    BoxProvider: provider,
+    Version:     "v1.0.0",
+    // The page: hosts, entities and the deadman channel render the Gatus
+    // YAML, which references ${ALERT_URL_ALERTS_READ_TOKEN}: the bearer
+    // token tenancy.alertReaders minted, not a push URL — see statusbox.md,
+    // "internal → status, pulled".
+    PlatformHosts:  platformHosts,
+    AlertsReadHost: "alerts.example.test",
+    DeadmanChannel: "#deadman",
+    EC2: status.EC2Inputs{
+        VPCID:                    vpcID,
+        SubnetIDs:                subnetIDs,
+        Bucket:                   "acme-status-replica",
+        AlertsReadTokenParameter: "/acme/status/alerts-read-token",
+        // ...
     },
 })
 ```

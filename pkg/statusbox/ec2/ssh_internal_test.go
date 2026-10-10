@@ -180,3 +180,23 @@ func TestUserDataOpksshOnlyIsWithinTheLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Less(t, len(got), 12*1024)
 }
+
+func TestSSHPrefersPostQuantumKeyExchangeFailSafe(t *testing.T) {
+	got, err := sshArgs().bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+
+	for _, want := range []string{
+		"KexAlgorithms ^sntrup761x25519-sha512@openssh.com",
+		"/etc/ssh/sshd_config.d/06-statusbox-kex.conf",
+		"if sshd -t; then systemctl restart sshd; else rm -f /etc/ssh/sshd_config.d/06-statusbox-kex.conf; exit 1; fi",
+		"post-quantum key exchange not enabled; sshd keeps its defaults",
+	} {
+		require.Contains(t, got, want)
+	}
+
+	require.Less(t, strings.Index(got, "KexAlgorithms"), strings.Index(got, "hostaccess-setup-v"+HostaccessVersion))
+
+	without, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.NotContains(t, without, "KexAlgorithms")
+}

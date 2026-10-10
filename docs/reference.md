@@ -1787,4 +1787,4 @@ produces no diff.
 | `observability-grafana` | `oci://ghcr.io/truvity/charts/observability-grafana` |
 | `observability-mcp` | `oci://ghcr.io/truvity/charts/observability-mcp`; the image `ghcr.io/truvity/observability/mcp-aggregator:<version>` |
 | `observability-rum` | `oci://ghcr.io/truvity/charts/observability-rum` |
-| `pkg/tenancy`, `pkg/statusbox` | `github.com/truvity/observability`; `setup.sh` and `checksums.txt` are release assets |
+| `pkg/tenancy`, `pkg/statusbox` | `github.com/truvity/observability`; `checksums.txt` and the Gatus binaries are release assets |

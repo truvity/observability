@@ -7,8 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
-	"github.com/pulumi/pulumi-tailscale/sdk/go/tailscale"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
@@ -130,59 +128,6 @@ func TestRenderRefusesAnEmptyHostList(t *testing.T) {
 	require.Error(t, err)
 }
 
-func deployWith(t *testing.T, public bool) *mocks {
-	t.Helper()
-
-	m := &mocks{}
-
-	require.NoError(t, pulumi.RunErr(func(c *pulumi.Context) error {
-		box, err := aws.NewProvider(c, "box", &aws.ProviderArgs{})
-		if err != nil {
-			return err
-		}
-
-		ts, err := tailscale.NewProvider(c, "ts", &tailscale.ProviderArgs{})
-		if err != nil {
-			return err
-		}
-
-		in := Inputs{
-			BoxProvider: box, TailscaleProvider: ts,
-			Version: "v0.7.0", AvailabilityZone: "eu-west-3a", Hostname: "statusbox", TailscaleTag: "tag:statusbox",
-			PlatformHosts: PlatformHosts(groups()), ByCompany: HostsByCompany(groups()),
-			Entities: []Entity{{Code: "acme", DisplayName: "Acme"}}, AlertsReadHost: "alerts.example.test", DeadmanChannel: "#deadman",
-			AlertsReadToken: pulumi.String("read"), DeadmanSlackToken: pulumi.String("slack"),
-		}
-		if public {
-			in.PublicHostname = "status.example.com"
-			in.OIDC = OIDC{IssuerURL: "https://issuer.example.com", ClientID: "status"}
-			in.OIDCClientSecret = pulumi.String("secret")
-			in.TunnelToken = pulumi.String("tunnel")
-		}
-
-		return Deploy(c, slog.New(slog.DiscardHandler), in)
-	}, pulumi.WithMocks("proj", "stack", m)))
-
-	return m
-}
-
-func TestDeployCreatesTheKeyAndTheBox(t *testing.T) {
-	for _, public := range []bool{false, true} {
-		m := deployWith(t, public)
-
-		assert.Equal(t, []string{"status-box"}, m.names("tailscale:index/tailnetKey:TailnetKey"))
-		assert.Equal(t, "tag:statusbox", m.tags("status-box"))
-		assert.NotEmpty(t, m.names("aws:lightsail/instance:Instance"))
-	}
-}
-
-func TestPublicPageNeedsItsSecrets(t *testing.T) {
-	err := pulumi.RunErr(func(c *pulumi.Context) error {
-		return Deploy(c, slog.New(slog.DiscardHandler), Inputs{PublicHostname: "status.example.com"})
-	}, pulumi.WithMocks("proj", "stack", &mocks{}))
-	require.ErrorContains(t, err, "needs OIDCClientSecret and TunnelToken")
-}
-
 type (
 	recorded struct {
 		typ, name string
@@ -238,20 +183,7 @@ func (m *mocks) input(typ, name, key string) string {
 	return ""
 }
 
-func (m *mocks) tags(name string) string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for _, r := range m.resources {
-		if r.name == name && r.typ == "tailscale:index/tailnetKey:TailnetKey" {
-			return r.inputs["tags"].ArrayValue()[0].StringValue()
-		}
-	}
-
-	return ""
-}
-
-func deployEC2With(t *testing.T, public bool) *mocks {
+func deployWith(t *testing.T, public bool) *mocks {
 	t.Helper()
 
 	previous := statusbox.FetchChecksums
@@ -267,7 +199,6 @@ func deployEC2With(t *testing.T, public bool) *mocks {
 
 	require.NoError(t, pulumi.RunErr(func(c *pulumi.Context) error {
 		in := Inputs{
-			Backend:       BackendEC2,
 			Version:       "v0.7.0",
 			PlatformHosts: PlatformHosts(groups()), ByCompany: HostsByCompany(groups()),
 			Entities: []Entity{{Code: "acme", DisplayName: "Acme"}}, AlertsReadHost: "alerts.example.test", DeadmanChannel: "#deadman",
@@ -294,31 +225,21 @@ func deployEC2With(t *testing.T, public bool) *mocks {
 	return m
 }
 
-// The EC2 backend mints no tailnet key and creates no Lightsail instance: it is
-// an Auto Scaling group, and no secret value is an input at all.
-func TestDeployEC2CreatesAGroupAndNoKey(t *testing.T) {
+// The box is an Auto Scaling group, and no secret value is an input at all.
+func TestDeployCreatesAGroup(t *testing.T) {
 	for _, public := range []bool{false, true} {
-		m := deployEC2With(t, public)
+		m := deployWith(t, public)
 
 		assert.Equal(t, []string{"status"}, m.names("aws:autoscaling/group:Group"))
-		assert.Empty(t, m.names("tailscale:index/tailnetKey:TailnetKey"))
-		assert.Empty(t, m.names("aws:lightsail/instance:Instance"))
 		assert.Equal(t, "boundary-arn", m.input("aws:iam/role:Role", "status", "permissionsBoundary"))
 	}
 }
 
-func TestDeployEC2PublicPageNeedsItsParameters(t *testing.T) {
+func TestDeployPublicPageNeedsItsParameters(t *testing.T) {
 	err := pulumi.RunErr(func(c *pulumi.Context) error {
-		return Deploy(c, slog.New(slog.DiscardHandler), Inputs{Backend: BackendEC2, PublicHostname: "status.example.com"})
+		return Deploy(c, slog.New(slog.DiscardHandler), Inputs{PublicHostname: "status.example.com"})
 	}, pulumi.WithMocks("proj", "stack", &mocks{}))
 	require.ErrorContains(t, err, "EC2.OIDCClientSecretParameter and EC2.TunnelTokenParameter")
-}
-
-func TestDeployRefusesAnUnknownBackend(t *testing.T) {
-	err := pulumi.RunErr(func(c *pulumi.Context) error {
-		return Deploy(c, slog.New(slog.DiscardHandler), Inputs{Backend: "gce"})
-	}, pulumi.WithMocks("proj", "stack", &mocks{}))
-	require.ErrorContains(t, err, `unknown Backend "gce"`)
 }
 
 // Telegram is optional: absent, nothing renders; present, only the paging
@@ -350,14 +271,12 @@ func TestTelegramIsOptionalAndOnlyThePagingInstanceHasIt(t *testing.T) {
 }
 
 func TestTelegramEnabledNeedsBothInputs(t *testing.T) {
-	assert.False(t, Inputs{Backend: BackendEC2, EC2: EC2Inputs{TelegramTokenParameter: "/x/t"}}.telegramEnabled())
-	assert.True(t, Inputs{Backend: BackendEC2, EC2: EC2Inputs{TelegramTokenParameter: "/x/t", TelegramChatIDParameter: "/x/i"}}.telegramEnabled())
+	assert.False(t, Inputs{EC2: EC2Inputs{TelegramTokenParameter: "/x/t"}}.telegramEnabled())
+	assert.True(t, Inputs{EC2: EC2Inputs{TelegramTokenParameter: "/x/t", TelegramChatIDParameter: "/x/i"}}.telegramEnabled())
 	assert.False(t, Inputs{}.telegramEnabled())
-	assert.True(t, Inputs{TelegramToken: pulumi.String("t"), TelegramChatID: pulumi.String("i")}.telegramEnabled())
 }
 
-func TestPrivatePortDefaultsAndIsEC2Only(t *testing.T) {
-	assert.Equal(t, PrivatePort, Inputs{Backend: BackendEC2}.privatePort())
-	assert.Equal(t, 80, Inputs{Backend: BackendEC2, EC2: EC2Inputs{PrivatePort: 80}}.privatePort())
-	assert.Equal(t, PrivatePort, Inputs{EC2: EC2Inputs{PrivatePort: 80}}.privatePort(), "Lightsail ignores it: its page is served on 80 by tailscale")
+func TestPrivatePortDefaultsAndCanBeOverridden(t *testing.T) {
+	assert.Equal(t, PrivatePort, Inputs{}.privatePort())
+	assert.Equal(t, 80, Inputs{EC2: EC2Inputs{PrivatePort: 80}}.privatePort())
 }

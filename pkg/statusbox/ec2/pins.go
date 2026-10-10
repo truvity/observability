@@ -9,8 +9,7 @@ import "fmt"
 // checksum is read from the release's checksums.txt at deploy time.
 const (
 	// GatusVersion is the upstream Gatus tag the release builds its binaries
-	// from. It is the same tag setup.sh pins as the Lightsail backend's image
-	// (TestGatusVersionMatchesSetupSh keeps the two equal).
+	// from (hack/build-gatus.sh reads it from here).
 	GatusVersion = "v5.37.0"
 
 	// LitestreamVersion is the Litestream release (without the leading v).

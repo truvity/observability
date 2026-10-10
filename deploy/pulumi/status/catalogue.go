@@ -27,7 +27,7 @@ const (
 	// DeadmanTelegramChatIDKey is the AlertURLs key of the Telegram chat id.
 	DeadmanTelegramChatIDKey = "deadman_telegram_chat_id"
 
-	// OIDCClientSecretEnvKey is the statusbox.Secrets.Env map key the Gatus
+	// OIDCClientSecretEnvKey is the env map key the Gatus
 	// config references as ${OIDC_CLIENT_SECRET}: the whole variable name,
 	// unlike an AlertURLs key.
 	OIDCClientSecretEnvKey = "OIDC_CLIENT_SECRET"

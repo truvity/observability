@@ -43,9 +43,9 @@
 #
 # Needs Docker, curl and python3 (with PyYAML, which every python3 this
 # repository has met so far already carries — the same way
-# hack/statusbox-ca-proof.sh needs openssl, curl and jq without either
+# hack/statusbox-ec2-ci.sh needs openssl, curl and jq without either
 # being a devbox package). Deliberately NOT part of `check` or CI, the
-# same reason hack/statusbox-ca-proof.sh's own Docker requirement is
+# same reason hack/statusbox-ec2-ci.sh's own Docker requirement is
 # not: a one-off, run-by-hand proof for this fix, not a regression gate
 # — the golden and tests/backupjobfailed_test.go are that gate.
 set -euo pipefail

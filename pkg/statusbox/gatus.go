@@ -102,9 +102,9 @@ const (
 	alertsReadInterval   = "1m"
 
 	// oidcClientSecretVar is Gatus's own ${...} reference to the ONE
-	// Secrets.Env entry a Public instance's Config needs
+	// env entry a Public instance's Config needs
 	// ("OIDC_CLIENT_SECRET"). Unlike alertVar, no prefix is added — see
-	// Secrets.Env's own doc comment in statusbox.go for why: Env's whole
+	// env's own doc comment in statusbox.go for why: Env's whole
 	// point is a Config writing exactly the name its key names, nothing
 	// added.
 	oidcClientSecretVar = "${OIDC_CLIENT_SECRET}"
@@ -252,7 +252,7 @@ type (
 	// from: vmalert's own `/api/v1/alerts`, at Host, with the bearer
 	// this Config references as ${ALERT_URL_<TokenEnvKey, upper-cased>}
 	// — the exact environment-variable name statusbox's own
-	// Secrets.AlertURLs (statusbox.go's alertURLName) computes from the
+	// alert-URL (statusbox.go's alertURLName) computes from the
 	// SAME key, so the two agree without either one hard-coding the
 	// other's naming.
 	AlertsRead struct {
@@ -283,11 +283,11 @@ type (
 		// exactly that path).
 		PublicHostname string
 		// ClientID is the OIDC client this page signs in as. Not a
-		// secret — see statusbox.Secrets.Env's own doc comment for
+		// secret — see env's own doc comment for
 		// where the matching client_secret comes from instead (this
 		// package never takes one as a literal; every rendered Config
 		// references oidcClientSecretVar, and the caller wires the real
-		// value through Args.Secrets.Env["OIDC_CLIENT_SECRET"]).
+		// value through Args.env["OIDC_CLIENT_SECRET"]).
 		ClientID string
 	}
 
@@ -305,7 +305,7 @@ type (
 	}
 
 	// TelegramProvider is Gatus's native `alerting.telegram`: a bot token
-	// and the chat id the bot writes to. Both are Secrets.AlertURLs keys
+	// and the chat id the bot writes to. Both are alert-URL keys
 	// (${ALERT_URL_<KEY>}), never literals: the chat id is not a secret
 	// strictly, but it is estate data that stays out of this repository.
 	TelegramProvider struct {
@@ -348,7 +348,7 @@ type (
 	ChatPost struct {
 		// URL is the API endpoint, e.g. https://slack.com/api/chat.postMessage.
 		URL string
-		// TokenEnvKey is the Secrets.AlertURLs key whose value is the bot
+		// TokenEnvKey is the alert-URL key whose value is the bot
 		// token (${ALERT_URL_<KEY>}).
 		TokenEnvKey string
 		// Channel is the channel the body names. A chat API answers 200
@@ -516,7 +516,7 @@ func RenderGatus(c Catalogue) (string, error) {
 
 	if c.Telegram != nil {
 		if !alertKeyRE.MatchString(c.Telegram.TokenKey) || !alertKeyRE.MatchString(c.Telegram.IDKey) {
-			return "", fmt.Errorf("statusbox: RenderGatus: Telegram.TokenKey %q and Telegram.IDKey %q must be valid Secrets.AlertURLs keys",
+			return "", fmt.Errorf("statusbox: RenderGatus: Telegram.TokenKey %q and Telegram.IDKey %q must be valid alert-URL keys",
 				c.Telegram.TokenKey, c.Telegram.IDKey)
 		}
 
@@ -812,7 +812,7 @@ func deadmanAlerting(d DeadmanChecks, alerting *gatusAlerting) ([]gatusAlertRef,
 	}
 
 	if !alertKeyRE.MatchString(p.TokenEnvKey) {
-		return nil, nil, fmt.Errorf("statusbox: RenderGatus: Deadman.Post.TokenEnvKey %q is not a valid Secrets.AlertURLs key", p.TokenEnvKey)
+		return nil, nil, fmt.Errorf("statusbox: RenderGatus: Deadman.Post.TokenEnvKey %q is not a valid alert-URL key", p.TokenEnvKey)
 	}
 
 	if !postChannelRE.MatchString(p.Channel) {

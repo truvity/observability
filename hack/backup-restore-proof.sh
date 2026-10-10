@@ -49,7 +49,7 @@
 #
 # Needs Docker and python3 (PyYAML). Deliberately NOT part of `check`:
 # a one-off, run-by-hand proof, the same reason
-# hack/statusbox-ca-proof.sh's own Docker requirement is not — the
+# hack/statusbox-ec2-ci.sh's own Docker requirement is not — the
 # golden renders (tests/golden/observability-stack/backup-credential-process.yaml)
 # and the negative fixtures are the regression gate.
 set -euo pipefail

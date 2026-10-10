@@ -292,18 +292,6 @@ func TestUserDataRefusesOverTheLimit(t *testing.T) {
 	require.ErrorContains(t, err, "over EC2's")
 }
 
-// TestGatusVersionMatchesSetupSh keeps the two backends on one Gatus: the
-// Lightsail backend pins the image tag in setup.sh, this one builds the binary
-// from GatusVersion.
-func TestGatusVersionMatchesSetupSh(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "setup.sh"))
-	require.NoError(t, err)
-
-	m := regexp.MustCompile(`(?m)^gatus_image="twinproduction/gatus:(v[0-9.]+)"$`).FindSubmatch(b)
-	require.Len(t, m, 2)
-	require.Equal(t, GatusVersion, string(m[1]))
-}
-
 func TestPinsAreWellFormed(t *testing.T) {
 	sha := regexp.MustCompile(`^[0-9a-f]{64}$`)
 

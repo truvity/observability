@@ -6,13 +6,12 @@ import (
 	"strings"
 )
 
-// This file is the small surface a second backend (pkg/statusbox/ec2) shares
-// with the Lightsail one: the same checks on the instances, the same names for
-// the secrets a Config may reference, and the same user-data wrapper. Nothing
-// here changes what CloudInit renders.
+// This file is the small surface pkg/statusbox/ec2 builds on: the checks on the
+// instances, the names for the secrets a Config may reference, and the
+// user-data wrapper.
 
 // ValidateInstances reports every problem with the instances and the hostnames
-// of the public ones, with the same messages Args.validate gives: a name that
+// of the public ones, a name that
 // would need escaping, two instances on one port, an empty Config, a public
 // instance with no hostname, more than one private instance.
 func ValidateInstances(instances []Instance, hostnames map[string]string) error {
@@ -20,13 +19,13 @@ func ValidateInstances(instances []Instance, hostnames map[string]string) error 
 	return errors.Join(errs...)
 }
 
-// AlertURLName is the environment variable an Args.Secrets.AlertURLs key
+// AlertURLName is the environment variable an alert key
 // becomes: ALERT_URL_<KEY>, upper-cased.
 func AlertURLName(key string) string { return alertURLName(key) }
 
 // ValidateSecretNames reports every problem with the keys a backend maps to
-// secrets: alertKeys as Secrets.AlertURLs keys, envNames as Secrets.Env keys.
-// The same rules as Args.validate: a key must be a valid name, an env name may
+// secrets: alertKeys as alert-URL keys, envNames as environment-variable names.
+// A key must be a valid name, an env name may
 // not be one statusbox reserves, and no env name may equal an ALERT_URL_<KEY>
 // an alert key already produces.
 func ValidateSecretNames(alertKeys, envNames []string) error {
@@ -59,7 +58,7 @@ func ValidateSecretNames(alertKeys, envNames []string) error {
 	return errors.Join(errs...)
 }
 
-// ValidateTrustedCAs checks an Args.TrustedCAs bundle: one or more PEM
+// ValidateTrustedCAs checks a TrustedCAs bundle: one or more PEM
 // CERTIFICATE blocks, each a CA.
 func ValidateTrustedCAs(bundle string) error { return parseTrustedCAs(bundle) }
 
