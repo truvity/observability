@@ -1,0 +1,11 @@
+# expect: additional properties 'severity' not allowed
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  upstream:
+    enabled: true
+    vmsingle:
+      override:
+        TooHighChurnRate24h:
+          severity: critical

@@ -756,3 +756,76 @@ groups:
     # this signal is one page. Empty keeps the convention.
     runbookUrl: ""
     keepClusterLabel: false
+
+  # -- THE VENDORED UPSTREAM RULE PACK (restructure step 4). OFF by default; see
+  # upstream/PIN.yaml for the pinned sources and docs/reference.md for the keys.
+  #
+  # Every upstream group is a key here, spelt exactly as upstream spells
+  # its name (quote it: names carry dots). Per group:
+  #   enabled   the default is what `observability-stack`'s sync job did
+  #             for the same group on a stock install: the groups that
+  #             need a control-plane scrape the stack leaves off (kubelet,
+  #             API server, scheduler, controller manager) default OFF.
+  #   exclude   rule names (alert or record) to leave out of the group.
+  #             A name the group does not have fails the render. A group
+  #             left with no rule renders no object.
+  #   override  rule name -> fields merged over the vendored rule (`expr`,
+  #             `for`, `keep_firing_for`, `labels`, `annotations`), for a
+  #             per-estate threshold. A name the group does not have fails
+  #             the render.
+  # Upstream rules carry no `commonLabels` and no `runbookBaseUrl` link,
+  # exactly as the sync job applied them, so alert identities (and with
+  # them silences and routes) do not change when an install moves its
+  # upstream rules here from the sync job.
+  upstream:
+    # -- Render the vendored upstream rule groups. Turning this on while
+    # the observability-stack sync job still applies the same rules
+    # DUPLICATES them for as long as both run: read docs/adoption.md
+    # (0.70.0) for the order, before changing this on a live install.
+    enabled: false
+    # -- The namespace the Alertmanager runs in, which the vendored
+    # `alertmanager.rules` group is scoped to (the sync job used the
+    # stack's own). Empty is this release's namespace.
+    alertmanagerNamespace: ""
+    "alertmanager.rules": {enabled: true, exclude: [], override: {}}
+    "general.rules": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_cpu_limits": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_cpu_requests": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_cpu_usage_seconds_total": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_memory_cache": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_memory_limits": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_memory_requests": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_memory_rss": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_memory_swap": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.container_memory_working_set_bytes": {enabled: true, exclude: [], override: {}}
+    "k8s.rules.pod_owner": {enabled: true, exclude: [], override: {}}
+    "kube-apiserver-availability.rules": {enabled: true, exclude: [], override: {}}
+    "kube-apiserver-burnrate.rules": {enabled: false, exclude: [], override: {}}
+    "kube-apiserver-histogram.rules": {enabled: false, exclude: [], override: {}}
+    "kube-apiserver-slos": {enabled: false, exclude: [], override: {}}
+    "kube-prometheus-general.rules": {enabled: true, exclude: [], override: {}}
+    "kube-prometheus-node-recording.rules": {enabled: true, exclude: [], override: {}}
+    "kube-scheduler.rules": {enabled: false, exclude: [], override: {}}
+    "kubelet.rules": {enabled: false, exclude: [], override: {}}
+    "kubernetes-apps": {enabled: true, exclude: [], override: {}}
+    "kubernetes-resources": {enabled: true, exclude: [], override: {}}
+    "kubernetes-storage": {enabled: true, exclude: [], override: {}}
+    "kubernetes-system": {enabled: true, exclude: [], override: {}}
+    "kubernetes-system-apiserver": {enabled: false, exclude: [], override: {}}
+    "kubernetes-system-controller-manager": {enabled: false, exclude: [], override: {}}
+    "kubernetes-system-kubelet": {enabled: false, exclude: [], override: {}}
+    "kubernetes-system-scheduler": {enabled: false, exclude: [], override: {}}
+    "node-network": {enabled: true, exclude: [], override: {}}
+    "node.rules": {enabled: true, exclude: [], override: {}}
+    "vm-health": {enabled: true, exclude: [], override: {}}
+    # -- The stack has always replaced this one expression (see the stack's
+    # comment: `count:up0` is empty by design). Keep it, or the alert fires
+    # on a healthy estate.
+    "vmalert":
+      enabled: true
+      exclude: []
+      override:
+        RecordingRulesNoData:
+          expr: sum(vmalert_recording_rules_last_evaluation_samples{recording!~"count:up0"}) without(id) < 1
+    "vmoperator": {enabled: true, exclude: [], override: {}}
+    "vmsingle": {enabled: true, exclude: [], override: {}}

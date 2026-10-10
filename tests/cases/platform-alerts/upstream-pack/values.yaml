@@ -1,0 +1,61 @@
+# The vendored upstream rule pack (restructure step 4): switched on, with the
+# shapes an estate uses. Every other platform-alerts group is off, so the
+# golden is the pack and nothing else.
+clusterLabel: k8s_cluster_name
+commonLabels:
+  k8s_cluster_name: example-cluster
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  backups: {enabled: false}
+  volumes: {enabled: false}
+  writePath: {enabled: false}
+  storeLimits: {enabled: false}
+  pendingPods: {enabled: false}
+  nodeClaims: {enabled: false}
+  probes: {enabled: false}
+  nats: {enabled: false}
+  argocd: {enabled: false}
+  eso: {enabled: false}
+  ack: {enabled: false}
+  podSecurity: {enabled: false}
+  podSecurityAudit: {enabled: false}
+  envoyRoutes: {enabled: false}
+  certificates: {enabled: false}
+  restarts: {enabled: false}
+  workloadAbsent: {enabled: false}
+  pulumiDrift: {enabled: false}
+  upstream:
+    enabled: true
+    alertmanagerNamespace: example-observability
+    # A rule excluded by name, in a group that stays on.
+    kubernetes-apps:
+      exclude: [KubeJobFailed, KubeDaemonSetMisScheduled, KubeDaemonSetRolloutStuck]
+    # A group that defaults off, switched on and trimmed to what is left.
+    kubernetes-system-kubelet:
+      enabled: true
+      exclude:
+        - KubeNodePressure
+        - KubeletTooManyPods
+        - KubeNodeReadinessFlapping
+        - KubeNodeEviction
+        - KubeletPlegDurationHigh
+        - KubeletPodStartUpLatencyHigh
+        - KubeletClientCertificateExpiration
+        - KubeletServerCertificateExpiration
+        - KubeletClientCertificateRenewalErrors
+        - KubeletServerCertificateRenewalErrors
+        - KubeletInstanceUnreachable
+        - KubeletDown
+    # A threshold moved for one estate: only `expr` changes.
+    vmsingle:
+      override:
+        TooHighChurnRate24h:
+          expr: sum(increase(vm_new_timeseries_created_total[24h])) by(instance) > (sum(vm_cache_entries{type="storage/hour_metric_ids"}) by(instance) * 6)
+    # A group left with no rule renders no object.
+    node-network:
+      exclude: [NodeNetworkInterfaceFlapping]
+    # A recording-only group: rule-type recording.
+    "k8s.rules.pod_owner":
+      enabled: true

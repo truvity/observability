@@ -1,0 +1,87 @@
+{{- /*
+The vendored upstream rule pack (restructure step 4): the rule groups that
+victoria-metrics-k8s-stack's sync job would fetch and apply, committed under
+upstream/ with a pin record (upstream/PIN.yaml; hack/vendor-upstream-rules.sh
+refreshes both). Off by default (`groups.upstream.enabled`).
+
+One VMRule per upstream group, named after the group, so a group can be
+switched off, trimmed (`exclude`) or patched (`override`) on its own and one
+rejected group cannot take the others down. Group names, rule names and
+expressions are upstream's, byte for byte, apart from the two install
+values the sync job also substituted: the cluster label (`clusterLabel`) and
+the Alertmanager namespace. Nothing else is added to a rule — not
+`commonLabels`, not `runbookBaseUrl` — so an alert keeps the identity it had
+when the sync job applied it.
+
+`observability.truvity.io/rule-type` is decided per object from what is left
+after `exclude`: `recording` when every remaining rule is a recording, else
+`alert`.
+*/ -}}
+{{- $u := .Values.groups.upstream -}}
+{{- if $u.enabled -}}
+{{- if not .Values.clusterLabel -}}
+{{- fail "platform-alerts: groups.upstream is on but `clusterLabel` is empty. The vendored rules group and join on the cluster label (the sync job substituted it the same way); with no label their expressions are not valid. Set `clusterLabel` to the store's cluster label (observability-stack `tenancy.clusterLabel`), or leave groups.upstream off." -}}
+{{- end -}}
+{{- $pin := .Files.Get "upstream/PIN.yaml" | fromYaml -}}
+{{- $am := default .Release.Namespace $u.alertmanagerNamespace -}}
+{{- $known := dict -}}
+{{- range $pin.groups }}{{- $_ := set $known .name true }}{{- end -}}
+{{- range $key, $_ := $u -}}
+{{- if and (ne $key "enabled") (ne $key "alertmanagerNamespace") (not (hasKey $known $key)) -}}
+{{- fail (printf "platform-alerts: groups.upstream.%s is not a vendored upstream group. The vendored groups are listed in upstream/PIN.yaml (the keys of values.yaml `groups.upstream`)." $key) -}}
+{{- end -}}
+{{- end -}}
+{{- $names := dict -}}
+{{- range $pin.groups }}
+{{- $cfg := get $u .name -}}
+{{- if $cfg.enabled }}
+{{- $raw := $.Files.Get (printf "upstream/%s" .file) | replace $pin.placeholders.clusterLabel $.Values.clusterLabel | replace $pin.placeholders.alertmanagerNamespace $am -}}
+{{- $g := fromYaml $raw -}}
+{{- $present := dict -}}
+{{- range $g.rules }}{{- $_ := set $present (default .record .alert) true }}{{- end -}}
+{{- range $cfg.exclude }}
+{{- if not (hasKey $present .) -}}
+{{- fail (printf "platform-alerts: groups.upstream.%s.exclude names %q, which is not a rule of that group (it has: %s). A misspelt exclusion would silently keep the rule." $g.name . (keys $present | sortAlpha | join ", ")) -}}
+{{- end -}}
+{{- end -}}
+{{- range $rn, $_ := $cfg.override }}
+{{- if not (hasKey $present $rn) -}}
+{{- fail (printf "platform-alerts: groups.upstream.%s.override names %q, which is not a rule of that group (it has: %s)." $g.name $rn (keys $present | sortAlpha | join ", ")) -}}
+{{- end -}}
+{{- end -}}
+{{- $kept := list -}}
+{{- range $g.rules }}
+{{- $name := default .record .alert -}}
+{{- if not (has $name $cfg.exclude) }}
+{{- $r := . -}}
+{{- with get $cfg.override $name }}{{- $r = mergeOverwrite (deepCopy $r) (deepCopy .) }}{{- end -}}
+{{- $kept = append $kept $r -}}
+{{- end -}}
+{{- end -}}
+{{- if $kept }}
+{{- $_ := set $g "rules" $kept -}}
+{{- $type := "recording" -}}
+{{- range $kept }}{{- if .alert }}{{- $type = "alert" }}{{- end }}{{- end -}}
+{{- $slug := regexReplaceAll "[^a-z0-9]+" (lower $g.name) "-" | trimAll "-" -}}
+{{- $obj := printf "%s-upstream-%s" (include "platform-alerts.fullname" $) $slug | trunc 63 | trimSuffix "-" -}}
+{{- if hasKey $names $obj -}}
+{{- fail (printf "platform-alerts: upstream groups %q and %q render the same VMRule name %q." (get $names $obj) $g.name $obj) -}}
+{{- end -}}
+{{- $_ := set $names $obj $g.name }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ $obj }}
+  labels:
+    app.kubernetes.io/name: {{ $.Chart.Name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    {{- toYaml (merge (deepCopy $.Values.ruleLabels) (dict "observability.truvity.io/evaluator" "metrics" "observability.truvity.io/rule-type" $type)) | nindent 4 }}
+spec:
+  groups:
+    - {{ toYaml $g | nindent 6 | trim }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

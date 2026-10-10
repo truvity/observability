@@ -38,6 +38,7 @@ vmalert and karma, or the pair splits and pages twice.
 {{- include "observability-stack.validate.seLinux" . -}}
 {{- include "observability-stack.validate.backupPrefixes" . -}}
 {{- include "observability-stack.validate.watchdogSource" . -}}
+{{- include "observability-stack.validate.upstreamRules" . -}}
 {{- include "observability-stack.validate.scrapeFrom" . -}}
 {{- include "observability-stack.validate.clientsFrom" . -}}
 {{- include "observability-stack.validate.notifier" . -}}
@@ -2180,6 +2181,25 @@ nobody, or evaluates the same rule twice. docs/notifications.md,
 {{- fail (printf "observability-stack: vmalert.remoteEvaluators[%d] (%s) `datasource.caBundle` must name exactly one of `configMap` or `secret` ({name, key})." $i (toString $e.name)) -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`upstreamRules.source: platform-alerts` hands the upstream rule sets to the
+vendored pack in charts/platform-alerts. The sync Job applies them too unless
+its rule sources are off, and the same alerts and recordings would be
+evaluated twice — from two sources that drift apart (the Job tracks upstream's
+branches, the pack is pinned). Helm cannot switch a subchart's value from
+this chart's own, so this refuses the combination instead; the preset
+presets/upstream-rules-platform-alerts.yaml sets both halves together.
+*/}}
+{{- define "observability-stack.validate.upstreamRules" -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- if eq (.Values.upstreamRules).source "platform-alerts" -}}
+{{- $dr := $vmks.defaultRules | default dict -}}
+{{- if and $vmks.enabled (or $dr.enabled $dr.create) -}}
+{{- fail "observability-stack: `upstreamRules.source` is \"platform-alerts\" but `victoria-metrics-k8s-stack.defaultRules` is still on (`enabled`, or `create`, is true), so the sync job would keep applying the upstream rules that charts/platform-alerts now renders: every one would be evaluated twice. Turn it off (`victoria-metrics-k8s-stack.defaultRules.enabled: false` and `create: false`), or list the preset `presets/upstream-rules-platform-alerts.yaml`, which sets both halves. To keep the sync job as the source, set `upstreamRules.source: sync-job`." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

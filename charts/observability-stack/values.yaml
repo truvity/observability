@@ -712,6 +712,38 @@ stores:
   traces:
     url: ""
 
+# -- Who applies the UPSTREAM rule sets (kube-prometheus, node-exporter and
+# VictoriaMetrics' own: `KubePodCrashLooping`, `TargetDown`, `Watchdog`, the
+# `k8s.rules.*` recordings, `TooHighChurnRate24h`, ...).
+#
+#   upstreamRules:
+#     source: sync-job          # the default, and what every install ran so far
+#     source: platform-alerts   # the vendored pack in charts/platform-alerts
+#
+# `sync-job`: `victoria-metrics-k8s-stack`'s sync Job fetches the rule files
+# from their upstream `main`/`master` branches at deploy time and applies them
+# to the cluster itself (see `victoria-metrics-k8s-stack.defaultRules`).
+# Nothing about that changes.
+#
+# `platform-alerts`: the same rules come from `charts/platform-alerts`'s
+# `groups.upstream`, vendored at a pinned commit, with every rule individually
+# switchable (`exclude`). The Job is then not to apply them as well. Helm cannot
+# turn a subchart's value off from this chart's own, so the switch is the
+# preset `presets/upstream-rules-platform-alerts.yaml`, which sets this key,
+# `victoria-metrics-k8s-stack.defaultRules.enabled: false` and
+# `victoria-metrics-k8s-stack.syncJob.enabled: false` together; this chart
+# refuses to render the key with the rule sources still on
+# (`observability-stack.validate.upstreamRules`). With this key set, this
+# chart no longer renders its own `Watchdog` either: the pack's `general.rules`
+# group carries upstream's (keep it on there; docs/adoption.md, 0.70.0).
+#
+# Turning the Job off is also what removes the VMRules it applied earlier (its
+# ServiceAccount owns them; the Job itself does not prune when it has no
+# source). So the preset is the SECOND step of a rollout whose first step is
+# the pack running in platform-alerts: docs/adoption.md, 0.70.0.
+upstreamRules:
+  source: sync-job
+
 # Alerting.
 #
 # Two vmalerts, because one cannot do both jobs: rules over metrics and

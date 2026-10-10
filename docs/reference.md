@@ -401,6 +401,58 @@ has no result label, so AWS throttling cannot be alerted on.
 Alerts: `ACKControllerDown`, `ACKControllerAbsent`, `ACKReconcileErrors`,
 `ACKTerminalReconcileErrors`, `ACKReconcilePanics`.
 
+### `groups.upstream` — the vendored upstream rule pack (0.70.0)
+
+Off by default. The rule groups that `victoria-metrics-k8s-stack`'s sync Job
+fetches from kube-prometheus and the VictoriaMetrics repositories and applies
+at run time (`KubePodCrashLooping`, `TargetDown`, `Watchdog`, the `k8s.rules.*`
+recordings, `TooHighChurnRate24h`, ...), committed under
+`charts/platform-alerts/upstream/` at **pinned commits**, so that the same
+rules can come from this chart with every rule individually switchable.
+`upstream/PIN.yaml` is the pin record: the k8s-stack version and sync-job
+image the files were produced with, each source's repository, branch, full
+commit and SHA-256, and for each group its file, checksum, rule names, rule
+type and default. `hack/vendor-upstream-rules.sh` refreshes everything
+deterministically (it runs the stack's own sync-job image against a fake API
+server; `update` moves the pins to the current heads, `check` fails when the
+committed files differ). CI holds the files to the record
+(`tests/upstream_rule_pack_test.go`), and to the stack: the sources the stack's
+sync job renders enabled by default are the pack's sources.
+
+Group names, rule names and expressions are upstream's, byte for byte, apart
+from the two values the sync job also substituted: the cluster label
+(`clusterLabel`) and the Alertmanager namespace (`alertmanagerNamespace`). A
+rule gets nothing else: not `commonLabels`, not a `runbookBaseUrl` link. So an
+alert keeps the identity it had under the sync job, and silences and routes
+keep matching. Compared with the live rules of a store running the sync job,
+every expression is identical except the two overridden ones below.
+
+Each group is one `VMRule` (`<release>-upstream-<group>`) labelled
+`observability.truvity.io/evaluator: metrics` (`ruleLabels` wins, as for every
+group) and `observability.truvity.io/rule-type`: `recording` when every rule
+left in the group is a recording, else `alert`.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `groups.upstream.enabled` | bool | `false` | Render the groups below. Needs a non-empty `clusterLabel`. |
+| `groups.upstream.alertmanagerNamespace` | string | `""` | The namespace the vendored `alertmanager.rules` group is scoped to (the sync job used the stack's). Empty: this release's namespace. |
+| `groups.upstream."<group>".enabled` | bool | what the stack's sync job did | A group needing a control-plane scrape the stack leaves off defaults **off** (`kubelet.rules`, `kubernetes-system-kubelet`, `kubernetes-system-apiserver`, `kube-apiserver-slos`, `-burnrate.rules`, `-histogram.rules`, `kube-scheduler.rules`, `kubernetes-system-scheduler`, `kubernetes-system-controller-manager`); every other group defaults on. |
+| `groups.upstream."<group>".exclude` | list | `[]` | Rule names (alert or record) left out. A name the group lacks fails the render, so a misspelling cannot keep a rule silently. A group left empty renders no object. A name that occurs twice in a group (two severities) goes with both. |
+| `groups.upstream."<group>".override` | map | `{}` | Rule name to fields merged over the vendored rule: `expr`, `for`, `keep_firing_for`, `labels`, `annotations`. A name the group lacks fails the render. |
+
+Defaults that are not plain upstream: `vmalert` overrides
+`RecordingRulesNoData` with the expression the stack has always used (it
+ignores `count:up0`, empty by design while every target is up). The stack's
+sync job mirrors its own `alertmanager.enabled` / `vmalert.enabled` into the
+`alertmanager` and `vmalert` rule sources; the pack cannot see them, so an
+install whose stack runs no Alertmanager sets
+`groups.upstream."alertmanager.rules".enabled: false`, and likewise
+`"vmalert"` for a stack without vmalert.
+
+Sources not vendored, because the stack never rendered them: kube-state-metrics,
+node-exporter, etcd, vmagent, vmcluster and the VictoriaLogs/VictoriaTraces
+sources.
+
 ## `charts/observability-stack`
 
 One install of the store. The chart renders the proxy, the two vmalerts,
@@ -1113,6 +1165,12 @@ its own switch and **not** gated by `selfAlerts.enabled`. Both default off.
 | `selfAlerts.divergence.metrics.metric` / `.matchers` | string | `vm_rows_inserted_total` / `type="promremotewrite"` | The metrics store's insert counter and extra label matchers. |
 | `selfAlerts.divergence.logs.metric` / `.traces.metric` | string | `vl_rows_ingested_total` / `vt_rows_ingested_total` | The log and trace stores' counters. |
 
+### `upstreamRules` (0.70.0)
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `upstreamRules.source` | enum | `sync-job` | Who applies the upstream rule sets. `sync-job`: `victoria-metrics-k8s-stack`'s sync Job fetches them from upstream's branch heads and applies them directly (what every install ran so far; nothing changes). `platform-alerts`: they come from `charts/platform-alerts`' vendored pack (`groups.upstream`). With `platform-alerts` this chart renders no `Watchdog` of its own (the pack's `general.rules` carries upstream's, so keep that group on) and **refuses to render while `victoria-metrics-k8s-stack.defaultRules` is still on** (`observability-stack.validate.upstreamRules`): the same rules would be evaluated twice, from two sources that drift apart. Helm cannot turn a subchart's value off from this chart's, so list `presets/upstream-rules-platform-alerts.yaml`, which sets `upstreamRules.source`, `defaultRules.enabled: false` and `syncJob.enabled: false` together. Turning the Job off is also what removes the VMRules it applied earlier: it does not prune when it has no source, but their owner is its ServiceAccount, and deleting that has Kubernetes garbage-collect them. Roll out in the order [adoption.md](adoption.md) gives (0.70.0). An install that also syncs dashboards (`defaultDashboards.enabled`) lists `syncJob.enabled: true` after the preset and removes the old VMRules itself. |
+
 ### The upstream charts
 
 Their own values, pinned in `Chart.yaml` and vendored under the chart's
@@ -1128,7 +1186,7 @@ through.
 | `…operator.env[]` | the five entries below | `VM_ENABLEDPROMETHEUSCONVERTER_PROBE`, `_SCRAPECONFIG`, `_PROMETHEUSRULE`, `_ALERTMANAGERCONFIG` are `"false"`: the operator converts only the two kinds this repository authors (`ServiceMonitor`, `PodMonitor`, left at its default of on), so a Prometheus Operator beside it is never fought over the rest (docs/safety.md, "The doctrine's own promise was broken"). `VM_PROMETHEUSCONVERTERADDARGOCDIGNOREANNOTATIONS` is `"true"`: the operator copies a converted object's annotations (Argo CD's tracking id) onto the `VMServiceScrape` it creates, which Argo CD then listed as part of the Application with no status; the flag marks it `IgnoreExtraneous`. Turning the converter off while this chart renders a `ServiceMonitor` is refused. |
 | `victoria-metrics-k8s-stack.defaultRules.rules.<Alert>` | `{}` | Per-alert override applied by the sync job: `{enabled: false}` (or `create: false`) drops that upstream alert, `{spec: {...}}` overrides fields of it (`RecordingRulesNoData` ships one). Used to turn `KubeCPUOvercommit` / `KubeMemoryOvercommit` off where nodes are provisioned on demand, paired with `platform-alerts`' `groups.pendingPods`. |
 | `…defaultRules.rules.TooHighChurnRate24h.spec.expr` | unset (upstream: factor 3) | Per-cluster churn threshold of the vmsingle self-monitoring alert. Upstream compares `sum(increase(vm_new_timeseries_created_total[24h])) by(instance)` to `sum(vm_cache_entries{type="storage/hour_metric_ids"}) by(instance) * 3`; a store holding short-lived CI workloads sets the same expression with a higher factor. Only `expr` moves: the alert name, `for`, labels and annotations stay upstream's, so silences and routes still match. Left unset, nothing is rendered for it. |
-| `victoria-metrics-k8s-stack.defaultRules.*` | upstream's own, ON | Left alone, deliberately: it fetches rule sources over the network and applies them directly to the cluster (invisible to `helm template`), and several — target- and pod-health, job failures, log/API-error volume, and this install's `Watchdog` alert (its `general.rules` group) — have no `charts/platform-alerts` equivalent. `templates/watchdog.yaml` renders this chart's own Watchdog only when this is turned OFF (`defaultRules.enabled: false`, not `create: false` alone — see its own doc comment in values.yaml); turning both off at once is refused (`observability-stack.validate.watchdogSource`). |
+| `victoria-metrics-k8s-stack.defaultRules.*` | upstream's own, ON | Left alone by default, deliberately (`upstreamRules.source: sync-job`): it fetches rule sources over the network and applies them directly to the cluster (invisible to `helm template`), and several — target- and pod-health, job failures, log/API-error volume, and this install's `Watchdog` alert (its `general.rules` group) — have no `charts/platform-alerts` equivalent. `templates/watchdog.yaml` renders this chart's own Watchdog only when this is turned OFF (`defaultRules.enabled: false`, not `create: false` alone — see its own doc comment in values.yaml); turning both off at once is refused (`observability-stack.validate.watchdogSource`). | With `upstreamRules.source: platform-alerts` the same rules come from `charts/platform-alerts`' `groups.upstream` (see above) and this is turned off by `presets/upstream-rules-platform-alerts.yaml`.
 | `victoria-metrics-k8s-stack.vmsingle.spec.retentionPeriod` | `90d` | **With a unit.** A bare number is months. |
 | `…vmsingle.spec.extraArgs['dedup.minScrapeInterval']` | `30s` | MIRROR of `interval`. |
 | `…vmsingle.spec.extraArgs['storage.minFreeDiskSpaceBytes']` | `10GiB` | The metrics store's only disk guard — it has no `-retention.max*` flags. Upstream's default is 100MB, which is reached with the disk already full. |

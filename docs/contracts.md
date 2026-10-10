@@ -63,6 +63,12 @@ validated by `rulecheck` (the value must be `alert` or `recording`).
 `metrics` and `logs` are the local alerters' own values, so a
 `vmalert.remoteEvaluators` entry cannot use them.
 
+The vendored upstream rule pack (`platform-alerts` `groups.upstream`) stamps
+both labels like every other rule this repository renders: one `VMRule` per
+upstream group, `evaluator: metrics`, and `rule-type` `recording` when the
+group (after `exclude`) holds recordings only, else `alert`. The sync job's
+own VMRules, which the pack replaces, carry no label.
+
 Selector design. One `ruleSelector` cannot be a union of two labels, so the
 selectors say what they refuse where they can, and a switch picks the one
 label the logs alerter requires:

@@ -131,6 +131,17 @@ func TestExactlyOneWatchdogSourcePerInstall(t *testing.T) {
 
 		checked++
 
+		// `upstreamRules.source: platform-alerts` (its preset): the third
+		// source. The stack renders no Watchdog and its sync job has no rule
+		// source; the Watchdog is the vendored pack's `general.rules`, which
+		// charts/platform-alerts renders (its `upstream-pack` golden carries it).
+		if packOwnsWatchdog[strings.TrimSuffix(filepath.Base(g), ".yaml")] {
+			assert.Zerof(t, chartWatchdogCount, "%s: the pack owns the Watchdog, but this chart rendered one too", g)
+			assert.Falsef(t, vendoredNonEmpty, "%s: the pack owns the Watchdog, but the sync job still has rule sources", g)
+
+			continue
+		}
+
 		gotOne := chartWatchdogCount + boolToInt(vendoredNonEmpty)
 		assert.Equalf(t, 1, gotOne, "%s: %d Watchdog sources (chart template + vendored rule set "+
 			"presumed present) — a metrics alerter should always end up with exactly one, from "+
@@ -148,6 +159,11 @@ func TestExactlyOneWatchdogSourcePerInstall(t *testing.T) {
 
 	assert.Positive(t, checked, "no golden with a metrics alerter was checked; this test went blind rather than passing")
 }
+
+// packOwnsWatchdog names the stack goldens whose Watchdog comes from the
+// vendored pack in charts/platform-alerts rather than from the sync job or
+// this chart's own template.
+var packOwnsWatchdog = map[string]bool{"upstream-rules-platform-alerts": true}
 
 func boolToInt(b bool) int {
 	if b {

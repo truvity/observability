@@ -6,6 +6,34 @@
   "additionalProperties": false,
   "required": ["groups"],
   "definitions": {
+    "upstreamGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "Rule names (alert or record) left out of the group."
+        },
+        "override": {
+          "type": "object",
+          "description": "Rule name to the fields merged over the vendored rule.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "expr": { "type": "string", "minLength": 1 },
+              "for": { "type": "string" },
+              "keep_firing_for": { "type": "string" },
+              "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+              "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
     "duration": {
       "type": "string",
       "pattern": "^[0-9]+(ms|s|m|h|d|w|y)$",
@@ -109,7 +137,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "pulumiDrift"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "pulumiDrift", "upstream"],
       "properties": {
         "backups": {
           "type": "object",
@@ -408,6 +436,50 @@
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" },
             "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "upstream": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "description": "The vendored upstream rule pack (restructure step 4); see upstream/PIN.yaml.",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Render the vendored upstream rule groups. Default false." },
+            "alertmanagerNamespace": { "type": "string", "description": "Namespace of the Alertmanager the vendored alertmanager.rules group is scoped to; empty is the release namespace." },
+            "alertmanager.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "general.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_cpu_limits": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_cpu_requests": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_cpu_usage_seconds_total": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_memory_cache": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_memory_limits": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_memory_requests": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_memory_rss": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_memory_swap": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.container_memory_working_set_bytes": { "$ref": "#/definitions/upstreamGroup" },
+            "k8s.rules.pod_owner": { "$ref": "#/definitions/upstreamGroup" },
+            "kube-apiserver-availability.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "kube-apiserver-burnrate.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "kube-apiserver-histogram.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "kube-apiserver-slos": { "$ref": "#/definitions/upstreamGroup" },
+            "kube-prometheus-general.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "kube-prometheus-node-recording.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "kube-scheduler.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "kubelet.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "kubernetes-apps": { "$ref": "#/definitions/upstreamGroup" },
+            "kubernetes-resources": { "$ref": "#/definitions/upstreamGroup" },
+            "kubernetes-storage": { "$ref": "#/definitions/upstreamGroup" },
+            "kubernetes-system": { "$ref": "#/definitions/upstreamGroup" },
+            "kubernetes-system-apiserver": { "$ref": "#/definitions/upstreamGroup" },
+            "kubernetes-system-controller-manager": { "$ref": "#/definitions/upstreamGroup" },
+            "kubernetes-system-kubelet": { "$ref": "#/definitions/upstreamGroup" },
+            "kubernetes-system-scheduler": { "$ref": "#/definitions/upstreamGroup" },
+            "node-network": { "$ref": "#/definitions/upstreamGroup" },
+            "node.rules": { "$ref": "#/definitions/upstreamGroup" },
+            "vm-health": { "$ref": "#/definitions/upstreamGroup" },
+            "vmalert": { "$ref": "#/definitions/upstreamGroup" },
+            "vmoperator": { "$ref": "#/definitions/upstreamGroup" },
+            "vmsingle": { "$ref": "#/definitions/upstreamGroup" }
           }
         },
         "pulumiDrift": {

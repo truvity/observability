@@ -689,6 +689,14 @@
         }
       }
     },
+    "upstreamRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who applies the upstream rule sets: the vendored sync Job (default) or charts/platform-alerts' vendored pack. See the key's comment in values.yaml and docs/adoption.md (0.70.0).",
+      "properties": {
+        "source": { "type": "string", "enum": ["sync-job", "platform-alerts"], "description": "`sync-job` (default) or `platform-alerts`. `platform-alerts` is refused unless victoria-metrics-k8s-stack.defaultRules.enabled is false; list presets/upstream-rules-platform-alerts.yaml." }
+      }
+    },
     "vmalert": {
       "type": "object",
       "additionalProperties": false,

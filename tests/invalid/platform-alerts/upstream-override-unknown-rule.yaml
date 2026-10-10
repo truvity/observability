@@ -1,0 +1,11 @@
+# expect: groups.upstream.vmsingle.override names "NoSuchAlert"
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  upstream:
+    enabled: true
+    vmsingle:
+      override:
+        NoSuchAlert:
+          expr: vector(1)

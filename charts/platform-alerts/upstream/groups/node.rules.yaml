@@ -1,0 +1,12 @@
+name: node.rules
+rules:
+- expr: topk(1, max(label_replace(kube_pod_info{job="kube-state-metrics",node!=""}, "pod", "$1", "pod", "(.*)")) by(__CLUSTER_LABEL__,node,namespace,pod)) by(__CLUSTER_LABEL__,namespace,pod)
+  record: 'node_namespace_pod:kube_pod_info:'
+- expr: count(node_cpu_seconds_total{mode="idle",job="node-exporter"} * on(__CLUSTER_LABEL__,namespace,pod) group_left(node) topk(1, node_namespace_pod:kube_pod_info:) by(__CLUSTER_LABEL__,namespace,pod)) by(__CLUSTER_LABEL__,node)
+  record: node:node_num_cpu:sum
+- expr: sum(node_memory_MemAvailable_bytes{job="node-exporter"} or (((node_memory_Buffers_bytes{job="node-exporter"} + node_memory_Cached_bytes{job="node-exporter"}) + node_memory_MemFree_bytes{job="node-exporter"}) + node_memory_Slab_bytes{job="node-exporter"})) by(__CLUSTER_LABEL__)
+  record: :node_memory_MemAvailable_bytes:sum
+- expr: avg(sum(rate(node_cpu_seconds_total{mode!="idle",mode!="iowait",mode!="steal",job="node-exporter"}[5m])) without(mode)) by(__CLUSTER_LABEL__,node)
+  record: node:node_cpu_utilization:ratio_rate5m
+- expr: avg(node:node_cpu_utilization:ratio_rate5m) by(__CLUSTER_LABEL__)
+  record: cluster:node_cpu:ratio_rate5m
