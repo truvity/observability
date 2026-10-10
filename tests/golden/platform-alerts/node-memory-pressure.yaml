@@ -1,0 +1,65 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: platform-alerts.node-memory-pressure
+      interval: 1m
+      rules:
+        # A node whose tasks spend more than `threshold` of the time waiting
+        # for memory.
+        #
+        # `node_pressure_memory_waiting_seconds_total` is node-exporter's
+        # PSI counter: seconds in which at least one task was stalled on
+        # memory. Its rate over 2m is the stalled share (0-1). A node that
+        # is over-committed (pods' memory requests far below their usage)
+        # reclaims and swaps, and its pods' liveness probes time out while
+        # they still read Running. Fires per node.
+        - alert: NodeMemoryPressureHigh
+          expr: >-
+            max by (k8s_cluster_name, node, instance) (
+              rate(node_pressure_memory_waiting_seconds_total[2m])
+            ) > 0.2
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.node }} has waited for memory {{ $value | humanizePercentage }} of the time"
+            description: >-
+              Tasks on node {{ $labels.node }} spent
+              {{ $value | humanizePercentage }} of the last 2m waiting for
+              memory (memory PSI above 0.2 for 1m).
+              The node is over-committed: it is reclaiming or swapping, and
+              liveness probes of its pods may time out. Look for pods with a
+              memory request far below their usage (`kubectl top pod -A
+              --sort-by=memory` against each pod's requests, for the pods on
+              this node), and for a recent burst of memory use. Raising those
+              requests lets the scheduler spread the pods.
+        # The same signal, past `criticalThreshold`: the node is thrashing.
+        - alert: NodeMemoryPressureCritical
+          expr: >-
+            max by (k8s_cluster_name, node, instance) (
+              rate(node_pressure_memory_waiting_seconds_total[2m])
+            ) > 0.5
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.node }} is thrashing on memory ({{ $value | humanizePercentage }} of the time waiting)"
+            description: >-
+              Tasks on node {{ $labels.node }} spent
+              {{ $value | humanizePercentage }} of the last 2m waiting for
+              memory (memory PSI above 0.5 for
+              1m). Pods on it are likely failing liveness
+              probes. Find the pods with memory requests far below their usage
+              and move or resize them; cordoning the node stops new pods
+              landing on it.

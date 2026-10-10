@@ -293,6 +293,26 @@ Initialized), which `groups.pendingPods` cannot.
 Alerts: `NodeClaimNotReady` (one per claim and condition type),
 `NodeClaimMetricsAbsent`.
 
+### `groups.nodeMemoryPressure`
+
+Off by default. Reads node-exporter's `node_pressure_memory_waiting_seconds_total`
+(memory PSI). A node whose pods' memory requests sit far below their usage
+reclaims and swaps; tasks stall and liveness probes time out while the pods
+still read Running. The rate of that counter is the stalled share of time.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `threshold` | number | `0.2` | Stalled share over 2m above which `NodeMemoryPressureHigh` fires. |
+| `for` | duration | `1m` | How long it must hold. |
+| `severity` | enum | `warning` | Severity of `NodeMemoryPressureHigh`. |
+| `criticalThreshold` | number | `0.5` | Share above which `NodeMemoryPressureCritical` fires; `0` renders no critical. |
+| `criticalFor` | duration | `1m` | How long it must hold. |
+| `criticalSeverity` | enum | `critical` | Severity of `NodeMemoryPressureCritical`. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
+
+Alerts: `NodeMemoryPressureHigh`, `NodeMemoryPressureCritical` (one per node).
+
 ### `groups.nats`
 
 Off by default. For the upstream NATS Helm chart with its

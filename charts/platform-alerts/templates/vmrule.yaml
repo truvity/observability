@@ -589,6 +589,65 @@ spec:
               that can have no NodeClaims at all this alert is expected.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NodeClaimMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
+    {{- if .Values.groups.nodeMemoryPressure.enabled }}
+    {{- $g := .Values.groups.nodeMemoryPressure }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    - name: platform-alerts.node-memory-pressure
+      interval: {{ .Values.interval }}
+      rules:
+        # A node whose tasks spend more than `threshold` of the time waiting
+        # for memory.
+        #
+        # `node_pressure_memory_waiting_seconds_total` is node-exporter's
+        # PSI counter: seconds in which at least one task was stalled on
+        # memory. Its rate over 2m is the stalled share (0-1). A node that
+        # is over-committed (pods' memory requests far below their usage)
+        # reclaims and swaps, and its pods' liveness probes time out while
+        # they still read Running. Fires per node.
+        - alert: NodeMemoryPressureHigh
+          expr: >-
+            max by ({{ $c }}node, instance) (
+              rate(node_pressure_memory_waiting_seconds_total[2m])
+            ) > {{ $g.threshold }}
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Node {{`{{ $labels.node }}`}} has waited for memory {{`{{ $value | humanizePercentage }}`}} of the time"
+            description: >-
+              Tasks on node {{`{{ $labels.node }}`}} spent
+              {{`{{ $value | humanizePercentage }}`}} of the last 2m waiting for
+              memory (memory PSI above {{ $g.threshold }} for {{ $g.for }}).
+              The node is over-committed: it is reclaiming or swapping, and
+              liveness probes of its pods may time out. Look for pods with a
+              memory request far below their usage (`kubectl top pod -A
+              --sort-by=memory` against each pod's requests, for the pods on
+              this node), and for a recent burst of memory use. Raising those
+              requests lets the scheduler spread the pods.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NodeMemoryPressureHigh")) }}{{ . | nindent 12 }}{{- end }}
+        {{- if gt (float64 $g.criticalThreshold) 0.0 }}
+        # The same signal, past `criticalThreshold`: the node is thrashing.
+        - alert: NodeMemoryPressureCritical
+          expr: >-
+            max by ({{ $c }}node, instance) (
+              rate(node_pressure_memory_waiting_seconds_total[2m])
+            ) > {{ $g.criticalThreshold }}
+          for: {{ $g.criticalFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.criticalSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Node {{`{{ $labels.node }}`}} is thrashing on memory ({{`{{ $value | humanizePercentage }}`}} of the time waiting)"
+            description: >-
+              Tasks on node {{`{{ $labels.node }}`}} spent
+              {{`{{ $value | humanizePercentage }}`}} of the last 2m waiting for
+              memory (memory PSI above {{ $g.criticalThreshold }} for
+              {{ $g.criticalFor }}). Pods on it are likely failing liveness
+              probes. Find the pods with memory requests far below their usage
+              and move or resize them; cordoning the node stops new pods
+              landing on it.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NodeMemoryPressureCritical")) }}{{ . | nindent 12 }}{{- end }}
+        {{- end }}
+    {{- end }}
     {{- if .Values.groups.nats.enabled }}
     {{- $g := .Values.groups.nats }}
     {{- $job := $g.job }}

@@ -376,6 +376,36 @@ groups:
     # `pendingPods.keepClusterLabel`).
     keepClusterLabel: false
 
+  # Node memory pressure (PSI).
+  #
+  # The incident class: a node whose pods' memory requests sit far below
+  # their real usage is over-committed. The OS reclaims and swaps, tasks
+  # stall waiting for memory, and liveness probes time out while every pod
+  # still reads Running. Memory PSI measures that stall directly: the share
+  # of time some task waited for memory. A healthy node sits near 0; the
+  # incident went from 0.13 to 0.89 within a minute.
+  #
+  # Off by default. Reads node-exporter's
+  #   node_pressure_memory_waiting_seconds_total{node, instance}
+  # (the `pressure` collector, on by default on Linux 4.20+ with PSI). Nodes
+  # are cluster-scoped: no namespace filter applies. A node without the
+  # series never fires, so there is no deadman here.
+  nodeMemoryPressure:
+    enabled: false
+    # -- Share of time (0-1) some task waits for memory, over 2m, above which
+    # the warning fires.
+    threshold: 0.2
+    # -- How long the warning must hold before firing.
+    for: 1m
+    severity: warning
+    # -- Share above which the critical alert fires; 0 renders no critical.
+    criticalThreshold: 0.5
+    criticalFor: 1m
+    criticalSeverity: critical
+    # -- Keep the series' own `clusterLabel` on the alert (see
+    # `pendingPods.keepClusterLabel`).
+    keepClusterLabel: false
+
   # NATS and JetStream (the upstream nats Helm chart with its
   # prometheus-nats-exporter sidecar and PodMonitor).
   #
