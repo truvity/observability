@@ -338,3 +338,20 @@ func TestAlertingChartValuesAreTheStacksValues(t *testing.T) {
 	}
 	assert.Contains(t, stack, "alerting", "the stack's switch")
 }
+
+// The presets the alerting chart ships are the plane's halves of the stack's
+// (a preset is listed in an Argo Application's valueFiles, so the chart that
+// renders the plane must carry it). Held equal, so the two cannot drift.
+func TestAlertingPresetsAreTheStacksPresets(t *testing.T) {
+	load := func(chart, name string) map[string]any {
+		return readYAMLMap(t, filepath.Join("..", "charts", chart, "presets", name+".yaml"))
+	}
+	for _, name := range []string{"self-alerts-victoria", "notifications-drop-vendored"} {
+		assert.Equal(t, load("observability-stack", name), load("observability-alerting", name), name)
+	}
+	stack, al := load("observability-stack", "upstream-rules-platform-alerts"), load("observability-alerting", "upstream-rules-platform-alerts")
+	assert.Equal(t, stack["upstreamRules"], al["upstreamRules"])
+	sd := stack["victoria-metrics-k8s-stack"].(map[string]any)["defaultRules"]
+	ad := al["victoria-metrics-k8s-stack"].(map[string]any)["defaultRules"]
+	assert.Equal(t, sd, ad)
+}

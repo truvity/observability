@@ -1,0 +1,48 @@
+# Copy of observability-stack/presets/self-alerts-victoria.yaml for the keys this chart declares
+# (tests/alerting_chart_test.go holds them equal). Read the original for the
+# reasoning.
+# Preset: the self-alert metric names of a VictoriaMetrics family store, as
+# the families export them.
+#
+# `selfAlerts.*` ships no default metric names on purpose: a name that was
+# never confirmed against a store renders a rule that can never fire. These
+# are the names a consuming estate confirmed against live stores (the counters
+# read 0 on a healthy install; the disk guard pair reads a ratio above the
+# `headroomFactor`). The rules still need `selfAlerts.enabled: true`, and
+# the log and trace stores' scrape (`serviceMonitor`) and the emitters' agents
+# must reach THIS store for the series to exist.
+#
+# Left unset on purpose, because nothing upstream exports them: the gateway
+# export/enqueue failure counters, and the log and trace disk guards (no
+# paired limit gauge). List the file BEFORE your own values; your own values
+# still win key by key. Nothing reads it unless it is listed.
+selfAlerts:
+  ingest:
+    metric: vm_rows_ignored_total
+  cardinality:
+    hourlyCurrentSeriesMetric: vm_hourly_series_limit_current_series
+    hourlyMaxSeriesMetric: vm_hourly_series_limit_max_series
+    dailyCurrentSeriesMetric: vm_daily_series_limit_current_series
+    dailyMaxSeriesMetric: vm_daily_series_limit_max_series
+  logStore:
+    metric: vl_rows_dropped_total
+  traceStore:
+    metric: vt_rows_dropped_total
+  logStreamChurn:
+    streamsCreatedMetric: vl_streams_created_total
+  traceStreamChurn:
+    streamsCreatedMetric: vt_streams_created_total
+  writer:
+    bufferMetric: vmagent_remotewrite_pending_data_bytes
+    droppedPacketsMetric: vmagent_remotewrite_packets_dropped_total
+    bufferMetricsExtra: [vlagent_remotewrite_pending_data_bytes]
+    droppedPacketsMetricsExtra: [vlagent_remotewrite_packets_dropped_total]
+  gateway:
+    queueSizeMetric: otelcol_exporter_queue_size
+    queueCapacityMetric: otelcol_exporter_queue_capacity
+  proxyConcurrency:
+    limitedRequestsMetric: vmauth_concurrent_requests_limit_reached_total
+  diskGuard:
+    metrics:
+      freeSpaceMetric: vm_free_disk_space_bytes
+      freeSpaceLimitMetric: vm_free_disk_space_limit_bytes
