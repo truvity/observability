@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Changed** (docs): the removal of the old LogsQL rule marker `observability.rule-type: vlogs` (and of `vmalert.acceptLegacyRuleLabels`) is no longer tied to v0.72, which shipped without removing it. The marker is accepted until every chart that ships LogsQL rules emits `observability.truvity.io/evaluator: logs`; it is removed in a later minor, not before v0.73, announced in the CHANGELOG. This supersedes "accepted through v0.71, removed in v0.72" in the v0.71.0 entry below. The docs, the `values.yaml` comments, the schema descriptions and the stack-keys notes now say so. No render moves.
+
 ## v0.72.0
 
 - **Added** `platform-alerts`: opt-in `groups.nodeMemoryPressure` (off by default, no existing golden moves). Alerts `NodeMemoryPressureHigh` (`rate(node_pressure_memory_waiting_seconds_total[2m])` above `threshold`, default 0.2, for 1m, warning) and `NodeMemoryPressureCritical` (above `criticalThreshold`, default 0.5, for 1m, critical; `criticalThreshold: 0` renders no critical). They catch an over-committed node (pods' memory requests far below their usage) while it reclaims and swaps, before liveness probes time out. Reads node-exporter's memory PSI counter, per node; a node without the series never fires, so there is no deadman. `keepClusterLabel` works as for `pendingPods`.

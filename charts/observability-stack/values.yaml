@@ -789,11 +789,13 @@ vmalert:
   # vmalert selects VMRules on `observability.truvity.io/evaluator`
   # (`logs` for the logs alerter, `metrics` or absent for the local metrics
   # alerter, a `remoteEvaluators` name for that evaluator). `true` (the
-  # default, for two minors) also accepts the old LogsQL marker
+  # default) also accepts the old LogsQL marker
   # `observability.rule-type: vlogs`: the logs alerter then takes that
   # label rather than `evaluator: logs`, so a logs rule must carry it.
   # `false` selects on the new labels only; set it once every logs rule
-  # carries `evaluator: logs`. The old spelling is removed in v0.72.
+  # carries `evaluator: logs`. The old spelling is accepted until every
+  # chart that ships LogsQL rules emits `evaluator: logs`; it is removed in a
+  # later minor, not before v0.73, announced in the CHANGELOG.
   acceptLegacyRuleLabels: true
   # -- Where a person lands from an alert's source link. vmalert defaults
   # `-external.url` to its own pod hostname, which makes every alert's

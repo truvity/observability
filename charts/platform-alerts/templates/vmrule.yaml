@@ -1620,7 +1620,7 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     {{- /* Both spellings of "evaluated by the logs alerter": the old
-           `observability.rule-type` (accepted until v0.72) and the new
+           `observability.rule-type` (accepted until every LogsQL chart emits the new one) and the new
            `observability.truvity.io/evaluator`. The chart's win over `ruleLabels`. */}}
     {{- toYaml (merge (dict "observability.rule-type" "vlogs" "observability.truvity.io/evaluator" "logs" "observability.truvity.io/rule-type" "alert") .Values.ruleLabels) | nindent 4 }}
 spec:

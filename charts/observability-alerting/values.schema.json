@@ -447,7 +447,7 @@
         },
         "acceptLegacyRuleLabels": {
           "type": "boolean",
-          "description": "Also accept the old LogsQL rule marker `observability.rule-type: vlogs` (default true, removed in v0.72). While true the logs alerter takes that label instead of `observability.truvity.io/evaluator: logs`; false selects on the new labels only. See docs/contracts.md."
+          "description": "Also accept the old LogsQL rule marker `observability.rule-type: vlogs` (default true; accepted until every chart that ships LogsQL rules emits `observability.truvity.io/evaluator: logs`, removed in a later minor, not before v0.73, announced in the CHANGELOG). While true the logs alerter takes that label instead of `observability.truvity.io/evaluator: logs`; false selects on the new labels only. See docs/contracts.md."
         },
         "remoteEvaluators": {
           "type": "array",
