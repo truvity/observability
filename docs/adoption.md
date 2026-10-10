@@ -414,6 +414,20 @@ all three off is refused. Turning one off removes its objects, its
 refusals and its destinations — an estate that already runs a log shipper
 sets `logs.enabled: false` and keeps the other two.
 
+## Installing observability-cluster (first slice)
+
+Additive and off by default: nothing it renders existed before, so there is
+no zero-diff gate and no handover. What it needs first, and the order, are in
+[architecture/observability-cluster.md](architecture/observability-cluster.md)
+("Migration per cluster"). In short: the Grafana CRDs must exist before the
+operator starts (they are a third set of `observability-crds` in a later slice,
+so do not enable `grafanaOperator` on a cluster before it exists unless you
+accept upstream's first-install-only CRDs), and the Secret named by
+`externalGrafana.credentials.secretName` must exist before the `Grafana`
+resource is useful. The emitters and the operator are not touched; they move
+into this chart, one at a time, by the ownership switch described under
+0.71.0.
+
 ## Upgrades that change what runs
 
 Each entry says what to do; none is optional reading before a bump. What

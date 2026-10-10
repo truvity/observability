@@ -1,0 +1,4 @@
+# expect: does not match pattern
+cluster: example
+folder: {uid: "has.dot"}
+externalGrafana: {enabled: true, url: "https://grafana.example.org", credentials: {secretName: s}}

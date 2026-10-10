@@ -1,0 +1,3 @@
+# The grafana-operator on its own: no Grafana resource, no folder.
+grafanaOperator:
+  enabled: true

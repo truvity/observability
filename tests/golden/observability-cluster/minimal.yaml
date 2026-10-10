@@ -1,0 +1,45 @@
+---
+# Source: observability-cluster/templates/grafana.yaml
+# The shared Grafana, as this cluster's operator sees it. `spec.external`: the
+# operator deploys nothing for it. The credential is a reference to a Secret
+# this chart neither creates nor reads.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: default
+  labels:
+    app.kubernetes.io/name: observability-cluster
+    app.kubernetes.io/instance: observability-cluster
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability
+    helm.sh/chart: observability-cluster-0.0.0
+    observability.truvity.io/grafana: shared
+spec:
+  external:
+    url: "https://grafana.example.org"
+    apiKey:
+      name: "grafana-credentials"
+      key: "token"
+
+---
+# Source: observability-cluster/templates/grafana.yaml
+# This cluster's folder in the shared Grafana. Component dashboards put
+# themselves in it by `folderUID`.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaFolder
+metadata:
+  name: example-cluster
+  namespace: default
+  labels:
+    app.kubernetes.io/name: observability-cluster
+    app.kubernetes.io/instance: observability-cluster
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability
+    helm.sh/chart: observability-cluster-0.0.0
+spec:
+  title: "example-cluster"
+  uid: "example-cluster"
+  instanceSelector:
+    matchLabels:
+      observability.truvity.io/grafana: shared

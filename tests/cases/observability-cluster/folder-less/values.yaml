@@ -1,0 +1,8 @@
+# The external Grafana without a folder of its own.
+externalGrafana:
+  enabled: true
+  url: http://grafana.example.svc:3000
+  credentials:
+    secretName: grafana-credentials
+folder:
+  enabled: false

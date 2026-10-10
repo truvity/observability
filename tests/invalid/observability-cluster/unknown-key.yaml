@@ -1,0 +1,2 @@
+# expect: not allowed
+externalGrafana: {enabled: true, insecureSkipVerify: true}

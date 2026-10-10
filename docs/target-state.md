@@ -56,6 +56,7 @@ Every piece is released; the state column says where its design page is.
 | `pkg/statusbox` + `pkg/statusbox/ec2` | the watcher outside: deadman, external probes, status pages | [statusbox.md](statusbox.md) |
 | `charts/observability-dashboards` | the generic dashboards, and the lint every dashboard passes | [dashboards.md](dashboards.md) |
 | `charts/observability-grafana` | one Grafana over several installs | [grafana.md](grafana.md) |
+| `charts/observability-cluster` | the per-cluster frontend; first slice: the grafana-operator, the external `Grafana` resource that points a cluster at the shared Grafana, and the cluster's folder | [architecture/observability-cluster.md](architecture/observability-cluster.md), [reference.md](reference.md#chartsobservability-cluster) |
 | `charts/observability-mcp` + `cmd/mcp-aggregator` | read-only MCP connectors over the stores and Grafana | [mcp.md](mcp.md) |
 | `charts/observability-rum` | browser telemetry through Faro and Alloy; issues on the log store | [frontend.md](frontend.md) |
 
