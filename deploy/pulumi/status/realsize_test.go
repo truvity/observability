@@ -60,7 +60,6 @@ func estateEC2Inputs(t *testing.T) Inputs {
 	}
 
 	return Inputs{
-		Backend:        BackendEC2,
 		Version:        "v0.7.0",
 		PlatformHosts:  PlatformHosts(estateGroups()),
 		ByCompany:      HostsByCompany(estateGroups()),

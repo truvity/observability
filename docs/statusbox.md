@@ -1,13 +1,14 @@
 # The status box: the watcher outside
 
-Design for `pkg/statusbox` (Pulumi, Go), the `setup.sh` release asset,
-and the templates they carry.
+Design for `pkg/statusbox` and `pkg/statusbox/ec2` (Pulumi, Go) and the
+templates they carry. The box runs on EC2 only: the Lightsail backend and
+its `setup.sh` release asset are gone (CHANGELOG, `**Removed**`).
 
 ```mermaid
 flowchart LR
   subgraph box["the status box: one VM, outside every cluster, no inbound port"]
     direction TB
-    ts["tailscaled: joins the private network;<br/>serves the private page on :80"]
+    ts["the private page on its own port,<br/>open only to the allowed networks"]
     gatus["gatus-ops: ONE private page<br/>probes · company components · the deadman group"]
   end
   gatus -. "GET vmalert /api/v1/alerts?match[]=…<br/>GET Alertmanager /api/v2/alerts<br/>bearer: tenancy.alertReaders" .-> vmauth["the install's vmauth<br/>(over the private network)"]
@@ -56,28 +57,25 @@ private network, on a small box" into a package an estate calls.
 
 ## The shape
 
-One virtual machine, provisioned by Pulumi from a package here, with no
-inbound port open. Today, on it:
+One virtual machine (an Auto Scaling group of exactly one, see "EC2
+backend"), provisioned by Pulumi from a package here, with no inbound port
+open to the internet. Today, on it:
 
 ```
-tailscaled   joins the estate's private network: SSH, the one page below, and its read of the install's alerting state
-gatus-ops    ONE page, PRIVATE, reachable only over the tailnet: every company's own component (red/green) alongside cluster infrastructure (every hostname, every certificate's expiry) and the deadman — both read, not received, see "internal → status, pulled"
+gatus-ops    ONE page, PRIVATE, reachable only from the allowed networks: every company's own component (red/green) alongside cluster infrastructure (every hostname, every certificate's expiry) and the deadman — both read, not received, see "internal → status, pulled"
 ```
 
-No `cloudflared` and no public page yet: nothing on the box is reachable
-from outside the private network. A public, per-company status page —
-`gatus-<company>`, on that company's own domain — is a SEPARATE instance
-an estate adds LATER, once that hostname is delegated; see "a new
-company page" in the table below. `pkg/statusbox`'s own shape
-(`Instance.Public`, `Args.Hostnames`, one `cloudflared` ingress rule per
-`Public` instance) already carries that step — taking it is a consumer
-decision, not a mechanism this package gains later. Nothing about
-taking it changes the private page: it keeps every company's own
-component and every piece of cluster infrastructure, in one page, for
-whoever is watching from inside the estate's own network.
+No public page unless the estate adds one: a public, per-company status
+page — `gatus-<company>`, on that company's own domain — is a SEPARATE
+instance (`Instance.Public`, one `cloudflared` ingress rule per `Public`
+instance), added once that hostname is delegated; see "a new company page"
+in the table below. Taking that step does not change the private page: it
+keeps every company's own component and every piece of cluster
+infrastructure, in one page, for whoever is watching from inside the
+estate's own network.
 
-Each Gatus is the same image, its own YAML, its own SQLite file on an
-attached disk. There is no shared database and there are no replicas:
+Each Gatus is the same binary, its own YAML, its own SQLite file (replicated
+to S3 by Litestream). There is no shared database and there are no replicas:
 Gatus has no clustering or leader election, and two instances on one
 database are two independent probers that both alert. Availability of
 the watcher is a second, independent box in another place — never a
@@ -105,7 +103,7 @@ differently (`placeholders.ALERT_TRIGGERED_OR_RESOLVED`): a recovery says
 - one check per `NotFiring` entry: that alert is NOT firing in vmalert.
 
 **Telegram (optional).** `Catalogue.Telegram` (a `TelegramProvider`: two
-`Secrets.AlertURLs` keys, the bot token and the chat id) renders Gatus's
+`AlertURLParameters` keys, the bot token and the chat id) renders Gatus's
 native `alerting.telegram` and adds a `telegram` alert to every endpoint the
 deadman group pages through, with the same failure threshold and
 send-on-resolved as the deadman's other channel. `Providers.Telegram` adds it
@@ -135,110 +133,29 @@ receiver, with nothing else configured, will not boot.
 ### `pkg/statusbox`
 
 ```go
-// The provider-neutral core: renders cloud-init from a version, the
-// secrets, and an instance list. Nothing of the estate is in this
-// package; everything of the estate is in the arguments.
+// The provider-neutral core: the instance list, its validation, and the
+// Gatus renderer. Nothing of the estate is in this package; everything of
+// the estate is in the arguments. pkg/statusbox/ec2 turns it into a box.
 type Instance struct {
     Name   string // gatus-<name>
     Port   int
     Public bool   // in the tunnel's ingress, or reachable only privately
     Config string // the Gatus YAML, rendered by the estate
 }
-
-type Secrets struct {
-    TailscaleAuthKey pulumi.StringInput            // one-shot pre-authorised key; required
-    TunnelToken      pulumi.StringInput            // required only if any Instance is Public
-    AlertURLs        map[string]pulumi.StringInput // keyed name → ${ALERT_URL_<NAME>} in a Config
-    Env              map[string]pulumi.StringInput // keyed name → ${<NAME>} in a Config, verbatim
-}
-
-type Args struct {
-    Version    string          // a release of this repository; setup.sh is fetched from it
-    Instances  []Instance
-    Secrets    Secrets
-    Hostname   string            // the box's OWN tailnet device name (`tailscale up --hostname=`)
-    Hostnames  map[string]string // instance name → public hostname, for the tunnel ingress
-    TrustedCAs string            // optional PEM bundle of extra roots every instance should ALSO trust
-}
-
-func CloudInit(ctx *pulumi.Context, a Args) (pulumi.StringOutput, error)
-
-// pkg/statusbox/lightsail: the one provider implemented first. A sibling
-// for another provider is a second small package over the same CloudInit.
-func NewLightsail(ctx *pulumi.Context, name string, a *LightsailArgs, opts ...pulumi.ResourceOption) (*Box, error)
 ```
 
-`NewLightsail` creates the instance with the rendered user-data, an
-`InstancePublicPorts` that admits **exactly one** port — tailscaled's
-own WireGuard port, 41641/udp, from and to `0.0.0.0/0` and `::/0` (the
-firewall closed by declaration to everything else: not SSH, not the
-status page itself, both of which answer only over the tailnet — see
-setup.sh) — and a `Disk` + `DiskAttachment` for `/data` that survives
-the instance being replaced.
-
-That one port is not a relaxation of "closed": Lightsail's API refuses
-an empty `port_info` outright (the AWS provider: "Not enough list
-items. Attribute port_info requires 1 item minimum"), so "nothing
-public" has to be one narrow, named port rather than zero. 41641/udp
-is authenticated WireGuard only — a peer still has to hold a key
-tailscaled will accept — and it is what lets the box take a direct
-tailnet connection instead of always relaying through DERP.
-
-Lightsail's launch scripts go through cloud-init like any other
-provider's, and cloud-init classifies a user-data payload by its FIRST
-LINE alone: `#!` makes it treat the rest as a shellscript and run it at
-boot, and anything else — plain text, a bare command, a line that only
-happens to decode to a script once it runs — is stored as text/plain
-and never executed at all. The one real constraint Lightsail's user-data
-field adds on top of that is size, not line count: the 16 KB ceiling
-`CloudInit` enforces as `userDataLimit` below. So `CloudInit` renders the
-whole bootstrap as an ordinary multi-line script, gzips it,
-base64-encodes the result, and returns `#!/bin/bash` followed by a
-`bash -c "$(echo <blob> | base64 -d | gunzip)"` line that decodes and
-runs it — the shebang line is what makes cloud-init execute the rest in
-the first place, not an artefact of a line-count limit that never
-existed. Gzip is not about fitting into a single line; it is headroom
-against the 16 KB limit below, so a script with real structure — several
-instances' worth of Config, every secret staged as an environment
-variable — still fits comfortably inside it.
-
-`Secrets.AlertURLs` is how a Config asks for a push-alert credential
-without carrying it as a literal — the mechanism, not one option among
-several. Gatus substitutes `${VAR}` inside its own YAML at start-up, so
-a Config writes `${ALERT_URL_<NAME>}` (an `AlertURLs` map key,
-upper-cased) wherever it wants that value: an external endpoint's
-`webhook-url`, for instance. `CloudInit` stages every entry as an
-exported environment variable in the boot script; `setup.sh` collects
-every `ALERT_URL_*` it finds into a `.env` file beside the box's compose
-file, and every instance's compose service names that file under its own
-`env_file:` — the directive that actually puts a variable into a
-container's environment, which listing `.env` next to a compose file on
-its own does not; `${...}` substitution WITHIN the compose file's own
-text is a different mechanism and does nothing for a container that
-never mentions the variable, which is exactly what `env_file:` is for
-here, since `AlertURLs`'s keys are the estate's own and unknown to
-`setup.sh` ahead of time. The credential still ends up in the box's
-user-data in plain text — see "readable from the instance metadata
-service" below — but a Config already written down (in the estate's own
-repository, in its catalogue) never has to carry it.
-
-`Secrets.Env` is the same mechanism, generalised, for a secret that is
-NOT a push-alert credential — Gatus's own `security.oidc.client-secret`,
-for instance, which a signed-in ops page needs and an alert page never
-did. It differs from `AlertURLs` in exactly one place: a key becomes the
-WHOLE variable name a Config writes as `${<NAME>}` — no `ALERT_URL_`
-prefix — because there is no one shape ("a push URL for THIS instance's
-alerting") to namespace it under. `CloudInit` stages each entry under an
-internal `STATUSBOX_ENV_<NAME>` name in the boot script — the prefix a
-`write_env` grep tells it apart from every other shell variable already
-in scope (`PATH`, `STATUSBOX_VERSION`, ...) by, a problem `ALERT_URL_`
-never has because that prefix already IS the variable a Config
-references; `setup.sh` strips the prefix back off before writing
-the real name into the same `.env` file `AlertURLs` entries land in. A
-name colliding with `TS_AUTHKEY`, `TUNNEL_TOKEN`, or the `ALERT_URL_`
-namespace is refused in `Args.validate` — two secrets landing in a
+A secret reaches a Config by name, never as a literal: Gatus substitutes
+`${VAR}` inside its own YAML at start-up, so a Config writes
+`${ALERT_URL_<NAME>}` (an alert key, upper-cased) wherever it wants a
+push-alert credential, such as an external endpoint's `webhook-url`, and
+`${<NAME>}` (a whole variable name, such as `OIDC_CLIENT_SECRET`) for any
+other secret, such as Gatus's own `security.oidc.client-secret`. In the EC2
+backend each is the NAME of an SSM parameter (`AlertURLParameters`,
+`EnvParameters`) that the box reads at boot into a tmpfs; see "EC2
+backend". A name colliding with `TUNNEL_TOKEN` or the `ALERT_URL_`
+namespace is refused (`ValidateSecretNames`): two secrets landing in a
 Config under the same `${...}` reference is worse discovered at deploy
-time than in a container's environment after the fact.
+time than in a process's environment after the fact.
 
 ### Building the Config: `RenderGatus` (0.9.0)
 
@@ -304,135 +221,31 @@ in its `Authorization` header. Skipping TLS verification (`-k`,
 Gatus's own `insecure: true`) is not an acceptable answer here: it would
 send that token to whatever answered on the address, verified or not.
 
-`Args.TrustedCAs` is a PEM bundle of one or more extra CA certificates
-every instance should trust ALONGSIDE its image's own public bundle —
-never instead of it. Left empty, the ordinary case, nothing changes at
-all: no file is staged, no directory is mounted, no environment variable
-is set, and the rendered cloud-init is byte-for-byte what it always was.
-Set, `CloudInit` validates it at render time — each PEM block must
-parse as an X.509 certificate and must itself be a CA
-(`BasicConstraints.IsCA`, the same field a browser or any other TLS
-client relies on) — and stages it the same way an instance's own Config
-travels: gzipped, base64-encoded, inside a heredoc in the rendered
-script, with `manifest.json` carrying a `"trustedCAs": true` flag so
-`setup.sh` knows to unpack it. `setup.sh`'s `setup_trusted_cas` writes
-the bundle to `/opt/statusbox/ca/extra-roots.pem`, and `write_compose`
-bind-mounts that DIRECTORY read-only into every Gatus container at
-`/etc/ssl/extra-ca` and sets `SSL_CERT_DIR=/etc/ssl/extra-ca` in the
-service's own environment.
-
-That one environment variable is enough, and it is additive rather than
-a replacement — a property of Go's `crypto/x509` on Linux, not an
-assumption. `SSL_CERT_FILE` and `SSL_CERT_DIR` are two independent
-overrides in `loadOnDiskRoots` (`crypto/x509/root.go`): setting one
-never touches the other's search. The release image
-(`twinproduction/gatus`, built `FROM scratch`) carries exactly one
-system trust artefact, `/etc/ssl/certs/ca-certificates.crt` — Alpine's
-`ca-certificates` package, copied in at the upstream image's build time
-— which Go finds through its FILE search (`certFiles`, first hit wins)
-regardless of `SSL_CERT_DIR`, because this box never sets
-`SSL_CERT_FILE`. `SSL_CERT_DIR` only replaces the DIRECTORY search
-(`certDirectories`, default `/etc/ssl/certs`), which on this image would
-just re-read that very same file a second time — redundant with the
-file search, never the only path those roots reach the pool through. So
-pointing `SSL_CERT_DIR` at `/etc/ssl/extra-ca` alone, with no
-colon-joined system path, drops nothing: the image's public roots keep
-loading from `/etc/ssl/certs/ca-certificates.crt` exactly as before, and
-the mounted directory is purely additive.
-
-`hack/statusbox-ca-proof.sh` (`just statusbox-ca-proof`) is the real
-proof, in Docker: a throwaway root CA and server certificate, a tiny
-HTTPS server presenting it, and the real `twinproduction/gatus:v5.37.0`
-image probing it with and without the mount — alongside an ordinary
-public HTTPS probe in the SAME with-CA container, which still succeeds.
-`hack/statusbox-ci.sh` proves the other half — that `setup_trusted_cas`
-and `write_compose` actually wire a staged bundle the way this section
-describes — but never asks whether Gatus's own TLS stack behaves
-differently because of it; that is what the Docker proof is for.
+`TrustedCAs` (on `ec2.Args`, `Inputs.TrustedCAs` in `deploy/pulumi/status`)
+is a PEM bundle of one or more extra CA certificates every instance should
+trust ALONGSIDE the system bundle — never instead of it. Left empty, the
+ordinary case, nothing changes at all. Set, it is validated at render time
+(`ValidateTrustedCAs`): each PEM block must parse as an X.509 certificate
+and must itself be a CA (`BasicConstraints.IsCA`). It travels as a
+content-addressed S3 object like an instance's Config, and the setup
+script's `setup_trusted_cas` installs it for the Gatus units, whose
+`SSL_CERT_DIR` then names the directory holding it. That is additive, a
+property of Go's `crypto/x509` on Linux: `SSL_CERT_FILE` and
+`SSL_CERT_DIR` are independent overrides, so the system bundle keeps
+loading from its file while the directory adds the estate's roots.
 
 ### Checksum at deploy, verify at boot
 
 The consumer pins only `Version`. The package fetches that release's
-`checksums.txt` at deploy time and bakes the `setup.sh` sha into the
-user-data; the box downloads the script from the release and refuses to
-run it if the sha does not match. One input, no hand-copied hashes, and
-`curl | sh` becomes content-addressed rather than a moving target.
-
-### `setup.sh`
-
-Idempotent, `set -euo pipefail`, a release asset. It installs a
-container runtime, `tailscale` (with a one-shot pre-authorised key),
-`cloudflared` (with the tunnel token), unpacks the instance configs,
-writes a compose file and one systemd unit, and starts it. It knows no
-hostname; the hostnames are in the tunnel ingress the estate's edge
-configuration owns.
-
-Joining the tailnet is not the same as being reachable on it: every
-instance is published at `127.0.0.1:<Port>` only (see `write_compose`),
-so a peer elsewhere on the tailnet still has nothing to connect to until
-something on the box forwards a connection to that loopback port. For
-the one instance that is not Public, `setup.sh` also registers a
-`tailscale serve --tcp=80` forward to `127.0.0.1:<Port>` — this is
-the path a person on the tailnet uses to load `gatus-ops`'s private
-page, and it always forwards to tailnet port **80** rather than the
-instance's own `Port`, so the page is `http://<Hostname>/` — no port
-to remember or paste, the same way MagicDNS already lets an operator
-reach the box by name alone. Plain HTTP, not `--https`: the tailnet
-is WireGuard-encrypted end to end, so a second TLS termination in
-front of a page nothing outside the tailnet can even address buys
-nothing. (It is not the path "internal → status, pulled" rides: that
-traffic runs the other way, `gatus-ops` DIALING OUT to the install's own
-alerting read API — an outbound connection this box's Tailscale client
-makes on its own, needing no forward and no listener on the box at all.
-`serve` matters here only for the person, not the pull.) A Public
-instance is never registered this way: it is reached through
-cloudflared alone, and the smallest tailnet surface this box can have is
-none of its public pages on it at all. Restricting *who* on the tailnet
-may reach the forwarded port is the estate's own tailnet ACL to grant (a
-`tag:statusbox` the box's identity carries, and a grant naming whichever
-peer needs it) — `setup.sh` forwards the port; it does not decide who
-may dial it. The OUTBOUND direction is a second, separate ACL grant —
-`tag:statusbox` reaching whatever the estate's alerting read API answers
-on — and it is the estate's own ACL to write for the identical reason.
-
-That outbound direction is also why joining the tailnet alone is not
-enough on the CLIENT side either. Everything this box reads over the
-tailnet — the alerting read API above, and any other internal service a
-`Config` probes by name — sits behind the estate's own subnet router,
-addressed by a private DNS name this repository never carries a literal
-IP or hostname for. `setup.sh` runs `tailscale up` with
-`--accept-routes`, so a route that router advertises is actually
-installed on this box, and `--accept-dns=true`, so MagicDNS and whatever
-split-DNS routes the tailnet admin has delegated to a resolver behind
-that same router actually resolve here. Neither flag makes this box a
-router for anyone else — there is no `--advertise-routes` and no exit
-node; accepting routes only changes what this box itself can reach.
-The estate's tailnet policy is what has to grant `tag:statusbox` both
-halves of that: the destination service itself, and the DNS resolver it
-reads through (UDP and TCP port 53) — a route with no matching DNS grant
-still cannot resolve the name it would otherwise have a path to.
-Every Gatus instance also runs in its own Docker container, so the
-compose file `write_compose` renders carries an explicit `dns:` entry
-naming the tailnet's resolver directly, rather than relying on however
-the host's own DNS ends up wired: that keeps a private name resolving
-inside a container the same way regardless of which DNS-management mode
-the host distribution happens to use.
-
-Serving on port 80 is only safe because `Args.validate` refuses a
-manifest with more than one non-Public instance: the box serves one
-combined private page by design (every company's own component and
-every piece of cluster infrastructure belong on the SAME page — see
-"The shape" above), and two private instances could not both claim
-port 80 on one box regardless. An estate that wants a second private
-page runs a second box.
-
-CI runs it on a plain Ubuntu runner with a fixture config and asserts
-every instance answers `/health`. The first run of the script must not
-be on the box, on a bad day.
+`checksums.txt` at deploy time (`statusbox.FetchChecksums`, replaceable for
+an estate with no general internet egress) and renders the sha256 of the
+Gatus binary into the setup parameters; the box downloads the binary from
+the release and refuses to install it if the sha does not match. One input,
+no hand-copied hashes.
 
 ## EC2 backend
 
-`pkg/statusbox/ec2` is a second place to run the same pages: an Amazon Linux 2023 instance in an Auto Scaling group of exactly one, with a warm pool of one stopped instance. The Lightsail backend is unchanged and stays the default; an estate opts in. It has no Docker, no Tailscale and no attached disk, and no secret in user-data.
+`pkg/statusbox/ec2` is the place the pages run: an Amazon Linux 2023 instance in an Auto Scaling group of exactly one, with a warm pool of one stopped instance. It has no Docker, no Tailscale and no attached disk, and no secret in user-data.
 
 ```mermaid
 flowchart LR
@@ -461,7 +274,7 @@ flowchart LR
 
 **Gatus and cloudflared are systemd units.** `gatus@<instance>.service` runs each instance as `litestream replicate -exec gatus` under a dedicated user, with the instance's directory bind-mounted at `/data` so a Config's `storage.path: /data/ops.db` is the same path a container would have had. The Config must say `storage.type: sqlite` with a file directly under `/data`; `Args.validate` refuses anything else. The listener is not the Config's: the setup script writes a second file into the instance's config directory, which Gatus merges over the first, binding a public instance to `127.0.0.1` (where cloudflared dials it) and the private one to every interface (where the security group admits the peer). `cloudflared.service` runs `cloudflared tunnel run` with the token from the environment. Both are `Restart=always`. Neither unit is enabled: only the boot phase starts them, which is what the next section depends on.
 
-**The binaries are pinned.** Gatus is built in this repository's release from the upstream tag `GatusVersion` (the same version `setup.sh` pins as the Lightsail image; a test keeps the two equal) for linux/arm64 and linux/amd64, attached as `gatus_<tag>_linux_<arch>` and listed in `checksums.txt`. The checksum is read from that file when Pulumi runs and rendered into the user-data, like `setup.sh`'s. Litestream and cloudflared are downloaded from their upstream releases; their versions and sha256 sums per architecture are constants in `pkg/statusbox/ec2/pins.go`. Every download is verified before it is installed.
+**The binaries are pinned.** Gatus is built in this repository's release from the upstream tag `GatusVersion` (`pkg/statusbox/ec2/pins.go`) for linux/arm64 and linux/amd64, attached as `gatus_<tag>_linux_<arch>` and listed in `checksums.txt`. The checksum is read from that file when Pulumi runs and rendered into the user-data. Litestream and cloudflared are downloaded from their upstream releases; their versions and sha256 sums per architecture are constants in `pkg/statusbox/ec2/pins.go`. Every download is verified before it is installed.
 
 **Storage: SQLite on the root volume, replicated by Litestream.** Gatus opens its SQLite database in WAL mode (`PRAGMA journal_mode=WAL` in its store, set when it opens the file), which is the mode Litestream requires, so no change to Gatus is needed. Each instance replicates to `s3://<Bucket>/<BucketPrefix>/<instance>` with `sync-interval: 60s`: a replaced instance loses at most the last minute of probe history. Gatus is not a source of truth, so that is the accepted window.
 
@@ -474,11 +287,11 @@ The replica is therefore written only by the one in-service instance. The group 
 
 **Health.** `Restart=always` handles a crashing process. A timer runs a local check every minute: each Gatus unit active and answering `/health`, and cloudflared active when there is a tunnel. If that fails continuously for `HealthFailMinutes` (default 5), the instance calls `aws autoscaling set-instance-health --health-status Unhealthy` on itself and the group replaces it. A 1 GiB swap file and a 100 MiB journald cap keep a nano instance alive.
 
-**Telegram and the dead-man ping (optional).** `AlertURLParameters` may carry the Telegram bot token and chat id (the keys above; see "The deadman group"), and `PingURLParameter` is an SSM SecureString holding a healthchecks.io-style ping URL. With the latter, the setup script installs `statusbox-ping.service` and `.timer`; the boot phase reads the URL into `/run/statusbox/ping.url` (mode 0600, root) and starts the timer once the instance is in service. Every 60 seconds the service GETs the URL when every local Gatus answers `/health` with 200, and `<url>/fail` otherwise. curl gets the URL on stdin (never on its command line), with a 5 s connect and 10 s total timeout and three retries; the URL appears in no unit file and no log. If the box dies, the pings stop and the external service alerts. Empty `PingURLParameter`: no ping units. In `deploy/pulumi/status`, `EC2Inputs.TelegramTokenParameter` and `TelegramChatIDParameter` (both or neither) and `EC2Inputs.PingURLParameter` carry them; on Lightsail, `Inputs.TelegramToken` and `TelegramChatID` enable Telegram (no ping).
+**Telegram and the dead-man ping (optional).** `AlertURLParameters` may carry the Telegram bot token and chat id (the keys above; see "The deadman group"), and `PingURLParameter` is an SSM SecureString holding a healthchecks.io-style ping URL. With the latter, the setup script installs `statusbox-ping.service` and `.timer`; the boot phase reads the URL into `/run/statusbox/ping.url` (mode 0600, root) and starts the timer once the instance is in service. Every 60 seconds the service GETs the URL when every local Gatus answers `/health` with 200, and `<url>/fail` otherwise. curl gets the URL on stdin (never on its command line), with a 5 s connect and 10 s total timeout and three retries; the URL appears in no unit file and no log. If the box dies, the pings stop and the external service alerts. Empty `PingURLParameter`: no ping units. In `deploy/pulumi/status`, `EC2Inputs.TelegramTokenParameter` and `TelegramChatIDParameter` (both or neither) and `EC2Inputs.PingURLParameter` carry them.
 
-**Not in this backend.** Tailscale: the instance reaches its peer over private routing (VPC peering) that the caller provides, and the private page is reachable on its own port from `PrivateIngressCIDRs`, not over a tailnet on port 80. The private page's port is the private instance's `Port` (`EC2Inputs.PrivatePort`, default 8081); setting it to 80 serves the page at plain `http://<name>/`. The security group opens exactly that port, the health, ping and lifecycle probes dial it, and for a port below 1024 `setup.sh` adds a drop-in to that instance's `gatus@<name>.service` with `AmbientCapabilities=CAP_NET_BIND_SERVICE` (the unit still runs as the unprivileged user with `NoNewPrivileges`). Changing the port changes the security group rule (the group is replaced only if its description changes, which this does not) and rolls the instance. Outside checks and the Gatus metrics push follow separately.
+**Not in this box.** Tailscale: the instance reaches its peer over private routing (VPC peering) that the caller provides, and the private page is reachable on its own port from `PrivateIngressCIDRs`, not over a tailnet on port 80. The private page's port is the private instance's `Port` (`EC2Inputs.PrivatePort`, default 8081); setting it to 80 serves the page at plain `http://<name>/`. The security group opens exactly that port, the health, ping and lifecycle probes dial it, and for a port below 1024 the setup script adds a drop-in to that instance's `gatus@<name>.service` with `AmbientCapabilities=CAP_NET_BIND_SERVICE` (the unit still runs as the unprivileged user with `NoNewPrivileges`). Changing the port changes the security group rule (the group is replaced only if its description changes, which this does not) and rolls the instance. Outside checks and the Gatus metrics push follow separately.
 
-**Permissions boundary (optional).** `Args.PermissionsBoundary` (`EC2Inputs.PermissionsBoundary` in `deploy/pulumi/status`) is the full ARN of an IAM permissions boundary set on the instance role; an account that denies creating a role without its boundary needs it. Empty: the role has none. The instance role is the only IAM resource the EC2 backend creates (the Lightsail backend creates none).
+**Permissions boundary (optional).** `Args.PermissionsBoundary` (`EC2Inputs.PermissionsBoundary` in `deploy/pulumi/status`) is the full ARN of an IAM permissions boundary set on the instance role; an account that denies creating a role without its boundary needs it. Empty: the role has none. The instance role is the only IAM resource the box creates.
 
 **Session Manager shell (optional).** `Args.SessionManager` (`EC2Inputs.SessionManager`) attaches the AWS managed policy `AmazonSSMManagedInstanceCore` to the instance role, so the SSM agent that Amazon Linux 2023 ships registers the instance with Systems Manager and `aws ssm start-session --target <instance-id>` gives a break-glass shell with no inbound port; no user-data change is needed. Without it the agent logs credential errors and the instance has no shell. Default false, so existing stacks do not change on upgrade. A permissions boundary on the role (see above) is the caller's: it must allow the `ssm:`, `ssmmessages:` and `ec2messages:` actions, or the attached policy is capped to nothing.
 
@@ -497,7 +310,7 @@ The replica is therefore written only by the one in-service instance. The group 
 
 The pinned opkssh and host-certificate builds are arm64, so SSH needs a Graviton `InstanceType` (the default `t4g.nano` is one); an x86 type with SSH set is refused at validation.
 
-**What the box does.** The bootstrap writes `Bundle.Files` (under `/etc/hostaccess`), then runs one small program that installs `Bundle.Packages` with `dnf` and runs `Bundle.Commands`: it downloads `hostaccess-setup-v1.24.2.sh` from the truvity/tailscale release, refuses it unless its sha256 is the one computed from the embedded copy, and runs it. That happens before the setup script's install phase, which is what starts the boot phase that completes the Auto Scaling lifecycle hook, so an instance is InService only after SSH setup was attempted. It is fail-safe: every step logs and carries on, and the whole program is limited to ten minutes, so a failed SSH setup leaves a box without SSH, never a box that does not come in service. A warm-pool instance gets it too, on its first boot. Delivery is by download, so SSH costs about 1.1 KB of the 16 KiB user-data limit; the estate-sized test asserts the whole user-data stays at or under 12 KiB with SSH on.
+**What the box does.** The bootstrap writes `Bundle.Files` (under `/etc/hostaccess`), then runs one small program that installs `Bundle.Packages` with `dnf` and runs `Bundle.Commands`: it downloads `hostaccess-setup-v1.24.2.sh` from the truvity/tailscale release, refuses it unless its sha256 is the one computed from the embedded copy, and runs it. That happens before the setup script's install phase, which is what starts the boot phase that completes the Auto Scaling lifecycle hook, so an instance is InService only after SSH setup was attempted. It is fail-safe: every step logs and carries on, and the whole program is limited to ten minutes, so a failed SSH setup leaves a box without SSH, never a box that does not come in service. Before the opkssh commands it also writes an sshd drop-in, `06-statusbox-kex.conf`, with `KexAlgorithms ^sntrup761x25519-sha512@openssh.com`: the post-quantum hybrid key exchange is offered first and sshd's own defaults follow it (the `^` prefixes the default list). Amazon Linux 2023's OpenSSH (9.9) supports it; the drop-in is kept only if `sshd -t` passes with it, otherwise it is removed and sshd keeps its defaults. A warm-pool instance gets it too, on its first boot. Delivery is by download, so SSH costs about 1.5 KB of the 16 KiB user-data limit; the estate-sized test asserts the whole user-data stays at or under 12 KiB with SSH on.
 
 **Security group.** TCP 22 from `SSH.IngressCIDRs` only. The group's description then reads "no inbound except the private page and SSH (opkssh) from the listed networks". A description cannot change in place, so a box that turns SSH on has its security group replaced; a box without SSH keeps the old description and is untouched.
 
@@ -534,38 +347,17 @@ ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ecdsa ec2-user@<host>
 
 ## Immutable, by construction
 
-The provider's user-data is applied once, at creation. So a change to
-any instance's config **replaces the instance**: about two minutes of
-status-page blip, the disk reattached, no history lost. The alternative
-— the box pulling its config — needs a credential on the box to pull
-with, and the provider chosen first offers no instance role to hold one.
-Immutability is the honest design; config changes here are rare.
+The user-data is applied at launch, and every file it names is verified by
+sha256 before it is used. So a change to any instance's config **replaces
+the instance** through the group's instance refresh: a few minutes of
+status-page blip, the history restored from the Litestream replica (at most
+the last minute is lost). Immutability is the honest design; config changes
+here are rare. The EC2 backend ships its configs as S3 objects because
+EC2's user-data limit (16,384 bytes) cannot hold them; see "EC2 backend".
 
-The reattachment itself is not simultaneous with the new box coming up:
-Lightsail only lets one instance hold a disk at a time, so `DiskAttachment`
-is registered `DeleteBeforeReplace` and the new instance's attachment is
-created only after the old one is torn down. In order: the new instance
-is created and boots; the OLD box is then briefly **stopped** so the
-provider can detach the disk from it (this is the provider's own
-delete-time behaviour for a disk attachment, not something this package
-asks for separately); the disk then attaches to the new box, which has
-already finished booting; only then is the old instance deleted.
-`setup.sh` waits for the disk to appear before it does anything with
-`/data`, so the gap between the new box's own boot and the disk's
-arrival is silent from the outside: no history is lost, and nothing on
-the new box runs against `/data` before the disk it belongs to is there.
-
-Two consequences, documented so nobody rediscovers them:
-
-- user-data has a size limit (16 KB on the first provider); the renderer
-  gzips the whole rendered script, see the shebang-plus-wrapper shape
-  above, and refuses to render past the limit. (This is the Lightsail
-  backend; the EC2 backend ships its configs as S3 objects, see "EC2
-  backend");
-- user-data is readable from the instance metadata service by any
-  process on the box. The box is single-purpose, the tailnet key is
-  one-shot, and an alert URL is rotated if the box is ever anything
-  else.
+User-data is readable from the instance metadata service by any process on
+the box, which is why no secret VALUE is ever in it: only parameter names,
+read at boot through the instance role (IMDSv2 required).
 
 ## How the estate wires it
 
@@ -586,7 +378,7 @@ is the install's OWN alerting read API — `tenancy.alertReaders` in
 `charts/observability-stack` mints exactly this bearer token, scoped to
 one route (vmalert's `/api/v1/alerts`) and nothing else — with an
 `Authorization: Bearer ${ALERT_URL_<KEY>}` header (the same
-`Secrets.AlertURLs` mechanism a Config already uses for a credential it
+alert-URL mechanism a Config already uses for a credential it
 must not carry as a literal, repurposed: the value staged there is a
 bearer token here, not a push URL).
 
@@ -625,7 +417,7 @@ be wrong in, and it is written down rather than glossed over.
 
 ## What the estate accepts, and what it does not
 
-The box is outside every cluster, and — on the first provider — inside
+The box is outside every cluster, and — on its one provider — inside
 the same cloud account structure as the estate, in a separate account
 and region. A running instance survives the cloud's control-plane
 mistakes (an IAM or organisation policy stops API calls, not processes);
@@ -641,16 +433,13 @@ door); Gatus replicas with a shared database (coordinates nothing).
 
 ## Proof
 
-- golden render of the cloud-init for a two-instance fixture;
-- a unit test that the firewall admits exactly one public port —
-  41641/udp, tailscaled's own — and no TCP port at all;
-- `setup.sh` in CI, as above;
+- golden render of the EC2 user-data and setup parameters
+  (`pkg/statusbox/ec2/testdata`), and the resource shapes;
+- `just statusbox-ec2`, the setup script inside `amazonlinux:2023`, as above;
 - fixtures for the refusals: an instance with no config, two instances
   on one port, a public instance with no hostname, two instances that
-  are both not Public, user-data over the limit, `Args.TrustedCAs` that
+  are both not Public, user-data over the limit, `TrustedCAs` that
   is not PEM, is not a CA, or carries trailing garbage;
-- `Args.TrustedCAs`, in Docker, against the real release image: see
-  "Trusting a private root" above and `hack/statusbox-ca-proof.sh`.
 - `RenderGatus`'s own golden and fixture coverage, structural, no
   network needed (`pkg/statusbox/gatus_internal_test.go`); and, in
   Docker against the real release image, `hack/gatus-boot-proof.sh` —
@@ -658,12 +447,10 @@ door); Gatus replicas with a shared database (coordinates nothing).
   `twinproduction/gatus:v5.37.0`, `/health` answers, and every rendered
   endpoint is live in Gatus's own API.
 
-In a consumer: the private page answers only over the private network
+In a consumer: the private page answers only from the allowed networks
 (and, once a company page exists, its public page renders behind the
 edge); stopping the box fires the edge health check; scaling the
 install's metrics vmalert to zero (or blocking the box's read of it)
 fires the deadman group on its chat channel after two probe intervals,
 and posts RESOLVED when it comes back; a config change replaces the
-instance — the old box stopped briefly to free the disk, the new box
-already booted before the disk reaches it — and the disk comes back
-with its history.
+instance, and the database comes back from its replica with its history.

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Builds the Gatus binaries the EC2 status box installs, from the upstream tag
-# setup.sh pins as the Lightsail backend's image, and writes them to
+# pkg/statusbox/ec2/pins.go pins as GatusVersion, and writes them to
 # build/gatus/gatus_<tag>_linux_<arch> for the release to attach (see
-# .goreleaser.yaml). The same tag, so both backends run one Gatus; the Go
-# package's TestGatusVersionMatchesSetupSh keeps its own constant equal too.
+# .goreleaser.yaml).
 #
 # Run by goreleaser's `before` hooks. Needs git and a Go toolchain new enough
 # for Gatus's go.mod (the release job runs under devbox, which has one).
@@ -14,8 +13,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${1:-$root/build/gatus}"
 
-tag="$(sed -n 's/^gatus_image="twinproduction\/gatus:\(v[0-9][0-9.]*\)"$/\1/p' "$root/setup.sh")"
-[ -n "$tag" ] || { echo "build-gatus.sh: no gatus_image tag in setup.sh" >&2; exit 1; }
+tag="$(sed -n 's/^[[:space:]]*GatusVersion = "\(v[0-9][0-9.]*\)"$/\1/p' "$root/pkg/statusbox/ec2/pins.go")"
+[ -n "$tag" ] || { echo "build-gatus.sh: no GatusVersion in pkg/statusbox/ec2/pins.go" >&2; exit 1; }
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

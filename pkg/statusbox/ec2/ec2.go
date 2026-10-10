@@ -1,10 +1,9 @@
-// Package ec2 is the second provider pkg/statusbox is provisioned on: one
+// Package ec2 provisions the status box from pkg/statusbox: one
 // Amazon Linux 2023 instance in an Auto Scaling group of exactly one, with a
 // warm pool of one stopped instance, running Gatus and cloudflared as systemd
 // units and keeping Gatus's SQLite databases in S3 through Litestream.
 //
-// What it shares with pkg/statusbox/lightsail is the idea, the instances and
-// their Gatus Configs; what it does not share is the machinery. There is no
+// The instances and their Gatus Configs come from pkg/statusbox. There is no
 // Docker, no Tailscale and no attached disk, and no secret in user-data: the
 // instance reads SSM Parameter Store at boot through its role, and the Args
 // carry parameter NAMES only. See docs/statusbox.md ("EC2 backend").
@@ -80,7 +79,7 @@ type Args struct {
 	// token. Required when some Instance is Public, refused otherwise.
 	TunnelTokenParameter string
 	// AlertURLParameters maps a Config's ALERT_URL_<KEY> to the SSM parameter
-	// holding it, with statusbox.Secrets.AlertURLs's key rules. This is where
+	// holding it, with statusbox.alert-URL's key rules. This is where
 	// the alerts-read token and a deadman's chat token go.
 	AlertURLParameters map[string]string
 	// PingURLParameter is the optional SSM parameter (a SecureString) holding

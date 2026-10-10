@@ -16,7 +16,7 @@ Only the latest release is supported with security updates.
 This repository publishes:
 
 - The charts `observability-crds`, `platform-alerts`, `observability-stack`, `observability-emitters`, `alert-ingress`, `observability-dashboards`, `observability-grafana` and `observability-mcp`.
-- The Go packages and commands: `pkg/tenancy`, `pkg/statusbox`, `cmd/alert-ingress`, `cmd/dashboardlint` and `cmd/rulecheck`, and the `setup.sh` that stands up the status box.
+- The Go packages and commands: `pkg/tenancy`, `pkg/statusbox`, `cmd/alert-ingress`, `cmd/dashboardlint` and `cmd/rulecheck`, and the setup script of the status box.
 - The documentation, where it tells an adopter to expose or trust something it should not.
 
 Reports that matter most:

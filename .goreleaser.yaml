@@ -19,7 +19,7 @@ before:
     - yarn --cwd apps/portal install --immutable
     - yarn --cwd apps/portal build
     # The Gatus binaries the EC2 status box installs, built from the upstream
-    # tag setup.sh pins: build/gatus/gatus_<tag>_linux_<arch>, attached below.
+    # tag pkg/statusbox/ec2 pins as GatusVersion: build/gatus/gatus_<tag>_linux_<arch>, attached below.
     - hack/build-gatus.sh
 
 builds:
@@ -163,26 +163,15 @@ release:
     | portal image | `ghcr.io/truvity/observability/portal:{{ .Version }}` |
     | observability-portal chart | `oci://ghcr.io/truvity/charts/observability-portal:{{ .Version }}` (`image.tag` defaults to it) |
     | Lambda extension layer | `otlp-lambda-layer_{{ .Version }}_linux_{{ "{amd64,arm64}" }}.zip`, verified by `checksums.txt` ([docs/integrations/aws-lambda.md](https://github.com/truvity/observability/blob/master/docs/integrations/aws-lambda.md)) |
-    | Gatus binaries (EC2 status box) | `gatus_<tag>_linux_{amd64,arm64}`, built from the upstream tag `setup.sh` pins and verified by `checksums.txt` ([docs/statusbox.md](https://github.com/truvity/observability/blob/master/docs/statusbox.md)) |
+    | Gatus binaries (EC2 status box) | `gatus_<tag>_linux_{amd64,arm64}`, built from the upstream tag `pkg/statusbox/ec2` pins and verified by `checksums.txt` ([docs/statusbox.md](https://github.com/truvity/observability/blob/master/docs/statusbox.md)) |
     | Go | `go get github.com/truvity/observability@{{ .Tag }}` |
-  # setup.sh is a release asset, not a build output: a box's cloud-init
-  # (rendered by pkg/statusbox.CloudInit) downloads THIS exact file from
-  # THIS release. It has to be attached here, and it has to be in
-  # checksum's own extra_files below too, or checksums.txt — the thing
-  # CloudInit fetches at deploy time to bake a sha256 into every box's
-  # user-data — would carry no entry for it, and CloudInit refuses to
-  # render rather than boot a box that trusts an unverified script. See
-  # docs/statusbox.md ("Checksum at deploy, verify at boot").
-  #
   # The Gatus binaries (hack/build-gatus.sh) are attached the same way and for
   # the same reason: pkg/statusbox/ec2 reads their sha256 from checksums.txt at
   # deploy time and the instance verifies the download against it.
   extra_files:
-    - glob: ./setup.sh
     - glob: ./build/gatus/gatus_*_linux_*
 
 checksum:
   name_template: "checksums.txt"
   extra_files:
-    - glob: ./setup.sh
     - glob: ./build/gatus/gatus_*_linux_*

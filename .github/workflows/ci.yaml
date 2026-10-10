@@ -1,17 +1,12 @@
 # CI calls the shared workflow (truvity/ci-workflows), which fans the
 # Justfile recipes out into PARALLEL jobs — one per recipe, each reporting
 # under its own name. The recipe list is this repository's own `check`
-# recipe plus `apply`, `reconcile`, `statusbox` and `statusbox-debian`, so
-# CI and a laptop run the same thing except for the jobs that need a
-# container runtime or root: `apply` stands up a kind cluster and requires
-# a real API server to accept every golden, `reconcile` requires the
-# operator to accept the release, `statusbox` runs setup.sh — the release
-# asset a box's cloud-init fetches, verifies by checksum and executes, see
-# pkg/statusbox — against a fixture and requires every instance to answer
-# /health, and `statusbox-debian` runs setup.sh's install_container_runtime
-# function alone inside a plain debian:12 container: `statusbox` runs the
-# whole script on an Ubuntu runner, which cannot catch an apt package that
-# exists only on Ubuntu (see hack/statusbox-debian-ci.sh). Each is a CI job
+# recipe plus `apply`, `reconcile` and `statusbox-ec2`, so CI and a laptop run
+# the same thing except for the jobs that need a container runtime: `apply`
+# stands up a kind cluster and requires a real API server to accept every
+# golden, `reconcile` requires the operator to accept the release, and
+# `statusbox-ec2` runs the EC2 status box's setup script inside an
+# amazonlinux:2023 container (see hack/statusbox-ec2-ci.sh). Each is a CI job
 # rather than part of `check` because `check` must stay runnable in
 # seconds on a laptop with nothing destructive in it, and a job rather
 # than nothing because each one catches a class of defect that reached
@@ -42,7 +37,7 @@ jobs:
       # job summary, and fails this job when a rule fails.
       policy-conformance: true
       policy-conformance-strict: true
-      recipes: '["lint", "test", "portal", "leak-canary", "dashboard-lint", "rulecheck", "apply", "reconcile", "statusbox", "statusbox-debian", "statusbox-ec2"]'
+      recipes: '["lint", "test", "portal", "leak-canary", "dashboard-lint", "rulecheck", "apply", "reconcile", "statusbox-ec2"]'
 
   # The per-cluster coverage report (the commands of `just rulecheck-coverage`, run directly so the job installs no `just`): which rule
   # groups and rules each rendered configuration leaves off. Its own job

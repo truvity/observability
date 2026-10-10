@@ -219,31 +219,6 @@ apply:
 reconcile:
     hack/reconcile.sh
 
-# Run setup.sh — the release asset a box's cloud-init fetches, verifies
-# by checksum and executes, see pkg/statusbox — against a fixture, and
-# require every instance it starts to answer /health.
-#
-# Deliberately NOT part of `check`: it needs root (apt-get, systemctl,
-# and it writes /opt/statusbox and /data for real) the same way `apply`
-# needs Docker, so a laptop run is destructive in a way `check` must
-# never be. It is a CI job for the reason the header of hack/statusbox-ci.sh
-# gives at length: the first run of setup.sh must not be on the box, on
-# a bad day.
-statusbox:
-    hack/statusbox-ci.sh
-
-# Run setup.sh's install_container_runtime function ALONE, inside a
-# plain debian:12 container — the actual OS the box boots, which
-# `statusbox` above cannot exercise: its own job runs the whole,
-# unmodified script on an Ubuntu runner, so an apt package that exists
-# only on Ubuntu (docker-compose-v2, until 0.7.4) passed there while
-# failing on every real box. See hack/statusbox-debian-ci.sh.
-#
-# Needs Docker, the same as `apply`/`reconcile`/`statusbox`; deliberately
-# NOT part of `check` for the same reason.
-statusbox-debian:
-    hack/statusbox-debian-ci.sh
-
 # Run the EC2 backend's setup script (pkg/statusbox/ec2/setup.sh, rendered
 # into the instance's user-data) inside an amazonlinux:2023 container: the
 # pinned Litestream and cloudflared downloads, the units and configs, a real
@@ -251,25 +226,9 @@ statusbox-debian:
 # warm-pool boot restores and starts nothing) with systemctl, aws and the
 # metadata service shimmed. See hack/statusbox-ec2-ci.sh.
 #
-# Needs Docker; deliberately NOT part of `check`, like `statusbox-debian`.
+# Needs Docker; deliberately NOT part of `check`.
 statusbox-ec2:
     hack/statusbox-ec2-ci.sh
-
-# REAL proof, in Docker, that statusbox.Args.TrustedCAs actually makes
-# Gatus trust a private root: a throwaway CA and server certificate, a
-# tiny HTTPS server presenting it, and the real twinproduction/gatus
-# image probing it with and without the CA mounted — plus a public HTTPS
-# probe in the SAME with-CA container, proving SSL_CERT_DIR adds to the
-# image's own trust bundle rather than replacing it. See
-# hack/statusbox-ca-proof.sh's own header for why this exists alongside
-# `statusbox` above (which proves setup.sh's OWN logic, never whether
-# Gatus's TLS stack actually behaves differently because of it).
-#
-# Needs Docker, openssl, curl and jq; deliberately NOT part of `check`
-# or CI, the same reason `statusbox`/`statusbox-debian` are not: a
-# one-off, run-by-hand proof for this feature, not a regression gate.
-statusbox-ca-proof:
-    hack/statusbox-ca-proof.sh
 
 # REAL proof, in Docker, that pkg/statusbox's RenderGatus (0.9.0, item 5
 # of "consumer simplification") produces a Config the real
@@ -281,7 +240,7 @@ statusbox-ca-proof:
 # itself accepts.
 #
 # Needs Docker, curl, jq and go; deliberately NOT part of `check` or CI,
-# the same reason `statusbox-ca-proof` above is not.
+# the same reason `statusbox-ec2` above is not.
 gatus-boot-proof:
     hack/gatus-boot-proof.sh
 
@@ -307,7 +266,7 @@ gatus-deadman-proof:
 # expression. See hack/platform-alerts-newest-job-proof.sh's own header.
 #
 # Needs Docker, curl and python3 (with PyYAML); deliberately NOT part of
-# `check` or CI, the same reason `statusbox-ca-proof` above is not: a
+# `check` or CI, the same reason `statusbox-ec2` above is not: a
 # one-off, run-by-hand proof for this fix, not a regression gate.
 platform-alerts-newest-job-proof:
     hack/platform-alerts-newest-job-proof.sh
@@ -382,7 +341,7 @@ node-exporter-proof:
 # "Restore" section, which this script is the proof for.
 #
 # Needs Docker, curl and python3 (PyYAML); deliberately NOT part of
-# `check`, the same reason `statusbox-ca-proof` above is not: a
+# `check`, the same reason `statusbox-ec2` above is not: a
 # one-off, run-by-hand proof for this feature, not a regression gate.
 backup-restore-proof:
     hack/backup-restore-proof.sh
@@ -418,7 +377,7 @@ backup-logs-traces-proof:
 # gate this complements rather than replaces.
 #
 # Needs Docker, curl, python3 (with PyYAML) and helm; deliberately NOT
-# part of `check`, the same reason `statusbox-ca-proof` above is not: a
+# part of `check`, the same reason `statusbox-ec2` above is not: a
 # one-off, run-by-hand proof for this feature, not a regression gate.
 cadvisor-churn-drop-proof:
     hack/cadvisor-churn-drop-proof.sh

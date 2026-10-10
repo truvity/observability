@@ -71,8 +71,21 @@ func (s SSHArgs) hostaccessConfig() hostaccess.Config {
 var hostKeyParameterRE = regexp.MustCompile(`^/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$`)
 
 const (
-	sshHostKeyPath    = "/etc/ssh/ssh_host_ed25519_key"
-	sshHostKeyDropIn  = "/etc/ssh/sshd_config.d/05-statusbox-hostkey.conf"
+	sshHostKeyPath   = "/etc/ssh/ssh_host_ed25519_key"
+	sshHostKeyDropIn = "/etc/ssh/sshd_config.d/05-statusbox-hostkey.conf"
+	sshKexDropIn     = "/etc/ssh/sshd_config.d/06-statusbox-kex.conf"
+	// sshKexPrefer puts the post-quantum hybrid key exchange first and leaves
+	// the rest of sshd's own defaults after it (the ^ prefix prepends to the
+	// default list, so the defaults the installed OpenSSH ships stay current).
+	// Amazon Linux 2023's OpenSSH supports it. Fail-safe: sshd -t must pass
+	// with the drop-in, or the drop-in is removed and sshd keeps its defaults.
+	sshKexPrefer = `# Key exchange: prefer the post-quantum hybrid, then sshd's defaults. Fail-safe.
+(
+  set -euo pipefail
+  printf 'KexAlgorithms ^sntrup761x25519-sha512@openssh.com\n' >%[1]s
+  if sshd -t; then systemctl restart sshd; else rm -f %[1]s; exit 1; fi
+) || { rm -f %[1]s; echo "statusbox ssh: post-quantum key exchange not enabled; sshd keeps its defaults"; }
+`
 	sshHostKeyRestore = `# Host key: restore the one fixed key from SSM before sshd is restarted. Fail-safe.
 (
   set -euo pipefail
@@ -175,6 +188,8 @@ func (a Args) sshBootstrap() (string, error) {
 	if p := a.SSH.HostKeyParameter; p != "" {
 		fmt.Fprintf(&prog, sshHostKeyRestore, p, sshHostKeyPath, sshHostKeyDropIn)
 	}
+
+	fmt.Fprintf(&prog, sshKexPrefer, sshKexDropIn)
 
 	for _, c := range bundle.Commands {
 		prog.WriteString(c + "\n")

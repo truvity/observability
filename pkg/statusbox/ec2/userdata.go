@@ -14,8 +14,7 @@ import (
 // header for the phases. It is embedded in the package but travels as an S3
 // object (user-data is capped at 16 KiB and the script alone is over half of
 // it): the user-data pins it by sha256, so a change to it is still a new
-// launch template version, the same "immutable by construction" the Lightsail
-// box has, and nothing at boot trusts a download except by digest.
+// launch template version, "immutable by construction", and nothing at boot trusts a download except by digest.
 //
 //go:embed setup.sh
 var setupScript string
