@@ -117,16 +117,29 @@ func deploy(t *testing.T, in Inputs) (*mocks, map[string]string) {
 	m := &mocks{}
 	got := map[string]string{}
 
+	// ApplyT callbacks run on separate goroutines, so guard the shared map.
+	var gotMu sync.Mutex
+	set := func(k string) func(string) string {
+		return func(s string) string {
+			gotMu.Lock()
+			defer gotMu.Unlock()
+
+			got[k] = s
+
+			return s
+		}
+	}
+
 	require.NoError(t, pulumi.RunErr(func(c *pulumi.Context) error {
 		out, err := Deploy(c, in)
 		if err != nil {
 			return err
 		}
 
-		out.QueueARN.ApplyT(func(s string) string { got["arn"] = s; return s })
-		out.QueueURL.ApplyT(func(s string) string { got["url"] = s; return s })
-		out.DeadLetterQueueARN.ApplyT(func(s string) string { got["dlq"] = s; return s })
-		out.ConsumerPolicy.ApplyT(func(s string) string { got["consumer"] = s; return s })
+		out.QueueARN.ApplyT(set("arn"))
+		out.QueueURL.ApplyT(set("url"))
+		out.DeadLetterQueueARN.ApplyT(set("dlq"))
+		out.ConsumerPolicy.ApplyT(set("consumer"))
 
 		return nil
 	}, pulumi.WithMocks("proj", "stack", m)))
