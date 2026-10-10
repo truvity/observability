@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-cluster",
+  "description": "The per-cluster observability frontend, first slice. Strict: an unknown key fails the render rather than being silently ignored, because a typo here is a credential or a folder that never applies and nothing says so. What the schema cannot say (a URL and a credential Secret when the external Grafana is on, a valid folder uid) is a render-time refusal in templates/_helpers.tpl.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "cluster": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{0,40}$",
+      "description": "The cluster this release runs on, as tenancy.cluster of observability-emitters spells it."
+    },
+    "grafanaOperator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "grafana-operator": {
+      "type": "object",
+      "description": "Values of the vendored grafana-operator chart, passed through unchanged.",
+      "additionalProperties": true
+    },
+    "externalGrafana": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^(https?://.+)?$",
+          "description": "The shared Grafana's root URL."
+        },
+        "credentials": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "caSecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "folder": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "uid": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{0,40}$"
+        }
+      }
+    }
+  }
+}

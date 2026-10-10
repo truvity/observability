@@ -1,0 +1,30 @@
+apiVersion: v2
+name: observability-cluster
+description: >-
+  The per-cluster observability frontend, first slice: the grafana-operator
+  (opt-in), the external Grafana resource that points it at the one shared
+  Grafana, and the cluster's folder. Components ship GrafanaDashboard
+  resources and see no Grafana address.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - grafana
+  - grafana-operator
+  - observability
+  - kubernetes
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability
+# The grafana-operator, pinned exactly (a range would resolve to whatever
+# exists on the day of the install) and vendored under charts/ so a render
+# reaches no registry. Off unless grafanaOperator.enabled: a cluster that
+# only wants the external Grafana resource (the operator installed some
+# other way) renders no operator. docs/architecture/observability-cluster.md
+# says why the operator is upstream's chart and not templates of this one.
+dependencies:
+  - name: grafana-operator
+    version: 5.25.0
+    repository: oci://ghcr.io/grafana/helm-charts
+    condition: grafanaOperator.enabled

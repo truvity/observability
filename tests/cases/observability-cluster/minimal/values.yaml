@@ -1,0 +1,8 @@
+# The smallest values file that renders an object: the external Grafana and
+# the cluster's folder. The operator is installed some other way.
+cluster: example-cluster
+externalGrafana:
+  enabled: true
+  url: https://grafana.example.org
+  credentials:
+    secretName: grafana-credentials
