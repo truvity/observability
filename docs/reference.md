@@ -659,11 +659,12 @@ does not carry it is never evaluated.**
 | `observability.truvity.io/evaluator: metrics`, or no evaluator label | the metrics alerter, only |
 
 So a rule written in LogsQL **must** be labelled
-`observability.truvity.io/evaluator: logs` (and, until the old spelling is
-dropped in v0.72, also `observability.rule-type: vlogs`: the charts here
-emit both) — and a PromQL rule needs no label, which is what keeps the
+`observability.truvity.io/evaluator: logs` (and, while the old spelling is
+accepted, also `observability.rule-type: vlogs`: the charts here emit both;
+it stays until every chart that ships LogsQL rules emits `evaluator: logs`,
+and is removed in a later minor, not before v0.73, announced in the CHANGELOG) — and a PromQL rule needs no label, which is what keeps the
 rules other charts ship working without changing them. The selection
-design, the two-minor deprecation window and `rule-type` are in
+design, the deprecation window and `rule-type` are in
 [contracts.md](contracts.md), "Rule ownership labels".
 
 **A LogsQL rule needs a second thing, and the two are not the same.** Its

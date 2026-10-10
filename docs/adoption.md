@@ -653,8 +653,10 @@ order:
 3. `vmalert.acceptLegacyRuleLabels` defaults to `true`, so the old
    LogsQL marker `observability.rule-type: vlogs` is still accepted.
    Move your own LogsQL rules to `observability.truvity.io/evaluator:
-   logs` and set the key to `false` while v0.70 and v0.71 are current: the
-   old spelling and the key are removed in v0.72.
+   logs` and set the key to `false` once none of your rules needs the old
+   one. The old spelling and the key are accepted until every chart that
+   ships LogsQL rules emits `evaluator: logs`; they are removed in a later
+   minor, not before v0.73, announced in the CHANGELOG.
 
 **`observability-stack`: `notifications.routeLabels`.** The default is
 unchanged (`k8s_cluster_name` and `k8s_namespace_name`, plus `ownerLabel`

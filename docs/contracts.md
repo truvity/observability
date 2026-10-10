@@ -90,11 +90,13 @@ accepting `metrics` and no label with one selector).
 
 Deprecation window. The old spelling `observability.rule-type: vlogs` (the
 LogsQL marker; not the new `rule-type`, which has other values and another
-meaning) is accepted through v0.70 and v0.71 and removed in v0.72:
-`vmalert.acceptLegacyRuleLabels` and the old selector terms go in v0.72. A
-component sets `evaluator: logs` on its LogsQL rules now, keeps the old
-label until v0.72, and sets the switch to `false` in an install once no rule
-needs the old one.
+meaning) is accepted until every chart that ships LogsQL rules emits
+`observability.truvity.io/evaluator: logs`. It is removed in a later minor,
+not before v0.73, and the removal is announced in the CHANGELOG:
+`vmalert.acceptLegacyRuleLabels` and the old selector terms go with it. The
+removal is not tied to a fixed version. A component sets `evaluator: logs` on
+its LogsQL rules now, keeps the old label until the removal is announced,
+and sets the switch to `false` in an install once no rule needs the old one.
 
 `rulecheck -require-evaluator` makes a `VMRule` without an `evaluator`
 label a violation (and a LogsQL rule whose evaluator is not `logs`). It is

@@ -127,7 +127,7 @@ spec:
 
     A LogsQL rule MUST carry `observability.truvity.io/evaluator: logs`
     to be evaluated; while `vmalert.acceptLegacyRuleLabels` is true (the
-    default, for two minors) the logs alerter instead takes the old
+    default) the logs alerter instead takes the old
     spelling `observability.rule-type: vlogs`, and a rule must carry that
     one (platform-alerts and observability-rum emit both). One selector
     cannot be a union of two labels, so the switch picks the label the
