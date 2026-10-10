@@ -37,6 +37,11 @@ const (
 	// OwnerLabel is the optional owner derived from the namespace
 	// (observability-emitters `tenancy.owners`).
 	OwnerLabel = "owner"
+	// SourceLabel names where an alert that is not about a cluster came
+	// from (`aws-guardduty`, `aws-cost`). alert-ingress mappings set it;
+	// the router matches on it when `notifications.routeLabels` lists it.
+	// A cluster-born alert needs no source: it has a cluster.
+	SourceLabel = "source"
 )
 
 // Log stream fields and span resource attributes: the other two columns

@@ -6,7 +6,11 @@
 #
 # Do not add to `keys`. A fix to the stack that needs a new key goes in
 # `fixes` with a reason; see docs/contracts.md, "Adding a fix-key".
-fixes: []
+fixes:
+  - key: "schema:notifications.routeLabels"
+    reason: "restructure step 1 (a PLANNED restructure key, not a bug fix; added here because the freeze has no separate lane for planned keys): the ordered label names a route may match on. Source-born alerts (alert-ingress) are routed on `source` instead of a fake k8s_cluster_name. Default equals the previous hard-coded vocabulary."
+  - key: "values:notifications.routeLabels"
+    reason: "default of notifications.routeLabels"
 keys:
   - "schema:alertmanager"
   - "schema:alertmanager.affinity"

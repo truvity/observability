@@ -19,6 +19,7 @@ import (
 func TestWireValues(t *testing.T) {
 	assert.Equal(t, "k8s_cluster_name", contracts.ClusterLabel)
 	assert.Equal(t, "k8s_namespace_name", contracts.NamespaceLabel)
+	assert.Equal(t, "source", contracts.SourceLabel)
 	assert.Equal(t, "observability.truvity.io/evaluator", contracts.EvaluatorLabel)
 	assert.Equal(t, "observability.truvity.io/rule-type", contracts.RuleTypeLabel)
 	assert.Equal(t, []string{"metrics", "logs", "traces"}, contracts.Datasources())
@@ -56,7 +57,7 @@ func TestDocMentionsEveryKey(t *testing.T) {
 	require.NoError(t, err)
 	doc := string(b)
 	for _, s := range []string{
-		contracts.ClusterLabel, contracts.NamespaceLabel, contracts.EnvironmentLabel, contracts.OwnerLabel,
+		contracts.ClusterLabel, contracts.NamespaceLabel, contracts.EnvironmentLabel, contracts.OwnerLabel, contracts.SourceLabel,
 		contracts.LogsClusterField, contracts.LogsNamespaceField, contracts.TracesClusterAttribute,
 		contracts.TracesNamespaceAttribute, contracts.EnvironmentAttribute,
 		contracts.EvaluatorLabel, contracts.RuleTypeLabel, contracts.RuleTypeAlert, contracts.RuleTypeRecording,

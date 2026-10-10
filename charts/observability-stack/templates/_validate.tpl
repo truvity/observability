@@ -1257,8 +1257,9 @@ looking exactly like a route that works.
 {{- end -}}
 {{- end -}}
 {{- range $k, $_ := ($r.match | default dict) -}}
-{{- if not (has $k (concat (list "k8s_cluster_name" "k8s_namespace_name") (without (list (toString ($n.ownerLabel | default ""))) ""))) -}}
-{{- fail (printf "observability-stack: notifications.routes[%d].match has key %q. The collectors this chart's rules run against stamp exactly two dimensions on every alert — k8s_cluster_name and k8s_namespace_name — so a route on anything else (tenant, env, team, …) matches nothing any rule actually carries. A route on the owning company needs `notifications.ownerLabel` set to the label the emitters stamp (`tenancy.owners` in observability-emitters)." $i (toString $k)) -}}
+{{- $routeLabels := $n.routeLabels | default (list "k8s_cluster_name" "k8s_namespace_name") -}}
+{{- if not (has $k (concat $routeLabels (without (list (toString ($n.ownerLabel | default ""))) ""))) -}}
+{{- fail (printf "observability-stack: notifications.routes[%d].match has key %q. A route may match only on a label in `notifications.routeLabels` (default: k8s_cluster_name and k8s_namespace_name, the two dimensions the collectors stamp on every alert; now: %s), plus `notifications.ownerLabel` when set. A route on anything else (tenant, env, team, …) matches nothing any rule actually carries. An alert born outside a cluster (alert-ingress) is routed on the label its mapping sets, usually `source`: add it to `notifications.routeLabels`. A route on the owning company needs `notifications.ownerLabel` set to the label the emitters stamp (`tenancy.owners` in observability-emitters)." $i (toString $k) (join ", " $routeLabels)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

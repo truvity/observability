@@ -903,6 +903,15 @@
           "pattern": "^([a-zA-Z_][a-zA-Z0-9_]*)?$",
           "description": "OPT-IN. The label naming the owning company, as stamped by observability-emitters tenancy.owners (`owner`). Set, a route's `match` may use it. Empty changes nothing."
         },
+        "routeLabels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "The ordered label names a `routes[].match` may use. Default: k8s_cluster_name, k8s_namespace_name (plus `ownerLabel` when set), which is what every route could match on before this key existed. Add `source` to route alerts that are born outside a cluster (alert-ingress mappings set it) without giving them a fake cluster. A match key outside this list, and `ownerLabel`, is refused at render time.",
+          "items": {
+            "$ref": "#/definitions/labelName"
+          }
+        },
         "groupBy": {
           "type": "array",
           "minItems": 1,

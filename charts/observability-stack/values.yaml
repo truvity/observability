@@ -1104,6 +1104,23 @@ notifications:
     - alertname
     - k8s_cluster_name
     - k8s_namespace_name
+  # -- The ordered label names a `routes[].match` may use. The default is
+  # what a route could always match on (the cluster and the namespace
+  # the collectors stamp on every alert; `ownerLabel` is added to it when
+  # set), so leaving it alone renders exactly what it rendered before.
+  # An alert born outside a cluster has no cluster: alert-ingress
+  # mappings set `source` on it, and listing `source` here lets a route
+  # match `source: aws-guardduty` without a made-up `k8s_cluster_name`:
+  #
+  #   routeLabels: [k8s_cluster_name, k8s_namespace_name, source]
+  #   routes:
+  #     - match: {source: aws-guardduty}
+  #       critical: "#alerts-security"
+  #
+  # A match key outside the list is refused at render time.
+  routeLabels:
+    - k8s_cluster_name
+    - k8s_namespace_name
   # -- OPT-IN (empty, the default, changes nothing): the label naming the
   # company that owns an alert's workload, as stamped by
   # `observability-emitters` `tenancy.owners` (`owner`). Set, a route's
