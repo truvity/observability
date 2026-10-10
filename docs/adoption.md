@@ -423,6 +423,20 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### 0.67.1 → 0.68.0
+
+**`deploy/pulumi/status` / `pkg/statusbox`: the Lightsail backend is gone.**
+Move any stack still on Lightsail to the EC2 backend first (an EC2 box
+beside it, then retire the Lightsail stack), then bump. Callers drop
+`Backend` (EC2 is the only backend) and the Lightsail-only inputs
+(`AvailabilityZone`, `Hostname`, `TailscaleTag`, `Generation`, the tailnet
+key and the secret-value inputs such as `TunnelToken`, `OIDCClientSecret`,
+`TelegramToken`, `TelegramChatID`); the EC2 backend reads its secrets from
+SSM parameters named in `EC2Inputs`. With SSH on, the box also writes an
+sshd drop-in preferring `mlkem768x25519-sha256`, then
+`sntrup761x25519-sha512@openssh.com`; the launch template changes, so the
+instance rolls once.
+
 ### 0.66.1 → 0.67.0
 
 **`deploy/pulumi/status` / `pkg/statusbox/ec2`: `SSHArgs.HostCert` is a
