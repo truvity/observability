@@ -17,9 +17,10 @@ cluster: ""
 
 grafanaOperator:
   # -- Install the grafana-operator (upstream's chart, vendored at the exact
-  # version pinned in Chart.yaml). Its CRDs are NOT this release's to apply:
-  # see "CRDs" in docs/architecture/observability-cluster.md. Under Argo CD,
-  # set `helm.skipCrds: true` once the CRDs are owned elsewhere.
+  # version pinned in Chart.yaml). Its CRDs are NOT this release's: the vendored
+  # archive ships none, and `grafana-operator.crds.immutable: false` is refused.
+  # Turn on `sets.grafanaOperator` of observability-crds first, a wave ahead
+  # (docs/architecture/observability-cluster.md, "CRDs").
   enabled: false
 
 # -- Values of the vendored grafana-operator chart, passed through as they are

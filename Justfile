@@ -180,9 +180,11 @@ rulecheck-coverage out="rulecheck-coverage":
 # after moving a version in its Chart.yaml. The archives are committed on
 # purpose: a render that needs the network is a render that differs
 # depending on when it runs, and `just lint` reads the STATUS column to
-# prove the archive and the pin still agree.
+# prove the archive and the pin still agree. observability-cluster's
+# grafana-operator archive is repacked without its nested CRDs (see
+# hack/vendor.sh for why).
 vendor chart:
-    helm dependency update charts/{{ chart }}
+    hack/vendor.sh {{ chart }}
 
 # The reason this repository can be public. Runs in CI as its own job.
 leak-canary:

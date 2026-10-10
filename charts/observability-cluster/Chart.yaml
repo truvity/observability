@@ -21,7 +21,8 @@ sources:
 # exists on the day of the install) and vendored under charts/ so a render
 # reaches no registry. Off unless grafanaOperator.enabled: a cluster that
 # only wants the external Grafana resource (the operator installed some
-# other way) renders no operator. docs/architecture/observability-cluster.md
+# other way) renders no operator. The archive is repacked without upstream's
+# nested CRDs subchart (hack/vendor.sh): the CRDs are observability-crds'. docs/architecture/observability-cluster.md
 # says why the operator is upstream's chart and not templates of this one.
 dependencies:
   - name: grafana-operator

@@ -5,7 +5,8 @@
 // has to hold is small and has to hold always: an empty values file renders
 // nothing (installing the chart changes no cluster), the operator renders
 // only when asked, no CustomResourceDefinition comes out of a render (the
-// CRDs are another release's, docs/adoption.md), and the Grafana resource
+// CRDs are observability-crds' `sets.grafanaOperator`, docs/adoption.md;
+// tests/crds_grafana_operator_test.go also renders with --include-crds), and the Grafana resource
 // carries a reference to its credential and never the credential.
 package tests
 

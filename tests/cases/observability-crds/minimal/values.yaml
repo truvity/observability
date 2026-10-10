@@ -5,3 +5,4 @@
 sets:
   victoriaMetrics: true
   prometheusOperator: true
+  grafanaOperator: false

@@ -43,3 +43,21 @@
 #   ScrapeConfig             monitoring.coreos.com              v1alpha1 (storage)
 #   ServiceMonitor           monitoring.coreos.com              v1 (storage)
 {{- end }}
+{{- if .Values.sets.grafanaOperator }}
+#
+# grafana-operator v5.25.0
+#
+#   GrafanaAlertRuleGroup    grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaContactPoint      grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaDashboard         grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaDatasource        grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaFolder            grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaLibraryPanel      grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaManifest          grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaMuteTiming        grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaNotificationPolicy grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaNotificationPolicyRoute grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaNotificationTemplate grafana.integreatly.org            v1beta1 (storage)
+#   Grafana                  grafana.integreatly.org            v1beta1 (storage)
+#   GrafanaServiceAccount    grafana.integreatly.org            v1beta1 (storage)
+{{- end }}
