@@ -423,7 +423,7 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
-### 0.70.0 → 0.71.0
+### The alerting plane as a chart of its own (0.71.0)
 
 **Nothing moves on the bump.** `observability-stack`'s new `alerting.source`
 defaults to `stack` and the new chart `observability-alerting` is not
