@@ -1,0 +1,25 @@
+# expect: karma.authentication.header.groupValueRe is empty
+# A groups header with no groupValueRe: karma refuses to start.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+karma:
+  enabled: true
+  authentication:
+    header:
+      name: X-Auth-Request-Email
+      groupName: X-Auth-Request-Groups

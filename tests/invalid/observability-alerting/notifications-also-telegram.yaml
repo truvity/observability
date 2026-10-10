@@ -1,0 +1,34 @@
+# expect: `also` delivers to a webhook or to Slack, not to Telegram
+# Telegram stays refused for `also`.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+    - name: partner
+      appTokenSecret:
+        name: example-partner-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+      workspace: acme
+    warning:
+      receiver: slack
+      channel: '#alerts'
+      workspace: acme
+  telegram:
+    botTokenSecret:
+      name: example-telegram-bot
+      key: token
+    chatId: -1000000000001
+  also:
+  - receiver: telegram
+    match:
+      severity: critical

@@ -1,0 +1,17 @@
+# expect: karma has no Alertmanager to read
+# alertmanager.enabled false and no extra servers: nothing for karma to show.
+stackReleaseName: observability-stack
+tenancy: {}
+alertmanager:
+  enabled: false
+  notifierUrl: http://alertmanager.example.svc:9093
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      alertmanager:
+        enabled: false
+karma:
+  enabled: true
+  authentication:
+    header:
+      name: X-Auth-Request-Email

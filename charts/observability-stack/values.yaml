@@ -744,6 +744,25 @@ stores:
 upstreamRules:
   source: sync-job
 
+# -- Who renders the alerting plane: the two (or four, under `ha`) vmalerts and
+# every `vmalert.remoteEvaluators` entry, the VMAlertmanager, karma, the
+# Watchdog rule, the store self-alerts and the Alertmanager ServiceMonitor.
+#
+#   alerting:
+#     source: stack   # the default, and what every install ran so far
+#     source: chart   # charts/observability-alerting renders them instead
+#
+# `stack`: this chart renders them, as it always did. Nothing changes.
+#
+# `chart`: this chart renders NONE of those objects; the separate
+# `observability-alerting` chart (this release's name in `stackReleaseName`,
+# the same values keys) owns them, under the same kind, name and namespace. It
+# is the second step of a rollout whose first step is installing that chart
+# beside this one: docs/adoption.md, 0.71.0. Refused with `mode: replica` (a
+# replica never rendered them, so there is nothing to hand over).
+alerting:
+  source: stack
+
 # Alerting.
 #
 # Two vmalerts, because one cannot do both jobs: rules over metrics and

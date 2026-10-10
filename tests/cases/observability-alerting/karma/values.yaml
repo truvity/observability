@@ -1,0 +1,69 @@
+# The alerting plane of tests/cases/observability-stack/karma: that case's values
+# (presets merged) kept to the keys this chart declares. tests/alerting_chart_test.go
+# derives the same file for every stack case and holds the objects byte-identical.
+stackReleaseName: observability-stack
+tenancy: {}
+vmalert:
+  externalUrl: https://grafana.example
+notifications:
+  alertmanagerUrl: https://alertmanager.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+karma:
+  enabled: true
+  alertmanagers:
+  - name: other
+    uri: http://alertmanager.other.svc:9093
+    readonly: true
+  authentication:
+    header:
+      name: X-Auth-Request-Email
+      groupName: X-Auth-Request-Groups
+      groupValueRe: ^(.+)$
+      groupValueSeparator: ','
+  authorization:
+    groups:
+    - name: admins
+      members:
+      - alice@example.com
+      - bob@example.com
+    - name: users
+      members:
+      - carol@example.com
+  acl:
+    silences:
+    - action: block
+      reason: regex silences are not allowed, use concrete label names and values
+      scope:
+        filters:
+        - name_re: .+
+          value_re: .+
+          isRegex: true
+    - action: allow
+      reason: admins may silence anything
+      scope:
+        groups:
+        - admins
+    - action: requireMatcher
+      reason: users must name a cluster
+      scope:
+        groups:
+        - users
+      matchers:
+        required:
+        - name: k8s_cluster_name
+          value_re: .+
+  history:
+    enabled: true
+    uri: http://prometheus.example.svc:9090

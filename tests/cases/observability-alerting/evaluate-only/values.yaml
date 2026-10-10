@@ -1,0 +1,16 @@
+# The alerting plane of tests/cases/observability-stack/evaluate-only: that case's values
+# (presets merged) kept to the keys this chart declares. tests/alerting_chart_test.go
+# derives the same file for every stack case and holds the objects byte-identical.
+stackReleaseName: observability-stack
+alertmanager:
+  enabled: false
+vmalert:
+  externalUrl: https://grafana.example
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      alertmanager:
+        enabled: false
+tenancy: {}
+notifications:
+  mode: evaluate-only

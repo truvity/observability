@@ -1,0 +1,8 @@
+# expect: Alertmanager then routes to the `blackhole` shape this chart exists to retire
+# `alertmanager.enabled` defaults to true, and this file sets no
+# `notifications` at all: the blackhole shape docs/notifications.md
+# exists to retire. vmalert would evaluate every rule and Alertmanager
+# would route the result to a receiver with no configs, and nothing
+# about the install would look unhealthy.
+stackReleaseName: observability-stack
+tenancy: {}

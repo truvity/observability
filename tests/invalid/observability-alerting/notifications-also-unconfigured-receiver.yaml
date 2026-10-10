@@ -1,0 +1,27 @@
+# expect: which is not the name of any notifications.webhook entry
+# `also[].receiver` names a webhook this chart never configured under
+# `notifications.webhook`. The bridge exists to reach a webhook beside
+# the normal route; a name that resolves to nothing is a route that
+# reaches nobody, the same failure as an unconfigured severity receiver.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  also:
+  - receiver: status-page
+    match:
+      severity: critical
+      customer_facing: 'true'

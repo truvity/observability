@@ -1,0 +1,11 @@
+# expect: vmalert would evaluate every rule and send the result nowhere
+
+stackReleaseName: observability-stack
+tenancy: {}
+alertmanager:
+  enabled: false
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      alertmanager:
+        enabled: false

@@ -1,0 +1,31 @@
+# expect: which karma.authorization.groups does not declare
+# A rule scoped to a group nobody declared applies to nobody.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+karma:
+  enabled: true
+  authentication:
+    header:
+      name: X-Auth-Request-Email
+  acl:
+    silences:
+    - action: allow
+      reason: admins
+      scope:
+        groups:
+        - admins

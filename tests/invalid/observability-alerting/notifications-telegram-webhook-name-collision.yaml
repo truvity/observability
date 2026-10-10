@@ -1,0 +1,23 @@
+# expect: also has an entry named "telegram"
+# The Telegram receiver kind beside a webhook NAMED `telegram` (the shape
+# an install bridging to Telegram through a webhook had before 0.10.0).
+# `receiver: telegram` would be ambiguous.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  telegram:
+    botTokenSecret:
+      name: example-telegram-bot
+      key: token
+    chatId: -1000000000001
+  webhook:
+  - name: telegram
+    urlSecret:
+      name: example-bridge-webhook
+      key: url
+  severities:
+    critical:
+      receiver: telegram
+    warning:
+      receiver: telegram

@@ -1,3 +1,4 @@
+{{- if eq (.Values.alerting.source | default "stack") "stack" }}
 {{- /*
 Two store alerts that are not part of `selfAlerts.enabled`'s list of
 metric names, because neither needs a name this chart could not confirm and
@@ -128,4 +129,5 @@ spec:
               primary (`first_available`) meanwhile. docs/high-availability.md.
         {{- end }}
         {{- end }}
+{{- end }}
 {{- end }}

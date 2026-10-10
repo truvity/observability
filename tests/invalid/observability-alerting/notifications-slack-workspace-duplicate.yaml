@@ -1,0 +1,25 @@
+# expect: has two entries named "acme"
+# Two workspaces with one name.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+    - name: acme
+      appTokenSecret:
+        name: example-other-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+      workspace: acme
+    warning:
+      receiver: slack
+      channel: '#alerts'
+      workspace: acme

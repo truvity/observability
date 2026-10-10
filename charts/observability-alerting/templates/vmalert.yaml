@@ -1,0 +1,338 @@
+{{- $observabilityStackEffective := include "observability-alerting.effectiveEnabled" . | fromYaml }}
+{{- if $observabilityStackEffective.vmalert }}
+{{- $root := . }}
+{{- $fullname := include "observability-alerting.fullname" . }}
+{{- $metrics := include "observability-alerting.metrics.url" . }}
+{{- $ha := include "observability-alerting.ha.primary" . }}
+{{- $haPeer := (include "observability-alerting.ha" . | fromYaml).peer }}
+{{- $notifier := .Values.alertmanager.notifierUrl | default (printf "http://vmalertmanager-%s.%s.svc:9093" $fullname .Release.Namespace) }}
+{{- /*
+`notifications.mode: evaluate-only` — docs/notifications.md, "Evaluate,
+notify nobody yet" — renders neither alerter's `notifiers:` block, and
+instead sets `-notifier.blackhole` on both: the flag vmalert has carried
+since v1.93.0 for evaluating alerting rules without sending any
+notifications, and the one setting `templates/_validate.tpl` (see
+`observability-alerting.validate.evaluateOnly`) refuses to combine with
+`spec.notifier`, `spec.notifiers` or `spec.notifier.notifierConfigRef` —
+the VictoriaMetrics operator refuses the same combination itself
+(api/operator/v1beta1/vmalert_types.go, `validateNotifierConfigs`), so
+this mirrors what the CRD would refuse if it did not.
+*/ -}}
+{{- $legacy := .Values.vmalert.acceptLegacyRuleLabels }}
+{{- $remoteNames := list }}
+{{- range .Values.vmalert.remoteEvaluators }}{{- $remoteNames = append $remoteNames .name }}{{- end }}
+{{- $evaluateOnly := eq ((.Values.notifications | default dict).mode | default "route") "evaluate-only" }}
+{{- /*
+Two vmalerts, because one process has one default rule type.
+
+Rules over metrics and rules over logs are evaluated by the same binary
+with different `-rule.defaultRuleType` values, so a single vmalert can
+serve one of them and silently ignores the other's rule objects — they
+load, they evaluate against the wrong store, and they never fire.
+
+Both carry the same three settings for the same three reasons:
+
+  remoteWrite AND remoteRead   vmalert keeps the state of every `for:`
+                               timer in the metrics store. With only
+                               remoteWrite it writes that state and never
+                               reads it back, so a restart re-arms every
+                               timer from zero — an alert with `for: 30m`
+                               becomes one that can never fire in a
+                               cluster that rolls its pods more often
+                               than that.
+  external.url                 defaults to the pod's own hostname, which
+                               makes every alert's source link dead the
+                               moment it leaves the cluster.
+  ruleSelector                 an unset selector selects NOTHING, and
+  ruleNamespaceSelector        `selectAllByDefault: true` with no selector
+                               selects EVERYTHING -- including the rules
+                               written in the other query language. Both
+                               are set here, explicitly, because the two
+                               alerters in this release must not overlap.
+
+`ha` (the primary of a pair): one vmalert per store replica, so four, not
+two. Each alerter of the peer set reads the PEER's store and keeps its
+`remoteWrite`/`remoteRead` state there, and everything else about it is
+the primary's twin: the same rule selector (so the same rules), the same
+`evaluationInterval`, the same `externalLabels` and every Alertmanager
+notified. The choice is per replica rather than every alerter against the
+primary through the proxy for three reasons. A store that is down must not
+take its alerting with it: an alerter reading through `first_available`
+would evaluate against the other replica anyway, so two of them would
+evaluate the same data and a lost replica would be invisible. Alert state
+(`ALERTS_FOR_STATE`) and recording-rule output then land in the store the
+rules read, so whichever replica answers a read has both. And no vmalert
+ever writes into the other half of the pair, which would put the same
+sample into one store from two sources. No `replica` external label is
+added, deliberately: Alertmanager groups and dedups by labels, so two
+alerters firing the same rule with the same labels page once, and a label
+that differed between them would page twice. Rules over data only one
+replica has (before the other was seeded) fire from that replica alone,
+and either firing is enough.
+*/}}
+{{- range $kind := list "metrics" "logs" }}
+{{- $isLogs := eq $kind "logs" }}
+{{- if or (not $isLogs) $root.Values.vmalert.logs.enabled }}
+{{- range $role := (ternary (list "primary" "peer") (list "primary") (eq $ha "true")) }}
+{{- $isPeer := eq $role "peer" }}
+{{- $storeMetrics := ternary $haPeer.metrics $metrics $isPeer }}
+{{- $storeLogs := ternary $haPeer.logs (include "observability-alerting.logs.url" $root) $isPeer }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: {{ printf "%s-%s" $fullname $kind }}{{ if $isPeer }}-peer{{ end }}
+  labels:
+    {{- include "observability-alerting.labels" $root | nindent 4 }}
+    observability.rule-type: {{ ternary "vlogs" "prometheus" $isLogs }}
+spec:
+  replicaCount: 1
+  {{- if $ha }}
+  {{- /*
+  The two alerters of a kind share a pod label to spread on. Soft, for the
+  same reason the proxy's spread is: the pair exists to survive a zone, and
+  a hard constraint would leave the survivor unschedulable.
+  */}}
+  podMetadata:
+    labels:
+      observability.vmalert: {{ $kind }}
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          observability.vmalert: {{ $kind }}
+  {{- end }}
+  evaluationInterval: {{ $root.Values.interval }}
+  securityContext:
+    {{- include "observability-alerting.restrictedSecurityContext" $root | nindent 4 }}
+  {{- /*
+    The two alerters speak different query languages, and a rule loaded by
+    the wrong one is fatal rather than ignored: vmalert parses every rule
+    at startup and EXITS on the first it cannot parse, so one PromQL rule
+    reaching the logs alerter (which runs with `-rule.defaultRuleType=vlogs`)
+    crash-loops it and takes every log rule down with it.
+
+    `selectAllByDefault: true` with no selector is what does that, and it
+    does it only once somebody creates rules -- an install with none looks
+    perfectly healthy. Measured on a live install: 23 PromQL rules from the
+    metrics subchart, all of them loaded by BOTH alerters.
+
+    So selection is by label, in both directions. The metrics alerter takes
+    everything that is not marked as LogsQL, which keeps the unlabelled
+    rules that other charts ship; the logs alerter takes only what is
+    marked. `NotIn` matches an object that does not carry the key at all --
+    verified against an API server, not assumed.
+
+    A LogsQL rule MUST carry `observability.truvity.io/evaluator: logs`
+    to be evaluated; while `vmalert.acceptLegacyRuleLabels` is true (the
+    default, for two minors) the logs alerter instead takes the old
+    spelling `observability.rule-type: vlogs`, and a rule must carry that
+    one (platform-alerts and observability-rum emit both). One selector
+    cannot be a union of two labels, so the switch picks the label the
+    LOGS alerter requires; the metrics alerter accepts both spellings in
+    either mode. docs/contracts.md, "Rule ownership labels".
+  */}}
+  ruleSelector:
+    {{- if and $isLogs (not $legacy) }}
+    matchLabels:
+      observability.truvity.io/evaluator: logs
+    {{- else if $isLogs }}
+    matchLabels:
+      observability.rule-type: vlogs
+    matchExpressions:
+      {{- /* Never a rule another evaluator owns. NotIn also matches a rule
+             that carries no evaluator label at all. */}}
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          {{- range (concat (list "metrics") $remoteNames) }}
+          - {{ . | quote }}
+          {{- end }}
+    {{- else }}
+    matchExpressions:
+      {{- /* The local metrics alerter takes a rule that names it
+             (`evaluator: metrics`) AND every rule that names no evaluator
+             (the unlabelled rules other charts ship). One selector cannot
+             say "this value or no label", so it says what is refused:
+             NotIn the logs alerter and every remote evaluator. Rules owned
+             by a remote evaluator (below) are evaluated there, against the
+             store they were written for; here they would be evaluated
+             against the wrong one and see their metric absent. */}}
+      - key: observability.truvity.io/evaluator
+        operator: NotIn
+        values:
+          {{- range (concat (list "logs") $remoteNames) }}
+          - {{ . | quote }}
+          {{- end }}
+      {{- if $legacy }}
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
+      {{- end }}
+    {{- end }}
+  {{- /* Empty selector: every namespace, which is what the release did
+         before selection was narrowed by label. */}}
+  ruleNamespaceSelector: {}
+  resources:
+    {{- include "observability-alerting.resources" $root.Values.vmalert.resources | nindent 4 }}
+  datasource:
+    url: {{ ternary $storeLogs $storeMetrics $isLogs | quote }}
+    basicAuth:
+      {{- include "observability-alerting.targetAuth" $root | nindent 6 }}
+  remoteWrite:
+    url: {{ $storeMetrics | quote }}
+    basicAuth:
+      {{- include "observability-alerting.targetAuth" $root | nindent 6 }}
+  remoteRead:
+    url: {{ $storeMetrics | quote }}
+    basicAuth:
+      {{- include "observability-alerting.targetAuth" $root | nindent 6 }}
+  {{- if not $evaluateOnly }}
+  notifiers:
+    {{- include "observability-alerting.vmalert.notifiers" $root | trim | nindent 4 }}
+  {{- end }}
+  {{- with $root.Values.vmalert.externalLabels }}
+  externalLabels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- /*
+    Built as a map and emitted only when it has something in it. Written
+    the other way round -- the key always, its contents conditionally --
+    the metrics alerter renders `extraArgs:` with an empty body, which is
+    null, and the CustomResourceDefinition types the field as an object:
+    the API server refuses the whole object, and ArgoCD reports a sync
+    that fails on one resource while every other object in the release is
+    already healthy. The logs alerter hid it, because its one flag is
+    unconditional.
+  */}}
+  {{- $extraArgs := dict }}
+  {{- if $evaluateOnly }}
+  {{- $_ := set $extraArgs "notifier.blackhole" "true" }}
+  {{- end }}
+  {{- if $isLogs }}
+  {{- $_ := set $extraArgs "rule.defaultRuleType" "vlogs" }}
+  {{- /*
+    `-rule.evalDelay` defaults to 30s, chosen to match
+    `-search.latencyOffset` — a VictoriaMetrics flag that withholds the
+    newest samples of a metrics query because they may still be
+    incomplete. VictoriaLogs has no such flag and withholds nothing, so
+    the logs alerter inheriting that default delays every log-based alert
+    by 30 seconds for a latency the log store does not have.
+  */}}
+  {{- $_ := set $extraArgs "rule.evalDelay" $root.Values.vmalert.logs.evalDelay }}
+  {{- end }}
+  {{- with $root.Values.vmalert.externalUrl }}
+  {{- $_ := set $extraArgs "external.url" . }}
+  {{- end }}
+  {{- with $extraArgs }}
+  extraArgs:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /*
+Remote evaluators: one extra metrics vmalert per entry of
+`vmalert.remoteEvaluators`, evaluating the VMRules that carry
+`observability.truvity.io/evaluator: <name>` against ANOTHER metrics store
+and notifying through THIS install's Alertmanager (docs/notifications.md,
+"Evaluating another store's rules"). See templates/_validate.tpl
+(`observability-alerting.validate.remoteEvaluators`) for what is refused.
+
+Disjointness: the main metrics alerter's selector refuses every rule that
+carries the `observability.truvity.io/evaluator` key, whatever its value,
+and each evaluator selects exactly one value of it (`metrics` and `logs` are the local alerters' own and are refused as evaluator names), so no rule is ever
+evaluated by two alerters and none of these is evaluated against the
+local store. The selector cannot be empty by construction.
+
+Notifiers are the main alerter's own (`observability-alerting.vmalert.notifiers`),
+so the Alertmanager pair, `alertmanager.notifierUrl` and `notifications.mode`
+apply unchanged. remoteWrite and remoteRead are the LOCAL store, like the
+main alerter's: `ALERTS`/`ALERTS_FOR_STATE` are written where the alerts
+are read from, and a restarted evaluator restores its `for:` timers.
+
+Single replica, no peer twin, also under `ha`: a pair exists so the loss of
+one STORE does not stop evaluation, and an evaluator reads one remote store
+that is its only source of truth; a twin would read the same store, notify
+the same Alertmanager twice and add nothing. The pod is rescheduled like the
+main alerter's and restores state from the local store.
+*/ -}}
+{{- if and $observabilityStackEffective.vmalert .Values.vmalert.remoteEvaluators }}
+{{- $root := . }}
+{{- $fullname := include "observability-alerting.fullname" . }}
+{{- $metrics := include "observability-alerting.metrics.url" . }}
+{{- range $ev := $root.Values.vmalert.remoteEvaluators }}
+{{- $auth := $ev.datasource.auth | default dict }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: {{ printf "%s-remote-%s" $fullname $ev.name }}
+  labels:
+    {{- include "observability-alerting.labels" $root | nindent 4 }}
+    observability.rule-type: prometheus
+    observability.truvity.io/evaluator: {{ $ev.name }}
+spec:
+  replicaCount: 1
+  evaluationInterval: {{ $ev.evaluationInterval | default $root.Values.interval }}
+  securityContext:
+    {{- include "observability-alerting.restrictedSecurityContext" $root | nindent 4 }}
+  ruleSelector:
+    matchLabels:
+      observability.truvity.io/evaluator: {{ $ev.name }}
+    {{- if $root.Values.vmalert.acceptLegacyRuleLabels }}
+    matchExpressions:
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
+    {{- end }}
+  ruleNamespaceSelector: {}
+  resources:
+    {{- include "observability-alerting.resources" $root.Values.vmalert.resources | nindent 4 }}
+  datasource:
+    url: {{ $ev.datasource.url | quote }}
+    {{- with $auth.bearer }}
+    bearerTokenSecret:
+      name: {{ .secretName | quote }}
+      key: {{ .key | quote }}
+    {{- end }}
+    {{- with $auth.basic }}
+    basicAuth:
+      username:
+        name: {{ .secretName | quote }}
+        key: {{ .usernameKey | quote }}
+      password:
+        name: {{ .secretName | quote }}
+        key: {{ .passwordKey | quote }}
+    {{- end }}
+    {{- with $ev.datasource.caBundle }}
+    tlsConfig:
+      ca:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+  remoteWrite:
+    url: {{ $metrics | quote }}
+    basicAuth:
+      {{- include "observability-alerting.targetAuth" $root | nindent 6 }}
+  remoteRead:
+    url: {{ $metrics | quote }}
+    basicAuth:
+      {{- include "observability-alerting.targetAuth" $root | nindent 6 }}
+  notifiers:
+    {{- include "observability-alerting.vmalert.notifiers" $root | trim | nindent 4 }}
+  {{- $labels := merge (deepCopy ($ev.externalLabels | default dict)) (deepCopy ($root.Values.vmalert.externalLabels | default dict)) }}
+  {{- with $labels }}
+  externalLabels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $root.Values.vmalert.externalUrl }}
+  extraArgs:
+    external.url: {{ . | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

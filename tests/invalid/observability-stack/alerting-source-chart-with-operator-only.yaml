@@ -1,0 +1,5 @@
+# expect: `alerting.source` is "chart" with `mode: operator-only`
+# `operator-only` renders none of the alerting plane either.
+mode: operator-only
+alerting:
+  source: chart

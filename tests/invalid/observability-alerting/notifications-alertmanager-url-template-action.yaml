@@ -1,0 +1,26 @@
+# expect: notifications.alertmanagerUrl is
+# The URL is embedded in an Alertmanager template: no actions.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+    - name: partner
+      appTokenSecret:
+        name: example-partner-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+      workspace: acme
+    warning:
+      receiver: slack
+      channel: '#alerts'
+      workspace: acme
+  alertmanagerUrl: https://alertmanager.example/{{ .Foo }}

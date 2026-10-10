@@ -1,0 +1,75 @@
+{{- /*
+The alert the outside watcher waits for.
+
+`vector(1)` is always true, so this fires for as long as rules are being
+evaluated at all — the METRICS vmalert (see templates/vmalert.yaml's
+ruleSelector: this rule carries no `observability.rule-type: vlogs`
+label, so the metrics alerter is the one that loads it). It lives here
+rather than in charts/platform-alerts because it is not a rule about the
+estate: it is this install reporting that it is still alive.
+
+Deliberately its OWN template, gated on `vmalert.enabled` alone rather
+than nested inside `alertmanager.enabled` the way it used to be (and
+still is, in every rendered manifest before this file existed — see
+CHANGELOG). This alert is read two ways, and only one of them needs
+Alertmanager at all:
+
+  PUSHED   an install with `alertmanager.enabled: true` and
+           `alertmanager.watchdog.secretName` set routes it to a webhook
+           every `alertmanager.watchdog.repeatInterval` — the receiver
+           and route templates/vmalertmanager.yaml still renders.
+  PULLED   a reader with no Alertmanager at all — `notifications.mode:
+           evaluate-only` REFUSES `alertmanager.enabled: true` (see
+           `observability-alerting.validate.evaluateOnly`), so an
+           evaluate-only install renders no VMAlertmanager and no
+           watchdog route — still has this rule evaluating and can be
+           read directly off vmalert's own `/api/v1/alerts` (see
+           `tenancy.alertReaders`, docs/statusbox.md "internal → status,
+           pulled"). A Watchdog trapped inside `alertmanager.enabled`
+           would never exist to read on an evaluate-only install, which
+           is exactly the gap this template closes.
+
+`vmalert.watchdog.enabled` defaults to true: an estate on `route` mode
+with a real webhook receiver already asked for Alertmanager to push this
+same alert, so rendering the rule it pushes is not a new fact — only
+NOT rendering it (set this to false) is a decision an estate has to make
+on purpose.
+
+ONE Watchdog, not two: `victoria-metrics-k8s-stack`'s own vendored
+default rule set — ON by default (see `defaultRules.create`'s own doc
+comment in values.yaml) — already carries one, in its `general.rules`
+group, upstream's own naming. This renders ONLY when that is not the
+case (`observability-alerting.vendoredWatchdogPresent` in _helpers.tpl):
+`defaultRules` turned off entirely, or its `general.rules` group
+specifically. Turning both this AND the vendored one off at once is
+refused (`observability-alerting.validate.watchdogSource`): the status
+box's deadman needs exactly one, from somewhere.
+*/}}
+{{- $observabilityStackEffective := include "observability-alerting.effectiveEnabled" . | fromYaml }}
+{{- if and $observabilityStackEffective.vmalert .Values.vmalert.watchdog.enabled (not (include "observability-alerting.vendoredWatchdogPresent" .)) }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ include "observability-alerting.fullname" . }}-watchdog
+  labels:
+    {{- include "observability-alerting.labels" . | nindent 4 }}
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: observability-stack.watchdog
+      interval: {{ .Values.interval }}
+      rules:
+        - alert: Watchdog
+          expr: vector(1)
+          labels:
+            severity: none
+          annotations:
+            summary: "This alert is always firing; its absence is the signal"
+            description: >-
+              The heartbeat of this observability stack. Something outside the
+              cluster watches for it — pushed through Alertmanager, or pulled
+              directly off vmalert's own read API — and pages when it stops
+              arriving: an alerting path that has died cannot report that it
+              has died.
+{{- end }}

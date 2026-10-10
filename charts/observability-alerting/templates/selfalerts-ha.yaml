@@ -1,0 +1,131 @@
+{{- /*
+Two store alerts that are not part of `selfAlerts.enabled`'s list of
+metric names, because neither needs a name this chart could not confirm and
+each has its own switch:
+
+  StoreMemoryNearLimit     `selfAlerts.storeMemory.enabled`, either mode.
+  StoreReplicaDivergence   `selfAlerts.divergence.enabled`, the primary of
+                           a pair only.
+
+One VMRule, evaluated by the metrics vmalert like every other rule here
+(none is marked as LogsQL). Rendered by the release that owns the pods it
+watches: the memory rule of a replica release is that release's own.
+*/ -}}
+{{- $sa := .Values.selfAlerts -}}
+{{- $primary := include "observability-alerting.ha.primary" . -}}
+{{- $memory := $sa.storeMemory.enabled -}}
+{{- $divergence := and $sa.divergence.enabled $primary -}}
+{{- if or $memory $divergence }}
+{{- $fullname := include "observability-alerting.fullname" . }}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ printf "%s-store-alerts" $fullname | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-alerting.labels" . | nindent 4 }}
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: observability-stack.stores
+      interval: {{ .Values.interval }}
+      rules:
+        {{- if $memory }}
+        {{- /*
+        The pods of THIS release's stores, by name: the VMSingle's pod is
+        `vmsingle-<VMSingle name>-<hash>`, the two StatefulSets' are
+        `<name>-<ordinal>`. Grouped by the cluster label as well, because
+        one store holds several clusters' series and a pod name repeats
+        across them.
+        */}}
+        {{- $pods := list }}
+        {{- if and $vmks.enabled ($vmks.vmsingle).enabled }}
+        {{- $pods = append $pods (printf "vmsingle-%s-.+" (include "observability-alerting.vmks.fullname" .)) }}
+        {{- end }}
+        {{- if (index .Values "victoria-logs-single").enabled }}
+        {{- $pods = append $pods (printf "%s-[0-9]+" (include "observability-alerting.logs.fullname" .)) }}
+        {{- end }}
+        {{- if (index .Values "victoria-traces-single").enabled }}
+        {{- $pods = append $pods (printf "%s-[0-9]+" (include "observability-alerting.traces.fullname" .)) }}
+        {{- end }}
+        {{- $by := printf "%s, namespace, pod, container" .Values.tenancy.clusterLabel }}
+        # StoreMemoryNearLimit. The working set of a store container is
+        # the number the kernel's OOM killer reads, and a store killed
+        # under its limit restarts with a cold cache; on a pair it also
+        # leaves a gap the writers' queues have to refill.
+        #
+        # Healthy range: under {{ $sa.storeMemory.ratio }} of the limit. The
+        # stores fill the cache they are allowed, so a working set that
+        # stays above it is a limit that is too small.
+        - alert: StoreMemoryNearLimit
+          expr: >-
+            max by ({{ $by }}) (container_memory_working_set_bytes{namespace={{ .Release.Namespace | quote }}, container!="", pod=~{{ printf "^(%s)$" (join "|" $pods) | quote }}})
+            /
+            max by ({{ $by }}) (kube_pod_container_resource_limits{namespace={{ .Release.Namespace | quote }}, resource="memory", pod=~{{ printf "^(%s)$" (join "|" $pods) | quote }}})
+            > {{ $sa.storeMemory.ratio }}
+          for: {{ $sa.storeMemory.for }}
+          labels:
+            severity: {{ $sa.storeMemory.severity }}
+          annotations:
+            summary: "A store container is above {{ printf "%.0f" (mulf $sa.storeMemory.ratio 100) }}% of its memory limit"
+            description: >-
+              {{ "{{ $labels.pod }}" }} ({{ "{{ $labels.container }}" }}) has been above
+              {{ $sa.storeMemory.ratio }} of its memory limit for {{ $sa.storeMemory.for }}.
+              Raise the store's memory request and limit (they are equal), or
+              look for a query or a cardinality burst that is holding it.
+        {{- end }}
+        {{- if $divergence }}
+        {{- $a := include "observability-alerting.pair.replica" . }}
+        {{- $b := include "observability-alerting.pair.otherReplica" . }}
+        {{- $w := $sa.divergence.window }}
+        {{- $t := $sa.divergence.threshold }}
+        {{- /* Keep the cluster label: a bare sum() drops it, and the alert reaches Alertmanager with no cluster to route on (the v0.45.1 class). Both sides group by it alone, so they still match one to one. */ -}}
+        {{- $sumBy := ternary (printf " by (%s)" .Values.tenancy.clusterLabel) "" (ne .Values.tenancy.clusterLabel "") }}
+        {{- $stores := list }}
+        {{- if and $vmks.enabled ($vmks.vmsingle).enabled }}
+        {{- $matchers := ternary (printf ", %s" $sa.divergence.metrics.matchers) "" (ne $sa.divergence.metrics.matchers "") }}
+        {{- $stores = append $stores (dict "alert" "Metric" "name" "metrics" "metric" $sa.divergence.metrics.metric "matchers" $matchers) }}
+        {{- end }}
+        {{- if (index .Values "victoria-logs-single").enabled }}
+        {{- $stores = append $stores (dict "alert" "Log" "name" "log" "metric" $sa.divergence.logs.metric "matchers" "") }}
+        {{- end }}
+        {{- if (index .Values "victoria-traces-single").enabled }}
+        {{- $stores = append $stores (dict "alert" "Trace" "name" "trace" "metric" $sa.divergence.traces.metric "matchers" "") }}
+        {{- end }}
+        {{- range $s := $stores }}
+        # {{ $s.alert }}StoreReplicaDivergence. The two {{ $s.name }} stores of the
+        # pair take the same writes, so over {{ $w }} the rows each ingested
+        # are the same up to the writers' queue skew. This fires when the
+        # ratio of replica "{{ $a }}" to replica "{{ $b }}" leaves 1 +/- {{ $t }}: a
+        # tolerance, not an equality. A replica that is down has no series
+        # and fires nothing here (that is `up == 0`'s job); a writer that
+        # lost one destination, or a replica that dropped rows, does.
+        #
+        # MEASURE A WEEK FIRST: {{ $t }} is a conservative starting value, not
+        # a measured one. Healthy range: the ratio sits near 1, with
+        # excursions while a recovered replica's writers drain their queues.
+        - alert: {{ $s.alert }}StoreReplicaDivergence
+          expr: >-
+            abs(
+              1 -
+              sum{{ $sumBy }}(rate({{ $s.metric }}{observability_replica={{ $a | quote }}{{ $s.matchers }}}[{{ $w }}]))
+              /
+              sum{{ $sumBy }}(rate({{ $s.metric }}{observability_replica={{ $b | quote }}{{ $s.matchers }}}[{{ $w }}]))
+            ) > {{ $t }}
+          for: {{ $sa.divergence.for }}
+          labels:
+            severity: {{ $sa.divergence.severity }}
+          annotations:
+            summary: "The two {{ $s.name }} stores of the pair are ingesting different amounts"
+            description: >-
+              {{ $s.metric }} over {{ $w }} differs between replica
+              "{{ $a }}" and replica "{{ $b }}" by more than {{ $t }} of the other.
+              One of them is not receiving what the writers send it (a lost
+              writer destination, a full queue, a store refusing rows) or
+              is still catching up after a restart. A recovered replica
+              lies until its writers' queues drain: reads stay on the
+              primary (`first_available`) meanwhile. docs/high-availability.md.
+        {{- end }}
+        {{- end }}
+{{- end }}

@@ -1,0 +1,83 @@
+# The alerting plane of tests/cases/observability-stack/ha: that case's values
+# (presets merged) kept to the keys this chart declares. tests/alerting_chart_test.go
+# derives the same file for every stack case and holds the objects byte-identical.
+stackReleaseName: observability-stack
+ha:
+  enabled: true
+  peer:
+    metrics: http://vmsingle-replica-victoria-metrics-k8s-stack.observability.svc:8428
+    logs: http://replica-victoria-logs-single-server.observability.svc:9428
+    traces: http://replica-vt-single-server.observability.svc:10428
+tenancy: {}
+vmalert:
+  externalUrl: https://alerts.example.com
+alertmanager:
+  replicaCount: 2
+  watchdog:
+    secretName: example-watchdog-receiver
+    key: url
+notifications:
+  externalUrl: https://alerts.example.com
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+selfAlerts:
+  storeMemory:
+    enabled: true
+  divergence:
+    enabled: true
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      podMetadata:
+        labels:
+          observability.pair: observability-metrics
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            observability.pair: observability-metrics
+victoria-logs-single:
+  server:
+    podLabels:
+      observability.pair: observability-logs
+    topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          observability.pair: observability-logs
+    serviceMonitor:
+      relabelings:
+      - action: replace
+        targetLabel: observability_replica
+        replacement: a
+victoria-traces-single:
+  server:
+    podLabels:
+      observability.pair: observability-traces
+    topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          observability.pair: observability-traces
+    serviceMonitor:
+      relabelings:
+      - action: replace
+        targetLabel: observability_replica
+        replacement: a

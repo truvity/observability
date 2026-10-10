@@ -1,0 +1,24 @@
+# expect: sets `chatId` or `messageThreadId` but its receiver is "slack"
+# A Telegram chat id on a tier that goes to Slack: read by nothing.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  telegram:
+    botTokenSecret:
+      name: example-telegram-bot
+      key: token
+    chatId: -1000000000001
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+      chatId: -1000000000002
+    warning:
+      receiver: telegram

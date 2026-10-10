@@ -1,0 +1,22 @@
+# expect: overrides a channel, but notifications.severities.critical.receiver is "telegram"
+# A project route overriding the channel of a tier that goes to Telegram.
+# A route's per-tier value is a Slack channel; on a Telegram tier nothing
+# reads it.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  telegram:
+    botTokenSecret:
+      name: example-telegram-bot
+      key: token
+    chatId: -1000000000001
+  severities:
+    critical:
+      receiver: telegram
+    warning:
+      receiver: telegram
+  routes:
+  - match:
+      k8s_namespace_name: example-app
+    critical: '#example-app'

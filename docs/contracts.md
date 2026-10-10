@@ -102,6 +102,19 @@ off by default, because vendored rules carry no label and are still
 evaluated; a component chart's CI turns it on. The `rule-type` value check
 is always on.
 
+### Alerting plane object names (stable; who renders them moves)
+
+The vmalerts, the VMAlertmanager, karma, the Watchdog rule, the store
+self-alerts and the Alertmanager ServiceMonitor keep their kind, name and
+namespace whichever chart renders them: `observability-stack` (the default) or
+`observability-alerting` (restructure step 5, `alerting.source: chart`). The
+Services the operator derives from them (`vmalert-<fullname>-metrics`,
+`vmalertmanager-<fullname>`) are therefore stable too, and the proxy's
+`alertReaders` and `vmalertAPI` routes keep pointing at them. A component
+never depends on which chart owns them; moving the owner is an Application
+switch that adopts the objects in place (docs/adoption.md, 0.71.0). No version
+bump: this records a fact the chart already kept.
+
 ### Identity kinds (stable)
 
 `pkg/tenancy` turns "who may read which telemetry" into a vmauth

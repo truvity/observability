@@ -1,0 +1,41 @@
+# The alerting plane of tests/cases/observability-stack/notifications-telegram-slack: that case's values
+# (presets merged) kept to the keys this chart declares. tests/alerting_chart_test.go
+# derives the same file for every stack case and holds the objects byte-identical.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  telegram:
+    botTokenSecret:
+      name: example-telegram-bot
+      key: bot-token
+    chatId: -1000000000001
+    parseMode: MarkdownV2
+    sendResolved: false
+    message: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }}'
+  webhook:
+  - name: status-page
+    urlSecret:
+      name: example-status-webhook
+      key: url
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: telegram
+      chatId: -1000000000002
+  routes:
+  - match:
+      k8s_namespace_name: example-app
+    critical: '#example-app'
+  also:
+  - receiver: status-page
+    match:
+      severity: critical

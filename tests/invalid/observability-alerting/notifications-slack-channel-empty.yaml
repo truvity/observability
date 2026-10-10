@@ -1,0 +1,20 @@
+# expect: at '/notifications/severities/critical/channel'
+# A Slack destination with an empty channel: Slack refuses every message
+# and the route looks wired up.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: ''
+    warning:
+      receiver: slack
+      channel: '#alerts'

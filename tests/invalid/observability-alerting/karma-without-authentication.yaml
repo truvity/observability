@@ -1,0 +1,21 @@
+# expect: karma.authentication.header.name
+# karma on with no header name and no `none` acknowledgement: an anonymous console by accident.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+karma:
+  enabled: true

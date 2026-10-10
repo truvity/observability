@@ -1,3 +1,4 @@
+{{- if eq (.Values.alerting.source | default "stack") "stack" }}
 {{- /*
 The alert the outside watcher waits for.
 
@@ -72,4 +73,5 @@ spec:
               directly off vmalert's own read API — and pages when it stops
               arriving: an alerting path that has died cannot report that it
               has died.
+{{- end }}
 {{- end }}

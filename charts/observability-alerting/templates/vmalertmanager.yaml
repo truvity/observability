@@ -1,0 +1,547 @@
+{{- $observabilityStackEffective := include "observability-alerting.effectiveEnabled" . | fromYaml }}
+{{- if $observabilityStackEffective.alertmanager }}
+{{- $fullname := include "observability-alerting.fullname" . }}
+{{- $watchdog := .Values.alertmanager.watchdog }}
+{{- /*
+Alertmanager, and the deadman's route out of the cluster.
+
+A Watchdog alert fires continuously while this stack is healthy, and
+something OUTSIDE the cluster pages when it STOPS arriving. That is the
+only alert that can see the alerting path itself failing: every other
+rule here is delivered by the machinery it would be reporting on.
+
+The receiver's URL is a capability to page, so it is a Secret. It is
+mounted and read with `url_file` rather than interpolated into the
+config, because a config rendered by Helm is in the release's manifest,
+in `helm get manifest`, and in whatever stores the release history.
+*/}}
+{{- $n := .Values.notifications | default dict }}
+{{- $slack := $n.slack | default dict }}
+{{- $telegram := $n.telegram | default dict }}
+{{- $webhooks := $n.webhook | default list }}
+{{- $severities := $n.severities | default dict }}
+{{- $routes := $n.routes | default list }}
+{{- $also := $n.also | default list }}
+{{- $drop := $n.drop | default list }}
+{{- $catchAll := $n.catchAll }}
+{{- /*
+An alert born outside a cluster (alert-ingress) carries `source` instead
+of a cluster. When `notifications.routeLabels` lists it, the default
+grouping adds it, so two sourced alerts with one alertname do not fold
+into one notification. Without `source` in routeLabels, and for any
+`groupBy` that is not the default list, the grouping is exactly what it was.
+*/}}
+{{- $defaultGroupBy := list "alertname" "k8s_cluster_name" "k8s_namespace_name" }}
+{{- $groupBy := $n.groupBy | default $defaultGroupBy }}
+{{- if and (eq (toJson $groupBy) (toJson $defaultGroupBy)) (has "source" ($n.routeLabels | default list)) }}
+{{- $groupBy = append $groupBy "source" }}
+{{- end }}
+{{- $inhibit := $n.inhibit | default dict }}
+{{- $inhibitEnabled := ternary $inhibit.enabled true (hasKey $inhibit "enabled") }}
+{{- $inhibitEqual := $inhibit.equal | default (list "k8s_cluster_name" "k8s_namespace_name") }}
+{{- $inhibitRequireLabels := ternary $inhibit.requireLabels true (hasKey $inhibit "requireLabels") }}
+{{- /*
+`notifications.externalUrl` defaults to `vmalert.externalUrl`: they are
+one fact (see the refusal in _validate.tpl), and a consumer who already
+set the vmalert one gets a working Grafana link in Slack for free.
+*/}}
+{{- $externalUrl := $n.externalUrl | default .Values.vmalert.externalUrl }}
+{{- $console := $n.console | default "alertmanager" }}
+{{- $silenceMinutes := $n.silenceMinutes | default 60 | int }}
+{{- /*
+Slack destinations: one receiver per distinct (workspace, channel, mention) any
+severity tier, the catch-all or a route's per-tier override resolves to.
+A bot token belongs to one workspace, so the workspace is half of what a
+destination IS; `slackTarget` resolves an omitted workspace to the one
+declared workspace (the refusal for two or more is in _validate.tpl).
+*/}}
+{{- $slackWorkspaces := $slack.workspaces | default list }}
+{{- $slackTargets := dict }}
+{{- range $tier, $cfg := $severities }}
+{{- if eq $cfg.receiver "slack" }}
+{{- $target := include "observability-alerting.notifications.slackTarget" (list $ $cfg "") | fromYaml }}
+{{- $_ := set $slackTargets (include "observability-alerting.notifications.slackReceiver" $target) $target }}
+{{- end }}
+{{- end }}
+{{- if and $catchAll (eq $catchAll.receiver "slack") }}
+{{- $target := include "observability-alerting.notifications.slackTarget" (list $ $catchAll "") | fromYaml }}
+{{- $_ := set $slackTargets (include "observability-alerting.notifications.slackReceiver" $target) $target }}
+{{- end }}
+{{- /*
+An `also` entry that delivers to Slack resolves to the same kind of
+destination a tier does, so it shares the receiver a primary route
+already renders for the same (workspace, channel, mention).
+*/}}
+{{- range $a := $also }}
+{{- if eq $a.receiver "slack" }}
+{{- $target := include "observability-alerting.notifications.slackTarget" (list $ $a "") | fromYaml }}
+{{- $_ := set $slackTargets (include "observability-alerting.notifications.slackReceiver" $target) $target }}
+{{- end }}
+{{- end }}
+{{- range $r := $routes }}
+{{- range $tier := list "critical" "warning" }}
+{{- $override := index $r $tier }}
+{{- if $override }}
+{{- $tcfg := index $severities $tier }}
+{{- if and $tcfg (eq $tcfg.receiver "slack") }}
+{{- $target := include "observability-alerting.notifications.slackTarget" (list $ $tcfg $override) | fromYaml }}
+{{- $_ := set $slackTargets (include "observability-alerting.notifications.slackReceiver" $target) $target }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /*
+The Slack delivery self-alert's receiver (`notifications.slack.failureReceiver`):
+a webhook's name, or `telegram`. Never Slack — that is refused — because
+the alert exists to say Slack is not delivering. Unset, the alert goes to
+the null receiver: it is visible in vmalert and reaches nobody, which
+docs/notifications.md states as the gap it is.
+*/}}
+{{- $failureReceiver := "notifications-none" }}
+{{- if $slack.failureReceiver }}
+{{- $failureReceiver = $slack.failureReceiver }}
+{{- end }}
+{{- /*
+Telegram targets: one receiver per distinct (chat, thread) a severity
+tier resolves to, named from the pair itself for the same reason a
+Slack receiver is named from its channel — two tiers landing in one
+chat render one receiver, not two. A route never overrides a Telegram
+tier (refused in _validate.tpl), so severities are the only source.
+*/}}
+{{- $telegramTargets := dict }}
+{{- if ($telegram.botTokenSecret).name }}
+{{- range $tier, $cfg := $severities }}
+{{- if eq $cfg.receiver "telegram" }}
+{{- $target := include "observability-alerting.notifications.telegramTarget" (list $telegram $cfg) | fromYaml }}
+{{- $_ := set $telegramTargets (include "observability-alerting.notifications.telegramReceiver" $target) $target }}
+{{- end }}
+{{- end }}
+{{- if and $catchAll (eq $catchAll.receiver "telegram") }}
+{{- $target := include "observability-alerting.notifications.telegramTarget" (list $telegram $catchAll) | fromYaml }}
+{{- $_ := set $telegramTargets (include "observability-alerting.notifications.telegramReceiver" $target) $target }}
+{{- end }}
+{{- if and $slackWorkspaces (eq ($slack.failureReceiver | default "") "telegram") }}
+{{- $target := include "observability-alerting.notifications.telegramTarget" (list $telegram (dict)) | fromYaml }}
+{{- $failureReceiver = include "observability-alerting.notifications.telegramReceiver" $target }}
+{{- $_ := set $telegramTargets $failureReceiver $target }}
+{{- end }}
+{{- end }}
+{{- /*
+The fallback of every node in the primary tree: `notifications-none`
+unless `catchAll` names a receiver, in which case an alert no tier route
+claimed — `info`, no severity, a tier `severities` leaves out — lands
+there rather than nowhere.
+*/}}
+{{- $fallback := "notifications-none" }}
+{{- if $catchAll }}
+{{- $fallback = include "observability-alerting.notifications.receiverFor" (list $ (dict "catchAll" $catchAll) "catchAll" "") }}
+{{- end }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlertmanager
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "observability-alerting.labels" . | nindent 4 }}
+spec:
+  replicaCount: {{ .Values.alertmanager.replicaCount }}
+  {{- if gt (int .Values.alertmanager.replicaCount) 1 }}
+  {{- /*
+  A PAIR (docs/notifications.md, "Alertmanager pair"). The operator runs
+  the replicas as a StatefulSet and joins them into one gossip mesh on
+  9094, so a notification is sent once however many replicas received
+  the alert. What the mesh cannot do is keep both replicas on one node:
+  that is spread and a budget, below. Every default is overridable.
+  */}}
+  {{- $am := .Values.alertmanager }}
+  {{- $amSelector := dict "app.kubernetes.io/name" "vmalertmanager" "app.kubernetes.io/instance" $fullname }}
+  podDisruptionBudget:
+    {{- toYaml ($am.podDisruptionBudget | default (dict "maxUnavailable" 1)) | nindent 4 }}
+  affinity:
+    {{- if $am.affinity }}
+    {{- toYaml $am.affinity | nindent 4 }}
+    {{- else }}
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                {{- toYaml $amSelector | nindent 16 }}
+    {{- end }}
+  topologySpreadConstraints:
+    {{- if $am.topologySpreadConstraints }}
+    {{- toYaml $am.topologySpreadConstraints | nindent 4 }}
+    {{- else }}
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          {{- toYaml $amSelector | nindent 10 }}
+    {{- end }}
+  {{- /*
+  A replica that is rescheduled returns at a new IP; the survivor keeps
+  the old address as a failed peer until --cluster.reconnect-timeout
+  (upstream default 6h) and alertmanager_cluster_failed_peers stays above
+  0 on a healthy mesh. The operator maps extraArgs keys, without dashes,
+  to Alertmanager flags.
+  */}}
+  extraArgs:
+    cluster.reconnect-timeout: {{ $am.cluster.reconnectTimeout | quote }}
+  {{- end }}
+  securityContext:
+    {{- include "observability-alerting.restrictedSecurityContext" . | nindent 4 }}
+  resources:
+    {{- include "observability-alerting.resources" .Values.alertmanager.resources | nindent 4 }}
+  selectAllByDefault: false
+  {{- /*
+  The operator's own VMServiceScrape is off: templates/
+  alertmanager-scrape.yaml renders the ServiceMonitor that replaces it
+  (docs/safety.md, "Scrape objects are always the Prometheus Operator
+  kinds"). Not a value: nothing here could usefully turn it back on.
+  */}}
+  disableSelfServiceScrape: true
+  {{- /*
+  This Alertmanager's own externally reachable base URL, and only that:
+  `notifications.alertmanagerUrl`. It is NOT `vmalert.externalUrl`, which
+  is the Grafana base and a different fact. Unset, Alertmanager keeps its
+  default (the pod address), and the message carries no silence link.
+  */}}
+  {{- with $n.alertmanagerUrl }}
+  externalURL: {{ . | quote }}
+  {{- end }}
+  {{- if or $watchdog.secretName $slackWorkspaces ($telegram.botTokenSecret).name $webhooks }}
+  {{- /*
+  Mounted here rather than through the CR's own `secrets` list, which
+  would put it under a path this repository's leak canary bans outright —
+  and the canary is right to: a path with that shape is the one thing in
+  a manifest that names where an estate keeps its secrets. A manifest
+  that contains a webhook is a webhook in git, so every receiver's URL
+  or token arrives as a mounted file and is read with `*_url_file` /
+  `*_token_file`, never interpolated into the config below.
+  */}}
+  volumes:
+    {{- if $watchdog.secretName }}
+    - name: watchdog
+      secret:
+        secretName: {{ $watchdog.secretName | quote }}
+    {{- end }}
+    {{- range $w := $slackWorkspaces }}
+    - name: {{ printf "notifications-slack-%s" $w.name }}
+      secret:
+        secretName: {{ $w.appTokenSecret.name | quote }}
+    {{- end }}
+    {{- if ($telegram.botTokenSecret).name }}
+    - name: notifications-telegram
+      secret:
+        secretName: {{ $telegram.botTokenSecret.name | quote }}
+    {{- if ($telegram.chatIdSecret).name }}
+    - name: notifications-telegram-chat
+      secret:
+        secretName: {{ $telegram.chatIdSecret.name | quote }}
+    {{- end }}
+    {{- end }}
+    {{- range $w := $webhooks }}
+    - name: {{ printf "notifications-webhook-%s" $w.name }}
+      secret:
+        secretName: {{ $w.urlSecret.name | quote }}
+    {{- end }}
+  volumeMounts:
+    {{- if $watchdog.secretName }}
+    - name: watchdog
+      mountPath: /etc/alertmanager/watchdog
+      readOnly: true
+    {{- end }}
+    {{- range $w := $slackWorkspaces }}
+    - name: {{ printf "notifications-slack-%s" $w.name }}
+      mountPath: {{ printf "/etc/alertmanager/notifications-slack-%s" $w.name }}
+      readOnly: true
+    {{- end }}
+    {{- if ($telegram.botTokenSecret).name }}
+    - name: notifications-telegram
+      mountPath: /etc/alertmanager/notifications-telegram
+      readOnly: true
+    {{- if ($telegram.chatIdSecret).name }}
+    - name: notifications-telegram-chat
+      mountPath: /etc/alertmanager/notifications-telegram-chat
+      readOnly: true
+    {{- end }}
+    {{- end }}
+    {{- range $w := $webhooks }}
+    - name: {{ printf "notifications-webhook-%s" $w.name }}
+      mountPath: {{ printf "/etc/alertmanager/notifications-webhook-%s" $w.name }}
+      readOnly: true
+    {{- end }}
+  {{- end }}
+  configRawYaml: |
+    route:
+      # `notifications-none` is a receiver with no configs: Alertmanager
+      # accepts that as a legitimate "do not send" target. It is the root
+      # receiver and the catch-all for a severity this chart's routing
+      # tree does not know (there is deliberately no `info` route — see
+      # docs/notifications.md), never a route somebody forgot to write.
+      receiver: notifications-none
+      group_by:
+        {{- range $l := $groupBy }}
+        - {{ ternary ($l | quote) $l (eq $l "...") }}
+        {{- end }}
+      group_wait: {{ $n.groupWait | default "30s" }}
+      group_interval: {{ $n.groupInterval | default "5m" }}
+      repeat_interval: {{ $n.repeatInterval | default "4h" }}
+      routes:
+        {{- if $slackWorkspaces }}
+        # The Slack delivery self-alert, before everything else and with
+        # `continue: false`: it says Slack is not delivering, so it must
+        # never be routed to Slack, and no route below may claim it.
+        # `notifications.slack.failureReceiver` names where it goes; unset,
+        # it goes to the null receiver (docs/notifications.md).
+        - receiver: {{ $failureReceiver }}
+          matchers:
+            - alertname = "SlackNotificationsFailing"
+          continue: false
+        {{- end }}
+        {{- if $watchdog.secretName }}
+        # The heartbeat, first and matched on its own: it must never be
+        # grouped with anything, never inhibited and never silenced by a
+        # rule written for a real alert.
+        - receiver: watchdog
+          matchers:
+            - alertname = "Watchdog"
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: {{ $watchdog.repeatInterval }}
+        {{- else if $catchAll }}
+        # No deadman receiver, and a catch-all that would otherwise take
+        # the always-firing heartbeat every repeat_interval.
+        - receiver: notifications-none
+          matchers:
+            - alertname = "Watchdog"
+        {{- end }}
+        {{- range $d := $drop }}
+        # notifications.drop: reaches nobody, by the estate's decision.
+        - match:
+            {{- toYaml $d | nindent 12 }}
+          receiver: notifications-none
+        {{- end }}
+        {{- /*
+        The primary tree, wrapped in one node that matches everything and
+        `continue: true`s past itself once it is done — the only place
+        `continue` is set, so that a project's own routing and the
+        `also` bridge below can BOTH fire for the same alert without
+        firing twice for one that only matched one of them.
+        */}}
+        - match: {}
+          receiver: {{ $fallback }}
+          continue: true
+          routes:
+            {{- range $r := $routes }}
+            - match:
+                {{- toYaml $r.match | nindent 16 }}
+              receiver: {{ $fallback }}
+              routes:
+                {{- range $tier := list "critical" "warning" }}
+                {{- $override := index $r $tier }}
+                {{- if hasKey $severities $tier }}
+                - match:
+                    severity: {{ $tier }}
+                  receiver: {{ include "observability-alerting.notifications.receiverFor" (list $ $severities $tier $override) }}
+                {{- end }}
+                {{- end }}
+            {{- end }}
+            {{- /*
+            The global default: every severity this chart knows, for an
+            alert that matched none of the projects above.
+            */}}
+            {{- range $tier := list "critical" "warning" }}
+            {{- if hasKey $severities $tier }}
+            - match:
+                severity: {{ $tier }}
+              receiver: {{ include "observability-alerting.notifications.receiverFor" (list $ $severities $tier "") }}
+            {{- end }}
+            {{- end }}
+        {{- range $a := $also }}
+        - match:
+            {{- toYaml $a.match | nindent 12 }}
+          {{- if eq $a.receiver "slack" }}
+          receiver: {{ include "observability-alerting.notifications.slackReceiver" (include "observability-alerting.notifications.slackTarget" (list $ $a "") | fromYaml) }}
+          {{- else }}
+          receiver: {{ $a.receiver }}
+          {{- end }}
+          continue: true
+        {{- end }}
+    receivers:
+      - name: notifications-none
+      {{- range $name, $target := $slackTargets }}
+      - name: {{ $name }}
+        slack_configs:
+          {{- /*
+          A Slack app's bot token, mounted and read with `app_token_file`
+          (Alertmanager v0.30.0 and later), never interpolated: it can post
+          as the bot anywhere the bot may. `channel` is honoured with a
+          token, which an incoming webhook never did. `update_message` is
+          deliberately absent: Alertmanager v0.34.0 crashes while LOADING a
+          config that sets it without an explicit `api_url`, and `api_url`
+          may not be set beside an app token (docs/notifications.md).
+          A mention (`<!here>`/`<!channel>`) pings people, so it is for a
+          FIRING notification only: a resolved one is news, not a page.
+          */}}
+          {{- $mentionPrefix := "" }}
+          {{- if $target.mention }}
+          {{- $mentionPrefix = printf "{{ if eq .Status \"firing\" }}<!%s> {{ end }}" $target.mention }}
+          {{- end }}
+          - channel: {{ $target.channel | quote }}
+            app_token_file: {{ printf "/etc/alertmanager/notifications-slack-%s/%s" $target.workspace (include "observability-alerting.notifications.workspaceKey" (list $slackWorkspaces $target.workspace)) }}
+            send_resolved: true
+            title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} or .CommonLabels.k8s_cluster_name .CommonLabels.source {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
+            title_link: '{{ if eq $console "karma" }}{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}{{ else }}{{ $externalUrl }}/?var-cluster={{ "{{" }} .CommonLabels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}&var-namespace={{ "{{" }} .CommonLabels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ end }}'
+            text: |-
+              {{ $mentionPrefix }}{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }} · <{{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}|Grafana>
+              {{- if $n.runbookBaseUrl }}
+              {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
+              {{ "{{" }} end {{ "}}" }}
+              {{- end }}
+              {{ "{{" }} end {{ "}}" }}
+              {{- /*
+              Named mrkdwn links, `<url|Name>`, in place of raw URLs (a
+              karma `?m=` value is long base64). Grafana is per alert
+              (`.Labels`), so it is on the alert's own summary line.
+              Silence and View are about the GROUP (`.CommonLabels`), so
+              they are ONE line after the alert loop, joined by ` · `:
+              Silence and View with `console: karma`, Silence with
+              `alertmanagerUrl`, nothing with neither.
+
+              Escaping follows Slack's "Escaping text" rules
+              (https://docs.slack.dev/messaging/formatting-message-text/#escaping):
+              `&`, `<`, `>` are written `&amp;`, `&lt;`, `&gt;` and Slack
+              decodes them back, so the `&` between query parameters is
+              written `&amp;`. A raw `|` or `>` would end the link early,
+              so every label-derived part of a URL passes through
+              `urlquery` (which escapes both); the Alertmanager silence
+              filter also turns `urlquery`'s `+` back into `%20`.
+
+              `console: karma`: `?m=` is karma's own base64 JSON (see
+              docs/notifications.md, "Console: karma"). Alertmanager's
+              `base64encode` is the URL-safe alphabet and the karma UI
+              decodes with `atob`, the standard one, so the two
+              characters that differ are put back before the whole value
+              is URL-escaped.
+              */}}
+              {{- if or (eq $console "karma") $n.alertmanagerUrl }}
+              {{ if eq $console "karma" }}<{{ $n.consoleUrl }}/?m={{ `{{ $m := list }}{{ range .CommonLabels.SortedPairs }}{{ $m = append $m (dict "n" .Name "r" false "e" true "v" (list .Value)) }}{{ end }}{{ dict "am" (list (dict "label" "alertmanager" "value" (list "alertmanager"))) "m" $m "d" ` }}{{ $silenceMinutes }}{{ ` "c" "" | toJson | base64encode | reReplaceAll "-" "+" | reReplaceAll "_" "/" | urlquery }}` }}|Silence> · <{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&amp;q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}|View>{{ else if $n.alertmanagerUrl }}<{{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} urlquery $p.Name {{ "}}" }}%3D%22{{ "{{" }} urlquery $p.Value | reReplaceAll "\\+" "%20" {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D|Silence>{{ end }}
+              {{- end }}
+      {{- end }}
+      {{- range $name, $target := $telegramTargets }}
+      - name: {{ $name }}
+        telegram_configs:
+          {{- /*
+          The bot token is a credential (it can post as the bot anywhere
+          the bot is a member), so it is mounted and read with
+          `bot_token_file`, never interpolated, the same as every other
+          receiver's secret here. The chat id is not a credential:
+          without the token it sends nothing.
+          */}}
+          - bot_token_file: /etc/alertmanager/notifications-telegram/{{ $telegram.botTokenSecret.key | default "token" }}
+            {{- if $target.chatFile }}
+            {{- /*
+            `chat_id_file` (Alertmanager v0.31.0 and later), for an estate
+            that keeps its chat ids out of git: mounted from
+            `notifications.telegram.chatIdSecret` like the token beside it.
+            */}}
+            chat_id_file: {{ $target.chatFile }}
+            {{- else }}
+            chat_id: {{ $target.chat }}
+            {{- end }}
+            {{- if $target.thread }}
+            message_thread_id: {{ $target.thread }}
+            {{- end }}
+            parse_mode: {{ $telegram.parseMode | default "HTML" | quote }}
+            send_resolved: {{ ternary $telegram.sendResolved true (hasKey $telegram "sendResolved") }}
+            {{- if $telegram.message }}
+            message: |-
+              {{- $telegram.message | nindent 14 }}
+            {{- else }}
+            {{- /*
+            The shipped message: the Slack template's facts — status,
+            alert, cluster/namespace, summary, runbook, Grafana, silence
+            — in Telegram's HTML. Alertmanager executes a Telegram
+            message through html/template when `parse_mode` is `HTML`,
+            so every value interpolated from an alert is escaped by
+            Alertmanager itself; only the literal text below has to be
+            valid Telegram HTML, which is why the link's `&` is written
+            as `&amp;`. The schema requires `message` for any other
+            parse mode: Markdown has no escaping, and one `_` in an
+            alert name fails the whole delivery.
+            */}}
+            message: |-
+              <b>{{ "{{" }} .Status | toUpper {{ "}}" }}</b> {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} or .CommonLabels.k8s_cluster_name .CommonLabels.source {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}
+              {{ "{{" }} range .Alerts {{ "}}" }}
+              {{ "{{" }} .Annotations.summary {{ "}}" }}
+              {{- if $n.runbookBaseUrl }}
+              {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
+              {{ "{{" }} end {{ "}}" }}
+              {{- end }}
+              Grafana: {{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}
+              {{ "{{" }} end {{ "}}" }}
+              {{- /*
+              Only with `notifications.alertmanagerUrl`: a link to the
+              pod address nobody can open is worse than no link.
+              */}}
+              {{- if $n.alertmanagerUrl }}
+              Silence: {{ $n.alertmanagerUrl }}/#/silences/new?filter=%7B{{ "{{" }} range $i, $p := .CommonLabels.SortedPairs {{ "}}" }}{{ "{{" }} if $i {{ "}}" }}%2C{{ "{{" }} end {{ "}}" }}{{ "{{" }} $p.Name {{ "}}" }}%3D%22{{ "{{" }} $p.Value {{ "}}" }}%22{{ "{{" }} end {{ "}}" }}%7D
+              {{- end }}
+            {{- end }}
+      {{- end }}
+      {{- range $w := $webhooks }}
+      - name: {{ $w.name }}
+        webhook_configs:
+          - url_file: {{ printf "/etc/alertmanager/notifications-webhook-%s/%s" $w.name (default "url" $w.urlSecret.key) }}
+            send_resolved: true
+      {{- end }}
+      {{- if $watchdog.secretName }}
+      - name: watchdog
+        webhook_configs:
+          - url_file: /etc/alertmanager/watchdog/{{ $watchdog.key }}
+            send_resolved: false
+            {{- if $watchdog.tokenKey }}
+            http_config:
+              {{- /*
+              A far end that wants a bearer (Gatus's external
+              endpoints do) gets it from the SAME Secret, read with
+              `credentials_file`, never interpolated into the config.
+              */}}
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/watchdog/{{ $watchdog.tokenKey }}
+            {{- end }}
+      {{- end }}
+    {{- /*
+    One inhibit rule: a critical on a cluster+namespace silences the
+    warning on the SAME pair, so a project already paged for the loud
+    version does not also get grouped with the quiet one. Watchdog needs
+    no rule of its own here — its own route above already keeps it out of
+    grouping, inhibition and silencing meant for a real alert.
+
+    Alertmanager compares a label missing on BOTH alerts as equal, so
+    without the `=~ ".+"` guard a critical carrying none of the `equal`
+    labels muted every warning carrying none of them either — install-
+    wide, silently. The guard sits on the source only: `equal` then
+    requires the target to carry the same non-empty values.
+    */}}
+    {{- if $inhibitEnabled }}
+    inhibit_rules:
+      - source_matchers:
+          - severity = "critical"
+          {{- if $inhibitRequireLabels }}
+          {{- range $l := $inhibitEqual }}
+          - {{ $l }} =~ ".+"
+          {{- end }}
+          {{- end }}
+        target_matchers:
+          - severity = "warning"
+        equal:
+          {{- range $l := $inhibitEqual }}
+          - {{ $l }}
+          {{- end }}
+    {{- end }}
+{{- end }}

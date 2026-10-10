@@ -697,6 +697,14 @@
         "source": { "type": "string", "enum": ["sync-job", "platform-alerts"], "description": "`sync-job` (default) or `platform-alerts`. `platform-alerts` is refused unless victoria-metrics-k8s-stack.defaultRules.enabled is false; list presets/upstream-rules-platform-alerts.yaml." }
       }
     },
+    "alerting": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who renders the alerting plane (vmalerts, VMAlertmanager, karma, Watchdog rule, store self-alerts, Alertmanager ServiceMonitor). See the key's comment in values.yaml and docs/adoption.md (0.71.0).",
+      "properties": {
+        "source": { "type": "string", "enum": ["stack", "chart"], "description": "`stack` (default): this chart renders the alerting plane. `chart`: charts/observability-alerting renders it and this chart renders none of it; install that chart first." }
+      }
+    },
     "vmalert": {
       "type": "object",
       "additionalProperties": false,

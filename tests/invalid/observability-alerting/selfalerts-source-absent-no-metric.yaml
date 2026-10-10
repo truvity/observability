@@ -1,0 +1,29 @@
+# expect: no metric name is set under `selfAlerts`, so there is no series for SelfAlertSourceAbsent
+#
+# Enabled, with only a backup rule configured: the backup rules read
+# kube-state-metrics, not a source this rule watches, so the absent
+# guard would render an empty expression.
+stackReleaseName: observability-stack
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+backup:
+  enabled: true
+  metrics:
+    enabled: true
+selfAlerts:
+  enabled: true
+  sourceAbsent:
+    enabled: true

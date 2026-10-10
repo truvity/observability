@@ -1171,6 +1171,12 @@ its own switch and **not** gated by `selfAlerts.enabled`. Both default off.
 |---|---|---|---|
 | `upstreamRules.source` | enum | `sync-job` | Who applies the upstream rule sets. `sync-job`: `victoria-metrics-k8s-stack`'s sync Job fetches them from upstream's branch heads and applies them directly (what every install ran so far; nothing changes). `platform-alerts`: they come from `charts/platform-alerts`' vendored pack (`groups.upstream`). With `platform-alerts` this chart renders no `Watchdog` of its own (the pack's `general.rules` carries upstream's, so keep that group on) and **refuses to render while `victoria-metrics-k8s-stack.defaultRules` is still on** (`observability-stack.validate.upstreamRules`): the same rules would be evaluated twice, from two sources that drift apart. Helm cannot turn a subchart's value off from this chart's, so list `presets/upstream-rules-platform-alerts.yaml`, which sets `upstreamRules.source`, `defaultRules.enabled: false` and `syncJob.enabled: false` together. Turning the Job off is also what removes the VMRules it applied earlier: it does not prune when it has no source, but their owner is its ServiceAccount, and deleting that has Kubernetes garbage-collect them. Roll out in the order [adoption.md](adoption.md) gives (0.70.0). An install that also syncs dashboards (`defaultDashboards.enabled`) lists `syncJob.enabled: true` after the preset and removes the old VMRules itself. |
 
+### `alerting` (0.71.0)
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `alerting.source` | enum | `stack` | Who renders the alerting plane. `stack`: this chart, as it always did (nothing changes). `chart`: [`charts/observability-alerting`](#chartsobservability-alerting) renders it and this chart renders **none** of: the two vmalerts (four under `ha`) and every `vmalert.remoteEvaluators` VMAlert, the VMAlertmanager, karma (ServiceAccount, ConfigMap, Service, Deployment), the Watchdog rule, the store self-alerts (`-selfalerts`, `-store-alerts`) and the Alertmanager ServiceMonitor. Everything else stays: the proxy and its VMUsers, the NetworkPolicies (including the vmalert and karma ones), the stores, the backups. Refused with `mode: replica` or `operator-only`: those never rendered the plane, so there is nothing to hand over (`observability-stack.validate.alerting`). The values of the plane (`vmalert`, `alertmanager`, `karma`, `notifications`, `selfAlerts`) stay in this chart's schema and are still validated here, so one values file can feed both charts. Roll out in the order [adoption.md](adoption.md) gives (0.71.0). |
+
 ### The upstream charts
 
 Their own values, pinned in `Chart.yaml` and vendored under the chart's
@@ -1324,6 +1330,53 @@ bind the ServiceAccount to a role that may `logs:FilterLogEvents`,
 Fields written on each record: `audit.namespace`, `audit.resource`,
 `audit.verb`, `audit.user`, `audit.id`, `audit.violations`; the body is the
 whole audit event.
+
+## `charts/observability-alerting`
+
+The alerting plane of an `observability-stack` install as a chart of its own,
+rendering the objects the stack renders when its `alerting.source` is
+`stack`, under the **same kind, name and namespace**, so that an Application
+switch adopts them in place ([adoption.md](adoption.md), 0.71.0).
+
+| Object | Name (stack release `observability-stack`) | When |
+|---|---|---|
+| `VMAlert` | `<fullname>-metrics`, `<fullname>-logs` | `vmalert` effective; the logs one while `vmalert.logs.enabled` |
+| `VMAlert` | `<fullname>-metrics-peer`, `<fullname>-logs-peer` | the primary of a pair (`ha.enabled`) |
+| `VMAlert` | `<fullname>-remote-<name>` | one per `vmalert.remoteEvaluators` entry |
+| `VMAlertmanager` | `<fullname>` | `alertmanager` effective; carries the whole routing tree, receivers, inhibitions and templates of `notifications` |
+| `ServiceAccount`, `ConfigMap`, `Service`, `Deployment` | `<fullname>-karma` | `karma.enabled` |
+| `VMRule` | `<fullname>-watchdog` | `vmalert.watchdog.enabled` and no vendored or `platform-alerts` Watchdog |
+| `VMRule` | `<fullname>-selfalerts`, `<fullname>-store-alerts` | `selfAlerts` (the first also for Slack delivery and remote-evaluator rules) |
+| `ServiceMonitor` | `<fullname>-alertmanager-scrape` | `alertmanager` effective |
+
+`<fullname>` is the stack's: `stackReleaseName` (or this release's name) when
+it already contains `observability-stack`, otherwise `<release>-observability-stack`
+(`fullnameOverride`/`nameOverride` as in the stack). The NetworkPolicies of
+the vmalerts and karma stay in the stack for now (they select pods by label,
+which are the same).
+
+**Values.** Every key is a key of `observability-stack`'s values, with the same
+name, shape, schema and default, so moving a section is a copy and paste:
+`vmalert`, `alertmanager`, `karma`, `notifications`, `selfAlerts`. A few keys
+the plane READS from other sections of the stack are repeated in their smallest
+form and must agree with the stack's: `mode` (only `full`; any other mode is
+refused), `ha`, `interval`, `storeCredentials`, `stores`, `tenancy.clusterLabel`,
+`upstreamRules.source`, `backup.{enabled,metrics,logs,traces}.enabled`,
+`nameOverride`/`fullnameOverride`, and from the subcharts
+`victoria-metrics-k8s-stack.{enabled,vmsingle.enabled,defaultRules,fullnameOverride,nameOverride}`,
+`victoria-logs-single.{enabled,server.fullnameOverride,nameOverride}`,
+`victoria-traces-single.{enabled,server.fullnameOverride,nameOverride}`.
+The schema is strict: a key the plane does not read is refused, so a values
+file for the stack cannot be passed whole.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `stackReleaseName` | string | `""` | The Helm release name of the stack install this chart sits beside. Every name and the `app.kubernetes.io/instance` label are derived from it exactly as the stack derives them, so the objects match. Empty means this chart's own release name, right only when it is named like the stack's. The only key with no counterpart in the stack. |
+
+`tests/alerting_chart_test.go` renders the stack (switch off and on) and this
+chart for every case under `tests/cases/observability-stack` and holds the
+objects byte-identical; the helpers and templates are copies, and that test
+is what keeps them honest.
 
 ## `charts/observability-emitters`
 

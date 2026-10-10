@@ -1,0 +1,22 @@
+# expect: at '/notifications/inhibit/equal'
+# An inhibit rule with no `equal` lets ANY critical mute EVERY warning.
+# No proxy: no principals to admit, so none of the tenancy refusals
+# apply and none can preempt this fixture's own.
+stackReleaseName: observability-stack
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  inhibit:
+    equal: []

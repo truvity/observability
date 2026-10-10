@@ -1,0 +1,25 @@
+# expect: notifications.routes[0].critical names workspace "initech"
+# A route moving a project to a workspace nothing declares.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  routes:
+  - match:
+      k8s_namespace_name: example-app
+    critical:
+      channel: '#example-app'
+      workspace: initech

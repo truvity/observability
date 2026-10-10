@@ -1,0 +1,24 @@
+# expect: sets `workspace` but its receiver is "telegram"
+# `workspace` picks a Slack app; on a Telegram tier it is read by nothing.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+  telegram:
+    botTokenSecret:
+      name: example-telegram-bot
+      key: bot-token
+    chatId: -1000000000001
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: telegram
+      workspace: acme

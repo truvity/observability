@@ -1,0 +1,10 @@
+# expect: `alertmanager.enabled` is true (or left at its default)
+# `notifications.mode: evaluate-only` with `alertmanager.enabled` left at
+# its default (true). Evaluate-only means vmalert sends its result to
+# nobody on purpose; an Alertmanager rendered beside it would have
+# nothing to route, so the mode refuses the default rather than render
+# a component with no job.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  mode: evaluate-only

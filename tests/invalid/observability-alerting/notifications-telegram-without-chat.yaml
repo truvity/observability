@@ -1,0 +1,16 @@
+# expect: at '/notifications/telegram'
+# Neither `chatId` nor `chatIdSecret`: a bot with nowhere to post.
+# No proxy: no principals to admit, so none of the tenancy refusals
+# apply and none can preempt this fixture's own.
+stackReleaseName: observability-stack
+notifications:
+  externalUrl: https://grafana.example
+  telegram:
+    botTokenSecret:
+      name: example-telegram-bot
+      key: token
+  severities:
+    critical:
+      receiver: telegram
+    warning:
+      receiver: telegram

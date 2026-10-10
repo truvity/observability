@@ -1,0 +1,26 @@
+# expect: add it to `notifications.routeLabels`
+# A route matching on `source` while `routeLabels` is left at its default
+# (cluster and namespace). The label is real -- alert-ingress stamps it --
+# but the router was not told to match on it, so it is refused rather
+# than silently listing a route nothing configured can reach.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  routes:
+  - match:
+      source: aws-guardduty
+    critical: '#alerts-security'

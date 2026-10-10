@@ -1,0 +1,17 @@
+# expect: a receiver configured beside it looks wired up and is never reached
+# `notifications.mode: evaluate-only` together with a configured
+# receiver (`slack` here; `webhook`, `severities`, `routes` and `also`
+# are refused the same way). Evaluate-only means nobody is notified yet
+# — a receiver configured beside it is dead code that looks live.
+stackReleaseName: observability-stack
+tenancy: {}
+alertmanager:
+  enabled: false
+notifications:
+  mode: evaluate-only
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token

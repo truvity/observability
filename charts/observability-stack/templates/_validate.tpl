@@ -24,6 +24,7 @@ must admit 9094/TCP and 9094/UDP between the replicas, 9093/TCP from
 vmalert and karma, or the pair splits and pages twice.
 */ -}}
 {{- define "observability-stack.validate" -}}
+{{- include "observability-stack.validate.alerting" . -}}
 {{- include "observability-stack.validate.mode" . -}}
 {{- include "observability-stack.validate.ha" . -}}
 {{- include "observability-stack.validate.retention" . -}}
@@ -2201,5 +2202,25 @@ presets/upstream-rules-platform-alerts.yaml sets both halves together.
 {{- if and $vmks.enabled (or $dr.enabled $dr.create) -}}
 {{- fail "observability-stack: `upstreamRules.source` is \"platform-alerts\" but `victoria-metrics-k8s-stack.defaultRules` is still on (`enabled`, or `create`, is true), so the sync job would keep applying the upstream rules that charts/platform-alerts now renders: every one would be evaluated twice. Turn it off (`victoria-metrics-k8s-stack.defaultRules.enabled: false` and `create: false`), or list the preset `presets/upstream-rules-platform-alerts.yaml`, which sets both halves. To keep the sync job as the source, set `upstreamRules.source: sync-job`." -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`alerting.source: chart` hands the alerting plane to charts/observability-alerting
+(docs/adoption.md, 0.71.0). Only an install that renders the plane has
+something to hand over: `mode: replica` never rendered it, and
+`mode: operator-only` renders none of it, so a leftover `chart` there is a
+mistake that would read as a decision. The key's value is also the only thing
+that stops this chart rendering the objects the other chart owns, so a
+misspelling must not fall through to `stack` (the schema's enum refuses it
+first; this is the same check for a render that bypasses the schema).
+*/}}
+{{- define "observability-stack.validate.alerting" -}}
+{{- $src := (.Values.alerting).source | default "stack" -}}
+{{- if not (has $src (list "stack" "chart")) -}}
+{{- fail (printf "observability-stack: `alerting.source` is %q; it must be \"stack\" (this chart renders the alerting plane) or \"chart\" (charts/observability-alerting does)." $src) -}}
+{{- end -}}
+{{- if and (eq $src "chart") (ne (.Values.mode | default "full") "full") -}}
+{{- fail (printf "observability-stack: `alerting.source` is \"chart\" with `mode: %s`. Only a `mode: full` install renders the vmalerts, Alertmanager, karma, the Watchdog rule and the self-alerts, so there is nothing to hand over here. Remove `alerting.source` (or set it to \"stack\"), and install charts/observability-alerting only beside a full install." (.Values.mode | default "full")) -}}
 {{- end -}}
 {{- end -}}

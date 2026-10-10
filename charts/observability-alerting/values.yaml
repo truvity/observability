@@ -1,0 +1,1197 @@
+# observability-alerting — the alerting plane of an observability-stack install:
+# the vmalerts, the Alertmanager and its notifications, karma, the Watchdog
+# rule, the store self-alerts.
+#
+# Every key here is a key of charts/observability-stack/values.yaml, with the
+# same name, shape and default, so moving a section from the stack's values to
+# this chart's is a copy and paste. Keys the alerting plane does not read are
+# not declared (the schema refuses them); a few the plane READS from the
+# stack's other sections are repeated here in their smallest form and must
+# agree with the stack's: they are marked MIRROR below, and docs/adoption.md
+# (0.71.0) lists them.
+#
+# This chart renders objects that observability-stack renders when its
+# `alerting.source` is `stack`, under the same kind, name and namespace. Do
+# not install both with the stack's `alerting.source` left at `stack`: they
+# would own the same objects. docs/adoption.md (0.71.0) has the rollout.
+
+# -- The Helm release name of the observability-stack install this chart
+# belongs beside. Every name this chart renders is derived from it exactly as
+# the stack derives it (`<release>-observability-stack`, or the release name
+# itself when that already contains `observability-stack`), as are the labels'
+# `app.kubernetes.io/instance` and the store Services the vmalerts query.
+# Empty means this chart's own release name, which is right only when this
+# release is named like the stack's.
+stackReleaseName: ""
+
+# -- MIRROR: the stack's `nameOverride` / `fullnameOverride`, when it sets them.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- MIRROR: the stack's `mode`. Only `full` runs the alerting plane.
+mode: full
+
+# -- MIRROR: the stack's `ha`. Under a pair the primary runs a vmalert per store
+# replica; the peer's store addresses come from here.
+ha: null
+
+# -- MIRROR: the stack's `interval`, the evaluation interval of every vmalert.
+interval: 30s
+
+# -- MIRROR: the stack's `storeCredentials`; the vmalerts authenticate to the
+# stores with it.
+storeCredentials:
+  secretName: observability-store-credentials
+  usernameKey: username
+  passwordKey: password
+
+# -- MIRROR: the stack's `stores` (a store this install does not run itself).
+stores:
+  metrics:
+    url: ""
+  logs:
+    url: ""
+  traces:
+    url: ""
+
+# -- MIRROR: the stack's `tenancy.clusterLabel` (the self-alerts aggregate on it).
+tenancy:
+  clusterLabel: k8s_cluster_name
+
+# -- MIRROR: the stack's `upstreamRules`. `platform-alerts` means the Watchdog
+# comes from that pack and this chart renders none of its own.
+upstreamRules:
+  source: sync-job
+
+# Alerting.
+#
+# Two vmalerts, because one cannot do both jobs: rules over metrics and
+# rules over logs are different rule types, selected by
+# `-rule.defaultRuleType`, and a single process has one default.
+vmalert:
+  # -- Null by default: see `vmauth.enabled`'s own comment — `mode`
+  # resolves an unset value; an explicit `true`/`false` pins it, and an
+  # explicit `true` beside `mode: operator-only` is refused.
+  enabled: null
+  # -- The rules over logs. Renders a second vmalert with
+  # `-rule.defaultRuleType=vlogs` and the log store as its datasource.
+  logs:
+    enabled: true
+    # -- `-rule.evalDelay`. vmalert's own default is 30s, chosen to match
+    # VictoriaMetrics' `-search.latencyOffset` — a flag that exists
+    # because vmselect deliberately withholds the newest samples of a
+    # query, since they may still be incomplete. VictoriaLogs has no such
+    # flag and no such withholding, so the logs alerter inheriting that
+    # default holds every log-based alert back by 30 seconds it never
+    # needed and nothing says why.
+    evalDelay: 5s
+  # -- Rule-selection labels (docs/contracts.md, "Rule ownership labels").
+  # vmalert selects VMRules on `observability.truvity.io/evaluator`
+  # (`logs` for the logs alerter, `metrics` or absent for the local metrics
+  # alerter, a `remoteEvaluators` name for that evaluator). `true` (the
+  # default, for two minors) also accepts the old LogsQL marker
+  # `observability.rule-type: vlogs`: the logs alerter then takes that
+  # label rather than `evaluator: logs`, so a logs rule must carry it.
+  # `false` selects on the new labels only; set it once every logs rule
+  # carries `evaluator: logs`. The old spelling is removed in v0.72.
+  acceptLegacyRuleLabels: true
+  # -- Where a person lands from an alert's source link. vmalert defaults
+  # `-external.url` to its own pod hostname, which makes every alert's
+  # link dead the moment it leaves the cluster. Empty renders no flag and
+  # keeps the broken default, so set it.
+  #
+  # `notifications.externalUrl` (below) is the SAME fact for the Slack
+  # template's Grafana link, and defaults to this value — set this one
+  # and both work. This one has to keep existing on its own regardless,
+  # because an install with `alertmanager.enabled: false` renders no
+  # `notifications` block at all and still needs its source links to
+  # resolve.
+  externalUrl: ""
+  # -- Labels on every alert and recording rule these vmalerts produce.
+  externalLabels: {}
+  # -- The heartbeat: templates/watchdog.yaml's `Watchdog` VMRule, always
+  # firing while the metrics alerter is evaluating rules at all.
+  #
+  # Independent of `alertmanager.*`, on purpose (docs/statusbox.md
+  # "internal → status, pulled"): the rule is read two ways — pushed,
+  # through `alertmanager.watchdog.secretName`'s route, or pulled
+  # directly off vmalert's own `/api/v1/alerts` (`tenancy.alertReaders`)
+  # — and only the first needs Alertmanager at all. An install with
+  # `notifications.mode: evaluate-only` renders no VMAlertmanager (that
+  # mode refuses `alertmanager.enabled: true`), so trapping this rule
+  # inside `alertmanager.enabled` — where it used to live — would leave
+  # such an install with no Watchdog for anything to read, pushed or
+  # pulled. Default true: an estate already pushing this alert through
+  # Alertmanager is not asked to also opt in to evaluating it: only
+  # turning it OFF is a decision to make on purpose.
+  watchdog:
+    enabled: true
+  # -- Evaluate selected rule groups against ANOTHER metrics store and
+  # notify through THIS install's Alertmanager. One extra VMAlert per entry:
+  # its datasource is the other store, its notifiers are the main alerter's
+  # (the Alertmanager pair, `alertmanager.notifierUrl`), its remoteWrite and
+  # remoteRead (`ALERTS`, `ALERTS_FOR_STATE`) are the LOCAL store. It
+  # evaluates exactly the VMRules that carry the label
+  # `observability.truvity.io/evaluator: <name>`, and the main metrics
+  # alerter ignores every rule carrying that key, so the two never overlap.
+  # Empty (the default) renders nothing and changes nothing.
+  #
+  # Refused: an empty or duplicate `name`, a missing `datasource.url`, an
+  # `auth` that is not exactly one of `bearer` / `basic` with every Secret
+  # name and key set, `notifications.mode: evaluate-only` (nobody to
+  # notify), and an install that renders no vmalert or has neither an
+  # Alertmanager nor `alertmanager.notifierUrl`. Credentials come from an
+  # EXISTING Secret, never inline. The consumer opens the egress to the
+  # other store. See docs/notifications.md, "Evaluating another store's rules".
+  remoteEvaluators: []
+  # - name: other-store            # DNS label; names the VMAlert and the rule label
+  #   evaluationInterval: 1m       # default: `interval`
+  #   datasource:
+  #     url: https://metrics.other-store.example   # the read endpoint, e.g. its proxy
+  #     auth:                      # exactly one of bearer / basic
+  #       bearer: {secretName: other-store-read, key: token}
+  #       # basic: {secretName: other-store-read, usernameKey: username, passwordKey: password}
+  #     caBundle: {}               # optional private CA: {secret|configMap: {name, key}}
+  #   externalLabels:              # merged over vmalert.externalLabels
+  #     k8s_cluster_name: edge
+  resources:
+    # CPU request: measured p95 was under 5m, so 1.5 x p95 is under the
+    # 10m floor; 50m keeps headroom for a rule-evaluation burst after a
+    # restart. No CPU limit (see `resources.policy`); the memory request
+    # equals its limit.
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      memory: 512Mi
+
+alertmanager:
+  # -- Null by default: see `vmauth.enabled`'s own comment — `mode`
+  # resolves an unset value; an explicit `true`/`false` pins it, and an
+  # explicit `true` beside `mode: operator-only` is refused.
+  enabled: null
+  # -- Above 1 the replicas form one Alertmanager mesh (the operator joins
+  # them on 9094) and the chart renders, for the pair: a PodDisruptionBudget
+  # (`podDisruptionBudget`), preferred hostname anti-affinity (`affinity`),
+  # a zone spread (`topologySpreadConstraints`), one vmalert notifier per
+  # replica and one karma server per replica. 1 renders none of these.
+  replicaCount: 1
+  # -- Only read when `replicaCount` > 1. Empty: `{maxUnavailable: 1}`.
+  # Passed through as the VMAlertmanager `podDisruptionBudget`.
+  podDisruptionBudget: {}
+  # -- Only read when `replicaCount` > 1. Empty: preferred pod
+  # anti-affinity on `kubernetes.io/hostname` against the replicas' own
+  # labels. Set, replaces it whole.
+  affinity: {}
+  # -- Only read when `replicaCount` > 1. Empty: one constraint, `maxSkew: 1`
+  # on `topology.kubernetes.io/zone`, `whenUnsatisfiable: ScheduleAnyway`,
+  # against the replicas' own labels. Set, replaces it whole.
+  topologySpreadConstraints: []
+  # -- Only read when `replicaCount` > 1.
+  cluster:
+    # -- Go duration. How long a replica keeps retrying a peer it lost
+    # before it forgets that peer. A rescheduled replica comes back at a
+    # new IP, so the old address is a dead peer the survivor retries until
+    # this elapses, and `alertmanager_cluster_failed_peers` stays above 0
+    # meanwhile (the vendored `AlertmanagerClusterFailedPeers` fires on a
+    # healthy mesh). Alertmanager's own default is `6h`; passed as
+    # `--cluster.reconnect-timeout`.
+    reconnectTimeout: 5m
+  # -- An Alertmanager the estate already runs, when `enabled` is false.
+  # A vmalert with no notifier evaluates every rule and sends the result
+  # nowhere, which is indistinguishable from an estate with no problems,
+  # so the chart refuses that combination.
+  notifierUrl: ""
+  # -- The deadman's route out of the cluster.
+  #
+  # A Watchdog alert fires continuously while the stack is healthy, and
+  # something OUTSIDE the cluster pages when it stops arriving. That
+  # receiver's URL is a credential (it is a capability to page), so it
+  # arrives as the name of a Secret and is read by Alertmanager from the
+  # mounted file with `url_file` — never interpolated into the rendered
+  # config, where it would sit in the release's manifest.
+  #
+  # With no Watchdog receiver configured the chart renders no Watchdog
+  # route at all rather than a route to nowhere.
+  watchdog:
+    secretName: ""
+    key: url
+    # -- How often the heartbeat repeats. The outside watcher's own
+    # timeout must be comfortably longer than this.
+    repeatInterval: 5m
+    # -- The far end's own timeout for a missing heartbeat, stated here
+    # rather than read from it, so the chart can refuse a
+    # `repeatInterval` that would not land comfortably inside it. Unset,
+    # the chart trusts whoever set `repeatInterval` to have set it
+    # sanely — which is what it always did before this existed.
+    # timeout: 15m
+    # -- The key, in the SAME Secret, of a bearer token the far end wants
+    # in `Authorization: Bearer <token>`. Read with `credentials_file`
+    # from the mounted Secret, like the URL. Unset (default), the heartbeat
+    # is posted without an Authorization header, as before.
+    tokenKey: ""
+  resources:
+    requests:
+      cpu: "1"
+      memory: 256Mi
+    limits:
+      memory: 256Mi
+
+# The alert console: karma (https://github.com/prymitive/karma), an alert
+# dashboard and silence proxy for Alertmanager. OFF by default.
+#
+# Why it exists: Alertmanager has no notion of a user. A silence's
+# `createdBy` is free text the caller types (prometheus/alertmanager#1196),
+# so on a bare Alertmanager anyone who can reach the UI can silence a page
+# in someone else's name. karma, with header authentication, REWRITES
+# `createdBy` to the authenticated user on every silence it proxies, and
+# enforces silence ACLs (karma docs/ACLs.md). The estate puts karma behind
+# an SSO gateway that sets identity headers, and keeps Alertmanager itself
+# reachable read-only. This chart renders karma; it does not render the
+# gateway, and it never trusts a header by itself: see
+# `karma.authentication`.
+karma:
+  enabled: false
+  image:
+    repository: ghcr.io/prymitive/karma
+    tag: v0.133
+  replicaCount: 1
+  # -- This release's own Alertmanager is ALWAYS the first server karma is
+  # given (name `alertmanager`, `proxy: true`, `readonly: false`, reached
+  # on its in-cluster Service), when `alertmanager` is enabled. Entries
+  # here are APPENDED to it, in karma's own `alertmanager.servers` shape
+  # and passed through untouched (`name` and `uri` are required, and a
+  # name may not be `alertmanager`):
+  #
+  #   - name: other
+  #     uri: http://alertmanager-other.monitoring.svc:9093
+  #     proxy: true
+  #
+  # With `alertmanager.enabled: false` (an estate whose Alertmanager is
+  # elsewhere) there is no own entry, and this list must name at least one.
+  alertmanagers: []
+  # -- Who karma believes. Header authentication only: karma does no
+  # authentication itself, a frontend service (an SSO gateway) sets a
+  # header on every request and karma takes the silence author from it.
+  # There is no basic-auth mode here, because its passwords would sit in
+  # a ConfigMap.
+  authentication:
+    # -- The explicit acknowledgement that karma runs with NO
+    # authentication: every silence is then created under whatever name
+    # the browser sends. The chart refuses `karma.enabled: true` with no
+    # `header.name` unless this is `true`, because a console that
+    # silences pages must not run anonymously by accident. Refused beside
+    # a `header.name`: the two contradict.
+    none: false
+    header:
+      # -- Name of the request header that carries the user (for example
+      # `X-Auth-Request-Email`). Set, karma refuses a request without it
+      # and forces every silence's author to the value it extracts.
+      #
+      # karma TRUSTS this header. It is only as good as the network path
+      # in front of it: `networkPolicy.karmaFrom` must admit the gateway
+      # and nothing else, or anyone who can reach the pod can claim any
+      # name.
+      name: ""
+      # -- Regex that extracts the user from the header value, with ONE
+      # capturing group; anchored by karma. Required when `name` is set.
+      valueRe: ^(.+)$
+      # -- Name of the header that carries the user's groups, if any.
+      groupName: ""
+      # -- Like `valueRe`, for the groups header. Required when
+      # `groupName` is set.
+      groupValueRe: ""
+      # -- Splits the groups header into group names, after
+      # `groupValueRe` is applied. Empty keeps karma's own default, a space.
+      groupValueSeparator: ""
+  authorization:
+    # -- Groups for the silence ACLs below, mapping the user names the
+    # authentication layer passes to a group name:
+    #
+    #   - name: admins
+    #     members: [alice@example.com, bob@example.com]
+    groups: []
+  # -- Silence ACLs, in karma's own format (docs/ACLs.md). `silences` is the
+  # list of rules, evaluated in order, first `allow` or `block` wins:
+  #
+  #   silences:
+  #     - action: block
+  #       reason: regex silences are not allowed
+  #       scope:
+  #         filters:
+  #           - name_re: .+
+  #             value_re: .+
+  #             isRegex: true
+  #     - action: allow
+  #       reason: admins may silence anything
+  #       scope:
+  #         groups: [admins]
+  #
+  # Rendered to a file beside karma's config. A rule's `scope.groups` must
+  # name a group declared above, and its `action` must be `allow`, `block`
+  # or `requireMatcher`; the rest passes through. Block regex silences
+  # FIRST (as above) or a user can bypass a matcher ACL with `pro[d]`.
+  acl:
+    silences: []
+  # -- Alert history: karma asks a Prometheus-compatible endpoint how often
+  # an alert fired in the last 24h. karma finds the endpoint from each
+  # alert's `generatorURL`, which is rarely reachable from the karma pod,
+  # so `uri` replaces it for every alert. Off by default.
+  #
+  # The endpoint must answer karma WITHOUT credentials: karma holds no
+  # secret here (a ConfigMap is not a place for one), and this chart's own
+  # proxy and stores require a bearer token or basic auth. Point it at a
+  # read-only endpoint the estate exposes for the purpose; for anything
+  # that needs a header, use `extraConfig` (`history.rewrite[].headers`)
+  # and accept that it is stored in a ConfigMap.
+  history:
+    enabled: false
+    # -- Base URL of the Prometheus-compatible API that holds the `ALERTS`
+    # series. Required when `enabled`.
+    uri: ""
+  # -- The filters karma applies when the UI opens with no `?q=` (karma's
+  # `filters.default`). The default hides this chart's always-firing
+  # Watchdog (the deadman heartbeat, an alert nobody acts on). It is only
+  # a default: remove the filter in the UI to see Watchdog. A set list
+  # REPLACES it; `[]` shows everything. Syntax: karma's filter bar, for
+  # example `alertname!=Watchdog` or `@state=active`.
+  filters:
+    default:
+      - alertname!=Watchdog
+  # -- RAW karma configuration, deep-merged over everything above and
+  # last. UNVALIDATED: a key here can undo the authentication, the ACLs or
+  # the proxying above, and nothing in this chart checks it. Maps merge,
+  # lists replace. It is stored in a ConfigMap: never put a secret in it.
+  extraConfig: {}
+  # -- Requests and limits; judged by `resources.policy` like every other
+  # component.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# The one router. See docs/notifications.md for the design this
+# implements.
+#
+# `alertmanager.config` used to be a free-form object in Alertmanager's
+# own syntax, filled in by the consumer. That shape could not be refused:
+# an install with `alertmanager.enabled` and nothing else got a route to
+# a receiver named `blackhole`, rules evaluated into nothing, and nothing
+# about it looked unhealthy — the most expensive shape a monitoring
+# system can have, because it looks exactly like a quiet estate. It also
+# meant every consumer hand-wrote the same routing tree and copied the
+# message template — cluster in the title, runbook link, Grafana link —
+# rather than getting it shipped.
+#
+# So this chart now renders the routing tree FROM this block, and refuses
+# to render `alertmanager.enabled` with none of it configured. What stays
+# the consumer's: the channel names, the webhook, the route list, the
+# external URL, and the policy of what severity a rule carries.
+notifications:
+  # -- `route` (the default, today's behaviour) or `evaluate-only`: the
+  # explicit, named opt-out for a consumer with no Slack or webhook
+  # credential YET. `route` requires a working receiver the moment
+  # `alertmanager.enabled` is true, same as always. `evaluate-only` keeps
+  # vmalert evaluating every rule — visible in its own UI and API — and
+  # renders `-notifier.blackhole` instead of pointing it at an
+  # Alertmanager; Alertmanager itself is not rendered in this mode, and
+  # is refused if `alertmanager.enabled` is left or set to `true`, so the
+  # opt-out stays visible in the values file rather than a state two
+  # unrelated toggles happen to reach together. Never combine with a
+  # receiver kind, a route, a severity, or `alertmanager.notifierUrl` —
+  # each is refused: a channel configured beside a mode that mutes
+  # vmalert looks wired up and is never reached. See docs/notifications.md,
+  # "Evaluate, notify nobody yet".
+  mode: route
+  # -- The base of the Grafana link this chart puts in every Slack
+  # message. Without it, every link a person clicks from an alert lands
+  # nowhere — the same failure `vmalert.externalUrl` exists to prevent
+  # for the alert's own source link, for a different link and a
+  # different reader.
+  #
+  # Both settings are the SAME fact — the base URL a link leaving the
+  # cluster should point at — and this chart refuses to render if they
+  # disagree, so this one defaults to `vmalert.externalUrl` and is worth
+  # setting on its own only when it needs to differ. The pair exists
+  # because `vmalert.externalUrl` has to keep working by itself: an
+  # install with `alertmanager.enabled: false` — an estate pointing
+  # vmalert at an Alertmanager it already runs — has no `notifications`
+  # block at all, and still needs its alerts' source links to resolve.
+  externalUrl: ""
+  # -- The externally reachable base URL of THIS Alertmanager's UI, no
+  # trailing slash (`https://alertmanager.example`). Set, it becomes the
+  # VMAlertmanager's `externalURL` and the base of the `Silence:` link in
+  # every message. Empty: the message carries NO `Silence:` line.
+  #
+  # There is deliberately no default. The only address the chart can guess
+  # is Alertmanager's own pod (`http://vmalertmanager-<release>-0:9093`),
+  # which nobody outside the cluster can open, and the Grafana base above
+  # is no better: the chart refuses Grafana-managed alerting, so Grafana
+  # has no silence page. A link that goes nowhere is worse than none.
+  alertmanagerUrl: ""
+  # -- Which console the `Silence:` link opens, and which one a `View:`
+  # link is added for. `alertmanager` (the default) is the behaviour
+  # above, byte for byte. `karma` points the Slack message at karma
+  # (`karma.enabled`): the silence form opens prefilled with the alert's
+  # labels, and the author is the signed-in user, not free text. Needs
+  # `consoleUrl`. The Telegram message keeps the Alertmanager link.
+  console: alertmanager
+  # -- The externally reachable base URL of karma, no trailing slash
+  # (`https://karma.example.com`). Required by `console: karma`.
+  consoleUrl: ""
+  # -- How long the silence the `console: karma` link prefills lasts, in
+  # minutes. The person can change it in the form.
+  silenceMinutes: 60
+  # -- Prefixed to a firing alert's `runbook` annotation to build the
+  # runbook link. Left empty, the message carries no runbook line at all
+  # — never a link to a base URL with nothing after it, which reads as a
+  # broken link rather than an absent one.
+  runbookBaseUrl: ""
+  groupWait: 30s
+  groupInterval: 5m
+  repeatInterval: 4h
+  # -- Alertmanager's `group_by` on the root route. The default is the
+  # scoping key the collectors stamp on every alert, plus the alert name.
+  # An estate whose alerts carry other labels names those instead — a
+  # label no alert carries does not fail, it groups every alert that
+  # lacks it together, which reads as one noisy notification for
+  # unrelated things. `["..."]` groups by every label (no grouping).
+  # While this is left at the default and `routeLabels` lists `source`,
+  # `source` is appended, so alerts with no cluster do not fold together.
+  groupBy:
+    - alertname
+    - k8s_cluster_name
+    - k8s_namespace_name
+  # -- The ordered label names a `routes[].match` may use. The default is
+  # what a route could always match on (the cluster and the namespace
+  # the collectors stamp on every alert; `ownerLabel` is added to it when
+  # set), so leaving it alone renders exactly what it rendered before.
+  # An alert born outside a cluster has no cluster: alert-ingress
+  # mappings set `source` on it, and listing `source` here lets a route
+  # match `source: aws-guardduty` without a made-up `k8s_cluster_name`:
+  #
+  #   routeLabels: [k8s_cluster_name, k8s_namespace_name, source]
+  #   routes:
+  #     - match: {source: aws-guardduty}
+  #       critical: "#alerts-security"
+  #
+  # A match key outside the list is refused at render time.
+  routeLabels:
+    - k8s_cluster_name
+    - k8s_namespace_name
+  # -- OPT-IN (empty, the default, changes nothing): the label naming the
+  # company that owns an alert's workload, as stamped by
+  # `observability-emitters` `tenancy.owners` (`owner`). Set, a route's
+  # `match` may use it, so an alert reaches the owning company's Slack
+  # workspace without one route per namespace:
+  #
+  #   ownerLabel: owner
+  #   routes:
+  #     - match: {owner: globex}
+  #       critical: {channel: "#alerts-critical", workspace: globex}
+  #
+  # An alert only carries the label if its rule kept it; see
+  # `platform-alerts` `ownerLabel`. An alert without it falls through to
+  # the tier's own destination.
+  ownerLabel: ""
+  # -- The one inhibit rule: a `critical` silences a `warning` that has
+  # the same value for every label in `equal`, so a project already paged
+  # for the loud version is not also sent the quiet one.
+  #
+  # THE HAZARD: Alertmanager treats a label missing on both alerts as
+  # EQUAL. An alert that carries none of the `equal` labels therefore
+  # "matches" every other alert that carries none of them — a single
+  # such critical mutes every such warning in the install, and nothing
+  # reports it. Name labels your alerts actually carry, or turn the rule
+  # off. See docs/notifications.md, "Inhibition".
+  inhibit:
+    enabled: true
+    # -- Never empty: an inhibit rule with no `equal` lets ANY critical
+    # mute EVERY warning.
+    equal:
+      - k8s_cluster_name
+      - k8s_namespace_name
+    # -- The guard against THE HAZARD above (0.11.0): a source matcher
+    # `<label> =~ ".+"` for every label in `equal`, so a critical that
+    # does not carry them inhibits nothing, rather than every warning
+    # that does not carry them either. On by default because it errs
+    # LOUD: a warning the old rule muted by accident now arrives. Before
+    # it, this chart's own `platform-alerts` hit the hazard on a default
+    # install — `CronJobNotSucceeding` (critical) and `BackupJobFailed`
+    # (warning) aggregate `by (namespace, …)`, which drops
+    # `k8s_namespace_name`, so one CronJob not succeeding muted every
+    # failed backup Job's warning on its cluster. `false` renders the
+    # 0.10.0 rule byte for byte.
+    requireLabels: true
+  # -- Exact-match matchers for alerts that reach NOBODY, routed to the
+  # null receiver ahead of every other route — for an alert an estate
+  # has decided it will never act on (a noisy vendored rule, say),
+  # without editing the rule set that ships it. Each entry needs at least
+  # one key: an empty one would match, and drop, everything.
+  drop: []
+  # - {alertname: InfoInhibitor}
+  # -- Where an alert lands when no severity tier claimed it: an `info`
+  # alert, an alert with no `severity` at all, or a tier `severities`
+  # does not configure. The same shape as a `severities` entry, and the
+  # same receiver kinds. Unset (the default), such an alert reaches
+  # nobody — this chart's own rules carry only `critical` and `warning`,
+  # see `severities` below.
+  #
+  # Set, it also becomes the fallback for a tier `severities` leaves out,
+  # so `severities.critical`/`.warning` are no longer required beside it.
+  # And when no deadman receiver is configured
+  # (`alertmanager.watchdog.secretName`), the always-firing `Watchdog`
+  # is routed to the null receiver first, so the heartbeat does not
+  # arrive at this receiver every `repeatInterval`. Other always-firing
+  # rules a vendored set ships (`InfoInhibitor`) belong in `drop`.
+  # catchAll: {receiver: telegram}
+  # -- Receiver kinds. Each is a mechanism — how the secret is mounted,
+  # what the message looks like — and none carries a value: which Slack
+  # channel a message lands in is chosen by `severities`, `routes` and
+  # `catchAll` below, never here.
+  #
+  # `slack` is one Slack APP per workspace, posting with its bot token
+  # (xoxb-...): each `workspaces` entry names an EXISTING Secret, mounted
+  # and read with Alertmanager's `app_token_file` (v0.30.0 and later) —
+  # never a value here, never in the rendered config. A token honours the
+  # `channel` each destination names. The incoming webhook this replaced
+  # did not: a webhook posts to the one channel it was created for and
+  # ignores `channel`, so routing to a second channel through it never
+  # worked. `webhookSecret` is therefore GONE, and a leftover one is
+  # refused at render with this migration.
+  #
+  # Every place that picks a Slack destination — `severities.<tier>`,
+  # `catchAll`, a route's per-tier override — may carry `workspace`. With
+  # exactly one workspace declared it may be omitted and means that one;
+  # with two or more it is required. One Alertmanager receiver renders
+  # per distinct (workspace, channel, mention), named
+  # `slack-<workspace>--<channel>`, with `--<mention>` appended only when
+  # the destination sets one.
+  #
+  # `mention: here | channel` (unset = none) on any of those destinations
+  # puts Slack's `<!here>` / `<!channel>` at the start of the message
+  # text, for FIRING notifications only (never a resolved one). Slack only.
+  #
+  # `failureReceiver` names where the `SlackNotificationsFailing` alert
+  # (selfAlerts.slackDelivery) goes: a `webhook[].name`, or `telegram`.
+  # Never `slack` — refused, since the alert says Slack is not delivering.
+  # UNSET, the alert is routed to the null receiver: it is visible in
+  # vmalert and reaches nobody, so set it. Unset by default: a workspace
+  # with an empty secret name or key is refused rather than accepted and
+  # silently unreachable. See docs/notifications.md, "Slack".
+  # slack:
+  #   workspaces:
+  #     - name: acme            # lower-case, [a-z0-9-], no double hyphen
+  #       appTokenSecret: {name: "", key: token}
+  #   failureReceiver: ""       # a webhook name, or telegram
+  # -- Telegram: one bot, posting to a chat (and, optionally, a forum
+  # topic in it). Coexists with `slack` and `webhook` — any combination,
+  # each severity tier picking one — and counts as a receiver for the
+  # "no receiver configured" refusal. The bot token is a credential: it
+  # is taken from an EXISTING Secret by name and key, mounted, and read
+  # with Alertmanager's `bot_token_file` — never a value here, never in
+  # the rendered config. `chatId` is the default destination;
+  # `severities.<tier>.chatId` / `.messageThreadId` override it per tier.
+  # Unset by default, and refused by the schema without `botTokenSecret`,
+  # or without exactly one of `chatId` and `chatIdSecret`. See
+  # docs/notifications.md, "Telegram".
+  # telegram:
+  #   botTokenSecret: {name: "", key: token}
+  #   chatId: 0              # an integer; negative for a group
+  #   chatIdSecret: {name: "", key: chat_id}  # instead of chatId: read
+  #                          # from a Secret with Alertmanager's
+  #                          # `chat_id_file` (Alertmanager >= v0.31.0),
+  #                          # for an estate that keeps chat ids private
+  #   messageThreadId: 0     # optional: a forum topic; 0 = none
+  #   parseMode: HTML        # HTML (default) | MarkdownV2 | Markdown
+  #   sendResolved: true     # default true
+  #   message: ""            # optional; REQUIRED unless parseMode is HTML
+  # -- Named webhook receivers, for `also` below. One URL each; there is
+  # no per-alert channel concept for a webhook the way there is for
+  # Slack.
+  webhook: []
+  # - name: ""
+  #   urlSecret: {name: "", key: url}
+  # -- Severity tiers, and where each lands when no route says otherwise.
+  # `receiver` names a configured kind above (`slack`, `telegram`, or
+  # an entry in `webhook`); `channel` is the Slack channel — or, for a
+  # webhook receiver, an identifying label only, since one webhook has
+  # one URL. A `slack` tier may also name a `workspace` (an entry of
+  # `slack.workspaces`): optional with exactly one declared, required
+  # with two or more. A `telegram` tier takes no `channel`: it lands in
+  # `telegram.chatId`, or in the tier's own `chatId`/`messageThreadId`.
+  #
+  # This chart's rules carry only `critical` and `warning`: `critical`
+  # means a person should look now, `warning` means a person should look
+  # today. There is no `info` tier here on purpose — an alert that pages
+  # nobody is a dashboard, not a notification, and a rule that wants one
+  # belongs in Grafana, not in this routing tree. A consumer's own rules
+  # may carry whatever severity the consumer gives them; this chart only
+  # ships a route for the two above.
+  severities: {}
+  # critical: {receiver: slack, channel: "", workspace: acme}
+  # warning:  {receiver: telegram, messageThreadId: 0}
+  # -- Routes, in order. The first entry whose `match` is satisfied wins,
+  # per severity; an entry naming only `critical` sends its warnings to
+  # `severities.warning`. `match` keys are the vocabulary the collectors
+  # stamp on every alert — `k8s_cluster_name` and `k8s_namespace_name` —
+  # and nothing else, because a route on a label no rule carries matches
+  # nothing and pages nobody while looking exactly like a route that
+  # works. The estate renders this list from wherever it derives projects
+  # from namespaces.
+  routes: []
+  # - match: {k8s_cluster_name: ""}
+  #   critical: ""                        # a channel in the tier's workspace
+  #   warning: {channel: "", workspace: globex}  # or another workspace
+  #
+  # A per-tier value is a channel string (the tier's workspace is kept) or
+  # `{channel, workspace, mention}`; anything omitted is taken from the tier.
+  # -- Which alerts ALSO reach a webhook receiver or a Slack channel,
+  # beside their normal route. An entry adds a delivery, it never replaces
+  # the one `severities`/`routes` already picked. `match` is free-form.
+  # `receiver: slack` takes `channel` (required), `workspace` (required
+  # with two or more workspaces) and an optional `mention`, and shares the
+  # receiver a primary route renders for the same destination.
+  also: []
+  # - receiver: ""
+  # - receiver: slack
+  #   match: {k8s_cluster_name: my-cluster}
+  #   workspace: partner
+  #   channel: "#partner-alerts"
+  #   match: {severity: critical}
+
+# -- MIRROR: the stack's `backup` switches. The self-alerts render a "newest
+# backup is stale" rule per store whose backup job is on.
+backup:
+  enabled: false
+  metrics:
+    enabled: true
+  logs:
+    enabled: true
+  traces:
+    enabled: false
+
+# Store self-alerts.
+#
+# See docs/notifications.md, "Store self-alerts". These nineteen rules
+# are not like `charts/platform-alerts`: that chart is generic across
+# estates and refuses to guess a metric name, because it cannot know
+# what a consumer's stores are called. This chart is not generic — it
+# vendors the stores, the proxy, both vmalerts and the backup CronJobs
+# itself — but "vendors the component" turned out NOT to mean "knows
+# what it exports": measured against a live install, ten of the eleven
+# `vm_`/`vl_`/`vt_`/`otelcol_`/`vmagent_`-family counters this design
+# names — including `vm_rows_ignored_total`, the counter the incident
+# below is about — are simply ABSENT from this chart's own metrics
+# store. Not wrong values: no series under those names at all. See
+# docs/safety.md, "The self-alerts, and the two incidents behind them",
+# for the measurement and why (the log store, the trace store and the
+# sibling chart's OpenTelemetry gateway have NOTHING scraping them into
+# this store at all — a coverage gap, not a spelling one — and even
+# `vm_rows_ignored_total`, on the ONE component that IS scraped, may be
+# a counter VictoriaMetrics only registers once a row has actually been
+# ignored, so its absence on a healthy install may be the correct,
+# healthy shape rather than evidence of a wrong name; this session could
+# not tell the two apart without causing the failure on purpose).
+#
+# So EVERY metric name below is a VALUE WITH NO DEFAULT, the same shape
+# `charts/platform-alerts` already uses for its own `stores` list and
+# for exactly the same reason: a name this chart has not seen accepted
+# by a real /metrics response is a guess, and a guessed name renders
+# cleanly and never fires, which is the one failure this whole
+# repository exists to prevent. `selfAlerts.enabled` therefore defaults
+# to FALSE — an install that turned it on today would get a `VMRule`
+# with an empty rule list, which looks like coverage and is not. Turn it
+# on once at least one rule below has a metric name confirmed against
+# your own store's `/metrics`; each rule then renders independently and
+# the rest stay silently absent, which is the honest outcome.
+#
+# All nineteen are MetricsQL, evaluated by the METRICS vmalert. Every
+# counter here lives on a component's own /metrics endpoint next to
+# every other Prometheus-style metric that component exports — none of
+# it is read out of the log or trace store's DATA — so none carries
+# `observability.rule-type: vlogs`.
+#
+# Rules are named per store (`MetricStore`/`LogStore`/`TraceStore`)
+# wherever the failure is one specific store's; three stores exist, and
+# a rule named just "Store..." does not say which one paged you. A rule
+# stays generic (`WriterBufferGrowing`, `WriterDroppingPackets`,
+# `ProxyAtConcurrencyLimit`) only where it genuinely is not about any one
+# store.
+#
+# This release closes part of the coverage gap directly: see
+# `victoria-logs-single.server.serviceMonitor` and
+# `victoria-traces-single.server.serviceMonitor` below, which give the
+# log and trace stores — components THIS chart itself renders — a
+# `ServiceMonitor` for the first time. It does not close the gap for
+# `charts/observability-emitters`' vmagent, vlagent or OpenTelemetry
+# gateway; that chart's scrape coverage is its own to fix.
+selfAlerts:
+  enabled: false
+
+  # MetricStoreIgnoringRows.
+  #
+  # THE INCIDENT: a series pushed past the metrics store's per-day label
+  # limit is discarded WHILE THE WRITE STILL ANSWERS 200 — a collector
+  # reported 888k rows written with zero errors while the store held
+  # none of them, and `vm_rows_ignored_total` sat at 9,748,387 with
+  # nothing else showing it. This is the rule that would have caught it.
+  #
+  # NOT DEFAULTED. `vm_` names ARE scraped into this store's vmsingle (63
+  # of them, measured), but this exact one was not among them on a
+  # healthy live install — plausibly because VictoriaMetrics registers a
+  # reason-labelled counter like this one lazily, only once a row has
+  # actually been ignored, which is indistinguishable from a wrong name
+  # without causing the failure on purpose. Confirm it exists before
+  # relying on it.
+  #
+  # Healthy range: 0. The counter only advances when a sample is refused
+  # for exceeding a configured limit; a write path that is not hitting
+  # one never touches it, so `for:` exists to ride out a single scrape
+  # gap rather than to tolerate a nonzero baseline.
+  ingest:
+    metric: ""
+    window: 5m
+    for: 5m
+    severity: critical
+
+  # MetricStoreCardinalityNearLimit, MetricStoreDailyCardinalityNearLimit.
+  #
+  # VictoriaMetrics' hourly/daily series limiter (`storage.maxHourlySeries`
+  # / `storage.maxDailySeries` above, both off by default) is believed to
+  # expose a current/max gauge pair per window when a cap is set. NOT
+  # DEFAULTED: the exact metric names for the vmsingle version this
+  # chart's `victoria-metrics-k8s-stack` pin (0.93.0) brings in were not
+  # confirmed this session. Confirm against your own store's `/metrics`
+  # before setting a pair; each renders independently of the other, and
+  # neither renders while unset — which is the honest outcome, the same
+  # one platform-alerts' storeLimits gives a store with no free-space
+  # metric. Two separate alerts, not one alert with an hourly/daily
+  # label: different windows, different meanings, and a name that says
+  # which one fired.
+  cardinality:
+    hourlyCurrentSeriesMetric: ""
+    hourlyMaxSeriesMetric: ""
+    dailyCurrentSeriesMetric: ""
+    dailyMaxSeriesMetric: ""
+    # -- Fire at this fraction of the limit — docs/notifications.md's own
+    # "90% of the limit". The same headroom idea as platform-alerts'
+    # storeLimits `headroomFactor`, read the other way round: arrive
+    # before the cap silently starts dropping new series, not after.
+    ratio: 0.9
+    # -- The most spike-prone rule in this file: it is a RATIO, and a
+    # series burst that the store absorbs on its own pushes the ratio up
+    # and back down within minutes. 5m is short enough that a real climb
+    # toward either limit is still caught with margin before it bites —
+    # the hourly window itself is only 12x this long — and long enough
+    # that a burst which resolves itself does not page anyone.
+    for: 5m
+    severity: warning
+
+  # LogStoreDroppingRows, TraceStoreDroppingRows.
+  #
+  # `vl_rows_dropped_total` and `vt_rows_dropped_total` are named in
+  # docs/notifications.md, but NOT DEFAULTED here regardless: measured
+  # against a live install, `vl_` and `vt_` have ZERO metric names in
+  # this store at all — nothing scrapes either store into it, so no
+  # name under either prefix could possibly be confirmed yet. This
+  # release adds `victoria-logs-single.server.serviceMonitor` and
+  # `victoria-traces-single.server.serviceMonitor` below, which should
+  # close that; once it does, confirm the name and set it here.
+  #
+  # Healthy range, once confirmed: 0 — a store that is not refusing rows
+  # never touches its counter. Safe to leave on with a store disabled:
+  # `rate()` of a counter with no matching series returns no data, not
+  # zero, so an absent store never fires this.
+  logStore:
+    metric: ""
+    window: 5m
+    for: 5m
+    severity: critical
+  traceStore:
+    metric: ""
+    window: 5m
+    for: 5m
+    severity: critical
+
+  # GatewayQueueFilling, GatewayExportFailing, GatewayEnqueueFailing.
+  #
+  # THE INCIDENT (this week): a network policy change cut
+  # `charts/observability-emitters`' OpenTelemetry gateway off from its
+  # own proxy, and "sending queue is full" ran for hours with every pod
+  # Running and nothing reporting it. `otelcol_exporter_queue_size` /
+  # `_capacity`, `otelcol_exporter_send_failed_*` and
+  # `_enqueue_failed_*` are named in the incident report and in
+  # docs/reference.md's own `otlp.podMonitor` entry, which already calls
+  # out the failed/enqueue-failed pair by name — but NOT DEFAULTED
+  # regardless: measured against a live install, `otelcol_` has ZERO
+  # metric names in this store. The gateway is a component of the
+  # SIBLING chart, and unlike the log and trace stores this release does
+  # not add scrape coverage for it — that chart's coverage is its own to
+  # fix (see docs/safety.md). Once it is scraped into this store, its
+  # metrics reach vmalert here directly, the same way this chart's own
+  # stores' counters do, and never through the proxy.
+  #
+  # Export failure and enqueue failure are different losses — one is the
+  # DESTINATION refusing a batch the gateway already accepted, the other
+  # is the gateway's own QUEUE refusing at the door — so they are two
+  # rules, not one: a single rule cannot tell an operator which one
+  # paged them. `_send_failed_` and `_enqueue_failed_` both carry a
+  # per-signal suffix (spans, metric_points, log_records) this session
+  # did not enumerate with confidence; both `*MetricPrefix` values below
+  # are matched by `__name__` PREFIX rather than an enumerated suffix, so
+  # confirming either does not also require enumerating every signal
+  # this gateway exports for.
+  gateway:
+    queueSizeMetric: ""
+    queueCapacityMetric: ""
+    # -- Healthy range: comfortably under 1, since a queue that is never
+    # exercised sits near 0. 0.8 is the "queue above 80%" the incident
+    # report gives — headroom before the queue is full and the collector
+    # starts blocking or dropping.
+    queueRatio: 0.8
+    queueFor: 10m
+    queueSeverity: warning
+    exportFailedMetricPrefix: ""
+    # -- Healthy range: 0. A send failure is not something a healthy
+    # exporter path produces at any rate.
+    exportFailWindow: 5m
+    exportFailFor: 5m
+    exportFailSeverity: critical
+    enqueueFailedMetricPrefix: ""
+    # -- Healthy range: 0, same reasoning as the export-fail window
+    # above — an enqueue failure is not something a healthy exporter
+    # path produces at any rate either.
+    enqueueFailWindow: 5m
+    enqueueFailFor: 5m
+    enqueueFailSeverity: critical
+
+  # MetricStoreDiskNearGuard, LogStoreDiskNearGuard, TraceStoreDiskNearGuard.
+  #
+  # `vm_free_disk_space_bytes` / `vm_free_disk_space_limit_bytes` is the
+  # exact pair `charts/platform-alerts`' own `stores` example already
+  # documents for the metrics store — but NOT DEFAULTED here either:
+  # measured against a live install, `vm_free_disk_space_bytes` is
+  # absent from vmsingle's own 63 scraped `vm_` names, despite
+  # `storage.minFreeDiskSpaceBytes` being set above. Unlike
+  # `vm_rows_ignored_total`, a free-space GAUGE has no obvious reason to
+  # be registered lazily, so this is a real open question rather than an
+  # expected absence — see docs/safety.md.
+  #
+  # All three stores are symmetric and equally unconfirmed:
+  # `headroomFactor` mirrors platform-alerts' `storeLimits` value and
+  # default (2), comfortably above the 1x at which a store already
+  # stopped accepting writes. Each store's rule renders only once its
+  # pair is set, under its own per-store alert name — a logs or traces
+  # store that fills its disk switches to read-only and does not drop
+  # data to recover, so this covers all three stores, not only the
+  # metrics one.
+  diskGuard:
+    headroomFactor: 2
+    # -- Free space falls MONOTONICALLY under normal operation — nothing
+    # gives space back to a store between writes — so a single reading
+    # under the guard is a measurement artefact (a stale scrape, a
+    # momentary read against a filesystem mid-flush), not a trend.
+    # Minutes, not seconds: long enough to ride out one bad reading,
+    # short enough that a real approach to the guard is still caught
+    # with the headroom above to act in.
+    for: 10m
+    severity: warning
+    metrics:
+      freeSpaceMetric: ""
+      freeSpaceLimitMetric: ""
+    logs:
+      freeSpaceMetric: ""
+      freeSpaceLimitMetric: ""
+    traces:
+      freeSpaceMetric: ""
+      freeSpaceLimitMetric: ""
+
+  # MetricStoreSnapshotOlderThanWindow, LogStoreSnapshotOlderThanWindow,
+  # TraceStoreSnapshotOlderThanWindow.
+  #
+  # Not a store-exported counter: the newest-snapshot age this rule
+  # watches is the age of the last SUCCESSFUL run of the backup CronJobs
+  # `templates/backup.yaml` itself renders in this release, read from
+  # `kube_cronjob_status_last_successful_time` — the exact metric
+  # `charts/platform-alerts`' own CronJobNotSucceeding rule already
+  # relies on, and NOT a name this session is unsure of: kube-state-
+  # metrics' CronJob metrics are among the most standard in the
+  # ecosystem. What IS unconfirmed is coverage rather than spelling:
+  # `kube-state-metrics.enabled: false` above is deliberate — this
+  # release's own store is not meant to duplicate an estate's shared
+  # kube-state-metrics — so whether THIS store carries the metric at all
+  # depends on whether the estate's shared collection layer remote-writes
+  # kube-state-metrics data into it, which this session could not check.
+  # Confirm before relying on it the same as any other rule here; unlike
+  # the rest, the fix if it is missing is a scrape-coverage decision for
+  # the estate, not a name this chart could guess differently.
+  #
+  # Not gated behind `metric` the way the others are, because the name
+  # itself is not in question — but each store's rule still renders only
+  # while `backup.enabled` and `backup.<store>.enabled` are both true,
+  # since a CronJob that does not exist has nothing to watch. Named per
+  # store, the same as `diskGuard` above, rather than one alert
+  # distinguished only by a label.
+  #
+  # Each `maxAge` is the store's own schedule plus slack, the same
+  # doctrine as platform-alerts' `groups.backups.maxSuccessAge`: change
+  # `backup.<store>.schedule` above and update the matching `maxAge`
+  # with it, since the two are not derived from one another. The
+  # defaults below suit the hourly schedules `backup.yaml` ships by
+  # default (2x the schedule plus a little).
+  snapshotAge:
+    # -- The condition itself is slow-moving — a snapshot is hours old or
+    # it is not — but the signal behind it is a live CronJob status field,
+    # and `kube_cronjob_status_last_successful_time` can be briefly
+    # absent from a scrape while a job is actively running and the
+    # controller has not yet written its result. Long enough that a job
+    # in flight does not page; short against each `maxAge` below, which
+    # is already hours, so a real stale snapshot is not meaningfully
+    # delayed.
+    for: 30m
+    severity: critical
+    metrics:
+      maxAge: 150m
+    logs:
+      maxAge: 2h
+    traces:
+      maxAge: 2h
+
+  # LogStoreStreamsChurning, TraceStoreStreamsChurning: unconfirmed in
+  # BOTH spelling and coverage. VictoriaLogs and VictoriaTraces are each
+  # believed to export a counter of streams created, for exactly this
+  # failure (a non-constant stream field), but this session found no
+  # name for either to confirm — not in docs/notifications.md, not in
+  # `charts/platform-alerts`, not in the vendored chart archives — and,
+  # like *StoreDroppingRows above, nothing scrapes either store into
+  # this release's metrics store yet regardless. Two rules, not one:
+  # different stores key streams differently (the trace store on
+  # `service.name` AND the span name), so the usual cause differs too.
+  #
+  # `perSecond` and `for` ARE defaulted, unlike every metric name in this
+  # file: a healthy install creates roughly a stream per pod per day, so
+  # 1 stream/second averaged over an hour is already two orders of
+  # magnitude above that baseline — a real, defensible number rather
+  # than a guessed metric name, the same distinction `diskGuard`'s
+  # `headroomFactor` and `cardinality`'s `ratio` already draw.
+  logStreamChurn:
+    streamsCreatedMetric: ""
+    perSecond: 1
+    for: 1h
+    severity: warning
+  traceStreamChurn:
+    streamsCreatedMetric: ""
+    perSecond: 1
+    for: 1h
+    severity: warning
+
+  # WriterBufferGrowing, WriterDroppingPackets: read as vmalert's own
+  # `remoteWrite` path (`templates/vmalert.yaml` sets `remoteWrite` on
+  # both alerters, against the metrics store) — vmalert shares its
+  # remote-write client with vmagent, but whether it exports that
+  # client's metrics under the SAME names was not confirmed this
+  # session, and the measured live store had zero `vmagent_`-prefixed
+  # names to check either binary's family against. Generic across
+  # writers on purpose: whichever remote-write agent's buffer the
+  # confirmed name belongs to, growing or dropping is the same failure.
+  #
+  # `WriterBufferGrowing` fires on the buffer's own rate of change
+  # (`deriv(...) > 0`) rather than a fixed byte threshold: there is no
+  # size this chart could state generically, and a buffer that is
+  # GROWING AT ALL is already the failure worth looking at, the same
+  # "above zero" reasoning `ingest` above uses.
+  #
+  # `ProxyAtConcurrencyLimit`: vmauth's `VMAuth` CR accepts a concurrency
+  # cap (see the `everything` test case's `maxConcurrentRequests`).
+  # UNLIKE every other rule in this file, a live measurement (see
+  # docs/safety.md) found `vmauth_concurrent_requests_limit_reached_total`
+  # PRESENT on the store — the one counter with actual evidence behind
+  # it rather than a guess. It is still not written in below: this chart
+  # holds every metric name to the same "no default" rule rather than
+  # carving out an exception for the one that happened to be confirmed
+  # by someone else's measurement instead of this session's own reading
+  # of an upstream doc or source file. Set it here once you have read it
+  # back the same way.
+  #
+  # Each renders only once its metric name is supplied — never before.
+  #
+  # PER DESTINATION, which is what an HA pair of stores needs: every
+  # remote-write agent labels these series with the destination's `url`,
+  # so the rules fire (and name the URL) for the half that is down while
+  # the other half stays quiet. Each AGENT has its own metric name, so a
+  # cluster running the metrics agent and the log agent sets the first
+  # here and the rest in the `…Extra` lists (docs/high-availability.md,
+  # "Writers"):
+  #
+  #   writer:
+  #     bufferMetric: vmagent_remotewrite_pending_data_bytes
+  #     bufferMetricsExtra: [vlagent_remotewrite_pending_data_bytes]
+  #     droppedPacketsMetric: vmagent_remotewrite_packets_dropped_total
+  #     droppedPacketsMetricsExtra: [vlagent_remotewrite_packets_dropped_total]
+  #
+  # The gateway's own queue is the `gateway` block above: its series
+  # carry an `exporter` label, one per destination and signal.
+  writer:
+    bufferMetric: ""
+    bufferMetricsExtra: []
+    droppedPacketsMetric: ""
+    droppedPacketsMetricsExtra: []
+    for: 10m
+    severity: critical
+  proxyConcurrency:
+    limitedRequestsMetric: ""
+    window: 5m
+    for: 5m
+    severity: warning
+
+  # SlackNotificationsFailing.
+  #
+  # Alertmanager counts every failed Slack delivery in
+  # `alertmanager_notifications_failed_total{integration="slack"}` and
+  # retries; a revoked token, a channel the bot may not post in or Slack
+  # being down otherwise looks like a quiet estate. This rule fires when
+  # that counter increases over `window`.
+  #
+  # Unlike every rule above, its metric is stated here, not supplied: it
+  # is Alertmanager's own, and this chart renders that Alertmanager. It
+  # renders by itself — `selfAlerts.enabled` is not needed — whenever
+  # `notifications.slack.workspaces` is non-empty. Set `enabled: false`
+  # to drop it.
+  #
+  # It is NEVER routed to Slack: a route at the top of the tree sends it
+  # to `notifications.slack.failureReceiver`, or to the null receiver when
+  # that is unset (visible in vmalert, reaches nobody). Its series exists
+  # because this chart scrapes Alertmanager itself: a ServiceMonitor
+  # (templates/alertmanager-scrape.yaml) renders whenever Alertmanager
+  # does, and the operator's own VMServiceScrape is disabled.
+  #
+  # Healthy range: 0.
+  slackDelivery:
+    enabled: true
+    window: 15m
+    for: 1m
+    severity: warning
+
+  # RemoteEvaluatorFailing. Renders whenever `vmalert.remoteEvaluators` is
+  # non-empty, without `selfAlerts.enabled` (like `slackDelivery`): an
+  # evaluator whose datasource is unreachable evaluates nothing, so its
+  # rules never fire and the estate looks healthy. Reads vmalert's own
+  # execution-error counters of the evaluator pods from the LOCAL store and
+  # fires through the local Alertmanager. Healthy range: 0.
+  remoteEvaluator:
+    enabled: true
+    window: 10m
+    for: 5m
+    severity: warning
+
+  # SelfAlertSourceAbsent. Every rule above reads an EMPTY series as
+  # healthy, so the day a scrape stops (a NetworkPolicy refusing the
+  # scraper, a renamed job, a relabel dropping the target) they all go
+  # quiet together and a quiet dashboard looks like a healthy one. This
+  # watches the metric names set under `selfAlerts` (not the snapshot
+  # rules, which read kube-state-metrics): per cluster, a series seen
+  # within `lookback` that has none now, `tenancy.clusterLabel` required
+  # non-empty on both sides, plus a whole-store `absent()` for the case
+  # where every cluster's series went at once. Opt in; needs at least one
+  # metric name set, and `selfAlerts.enabled`.
+  #
+  # Only enable it where every configured metric is always exported: a name
+  # that never existed on this store (a renamed counter, one the store only
+  # publishes after its first event) is read as "the whole store lost it"
+  # and fires, with no cluster label and `source` naming the metric. Unset
+  # the metric names you do not want watched.
+  #
+  # `lookback` is how long a vanished series keeps the alert firing: past
+  # it the series is forgotten and the alert resolves, so it is the time
+  # a human has to notice, not an outage length. A day matches
+  # platform-alerts' `absentLookback`.
+  sourceAbsent:
+    enabled: false
+    lookback: 1d
+    for: 15m
+    severity: warning
+
+  # StoreMemoryNearLimit. Works in BOTH modes, and renders without
+  # `selfAlerts.enabled` (its own switch, like `slackDelivery`): a store
+  # that is OOM-killed under its memory limit comes back with a cold cache
+  # and, on a pair, a gap its writers must refill, and the first anyone
+  # hears of it is the restart. The working set of each store container of
+  # THIS release against its own memory limit, from cAdvisor's
+  # `container_memory_working_set_bytes` and kube-state-metrics'
+  # `kube_pod_container_resource_limits`: both standard names, so unlike
+  # the rest of this block there is no metric to confirm. A store whose pod
+  # carries no limit has no series on the right-hand side and never fires,
+  # which is the right answer (the chart refuses a store with no memory
+  # limit anyway, see `resources.policy`). Set it in the replica release
+  # too: each release alerts for its own pods. Opt in: the rule needs
+  # cAdvisor and kube-state-metrics series in the store the vmalert reads.
+  #
+  # Healthy range: well under `ratio`. VictoriaMetrics and its siblings
+  # fill the page cache they are allowed, so a working set that creeps
+  # toward the limit and stays is a store that needs a bigger limit, not a
+  # leak.
+  storeMemory:
+    enabled: false
+    # -- Fire above this fraction of the container's memory limit.
+    ratio: 0.8
+    for: 15m
+    severity: warning
+
+  # StoreReplicaDivergence (`ha.enabled` on the primary only). The two stores of a
+  # pair take the same writes, so over a window their ingest rates are the
+  # same, give or take the writers' queues draining after a restart. This
+  # compares the rows-ingested RATE of replica `a` against replica `b`
+  # (`observability_replica`, the label the stores' self-scrape carries in
+  # a pair) and fires when the ratio leaves 1 +/- `threshold`. It is a
+  # tolerance, never an equality: the two counters are scraped at different
+  # instants and a writer that replays a queue skews one side for minutes.
+  #
+  # MEASURE A WEEK FIRST. `threshold` is a conservative guess (a quarter),
+  # not a measured one: run with `enabled: false` or watch
+  # `abs(1 - rate(a) / rate(b))` in Grafana for a week of a healthy pair,
+  # then set the threshold just above its worst healthy value. A tight
+  # threshold pages on every restart; a loose one misses a writer that has
+  # lost one destination, which is the failure this rule exists for.
+  #
+  # The metric names are the stores' own counters (the log and trace names
+  # were seen on a live store, the metrics one is VictoriaMetrics'
+  # documented insert counter); the metrics rule reads
+  # `type="promremotewrite"` rows, the path the collectors write on. A
+  # store that is down has no series and fires nothing here: a store down
+  # is `up == 0`'s job, not this rule's.
+  divergence:
+    enabled: false
+    window: 1h
+    threshold: 0.25
+    for: 30m
+    severity: warning
+    metrics:
+      metric: vm_rows_inserted_total
+      # -- Extra label matchers on the metrics counter, inside the braces.
+      matchers: 'type="promremotewrite"'
+    logs:
+      metric: vl_rows_ingested_total
+    traces:
+      metric: vt_rows_ingested_total
+
+
+# -- MIRROR: the few keys of the stack's subcharts this chart reads: whether a
+# store is on (the store self-alerts), the store Services' names, and
+# whether the vendored default rule set (hence upstream's `Watchdog`) is on.
+# The rest of those sections is the stack's.
+victoria-metrics-k8s-stack:
+  enabled: true
+  vmsingle:
+    enabled: true
+  defaultRules:
+    enabled: true
+victoria-logs-single:
+  enabled: true
+victoria-traces-single:
+  enabled: true

@@ -423,6 +423,137 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### 0.70.0 → 0.71.0
+
+**Nothing moves on the bump.** `observability-stack`'s new `alerting.source`
+defaults to `stack` and the new chart `observability-alerting` is not
+installed by anything: every golden render is unchanged. The upgrade is an
+opt-in that moves **who renders the alerting plane**: the vmalerts, the
+VMAlertmanager, karma, the Watchdog rule, the store self-alerts and the
+Alertmanager ServiceMonitor ([reference.md](reference.md),
+`charts/observability-alerting`) from the stack's Application to an
+Application of their own, under the **same kind, name and namespace**, so
+the objects are adopted in place and never deleted. The alerting plane is the
+one part of an install where a gap costs a page that does not arrive, so the
+order below is chosen so that no step can delete anything.
+
+**Why it can be adopted in place.** Argo CD tracks an object by an annotation
+(`argocd.argoproj.io/tracking-id`) naming the Application that applied it, and
+prunes only objects that name it. The new Application server-side-applies the
+same objects: same name, same namespace, same uid, the same spec, only that
+annotation moves. The VictoriaMetrics operator sees no change to the
+`VMAlert`/`VMAlertmanager` spec, so it rolls nothing: vmalert keeps its loaded
+rules and its `for:` timers, and Alertmanager keeps its silences and its
+mesh (a pair holds its state in memory, replicated between the replicas; a
+restart of the whole set would lose it, and nothing here restarts it).
+`tests/alerting_chart_test.go` is the proof that "the same spec" is true: for
+every stack test case, the stack with the switch off plus the alerting chart
+equals the stack with it on, object for object, byte for byte.
+
+**The hazard, and the mechanism.** The stack's Application has `prune: true`.
+The moment the stack stops rendering the plane (`alerting.source: chart`), its
+next sync prunes every object of it that still names the stack Application.
+The new Application only takes them over when it syncs, and nothing orders the
+two: do not lean on sync waves between Applications for this, a root that
+health-gates waves still does not make one Application's prune wait for
+another's apply. If the
+stack syncs first with prune on, the plane is deleted, the operator tears down
+the vmalert and Alertmanager pods, and until the new Application recreates
+them nothing is evaluated and nothing notifies. The same mechanism that
+hands VMRules from one Application to another without deleting them removes
+the hazard: **turn the stack's prune off for the handover.** With prune off, whichever Application syncs
+first, nothing is deleted: the stack that stops rendering leaves the objects
+where they are, and the new Application then re-tags them.
+
+**Order.** Four steps, each a separate change, each checked before the next.
+
+1. **Bump the pin to 0.71.0 on the cluster, and change nothing else.** The
+   bump is a no-op render; confirm with the zero-diff gate. This is a floor,
+   not a step to skip: a cluster still on 0.70.0 refuses the `alerting` key.
+2. **Hand over, with prune off, in ONE change.** In the stack Application:
+   `alerting.source: chart` and, temporarily, `syncPolicy.automated.prune:
+   false` (commented as temporary). Add the `observability-alerting`
+   Application, same destination namespace, release `observability-alerting`,
+   `stackReleaseName: <the stack's release name>`, and the plane's sections of
+   the stack's values **copied unchanged** (`vmalert`, `alertmanager`,
+   `karma`, `notifications`, `selfAlerts`, plus the mirrored keys listed in
+   [reference.md](reference.md): `mode`, `ha`, `interval`, `storeCredentials`,
+   `stores`, `tenancy.clusterLabel`, `upstreamRules`, `backup` switches, and
+   the subchart keys the stack sets for `defaultRules`). Do not change a
+   value, the chart version of either Application or the Alertmanager's
+   `replicaCount` in this change: the whole argument is that nothing about the
+   objects differs. Render both Applications' manifests with the real values
+   and diff them against the live objects first (`kubectl diff` of the new
+   chart's render, with `--server-side`): the diff must be empty apart from the
+   tracking annotation.
+   Both orders are safe:
+   - *new Application first*: it applies identical objects and takes the
+     tracking id; the stack then has nothing left to prune.
+   - *stack first*: it stops rendering the plane; with prune off it deletes
+     nothing, shows OutOfSync with "extra resources" until the new
+     Application has applied them, and a `SharedResourceWarning` for the
+     minutes between is expected and harmless.
+   Both Applications run `ServerSideApply=true` like the stack's already does.
+3. **Verify the tracking ids moved, read-only.** On each cluster:
+
+   ```
+   kubectl --context <c> -n observability get vmalert,vmalertmanager,vmrule,servicemonitor,deploy,svc,cm,sa \
+     -o custom-columns=KIND:.kind,NAME:.metadata.name,APP:.metadata.annotations.argocd\\.argoproj\\.io/tracking-id
+   ```
+
+   Every object in the table of `charts/observability-alerting` names the new
+   Application (the stack's other objects, the proxy, the stores, the
+   NetworkPolicies, still name the stack). Also: the new Application is
+   Synced and Healthy; the stack Application shows no resource requiring
+   prune; vmalert's `/api/v1/rules` still lists every group with no
+   `health: err`; the count of firing alerts and the Watchdog did not change;
+   the Alertmanager pods' age did not change (nothing restarted) and a silence
+   created before step 2 is still listed.
+4. **Restore prune.** A separate change removes the temporary `prune: false`
+   from the stack Application. Do not merge it before step 3 holds on every
+   cluster that has the plane. With prune back on, anything still naming the
+   stack and no longer rendered by it would be deleted; step 3 is what proves
+   there is nothing.
+
+**No-gap argument.** At no step is a plane object absent: step 2 deletes
+nothing under either sync order (prune off), the objects' specs are
+byte-identical so the operator restarts nothing, and the tracking-id rewrite
+is metadata. There is no evaluation gap (the vmalert pods run through), no
+notification gap (the Alertmanager pods run through, same mesh, same
+silences), and the Watchdog rule keeps its object so the status box's deadman
+reads no interruption. The two things that *can* still go wrong are listed
+under Rolling back.
+
+**Do not.**
+- do not install the new chart with the stack still on `alerting.source:
+  stack`: two Applications would own the same objects and fight over the
+  tracking id on every sync;
+- do not turn the stack's prune back on in the same change as the handover;
+- do not combine the handover with a chart upgrade or a change to the plane's
+  values. Change them before (stack still renders) or after (the new chart
+  renders), where an ordinary sync applies them;
+- do not change `nameOverride`/`fullnameOverride`/`stackReleaseName` on one
+  side only: every name derives from them, and a name that differs is a
+  different object, which is a delete and a create.
+
+**What stays in the stack.** The NetworkPolicies (including the vmalert and
+karma ones, which select pods by label, and the labels are unchanged), the
+proxy and its VMUsers (the `alertReaders` and `vmalertAPI` routes point at the
+vmalert and Alertmanager Services by their unchanged names), the stores and
+the backups. A later release may move the two NetworkPolicies with the
+plane.
+
+**Rolling back** is the same order reversed: set the stack's prune off, return
+`alerting.source: stack`, remove the new Application (it carries no finalizer,
+so deleting it does not cascade to the objects; check that before relying on
+it), then restore prune. Nothing is deleted at any point for the same reason.
+Two failure modes remain, and neither is a regression of this procedure: a
+values difference between the stack's copy and the new Application's (the
+objects *would* change, and the operator would roll the pods; the render diff
+in step 2 is the check), and the new Application pointing at a different
+`stackReleaseName` (different object names: new objects are created beside the
+old ones and the old ones are left until prune).
+
 ### 0.69.2 → 0.70.0
 
 **Nothing moves on the bump.** `observability-stack`'s new

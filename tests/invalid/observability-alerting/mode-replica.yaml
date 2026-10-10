@@ -1,0 +1,6 @@
+# expect: The alerting plane (vmalerts, Alertmanager, karma, Watchdog rule, self-alerts) belongs to a `mode: full` install
+# A release of this chart beside a `mode: replica` (or `operator-only`)
+# install has nothing to hand over: the stack renders none of the alerting
+# plane in those modes.
+stackReleaseName: observability-stack
+mode: replica

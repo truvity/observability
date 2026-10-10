@@ -1,0 +1,184 @@
+# The alerting plane of tests/cases/observability-stack/everything: that case's values
+# (presets merged) kept to the keys this chart declares. tests/alerting_chart_test.go
+# derives the same file for every stack case and holds the objects byte-identical.
+stackReleaseName: observability-stack
+nameOverride: stack
+ha: true
+interval: 15s
+tenancy:
+  clusterLabel: cell
+storeCredentials:
+  secretName: example-store-credentials
+  usernameKey: user
+  passwordKey: pass
+vmalert:
+  externalUrl: https://alerts.example.com
+  externalLabels:
+    cluster: example
+  logs:
+    enabled: true
+  resources:
+    requests:
+      cpu: '2'
+      memory: 1Gi
+    limits:
+      cpu: '2'
+      memory: 1Gi
+alertmanager:
+  replicaCount: 2
+  watchdog:
+    secretName: example-watchdog-receiver
+    key: url
+    repeatInterval: 2m
+    timeout: 10m
+  resources:
+    requests:
+      cpu: '2'
+      memory: 512Mi
+    limits:
+      cpu: '2'
+      memory: 512Mi
+notifications:
+  externalUrl: https://alerts.example.com
+  runbookBaseUrl: https://runbooks.example/
+  groupWait: 10s
+  groupInterval: 2m
+  repeatInterval: 2h
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  webhook:
+  - name: status-page
+    urlSecret:
+      name: example-status-webhook
+      key: url
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  routes:
+  - match:
+      k8s_cluster_name: example-cluster
+    critical: '#alerts-example-cluster'
+    warning: '#alerts-example-cluster'
+  - match:
+      k8s_namespace_name: example-app
+    critical: '#example-app'
+  also:
+  - receiver: status-page
+    match:
+      severity: critical
+      customer_facing: 'true'
+backup:
+  enabled: true
+  metrics:
+    enabled: true
+  logs:
+    enabled: true
+  traces:
+    enabled: true
+selfAlerts:
+  enabled: true
+  ingest:
+    metric: example_vm_rows_ignored_total
+    window: 2m
+    for: 2m
+    severity: critical
+  cardinality:
+    hourlyCurrentSeriesMetric: example_vm_hourly_series_limit_current_series
+    hourlyMaxSeriesMetric: example_vm_hourly_series_limit_max_series
+    dailyCurrentSeriesMetric: example_vm_daily_series_limit_current_series
+    dailyMaxSeriesMetric: example_vm_daily_series_limit_max_series
+    ratio: 0.85
+    for: 3m
+    severity: warning
+  logStore:
+    metric: example_vl_rows_dropped_total
+    window: 2m
+    for: 2m
+    severity: critical
+  traceStore:
+    metric: example_vt_rows_dropped_total
+    window: 2m
+    for: 2m
+    severity: critical
+  gateway:
+    queueSizeMetric: example_otelcol_exporter_queue_size
+    queueCapacityMetric: example_otelcol_exporter_queue_capacity
+    queueRatio: 0.75
+    queueFor: 5m
+    queueSeverity: warning
+    exportFailedMetricPrefix: example_otelcol_exporter
+    exportFailWindow: 2m
+    exportFailFor: 2m
+    exportFailSeverity: critical
+    enqueueFailedMetricPrefix: example_otelcol_exporter
+    enqueueFailWindow: 2m
+    enqueueFailFor: 2m
+    enqueueFailSeverity: critical
+  diskGuard:
+    headroomFactor: 3
+    for: 8m
+    severity: warning
+    metrics:
+      freeSpaceMetric: example_vm_free_disk_space_bytes
+      freeSpaceLimitMetric: example_vm_free_disk_space_limit_bytes
+    logs:
+      freeSpaceMetric: example_vl_free_disk_space_bytes
+      freeSpaceLimitMetric: example_vl_free_disk_space_limit_bytes
+    traces:
+      freeSpaceMetric: example_vt_free_disk_space_bytes
+      freeSpaceLimitMetric: example_vt_free_disk_space_limit_bytes
+  snapshotAge:
+    for: 20m
+    severity: critical
+    metrics:
+      maxAge: 3h
+    logs:
+      maxAge: 90m
+    traces:
+      maxAge: 90m
+  logStreamChurn:
+    streamsCreatedMetric: example_vl_streams_created_total
+    perSecond: 2
+    for: 30m
+    severity: warning
+  traceStreamChurn:
+    streamsCreatedMetric: example_vt_streams_created_total
+    perSecond: 2
+    for: 30m
+    severity: warning
+  writer:
+    bufferMetric: example_vmalert_remotewrite_pending_data_bytes
+    bufferMetricsExtra:
+    - example_vlagent_remotewrite_pending_data_bytes
+    for: 15m
+    droppedPacketsMetric: example_vmalert_remotewrite_packets_dropped_total
+    droppedPacketsMetricsExtra:
+    - example_vlagent_remotewrite_packets_dropped_total
+    severity: critical
+  proxyConcurrency:
+    limitedRequestsMetric: example_vmauth_concurrent_requests_limit_reached_total
+    window: 2m
+    for: 2m
+    severity: warning
+victoria-metrics-k8s-stack:
+  global:
+    clusterLabel: cell
+  vmsingle:
+    enabled: false
+  defaultDashboards:
+    enabled: true
+    dashboards:
+      grafana-overview:
+        enabled: true
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

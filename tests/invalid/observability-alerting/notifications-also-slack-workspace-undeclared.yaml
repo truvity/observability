@@ -1,0 +1,31 @@
+# expect: names workspace "nowhere"
+# An `also` entry naming a workspace with no bot token.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+    - name: partner
+      appTokenSecret:
+        name: example-partner-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+      workspace: acme
+    warning:
+      receiver: slack
+      channel: '#alerts'
+      workspace: acme
+  also:
+  - receiver: slack
+    match:
+      k8s_cluster_name: my-cluster
+    workspace: nowhere
+    channel: '#mirror'
