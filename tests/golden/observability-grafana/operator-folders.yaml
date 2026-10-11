@@ -322,9 +322,12 @@ data:
       call GET "/api/users/$uid"
       need "read operator user for $c" 200 || continue
       if printf '%s' "$body" | grep -q '"isExternallySynced":true'; then
-        call GET "/api/org/users/lookup?query=$enc&limit=100"
+        # The role is only on /api/users/:id/orgs (admin, users:read, same as the
+        # call above): [{"orgId":1,"name":"Main Org.","role":"None"},…]. The lookups
+        # (/api/org/users/lookup) carry no `role`. The Job works in org 1.
+        call GET "/api/users/$uid/orgs"
         need "read org role of operator user for $c" 200 || continue
-        role=$(printf '%s' "$body" | sed 's/{"orgId"/\n&/g' | grep "\"userId\":$uid[,}]" | sed -n 's/.*"role":"\([^"]*\)".*/\1/p' | head -n 1)
+        role=$(printf '%s' "$body" | sed 's/{"orgId"/\n&/g' | grep '^{"orgId":1[,}]' | sed -n 's/.*"role":"\([^"]*\)".*/\1/p' | head -n 1)
         if [ "$role" != None ]; then
           log "operator user for $c is externally synced with role '${role:-unknown}', not None: fix the workloadAuth role mapping (noRoleSubjectSuffixes); not granting Edit"
           failed=1; continue
