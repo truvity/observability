@@ -1,0 +1,18 @@
+# External Secrets Operator's CRDs, fetched by ocictl's crdctl. hack/crds.sh
+# keeps TWO of them: the ExternalSecret and the SSHKey generator, the kinds
+# charts/observability-stack renders (`tenancy.authz.signingKey.source: eso`)
+# to have the operator generate tenancy-authz's signing key. The rest of the
+# set (stores, the other generators, push secrets) belongs to whoever installs
+# the operator.
+#
+# A COPY of the definitions, vendored so that tests/pruning_test.go can walk
+# the objects this repository renders against the very schemas the API
+# server will prune them by. Not an installation of the operator: the set is
+# off by default and turned on only where the operator's own release does
+# not install them.
+#
+# The version is pinned by hand and bumped deliberately.
+repo: external-secrets/external-secrets
+pinned_version: "2.12.0"
+paths:
+  - config/crds/bases

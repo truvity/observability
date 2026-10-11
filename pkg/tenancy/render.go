@@ -274,3 +274,89 @@ func orDefault(v, def string) string {
 	}
 	return v
 }
+
+// ClaimForGroups returns the vm_access claim body for a caller who holds
+// the given groups: the UNION of what every principal those groups select
+// may read.
+//
+// This is the per-person shape vmauth cannot build for itself. vmauth
+// selects ONE user per token by `match_claims`, so a token holding two
+// groups reads whichever principal came first and never both; an
+// authoriser in front of it can read the whole list, merge the grants, and
+// hand vmauth one claim that says so.
+//
+// A principal is selected when ANY of its groups is among the caller's
+// (compared exactly, never as a pattern). Grants are merged per cluster:
+// the namespaces of every grant on that cluster are unioned, and a grant
+// of every namespace on a cluster swallows the rest of that cluster's
+// grants. The merged principal is then rendered by RenderClaim, so the
+// result is exactly what a principal holding that union would get from
+// vmauth's own configuration — in particular the logs filter is ONE
+// `_stream:{a or b}` string, because the log store ANDs several.
+//
+// The bool is false, with a nil error, when no principal is selected. That
+// is "this caller may read nothing", and it is the caller's to turn into a
+// refusal: an empty claim is not a narrow grant, it is no grant enforced.
+// An error means the configuration itself is unusable.
+func (c Config) ClaimForGroups(groups []string) (Claim, bool, error) {
+	held := make(map[string]bool, len(groups))
+	for _, g := range groups {
+		held[g] = true
+	}
+
+	type reach struct {
+		all        bool
+		namespaces map[string]bool
+	}
+	byCluster := map[string]*reach{}
+	var matched []string
+
+	for _, p := range c.Principals {
+		selected := false
+		for _, g := range p.groupList() {
+			if held[g] {
+				selected = true
+				break
+			}
+		}
+		if !selected {
+			continue
+		}
+		matched = append(matched, p.label())
+		for _, g := range p.Grants {
+			r := byCluster[g.Cluster]
+			if r == nil {
+				r = &reach{namespaces: map[string]bool{}}
+				byCluster[g.Cluster] = r
+			}
+			if g.AllNamespaces {
+				r.all = true
+			}
+			for _, ns := range g.Namespaces {
+				r.namespaces[ns] = true
+			}
+		}
+	}
+	if len(matched) == 0 {
+		return Claim{}, false, nil
+	}
+
+	merged := Principal{Group: strings.Join(matched, "+")}
+	for cluster, r := range byCluster {
+		g := Grant{Cluster: cluster}
+		if r.all {
+			g.AllNamespaces = true
+		} else {
+			for ns := range r.namespaces {
+				g.Namespaces = append(g.Namespaces, ns)
+			}
+		}
+		merged.Grants = append(merged.Grants, g)
+	}
+
+	claim, err := c.RenderClaim(merged)
+	if err != nil {
+		return Claim{}, false, err
+	}
+	return claim, true, nil
+}

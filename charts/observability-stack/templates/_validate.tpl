@@ -47,6 +47,7 @@ vmalert and karma, or the pair splits and pages twice.
 {{- include "observability-stack.validate.notifications" . -}}
 {{- include "observability-stack.validate.karma" . -}}
 {{- include "observability-stack.validate.tenancy" . -}}
+{{- include "observability-stack.validate.tenancyAuthz" . -}}
 {{- include "observability-stack.validate.writers" . -}}
 {{- include "observability-stack.validate.alertReaders" . -}}
 {{- include "observability-stack.validate.readers" . -}}
@@ -467,6 +468,9 @@ where the reason above does not reach:
 {{- if .Values.karma.enabled -}}
 {{- $sites = append $sites (dict "key" "karma.resources" "value" .Values.karma.resources) -}}
 {{- end -}}
+{{- if .Values.tenancy.authz.enabled -}}
+{{- $sites = append $sites (dict "key" "tenancy.authz.resources" "value" .Values.tenancy.authz.resources) -}}
+{{- end -}}
 {{- $policy := (.Values.resources).policy | default "burstable" -}}
 {{- range $site := $sites -}}
 {{- $r := $site.value | default dict -}}
@@ -488,7 +492,7 @@ written when those carried a default CPU limit keeps meaning "no limit".
 */ -}}
 {{- range $side, $m := dict "requests" $requests "limits" $limits -}}
 {{- range $res, $q := $m -}}
-{{- if and (kindIs "invalid" $q) (not (has $site.key (list "vmauth.resources" "vmalert.resources" "alertmanager.resources" "karma.resources"))) -}}
+{{- if and (kindIs "invalid" $q) (not (has $site.key (list "vmauth.resources" "vmalert.resources" "alertmanager.resources" "karma.resources" "tenancy.authz.resources"))) -}}
 {{- fail (printf "observability-stack: %s.%s.%s is null. Helm deletes a null from this chart's own values, but passes it through unchanged to a vendored subchart's, and the API server then reads it as a quantity of 0 and refuses the object. A default on this component cannot be removed through values: under `resources.policy: burstable`, give it a whole number of cores well above the request instead (the node's core count leaves it effectively unthrottled)." $site.key $side (toString $res)) -}}
 {{- end -}}
 {{- end -}}
@@ -1360,14 +1364,15 @@ per-tier override — as `(where channel workspace workspaceNames)`.
 {{- end -}}
 {{- /* The vm_access reader (opt-in). */ -}}
 {{- if $t.vmAccessReader.enabled -}}
-{{- if not $t.issuerUrl -}}
+{{- /* With `tenancy.authz` on, the issuer and the audience are the service's: see validate.tenancyAuthz. */ -}}
+{{- if and (not $t.authz.enabled) (not $t.issuerUrl) -}}
 {{- fail "observability-stack: `tenancy.vmAccessReader.enabled` is set but `tenancy.issuerUrl` is empty. vmauth verifies a token against the issuer's OIDC discovery document; with no issuer there is nothing to verify a signature against." -}}
 {{- end -}}
 {{- $vrAud := $t.vmAccessReader.audience | default $t.audience -}}
-{{- if not $vrAud -}}
+{{- if and (not $t.authz.enabled) (not $vrAud) -}}
 {{- fail "observability-stack: `tenancy.vmAccessReader.enabled` is set but neither `tenancy.vmAccessReader.audience` nor `tenancy.audience` is. vmauth never inspects `aud` on its own, so the reader would admit ANY unexpired token of the issuer that carries a `vm_access` claim, whatever client it was minted for; the pin in `matchClaims` is the only place the check can be made." -}}
 {{- end -}}
-{{- if not (regexMatch $audienceShape (toString $vrAud)) -}}
+{{- if and (not $t.authz.enabled) (not (regexMatch $audienceShape (toString $vrAud))) -}}
 {{- fail (printf "observability-stack: the vm_access reader's audience %q is not an identifier (%s): it carries whitespace or a newline." (toString $vrAud) $audienceShape) -}}
 {{- end -}}
 {{- $vrRoutes := $t.vmAccessReader.routes | default (list "metrics" "logs" "traces") -}}
@@ -2242,5 +2247,103 @@ first; this is the same check for a render that bypasses the schema).
 {{- end -}}
 {{- if and (eq $src "chart") (ne (.Values.mode | default "full") "full") -}}
 {{- fail (printf "observability-stack: `alerting.source` is \"chart\" with `mode: %s`. Only a `mode: full` install renders the vmalerts, Alertmanager, karma, the Watchdog rule and the self-alerts, so there is nothing to hand over here. Remove `alerting.source` (or set it to \"stack\"), and install charts/observability-alerting only beside a full install." (.Values.mode | default "full")) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`tenancy.authz`: the Envoy external authorisation service in front of vmauth.
+
+Every refusal here is a way the arrangement renders, installs and then does
+not do what it says — and most of them fail in the unsafe direction or
+silently: a reader that trusts a service that is not there (everyone is
+refused), a gateway that cannot reach the service (everyone is refused, or
+with a fail-open policy, nobody is checked), a principal whose narrower
+routes the single minted claim would widen.
+*/}}
+{{- define "observability-stack.validate.tenancyAuthz" -}}
+{{- $t := .Values.tenancy -}}
+{{- $a := $t.authz -}}
+{{- if $a.enabled -}}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- if not $eff.vmauth -}}
+{{- fail "observability-stack: `tenancy.authz.enabled` is set but this install renders no vmauth (`mode` is not \"full\", or `vmauth.enabled` is false). The service exists to feed vmauth's vm_access reader; with no proxy it would be configured and unreachable." -}}
+{{- end -}}
+{{- if not $t.vmAccessReader.enabled -}}
+{{- fail "observability-stack: `tenancy.authz.enabled` is set but `tenancy.vmAccessReader.enabled` is not. The service answers with a token whose `vm_access` claim is the person's grant, and the vm_access reader is the only VMUser that applies one; without it vmauth would find no user for the minted token and refuse every person." -}}
+{{- end -}}
+{{- $upstream := $a.upstreamIssuer | default $t.issuerUrl -}}
+{{- if not $upstream -}}
+{{- fail "observability-stack: `tenancy.authz.enabled` is set but neither `tenancy.authz.upstreamIssuer` nor `tenancy.issuerUrl` is. There is no identity provider to verify a person's token against, and a service that trusts an unverified token grants whatever its claims say." -}}
+{{- end -}}
+{{- if not (regexMatch "^https?://[^/?#@\\s]+$" (toString $upstream)) -}}
+{{- fail (printf "observability-stack: the upstream issuer %q is not a bare http(s) URL (no path, query or credentials). The service compares it to a token's `iss` as a string and fetches `/.well-known/openid-configuration` from it." (toString $upstream)) -}}
+{{- end -}}
+{{- $person := (include "observability-stack.authz.personAudiences" . | fromYaml).audiences -}}
+{{- if not $person -}}
+{{- fail "observability-stack: `tenancy.authz.enabled` is set but there is no person audience: `tenancy.authz.personAudiences` is empty and so is `tenancy.audience`. No token would be exchanged and every person would be refused." -}}
+{{- end -}}
+{{- range $aud := $person -}}
+{{- if not (regexMatch "^\\S+$" (toString $aud)) -}}
+{{- fail (printf "observability-stack: `tenancy.authz.personAudiences` has %q, which is not an identifier (blank, or carrying whitespace)." (toString $aud)) -}}
+{{- end -}}
+{{- end -}}
+{{- if not (regexMatch "^\\S+$" (toString $a.mintedAudience)) -}}
+{{- fail (printf "observability-stack: `tenancy.authz.mintedAudience` is %q, which is not an identifier (blank, or carrying whitespace). The vm_access reader pins it in `aud`." (toString $a.mintedAudience)) -}}
+{{- end -}}
+{{- if has $a.mintedAudience $person -}}
+{{- fail (printf "observability-stack: `tenancy.authz.mintedAudience` %q is also a person audience. A minted token would be taken for a person's if it ever came back, and the vm_access reader could not tell the two apart by audience." (toString $a.mintedAudience)) -}}
+{{- end -}}
+{{- if and $t.vmAccessReader.audience (ne (toString $t.vmAccessReader.audience) (toString $a.mintedAudience)) -}}
+{{- fail (printf "observability-stack: `tenancy.vmAccessReader.audience` is %q but `tenancy.authz` is on, so the reader pins `tenancy.authz.mintedAudience` (%q). Two audiences for one reader is a setting that silently does not apply; clear `vmAccessReader.audience`." (toString $t.vmAccessReader.audience) (toString $a.mintedAudience)) -}}
+{{- end -}}
+{{- if not (regexMatch "^[0-9]+(s|m|h)$" (toString $a.tokenTTL)) -}}
+{{- fail (printf "observability-stack: `tenancy.authz.tokenTTL` is %q: write whole seconds, minutes or hours (30s, 5m, 1h)." (toString $a.tokenTTL)) -}}
+{{- end -}}
+{{- $ttl := include "observability-stack.durationSeconds" $a.tokenTTL | int -}}
+{{- if or (lt $ttl 30) (gt $ttl 3600) -}}
+{{- fail (printf "observability-stack: `tenancy.authz.tokenTTL` %q is outside 30s..1h. Shorter and every query pays for a signature; longer and a person's removal from a group is honoured that much later." (toString $a.tokenTTL)) -}}
+{{- end -}}
+{{- /*
+The people's principals: the ones the service will union. A principal that
+narrows its routes cannot be honoured: the service mints ONE claim per
+person and the vm_access reader gives every claim the same routes, so the
+narrowing would be silently dropped and the person would read more than the
+principal says. Refused, not guessed.
+*/ -}}
+{{- $mine := (include "observability-stack.authz.principals" . | fromYaml).principals -}}
+{{- if not $mine -}}
+{{- fail "observability-stack: `tenancy.authz.enabled` is set but no entry of `tenancy.principals` is a person's principal (its audience, its own or `tenancy.audience`, is not in the person audiences). The service would have nothing to grant and would refuse everyone." -}}
+{{- end -}}
+{{- range $p := $t.principals -}}
+{{- $aud := $p.audience | default $t.audience -}}
+{{- if has $aud $person -}}
+{{- $label := $p.name | default $p.group -}}
+{{- if or $p.routes $p.metricsQueryOnly $p.vmalertAPI -}}
+{{- fail (printf "observability-stack: principal %q is a person's principal but sets `routes`, `metricsQueryOnly` or `vmalertAPI`. With `tenancy.authz` on, the service mints one claim per person and the vm_access reader gives every claim the same routes, so the narrowing would be dropped and the person would read more than this principal says. Give a narrower population its own audience (and keep it out of `personAudiences`), or leave the narrowing off." $label) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $a.signingKey.source "existingSecret" -}}
+{{- if not $a.signingKey.existingSecret -}}
+{{- fail "observability-stack: `tenancy.authz.signingKey.source` is existingSecret but `tenancy.authz.signingKey.existingSecret` is empty. Name the Secret holding the key as the file `privateKey`, or use `source: eso`." -}}
+{{- end -}}
+{{- else if $a.signingKey.existingSecret -}}
+{{- fail "observability-stack: `tenancy.authz.signingKey.existingSecret` is set but `tenancy.authz.signingKey.source` is eso, so the Secret would be ignored and a generated one used. Set `source: existingSecret`." -}}
+{{- end -}}
+{{- if $a.securityPolicy.enabled -}}
+{{- if not $a.securityPolicy.targetRefs -}}
+{{- fail "observability-stack: `tenancy.authz.securityPolicy.enabled` is set but `tenancy.authz.securityPolicy.targetRefs` is empty. The SecurityPolicy attaches the service to the HTTPRoute(s) people read through, and this chart does not render the route, so it cannot guess which. Name them, or set `securityPolicy.enabled: false` and render the policy yourself (extAuth.http to the Service this chart renders, path `/check`, headersToBackend `authorization`, failOpen false)." -}}
+{{- end -}}
+{{- range $i, $ref := $a.securityPolicy.targetRefs -}}
+{{- if not $ref.name -}}
+{{- fail (printf "observability-stack: `tenancy.authz.securityPolicy.targetRefs[%d]` has no name." $i) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if .Values.networkPolicy.enabled -}}
+{{- if not $a.networkPolicy.gatewayFrom -}}
+{{- fail "observability-stack: `tenancy.authz.enabled` and `networkPolicy.enabled` are set but `tenancy.authz.networkPolicy.gatewayFrom` is empty. The service's NetworkPolicy denies everything it does not name, and Envoy's pods are not in this release; the service fails closed, so a policy that hides it from the gateway is an outage for every person. Name the Envoy proxy pods (NetworkPolicyPeer objects)." -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}

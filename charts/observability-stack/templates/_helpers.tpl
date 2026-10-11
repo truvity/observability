@@ -941,3 +941,114 @@ https://docs.victoriametrics.com/victoriametrics/vmalert/#high-availability
 - url: {{ $notifier | quote }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+tenancy-authz: names, addresses and the one configuration both it and the
+VMUsers are rendered from.
+*/}}
+{{- define "observability-stack.authz.name" -}}
+{{- printf "%s-tenancy-authz" (include "observability-stack.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "observability-stack.authz.signingSecretName" -}}
+{{- $a := .Values.tenancy.authz -}}
+{{- if eq $a.signingKey.source "existingSecret" -}}
+{{- $a.signingKey.existingSecret -}}
+{{- else -}}
+{{- printf "%s-signing" (include "observability-stack.authz.name" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The service's own issuer: the address vmauth fetches discovery and keys
+from, and the `iss` of every token it mints. `<service>.<namespace>.svc`,
+the short form every address in this chart uses, with no path and no
+trailing slash because vmauth compares it as a string.
+*/}}
+{{- define "observability-stack.authz.issuerUrl" -}}
+{{- printf "http://%s.%s.svc:8080" (include "observability-stack.authz.name" .) .Release.Namespace -}}
+{{- end -}}
+
+{{/*
+The audiences that mark a token as a person's: the explicit list, else
+`tenancy.audience`. Rendered as `{audiences: [...]}` so a caller can
+`fromYaml` it.
+*/}}
+{{- define "observability-stack.authz.personAudiences" -}}
+{{- $t := .Values.tenancy -}}
+{{- $list := $t.authz.personAudiences -}}
+{{- if not $list -}}
+{{- $list = ternary (list $t.audience) (list) (ne (toString $t.audience) "") -}}
+{{- end -}}
+{{- toYaml (dict "audiences" $list) -}}
+{{- end -}}
+
+{{/*
+The principals tenancy-authz unions, as `{principals: [...]}`: the SAME
+`tenancy.principals` the VMUsers render from, in the shape pkg/tenancy.Config
+reads — and rendered the way templates/vmusers.yaml renders a principal's
+grants (one per cluster, the last of a repeated cluster winning, sorted by
+cluster, namespaces sorted), so what the service grants and what a VMUser
+grants cannot differ by an edit to one of them.
+
+Only the principals of the PEOPLE's path: those whose audience (their own,
+else `tenancy.audience`) is a person audience. A principal pinned to a
+workload's audience is not the service's to apply — a token for it is passed
+through to vmauth untouched — and putting it in would let a person who
+happens to hold that group read what the workload reads.
+*/}}
+{{- define "observability-stack.authz.principals" -}}
+{{- $t := .Values.tenancy -}}
+{{- $person := include "observability-stack.authz.personAudiences" . | fromYaml -}}
+{{- $out := list -}}
+{{- range $p := $t.principals -}}
+{{- $aud := $p.audience | default $t.audience -}}
+{{- if has $aud $person.audiences -}}
+{{- $byCluster := dict -}}
+{{- range $grant := $p.grants -}}
+{{- $_ := set $byCluster $grant.cluster $grant -}}
+{{- end -}}
+{{- $grants := list -}}
+{{- range $cluster := (keys $byCluster | sortAlpha) -}}
+{{- $g := index $byCluster $cluster -}}
+{{- if $g.allNamespaces -}}
+{{- $grants = append $grants (dict "cluster" $cluster "allNamespaces" true) -}}
+{{- else -}}
+{{- $grants = append $grants (dict "cluster" $cluster "namespaces" (sortAlpha $g.namespaces)) -}}
+{{- end -}}
+{{- end -}}
+{{- $entry := dict "grants" $grants -}}
+{{- if $p.groups -}}
+{{- $_ := set $entry "name" $p.name -}}
+{{- $_ := set $entry "groups" $p.groups -}}
+{{- else -}}
+{{- $_ := set $entry "group" $p.group -}}
+{{- end -}}
+{{- $out = append $out $entry -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml (dict "principals" $out) -}}
+{{- end -}}
+
+{{/*
+The whole configuration file of tenancy-authz.
+*/}}
+{{- define "observability-stack.authz.config" -}}
+{{- $t := .Values.tenancy -}}
+{{- $a := $t.authz -}}
+{{- $cfg := dict
+    "claimName" $t.claimName
+    "clusterLabel" $t.clusterLabel
+    "namespaceLabel" $t.namespaceLabel
+    "logsClusterField" $t.logsClusterField
+    "logsNamespaceField" $t.logsNamespaceField
+    "principals" (include "observability-stack.authz.principals" . | fromYaml).principals
+    "authz" (dict
+      "upstreamIssuer" ($a.upstreamIssuer | default $t.issuerUrl)
+      "personAudiences" (include "observability-stack.authz.personAudiences" . | fromYaml).audiences
+      "issuerURL" (include "observability-stack.authz.issuerUrl" .)
+      "mintedAudience" $a.mintedAudience
+      "tokenTTL" $a.tokenTTL
+      "signingKey" (dict "file" "/etc/tenancy-authz/signing/privateKey")) -}}
+{{- toYaml $cfg -}}
+{{- end -}}

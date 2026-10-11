@@ -386,6 +386,107 @@ tenancy:
     audience: ""
     # -- Which of `metrics`, `logs`, `traces` it gets; unset means all three.
     routes: []
+  # -- OPT-IN, default off. `tenancy-authz`: the Envoy external authorisation
+  # service that turns a person's GROUPS into the `vm_access` claim the
+  # reader above applies.
+  #
+  # Why it exists. vmauth selects ONE user per token by `matchClaims`, so a
+  # person holding two groups reads whatever the first matching group allows
+  # and never both; and it can template filters only from a `vm_access`
+  # claim, which the identity provider does not (and should not) mint. This
+  # service sits in front of vmauth on the read route. For each request it
+  # verifies the person's token against `upstreamIssuer`, finds EVERY
+  # principal in `tenancy.principals` whose group the token holds, unions
+  # their grants, and answers with an `Authorization` header carrying a
+  # short-lived token of its own whose `vm_access` is that union. vmauth then
+  # trusts ONLY this service's issuer for that claim, and stays the point
+  # that enforces it. docs/tenancy-authz.md has the flow, the trust model and
+  # the failure modes.
+  #
+  # The principals are the SAME `tenancy.principals` the VMUsers render
+  # from, so the two cannot drift. A principal belongs to the people's path
+  # when its audience (its own `audience`, else `tenancy.audience`) is one of
+  # `personAudiences`; the others (a workload's own audience) are not in the
+  # service's configuration at all, and a token for them is passed through
+  # unchanged to vmauth's own readers.
+  #
+  # Requires `tenancy.vmAccessReader.enabled`, which this switch re-points at
+  # the service's issuer, and a `securityPolicy.targetRefs` naming the
+  # HTTPRoute(s) the people read through (the route is rendered outside this
+  # chart).
+  authz:
+    enabled: false
+    image:
+      repository: ghcr.io/truvity/observability/tenancy-authz
+      # -- Empty: this chart's own appVersion, the release that built both.
+      tag: ""
+      digest: ""
+      pullPolicy: IfNotPresent
+    # -- Two, so one pod restarting does not turn every dashboard into a
+    # 5xx: the service is on the read path and fails closed.
+    replicas: 2
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 64Mi
+    nodeSelector: {}
+    tolerations: []
+    priorityClassName: ""
+    # -- The identity provider people sign in with. Empty means
+    # `tenancy.issuerUrl`.
+    upstreamIssuer: ""
+    # -- The `aud` values that mark a token as a person's. Empty means
+    # `[tenancy.audience]`.
+    personAudiences: []
+    # -- The `aud` of the tokens the service mints, and the one the reader
+    # pins. It may not be a person audience.
+    mintedAudience: vmauth
+    # -- How long a minted token lives at most (it never outlives the
+    # person's own). 30s to 1h.
+    tokenTTL: 5m
+    signingKey:
+      # -- Where the ES256 signing key comes from. The service only READS it,
+      # from a mounted Secret (file `privateKey`); it makes no key and holds no
+      # credential to the cluster API.
+      #
+      # `eso` (default): External Secrets Operator generates it. The chart
+      # renders a `generators.external-secrets.io/v1alpha1` SSHKey (ECDSA,
+      # 256 bits) and an `external-secrets.io/v1` ExternalSecret with
+      # `refreshPolicy: CreatedOnce`, which creates the Secret
+      # `<release>-tenancy-authz-signing` once and never changes it. Needs
+      # the operator and its CRDs on the cluster.
+      #
+      # `existingSecret`: a Secret you own, named in `existingSecret`, holding
+      # the key in the file `privateKey` (OpenSSH, PKCS#8 or SEC1 PEM; P-256).
+      #
+      # Rotation, either way: replace the Secret's content (with `eso`, delete
+      # the Secret: the operator recreates it with a new key). The kubelet
+      # refreshes the mount and the service picks the new key up with no
+      # restart: it PUBLISHES it at once and starts SIGNING with it after
+      # seven minutes (vmauth refetches the key set on a five-minute timer
+      # and never on an unknown key id), and keeps the old one published for
+      # the life of the tokens it signed. See docs/tenancy-authz.md.
+      source: eso
+      # -- The Secret, when `source: existingSecret`.
+      existingSecret: ""
+    securityPolicy:
+      # -- Render the Envoy Gateway `SecurityPolicy` that attaches the service
+      # to the read route. Off, the consumer renders its own and points
+      # `extAuth.http` at this chart's Service.
+      enabled: true
+      # -- The HTTPRoutes in this namespace the people read through:
+      # `[{kind: HTTPRoute, name: <route>}]`. Required while `enabled`.
+      targetRefs: []
+    networkPolicy:
+      # -- Who may call the check endpoint: the Envoy Gateway proxy pods that
+      # serve the route. `NetworkPolicyPeer` objects, passed through
+      # untouched. Required while `networkPolicy.enabled`: the service fails
+      # closed, so a policy that hides it from Envoy is an outage for every
+      # person, and there is no default that is right for an estate this
+      # chart cannot see.
+      gatewayFrom: []
   # -- The keys the filters select on, per signal.
   #
   # The scoping key is the CLUSTER and the NAMESPACE, under OpenTelemetry's

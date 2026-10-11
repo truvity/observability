@@ -1,0 +1,10 @@
+# The set a cluster turns on when its Envoy Gateway release does not install
+# the SecurityPolicy that charts/observability-stack renders for
+# tenancy.authz: that one kind and nothing else. Proves the set renders on
+# its own and that the other four render nothing when it is the only one on.
+sets:
+  victoriaMetrics: false
+  prometheusOperator: false
+  grafanaOperator: false
+  envoyGateway: true
+  externalSecrets: false

@@ -217,7 +217,18 @@ selection order and the deny-by-default argument).
 */}}
 {{- if .Values.tenancy.vmAccessReader.enabled }}
 {{- $vr := .Values.tenancy.vmAccessReader }}
-{{- $vrAudience := $vr.audience | default $root.Values.tenancy.audience }}
+{{- /*
+With `tenancy.authz` on, the reader trusts tenancy-authz and nobody else:
+its issuer (discovery and keys fetched from the service itself), pinned in
+`iss`, and the audience the service mints for. The person's own token, from
+the identity provider, no longer matches this user at all: it carries no
+`vm_access`, and its `iss` is not the service's. What is shared with the
+non-authz shape is everything else — the two `vm_access.*` matchers and the
+routes.
+*/}}
+{{- $authz := $root.Values.tenancy.authz }}
+{{- $vrIssuer := ternary (include "observability-stack.authz.issuerUrl" $root) $root.Values.tenancy.issuerUrl $authz.enabled }}
+{{- $vrAudience := ternary $authz.mintedAudience ($vr.audience | default $root.Values.tenancy.audience) $authz.enabled }}
 {{- $vrRoutes := $vr.routes | default (list "metrics" "logs" "traces") }}
 ---
 apiVersion: operator.victoriametrics.com/v1beta1
@@ -232,7 +243,7 @@ spec:
   disable_secret_creation: true
   jwt:
     oidc:
-      issuer: {{ $root.Values.tenancy.issuerUrl | quote }}
+      issuer: {{ $vrIssuer | quote }}
     {{- /*
     Four claims, all anchored and escaped like a principal's. The two
     `vm_access.*` keys are vmauth's dotted lookup into the claim object; an
@@ -241,7 +252,7 @@ spec:
     */}}
     matchClaims:
       aud: {{ printf "^(%s)$" (regexQuoteMeta $vrAudience) | quote }}
-      iss: {{ printf "^(%s)$" (regexQuoteMeta $root.Values.tenancy.issuerUrl) | quote }}
+      iss: {{ printf "^(%s)$" (regexQuoteMeta $vrIssuer) | quote }}
       vm_access.metrics_extra_filters: ".+"
       vm_access.logs_extra_stream_filters: ".+"
   load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}

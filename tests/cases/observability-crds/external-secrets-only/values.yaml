@@ -1,0 +1,11 @@
+# The set a cluster turns on when its External Secrets Operator release does
+# not install the ExternalSecret and SSHKey CRDs that
+# charts/observability-stack renders for tenancy.authz: those two kinds and
+# nothing else. Proves the set renders on its own and that the other four
+# render nothing when it is the only one on.
+sets:
+  victoriaMetrics: false
+  prometheusOperator: false
+  grafanaOperator: false
+  envoyGateway: false
+  externalSecrets: true

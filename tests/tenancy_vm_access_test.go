@@ -64,7 +64,9 @@ func TestVMAccessReaderIsAbsentUnlessEnabled(t *testing.T) {
 	var seen int
 	for _, g := range goldens {
 		name := strings.TrimSuffix(filepath.Base(g), ".yaml")
-		if name == "tenancy-vm-access" {
+		// The cases that turn the reader on: itself, and tenancy.authz, which
+		// requires it.
+		if name == "tenancy-vm-access" || strings.HasPrefix(name, "tenancy-authz") {
 			continue
 		}
 		seen++

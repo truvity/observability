@@ -61,3 +61,16 @@
 #   Grafana                  grafana.integreatly.org            v1beta1 (storage)
 #   GrafanaServiceAccount    grafana.integreatly.org            v1beta1 (storage)
 {{- end }}
+{{- if .Values.sets.envoyGateway }}
+#
+# Envoy Gateway v1.9.2, the SecurityPolicy only
+#
+#   SecurityPolicy           gateway.envoyproxy.io              v1alpha1 (storage)
+{{- end }}
+{{- if .Values.sets.externalSecrets }}
+#
+# External Secrets Operator v2.12.0, the ExternalSecret and the SSHKey generator only
+#
+#   ExternalSecret           external-secrets.io                v1 (storage), v1beta1 (not served)
+#   SSHKey                   generators.external-secrets.io     v1alpha1 (storage)
+{{- end }}

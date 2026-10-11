@@ -1,0 +1,19 @@
+# Envoy Gateway's CRDs, fetched by ocictl's crdctl. hack/crds.sh keeps ONE of
+# them, the SecurityPolicy: the kind charts/observability-stack renders
+# (`tenancy.authz`) to attach the external authorisation service to the read
+# route. The rest of the set (the Envoy proxy, the traffic and client
+# policies, the extension kinds) belongs to whoever installs Envoy Gateway,
+# and installing it here would invite two owners of the same CRD.
+#
+# This is a COPY of the definition, vendored so that
+# tests/pruning_test.go can walk the SecurityPolicy this repository renders
+# against the very schema the API server will prune it by. It is not an
+# installation of Envoy Gateway: the set is off by default, and turned on
+# only on a cluster whose Envoy Gateway release does not already own it.
+#
+# The version is pinned by hand and bumped deliberately: a schema that has
+# narrowed a field silently drops it from objects that already exist.
+repo: envoyproxy/gateway
+pinned_version: "1.9.2"
+paths:
+  - charts/gateway-helm/charts/crds/crds/generated
