@@ -46,6 +46,7 @@ func TestPresetsRenderWhatTheirValuesRender(t *testing.T) {
 		{"observability-grafana", "presets", []string{"kubernetes.io/arch: arm64"}},
 		{"observability-rum", "presets", []string{"kubernetes.io/arch: arm64"}},
 		{"observability-cluster", "sluis-exchange", []string{"kubeauth-subject-token", "useKubeAuth: true", "name: token-exchange"}},
+		{"alert-ingress", "presets", []string{"RootCredentialUsage", "CloudSecurityFinding", "CloudBudgetThreshold"}},
 		{"platform-alerts", "presets", []string{"vm_rows_inserted_total", "vl_rows_ingested_total"}},
 		{"platform-alerts", "upstream-presets", []string{
 			"karpenter.sh/disrupted", "job_name!~", "by(instance) * 6)",

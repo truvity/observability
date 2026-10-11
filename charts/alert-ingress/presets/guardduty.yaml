@@ -1,0 +1,45 @@
+# Preset: GuardDuty findings, delivered as EventBridge events through SNS.
+#
+# Two mappings, tried before your own `mappings` (through `presetMappings`,
+# which a preset can set without replacing your list):
+#
+#   root-credential-usage  the one finding type that always pages (critical),
+#                          with the API call and the caller's address
+#   guardduty              every other finding: critical from severity 7,
+#                          warning below. GuardDuty publishes every finding,
+#                          low ones included, so the severity is read from the
+#                          finding rather than fixed.
+#
+# Both stamp `source: guardduty` (route on it; `notifications.routeLabels` in
+# observability-stack lists it), plus the account and the region. Distinct
+# findings stay distinct alerts through `finding_type` and `finding_id`.
+# List the file BEFORE your own values; nothing reads it unless it is listed.
+presetMappings:
+  guardduty:
+    - name: root-credential-usage
+      match: {"detail-type": "GuardDuty Finding", "detail.type": "Policy:IAMUser/RootCredentialUsage"}
+      alert:
+        alertname: RootCredentialUsage
+        severity: critical
+        labels:
+          source: guardduty
+          account: '{{ .account }}'
+          region: '{{ .region }}'
+        annotations:
+          summary: '{{ .detail.title }}'
+          api: '{{ .detail.service.action.awsApiCallAction.api }}'
+          remote_ip: '{{ .detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4 }}'
+          count: '{{ .detail.service.count }}'
+    - name: guardduty
+      match: {"detail-type": "GuardDuty Finding"}
+      alert:
+        alertname: CloudSecurityFinding
+        severity: '{{ if atLeast .detail.severity 7 }}critical{{ else }}warning{{ end }}'
+        labels:
+          source: guardduty
+          account: '{{ .account }}'
+          region: '{{ .region }}'
+          finding_type: '{{ .detail.type }}'
+          finding_id: '{{ .detail.id }}'
+        annotations:
+          summary: '{{ .detail.title }}'

@@ -53,6 +53,7 @@ Rules the presets keep:
 | platform-alerts | `stores-victoria` | `stores` for the metrics and log store of a VictoriaMetrics family install |
 | platform-alerts | `keep-cluster-label` | `keepClusterLabel: true` on the cluster-scoped groups, for a store that holds several clusters |
 | platform-alerts | `karpenter-aware` | the vendored `KubeDaemonSetMisScheduled` / `KubeDaemonSetRolloutStuck` stay quiet while a node carries the `karpenter.sh/disrupted` taint (needs `groups.upstream.enabled`) |
+| alert-ingress | `guardduty` | the two GuardDuty mappings (`root-credential-usage`, `guardduty`) through `presetMappings`, tried before your `mappings` |
 | platform-alerts | `kargo-jobs` | the vendored `KubeJobFailed` skips Kargo's UUID-named analysis Jobs (needs `groups.upstream.enabled`) |
 
 The log agent's `collector.extraFields` (cluster and environment as JSON) is not

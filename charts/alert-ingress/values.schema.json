@@ -183,6 +183,11 @@
       "items": { "type": "string", "minLength": 1 },
       "description": "Refused empty at render time (templates/_validate.tpl): an endpoint that confirms any topic can be subscribed to anyone's topic and fed alerts."
     },
+    "presetMappings": {
+      "type": "object",
+      "description": "Mappings supplied by chart presets, one list per preset, tried before `mappings`.",
+      "additionalProperties": { "$ref": "#/properties/mappings" }
+    },
     "mappings": {
       "type": "array",
       "items": {
