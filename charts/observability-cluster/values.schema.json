@@ -48,6 +48,33 @@
           "pattern": "^(https?://.+)?$",
           "description": "The shared Grafana's root URL."
         },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sluisExchange": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "issuerUrl": {
+                  "type": "string",
+                  "pattern": "^(https?://.+)?$"
+                },
+                "clientId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "refreshEvery": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*[smh]$"
+                }
+              }
+            }
+          }
+        },
         "credentials": {
           "type": "object",
           "additionalProperties": false,

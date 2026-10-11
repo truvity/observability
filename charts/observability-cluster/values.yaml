@@ -39,11 +39,38 @@ externalGrafana:
   # -- The shared Grafana's root URL, as the operator in this cluster reaches
   # it (http or https). A data input; there is no default.
   url: ""
+  auth:
+    sluisExchange:
+      # -- Authenticate the operator to the shared Grafana with a short-lived
+      # access token from the estate's identity issuer instead of a static
+      # service account token: the Grafana resource gets
+      # `spec.client.useKubeAuth: true`, and a sidecar in the operator pod
+      # exchanges the operator's ServiceAccount token for it (RFC 8693). Needs
+      # `presets/operator-sluis-exchange.yaml` listed before your values when
+      # `grafanaOperator.enabled` (docs/architecture/observability-cluster.md,
+      # "Operator authentication"). Off: the Secret below is used, as before.
+      enabled: false
+      # -- The issuer's base URL (its `/token` endpoint is called). A data
+      # input; there is no default.
+      issuerUrl: ""
+      # -- The exchange client the issuer admits this ServiceAccount for. It
+      # is also the `audience` asked of the exchange. Authenticated by HTTP
+      # Basic with an empty secret.
+      clientId: grafana-workload
+      # -- How often the sidecar exchanges again (`<n>s`, `<n>m` or `<n>h`).
+      # The token lives an hour and the operator treats it as expired 30
+      # seconds early, so keep this well under the lifetime.
+      refreshEvery: 20m
+      # The audience of the ServiceAccount token the issuer expects is
+      # `grafana-operator.kubeAuth.audience` (the vendored chart's own key);
+      # set it, there is no default. Its documented value is `access-issuer`, the
+      # audience the issuer accepts for exchange.
   credentials:
     # -- The Secret (in this release's namespace) holding the Grafana service
     # account token this cluster's operator authenticates with. It is never
     # rendered or created here: its provisioning is restructure R2.2 (a
-    # folder-scoped service account per cluster).
+    # folder-scoped service account per cluster). Not used, and not required,
+    # with `auth.sluisExchange.enabled`.
     secretName: ""
     # -- The key in that Secret holding the token.
     key: token

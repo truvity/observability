@@ -44,6 +44,7 @@ func TestPresetsRenderWhatTheirValuesRender(t *testing.T) {
 		{"observability-emitters", "presets-remote", []string{"/etc/observability-write-ca"}},
 		{"observability-grafana", "presets", []string{"kubernetes.io/arch: arm64"}},
 		{"observability-rum", "presets", []string{"kubernetes.io/arch: arm64"}},
+		{"observability-cluster", "sluis-exchange", []string{"kubeauth-subject-token", "useKubeAuth: true", "name: token-exchange"}},
 		{"platform-alerts", "presets", []string{"vm_rows_inserted_total", "vl_rows_ingested_total"}},
 	} {
 		t.Run(tc.chart+"/"+tc.name, func(t *testing.T) {

@@ -44,6 +44,7 @@ Rules the presets keep:
 | observability-stack | `notifications-drop-vendored` | `notifications.drop` for the vendored groups (general, kubernetes-*, node-network, vm-health, vmoperator, vmsingle) |
 | observability-stack | `scheduling-durable` | stores and backup Jobs on a `durable` pool (selector `karpenter.sh/nodepool: durable`, tolerations `durable`, `arch`) |
 | observability-stack | `scheduling-arm64` | the operator on arm64 nodes |
+| observability-cluster | `operator-sluis-exchange` | the operator pod's half of `externalGrafana.auth.sluisExchange`: the token sidecar and the in-memory volume that carries its token to the operator (needs `grafana-operator.kubeAuth.audience` from you) |
 | observability-emitters | `local-write` | `writeCredentials`, metrics and OTLP destinations, and the log agent's mounts and `remoteWrite` for a stack installed as `observability-stack` in the `observability` namespace |
 | observability-emitters | `logs-collector-remote` | the log agent's token and CA mounts for the `remote` form |
 | observability-emitters | `scheduling-durable`, `scheduling-arm64` | the gateway and CloudWatch receiver on `durable`; the metrics agent and blackbox exporter on arm64 |

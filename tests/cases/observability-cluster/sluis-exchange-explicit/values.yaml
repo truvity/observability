@@ -1,0 +1,63 @@
+# The sluis-exchange-preset case with the preset written out in full.
+grafana-operator:
+  tokenExchangeImage:
+    registry: docker.io
+    repository: curlimages/curl
+    tag: 8.22.0
+  kubeAuth:
+    volume:
+      emptyDir:
+        medium: Memory
+        sizeLimit: 1Mi
+    audience: issuer.example.org
+  extraContainers:
+  - name: token-exchange
+    image: '{{ .Values.tokenExchangeImage.registry }}/{{ .Values.tokenExchangeImage.repository }}:{{ .Values.tokenExchangeImage.tag }}'
+    imagePullPolicy: IfNotPresent
+    command:
+    - sh
+    - -c
+    - "set -u\ndir=/var/run/secrets/grafana.com/serviceaccount\nsubject=/var/run/exchange-subject/token\nlog() { printf '%s token-exchange: %s\\n' \"$(date -u +%FT%TZ)\" \"$*\"; }\nwhile :; do\n  wait=30\n  out=$(curl -sS --max-time 20 -w '\\n%{http_code}' -u \"${CLIENT_ID}:\" \\\n    --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange \\\n    --data-urlencode \"subject_token@${subject}\" \\\n    --data-urlencode subject_token_type=urn:ietf:params:oauth:token-type:jwt \\\n    --data-urlencode \"audience=${CLIENT_ID}\" \\\n    \"${ISSUER_URL%/}/token\" 2>&1) || true\n  code=$(printf '%s\\n' \"$out\" | tail -n 1)\n  token=$(printf '%s\\n' \"$out\" | sed -n 's/.*\"access_token\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p')\n  if [ \"$code\" = 200 ] && [ -n \"$token\" ]; then\n    printf '%s' \"$token\" > \"$dir/.token.new\"\n    chmod 0644 \"$dir/.token.new\"\n    mv \"$dir/.token.new\" \"$dir/token\"\n    log \"token written, next refresh in ${REFRESH_SECONDS}s\"\
+      \n    wait=$REFRESH_SECONDS\n  else\n    # The status only: the body of a failure is nothing to print, and a body may carry a token.\n    log \"exchange failed (http status ${code:-none}), retrying in ${wait}s\"\n  fi\n  token=\n  out=\n  sleep \"$wait\"\ndone\n"
+    envFrom:
+    - configMapRef:
+        name: '{{ .Release.Name }}-operator-token-exchange'
+    readinessProbe:
+      exec:
+        command:
+        - sh
+        - -c
+        - test -s /var/run/secrets/grafana.com/serviceaccount/token
+      periodSeconds: 10
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        memory: 32Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 65532
+      capabilities:
+        drop:
+        - ALL
+      seccompProfile:
+        type: RuntimeDefault
+    volumeMounts:
+    - name: kubeauth-token-volume
+      mountPath: /var/run/secrets/grafana.com/serviceaccount
+    - name: kubeauth-subject-token
+      mountPath: /var/run/exchange-subject
+      readOnly: true
+cluster: example-cluster
+grafanaOperator:
+  enabled: true
+externalGrafana:
+  enabled: true
+  url: https://grafana.example.org
+  auth:
+    sluisExchange:
+      enabled: true
+      issuerUrl: https://issuer.example.org
