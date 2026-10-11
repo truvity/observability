@@ -54,6 +54,7 @@ vmalert and karma, or the pair splits and pages twice.
 {{- include "observability-stack.validate.grafana" . -}}
 {{- include "observability-stack.validate.routeOverlap" . -}}
 {{- include "observability-stack.validate.k8sStackClusterLabel" . -}}
+{{- include "observability-stack.validate.streamAggr" . -}}
 {{- end -}}
 
 {{/*
@@ -2345,6 +2346,77 @@ principal says. Refused, not guessed.
 {{- if not $a.networkPolicy.gatewayFrom -}}
 {{- fail "observability-stack: `tenancy.authz.enabled` and `networkPolicy.enabled` are set but `tenancy.authz.networkPolicy.gatewayFrom` is empty. The service's NetworkPolicy denies everything it does not name, and Envoy's pods are not in this release; the service fails closed, so a policy that hides it from the gateway is an outage for every person. Name the Envoy proxy pods (NetworkPolicyPeer objects)." -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Stream aggregation on the metrics store
+(`victoria-metrics-k8s-stack.vmsingle.spec.streamAggrConfig`, see the
+`serverless-stream-aggregation` preset and docs/safety.md, "Metric churn:
+serverless sources").
+
+An aggregation that is wrong still ingests: it stores a different series
+than the sender wrote and nothing says so. Refused:
+
+- a rule with no `match`, or whose `match` has no exact `telemetry_source=`
+  matcher: it would aggregate series that were never meant to lose labels,
+  and the store has no other source marker to scope it by;
+- a rule with no `interval` (a duration with a unit) or no `outputs`;
+- `without` naming a label that separates tenants or metric parts: the
+  cluster label, `namespace`, `owner`, `cloud_account_id`,
+  `telemetry_source`, `le` (a histogram's buckets would merge into one) or
+  `__name__`; merging those writes one tenant's data into another's series;
+- `by` and `without` on one rule (two ways to say which labels survive);
+- `keep_metric_names: true` with more than one output (VictoriaMetrics
+  refuses it at start, and the store then runs without any aggregation);
+- `keepInput: true` or `dropInput: true` beside `rules`: the first stores
+  every per-instance series as well, so the churn the aggregation exists to
+  remove stays, the second drops UNMATCHED input too.
+*/}}
+{{- define "observability-stack.validate.streamAggr" -}}
+{{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
+{{- $cfg := dict -}}
+{{- if and $vmks.enabled ($vmks.vmsingle).enabled -}}
+{{- $cfg = (($vmks.vmsingle).spec).streamAggrConfig | default dict -}}
+{{- end -}}
+{{- $rules := $cfg.rules | default list -}}
+{{- $where := "victoria-metrics-k8s-stack.vmsingle.spec.streamAggrConfig" -}}
+{{- if and $rules (hasKey $cfg "keepInput") $cfg.keepInput -}}
+{{- fail (printf "observability-stack: `%s.keepInput` is true. The matched per-instance series would be stored beside their aggregate, so the series count the aggregation exists to cut does not fall. Set `keepInput: false`; unmatched series are stored either way." $where) -}}
+{{- end -}}
+{{- if and $rules (hasKey $cfg "dropInput") $cfg.dropInput -}}
+{{- fail (printf "observability-stack: `%s.dropInput` is true. It drops every input sample, including the series no rule matches, so the store would keep only aggregates. Remove it." $where) -}}
+{{- end -}}
+{{- $forbidden := list "__name__" "le" "namespace" "owner" "cloud_account_id" "telemetry_source" (toString .Values.tenancy.clusterLabel) -}}
+{{- range $i, $r := $rules -}}
+{{- $at := printf "`%s.rules[%d]`" $where $i -}}
+{{- $matches := list -}}
+{{- if kindIs "slice" $r.match -}}{{- $matches = $r.match -}}{{- else if $r.match -}}{{- $matches = list $r.match -}}{{- end -}}
+{{- if not $matches -}}
+{{- fail (printf "observability-stack: %s has no `match`. A rule without one aggregates every series the store receives. Scope it, e.g. `{telemetry_source=\"external\"}`." $at) -}}
+{{- end -}}
+{{- range $m := $matches -}}
+{{- if not (contains "telemetry_source=\"" (toString $m)) -}}
+{{- fail (printf "observability-stack: %s `match` %q has no exact `telemetry_source=\"...\"` matcher. The aggregation would apply to series that are not a stamped external source and silently drop their `without` labels. Add one, e.g. `{telemetry_source=\"external\",...}`." $at (toString $m)) -}}
+{{- end -}}
+{{- end -}}
+{{- if not (regexMatch "^[0-9]+(ms|s|m|h|d|w)$" (toString ($r.interval | default ""))) -}}
+{{- fail (printf "observability-stack: %s `interval` is %q, which is not a duration with a unit (e.g. 1m). The output would be flushed at an interval nobody chose." $at (toString ($r.interval | default ""))) -}}
+{{- end -}}
+{{- if not $r.outputs -}}
+{{- fail (printf "observability-stack: %s has no `outputs`. A rule with none aggregates nothing and, with `keepInput: false`, drops the matched series." $at) -}}
+{{- end -}}
+{{- if and $r.by $r.without -}}
+{{- fail (printf "observability-stack: %s sets both `by` and `without`; use one." $at) -}}
+{{- end -}}
+{{- range $l := ($r.without | default list) -}}
+{{- if has (toString $l) $forbidden -}}
+{{- fail (printf "observability-stack: %s `without` names %q, which separates tenants or the parts of a metric (the cluster label, namespace, owner, cloud_account_id, telemetry_source, le and __name__ are refused). Dropping it would write one source's data into another's series." $at (toString $l)) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $r.keep_metric_names (gt (len $r.outputs) 1) -}}
+{{- fail (printf "observability-stack: %s sets `keep_metric_names: true` with %d outputs. VictoriaMetrics accepts it only with a single output (two outputs would write the same series). Use one rule per output." $at (len $r.outputs)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

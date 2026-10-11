@@ -31,7 +31,15 @@ which special-cases exactly this shape: "true" -> 1, "false"/"unknown"
 `kargo_promotion_phase`: a StateSet over status.phase — one of Kargo's
 own six (Pending, Running, Succeeded, Failed, Errored, Aborted) — SIX
 series per Promotion object, 1 on the current phase and 0 on the other
-five.
+five. It carries NO per-Promotion name label (`namespace`, `stage` and
+`phase` only): Kargo keeps finished Promotions, one new name per
+promotion, so a name label made the metric grow without bound (15k
+series on a measured estate). Without it the Promotions of one Stage
+emit the same label set, and the store keeps the LARGEST value per
+sample time (`-dedup.minScrapeInterval`, which this chart's store sets
+to the scrape interval), so a series reads 1 while ANY Promotion of that
+Stage is in that phase. Every reader here asks that question (is a
+Promotion of the Stage Errored, Running, Failed), never which one.
 
 `nodeclaim_status_condition` (the `nodeClaims` preset): the same Gauge
 shape over a Karpenter NodeClaim's status.conditions (Launched, Registered,
@@ -89,14 +97,16 @@ data:
           metricNamePrefix: ""
           labelsFromPath:
             namespace: [metadata, namespace]
-            promotion: [metadata, name]
             stage: [spec, stage]
           metrics:
             - name: kargo_promotion_phase
               help: >-
                 Kargo Promotion phase, from status.phase, as a StateSet:
                 1 for the Promotion's current phase, 0 for the other
-                five.
+                five. One series per (namespace, stage, phase): the
+                Promotions of a Stage share series, and the store keeps the
+                largest value, so 1 means at least one Promotion of the
+                Stage is in that phase.
               each:
                 type: StateSet
                 stateSet:

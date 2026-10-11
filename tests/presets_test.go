@@ -34,6 +34,7 @@ func TestPresetsRenderWhatTheirValuesRender(t *testing.T) {
 			"alertgroup", "KubeCPUOvercommit",
 		}},
 		{"observability-stack", "presets-operator-only", []string{"kubernetes.io/arch: arm64"}},
+		{"observability-stack", "stream-aggregation", []string{"streamAggrConfig", "keep_metric_names: true", "staleness_interval: 1h"}},
 		{"observability-alerting", "presets", []string{
 			"vm_rows_ignored_total", "alertgroup",
 		}},

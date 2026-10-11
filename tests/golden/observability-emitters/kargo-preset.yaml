@@ -304,14 +304,16 @@ data:
           metricNamePrefix: ""
           labelsFromPath:
             namespace: [metadata, namespace]
-            promotion: [metadata, name]
             stage: [spec, stage]
           metrics:
             - name: kargo_promotion_phase
               help: >-
                 Kargo Promotion phase, from status.phase, as a StateSet:
                 1 for the Promotion's current phase, 0 for the other
-                five.
+                five. One series per (namespace, stage, phase): the
+                Promotions of a Stage share series, and the store keeps the
+                largest value, so 1 means at least one Promotion of the
+                Stage is in that phase.
               each:
                 type: StateSet
                 stateSet:

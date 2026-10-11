@@ -47,24 +47,24 @@ def build():
            'count(count by (namespace, stage) (kargo_stage_condition{%s,type="Healthy"} == 0)) or (0 * count(kargo_stage_condition{%s}))' % (S, K),
            8, y, to_ns, w=4, no_value=na)
     b.stat("Promotions Running",
-           "Promotions in the Running phase now. A number that stays above zero for long is a stuck Promotion: open it in Kargo and read its steps.",
+           "Stages with a Promotion in the Running phase now (the metric has no per-Promotion label, so two at once on one Stage count once). A number that stays above zero for long is a stuck Promotion: open it in Kargo and read its steps.",
            'count(kargo_promotion_phase{%s,phase="Running"} == 1) or (0 * count(kargo_promotion_phase{%s}))' % (S, K),
            12, y, to_ns, w=4, no_value=na, steps=[(None, "blue")])
     b.stat("Promotions errored",
-           "Errored Promotions whose Stage has not recovered (the condition the KargoPromotionErrored alert uses). Re-promote once the cause is fixed.",
+           "Stages with an Errored Promotion that have not recovered (the condition the KargoPromotionErrored alert uses). Re-promote once the cause is fixed.",
            'count((kargo_promotion_phase{%s,phase="Errored"} == 1) and on (k8s_cluster_name, namespace, stage) '
            '(kargo_stage_condition{%s,type="Ready",reason="LastPromotionErrored"} == 0)) '
            'or (0 * count(kargo_promotion_phase{%s}))' % (S, S, K),
            16, y, to_ns, w=4, no_value=na)
     b.stat("Promotions failed",
-           "Promotions that finished in the Failed phase and are still in the cluster. Failed is terminal: read the failed step and fix the cause before promoting again.",
+           "Stages with a Promotion that finished in the Failed phase and is still in the cluster. Failed is terminal: read the failed step and fix the cause before promoting again.",
            'count(kargo_promotion_phase{%s,phase="Failed"} == 1) or (0 * count(kargo_promotion_phase{%s}))' % (S, K),
            20, y, to_ns, w=4, no_value=na, steps=[(None, "green"), (1, "orange")])
     y += 4
 
     b.timeseries(
         "Promotions by phase",
-        "How many Promotions are in each phase, over time, counting the Promotion objects still in the cluster. A rise in Failed or Errored is a delivery that broke; Running that never drains is a stuck Promotion.",
+        "How many Stages have a Promotion in each phase, over time, counting the Promotion objects still in the cluster (a Stage counts once per phase however many of its Promotions are in it). A rise in Failed or Errored is a delivery that broke; Running that never drains is a stuck Promotion.",
         [('sum by (phase) (kargo_promotion_phase{%s})' % S, "{{phase}}")],
         0, y, 12, 8, "short", None, colors={"Errored": fo.RED, "Failed": fo.ORANGE, "Succeeded": fo.GREEN})
     b.timeseries(
