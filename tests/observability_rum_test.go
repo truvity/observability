@@ -138,7 +138,8 @@ func TestRumRulesAreLogsQLForTheLogsAlerter(t *testing.T) {
 				continue
 			}
 			sawRule = true
-			assert.Equal(t, "vlogs", dig(d, "metadata", "labels", "observability.rule-type"), g)
+			assert.Equal(t, "logs", dig(d, "metadata", "labels", "observability.truvity.io/evaluator"), g)
+			assert.Nil(t, dig(d, "metadata", "labels", "observability.rule-type"), "%s: the old LogsQL marker is no longer emitted", g)
 			for _, grp := range dig(d, "spec", "groups").([]any) {
 				assert.Equal(t, "vlogs", grp.(map[string]any)["type"], "%s: a group without type: vlogs is parsed as MetricsQL and silently absent", g)
 				for _, r := range grp.(map[string]any)["rules"].([]any) {

@@ -19,7 +19,6 @@ the VictoriaMetrics operator refuses the same combination itself
 (api/operator/v1beta1/vmalert_types.go, `validateNotifierConfigs`), so
 this mirrors what the CRD would refuse if it did not.
 */ -}}
-{{- $legacy := .Values.vmalert.acceptLegacyRuleLabels }}
 {{- $remoteNames := list }}
 {{- range .Values.vmalert.remoteEvaluators }}{{- $remoteNames = append $remoteNames .name }}{{- end }}
 {{- $evaluateOnly := eq ((.Values.notifications | default dict).mode | default "route") "evaluate-only" }}
@@ -127,30 +126,14 @@ spec:
     verified against an API server, not assumed.
 
     A LogsQL rule MUST carry `observability.truvity.io/evaluator: logs`
-    to be evaluated; while `vmalert.acceptLegacyRuleLabels` is true (the
-    default) the logs alerter instead takes the old
-    spelling `observability.rule-type: vlogs`, and a rule must carry that
-    one (platform-alerts and observability-rum emit both). One selector
-    cannot be a union of two labels, so the switch picks the label the
-    LOGS alerter requires; the metrics alerter accepts both spellings in
-    either mode. docs/contracts.md, "Rule ownership labels".
+    to be evaluated; the old marker `observability.rule-type: vlogs` is no
+    longer read (removed in 0.74.0). docs/contracts.md, "Rule ownership
+    labels".
   */}}
   ruleSelector:
-    {{- if and $isLogs (not $legacy) }}
+    {{- if $isLogs }}
     matchLabels:
       observability.truvity.io/evaluator: logs
-    {{- else if $isLogs }}
-    matchLabels:
-      observability.rule-type: vlogs
-    matchExpressions:
-      {{- /* Never a rule another evaluator owns. NotIn also matches a rule
-             that carries no evaluator label at all. */}}
-      - key: observability.truvity.io/evaluator
-        operator: NotIn
-        values:
-          {{- range (concat (list "metrics") $remoteNames) }}
-          - {{ . | quote }}
-          {{- end }}
     {{- else }}
     matchExpressions:
       {{- /* The local metrics alerter takes a rule that names it
@@ -167,12 +150,6 @@ spec:
           {{- range (concat (list "logs") $remoteNames) }}
           - {{ . | quote }}
           {{- end }}
-      {{- if $legacy }}
-      - key: observability.rule-type
-        operator: NotIn
-        values:
-          - vlogs
-      {{- end }}
     {{- end }}
   {{- /* Empty selector: every namespace, which is what the release did
          before selection was narrowed by label. */}}
@@ -285,13 +262,6 @@ spec:
   ruleSelector:
     matchLabels:
       observability.truvity.io/evaluator: {{ $ev.name }}
-    {{- if $root.Values.vmalert.acceptLegacyRuleLabels }}
-    matchExpressions:
-      - key: observability.rule-type
-        operator: NotIn
-        values:
-          - vlogs
-    {{- end }}
   ruleNamespaceSelector: {}
   resources:
     {{- include "observability-stack.resources" $root.Values.vmalert.resources | nindent 4 }}
