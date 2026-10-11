@@ -115,7 +115,8 @@ func (h *ringHarness) kids() []string {
 	var set jose.JSONWebKeySet
 	require.NoError(h.t, json.Unmarshal(h.ring.JWKS(), &set))
 	var out []string
-	for _, k := range set.Keys {
+	for i := range set.Keys {
+		k := &set.Keys[i]
 		out = append(out, k.KeyID)
 	}
 	return out

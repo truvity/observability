@@ -193,9 +193,9 @@ func (v *Verifier) candidates(kid string) []jose.JSONWebKey {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	var out []jose.JSONWebKey
-	for _, k := range v.keys {
-		if kid == "" || k.KeyID == kid {
-			out = append(out, k)
+	for i := range v.keys {
+		if kid == "" || v.keys[i].KeyID == kid {
+			out = append(out, v.keys[i])
 		}
 	}
 	return out
@@ -235,9 +235,9 @@ func (v *Verifier) Verify(ctx context.Context, raw string, audiences []string) (
 	var std jwt.Claims
 	var all map[string]any
 	var verifyErr error
-	for _, k := range keys {
+	for i := range keys {
 		std, all = jwt.Claims{}, nil
-		if verifyErr = tok.Claims(k, &std, &all); verifyErr == nil {
+		if verifyErr = tok.Claims(keys[i], &std, &all); verifyErr == nil {
 			break
 		}
 	}

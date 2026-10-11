@@ -64,9 +64,12 @@ func TestParseConfigRefusals(t *testing.T) {
 		return out
 	}
 	cases := map[string]struct{ config, want string }{
-		"unknown key":               {validConfig + "bogus: 1\n", "bogus"},
-		"unknown authz key":         {mutate("mintedAudience: vmauth", "mintedAudience: vmauth\n  bogus: 1"), "bogus"},
-		"no principals":             {mutate("principals:\n  - group: team-a\n    grants:\n      - cluster: cluster-a\n        namespaces: [app-a]", "principals: []"), "no principals"},
+		"unknown key":       {validConfig + "bogus: 1\n", "bogus"},
+		"unknown authz key": {mutate("mintedAudience: vmauth", "mintedAudience: vmauth\n  bogus: 1"), "bogus"},
+		"no principals": {
+			mutate("principals:\n  - group: team-a\n    grants:\n      - cluster: cluster-a\n        namespaces: [app-a]", "principals: []"),
+			"no principals",
+		},
 		"hostile namespace":         {mutate("[app-a]", "[\"a|.*\"]"), "namespace"},
 		"no person audience":        {mutate("[grafana]", "[]"), "personAudiences"},
 		"blank person audience":     {mutate("[grafana]", "[\"a b\"]"), "identifier"},

@@ -144,7 +144,6 @@ type harness struct {
 	signer   *Signer
 	metrics  *Metrics
 	logs     *bytes.Buffer
-	now      time.Time
 }
 
 func newHarness(t *testing.T) *harness {

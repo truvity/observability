@@ -136,7 +136,8 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("authz.mintedAudience %q is not an identifier (blank or carrying whitespace)", a.MintedAudience))
 	}
 	if slices.Contains(a.PersonAudiences, a.MintedAudience) {
-		errs = append(errs, fmt.Errorf("authz.mintedAudience %q is also a person audience: a minted token would be treated as a person's token if it ever came back", a.MintedAudience))
+		errs = append(errs, fmt.Errorf("authz.mintedAudience %q is also a person audience: "+
+			"a minted token would be treated as a person's token if it ever came back", a.MintedAudience))
 	}
 
 	if a.TokenTTL < minTokenTTL || a.TokenTTL > maxTokenTTL {
@@ -166,7 +167,8 @@ func validateIssuerURL(field, raw string, own bool) []error {
 		errs = append(errs, fmt.Errorf("%s %q carries a query, fragment or credentials", field, raw))
 	}
 	if own && (u.Path != "" || u.RawPath != "") {
-		errs = append(errs, fmt.Errorf("%s %q has a path or a trailing slash: the discovery document is served at the root, and vmauth compares the issuer as a string", field, raw))
+		errs = append(errs, fmt.Errorf("%s %q has a path or a trailing slash: the discovery document is served at the root, "+
+			"and vmauth compares the issuer as a string", field, raw))
 	}
 	return errs
 }

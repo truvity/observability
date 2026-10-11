@@ -12,7 +12,10 @@ func claimForGroupsConfig() Config {
 		ClaimName: "groups",
 		Principals: []Principal{
 			{Group: "team-a", Grants: []Grant{{Cluster: "cluster-a", Namespaces: []string{"app-a", "shared"}}}},
-			{Group: "team-b", Grants: []Grant{{Cluster: "cluster-a", Namespaces: []string{"app-b", "shared"}}, {Cluster: "cluster-b", Namespaces: []string{"app-b"}}}},
+			{Group: "team-b", Grants: []Grant{
+				{Cluster: "cluster-a", Namespaces: []string{"app-b", "shared"}},
+				{Cluster: "cluster-b", Namespaces: []string{"app-b"}},
+			}},
 			{Name: "ops", Groups: []string{"ops-x", "ops-y"}, Grants: []Grant{{Cluster: "cluster-a", AllNamespaces: true}}},
 		},
 	}
@@ -36,7 +39,8 @@ func TestClaimForGroupsUnionsGrantsAndJoinsLogsIntoOneFilter(t *testing.T) {
 	// ONE stream filter for the whole reach: the log store ANDs several.
 	require.Len(t, claim.LogsExtraStreamFilters, 1)
 	assert.Equal(t,
-		`_stream:{"k8s.cluster.name"="cluster-a","kubernetes.pod_namespace"=~"^(app-a|app-b|shared)$" or "k8s.cluster.name"="cluster-b","kubernetes.pod_namespace"=~"^(app-b)$"}`,
+		`_stream:{"k8s.cluster.name"="cluster-a","kubernetes.pod_namespace"=~"^(app-a|app-b|shared)$"`+
+			` or "k8s.cluster.name"="cluster-b","kubernetes.pod_namespace"=~"^(app-b)$"}`,
 		claim.LogsExtraStreamFilters[0])
 }
 

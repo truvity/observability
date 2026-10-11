@@ -119,15 +119,18 @@ func TestInvalidPersonTokensAreUnauthenticated(t *testing.T) {
 	})
 
 	cases := map[string]string{
-		"wrong key, known kid":       forged,
-		"unknown kid":                otherKid,
-		"expired":                    h.issuer.token(map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}),
-		"wrong issuer":               h.issuer.token(map[string]any{"iss": "https://elsewhere.example"}),
-		"no expiry":                  h.issuer.token(map[string]any{"exp": nil}),
-		"no subject":                 h.issuer.token(map[string]any{"sub": nil}),
-		"not yet valid":              h.issuer.token(map[string]any{"nbf": time.Now().Add(time.Hour).Unix()}),
-		"person audience, mangled":   h.issuer.token(nil)[:len(h.issuer.token(nil))-4] + "AAAA",
-		"audience list incl. person": signWith(t, newTestKey(t), "kid-1", map[string]any{"iss": h.issuer.URL(), "sub": "x", "aud": []string{"other", "grafana"}, "exp": time.Now().Add(time.Hour).Unix(), "groups": []string{"team-a"}}),
+		"wrong key, known kid":     forged,
+		"unknown kid":              otherKid,
+		"expired":                  h.issuer.token(map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}),
+		"wrong issuer":             h.issuer.token(map[string]any{"iss": "https://elsewhere.example"}),
+		"no expiry":                h.issuer.token(map[string]any{"exp": nil}),
+		"no subject":               h.issuer.token(map[string]any{"sub": nil}),
+		"not yet valid":            h.issuer.token(map[string]any{"nbf": time.Now().Add(time.Hour).Unix()}),
+		"person audience, mangled": h.issuer.token(nil)[:len(h.issuer.token(nil))-4] + "AAAA",
+		"audience list incl. person": signWith(t, newTestKey(t), "kid-1", map[string]any{
+			"iss": h.issuer.URL(), "sub": "x", "aud": []string{"other", "grafana"},
+			"exp": time.Now().Add(time.Hour).Unix(), "groups": []string{"team-a"},
+		}),
 	}
 	for name, tok := range cases {
 		rec := h.check("Bearer " + tok)
@@ -142,7 +145,9 @@ func TestTokensThatAreNotAPersonsPassThroughUntouched(t *testing.T) {
 	workload := h.issuer.token(map[string]any{"aud": "reader", "groups": []string{"c:ns:reader"}})
 	// Even a token that would not verify is not this service's to judge when
 	// it is not a person's: vmauth's readers verify it for themselves.
-	forgedWorkload := signWith(t, newTestKey(t), "kid-1", map[string]any{"iss": h.issuer.URL(), "sub": "w", "aud": "reader", "exp": time.Now().Add(time.Hour).Unix()})
+	forgedWorkload := signWith(t, newTestKey(t), "kid-1", map[string]any{
+		"iss": h.issuer.URL(), "sub": "w", "aud": "reader", "exp": time.Now().Add(time.Hour).Unix(),
+	})
 
 	for name, header := range map[string]string{
 		"workload audience":         "Bearer " + workload,
