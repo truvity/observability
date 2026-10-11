@@ -36,9 +36,12 @@ Isolation stays in vmauth, driven by the person's token.
 
 ## Chosen direction
 
-- **Per-person filters from the viewer's sluis token.** The preferred shape is
-  a `vm_access` claim built from per-group claim fragments; per-grant-set
-  readers are the fallback. Which of the two is open (decision E1).
+- **Per-person filters from the viewer's sluis token** (E1 A, decided). The
+  namespace rules stay sluis groups. Each grant group carries a `vm_access`
+  fragment through sluis's existing `claims.<group>` policy block (config only,
+  no sluis code change), and the token's `vm_access` claim is the union of the
+  fragments of the person's groups. Per-grant-set readers are a fallback only
+  if sluis cannot carry the fragments.
 - **One datasource set per store, as today.** No per-cluster datasource copies.
 - **Cluster Grafana operator signs in with a short-lived sluis workload JWT**,
   through `client.useKubeAuth` and a token sidecar (E3 A), not a static service
@@ -48,6 +51,14 @@ Isolation stays in vmauth, driven by the person's token.
 - **Traces are fleet-wide** (D3): VictoriaTraces takes no filter argument, so
   there is no per-cluster trace route, and the trace datasource is shared.
 - **Alerting runs in vmalert**, not in Grafana.
+
+## Open points
+
+- Whether the fragments follow the token's audience scoping. Asked of the
+  sluis owner.
+- vmauth ANDs `logs_extra_stream_filters`, so a person with several namespaces
+  must get ONE stream filter that lists them all. Building that filter from
+  the claim is still to be proven.
 
 ## What stays true
 
