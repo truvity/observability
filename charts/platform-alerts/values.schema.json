@@ -31,17 +31,8 @@
               "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
             }
           }
-        }
-      }
-    },
-    "upstreamGroupVmsingle": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "exclude": { "$ref": "#/definitions/upstreamGroup/properties/exclude" },
-        "override": { "$ref": "#/definitions/upstreamGroup/properties/override" },
-        "churnFactor24h": { "type": "number", "minimum": 0, "description": "Factor of TooHighChurnRate24h (new series over 24h against this many times the hourly active series); 0 keeps upstream's 3." }
+        },
+        "churnFactor24h": { "type": "number", "minimum": 0, "description": "vmsingle only: the factor of TooHighChurnRate24h (new series over 24h against this many times the hourly active series); 0 keeps upstream's 3." }
       }
     },
     "duration": {
@@ -504,7 +495,7 @@
             "vm-health": { "$ref": "#/definitions/upstreamGroup" },
             "vmalert": { "$ref": "#/definitions/upstreamGroup" },
             "vmoperator": { "$ref": "#/definitions/upstreamGroup" },
-            "vmsingle": { "$ref": "#/definitions/upstreamGroupVmsingle" }
+            "vmsingle": { "$ref": "#/definitions/upstreamGroup" }
           }
         },
         "podSecurity": {
