@@ -257,7 +257,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 			}
 		}
 		if panelSet && !isAnyDatasourceVarRef(panelUID, dsVars) {
-			add(1, "panel %q has a datasource %q that is not a datasource-type template variable (use `$datasource` or another variable of type `datasource`)", p.Title, panelUID)
+			add(1, "panel %q has a datasource %q that is not a datasource-type variable"+
+				" (use `$datasource` or another variable of type `datasource`)", p.Title, panelUID)
 			continue
 		}
 		if panelSet && panelUID != mixedSentinel {
@@ -279,7 +280,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 				continue
 			}
 			if !isAnyDatasourceVarRef(uid, dsVars) {
-				add(1, "panel %q, query %q has a datasource %q that is not a datasource-type template variable (use `$datasource` or another variable of type `datasource`)", p.Title, t.Expr, uid)
+				add(1, "panel %q, query %q has a datasource %q that is not a datasource-type variable"+
+					" (use `$datasource` or another variable of type `datasource`)", p.Title, t.Expr, uid)
 			}
 		}
 	}
