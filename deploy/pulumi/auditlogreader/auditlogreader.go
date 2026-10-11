@@ -68,23 +68,23 @@ func (in Inputs) validate() error {
 	var errs []error
 
 	if in.ClusterName == "" {
-		errs = append(errs, errors.New("ClusterName is required"))
+		errs = append(errs, errors.New("input ClusterName is required"))
 	}
 
 	if in.EKSClusterName == nil {
-		errs = append(errs, errors.New("EKSClusterName is required"))
+		errs = append(errs, errors.New("input EKSClusterName is required"))
 	}
 
 	if in.Provider == nil {
-		errs = append(errs, errors.New("Provider is required"))
+		errs = append(errs, errors.New("input Provider is required"))
 	}
 
 	if in.Region == "" {
-		errs = append(errs, errors.New("Region is required"))
+		errs = append(errs, errors.New("input Region is required"))
 	}
 
 	if in.AccountID == "" {
-		errs = append(errs, errors.New("AccountID is required"))
+		errs = append(errs, errors.New("input AccountID is required"))
 	}
 
 	return errors.Join(errs...)
