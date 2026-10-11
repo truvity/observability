@@ -67,7 +67,7 @@ func TestGrafanaWorkloadAuthIsAbsentUnlessEnabled(t *testing.T) {
 	var off int
 	for _, g := range goldens {
 		name := strings.TrimSuffix(filepath.Base(g), ".yaml")
-		if strings.HasPrefix(name, "workload-auth") {
+		if strings.HasPrefix(name, "workload-auth") || name == "operator-folders" {
 			continue
 		}
 		off++

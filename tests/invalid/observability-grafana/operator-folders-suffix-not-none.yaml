@@ -1,0 +1,20 @@
+# expect: is not in `workloadAuth.noRoleSubjectSuffixes`
+# A suffix that is not lowered to None would sign the operator in as a Viewer.
+global:
+  observabilityGrafana:
+    database:
+      host: pg:5432
+      secretRef: {name: grafana-pg-app}
+    oauth:
+      clientId: grafana
+      clientSecretRef: {name: grafana-client}
+      issuer: https://issuer.example.org
+      roleAttributePath: '''Editor'''
+    rootUrl: https://grafana.example.org
+    secretKeyRef: {name: grafana-secret-key}
+    stores:
+    - {default: true, name: store-a, url: 'https://a.example.org'}
+    workloadAuth: {enabled: true, issuer: 'https://issuer.example.org', jwksUrl: 'https://issuer.example.org/keys', audience: a, noRoleSubjectSuffixes: []}
+    operatorFolders: {enabled: true, clusters: [cluster-a]}
+grafana:
+  admin: {existingSecret: grafana-admin}

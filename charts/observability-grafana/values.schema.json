@@ -192,6 +192,33 @@
                 }
               }
             },
+            "operatorFolders": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Opt-in (default off): a reconcile Job that ensures each cluster's folder, its grafana-operator user (role None) and Edit on that folder only.",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "clusters": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,40}$"}
+                },
+                "subjectSuffix": {"type": "string", "pattern": "^[^\\s\"'\\\\{}$`]+$"},
+                "hook": {"type": "boolean"},
+                "schedule": {"type": "string", "pattern": "^([^\\s\"'\\\\{}$`]+( [^\\s\"'\\\\{}$`]+){4})?$"},
+                "prune": {"type": "boolean"},
+                "url": {"type": "string", "pattern": "^(https?://[^\\s\"'\\\\{}$`]+)?$"},
+                "image": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "registry": {"type": "string", "minLength": 1},
+                    "repository": {"type": "string", "minLength": 1},
+                    "tag": {"type": "string", "minLength": 1}
+                  }
+                }
+              }
+            },
             "workloadAuth": {
               "type": "object",
               "additionalProperties": false,

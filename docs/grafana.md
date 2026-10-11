@@ -188,6 +188,35 @@ render. The template opens `[auth.jwt]` and re-opens `[auth]`, which
 Grafana's ini reader merges; with the feature off the render is byte for byte
 what it was. `tests/grafana_workload_auth_test.go` asserts both.
 
+## Operator folders (opt-in)
+
+`global.observabilityGrafana.operatorFolders` renders a reconcile Job that
+prepares what each cluster's grafana-operator needs, since an operator with
+role None can write dashboards only into a folder it has Edit on:
+
+```yaml
+operatorFolders:
+  enabled: true
+  clusters: [cluster-a, cluster-b]   # each is also the folder uid
+  schedule: "*/30 * * * *"           # optional; also repairs drift between syncs
+  prune: false                       # true: delete operator users of unlisted clusters
+```
+
+For each cluster the Job, over Grafana's HTTP API with the chart's admin
+Secret (`grafana.admin.existingSecret`), ensures the folder (uid and title
+`<cluster>`), the user `workload:<cluster><subjectSuffix>` with org role
+None, and Edit on that folder for that user through the per-user RBAC
+endpoint (`POST /api/access-control/folders/<uid>/users/<id>`), which leaves
+every other grant on the folder alone (the folder-wide permissions endpoint
+replaces them all). It is idempotent, and it does not matter whether the
+user signed in first: Grafana links the sign-in to the pre-created user, and
+a user created by a first sign-in is found and granted. It needs
+`workloadAuth.enabled`, the suffix listed in `noRoleSubjectSuffixes`, and runs
+as an Argo CD PostSync / Helm post hook (`hook`, default) and/or a CronJob
+(`schedule`). `prune` (off) only deletes operator users, never folders, since
+deleting a folder deletes its dashboards. It logs statuses and names, never a
+credential or a response body. One org (the main org) only.
+
 ## Why it is not the security boundary
 
 Every datasource forwards the signed-in person's own token

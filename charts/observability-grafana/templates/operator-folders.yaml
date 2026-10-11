@@ -1,0 +1,89 @@
+{{- $c := .Values.global.observabilityGrafana }}
+{{- $of := $c.operatorFolders | default dict }}
+{{- if $of.enabled }}
+{{- $g := .Values.grafana | default dict }}
+{{- $admin := $g.admin | default dict }}
+{{- $name := printf "%s-operator-folders" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- /* The Grafana subchart's Service name: its own fullname rule. */ -}}
+{{- $gname := default "grafana" $g.nameOverride }}
+{{- $gfull := ternary $g.fullnameOverride (ternary .Release.Name (printf "%s-%s" .Release.Name $gname) (contains $gname .Release.Name)) (not (empty $g.fullnameOverride)) }}
+{{- $port := ((($g.service | default dict).port) | default 80) }}
+{{- $url := $of.url | default (printf "http://%s.%s.svc:%v" $gfull .Release.Namespace $port) }}
+{{- $image := printf "%s/%s:%s" $of.image.registry $of.image.repository $of.image.tag }}
+---
+# The reconcile script and its inputs. Nothing secret: the admin credentials
+# are read from the Secret by the Job, never rendered.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-grafana.labels" . | nindent 4 }}
+data:
+  GRAFANA_URL: {{ $url | quote }}
+  CLUSTERS: {{ join " " $of.clusters | quote }}
+  SUBJECT_SUFFIX: {{ $of.subjectSuffix | quote }}
+  PRUNE: {{ $of.prune | quote }}
+  reconcile.sh: |
+{{ .Files.Get "files/operator-folders.sh" | indent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-grafana.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- $pod := dict "name" $name "image" $image "secret" $admin.existingSecret "userKey" ($admin.userKey | default "admin-user") "passwordKey" ($admin.passwordKey | default "admin-password") }}
+{{- if $of.hook }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-grafana.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "observability-grafana.labels" . | nindent 8 }}
+    spec:
+      {{- include "observability-grafana.operatorFoldersPod" $pod | nindent 6 }}
+{{- end }}
+{{- if $of.schedule }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-grafana.labels" . | nindent 4 }}
+spec:
+  schedule: {{ $of.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            {{- include "observability-grafana.labels" . | nindent 12 }}
+        spec:
+          {{- include "observability-grafana.operatorFoldersPod" $pod | nindent 10 }}
+{{- end }}
+{{- end }}
