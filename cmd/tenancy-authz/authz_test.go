@@ -33,7 +33,7 @@ func verifyMinted(t *testing.T, h *harness, authorization string) (jwt.Claims, m
 
 func outcomes(h *harness) map[string]float64 {
 	out := map[string]float64{}
-	for _, o := range []string{outcomePassThrough, outcomeMinted, outcomeUnauthenticated, outcomeForbidden, outcomeError} {
+	for _, o := range []string{outcomePassThrough, outcomeMinted, outcomeUnauthenticated, outcomeForbidden, outcomeForbiddenTraces, outcomeError} {
 		out[o] = counterValue(h.metrics.Checks.WithLabelValues(o))
 	}
 	return out
@@ -249,4 +249,55 @@ func TestNothingLoggedCarriesAToken(t *testing.T) {
 		assert.NotContains(t, logged, secret)
 	}
 	assert.Contains(t, logged, "person-1", "the subject and the outcome are what is logged")
+}
+
+func TestTracePathsNeedReachToTheWholeStore(t *testing.T) {
+	const services = "/check/select/jaeger/api/services"
+
+	cases := []struct {
+		name   string
+		groups []string
+		target string
+		want   int
+	}{
+		{"namespace-only person, traces", []string{"team-a"}, services, http.StatusForbidden},
+		{"whole cluster on one of two, traces", []string{"ops"}, services, http.StatusForbidden},
+		{"whole cluster plus namespace group on one of two, traces", []string{"ops", "team-a"}, services, http.StatusForbidden},
+		{"whole cluster on every cluster, traces", []string{"fleet"}, services, http.StatusOK},
+		{"two whole-cluster groups covering the store, traces", []string{"ops", "fleet"}, services, http.StatusOK},
+		{"tempo is a trace path too", []string{"team-a"}, "/check/select/tempo/api/search?q=x", http.StatusForbidden},
+		{"a doubled slash does not hide a trace path", []string{"team-a"}, "/check//select/jaeger/api/services", http.StatusForbidden},
+		{"a dot segment does not hide a trace path", []string{"team-a"}, "/check/x/../select/jaeger/api/services", http.StatusForbidden},
+		{"an escaped slash does not hide a trace path", []string{"team-a"}, "/check/select%2Fjaeger/api/services", http.StatusForbidden},
+		{"namespace-only person, metrics are unchanged", []string{"team-a"}, "/check/prometheus/api/v1/query", http.StatusOK},
+		{"namespace-only person, logs are unchanged", []string{"team-a"}, "/check/select/logsql/query", http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			rec := h.checkPath(tc.target, "Bearer "+h.issuer.token(map[string]any{"groups": tc.groups}))
+			assert.Equal(t, tc.want, rec.Code)
+			if tc.want == http.StatusForbidden {
+				assert.Empty(t, rec.Header().Get("Authorization"), "a refusal mints nothing")
+				assert.Equal(t, 1.0, outcomes(h)[outcomeForbiddenTraces])
+				assert.Equal(t, 0.0, outcomes(h)[outcomeMinted])
+			} else {
+				assert.Equal(t, 1.0, outcomes(h)[outcomeMinted])
+			}
+		})
+	}
+}
+
+func TestTracePathsAreRefusedWhenNoTraceClustersAreConfigured(t *testing.T) {
+	h := newHarness(t)
+	h.authz.cfg.Authz.TraceClusters = nil
+	rec := h.checkPath("/check/select/jaeger/api/services", "Bearer "+h.issuer.token(map[string]any{"groups": []string{"fleet"}}))
+	assert.Equal(t, http.StatusForbidden, rec.Code, "with no cluster named, nobody can be shown to reach the whole store")
+}
+
+func TestTracePathsPassThroughForTokensThatAreNotAPersons(t *testing.T) {
+	h := newHarness(t)
+	rec := h.checkPath("/check/select/jaeger/api/services", "Bearer "+h.issuer.token(map[string]any{"aud": "some-workload", "groups": []string{"team-a"}}))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 1.0, outcomes(h)[outcomePassThrough])
 }

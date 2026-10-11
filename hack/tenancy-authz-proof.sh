@@ -38,11 +38,17 @@
 #      cannot widen the result, and neither can the array spelling
 #      `extra_filters[]` that VictoriaMetrics ORs in beside `extra_filters`
 #      (every metrics route pins both, so vmauth drops the client's copy);
-#   7. both replicas sign with the one key the operator generated, and
-#      deleting the Secret rotates it with no restart and no failed request:
-#      the new key is published beside the old one at once;
+#   7. traces, which the trace store cannot filter: a person narrower than
+#      the whole store (a namespace group; a whole-cluster group on one of two
+#      clusters) gets 403 on /select/jaeger/api/services, and a person with
+#      allNamespaces on every cluster gets 200. The trace store is a stub
+#      (a file server answering that one path): what is proved is the
+#      decision in front of it, which does not depend on the store;
 #   8. with the service down a person gets no data (the policy fails closed),
-#      and a workload calling vmauth directly is unaffected.
+#      and a workload calling vmauth directly is unaffected;
+#   9. both replicas sign with the one key the operator generated, and
+#      deleting the Secret rotates it with no restart and no failed request:
+#      the new key is published beside the old one at once.
 #
 # Needs network (images and the Envoy Gateway and External Secrets charts),
 # Docker, kind, kubectl, helm, go, python3 (PyYAML, PyJWT,
@@ -101,6 +107,7 @@ tenancy:
   claimName: groups
   vmAccessReader:
     enabled: true
+  allowUnfilteredTraceReads: true
   authz:
     enabled: true
     replicas: 2
@@ -121,11 +128,18 @@ tenancy:
     - group: ops
       grants:
         - {cluster: cluster-b, allNamespaces: true}
+    - group: fleet
+      grants:
+        - {cluster: cluster-a, allNamespaces: true}
+        - {cluster: cluster-b, allNamespaces: true}
     - group: cluster-a:ns-a:reader
       audience: reader
       routes: [metrics]
       grants:
         - {cluster: cluster-a, namespaces: [ns-a]}
+stores:
+  traces:
+    url: http://vt.$ns.svc:10428
 networkPolicy:
   enabled: false
 vmalert: {enabled: false}
@@ -153,9 +167,10 @@ for d in docs:
     rows = []
     for ref in s["targetRefs"]:
         url = ref["static"]["url"]
-        url = f"http://vm.obs.svc:8428" if ":8428" in url else "http://vl.obs.svc:9428"
-        args = "&".join(f"{a['name']}={v}" for a in ref["query_args"] for v in a["values"])
-        rows.append({"src_paths": ref["paths"], "url_prefix": f"{url}?{args}"})
+        url = "http://vm.obs.svc:8428" if ":8428" in url else "http://vt.obs.svc:10428" if ":10428" in url else "http://vl.obs.svc:9428"
+        args = "&".join(f"{a['name']}={v}" for a in ref.get("query_args", []) for v in a["values"])
+        # The trace route carries no filter (the store has nowhere to put one).
+        rows.append({"src_paths": ref["paths"], "url_prefix": f"{url}?{args}" if args else url})
     j = {"oidc": {"issuer": s["jwt"]["oidc"]["issuer"]}, "match_claims": dict(s["jwt"]["matchClaims"])}
     dv = s["jwt"].get("defaultVMAccessClaim")
     if dv:
@@ -193,6 +208,8 @@ def mint(name, groups=None, aud="grafana", key=pem, extra=None, sub="alice"):
 mint("ab", ["team-a", "team-b", "unrelated"])
 mint("a", ["team-a"])
 mint("ops-a", ["ops", "team-a"])
+mint("fleet", ["fleet"])
+mint("ops", ["ops"])
 mint("nobody", ["nobody"])
 mint("forged", ["team-a", "team-b"], key=other_pem)
 mint("workload", ["cluster-a:ns-a:reader"], aud="reader", sub="svc")
@@ -215,6 +232,9 @@ helm install external-secrets oci://ghcr.io/external-secrets/charts/external-sec
 k create namespace "$ns" >/dev/null
 
 kn create configmap oidc --from-file=jwks.json="$work/jwks.json" --from-file=openid-configuration="$work/openid-configuration" >/dev/null
+mkdir -p "$work/vt-www/select/jaeger/api"
+printf '{"data":["stub-service"],"total":1}' > "$work/vt-www/select/jaeger/api/services"
+kn create configmap vt-www --from-file=services="$work/vt-www/select/jaeger/api/services" >/dev/null
 kn create configmap vmauth-config --from-file=vmauth.yml="$work/vmauth.yml" >/dev/null
 
 cat > "$work/base.yaml" <<EOF
@@ -287,6 +307,30 @@ spec: {selector: {app: vl}, ports: [{port: 9428}]}
 ---
 apiVersion: apps/v1
 kind: Deployment
+metadata: {name: vt}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: vt}}
+  template:
+    metadata: {labels: {app: vt}}
+    spec:
+      containers:
+        - name: vt
+          image: python:3-alpine
+          imagePullPolicy: Never
+          command: [python3, -m, http.server, "10428", -d, /www]
+          volumeMounts: [{name: www, mountPath: /www/select/jaeger/api}]
+      volumes:
+        - name: www
+          configMap: {name: vt-www}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: vt}
+spec: {selector: {app: vt}, ports: [{port: 10428}]}
+---
+apiVersion: apps/v1
+kind: Deployment
 metadata: {name: vmauth}
 spec:
   replicas: 1
@@ -342,7 +386,7 @@ spec:
 EOF
 # The Gateway API CRDs come with Envoy Gateway; the GatewayClass is cluster scoped.
 kn apply -f "$work/base.yaml" >/dev/null
-kn wait --for=condition=Available deployment/oidc deployment/vm deployment/vl deployment/vmauth --timeout=180s >/dev/null
+kn wait --for=condition=Available deployment/oidc deployment/vm deployment/vl deployment/vt deployment/vmauth --timeout=180s >/dev/null
 kn wait --for=condition=Ready pod/tools --timeout=120s >/dev/null
 
 # --- the service, from the chart's own objects, and its policy ----------
@@ -387,6 +431,10 @@ metrics() {
   local base="$1" tok="$2"; shift 2
   tool_curl -H "Authorization: Bearer $(token "$tok")" -G "$base/prometheus/api/v1/query" --data-urlencode 'query=probe_up' "$@" \
     | python3 -c 'import json,sys; print(",".join(sorted(r["metric"]["k8s_cluster_name"] + "/" + r["metric"]["k8s_namespace_name"] for r in json.load(sys.stdin)["data"]["result"])))'
+}
+# traces <base> <token> -> HTTP status of the Jaeger services endpoint
+traces() {
+  tool_curl -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(token "$2")" "$1/select/jaeger/api/services"
 }
 logs() {
   local base="$1" tok="$2"; shift 2
@@ -441,7 +489,16 @@ expect "extra_filters[] matching everything, two-group person       " "$(metrics
 expect "extra_stream_filters naming another namespace (logs)        " "$(logs "$gw" a --data-urlencode 'extra_stream_filters={"kubernetes.pod_namespace"="ns-b"}')" "cluster-a/ns-a"
 expect "extra_stream_filters matching everything (logs)             " "$(logs "$gw" a --data-urlencode 'extra_stream_filters={"k8s.cluster.name"=~".+"}')" "cluster-a/ns-a"
 
-echo; echo "=== 7. the service down: a person gets nothing; direct workload traffic is unaffected ==="
+echo; echo "=== 7. traces: only people who reach the whole store ==="
+expect "[team-a] (one namespace): traces refused                    " "$(traces "$gw" a)" "403"
+expect "[team-a, team-b]: traces refused                            " "$(traces "$gw" ab)" "403"
+expect "[ops] (whole cluster-b, nothing on cluster-a): refused      " "$(traces "$gw" ops)" "403"
+expect "[ops, team-a] (whole cluster-b + a namespace): refused      " "$(traces "$gw" ops-a)" "403"
+expect "[fleet] (every namespace of both clusters): traces served   " "$(traces "$gw" fleet)" "200"
+expect "[fleet] metrics are unchanged                               " "$(metrics "$gw" fleet)" "cluster-a/ns-a,cluster-a/ns-b,cluster-a/ns-c,cluster-b/ns-x"
+expect "[team-a] metrics are unchanged beside the refusal           " "$(metrics "$gw" a)" "cluster-a/ns-a"
+
+echo; echo "=== 8. the service down: a person gets nothing; direct workload traffic is unaffected ==="
 kn scale deployment/x-observability-stack-tenancy-authz --replicas=0 >/dev/null
 kn wait --for=delete pod -l app.kubernetes.io/name=tenancy-authz --timeout=120s >/dev/null 2>&1 || true
 sleep 3
@@ -456,7 +513,7 @@ for _ in $(seq 1 60); do
 done
 expect "person via the gateway, service back                        " "$(metrics "$gw" ab)" "cluster-a/ns-a,cluster-a/ns-b"
 
-echo; echo "=== 8. one key from the operator; deleting the Secret rotates it with no restart ==="
+echo; echo "=== 9. one key from the operator; deleting the Secret rotates it with no restart ==="
 secret=x-observability-stack-tenancy-authz-signing
 for _ in $(seq 1 60); do kn get secret "$secret" >/dev/null 2>&1 && break; sleep 2; done
 pod_ips() { kn get pod -l app.kubernetes.io/name=tenancy-authz -o jsonpath='{.items[*].status.podIP}'; }

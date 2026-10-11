@@ -89,3 +89,17 @@ func TestParseConfigRefusals(t *testing.T) {
 		assert.Contains(t, err.Error(), c.want, name)
 	}
 }
+
+func TestParseConfigReadsTraceClustersAndRefusesABadName(t *testing.T) {
+	cfg, err := ParseConfig([]byte(validConfig + "  traceClusters: [cluster-a, cluster-b]\n"))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"cluster-a", "cluster-b"}, cfg.Authz.TraceClusters)
+
+	cfg, err = ParseConfig([]byte(validConfig))
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Authz.TraceClusters, "unset means nobody reads traces")
+
+	_, err = ParseConfig([]byte(validConfig + "  traceClusters: ['cluster a']\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "traceClusters")
+}

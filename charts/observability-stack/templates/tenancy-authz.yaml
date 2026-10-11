@@ -265,6 +265,13 @@ request it forwards, and a header listed there REPLACES the client's own
 swapped for the minted one. `failOpen: false` is the point of the whole
 arrangement — an unreachable service is a refused request, never a request
 that reaches vmauth carrying the person's own token.
+
+The same fail-closed makes the ORDER matter: a policy that applies before the
+Deployment is Ready (the ExternalSecret must first make the key Secret) refuses
+every read through the route until it is. `securityPolicy.annotations`
+defaults to an Argo CD sync wave after the rest of this component, which
+Argo CD waits to be healthy. Helm has no such ordering; apply this chart in
+two steps there (see docs/tenancy-authz.md).
 */}}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
@@ -273,6 +280,10 @@ metadata:
   labels:
     {{- include "observability-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: tenancy-authz
+  {{- with $a.securityPolicy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   targetRefs:
     {{- range $ref := $a.securityPolicy.targetRefs }}

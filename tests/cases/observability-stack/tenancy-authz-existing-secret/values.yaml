@@ -18,6 +18,8 @@ tenancy:
     personAudiences: [grafana, example-observability-client]
     mintedAudience: example-vmauth
     tokenTTL: 2m
+    # Stated rather than derived from the principals' grants.
+    traceClusters: [cluster-a]
     signingKey:
       source: existingSecret
       existingSecret: example-authz-signing

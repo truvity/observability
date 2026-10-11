@@ -85,3 +85,60 @@ func TestClaimForGroupsIsDeterministic(t *testing.T) {
 		require.Equal(t, first, again)
 	}
 }
+
+func wholeStoreConfig() Config {
+	return Config{
+		ClaimName: "groups",
+		Principals: []Principal{
+			{Group: "ns-only", Grants: []Grant{
+				{Cluster: "cluster-a", Namespaces: []string{"app-a"}},
+				{Cluster: "cluster-b", Namespaces: []string{"app-a"}},
+			}},
+			{Group: "all-a", Grants: []Grant{{Cluster: "cluster-a", AllNamespaces: true}}},
+			{Group: "all-b", Grants: []Grant{{Cluster: "cluster-b", AllNamespaces: true}}},
+			{Name: "fleet", Groups: []string{"fleet-x"}, Grants: []Grant{
+				{Cluster: "cluster-a", AllNamespaces: true},
+				{Cluster: "cluster-b", AllNamespaces: true},
+			}},
+		},
+	}
+}
+
+func TestWholeStoreReach(t *testing.T) {
+	cfg := wholeStoreConfig()
+	require.NoError(t, cfg.Validate())
+	both := []string{"cluster-a", "cluster-b"}
+
+	cases := []struct {
+		name     string
+		groups   []string
+		clusters []string
+		want     bool
+	}{
+		{"namespace-only grant", []string{"ns-only"}, both, false},
+		{"whole cluster on one of two", []string{"all-a"}, both, false},
+		{"whole cluster on all, one principal", []string{"fleet-x"}, both, true},
+		{"whole cluster on all, two principals", []string{"all-a", "all-b"}, both, true},
+		{"whole cluster plus a namespace group", []string{"ns-only", "all-a", "all-b"}, both, true},
+		{"whole cluster plus a namespace group, one cluster short", []string{"ns-only", "all-a"}, both, false},
+		{"whole cluster on the only cluster served", []string{"all-a"}, []string{"cluster-a"}, true},
+		{"no group selects anything", []string{"stranger"}, both, false},
+		{"no groups", nil, both, false},
+		{"no clusters served is never whole-store", []string{"fleet-x"}, nil, false},
+		{"a cluster nobody is granted", []string{"fleet-x"}, []string{"cluster-a", "cluster-c"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, cfg.WholeStoreReach(tc.groups, tc.clusters))
+		})
+	}
+}
+
+func TestIsTracesPath(t *testing.T) {
+	for _, p := range []string{"/select/jaeger/api/services", "/select/jaeger/api/traces/abc", "/select/tempo/api/search"} {
+		assert.True(t, IsTracesPath(p), p)
+	}
+	for _, p := range []string{"/prometheus/api/v1/query", "/select/logsql/query", "/select/jaegerx", "/x/select/jaeger/api", ""} {
+		assert.False(t, IsTracesPath(p), p)
+	}
+}

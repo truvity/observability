@@ -9,6 +9,7 @@ const (
 	outcomeMinted          = "minted"
 	outcomeUnauthenticated = "unauthenticated"
 	outcomeForbidden       = "forbidden"
+	outcomeForbiddenTraces = "forbidden_traces"
 	outcomeError           = "error"
 )
 
@@ -17,7 +18,8 @@ type Metrics struct {
 	// Checks counts ext_authz checks by outcome: pass_through (not a
 	// person's token; answered 200 with nothing changed), minted (a person's
 	// token exchanged), unauthenticated (401), forbidden (403: no group
-	// selects a principal), error (the service could not decide).
+	// selects a principal), forbidden_traces (403: a trace path, and the person
+	// does not reach the whole store), error (the service could not decide).
 	Checks *prometheus.CounterVec
 	// Duration is the latency of one check.
 	Duration prometheus.Histogram
@@ -55,7 +57,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help: "1 once the signing key is loaded and the upstream key set has been fetched.",
 		}),
 	}
-	for _, o := range []string{outcomePassThrough, outcomeMinted, outcomeUnauthenticated, outcomeForbidden, outcomeError} {
+	for _, o := range []string{outcomePassThrough, outcomeMinted, outcomeUnauthenticated, outcomeForbidden, outcomeForbiddenTraces, outcomeError} {
 		m.Checks.WithLabelValues(o)
 	}
 	reg.MustRegister(m.Checks, m.Duration, m.CacheHits, m.Refreshes, m.Ready)

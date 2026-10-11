@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -61,6 +63,8 @@ func NewAuthorizer(cfg Config, verifier tokenVerifier, signer tokenSigner, metri
 //     a person audience): 200, nothing changed. vmauth's own readers decide.
 //   - A person's token that does not verify: 401.
 //   - A verified person whose groups select no principal: 403.
+//   - A verified person asking for a trace path without reach to every
+//     namespace on every cluster of the trace store: 403 (forbidden_traces).
 //   - Otherwise: 200 with the Authorization header replaced by a token
 //     carrying the union of the selected principals' grants.
 //
@@ -115,6 +119,16 @@ func (a *Authorizer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The trace store cannot be filtered, so the claim cannot narrow what a
+	// person reads there: the vm-access reader serves traces to every minted
+	// token. Only a person who may read the whole store gets them.
+	if isTracePath(r.URL) && !a.cfg.WholeStoreReach(id.Groups, a.cfg.Authz.TraceClusters) {
+		outcome = outcomeForbiddenTraces
+		a.logger.Info("refused", "sub", id.Subject, "outcome", outcome)
+		http.Error(w, "forbidden: traces are for people with access to every namespace on every cluster", http.StatusForbidden)
+		return
+	}
+
 	minted, hit, err := a.mint(id, claim)
 	if err != nil {
 		a.logger.Error("minting a token", "sub", id.Subject, "error", err.Error())
@@ -129,6 +143,23 @@ func (a *Authorizer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	outcome = outcomeMinted
 	w.Header().Set("Authorization", "Bearer "+minted)
 	w.WriteHeader(http.StatusOK)
+}
+
+// isTracePath reports whether the checked request is one for the trace
+// store. The original path follows checkPrefix; it is judged as sent and
+// again cleaned, so `//` or `/./` cannot dress a trace read as something
+// else. Over-matching only refuses, which is the safe side.
+func isTracePath(u *url.URL) bool {
+	orig := strings.TrimPrefix(u.Path, checkPrefix)
+	if tenancy.IsTracesPath(orig) || tenancy.IsTracesPath(path.Clean("/"+orig)) {
+		return true
+	}
+	if u.RawPath != "" {
+		if raw, err := url.PathUnescape(strings.TrimPrefix(u.RawPath, checkPrefix)); err == nil {
+			return tenancy.IsTracesPath(raw) || tenancy.IsTracesPath(path.Clean("/"+raw))
+		}
+	}
+	return false
 }
 
 func (a *Authorizer) isPerson(aud []string) bool {

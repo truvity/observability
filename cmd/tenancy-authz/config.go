@@ -57,6 +57,13 @@ type AuthzConfig struct {
 
 	// SigningKey says where the ES256 key is.
 	SigningKey SigningKeyConfig `yaml:"signingKey"`
+
+	// TraceClusters are the clusters the trace store serves. The trace store
+	// cannot be filtered, so a person reads traces only when they hold
+	// allNamespaces on EVERY cluster listed here
+	// (tenancy.Config.WholeStoreReach); anyone narrower is refused a trace
+	// path with 403. Empty means nobody reads traces through this service.
+	TraceClusters []string `yaml:"traceClusters"`
 }
 
 // SigningKeyConfig says where the ES256 key is: a file, which the chart
@@ -76,6 +83,8 @@ const (
 	maxTokenTTL     = time.Hour
 	maxLeeway       = time.Minute
 )
+
+var clusterShape = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 var audienceShape = regexp.MustCompile(`^\S+$`)
 
@@ -145,6 +154,12 @@ func (c Config) Validate() error {
 	}
 	if a.Leeway < 0 || a.Leeway > maxLeeway {
 		errs = append(errs, fmt.Errorf("authz.leeway %s is outside 0..%s", a.Leeway, maxLeeway))
+	}
+
+	for _, cl := range a.TraceClusters {
+		if !clusterShape.MatchString(cl) {
+			errs = append(errs, fmt.Errorf("authz.traceClusters has %q, which is not a cluster name (a DNS label)", cl))
+		}
 	}
 
 	if a.SigningKey.File == "" {

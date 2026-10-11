@@ -49,6 +49,7 @@ type authzConfig struct {
 		IssuerURL       string   `yaml:"issuerURL"`
 		MintedAudience  string   `yaml:"mintedAudience"`
 		TokenTTL        string   `yaml:"tokenTTL"`
+		TraceClusters   []string `yaml:"traceClusters"`
 		SigningKey      struct {
 			File string `yaml:"file"`
 		} `yaml:"signingKey"`
@@ -344,4 +345,33 @@ func TestTheServicesNetworkPolicyNamesItsCallersAndItsEgress(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(b), "8443", "the upstream issuer is named with a port")
 	assert.NotContains(t, string(b), "6443", "no API server egress when no key is made")
+}
+
+func TestTracesAreForPeopleWhoReachTheWholeStore(t *testing.T) {
+	// Derived: the union of the clusters named by the people's grants (the
+	// workload principal on its own audience is not one of them).
+	cfg := authzConfigOf(t, authzGolden)
+	assert.Equal(t, []string{"cluster-a", "cluster-b"}, cfg.Authz.TraceClusters)
+
+	assert.True(t, cfg.WholeStoreReach([]string{"cluster-a:k8s:viewer"}, cfg.Authz.TraceClusters),
+		"the viewer principal lists allNamespaces on both clusters under either spelling of its group")
+	assert.False(t, cfg.WholeStoreReach([]string{"example:example-app:deployer"}, cfg.Authz.TraceClusters),
+		"a namespace-only person gets no traces")
+	assert.True(t, cfg.WholeStoreReach([]string{"example:example-app:deployer", "cluster-b:k8s:viewer"}, cfg.Authz.TraceClusters),
+		"a namespace group beside a whole-cluster group on every cluster still reaches the store")
+
+	// Stated: the override wins over the derivation.
+	over := authzConfigOf(t, authzGoldenSecret)
+	assert.Equal(t, []string{"cluster-a"}, over.Authz.TraceClusters)
+}
+
+func TestTheSecurityPolicyAppliesAfterTheDeploymentItDependsOn(t *testing.T) {
+	docs := renderedDocs(t, authzGolden)
+	sp := findDoc(t, docs, "SecurityPolicy", nil)
+	assert.Equal(t, "1", dig(sp, "metadata", "annotations", "argocd.argoproj.io/sync-wave"),
+		"the policy fails closed, so it must apply after the pods behind it can answer")
+	for _, kind := range []string{"Deployment", "Service", "ExternalSecret", "SSHKey", "ConfigMap"} {
+		d := findDoc(t, docs, kind, func(d map[string]any) bool { return dig(d, "metadata", "labels", "app.kubernetes.io/component") == "tenancy-authz" })
+		assert.Nil(t, dig(d, "metadata", "annotations", "argocd.argoproj.io/sync-wave"), "%s stays in the default wave, ahead of the policy", kind)
+	}
 }

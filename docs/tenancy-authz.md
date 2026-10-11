@@ -74,6 +74,26 @@ The check request's path is the policy's `path` (`/check`) with the original
 request path appended, and carries the original method. The service answers
 every method and every path under `/check`.
 
+## Traces
+
+The trace store cannot be filtered (`TracesRead` in `pkg/tenancy/route.go`:
+VictoriaTraces' Jaeger and Tempo select APIs take no filter argument), and the
+vm-access reader serves traces to every minted token, so a person narrower
+than the whole store would read every tenant's spans. The service therefore
+decides per request. When the original path (after `/check`) is a trace path
+(the `TracesRead` paths, matched with the same anchored regular expressions)
+and the person does not hold `allNamespaces` on **every** cluster in
+`traceClusters`, it answers **403** and counts `forbidden_traces`. Grants are
+unioned first, so a whole-cluster group plus a namespace group still has
+whole-store reach if the whole-cluster groups cover every cluster; namespace
+grants never add up to a cluster. Everyone else behaves as before, and a
+workload's token (another audience) passes through untouched. `traceClusters`
+is the clusters the trace store serves; the chart defaults it to the union of
+clusters named by any person principal's grants and
+`tenancy.authz.traceClusters` overrides it. An empty list refuses traces to
+every person. A person calling vmauth directly with their own token is not
+covered by this (see "Calling vmauth directly").
+
 ## The trust model
 
 | Who | trusts | for | how |
@@ -144,6 +164,15 @@ tenancy:
   principals: [...]                       # as before
 ```
 
+- **Apply order.** The `SecurityPolicy` fails closed, so applied before the
+  Deployment is Ready (and the `ExternalSecret` has made the key Secret) it
+  refuses every read through the route. It carries
+  `argocd.argoproj.io/sync-wave: "1"` by default
+  (`securityPolicy.annotations`), so Argo CD applies it after the rest of the
+  component is healthy; the other objects of the component sit in wave 0.
+  Helm has no ordering: install with `securityPolicy.enabled: false`, wait for
+  the Deployment, then enable it. `/readyz` answers 200 only with the signing
+  key loaded and the upstream key set fetched.
 - The HTTPRoute is rendered outside this chart, so the chart cannot guess
   it: name it in `securityPolicy.targetRefs`, or set `securityPolicy.enabled:
   false` and render the policy yourself against the Service this chart
@@ -192,6 +221,7 @@ group does not revoke tokens already minted, which live at most `tokenTTL`
 | the signing Secret becomes unreadable while running | the service keeps the keys it holds and logs a warning | unaffected |
 | a configuration the library refuses | the pod does not start (the whole file is validated first) | as above |
 | a person's groups select nothing | 403 | not applicable |
+| a person without reach to the whole store asks for traces | 403 on the trace endpoints only (`forbidden_traces`) | not applicable |
 
 **Key rotation:** delete the Secret. External Secrets recreates it with a new
 key (`CreatedOnce` creates a target that is missing), the kubelet refreshes
@@ -216,7 +246,7 @@ fail verification. Roll pods after the switch, not during it.
 `/metrics` is on its own port (9090), scraped by the chart's `ServiceMonitor`:
 
 - `tenancy_authz_checks_total{outcome}` — `pass_through`, `minted`,
-  `unauthenticated`, `forbidden`, `error`;
+  `unauthenticated`, `forbidden`, `forbidden_traces`, `error`;
 - `tenancy_authz_check_duration_seconds`;
 - `tenancy_authz_mint_cache_hits_total`;
 - `tenancy_authz_upstream_refreshes_total{result}`;
@@ -234,5 +264,8 @@ and checks: the OR across two groups (metrics and logs), 403 for no group,
 401 for a forged token, pass-through for another audience, a direct call
 matching nothing it should not, a client-supplied filter not widening the
 result, one operator-generated signing key across replicas, a rotation by deleting
-the Secret (the new key published beside the old, no restart), and the route
-failing closed with the service down. It is a run-by-hand proof, like the other `hack/*-proof.sh`.
+the Secret (the new key published beside the old, no restart), traces
+refused to namespace-only people and to a whole-cluster person who misses a
+cluster, and served to a person with every namespace on every cluster (the
+trace store is a stub file server, since the decision is in front of it), and
+the route failing closed with the service down. It is a run-by-hand proof, like the other `hack/*-proof.sh`.

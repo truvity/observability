@@ -82,7 +82,10 @@ func main() {
 	go verifier.Run(ctx, logger)
 
 	authz := NewAuthorizer(cfg, verifier, keyring, metrics, logger)
-	ready := func() bool { return verifier.Ready() }
+	// Ready needs the signing key AND the upstream key set. The key is
+	// loaded before anything listens (the process exits without it), and
+	// asking for it here keeps that true if the start-up order ever changes.
+	ready := func() bool { return keyring.KeyID() != "" && verifier.Ready() }
 
 	mux := newMux(cfg, keyring.JWKS, authz)
 	admin := http.NewServeMux()

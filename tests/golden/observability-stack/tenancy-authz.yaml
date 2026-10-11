@@ -220,6 +220,9 @@ data:
       signingKey:
         file: /etc/tenancy-authz/signing/privateKey
       tokenTTL: 5m
+      traceClusters:
+      - cluster-a
+      - cluster-b
       upstreamIssuer: https://issuer.example
     claimName: groups
     clusterLabel: k8s_cluster_name
@@ -296,7 +299,7 @@ spec:
         app.kubernetes.io/instance: observability-stack
         app.kubernetes.io/name: tenancy-authz
       annotations:
-        checksum/config: 69665cc4951a3169c8043a8e6052ffb45b2acec730b9f1475448c53475463b15
+        checksum/config: f3c47101a4e2c8ac8bd9b44e36def52020572787f8fb2ff3bb74b2eef2689af1
     spec:
       serviceAccountName: observability-stack-tenancy-authz
       automountServiceAccountToken: false
@@ -430,6 +433,8 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: observability-stack
     app.kubernetes.io/component: tenancy-authz
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   targetRefs:
     - group: gateway.networking.k8s.io

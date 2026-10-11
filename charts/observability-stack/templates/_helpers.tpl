@@ -1057,6 +1057,26 @@ happens to hold that group read what the workload reads.
 {{- end -}}
 
 {{/*
+The clusters the trace store serves, for tenancy-authz: `authz.traceClusters`
+when set, else every cluster named by a grant of any person principal. A
+person reads traces only with allNamespaces on EVERY one of them.
+*/}}
+{{- define "observability-stack.authz.traceClusters" -}}
+{{- $a := .Values.tenancy.authz -}}
+{{- if $a.traceClusters -}}
+{{- toYaml (dict "clusters" (sortAlpha (uniq $a.traceClusters))) -}}
+{{- else -}}
+{{- $set := dict -}}
+{{- range $p := (include "observability-stack.authz.principals" . | fromYaml).principals -}}
+{{- range $g := $p.grants -}}
+{{- $_ := set $set $g.cluster true -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml (dict "clusters" (keys $set | sortAlpha)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The whole configuration file of tenancy-authz.
 */}}
 {{- define "observability-stack.authz.config" -}}
@@ -1075,6 +1095,7 @@ The whole configuration file of tenancy-authz.
       "issuerURL" (include "observability-stack.authz.issuerUrl" .)
       "mintedAudience" $a.mintedAudience
       "tokenTTL" $a.tokenTTL
+      "traceClusters" (include "observability-stack.authz.traceClusters" . | fromYaml).clusters
       "signingKey" (dict "file" "/etc/tenancy-authz/signing/privateKey")) -}}
 {{- toYaml $cfg -}}
 {{- end -}}

@@ -471,7 +471,20 @@ tenancy:
       source: eso
       # -- The Secret, when `source: existingSecret`.
       existingSecret: ""
+    # -- The clusters the trace store serves. The trace store cannot be
+    # filtered, so a person reads traces only with allNamespaces on EVERY
+    # cluster listed here; anyone narrower gets 403 on the trace endpoints.
+    # Empty means the union of the clusters named by any person principal's
+    # grants.
+    traceClusters: []
     securityPolicy:
+      # -- Annotations on the SecurityPolicy. The policy fails closed, so it
+      # must apply AFTER the Deployment, ExternalSecret and Service (a read
+      # through the route is refused until the pods are Ready). The default
+      # is an Argo CD sync wave after them; the other objects of this
+      # component sit in wave 0. Set the key to null to drop it.
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
       # -- Render the Envoy Gateway `SecurityPolicy` that attaches the service
       # to the read route. Off, the consumer renders its own and points
       # `extAuth.http` at this chart's Service.
