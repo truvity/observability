@@ -446,8 +446,11 @@ spec:
       - authorization
     http:
       backendRefs:
-        - name: observability-stack-tenancy-authz
+        - group: ""
+          kind: Service
+          name: observability-stack-tenancy-authz
           port: 8080
+          weight: 1
       path: /check
       headersToBackend:
         - authorization

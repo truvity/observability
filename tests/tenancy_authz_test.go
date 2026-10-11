@@ -371,7 +371,9 @@ func TestTheSecurityPolicyAppliesAfterTheDeploymentItDependsOn(t *testing.T) {
 	assert.Equal(t, "1", dig(sp, "metadata", "annotations", "argocd.argoproj.io/sync-wave"),
 		"the policy fails closed, so it must apply after the pods behind it can answer")
 	for _, kind := range []string{"Deployment", "Service", "ExternalSecret", "SSHKey", "ConfigMap"} {
-		d := findDoc(t, docs, kind, func(d map[string]any) bool { return dig(d, "metadata", "labels", "app.kubernetes.io/component") == "tenancy-authz" })
+		d := findDoc(t, docs, kind, func(d map[string]any) bool {
+			return dig(d, "metadata", "labels", "app.kubernetes.io/component") == "tenancy-authz"
+		})
 		assert.Nil(t, dig(d, "metadata", "annotations", "argocd.argoproj.io/sync-wave"), "%s stays in the default wave, ahead of the policy", kind)
 	}
 }
