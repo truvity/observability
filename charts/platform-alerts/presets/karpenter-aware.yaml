@@ -1,0 +1,40 @@
+# Preset: the vendored DaemonSet rules ride out a Karpenter node disruption.
+#
+# While Karpenter drains a node it taints it `karpenter.sh/disrupted`, and the
+# DaemonSet pods on it count as misscheduled and not updated for the length of
+# the drain. This takes upstream's `KubeDaemonSetMisScheduled` and
+# `KubeDaemonSetRolloutStuck` and adds one exclusion to each: they do not fire
+# while ANY node of the cluster carries that taint (`unless on (<clusterLabel>)`).
+# Everything else about the two rules is upstream's, and `KubeDaemonSetMisScheduled`
+# keeps a 30m `for` (upstream: 15m) so a drain that outlasts the taint still
+# shows. Needs `kube_node_spec_taint` (kube-state-metrics' `nodes` collector).
+#
+# The expressions name the cluster label `k8s_cluster_name`, the chart's
+# `clusterLabel` default; an install that sets another `clusterLabel` writes
+# the two overrides itself. Takes effect only with `groups.upstream.enabled`.
+# List the file BEFORE your own values; nothing reads it unless it is listed.
+groups:
+  upstream:
+    kubernetes-apps:
+      override:
+        KubeDaemonSetMisScheduled:
+          for: 30m
+          expr: >-
+            kube_daemonset_status_number_misscheduled{job="kube-state-metrics",namespace=~".*"} > 0
+            unless on (k8s_cluster_name)
+            (count by (k8s_cluster_name) (kube_node_spec_taint{key="karpenter.sh/disrupted"}) > 0)
+        KubeDaemonSetRolloutStuck:
+          expr: >-
+            (
+              (
+                (
+                  (kube_daemonset_status_current_number_scheduled{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+                  or (kube_daemonset_status_number_misscheduled{job="kube-state-metrics",namespace=~".*"} != 0)
+                )
+                or (kube_daemonset_status_updated_number_scheduled{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+              )
+              or (kube_daemonset_status_number_available{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+            )
+            and (changes(kube_daemonset_status_updated_number_scheduled{job="kube-state-metrics",namespace=~".*"}[5m]) == 0)
+            unless on (k8s_cluster_name)
+            (count by (k8s_cluster_name) (kube_node_spec_taint{key="karpenter.sh/disrupted"}) > 0)

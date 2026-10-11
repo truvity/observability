@@ -34,6 +34,16 @@
         }
       }
     },
+    "upstreamGroupVmsingle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "exclude": { "$ref": "#/definitions/upstreamGroup/properties/exclude" },
+        "override": { "$ref": "#/definitions/upstreamGroup/properties/override" },
+        "churnFactor24h": { "type": "number", "minimum": 0, "description": "Factor of TooHighChurnRate24h (new series over 24h against this many times the hourly active series); 0 keeps upstream's 3." }
+      }
+    },
     "duration": {
       "type": "string",
       "pattern": "^[0-9]+(ms|s|m|h|d|w|y)$",
@@ -494,7 +504,7 @@
             "vm-health": { "$ref": "#/definitions/upstreamGroup" },
             "vmalert": { "$ref": "#/definitions/upstreamGroup" },
             "vmoperator": { "$ref": "#/definitions/upstreamGroup" },
-            "vmsingle": { "$ref": "#/definitions/upstreamGroup" }
+            "vmsingle": { "$ref": "#/definitions/upstreamGroupVmsingle" }
           }
         },
         "podSecurity": {
