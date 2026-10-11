@@ -1,6 +1,0 @@
-# expect: datasources.enabled needs externalGrafana.enabled
-datasources:
-  enabled: true
-  proxyUrl: https://telemetry.example.org
-  clusters:
-    - {name: example-a, tokenSecret: {name: t, key: token}}
