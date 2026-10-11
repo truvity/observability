@@ -844,6 +844,34 @@ copies unknown claims through. The same control that stops a caller
 choosing their own `groups` has to cover `vm_access`, and it is a
 different claim in a different place.
 
+#### The `vm_access` reader and its deny-by-default
+
+`tenancy.vmAccessReader` (opt-in) is the issuer-side shape made a first-class
+user: one VMUser selected by `aud`, `iss` and a `vm_access` claim that carries
+BOTH a non-empty `metrics_extra_filters` and a non-empty
+`logs_extra_stream_filters`. It sets no `defaultVMAccessClaim`.
+
+- **Absent means denied.** The user is never selected for a token without the
+  complete claim, so the only way the placeholders `{{.MetricsExtraFilters}}`
+  and `{{.LogsExtraStreamFilters}}` expand to nothing (which removes the
+  argument, i.e. no filter) is a user that has no claim to fall back on. This
+  one cannot be reached without it. A token with neither a complete claim nor
+  a matching group gets 401.
+- **Selection order.** vmauth sorts users by the number of `match_claims`,
+  most first (stable), and the first whose claims all match is the user. The
+  reader has four, a principal two, so during a migration a token with the
+  claim is read by the reader and a token without keeps the group principals.
+- **What it does not close.** A token with a PARTIAL claim (one list) that also
+  carries a group a principal names does not match the reader and is read by
+  that principal, whose route applies the token's claim over the proxy-side
+  default: the missing list expands to nothing there. The issuer must mint both
+  lists whenever it mints `vm_access` (a list that matches nothing for a store
+  the person has no grant on), and the group principals must be removed once
+  every token carries the claim. `hack/vm-access-reader-proof.sh` shows the rest.
+- **Several logs filters are ANDed by the store**, so the issuer must mint ONE
+  stream filter that lists every namespace (`_stream:{a or b}`); the metrics
+  list is OR-ed.
+
 #### What the test that would have caught it looks like
 
 Nothing about the broken version looked broken. The render succeeded.
