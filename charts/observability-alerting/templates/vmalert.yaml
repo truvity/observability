@@ -126,7 +126,8 @@ spec:
 
     A LogsQL rule MUST carry `observability.truvity.io/evaluator: logs`
     to be evaluated; the old marker `observability.rule-type: vlogs` is no
-    longer read (removed in 0.74.0). docs/contracts.md, "Rule ownership
+    longer read (removed in 0.74.0); the PromQL alerters still refuse it
+    (a defensive `NotIn`), so a rule carrying only it is evaluated by nobody. docs/contracts.md, "Rule ownership
     labels".
   */}}
   ruleSelector:
@@ -149,6 +150,13 @@ spec:
           {{- range (concat (list "logs") $remoteNames) }}
           - {{ . | quote }}
           {{- end }}
+      {{- /* Defensive exclusion, not acceptance: a rule that still carries
+             only the removed LogsQL marker must not reach this PromQL
+             alerter, which would exit on it. It is evaluated by nobody. */}}
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
     {{- end }}
   {{- /* Empty selector: every namespace, which is what the release did
          before selection was narrowed by label. */}}
@@ -261,6 +269,12 @@ spec:
   ruleSelector:
     matchLabels:
       observability.truvity.io/evaluator: {{ $ev.name }}
+    matchExpressions:
+      {{- /* Defensive exclusion, not acceptance (see the metrics alerter). */}}
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
   ruleNamespaceSelector: {}
   resources:
     {{- include "observability-alerting.resources" $root.Values.vmalert.resources | nindent 4 }}

@@ -411,6 +411,10 @@ spec:
         operator: NotIn
         values:
           - "logs"
+      - key: observability.rule-type
+        operator: NotIn
+        values:
+          - vlogs
   ruleNamespaceSelector: {}
   resources:
     limits:

@@ -186,7 +186,7 @@ func Lint(rules []Rule, o LintOptions) ([]Violation, error) {
 			// `evaluator: logs` only, and the metrics alerter would load an
 			// unlabelled LogsQL rule and crash-loop on it.
 			add(r, CheckEvaluatorLabel,
-				"a LogsQL rule must carry %s: %s; %s, so the logs vmalert would not load it and the metrics one would crash on it",
+				"a LogsQL rule must carry %s: %s; %s, so no vmalert would evaluate it",
 				contracts.EvaluatorLabel, contracts.EvaluatorLogs, ternaryStr(hasEv && ev != "", fmt.Sprintf("%q names another evaluator", ev), "the label is missing"))
 		case o.RequireEvaluator && (!hasEv || ev == ""):
 			add(r, CheckEvaluatorLabel, "the VMRule has no %s label, so it is not explicit which vmalert evaluates it", contracts.EvaluatorLabel)

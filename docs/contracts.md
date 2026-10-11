@@ -73,9 +73,9 @@ Selector design. Each `ruleSelector` reads `evaluator` only:
 
 | Alerter | Selects |
 |---|---|
-| metrics | `evaluator` NotIn {`logs`, remote names} |
+| metrics | `evaluator` NotIn {`logs`, remote names} and `observability.rule-type` NotIn {`vlogs`} |
 | logs | `evaluator=logs` |
-| remote `<n>` | `evaluator=<n>` |
+| remote `<n>` | `evaluator=<n>` and `observability.rule-type` NotIn {`vlogs`} |
 
 The metrics alerter still takes an unlabelled rule (the rules a vendored
 chart ships carry no labels). A rule that names an evaluator no alerter
@@ -87,12 +87,15 @@ Removed in 0.74.0. The old LogsQL marker `observability.rule-type: vlogs`
 (not the new `rule-type`, which has other values and another meaning) and
 the switch `vmalert.acceptLegacyRuleLabels` are gone from the stack and the
 alerting chart, and no chart here emits the marker any more. A LogsQL rule
-that carries only the old marker is no longer loaded by the logs alerter,
-and the metrics alerter loads it and exits on a rule it cannot parse: it
-must carry `observability.truvity.io/evaluator: logs`.
+that carries only the old marker is no longer loaded by the logs alerter:
+it must carry `observability.truvity.io/evaluator: logs`. The `NotIn
+[vlogs]` terms on the PromQL alerters are a defensive exclusion, not
+acceptance: they keep a rule that still carries only the old marker from
+reaching an alerter that would exit on it, so its cost is "that rule is not
+evaluated" rather than "metric alerting stops".
 
 `rulecheck`: a LogsQL rule whose evaluator is not `logs` is always a
-violation (since 0.74.0; the metrics alerter would load it and exit).
+violation (since 0.74.0; no alerter would evaluate it).
 `-require-evaluator` also makes a `VMRule` without an `evaluator` label a
 violation; that part is off by default, because vendored rules carry no
 label and are still evaluated, and a component chart's CI turns it on. The `rule-type` value check
