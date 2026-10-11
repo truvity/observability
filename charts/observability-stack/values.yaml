@@ -922,6 +922,25 @@ upstreamRules:
 alerting:
   source: stack
 
+# -- Who renders the Door plane: the vmauth proxy, every VMUser (principals,
+# readers, writers, alert readers, the vm-access reader), tenancy-authz with
+# its SecurityPolicy, and the proxy's NetworkPolicy.
+#
+#   door:
+#     source: stack   # the default, and what every install ran so far
+#     source: chart   # charts/observability-proxy renders them instead
+#
+# `stack`: this chart renders them, as it always did. Nothing changes.
+#
+# `chart`: this chart renders NONE of those objects; the separate
+# `observability-proxy` chart (this release's name in `stackReleaseName`, the
+# same values keys) owns them, under the same kind, name and namespace. It is
+# the second step of a rollout whose first step is installing that chart
+# beside this one: docs/adoption.md, 0.81.0. Refused with any `mode` but
+# `full`.
+door:
+  source: stack
+
 # Alerting.
 #
 # Two vmalerts, because one cannot do both jobs: rules over metrics and

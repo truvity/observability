@@ -1,0 +1,6 @@
+# expect: The proxy (vmauth, its VMUsers, tenancy-authz and their network policies) belongs to a `mode: full` install
+# A release of this chart beside a `mode: replica` (or `operator-only`)
+# install has nothing to hand over: the stack renders none of the Door in
+# those modes.
+stackReleaseName: observability-stack
+mode: replica

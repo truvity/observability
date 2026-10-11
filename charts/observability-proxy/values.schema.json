@@ -1,0 +1,767 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "observability-proxy",
+  "description": "The Door plane of an observability-stack install: the vmauth proxy and its VMUsers, tenancy-authz with its SecurityPolicy, and the proxy's network policies. Strict like the stack's schema: an unknown key fails the render. Every key is the stack's, with the same shape; sections the Door does not read are not declared.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "interval",
+    "storeCredentials",
+    "vmauth",
+    "tenancy"
+  ],
+  "definitions": {
+    "audience": {
+      "type": "string",
+      "pattern": "^\\S*$",
+      "description": "An OAuth client id: the audience this proxy's tokens are minted for. It is whatever the issuer assigned - a UUID, a name, an <id>@<project> - and is escaped and anchored where it is rendered, so a dot or a pipe in it pins itself rather than a pattern. Only a value no issuer mints is refused here: one carrying whitespace or a newline, which is usually a value that arrived from the wrong place. Empty is allowed by the schema and refused at render time whenever a principal exists, so that the refusal can say what an unpinned audience costs."
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h|d|w|y)$",
+      "description": "A duration with a unit, e.g. 30s, 5m, 1h."
+    },
+    "labelName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+    },
+    "logFieldName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$",
+      "description": "A LOG FIELD NAME, which is a different question from a plain name and has a different answer. A log agent names its own fields, and a real one carries dots: kubernetes.pod_namespace, k8s.cluster.name. The shape admits those and refuses everything that is stream-filter syntax - a quote, a brace, a comma, an equals sign, a pipe, a colon, whitespace - because the name is interpolated into the filter and one of those would widen the grant rather than look odd."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "description": "A plain name. This is a security boundary rather than a style rule: cluster and namespace names are interpolated into a filter expression, so one carrying | or .* would widen the grant it appears in."
+    },
+    "optionalName": {
+      "type": "string",
+      "pattern": "^([a-z0-9]([a-z0-9-]*[a-z0-9])?)?$",
+      "description": "A plain name (see `name`), or empty. Empty is allowed by the schema and refused at render time only where leaving it empty actually costs something, the same way `audience` is — so the refusal can say what leaving it unset costs there, rather than the schema rejecting a legitimate default of \"unset\"."
+    },
+    "resources": {
+      "type": "object",
+      "description": "Kubernetes resource requirements; passed through untouched. Under `resources.policy: guaranteed` the chart refuses requests that differ from limits and a fractional CPU; under `burstable`, see `resources.policy`.",
+      "required": [
+        "requests",
+        "limits"
+      ],
+      "properties": {
+        "requests": {
+          "type": "object"
+        },
+        "limits": {
+          "type": "object"
+        }
+      }
+    },
+    "secretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "key"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "storeAddress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "subchart": {
+      "type": "object",
+      "description": "An upstream chart's own values. Left open on purpose: the vendor owns this surface."
+    }
+  },
+  "properties": {
+    "interval": {
+      "$ref": "#/definitions/duration",
+      "description": "The scrape interval, the metrics store's deduplication window and both vmalerts' evaluation interval. One value."
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "full",
+        "operator-only",
+        "replica"
+      ],
+      "description": "\"replica\": the second half of a high-availability pair — the three stores and nothing else; a CONTRACT like operator-only (docs/high-availability.md). \"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs — see charts/observability-crds) — no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, the three stores, and tenancy.principals/writers/readers/alertReaders left empty) — the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
+    },
+    "ha": {
+      "description": "Zone-redundant mode (docs/high-availability.md). Unset (null) or `false`: the single install. `true`: the legacy boolean, accepted and refused with fewer than two zones, nothing else. An object with `enabled: true`: this release is one half of a pair.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "$ref": "#/definitions/name"
+            },
+            "replica": {
+              "type": "string",
+              "enum": [
+                "",
+                "a",
+                "b"
+              ]
+            },
+            "peer": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metrics": {
+                  "type": "string",
+                  "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$"
+                },
+                "logs": {
+                  "type": "string",
+                  "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$"
+                },
+                "traces": {
+                  "type": "string",
+                  "pattern": "^(https?://[^\\s/]+(/\\S*)?)?$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "storeCredentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "secretName",
+        "usernameKey",
+        "passwordKey"
+      ],
+      "properties": {
+        "secretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "usernameKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passwordKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "stores": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "$ref": "#/definitions/storeAddress"
+        },
+        "logs": {
+          "$ref": "#/definitions/storeAddress"
+        },
+        "traces": {
+          "$ref": "#/definitions/storeAddress"
+        }
+      }
+    },
+    "victoria-metrics-k8s-stack": {
+      "$ref": "#/definitions/subchart",
+      "description": "MIRROR: the keys of the stack's section this chart reads (`enabled`, `fullnameOverride`/`nameOverride`, `server.fullnameOverride`, `defaultRules`, `vmsingle.enabled`); the vendor's surface stays open."
+    },
+    "victoria-logs-single": {
+      "$ref": "#/definitions/subchart",
+      "description": "MIRROR: the keys of the stack's section this chart reads (`enabled`, `fullnameOverride`/`nameOverride`, `server.fullnameOverride`, `defaultRules`, `vmsingle.enabled`); the vendor's surface stays open."
+    },
+    "victoria-traces-single": {
+      "$ref": "#/definitions/subchart",
+      "description": "MIRROR: the keys of the stack's section this chart reads (`enabled`, `fullnameOverride`/`nameOverride`, `server.fullnameOverride`, `defaultRules`, `vmsingle.enabled`); the vendor's surface stays open."
+    },
+    "stackReleaseName": {
+      "type": "string",
+      "description": "The Helm release name of the observability-stack install this chart belongs beside; every name this chart renders derives from it as the stack derives it. Empty: this chart's own release name."
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": [
+            "guaranteed",
+            "burstable"
+          ],
+          "description": "`burstable` (default): requests required; CPU may be fractional and below or without a limit, a CPU limit that is set is still whole; memory stays request == limit. `guaranteed`: requests equal limits, whole-number CPU."
+        }
+      },
+      "description": "MIRROR: only `policy` of the stack's `resources`."
+    },
+    "vmalert": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
+        }
+      },
+      "description": "MIRROR: only `enabled` of the stack's `vmalert`."
+    },
+    "alertmanager": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
+        }
+      },
+      "description": "MIRROR: only `enabled` of the stack's `alertmanager`."
+    },
+    "vmauth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Null (the default): on when `mode` is \"full\", off when `mode` is \"operator-only\" -- this mode turns it off ITSELF. An explicit true or false pins it regardless of mode; an explicit true beside `mode: operator-only` is refused, the same contradiction every other component in this mode refuses."
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "tag"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1,
+              "description": "v1.152.0 or later: earlier builds matched claim values unanchored (GHSA-f99m-22fh-qw96)."
+            }
+          }
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "extraArgs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "deniedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "loadBalancingPolicy": {
+          "type": "string",
+          "enum": [
+            "first_available",
+            "least_loaded"
+          ]
+        },
+        "retryStatusCodes": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "tenancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claimName"
+      ],
+      "properties": {
+        "issuerUrl": {
+          "type": "string"
+        },
+        "audience": {
+          "$ref": "#/definitions/audience",
+          "description": "The client id this proxy's tokens are minted under, pinned into every reader's matchClaims as `aud`. REQUIRED whenever principals are set: vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else - it has no audience option and never inspects aud itself - so without this pin any unexpired token from that issuer is admitted whatever client it was minted for. Escaped and anchored where it is rendered, so whatever the issuer assigned pins itself and nothing else."
+        },
+        "claimName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clusterLabel": {
+          "$ref": "#/definitions/labelName",
+          "description": "The metrics label carrying the cluster. Default k8s_cluster_name, which is what charts/observability-emitters stamps."
+        },
+        "namespaceLabel": {
+          "$ref": "#/definitions/labelName",
+          "description": "The metrics label carrying the namespace. Default k8s_namespace_name."
+        },
+        "logsClusterField": {
+          "$ref": "#/definitions/logFieldName",
+          "description": "The log STREAM FIELD carrying the cluster. Default k8s.cluster.name, the conventional name both log writers stamp."
+        },
+        "logsNamespaceField": {
+          "$ref": "#/definitions/logFieldName",
+          "description": "The log STREAM FIELD carrying the namespace. Default kubernetes.pod_namespace: the container-log agent's native spelling, because it cannot rename a field and the gateway is configured to write the same one."
+        },
+        "ownCluster": {
+          "$ref": "#/definitions/optionalName",
+          "description": "The name THIS install's own cluster is known by. Optional, and unrelated to whether this install runs a store at all: it exists only so `tenancy.writers[].cluster` has something to be refused against. A writer pinned to this value would duplicate the unscoped, local writer's job rather than identify a remote one, so it is refused. Leave unset and that one refusal does nothing; every other writer check still applies."
+        },
+        "allowUnfilteredTraceReads": {
+          "type": "boolean",
+          "description": "Admit the trace read route although nothing can scope it. vmauth applies a principal's filters by substituting them into the route, and VictoriaTraces' Jaeger and Tempo select APIs accept no query argument to substitute them into - so every principal who can read traces reads EVERY tenant's spans. Off by default, and required whenever a trace store is enabled alongside principals."
+        },
+        "allowUnfilteredMetricMetadata": {
+          "type": "boolean",
+          "description": "Admit /api/v1/metadata on the metrics read route. It returns every metric name, type and help in the store and no filter reaches it, so every principal sees the same list whatever their grant. Off by default; the visible cost of off is a 401 in Grafana's datasource log where metric descriptions would be."
+        },
+        "vmAccessReader": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Opt-in (default off): one reader selected by the token's own vm_access claim (aud, iss and non-empty metrics_extra_filters and logs_extra_stream_filters), with no default claim: a token without the claim never reaches it.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "audience": {
+              "type": "string",
+              "description": "The aud this reader pins; empty means tenancy.audience."
+            },
+            "routes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "metrics",
+                  "logs",
+                  "traces"
+                ]
+              }
+            }
+          }
+        },
+        "authz": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Opt-in (default off): the Envoy external authorisation service that unions the grants of every principal a person's groups select into a short-lived vm_access token for the vm_access reader. See docs/tenancy-authz.md.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "image": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repository": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "tag": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^(sha256:[a-f0-9]{64})?$"
+                },
+                "pullPolicy": {
+                  "enum": [
+                    "Always",
+                    "IfNotPresent",
+                    "Never"
+                  ]
+                }
+              }
+            },
+            "replicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "resources": {
+              "$ref": "#/definitions/resources"
+            },
+            "nodeSelector": {
+              "type": "object"
+            },
+            "tolerations": {
+              "type": "array"
+            },
+            "priorityClassName": {
+              "type": "string"
+            },
+            "upstreamIssuer": {
+              "type": "string",
+              "description": "Empty means tenancy.issuerUrl."
+            },
+            "personAudiences": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/definitions/audience"
+              },
+              "description": "Empty means [tenancy.audience]."
+            },
+            "mintedAudience": {
+              "$ref": "#/definitions/audience"
+            },
+            "tokenTTL": {
+              "$ref": "#/definitions/duration"
+            },
+            "signingKey": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "enum": [
+                    "eso",
+                    "existingSecret"
+                  ],
+                  "description": "eso: External Secrets Operator generates the key (SSHKey generator + ExternalSecret, CreatedOnce). existingSecret: a Secret you own."
+                },
+                "existingSecret": {
+                  "type": "string",
+                  "description": "The Secret holding the key as file privateKey, when source is existingSecret."
+                }
+              }
+            },
+            "traceClusters": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "The clusters the trace store serves. A person reads traces only with allNamespaces on every one of them. Empty means the union of the clusters named by any person principal's grants."
+            },
+            "retireGroupReaders": {
+              "type": "boolean",
+              "description": "Do not render the per-principal VMUsers of person principals; tenancy-authz grants people access. Needs authz.enabled and securityPolicy.enabled."
+            },
+            "securityPolicy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "annotations": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "description": "Annotations on the SecurityPolicy. Defaults to an Argo CD sync wave after the rest of the component, because the policy fails closed."
+                },
+                "targetRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "name"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "HTTPRoute"
+                        ]
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "networkPolicy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "gatewayFrom": {
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "principals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "grants"
+            ],
+            "properties": {
+              "group": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The group a token's claim must equal. Exactly one of `group` and `groups` is required (checked at render time)."
+              },
+              "groups": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Several group spellings for ONE principal: a token carrying ANY of them selects it and reads EVERY grant. Requires `name`; refused beside `group`. A token holding only one of the groups reads all the grants, which is correct only while every holder of one spelling holds them all - otherwise mint per-person vm_access claims instead. Each entry is escaped and anchored like `group`."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The VMUser's name when `groups` is used."
+              },
+              "audience": {
+                "$ref": "#/definitions/audience",
+                "description": "This principal's OWN audience, overriding `tenancy.audience` for its `matchClaims.aud` alone. Optional: unset, this principal is pinned to `tenancy.audience` like any other, which stays REQUIRED whenever `principals` is set — this is a per-reader override, not a replacement. Escaped and anchored exactly as `tenancy.audience` is; the same refusal applies to a value no issuer mints (empty, whitespace, a newline). The reader `tenancy.alertReaders` cannot use this: it has no OIDC identity to pin an audience on in the first place."
+              },
+              "routes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "metrics",
+                    "logs",
+                    "traces"
+                  ]
+                },
+                "description": "Which of this proxy's three read routes this principal gets. Optional: unset renders all three (subject to the same gates as always — a trace route still needs a trace store enabled and `tenancy.allowUnfilteredTraceReads`). Set to narrow a principal to fewer signals, for example `[metrics]` for a machine reader with no business reading logs or traces. An empty list is refused by the schema rather than read as \"nothing\", the same as `writers[].destinations`."
+              },
+              "metricsQueryOnly": {
+                "type": "boolean",
+                "description": "Narrow the metrics route (when this principal has one) to exactly `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range` — no series, labels, label values, tsdb status or vmui. Off by default, which keeps the full metrics read route. Refused when `routes` is set and excludes `metrics`: there would be nothing left for it to narrow."
+              },
+              "vmalertAPI": {
+                "type": "boolean",
+                "description": "Give this principal the metrics vmalert's alerts and rules: `/prometheus/vmalert/api/v1/alerts` and `/prometheus/vmalert/api/v1/rules`, forwarded to vmalert as `/vmalert/api/v1/...`. Off by default. UNFILTERED: vmalert has no per-namespace or per-cluster concept, so this principal's grants do not scope what it reads here; it needs `tenancy.allowUnfilteredAlertReads`, like `alertReaders`. Refused when `routes` excludes `metrics`, or `vmalert.enabled` is false."
+              },
+              "grants": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "cluster"
+                  ],
+                  "properties": {
+                    "cluster": {
+                      "$ref": "#/definitions/name"
+                    },
+                    "namespaces": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/definitions/name"
+                      },
+                      "description": "An EMPTY list is refused rather than read as everything: a project that expands to no namespaces is the likeliest way a grant widens by accident."
+                    },
+                    "allNamespaces": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "writers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "tokenSecret",
+              "destinations"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/name"
+              },
+              "tokenSecret": {
+                "$ref": "#/definitions/secretRef"
+              },
+              "destinations": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "metrics",
+                    "logs",
+                    "traces"
+                  ]
+                }
+              },
+              "cluster": {
+                "$ref": "#/definitions/name",
+                "description": "OPTIONAL. The cluster this writer's series, log records and spans are FORCED to belong to, overriding whatever k8s_cluster_name (or the log/trace equivalent) the writer's own collector config claims. Unset is the unscoped, local writer's shape — a collector writing to the store beside it, exactly as charts/observability-emitters has always done — and is unaffected by this field existing. Set it for a REMOTE writer: one whose collector runs on a different cluster than this install and pushes here across the network, where a bearer token alone proves nothing about which cluster it actually ran on. Refused when it equals `tenancy.ownCluster` (that is the unscoped writer's job), and refused as a duplicate if two writers name the same cluster."
+              }
+            }
+          }
+        },
+        "readers": {
+          "type": "array",
+          "description": "Static-bearer, read-only METRICS QUERY readers, scoped by a grant: a machine in another cluster (another install's `vmalert.remoteEvaluators` entry) queries this store with a token from a Secret. Routes are `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range` only; the grant is enforced as literal `extra_filters` on them. No write, log, trace or admin route.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "tokenSecret",
+              "grants"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/name"
+              },
+              "tokenSecret": {
+                "$ref": "#/definitions/secretRef"
+              },
+              "grants": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "cluster"
+                  ],
+                  "properties": {
+                    "cluster": {
+                      "$ref": "#/definitions/name"
+                    },
+                    "namespaces": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/definitions/name"
+                      },
+                      "description": "An EMPTY list is refused rather than read as everything."
+                    },
+                    "allNamespaces": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "allowUnfilteredAlertReads": {
+          "type": "boolean",
+          "description": "Admit the alerts-reader route although nothing can scope it. vmalert's own /api/v1/alerts has no per-namespace or per-cluster concept to filter on, so every reader named in alertReaders reads every active alert this install's metrics vmalert is evaluating, cluster-wide. Off by default, and required whenever alertReaders is non-empty."
+        },
+        "alertReaders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "tokenSecret"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/name"
+              },
+              "tokenSecret": {
+                "$ref": "#/definitions/secretRef"
+              },
+              "alertmanager": {
+                "type": "boolean",
+                "description": "Also admit this reader to this install's Alertmanager `/api/v2/alerts` (exact path), so it can ask whether an alert (the Watchdog) is ACTIVE in the router, not only evaluated by vmalert. Off by default. vmauth matches paths, not methods: `POST /api/v2/alerts` on that path CREATES alerts, so the edge in front of vmauth must admit GET only (a Gateway route with `method: GET`); this chart cannot enforce it. Needs `alertmanager.enabled`."
+              }
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "proxyFrom": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Kubernetes NetworkPolicyPeer objects; passed through untouched."
+        },
+        "scrapeFrom": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Kubernetes NetworkPolicyPeer objects; passed through untouched. Empty means the metrics agent charts/observability-emitters renders."
+        }
+      },
+      "description": "MIRROR: `enabled`, `proxyFrom` and `scrapeFrom` of the stack's `networkPolicy`; the stores', vmalert's and karma's policies stay with the stack."
+    }
+  }
+}

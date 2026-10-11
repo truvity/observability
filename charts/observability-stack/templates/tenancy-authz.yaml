@@ -1,3 +1,4 @@
+{{- if eq (.Values.door.source | default "stack") "stack" }}
 {{- if .Values.tenancy.authz.enabled }}
 {{- /*
 tenancy-authz (`tenancy.authz`, opt-in): the Envoy external authorisation
@@ -364,5 +365,6 @@ spec:
     - ports:
         - protocol: TCP
           port: {{ $issuerPort | int }}
+{{- end }}
 {{- end }}
 {{- end }}

@@ -1,0 +1,5 @@
+# expect: at '/door/source'
+# A misspelt switch must not fall through to `stack`, which would render the
+# objects charts/observability-proxy owns.
+door:
+  source: separate

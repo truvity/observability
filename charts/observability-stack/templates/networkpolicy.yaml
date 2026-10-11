@@ -185,6 +185,7 @@ spec:
         - protocol: TCP
           port: 8435
 {{- end }}
+{{- if eq (.Values.door.source | default "stack") "stack" }}
 ---
 {{- /*
 The proxy's own ingress. Empty `proxyFrom` means the release's namespace
@@ -236,6 +237,7 @@ spec:
       ports:
         - protocol: TCP
           port: 8435
+{{- end }}
 {{- /*
 karma's own ingress, when karma is on. Empty `karmaFrom` means the
 release's namespace and nothing else, the same default as `proxyFrom`.

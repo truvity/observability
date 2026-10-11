@@ -449,6 +449,86 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### Handing the Door plane to observability-proxy (0.81.0)
+
+**Nothing moves on the bump.** `observability-stack`'s new `door.source`
+defaults to `stack` and the new chart `observability-proxy` is not installed
+by anything: every existing golden render is unchanged. The upgrade is an
+opt-in that moves **who renders the Door plane**: the vmauth proxy (the
+`VMAuth`), every `VMUser` (principals, readers, writers, alert readers, the
+vm-access reader), `tenancy-authz` (ServiceAccount, ConfigMap, Service,
+Deployment, PodDisruptionBudget, ServiceMonitor, the SSHKey generator and its
+`CreatedOnce` ExternalSecret, the Envoy SecurityPolicy and its NetworkPolicy)
+and the proxy's own NetworkPolicy ([reference.md](reference.md),
+`charts/observability-proxy`) from the stack's Application to an Application of
+their own, under the **same kind, name and namespace**, so the objects are
+adopted in place and never deleted. Nothing is redesigned: the same values
+keys (`vmauth.*`, `tenancy.*`, the proxy half of `networkPolicy.*`), the same
+service code and image. [proxy.md](proxy.md) describes the plane.
+
+**Why it can be adopted in place, and the hazard.** The mechanism is the one
+of 0.70.0 → 0.71.0 above: Argo CD prunes only objects that name the
+Application that applied them, the new Application server-side-applies the
+same objects (same name, uid and spec; only the tracking annotation moves), and
+the VictoriaMetrics operator sees no change to the `VMAuth`, so it rolls no
+pod. `tests/proxy_chart_test.go` is the proof that "the same spec" is true: for
+every stack test case, the stack with the switch off plus the proxy chart
+equals the stack with it on, object for object, byte for byte. The hazard is
+also the same: the stack's Application has `prune: true`, so the moment the
+stack stops rendering the Door, its next sync deletes every Door object that
+still names it, and until the new Application recreates them every read and
+every cross-cluster write is refused. Nothing orders the two Applications, so
+**turn the stack's prune off for the handover.**
+
+**Order.** Four steps, each a separate change, each checked before the next.
+
+1. **Bump the pin to 0.81.0 on the cluster, and change nothing else.** The bump
+   is a no-op render; confirm with the zero-diff gate. A cluster still on
+   0.80.0 refuses the `door` key.
+2. **Hand over, with prune off, in ONE change.** In the stack Application:
+   `door.source: chart` and, temporarily, `syncPolicy.automated.prune: false`
+   (commented as temporary). Add the `observability-proxy` Application with
+   `Prune=false` on its own sync options as well, same destination namespace,
+   release `observability-proxy`, `stackReleaseName: <the stack's release
+   name>`, and the Door's sections of the stack's values **copied unchanged**
+   (`vmauth`, `tenancy`, `networkPolicy.{enabled,proxyFrom,scrapeFrom}`), plus
+   the mirrored keys listed in [reference.md](reference.md): `mode`, `ha`,
+   `interval`, `resources.policy`, `storeCredentials`, `stores`,
+   `vmalert.enabled`, `alertmanager.enabled`, `nameOverride`/`fullnameOverride`
+   and the subchart keys that name the stores. Do not change a value or the
+   chart version of either Application in this change. Render both
+   Applications' manifests with the real values and diff the new chart's render
+   against the live objects first (`kubectl diff --server-side`): the diff must
+   be empty apart from the tracking annotation.
+   Both orders are safe: *new Application first* applies identical objects and
+   takes the tracking id, leaving the stack nothing to prune; *stack first*
+   stops rendering the Door and, with prune off, deletes nothing (it shows
+   OutOfSync with "extra resources" until the new Application has applied
+   them, and a `SharedResourceWarning` for the minutes between is expected).
+3. **Verify the tracking ids moved, read-only.** Every Door object names the
+   new Application (the stores, the vmalerts, Alertmanager and the other
+   NetworkPolicies still name the stack); the new Application is Synced and
+   Healthy; the stack shows no resource requiring prune; the vmauth and
+   tenancy-authz pods' age did not change (nothing restarted); a read through
+   the proxy still answers.
+4. **Restore prune.** A separate change removes the temporary `prune: false`
+   from the stack Application, after step 3 holds on every cluster that has the
+   Door.
+
+**What stays in the stack.** The three store NetworkPolicies, the vmalert and
+karma ones, the stores, the alerting plane and the backups. `tenancy-authz`'s
+own NetworkPolicy moves with it; the proxy's moves too.
+
+**Rolling back** is the same order reversed: stack prune off, `door.source:
+stack`, remove the new Application (check that deleting it does not cascade),
+then restore prune.
+
+**Do not.** Install the new chart with the stack still on `door.source:
+stack` (two Applications would own the same objects); turn prune back on in the
+same change as the handover; combine the handover with a chart upgrade or a
+values change; change `nameOverride`/`fullnameOverride`/`stackReleaseName` on
+one side only (a different name is a different object: a delete and a create).
+
 ### 0.78.1 → 0.79.0
 
 **`groups.pulumiDrift` is removed.** Before the bump, delete the
