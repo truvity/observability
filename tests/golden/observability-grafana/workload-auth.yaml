@@ -69,7 +69,7 @@ data:
     cache_ttl = 60m
     expect_claims = {"aud":"grafana-workload","iss":"https://issuer.example.org"}
     username_attribute_path = join(':', ['workload', sub])
-    role_attribute_path = sub && 'Viewer'
+    role_attribute_path = ends_with(sub, ':k8s:observability:observability-cluster-grafana-operator') && 'None' || 'Viewer'
     role_attribute_strict = true
     allow_assign_grafana_admin = false
     skip_org_role_sync = false
@@ -315,7 +315,7 @@ spec:
         app.kubernetes.io/instance: observability-grafana
         app.kubernetes.io/version: "13.1.1"
       annotations:
-        checksum/config: 4e3e21525b25da99ddab8a89cb0759f6712ca12c732d81a0ed64c77d8590eafc
+        checksum/config: 56efef5c8dba6bf0bbe6b9f1daf22f56538e25811f5a316a186df246a4fa1d66
         checksum/sc-dashboard-provider-config: 81f722b8194d01e4a84ce12a0cbbe9b705b2d9145719c803ac264b4786c64a09
         kubectl.kubernetes.io/default-container: grafana
     spec:
