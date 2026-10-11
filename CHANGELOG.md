@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.76.1
+
+- Dependency updates.
+
 ## v0.76.0
 
 - **Security** `observability-stack`, `pkg/tenancy`: a reader could widen its metrics grant to every series in the store by sending `extra_filters[]={k8s_cluster_name=~".+"}`. VictoriaMetrics ORs that spelling in beside `extra_filters`, and vmauth drops a client argument only when the route sets the same name, so the route's `extra_filters` never clashed with it. This worked straight against vmauth for every principal, the `vm_access` reader and every `tenancy.readers` token, and through the gateway too. Every filtered metrics route now pins both `extra_filters` and `extra_filters[]` to the same placeholder (or, for `tenancy.readers`, the same literal grant); `pkg/tenancy` gains `MetricsFilterArrayArg`, `MetricsFilterArgs`, `ReadRoute.FilterArgs` and `CarriesFilters`, and refuses a metrics route that pins one. The logs route is unchanged (VictoriaLogs reads no array spelling and ANDs every filter, so a client's own copy only narrows). **No values change**; every VMUser golden with a metrics route gains the second `query_args` entry, and `hack/tenancy-authz-proof.sh` now asserts the widening returns only the granted series.
