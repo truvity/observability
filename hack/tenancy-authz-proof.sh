@@ -48,7 +48,10 @@
 #      and a workload calling vmauth directly is unaffected;
 #   9. both replicas sign with the one key the operator generated, and
 #      deleting the Secret rotates it with no restart and no failed request:
-#      the new key is published beside the old one at once.
+#      the new key is published beside the old one at once;
+#  10. with `retireGroupReaders` a person's own token sent straight to
+#      vmauth gets 401 (their group readers are gone), the same person
+#      through the gateway still reads, and a workload's token is unchanged.
 #
 # Needs network (images and the Envoy Gateway and External Secrets charts),
 # Docker, kind, kubectl, helm, go, python3 (PyYAML, PyJWT,
@@ -150,14 +153,18 @@ victoria-traces-single: {enabled: false}
 EOF
 helm template x "$root/charts/observability-stack" --namespace "$ns" -f "$work/values.yaml" > "$work/chart.yaml"
 
-python3 - "$work" <<'PY'
+# convert [suffix]: translate the rendered chart{suffix}.yaml into vmauth.yml
+# (suffix empty) or vmauth{suffix}.yml; only the first also writes authz.yaml.
+convert() {
+python3 - "$work" "${1:-}" <<'PY'
 import sys, yaml
-work = sys.argv[1]
-docs = [d for d in yaml.safe_load_all(open(f"{work}/chart.yaml")) if d]
+work, sfx = sys.argv[1], sys.argv[2]
+docs = [d for d in yaml.safe_load_all(open(f"{work}/chart{sfx}.yaml")) if d]
 authz_kinds = {"ServiceAccount", "ConfigMap", "Service", "Deployment", "SecurityPolicy", "PodDisruptionBudget", "SSHKey", "ExternalSecret"}
-keep = [d for d in docs if "tenancy-authz" in d["metadata"]["name"] and d["kind"] in authz_kinds]
-yaml.safe_dump_all(keep, open(f"{work}/authz.yaml", "w"), sort_keys=False)
-print(f"--- authz.yaml: {', '.join(sorted(d['kind'] for d in keep))}")
+if not sfx:
+    keep = [d for d in docs if "tenancy-authz" in d["metadata"]["name"] and d["kind"] in authz_kinds]
+    yaml.safe_dump_all(keep, open(f"{work}/authz.yaml", "w"), sort_keys=False)
+    print(f"--- authz.yaml: {', '.join(sorted(d['kind'] for d in keep))}")
 
 users = []
 for d in docs:
@@ -177,11 +184,13 @@ for d in docs:
         j["default_vm_access_claim"] = {"metrics_extra_filters": dv["metricsExtraFilters"],
                                         "logs_extra_stream_filters": dv["logsExtraStreamFilters"]}
     users.append({"name": s["name"], "jwt": j, "url_map": rows})
-yaml.safe_dump({"users": users}, open(f"{work}/vmauth.yml", "w"), sort_keys=False)
-print(f"--- vmauth.yml: {len(users)} reader user(s)")
+yaml.safe_dump({"users": users}, open(f"{work}/vmauth{sfx}.yml", "w"), sort_keys=False)
+print(f"--- vmauth{sfx}.yml: {len(users)} reader user(s)")
 for u in users:
     print(f"    {u['name']}: oidc {u['jwt']['oidc']['issuer']}, {len(u['jwt']['match_claims'])} match claims, default claim: {'default_vm_access_claim' in u['jwt']}")
 PY
+}
+convert
 
 # --- the fake identity provider: keys and tokens ------------------------
 python3 - "$work" "$ns" <<'PY'
@@ -534,6 +543,26 @@ done
 expect "both replicas publish old and new key                       " "$n" "2"
 expect "the old key is still published by both                      " "$(for ip in $(pod_ips); do jwks_kids_of "$ip" | tr ',' '\n' | grep -c "^$old_kid\$"; done | awk '{s+=$1} END {print s}')" "2"
 expect "people still read (the old key signs until the switch)      " "$(metrics "$gw" ab)" "cluster-a/ns-a,cluster-a/ns-b"
+
+echo; echo "=== 10. retireGroupReaders: one path for people ==="
+# The same values with the person principals' own VMUsers retired. vmauth gets
+# the config rendered from THAT chart; the service and the route are unchanged.
+helm template x "$root/charts/observability-stack" --namespace "$ns" -f "$work/values.yaml" \
+  --set tenancy.authz.retireGroupReaders=true > "$work/chart-retired.yaml"
+convert -retired
+kn create configmap vmauth-config --from-file=vmauth.yml="$work/vmauth-retired.yml" --dry-run=client -o yaml | kn replace -f - >/dev/null
+kn rollout restart deployment/vmauth >/dev/null
+kn rollout status deployment/vmauth --timeout=120s >/dev/null
+for _ in $(seq 1 60); do
+  [ "$(status "$gw" ab)" = 200 ] && break; sleep 2
+done
+expect "[team-a, team-b] via gateway: still the union               " "$(metrics "$gw" ab)" "cluster-a/ns-a,cluster-a/ns-b"
+expect "[team-a] raw person token straight to vmauth: 401           " "$(status "$direct" a)" "401"
+expect "[team-a, team-b] raw person token straight to vmauth: 401   " "$(status "$direct" ab)" "401"
+expect "[fleet] raw person token straight to vmauth: 401            " "$(status "$direct" fleet)" "401"
+expect "[nobody] + client vm_access claim straight to vmauth: 401   " "$(status "$direct" nobody-claims-b)" "401"
+expect "[fleet] traces via gateway: still served                    " "$(traces "$gw" fleet)" "200"
+expect "workload token direct to vmauth: unchanged                  " "$(metrics "$direct" workload)" "cluster-a/ns-a"
 
 echo
 if [ "$fail" = 0 ]; then

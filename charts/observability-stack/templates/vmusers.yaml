@@ -26,7 +26,23 @@ keep the two from drifting: a difference between what a token says a
 person may read and what the proxy lets them read is not a difference
 anyone notices until it matters.
 */}}
-{{- range $i, $p := .Values.tenancy.principals }}
+{{- /*
+`tenancy.authz.retireGroupReaders`: with tenancy-authz on, a person's token is
+exchanged at the gateway for a vm_access token, so the per-principal readers
+matching a person's raw token (their `aud` is a person audience) are a second
+path to the same data. Retired, they are not rendered; the same principals
+stay in tenancy-authz's configuration, which is what grants people access.
+A principal on any other audience (a workload's, a machine's) is never touched.
+*/}}
+{{- $personAud := (include "observability-stack.authz.personAudiences" . | fromYaml).audiences }}
+{{- $retire := and .Values.tenancy.authz.enabled .Values.tenancy.authz.retireGroupReaders }}
+{{- $kept := list }}
+{{- range $p := .Values.tenancy.principals }}
+{{- if not (and $retire (has ($p.audience | default $.Values.tenancy.audience) $personAud)) }}
+{{- $kept = append $kept $p }}
+{{- end }}
+{{- end }}
+{{- range $i, $p := $kept }}
 {{- /*
 A principal is selected by ONE `group`, or by a list of `groups` with a
 `name` (validated in _validate.tpl): a token carrying any of the listed

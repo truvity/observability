@@ -2265,6 +2265,9 @@ routes the single minted claim would widen.
 {{- define "observability-stack.validate.tenancyAuthz" -}}
 {{- $t := .Values.tenancy -}}
 {{- $a := $t.authz -}}
+{{- if and $a.retireGroupReaders (not $a.enabled) -}}
+{{- fail "observability-stack: `tenancy.authz.retireGroupReaders` is set but `tenancy.authz.enabled` is not. The person readers would be dropped and nothing would grant people access in their place. Turn `tenancy.authz` on, or leave `retireGroupReaders` off." -}}
+{{- end -}}
 {{- if $a.enabled -}}
 {{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
 {{- if not $eff.vmauth -}}
@@ -2323,6 +2326,11 @@ principal says. Refused, not guessed.
 {{- if or $p.routes $p.metricsQueryOnly $p.vmalertAPI -}}
 {{- fail (printf "observability-stack: principal %q is a person's principal but sets `routes`, `metricsQueryOnly` or `vmalertAPI`. With `tenancy.authz` on, the service mints one claim per person and the vm_access reader gives every claim the same routes, so the narrowing would be dropped and the person would read more than this principal says. Give a narrower population its own audience (and keep it out of `personAudiences`), or leave the narrowing off." $label) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $a.retireGroupReaders -}}
+{{- if not $a.securityPolicy.enabled -}}
+{{- fail "observability-stack: `tenancy.authz.retireGroupReaders` is set but `tenancy.authz.securityPolicy.enabled` is not. This chart cannot see a SecurityPolicy you render yourself, so it cannot know that the route people read through is behind tenancy-authz; retiring the person readers on a route without the service would lock every person out. Let the chart render the policy (`securityPolicy.enabled: true`, `targetRefs` naming the route), or leave `retireGroupReaders` off." -}}
 {{- end -}}
 {{- end -}}
 {{- if eq $a.signingKey.source "existingSecret" -}}
