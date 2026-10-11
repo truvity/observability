@@ -35,7 +35,7 @@ func (f *fakeGrafana) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	f.reqs = append(f.reqs, r.Method+" "+r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
-	reply := func(code int, body string) { w.WriteHeader(code); fmt.Fprint(w, body) }
+	reply := func(code int, body string) { w.WriteHeader(code); _, _ = fmt.Fprint(w, body) }
 	switch {
 	case r.URL.Path == "/api/health":
 		reply(200, `{"database":"ok"}`)
@@ -53,7 +53,8 @@ func (f *fakeGrafana) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && r.URL.Path == fmt.Sprintf("/api/users/%d", fakeUID):
 		reply(200, fmt.Sprintf(`{"id":%d,"isExternal":%t,"isExternallySynced":%t,"isGrafanaAdminExternallySynced":false}`, fakeUID, f.external, f.external))
 	case r.Method == "GET" && r.URL.Path == "/api/org/users/lookup":
-		reply(200, fmt.Sprintf(`[{"orgId":1,"userId":99,"login":"other","role":"Admin"},{"orgId":1,"userId":%d,"login":"x","role":"%s","accessControl":{"a":true}}]`, fakeUID, f.role))
+		reply(200, fmt.Sprintf(`[{"orgId":1,"userId":99,"login":"other","role":"Admin"},`+
+			`{"orgId":1,"userId":%d,"login":"x","role":"%s","accessControl":{"a":true}}]`, fakeUID, f.role))
 	case r.Method == "PATCH" && r.URL.Path == fmt.Sprintf("/api/org/users/%d", fakeUID):
 		if f.external {
 			reply(403, `{"message":"Cannot change role for externally synced user"}`)
