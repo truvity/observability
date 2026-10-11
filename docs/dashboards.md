@@ -69,7 +69,11 @@ shipped as a `just` recipe an estate runs on its own:
 1. **A `datasource` variable, and every panel uses it.** A panel pinned
    to one datasource UID is how a fleet dashboard silently becomes a
    one-install dashboard. The lint fails on any panel whose datasource
-   is a literal.
+   is a literal uid. A panel may use `$datasource` or any other
+   template variable of type `datasource` (`${var}` or `$var`), so a
+   dashboard can keep a second one, e.g. `logsds` for its log panels;
+   a variable that is not of that type, or is not declared, is refused
+   like a literal.
 2. **A `cluster` variable, chained off `datasource`**, populated by a
    label-values query so the list is whatever the chosen install
    actually holds — never hardcoded — and used in every query.
