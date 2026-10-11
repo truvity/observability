@@ -1,0 +1,61 @@
+# Preset: aggregate serverless per-instance series at ingestion.
+#
+# Every execution environment of a serverless function (an AWS Lambda
+# environment, say) reports with its own `instance` and `faas_instance`, so
+# a function with a few hundred environments a day files its whole set of
+# series again each day: tens of thousands of new series per day that are
+# never read per instance. This preset has the metrics store aggregate them
+# away as they arrive: VictoriaMetrics stream aggregation on the VMSingle,
+# dropping `instance` and `faas_instance` and keeping every other label.
+# The mechanism and the effect on `rate()` are in docs/safety.md, "Metric
+# churn: serverless sources".
+#
+# What it matches: the series the external OTLP receiver stamps
+# (`telemetry_source="external"`, `namespace="external"`; docs/external-ingest.md).
+# `namespace` is `otlp.external.namespace` of your emitters release: if you
+# changed it, change the `match` lines below to the same value. Only matched
+# series are replaced (`keepInput: false` drops the matched input only);
+# every other series is stored as it arrives.
+#
+# What it does, by metric name (OTLP carries no type once it is stored):
+#   - names ending `_total`, `_bucket`, `_sum` or `_count` (counters and the
+#     parts of a histogram) -> `total`, which sums the per-environment
+#     increases and treats a drop in an environment's value as a reset of
+#     that environment, not of the sum. A counter your senders export
+#     WITHOUT one of those suffixes is not a counter to this preset: extend
+#     the name regex in both rules (it is the same regex, negated in the
+#     second).
+#   - every other name (gauges, `target_info`) -> `max`. Of one gauge across
+#     environments the largest is the one that matters (memory, concurrency,
+#     queue depth); `last` would return whichever environment reported
+#     last, which changes from one interval to the next.
+# Names are kept (`keep_metric_names`), so dashboards and rules read the
+# same metric. Resolution becomes the interval: a `rate()` or `increase()`
+# over these series needs a range of at least two intervals (`[2m]`).
+#
+# `staleness_interval: 1h` keeps a `total` counting through an idle hour.
+# The default (twice the interval) forgets the running sum after two quiet
+# minutes, and the counter would restart from zero after every quiet period.
+#
+# List the file BEFORE your own values. Nothing reads it unless it is listed.
+# A list replaces, never merges: to change a rule, copy BOTH rules. The chart
+# refuses a rule that would merge tenants or keep the per-instance input
+# (templates/_validate.tpl, `validate.streamAggr`).
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      streamAggrConfig:
+        keepInput: false
+        rules:
+          - match: '{telemetry_source="external",namespace="external",__name__=~".*(_total|_bucket|_sum|_count)"}'
+            interval: 1m
+            outputs: [total]
+            without: [instance, faas_instance]
+            keep_metric_names: true
+            staleness_interval: 1h
+          - match: '{telemetry_source="external",namespace="external",__name__!~".*(_total|_bucket|_sum|_count)"}'
+            interval: 1m
+            outputs: [max]
+            without: [instance, faas_instance]
+            keep_metric_names: true
+            staleness_interval: 1h

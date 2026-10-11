@@ -200,9 +200,11 @@ groups:
   #   kargo_stage_condition{namespace, stage, type, reason}
   #     A gauge: 1 while the Stage condition named by `type`/`reason` is
   #     True, 0 while it is False or Unknown.
-  #   kargo_promotion_phase{namespace, promotion, stage, phase}
+  #   kargo_promotion_phase{namespace, stage, phase}
   #     A StateSet over Pending, Running, Succeeded, Failed, Errored and
-  #     Aborted: 1 on the Promotion's current phase.
+  #     Aborted: 1 on the Promotion's current phase. No per-Promotion
+  #     label (it grew without bound), so the Promotions of one Stage
+  #     share a series that reads 1 while any of them is in that phase.
   kargo:
     enabled: false
     # -- How long a Stage's Ready condition must read

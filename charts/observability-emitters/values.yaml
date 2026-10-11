@@ -609,7 +609,7 @@ kubeStateMetrics:
     # -- Kargo's own Stage and Promotion objects, as two metrics:
     # `kargo_stage_condition{namespace,stage,type,reason}` (a Gauge over
     # `status.conditions[]`) and `kargo_promotion_phase{namespace,
-    # promotion,stage,phase}` (a StateSet over `status.phase`'s six
+    # stage,phase}` (a StateSet over `status.phase`'s six
     # values), both with `metricNamePrefix: ""` — the exact shape
     # `charts/platform-alerts`' own `groups.kargo` (docs/reference.md)
     # is written to read. Off by default: nothing here reads a Kargo

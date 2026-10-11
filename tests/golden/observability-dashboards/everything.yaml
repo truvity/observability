@@ -21751,7 +21751,7 @@ data:
           "id": 18,
           "type": "stat",
           "title": "Kargo promotions errored",
-          "description": "Errored Promotions whose Stage has not recovered (the same condition the KargoPromotionErrored alert uses). Shows n/a where the Kargo state metrics are not enabled. Re-promote once the cause is fixed.",
+          "description": "Stages with an Errored Promotion that have not recovered (the same condition the KargoPromotionErrored alert uses). Shows n/a where the Kargo state metrics are not enabled. Re-promote once the cause is fixed.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -32102,7 +32102,7 @@ data:
           "id": 5,
           "type": "stat",
           "title": "Promotions Running",
-          "description": "Promotions in the Running phase now. A number that stays above zero for long is a stuck Promotion: open it in Kargo and read its steps.",
+          "description": "Stages with a Promotion in the Running phase now (the metric has no per-Promotion label, so two at once on one Stage count once). A number that stays above zero for long is a stuck Promotion: open it in Kargo and read its steps.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -32171,7 +32171,7 @@ data:
           "id": 6,
           "type": "stat",
           "title": "Promotions errored",
-          "description": "Errored Promotions whose Stage has not recovered (the condition the KargoPromotionErrored alert uses). Re-promote once the cause is fixed.",
+          "description": "Stages with an Errored Promotion that have not recovered (the condition the KargoPromotionErrored alert uses). Re-promote once the cause is fixed.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -32244,7 +32244,7 @@ data:
           "id": 7,
           "type": "stat",
           "title": "Promotions failed",
-          "description": "Promotions that finished in the Failed phase and are still in the cluster. Failed is terminal: read the failed step and fix the cause before promoting again.",
+          "description": "Stages with a Promotion that finished in the Failed phase and is still in the cluster. Failed is terminal: read the failed step and fix the cause before promoting again.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -32317,7 +32317,7 @@ data:
           "id": 8,
           "type": "timeseries",
           "title": "Promotions by phase",
-          "description": "How many Promotions are in each phase, over time, counting the Promotion objects still in the cluster. A rise in Failed or Errored is a delivery that broke; Running that never drains is a stuck Promotion.",
+          "description": "How many Stages have a Promotion in each phase, over time, counting the Promotion objects still in the cluster (a Stage counts once per phase however many of its Promotions are in it). A rise in Failed or Errored is a delivery that broke; Running that never drains is a stuck Promotion.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"

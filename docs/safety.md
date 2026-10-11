@@ -1632,6 +1632,92 @@ repository's own reasoning about the YAML — for the default, the
 switch off, each read from its own golden under
 `tests/golden/observability-emitters/`.
 
+## Metric churn: serverless sources
+
+A central metrics store took 1.06 million new series in one day, and label
+pickers that carry an enforced `extra_filters` (every person's reader) must
+scan the monthly index, so they began to fail with `422 ... exceeds 1000000
+(-search.maxUniqueTimeseries)`. Raising the limit would have made every
+broad query dearer; cutting the churn is the fix. Two sources made most of it,
+and both are series that nobody reads one by one.
+
+### Serverless instances (about 274k series a day)
+
+A serverless function's execution environments each report with their own
+`instance` and `faas_instance`. A function with a few hundred environments a
+day, at roughly a thousand series each, files its whole set of series again
+every day, and every series is new. The other source types (a Deployment's
+pod, a node) have a stable identity; an environment lives minutes.
+
+The fix is VictoriaMetrics **stream aggregation** on the metrics store, which
+sees the data at ingestion (OTLP arrives through vmauth at
+`/opentelemetry/v1/metrics`, on its way to the VMSingle). It is the
+`serverless-stream-aggregation` preset of `charts/observability-stack`
+(docs/presets.md), which sets
+`victoria-metrics-k8s-stack.vmsingle.spec.streamAggrConfig`
+(`vmsingles.operator.victoriametrics.com`,
+`spec.streamAggrConfig.rules`, in the vendored CRD of
+`victoria-metrics-operator-crds` 0.14.0, operator v0.74). Off unless the
+preset is listed; nothing renders differently without it.
+
+- **Which series.** `telemetry_source="external"` and
+  `namespace="external"`, the two stamps the external OTLP receiver writes
+  (docs/external-ingest.md). Only matched series are replaced
+  (`keepInput: false` drops the matched input only; every other series is
+  stored as it arrives). If `otlp.external.namespace` is not `external`, or
+  a partner and a function share the source, narrow the `match`.
+- **Counters, histogram buckets, `_sum`, `_count`: `total`.** It sums the
+  increases of every environment and treats a value below the previous one as
+  that environment's restart from zero, so one environment's reset does not
+  pull the sum down. OTLP carries no type once stored, so the rule picks by
+  name: `_total`, `_bucket`, `_sum`, `_count`. A counter exported without one
+  of these suffixes is not caught: add its name to the regex in both rules.
+- **Gauges (everything else, `target_info` too): `max`.** Of one gauge across
+  environments the largest is the one that matters (memory, concurrency,
+  queue depth). `last` would return whichever environment reported last,
+  which differs from one interval to the next.
+- **Names are kept** (`keep_metric_names`), so dashboards and alert rules
+  read the same metric names. Only `instance` and `faas_instance` are
+  removed. A per-environment attribute beyond those two (a log stream name or a
+  process id on a resource) still multiplies series: list it in `without`.
+- **Interval 1m, and what that does to queries.** The aggregate has one
+  sample per interval (a source that reported every 10 seconds now has one every
+  minute). A `rate()` or `increase()` over these series needs a range of at
+  least two intervals: `rate(x[2m])` works, `rate(x[1m])` can return nothing.
+  Dashboards at a 5m range are unaffected; the rate itself is the same,
+  smoothed over the interval. A counter keeps rising through quiet periods:
+  `staleness_interval: 1h` holds the running sum for an idle hour, where the
+  default (twice the interval) would restart it from zero after two quiet
+  minutes.
+
+The chart refuses (`validate.streamAggr`, one fixture per case under
+`tests/invalid/observability-stack/stream-aggr-*.yaml`) a rule with no
+`match` or no `telemetry_source=` matcher in it, a `without` naming the
+cluster label, `namespace`, `owner`, `cloud_account_id`, `telemetry_source`,
+`le` or `__name__` (it would write one tenant's data into another's series),
+`keepInput: true` (the per-instance series would be stored too),
+`dropInput: true`, a bad `interval`, no `outputs`, and `keep_metric_names`
+with two outputs.
+`hack/serverless-stream-aggregation-proof.sh` runs the real rules against the
+pinned VictoriaMetrics: two instances, one resetting, a gauge, another source
+left alone.
+
+### Kargo promotions (about 15k series, growing)
+
+`kargo_promotion_phase` carried the Promotion's name. Kargo keeps finished
+Promotions and every one has a new name, so six series (one per phase) were
+added per Promotion for as long as the object lived. The label is gone
+(`kubeStateMetrics.customResources.kargo`); `namespace`, `stage` and `phase`
+stay. The Promotions of a Stage now emit the same label set, and the store
+keeps the largest value of duplicate samples at one timestamp
+(`-dedup.minScrapeInterval`, which the stack sets to the scrape interval), so
+a series reads 1 while any Promotion of the Stage is in that phase.
+`KargoPromotionErrored`, `KargoStateMetricsAbsent` and the dashboards ask
+exactly that ("is a Promotion of this Stage Errored, Running, Failed") and
+join on `namespace, stage`; none read the name. Only the alert text changed:
+it names the Stage, not the Promotion. A store with deduplication off keeps
+an arbitrary one of the duplicates: leave it on.
+
 ## The namespace stamp kube-state-metrics needs and no other scrape object does
 
 Every scrape object on a cluster this chart collects from gets the same

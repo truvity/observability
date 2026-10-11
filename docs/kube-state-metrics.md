@@ -311,7 +311,6 @@ spec:
       metricNamePrefix: ""
       labelsFromPath:
         namespace: [metadata, namespace]
-        promotion: [metadata, name]
         stage: [spec, stage]
       metrics:
         - name: kargo_promotion_phase
@@ -341,6 +340,19 @@ rather than its `metadata`, is what `KargoPromotionErrored`'s `and on
 (namespace, stage)` join against `kargo_stage_condition` depends on —
 name it something else and the join matches nothing, silently, on every
 evaluation.
+
+The Promotion's own name is NOT a label, on purpose. Kargo keeps finished
+Promotions and every one has a new name, so a `promotion` label added six
+series per Promotion for as long as the object lived: 15k series on one
+measured estate, growing every day. Without it the Promotions of a Stage emit
+identical label sets, and the metrics store keeps the largest value of
+duplicates at one sample time (`-dedup.minScrapeInterval`, set by
+`charts/observability-stack` to the scrape interval), so
+`kargo_promotion_phase{stage="x",phase="Errored"}` reads 1 while any
+Promotion of that Stage is Errored. A store with deduplication off keeps an
+arbitrary one of them; turn it on or do not use the preset. The rules and
+dashboards ask exactly that question, and none needs the name (Kargo's UI or
+`kubectl get promotions -n <project>` has it).
 
 ## Refusals
 

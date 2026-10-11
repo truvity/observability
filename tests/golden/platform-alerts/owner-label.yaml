@@ -221,7 +221,10 @@ spec:
         #
         # `kargo_promotion_phase` is a StateSet over Pending, Running,
         # Succeeded, Failed, Errored and Aborted: 1 on the Promotion's
-        # current phase, 0 on every other. Joining on (namespace, stage)
+        # current phase, 0 on every other. It has no per-Promotion label
+        # (that label grew without bound): the Promotions of one Stage
+        # share a series, which reads 1 while ANY of them is in that phase,
+        # so the rule says which Stage, not which Promotion. Joining on (namespace, stage)
         # against the Stage condition above is what tells an Errored
         # promotion whose Stage has already recovered (a retry that
         # succeeded since) apart from one still stuck.
@@ -235,10 +238,10 @@ spec:
             severity: warning
             tenant: example
           annotations:
-            summary: "Kargo Promotion {{ $labels.namespace }}/{{ $labels.promotion }} errored and its Stage has not recovered"
+            summary: "Kargo Stage {{ $labels.namespace }}/{{ $labels.stage }} has an errored Promotion and has not recovered"
             description: >-
-              The Promotion has sat in the Errored phase for 20m and its
-              Stage still reads LastPromotionErrored. Re-promote the Freight from
+              A Promotion of the Stage has sat in the Errored phase for 20m and
+              the Stage still reads LastPromotionErrored. Re-promote the Freight from
               the Kargo UI or CLI once the underlying failure is fixed.
             runbook_url: "https://runbooks.example.com/KargoPromotionErrored"
         # The deadman for the two rules above.

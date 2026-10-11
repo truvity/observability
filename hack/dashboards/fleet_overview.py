@@ -328,7 +328,7 @@ def build():
            'or (0 * count(kargo_stage_condition{%s}))' % (CLUSTER, CLUSTER),
            12, y, to_ns, no_value="n/a")
     b.stat("Kargo promotions errored",
-           "Errored Promotions whose Stage has not recovered (the same condition the KargoPromotionErrored alert uses). Shows n/a where the Kargo state metrics are not enabled. Re-promote once the cause is fixed.",
+           "Stages with an Errored Promotion that have not recovered (the same condition the KargoPromotionErrored alert uses). Shows n/a where the Kargo state metrics are not enabled. Re-promote once the cause is fixed.",
            'count((kargo_promotion_phase{%s,phase="Errored"} == 1) and on (k8s_cluster_name, namespace, stage) '
            '(kargo_stage_condition{%s,type="Ready",reason="LastPromotionErrored"} == 0)) '
            'or (0 * count(kargo_promotion_phase{%s}))' % (CLUSTER, CLUSTER, CLUSTER),

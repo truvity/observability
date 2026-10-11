@@ -151,6 +151,15 @@ equal to an in-cluster port or 8888; an empty `networkPolicy.ingressFrom`.
 - Logs and traces: every resource attribute is a searchable field. Stream
   fields are unchanged (`otlp.streamFields`).
 
+## Cardinality: one series set per execution environment
+
+A serverless sender's `instance` and `faas_instance` change with every
+execution environment, so each environment files its whole set of series
+again. For a store that holds such a source, list the
+`serverless-stream-aggregation` preset of `charts/observability-stack`: it
+aggregates those two labels away at ingestion (docs/safety.md, "Metric churn:
+serverless sources").
+
 ## Limits
 
 `otlp.external.maxRequestBodyBytes` (default 4 MiB, measured after

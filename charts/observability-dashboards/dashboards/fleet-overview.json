@@ -1370,7 +1370,7 @@
       "id": 18,
       "type": "stat",
       "title": "Kargo promotions errored",
-      "description": "Errored Promotions whose Stage has not recovered (the same condition the KargoPromotionErrored alert uses). Shows n/a where the Kargo state metrics are not enabled. Re-promote once the cause is fixed.",
+      "description": "Stages with an Errored Promotion that have not recovered (the same condition the KargoPromotionErrored alert uses). Shows n/a where the Kargo state metrics are not enabled. Re-promote once the cause is fixed.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

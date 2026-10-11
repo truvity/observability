@@ -44,6 +44,7 @@ Rules the presets keep:
 | observability-stack | `notifications-drop-vendored` | `notifications.drop` for the vendored groups (general, kubernetes-*, node-network, vm-health, vmoperator, vmsingle) |
 | observability-stack | `scheduling-durable` | stores and backup Jobs on a `durable` pool (selector `karpenter.sh/nodepool: durable`, tolerations `durable`, `arch`) |
 | observability-stack | `scheduling-arm64` | the operator on arm64 nodes |
+| observability-stack | `serverless-stream-aggregation` | VictoriaMetrics stream aggregation on the metrics store for `telemetry_source="external"` / `namespace="external"`: `instance` and `faas_instance` dropped at ingestion, counters and histogram parts by `total`, gauges by `max`, 1m (docs/safety.md, "Metric churn: serverless sources") |
 | observability-cluster | `operator-sluis-exchange` | the operator pod's half of `externalGrafana.auth.sluisExchange`: the token sidecar and the in-memory volume that carries its token to the operator (needs `grafana-operator.kubeAuth.audience` from you) |
 | observability-emitters | `local-write` | `writeCredentials`, metrics and OTLP destinations, and the log agent's mounts and `remoteWrite` for a stack installed as `observability-stack` in the `observability` namespace |
 | observability-emitters | `logs-collector-remote` | the log agent's token and CA mounts for the `remote` form |
