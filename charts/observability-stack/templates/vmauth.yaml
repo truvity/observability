@@ -1,3 +1,4 @@
+{{- if eq (.Values.door.source | default "stack") "stack" }}
 {{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml }}
 {{- if $observabilityStackEffective.vmauth }}
 {{- /*
@@ -85,4 +86,5 @@ spec:
   */}}
   extraArgs:
     {{- toYaml .Values.vmauth.extraArgs | nindent 4 }}
+{{- end }}
 {{- end }}

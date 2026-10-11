@@ -114,6 +114,17 @@ never depends on which chart owns them; moving the owner is an Application
 switch that adopts the objects in place (docs/adoption.md, 0.71.0). No version
 bump: this records a fact the chart already kept.
 
+### Door plane object names (stable; who renders them moves)
+
+The `VMAuth`, every `VMUser`, the `tenancy-authz` objects (with its
+SecurityPolicy and NetworkPolicy) and the proxy's NetworkPolicy keep their
+kind, name and namespace whichever chart renders them: `observability-stack`
+(the default) or `observability-proxy` (restructure step 2,
+`door.source: chart`). A component never depends on which chart owns them;
+moving the owner is an Application switch that adopts the objects in place
+(docs/adoption.md, "Handing the Door plane to observability-proxy"). No version bump: this records a fact the
+chart already kept.
+
 ### Identity kinds (stable)
 
 `pkg/tenancy` turns "who may read which telemetry" into a vmauth

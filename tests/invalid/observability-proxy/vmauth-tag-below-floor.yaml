@@ -1,0 +1,7 @@
+# expect: The floor for this design is v1.152.0
+# The same version floor the stack enforces: v1.147.0 through v1.151.x
+# matched `match_claims` values unanchored.
+stackReleaseName: observability-stack
+vmauth:
+  image:
+    tag: v1.150.0

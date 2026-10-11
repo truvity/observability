@@ -1,0 +1,83 @@
+# The Door half of the stack case of the same name (tests/cases/observability-stack/ha):
+# its values kept to the keys charts/observability-proxy declares, with
+# `stackReleaseName` set to the stack's release name, so the render carries the
+# names the stack's does.
+stackReleaseName: observability-stack
+ha:
+  enabled: true
+  peer:
+    metrics: http://vmsingle-replica-victoria-metrics-k8s-stack.observability.svc:8428
+    logs: http://replica-victoria-logs-single-server.observability.svc:9428
+    traces: http://replica-vt-single-server.observability.svc:10428
+vmauth:
+  replicaCount: 2
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  allowUnfilteredAlertReads: true
+  principals:
+  - group: example:k8s:viewer
+    grants:
+    - cluster: example-cluster
+      allNamespaces: true
+    vmalertAPI: true
+  writers:
+  - name: metrics-agent
+    tokenSecret:
+      name: example-writer-token
+      key: token
+    destinations:
+    - metrics
+    - logs
+    - traces
+  alertReaders:
+  - name: status
+    tokenSecret:
+      name: example-alerts-token
+      key: token
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      podMetadata:
+        labels:
+          observability.pair: observability-metrics
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            observability.pair: observability-metrics
+victoria-logs-single:
+  server:
+    podLabels:
+      observability.pair: observability-logs
+    topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          observability.pair: observability-logs
+    serviceMonitor:
+      relabelings:
+      - action: replace
+        targetLabel: observability_replica
+        replacement: a
+victoria-traces-single:
+  server:
+    podLabels:
+      observability.pair: observability-traces
+    topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          observability.pair: observability-traces
+    serviceMonitor:
+      relabelings:
+      - action: replace
+        targetLabel: observability_replica
+        replacement: a

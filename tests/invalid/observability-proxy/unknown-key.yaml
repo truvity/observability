@@ -1,0 +1,6 @@
+# expect: additional properties 'karmaFrom' not allowed
+# karma's policy stays with the stack; the key is not declared here, so a
+# values block moved over with it fails instead of being silently ignored.
+stackReleaseName: observability-stack
+networkPolicy:
+  karmaFrom: []

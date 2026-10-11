@@ -1,3 +1,4 @@
+{{- if eq (.Values.door.source | default "stack") "stack" }}
 {{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml }}
 {{- if $observabilityStackEffective.vmauth }}
 {{- $root := . }}
@@ -477,5 +478,6 @@ spec:
       paths:
         - /api/v2/alerts
     {{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

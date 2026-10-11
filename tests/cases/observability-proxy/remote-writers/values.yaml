@@ -1,0 +1,27 @@
+# The Door half of the stack case of the same name (tests/cases/observability-stack/remote-writers):
+# its values kept to the keys charts/observability-proxy declares, with
+# `stackReleaseName` set to the stack's release name, so the render carries the
+# names the stack's does.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  ownCluster: example-central
+  writers:
+  - name: local-emitters
+    tokenSecret:
+      name: local-writer-token
+      key: token
+    destinations:
+    - metrics
+    - logs
+    - traces
+  - name: remote-cluster
+    tokenSecret:
+      name: remote-writer-token
+      key: token
+    destinations:
+    - metrics
+    - logs
+    - traces
+    cluster: example-remote
