@@ -1,14 +1,13 @@
 package auditlogreader
 
 import (
-	"sync"
-
 	"encoding/json"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
-	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

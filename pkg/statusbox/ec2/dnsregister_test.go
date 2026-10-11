@@ -48,8 +48,11 @@ func TestDNSRegisterPolicyAllowsOneChangeOnly(t *testing.T) {
 }
 
 func TestDNSRegisterTrustNamesTheBoxRoleOnly(t *testing.T) {
-	trust := statusboxec2.DNSRegisterTrustPolicy("arn:" + part + ":iam::" + account + ":role/box-instance")
-	assert.Equal(t, `{"Statement":[{"Action":"sts:AssumeRole","Effect":"Allow","Principal":{"AWS":"arn:`+part+`:iam::`+account+`:role/box-instance"}}],"Version":"2012-10-17"}`, trust)
+	box := "arn:" + part + ":iam::" + account + ":role/box-instance"
+	want := `{"Statement":[{"Action":"sts:AssumeRole","Effect":"Allow","Principal":{"AWS":"` + box + `"}}],` +
+		`"Version":"2012-10-17"}`
+
+	assert.Equal(t, want, statusboxec2.DNSRegisterTrustPolicy(box))
 }
 
 func TestDNSRegisterRoleKeepsItsNames(t *testing.T) {
