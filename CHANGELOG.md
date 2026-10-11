@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `platform-alerts`: `watches`, a list (default empty, **no default change**: every existing golden is byte-identical) of series watches, each rendered as a VMRule of its own named `name` with one group of the same name. A rule is `kind: absent` (`absent_over_time(<metric>{<selector>}[<window>])`) or `kind: heartbeat` (that, or `increase(...) == 0`), for a series the chart has no group for (a function's own gauge, a probe's counter); `selector`, `window` (15m), `for` (5m), `labels` (all of them, `severity` required; `commonLabels` are not added) and `annotations` are the consumer's, and `evaluator` names a remote evaluator whose store holds the series. The selector text is verbatim so a consumer replacing a hand-written VMRule keeps its expressions, and with them the alerts' identity. A render with every group disabled is allowed when `watches` is set. New golden `watches`.
+
 ## v0.81.0
 
 - **Changed** `dashboardlint` (`cmd/dashboardlint`, `pkg/dashboardlint`), rule 1: a panel or query datasource may be any `${var}` or `$var` whose template variable has `type: datasource`, not only `$datasource`, so a dashboard with a second datasource variable (for example `logsds` for its log panels) passes. Still refused: a literal datasource uid, and a variable that is undeclared or not of type `datasource`. The `datasource` variable itself is still required (the `cluster` variable chains off it). A dashboard that passed before still passes; the finding text for a refused datasource changed. See docs/dashboards.md.
