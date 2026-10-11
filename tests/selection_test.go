@@ -20,7 +20,6 @@ package tests
 
 import (
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -119,11 +118,10 @@ var ruleShapes = []struct {
 }{
 	{"an unlabelled PromQL rule, as the metrics subchart ships 23 of", nil},
 	{"a rule marked as PromQL", map[string]string{"observability.rule-type": "prometheus"}},
-	{"a rule marked as LogsQL", map[string]string{"observability.rule-type": "vlogs"}},
+	{"a rule marked as LogsQL", map[string]string{evaluatorKey: "logs"}},
 	{"a rule naming the metrics alerter", map[string]string{evaluatorKey: "metrics"}},
 	{"a platform alert for the metrics alerter", map[string]string{evaluatorKey: "metrics", ruleTypeKey: "alert"}},
 	{"a recording VMRule for the metrics alerter", map[string]string{evaluatorKey: "metrics", ruleTypeKey: "recording"}},
-	{"a LogsQL rule carrying both spellings (as the charts emit them)", map[string]string{"observability.rule-type": "vlogs", evaluatorKey: "logs"}},
 }
 
 // TestNoRuleReachesTwoAlerters is the check the crash-loop needed.
@@ -231,7 +229,7 @@ func TestEveryRuleShapeIsEvaluatedSomewhere(t *testing.T) {
 			for _, shape := range ruleShapes {
 				// A release with only the metrics alerter is a release
 				// that has no business evaluating LogsQL.
-				if (shape.labels["observability.rule-type"] == "vlogs" || shape.labels["observability.truvity.io/evaluator"] == "logs") && len(alerters) < 2 {
+				if shape.labels[evaluatorKey] == "logs" && len(alerters) < 2 {
 					continue
 				}
 
@@ -285,7 +283,7 @@ func TestRemoteEvaluatorRulesHaveExactlyOneOwner(t *testing.T) {
 	}
 
 	for _, name := range []string{"other-store", "third-store"} {
-		for _, extra := range []map[string]string{nil, {"observability.rule-type": "prometheus"}, {"observability.rule-type": "vlogs"}} {
+		for _, extra := range []map[string]string{nil, {"observability.rule-type": "prometheus"}} {
 			labels := map[string]string{key: name}
 			for k, v := range extra {
 				labels[k] = v
@@ -293,67 +291,21 @@ func TestRemoteEvaluatorRulesHaveExactlyOneOwner(t *testing.T) {
 
 			got := owners(labels)
 
-			if extra["observability.rule-type"] == "vlogs" {
-				assert.Empty(t, got, "a LogsQL rule with an evaluator label is evaluated by nobody, never by the wrong alerter")
-
-				continue
-			}
-
 			require.Len(t, got, 1, "%v is owned by %v", labels, got)
 			assert.True(t, strings.HasSuffix(got[0], "-remote-"+name), "%v owned by %s", labels, got[0])
 		}
 	}
 
-	for _, labels := range []map[string]string{nil, {"observability.rule-type": "prometheus"}, {"observability.rule-type": "vlogs"}} {
+	for _, labels := range []map[string]string{nil, {"observability.rule-type": "prometheus"}} {
 		for _, o := range owners(labels) {
 			assert.NotContains(t, o, "-remote-", "an unlabelled rule must never reach a remote evaluator")
 		}
 	}
 }
 
-// TestRuleLabelsNewOnly: with `vmalert.acceptLegacyRuleLabels: false` the
-// logs alerter selects the new evaluator label alone and the old marker is
-// no longer a way to reach it; the new labels keep exactly one owner.
-func TestRuleLabelsNewOnly(t *testing.T) {
-	alerters := map[string]vmalertDoc{}
-
-	for _, doc := range splitDocs(t, "golden/observability-stack/rule-labels-new-only.yaml") {
-		var a vmalertDoc
-		if err := yaml.Unmarshal(doc, &a); err != nil || a.Kind != "VMAlert" {
-			continue
-		}
-
-		alerters[a.Metadata.Name] = a
-	}
-
-	require.Len(t, alerters, 3, "metrics, logs and one remote evaluator")
-
-	owners := func(labels map[string]string) []string {
-		var out []string
-
-		for name, a := range alerters {
-			if a.Spec.RuleSelector != nil && a.Spec.RuleSelector.selects(labels) {
-				out = append(out, name[strings.LastIndex(name, "-")+1:])
-			}
-		}
-
-		sort.Strings(out)
-
-		return out
-	}
-
-	const ev = "observability.truvity.io/evaluator"
-
-	assert.Equal(t, []string{"logs"}, owners(map[string]string{ev: "logs"}))
-	assert.Equal(t, []string{"metrics"}, owners(map[string]string{ev: "metrics"}))
-	assert.Equal(t, []string{"metrics"}, owners(nil))
-	assert.Equal(t, []string{"store"}, owners(map[string]string{ev: "other-store"}))
-	assert.Equal(t, []string{"logs"}, owners(map[string]string{ev: "logs", "observability.rule-type": "vlogs"}))
-	assert.Equal(t, []string{"metrics"}, owners(map[string]string{ev: "metrics", "observability.truvity.io/rule-type": "recording"}))
-}
-
-// TestEvaluatorLabelOwnership holds the default (legacy accepted) render to
-// the same table for the new label, evaluator values included.
+// TestEvaluatorLabelOwnership holds the render to the evaluator table:
+// each evaluator value has exactly one owner, and a LogsQL rule is loaded by
+// the logs alerter alone.
 func TestEvaluatorLabelOwnership(t *testing.T) {
 	alerters := map[string]vmalertDoc{}
 
@@ -381,7 +333,7 @@ func TestEvaluatorLabelOwnership(t *testing.T) {
 
 	for _, labels := range []map[string]string{
 		{ev: "metrics"},
-		{ev: "logs", "observability.rule-type": "vlogs"},
+		{ev: "logs"},
 		{ev: "other-store"},
 		{ev: "metrics", "observability.rule-type": "prometheus"},
 	} {
@@ -389,12 +341,9 @@ func TestEvaluatorLabelOwnership(t *testing.T) {
 		assert.Equalf(t, 1, n, "%v must have exactly one owner", labels)
 	}
 
-	// New-only logs rule: not loaded in legacy mode (it needs the old label
-	// too), and above all never by the metrics alerter.
+	// A LogsQL rule is loaded by the logs alerter, and never by the metrics one.
 	n, last := count(map[string]string{ev: "logs"})
-	assert.LessOrEqual(t, n, 1)
-
-	if n == 1 {
-		assert.NotContains(t, last, "metrics")
-	}
+	assert.Equal(t, 1, n)
+	assert.Contains(t, last, "logs")
+	assert.NotContains(t, last, "metrics")
 }

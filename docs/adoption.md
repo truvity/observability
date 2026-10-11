@@ -449,6 +449,32 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### The old LogsQL rule marker is removed (0.74.0)
+
+**The old LogsQL marker `observability.rule-type: vlogs` and
+`vmalert.acceptLegacyRuleLabels` are removed.** Check, before the bump:
+
+1. Every `VMRule` with LogsQL groups (`type: vlogs`) carries
+   `observability.truvity.io/evaluator: logs`. A LogsQL rule that carries
+   only the old marker is not loaded by the logs alerter after the bump
+   (it selects `evaluator: logs` only), and the metrics alerter, which no
+   longer refuses the old marker, loads it and exits on a rule it cannot
+   parse. List them with
+   `kubectl get vmrule -A -o json` and look at each rule's labels. Every
+   chart in this repository and every chart that ships LogsQL rules at the
+   time of the release already emits it.
+2. An install that sets `vmalert.acceptLegacyRuleLabels` (either value)
+   in `observability-stack` or `observability-alerting` drops the key: the
+   schema now refuses it.
+3. Upgrade `observability-stack` and `observability-alerting` together
+   (one freight does that): both render the vmalerts, and the selectors
+   must not differ between them. Upgrade them before, or in the same
+   rollout as, the component charts (`platform-alerts`,
+   `observability-rum`, ...): those stop emitting the old marker, and an
+   older stack or alerting chart (the key defaulted to `true`) still
+   selects its logs alerter on that marker, so it would stop loading the
+   rule until it is upgraded.
+
 ### 0.70.0 → 0.71.0
 
 **Nothing moves on the bump.** `observability-stack`'s new `alerting.source`

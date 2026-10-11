@@ -615,7 +615,7 @@ groups:
   # Off by default, and the only LogsQL group: it needs the Kubernetes
   # Events in the log store (`observability-emitters` `otlp.events`, on by
   # default), a logs vmalert (`observability-stack` `vmalert` logs flavour),
-  # and renders a VMRule of its own marked `observability.rule-type: vlogs`
+  # and renders a VMRule of its own labelled `observability.truvity.io/evaluator: logs`
   # (`<release>-platform-alerts-logs`). Events carry the involved object, so
   # the alert is per cluster, namespace and owning controller.
   podSecurity:

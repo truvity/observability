@@ -56,8 +56,9 @@ type LintOptions struct {
 	// leaves a source out is a violation either way.
 	RequireSourceAbsent bool
 	// RequireEvaluator makes a VMRule without the
-	// `observability.truvity.io/evaluator` label a violation, and a LogsQL
-	// rule whose evaluator is not `logs`. Off by default: the rules a
+	// `observability.truvity.io/evaluator` label a violation. (A LogsQL
+	// rule whose evaluator is not `logs` is a violation always, since
+	// 0.74.0.) Off by default: the rules a
 	// vendored chart ships carry no such label and are still evaluated (the
 	// local metrics alerter takes an unlabelled rule), so the check is for
 	// a component chart that wants to be explicit, and for this repository's
@@ -160,6 +161,14 @@ func Lint(rules []Rule, o LintOptions) ([]Violation, error) {
 	// (reported on its first rule), for metrics and LogsQL rules alike.
 	labelled := map[resKey]bool{}
 
+	logsQLResource := map[resKey]bool{}
+
+	for _, r := range rules {
+		if r.LogsQL() {
+			logsQLResource[resKey{r.Source, r.Resource}] = true
+		}
+	}
+
 	for _, r := range rules {
 		k := resKey{r.Source, r.Resource}
 		if labelled[k] {
@@ -169,14 +178,18 @@ func Lint(rules []Rule, o LintOptions) ([]Violation, error) {
 		labelled[k] = true
 
 		ev, hasEv := r.Labels[contracts.EvaluatorLabel]
-		if o.RequireEvaluator && (!hasEv || ev == "") {
-			add(r, CheckEvaluatorLabel, "the VMRule has no %s label, so it is not explicit which vmalert evaluates it", contracts.EvaluatorLabel)
-		}
 
-		if o.RequireEvaluator && hasEv && r.LogsQL() && ev != contracts.EvaluatorLogs {
+		switch {
+		case logsQLResource[k] && ev != contracts.EvaluatorLogs:
+			// Always on (since 0.74.0, when the old `observability.rule-type:
+			// vlogs` marker stopped being read): the logs alerter selects
+			// `evaluator: logs` only, and the metrics alerter would load an
+			// unlabelled LogsQL rule and crash-loop on it.
 			add(r, CheckEvaluatorLabel,
-				"a LogsQL rule must carry %s: %s; %q names another evaluator, so no vmalert would load it",
-				contracts.EvaluatorLabel, contracts.EvaluatorLogs, ev)
+				"a LogsQL rule must carry %s: %s; %s, so the logs vmalert would not load it and the metrics one would crash on it",
+				contracts.EvaluatorLabel, contracts.EvaluatorLogs, ternaryStr(hasEv && ev != "", fmt.Sprintf("%q names another evaluator", ev), "the label is missing"))
+		case o.RequireEvaluator && (!hasEv || ev == ""):
+			add(r, CheckEvaluatorLabel, "the VMRule has no %s label, so it is not explicit which vmalert evaluates it", contracts.EvaluatorLabel)
 		}
 
 		if rt, ok := r.Labels[contracts.RuleTypeLabel]; ok && rt != contracts.RuleTypeAlert && rt != contracts.RuleTypeRecording {
@@ -772,4 +785,12 @@ func firstRule(rs []Rule, name string) Rule {
 	}
 
 	return Rule{}
+}
+
+func ternaryStr(c bool, a, b string) string {
+	if c {
+		return a
+	}
+
+	return b
 }

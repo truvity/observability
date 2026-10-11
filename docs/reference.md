@@ -212,7 +212,7 @@ Kubernetes Events in the log store (`observability-emitters` `otlp.events`):
 reason `FailedCreate` and "violates PodSecurity" in the message, grouped by
 cluster, namespace and the controller named in the Event. Renders a second
 VMRule, `<release>-platform-alerts-logs`, carrying
-`observability.rule-type: vlogs` and `observability.truvity.io/evaluator: logs`,
+`observability.truvity.io/evaluator: logs`,
 so only a logs vmalert evaluates it.
 
 | Key | Type | Default | Meaning |
@@ -655,17 +655,16 @@ does not carry it is never evaluated.**
 
 | Rule carries | Loaded by |
 |---|---|
-| `observability.truvity.io/evaluator: logs` (or, while `vmalert.acceptLegacyRuleLabels` is `true`, `observability.rule-type: vlogs`) | the logs alerter, only |
+| `observability.truvity.io/evaluator: logs` | the logs alerter, only |
 | `observability.truvity.io/evaluator: <remote evaluator name>` | that remote evaluator, only |
 | `observability.truvity.io/evaluator: metrics`, or no evaluator label | the metrics alerter, only |
 
 So a rule written in LogsQL **must** be labelled
-`observability.truvity.io/evaluator: logs` (and, while the old spelling is
-accepted, also `observability.rule-type: vlogs`: the charts here emit both;
-it stays until every chart that ships LogsQL rules emits `evaluator: logs`,
-and is removed in a later minor, not before v0.73, announced in the CHANGELOG) — and a PromQL rule needs no label, which is what keeps the
-rules other charts ship working without changing them. The selection
-design, the deprecation window and `rule-type` are in
+`observability.truvity.io/evaluator: logs`. The old marker
+`observability.rule-type: vlogs` is no longer read (removed in 0.74.0, with
+`vmalert.acceptLegacyRuleLabels`). A PromQL rule needs no label, which is what
+keeps the rules other charts ship working without changing them. The selection
+design, the removed deprecation window and `rule-type` are in
 [contracts.md](contracts.md), "Rule ownership labels".
 
 **A LogsQL rule needs a second thing, and the two are not the same.** Its
@@ -1866,7 +1865,7 @@ keys stay under `alloy:`.
 
 | Value | Type | Default | What it does |
 |---|---|---|---|
-| `rules.enabled` | bool | `true` | Renders the VMRule (`observability.rule-type: vlogs`, groups `type: vlogs`). |
+| `rules.enabled` | bool | `true` | Renders the VMRule (`observability.truvity.io/evaluator: logs`, groups `type: vlogs`). |
 | `rules.interval` | duration | `1m` | Every group's evaluation interval. |
 | `rules.extraLabels` | map | `{}` | Added to every alert. |
 | `rules.maxFingerprints` | int | `10` | At most this many fingerprints fire per issue rule per evaluation (1–100), highest volume first. |

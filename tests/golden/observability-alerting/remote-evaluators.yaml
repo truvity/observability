@@ -59,10 +59,6 @@ spec:
           - "logs"
           - "other-store"
           - "third-store"
-      - key: observability.rule-type
-        operator: NotIn
-        values:
-          - vlogs
   ruleNamespaceSelector: {}
   resources:
     limits:
@@ -134,14 +130,7 @@ spec:
         - ALL
   ruleSelector:
     matchLabels:
-      observability.rule-type: vlogs
-    matchExpressions:
-      - key: observability.truvity.io/evaluator
-        operator: NotIn
-        values:
-          - "metrics"
-          - "other-store"
-          - "third-store"
+      observability.truvity.io/evaluator: logs
   ruleNamespaceSelector: {}
   resources:
     limits:
@@ -217,11 +206,6 @@ spec:
   ruleSelector:
     matchLabels:
       observability.truvity.io/evaluator: other-store
-    matchExpressions:
-      - key: observability.rule-type
-        operator: NotIn
-        values:
-          - vlogs
   ruleNamespaceSelector: {}
   resources:
     limits:
@@ -291,11 +275,6 @@ spec:
   ruleSelector:
     matchLabels:
       observability.truvity.io/evaluator: third-store
-    matchExpressions:
-      - key: observability.rule-type
-        operator: NotIn
-        values:
-          - vlogs
   ruleNamespaceSelector: {}
   resources:
     limits:
