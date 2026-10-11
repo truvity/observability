@@ -148,6 +148,53 @@ global:
       # Empty means every workload is a Viewer. No whitespace, quote or brace.
       noRoleSubjectSuffixes:
         - ":k8s:observability:observability-cluster-grafana-operator"
+    # -- OPT-IN, default off. A reconcile Job that gives each cluster's
+    # grafana-operator its own folder and nothing else, for the operators
+    # that sign in through `workloadAuth` (role None, see
+    # `noRoleSubjectSuffixes`). For each cluster listed it ENSURES, over
+    # Grafana's HTTP API with the chart's existing admin Secret
+    # (`grafana.admin.existingSecret`):
+    #
+    #   1. the folder, uid and title `<cluster>`;
+    #   2. the operator user `workload:<cluster><subjectSuffix>` (created if
+    #      Grafana has not seen its first sign-in yet; the sign-in links to the
+    #      same user either way), with the org role None;
+    #   3. Edit on that folder for that user only, through the per-user RBAC
+    #      endpoint, which leaves every other grant on the folder alone.
+    #
+    # Idempotent: a run that finds everything in place changes nothing, and
+    # the order of "user signs in" and "job runs" does not matter. It never
+    # logs a credential or a response body.
+    #
+    # Needs `workloadAuth.enabled` and a non-empty `clusters`. Runs as an
+    # Argo CD PostSync / Helm post-install,post-upgrade hook (`hook`), and/or
+    # as a CronJob (`schedule`); at least one of the two. One org only (the
+    # main org), as the rest of this chart.
+    operatorFolders:
+      enabled: false
+      # -- Cluster names, each also the folder uid: 1 to 40 letters, digits,
+      # `-` or `_`, the same rule as observability-cluster's folder uid.
+      clusters: []
+      # -- What follows the cluster in the operator's subject. The user's
+      # login is `workload:<cluster><subjectSuffix>`. Must be listed in
+      # `workloadAuth.noRoleSubjectSuffixes` so the operator is role None.
+      subjectSuffix: ":k8s:observability:observability-cluster-grafana-operator"
+      # -- Run once per sync as a post-sync hook Job.
+      hook: true
+      # -- A cron expression to also (or instead) reconcile on a schedule,
+      # which repairs drift between syncs. Empty renders no CronJob.
+      schedule: ""
+      # -- Also DELETE operator users (`workload:*<subjectSuffix>`) whose
+      # cluster is no longer listed. Never deletes a folder (that would
+      # delete its dashboards). Off by default.
+      prune: false
+      # -- The Grafana URL the Job calls; empty means this release's own
+      # Service.
+      url: ""
+      image:
+        registry: docker.io
+        repository: curlimages/curl
+        tag: "8.22.0"
 
 grafana:
   # State lives in the external database; what remains on disk is the

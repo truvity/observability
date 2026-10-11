@@ -77,6 +77,26 @@ for the reason it is named for.
 {{- fail "observability-grafana: grafana.ini's [auth.generic_oauth] has `role_attribute_strict` false, so a person whose claims map to no role is given the default one instead of being refused. An unmapped viewer is a support ticket; an unmapped editor is an incident." -}}
 {{- end -}}
 
+{{- /* Operator folders (opt-in). */ -}}
+{{- $of := $c.operatorFolders | default dict -}}
+{{- if $of.enabled -}}
+{{- if not (($c.workloadAuth | default dict).enabled) -}}
+{{- fail "observability-grafana: `operatorFolders.enabled` needs `workloadAuth.enabled`: the operator users it prepares only exist through the workload sign-in." -}}
+{{- end -}}
+{{- if not $of.clusters -}}
+{{- fail "observability-grafana: `operatorFolders.enabled` with no `operatorFolders.clusters` reconciles nothing." -}}
+{{- end -}}
+{{- if not (or $of.hook $of.schedule) -}}
+{{- fail "observability-grafana: `operatorFolders` has `hook: false` and no `schedule`: nothing would ever run the reconcile." -}}
+{{- end -}}
+{{- if not (has $of.subjectSuffix (($c.workloadAuth | default dict).noRoleSubjectSuffixes | default list)) -}}
+{{- fail (printf "observability-grafana: `operatorFolders.subjectSuffix` (%q) is not in `workloadAuth.noRoleSubjectSuffixes`, so the operator would sign in as a Viewer, which can query every datasource, instead of role None." $of.subjectSuffix) -}}
+{{- end -}}
+{{- if not (($g.admin | default dict).existingSecret) -}}
+{{- fail "observability-grafana: `operatorFolders.enabled` needs `grafana.admin.existingSecret`: the Job signs in with the chart's admin Secret, and a generated password is unknown to it." -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* Workload sign-in (opt-in). */ -}}
 {{- $w := $c.workloadAuth | default dict -}}
 {{- if $w.enabled -}}
