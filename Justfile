@@ -402,6 +402,15 @@ metrics-path-proof:
 multi-group-reader-proof:
     hack/multi-group-reader-proof.sh
 
+# REAL proof, against the pinned vmauth, VictoriaMetrics and VictoriaLogs,
+# that `tenancy.vmAccessReader` applies a token's complete `vm_access` claim
+# (and wins over groups), that a token without it keeps the group readers,
+# and that an absent or half-filled claim is a 401. Needs Docker, curl,
+# python3 (PyYAML, PyJWT, cryptography) and helm; not part of `check`. See
+# hack/vm-access-reader-proof.sh's own header.
+vm-access-reader-proof:
+    hack/vm-access-reader-proof.sh
+
 # REAL proof, with the three stock VictoriaMetrics MCP servers built from
 # their pinned tags and cmd/mcp-aggregator built from this tree, that every
 # tool observability-mcp exposes for a store reaches a path the store's

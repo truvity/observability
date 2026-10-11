@@ -1358,6 +1358,23 @@ per-tier override — as `(where channel workspace workspaceNames)`.
 {{- if and $t.principals (not $t.issuerUrl) -}}
 {{- fail "observability-stack: `tenancy.principals` is set but `tenancy.issuerUrl` is empty. vmauth verifies a token against the issuer's OIDC discovery document; with no issuer there is nothing to verify a signature against, and a proxy that trusts an unverified token is worse than no proxy at all." -}}
 {{- end -}}
+{{- /* The vm_access reader (opt-in). */ -}}
+{{- if $t.vmAccessReader.enabled -}}
+{{- if not $t.issuerUrl -}}
+{{- fail "observability-stack: `tenancy.vmAccessReader.enabled` is set but `tenancy.issuerUrl` is empty. vmauth verifies a token against the issuer's OIDC discovery document; with no issuer there is nothing to verify a signature against." -}}
+{{- end -}}
+{{- $vrAud := $t.vmAccessReader.audience | default $t.audience -}}
+{{- if not $vrAud -}}
+{{- fail "observability-stack: `tenancy.vmAccessReader.enabled` is set but neither `tenancy.vmAccessReader.audience` nor `tenancy.audience` is. vmauth never inspects `aud` on its own, so the reader would admit ANY unexpired token of the issuer that carries a `vm_access` claim, whatever client it was minted for; the pin in `matchClaims` is the only place the check can be made." -}}
+{{- end -}}
+{{- if not (regexMatch $audienceShape (toString $vrAud)) -}}
+{{- fail (printf "observability-stack: the vm_access reader's audience %q is not an identifier (%s): it carries whitespace or a newline." (toString $vrAud) $audienceShape) -}}
+{{- end -}}
+{{- $vrRoutes := $t.vmAccessReader.routes | default (list "metrics" "logs" "traces") -}}
+{{- if not (or (has "metrics" $vrRoutes) (has "logs" $vrRoutes) (and (has "traces" $vrRoutes) (include "observability-stack.tracesEnabled" .))) -}}
+{{- fail (printf "observability-stack: `tenancy.vmAccessReader.routes` (%s) renders no route at all (`traces` renders only when a trace store is enabled). Leave the reader off instead." (join ", " $vrRoutes)) -}}
+{{- end -}}
+{{- end -}}
 {{- /*
 The audience, which is the other half of "whose token is this".
 
@@ -1503,6 +1520,9 @@ default is unchanged — all three routes — so an install that sets no
 {{- if has "traces" ($p.routes | default (list "metrics" "logs" "traces")) -}}
 {{- $anyPrincipalWantsTraces = true -}}
 {{- end -}}
+{{- end -}}
+{{- if and $t.vmAccessReader.enabled (has "traces" ($t.vmAccessReader.routes | default (list "metrics" "logs" "traces"))) -}}
+{{- $anyPrincipalWantsTraces = true -}}
 {{- end -}}
 {{- if and $anyPrincipalWantsTraces (include "observability-stack.tracesEnabled" .) -}}
 {{- if not $t.allowUnfilteredTraceReads -}}

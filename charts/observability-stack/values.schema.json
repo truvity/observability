@@ -455,6 +455,27 @@
           "type": "boolean",
           "description": "Admit /api/v1/metadata on the metrics read route. It returns every metric name, type and help in the store and no filter reaches it, so every principal sees the same list whatever their grant. Off by default; the visible cost of off is a 401 in Grafana's datasource log where metric descriptions would be."
         },
+        "vmAccessReader": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Opt-in (default off): one reader selected by the token's own vm_access claim (aud, iss and non-empty metrics_extra_filters and logs_extra_stream_filters), with no default claim: a token without the claim never reaches it.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "audience": {
+              "type": "string",
+              "description": "The aud this reader pins; empty means tenancy.audience."
+            },
+            "routes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": ["metrics", "logs", "traces"]
+              }
+            }
+          }
+        },
         "principals": {
           "type": "array",
           "items": {

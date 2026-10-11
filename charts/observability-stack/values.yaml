@@ -354,6 +354,38 @@ tenancy:
   # which the audience above is pinned under: both are entries in one
   # `matchClaims` map, and one would overwrite the other.
   claimName: groups
+  # -- OPT-IN, default off. A reader selected by the token's OWN `vm_access`
+  # claim instead of by a group: the issuer states, per person, which
+  # clusters and namespaces they may read, and this one VMUser applies it.
+  #
+  # The VMUser matches a token whose `aud` is the audience, whose `iss` is
+  # `issuerUrl` AND whose `vm_access` carries BOTH a non-empty
+  # `metrics_extra_filters` and a non-empty `logs_extra_stream_filters`
+  # (vmauth's `match_claims` reaches into the object by a dotted key). It
+  # sets NO `defaultVMAccessClaim`, so a token that does not carry the claim
+  # never reaches it: it falls to the group-matched `principals` below, and
+  # with none that match, to a plain 401 (this chart renders no unauthorized
+  # user). That is DENY BY DEFAULT: an absent or half-filled claim can never
+  # expand to "no filter" on this reader, which is what an empty
+  # `{{.MetricsExtraFilters}}` would otherwise mean.
+  #
+  # Coexistence with `principals`: vmauth tries users with MORE `match_claims`
+  # first (stable sort), first match wins. This reader carries four claims
+  # (`aud`, `iss`, and the two `vm_access` lists) against a principal's two
+  # (group, `aud`), so a token WITH a complete `vm_access` uses this reader
+  # whatever groups it also carries, and a token without keeps the group
+  # readers. Remove the principals once every token carries the claim.
+  #
+  # The metrics lists are OR-ed by the store; the logs list must be ONE
+  # stream filter (`_stream:{a or b}`), because the store ANDs several. Traces
+  # behave as for a principal: the route renders only with a trace store, and
+  # then needs `allowUnfilteredTraceReads`, because no filter reaches it.
+  vmAccessReader:
+    enabled: false
+    # -- The `aud` this reader pins. Empty means `tenancy.audience`.
+    audience: ""
+    # -- Which of `metrics`, `logs`, `traces` it gets; unset means all three.
+    routes: []
   # -- The keys the filters select on, per signal.
   #
   # The scoping key is the CLUSTER and the NAMESPACE, under OpenTelemetry's
