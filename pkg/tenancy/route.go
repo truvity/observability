@@ -60,17 +60,35 @@ const (
 	LogsFilterPlaceholder    = "{{.LogsExtraStreamFilters}}"
 )
 
-// The query argument each store reads its enforced filter from.
+// The query arguments each store reads its enforced filter from.
 //
-// They are different arguments on purpose. vmselect OR-s the
-// `extra_filters` it receives; VictoriaLogs AND-s every
-// `extra_stream_filters` into the query AND into every subquery inside
-// it — which is what makes it an access-control mechanism rather than a
-// convenience, because otherwise a subquery would escape it.
+// They are different arguments on purpose. vmselect OR-s every extra
+// filter it receives; VictoriaLogs AND-s every `extra_stream_filters`
+// into the query AND into every subquery inside it — which is what
+// makes it an access-control mechanism rather than a convenience,
+// because otherwise a subquery would escape it.
+//
+// The metrics route pins TWO spellings, not one. vmselect reads
+// `extra_filters` and ALSO `extra_filters[]` (app/vmselect/searchutil,
+// GetExtraTagFilters: both lists are appended, then OR-ed), and vmauth
+// drops a client argument only when the route set the SAME name. A route
+// that pins only `extra_filters` therefore lets a client send
+// `extra_filters[]={k8s_cluster_name=~".+"}`, which vmselect ORs with the
+// grant and which widens it to every series in the store.
+//
+// The logs route pins one spelling because the second one cannot widen:
+// VictoriaLogs reads only the exact names `extra_filters` and
+// `extra_stream_filters` (app/vlselect/logsql, parseCommonArgs) and
+// AND-s every value it receives, so a client's own copy only narrows.
 const (
-	MetricsFilterArg = "extra_filters"
-	LogsFilterArg    = "extra_stream_filters"
+	MetricsFilterArg      = "extra_filters"
+	MetricsFilterArrayArg = "extra_filters[]"
+	LogsFilterArg         = "extra_stream_filters"
 )
+
+// MetricsFilterArgs is every spelling the metrics store ORs an extra
+// filter in from. All of them carry the same placeholder.
+var MetricsFilterArgs = []string{MetricsFilterArg, MetricsFilterArrayArg}
 
 // supportedPlaceholders is every placeholder vmauth knows. A route
 // naming anything else would be forwarded to the store as a literal
@@ -100,7 +118,7 @@ var supportedPlaceholders = map[string]bool{
 type ReadRoute struct {
 	name        string
 	paths       []string
-	filterArg   string
+	filterArgs  []string
 	placeholder string
 
 	// unenforceable is why the store behind these paths cannot carry a
@@ -115,8 +133,11 @@ type ReadRoute struct {
 // filteredRoute is the only way to declare a route that carries a
 // filter, and it takes the placeholder because there is no correct route
 // without one.
-func filteredRoute(name, filterArg, placeholder string, paths ...string) ReadRoute {
-	return ReadRoute{name: name, paths: paths, filterArg: filterArg, placeholder: placeholder}
+//
+// filterArgs are every spelling of the argument that can widen a grant;
+// each is pinned to the one placeholder.
+func filteredRoute(name string, filterArgs []string, placeholder string, paths ...string) ReadRoute {
+	return ReadRoute{name: name, paths: paths, filterArgs: append([]string(nil), filterArgs...), placeholder: placeholder}
 }
 
 // unenforceableRoute declares a route whose store has no mechanism to
@@ -141,12 +162,22 @@ func (r ReadRoute) withPath(path string) ReadRoute {
 	return r
 }
 
-// FilterArg is the query argument the store reads the filter from, or ""
-// on an unenforceable route.
-func (r ReadRoute) FilterArg() string { return r.filterArg }
+// FilterArg is the primary query argument the store reads the filter
+// from, or "" on an unenforceable route. See FilterArgs for the whole
+// list.
+func (r ReadRoute) FilterArg() string {
+	if len(r.filterArgs) == 0 {
+		return ""
+	}
+	return r.filterArgs[0]
+}
+
+// FilterArgs is every query argument name the route pins to Placeholder,
+// or nil on an unenforceable route.
+func (r ReadRoute) FilterArgs() []string { return append([]string(nil), r.filterArgs...) }
 
 // Placeholder is the vmauth placeholder that carries the principal's
-// filter into FilterArg, or "" on an unenforceable route.
+// filter into every one of FilterArgs, or "" on an unenforceable route.
 func (r ReadRoute) Placeholder() string { return r.placeholder }
 
 // Unenforceable is why this route cannot be scoped, or "" when it can.
@@ -166,15 +197,30 @@ func (r ReadRoute) validate() error {
 	}
 
 	if r.unenforceable != "" {
-		if r.filterArg != "" || r.placeholder != "" {
+		if len(r.filterArgs) != 0 || r.placeholder != "" {
 			return fmt.Errorf("read route %q is declared unenforceable and also carries a filter; one of the two is a lie", r.name)
 		}
 		return nil
 	}
 
-	if r.filterArg == "" {
+	if len(r.filterArgs) == 0 {
 		return fmt.Errorf("read route %q has no filter argument: the principal's vm_access claim would be computed and then discarded, and every token that "+
 			"verifies would read every tenant", r.name)
+	}
+	seen := map[string]bool{}
+	for _, a := range r.filterArgs {
+		if a == "" {
+			return fmt.Errorf("read route %q names an empty filter argument", r.name)
+		}
+		if seen[a] {
+			return fmt.Errorf("read route %q names filter argument %q twice", r.name, a)
+		}
+		seen[a] = true
+	}
+	if r.placeholder == MetricsFilterPlaceholder && (!seen[MetricsFilterArg] || !seen[MetricsFilterArrayArg]) {
+		return fmt.Errorf("read route %q carries %s and must pin both %q and %q: vmselect ORs the `extra_filters[]` spelling with the grant and vmauth drops a client "+
+			"argument only when the route sets the same name, so a route that pins one spelling lets a caller widen its grant with the other",
+			r.name, MetricsFilterPlaceholder, MetricsFilterArg, MetricsFilterArrayArg)
 	}
 	if r.placeholder == "" {
 		return fmt.Errorf("read route %q has no filter placeholder: vmauth applies a vm_access claim ONLY by substituting a placeholder into the route, so this "+
@@ -220,7 +266,11 @@ func (r ReadRoute) urlPrefix(backend string) (string, error) {
 	// the query before looking the placeholder up — but a configuration
 	// a person can read is a configuration a person can review, and this
 	// one is the vendor's own spelling.
-	u.RawQuery = r.filterArg + "=" + r.placeholder
+	pins := make([]string, len(r.filterArgs))
+	for i, a := range r.filterArgs {
+		pins[i] = a + "=" + r.placeholder
+	}
+	u.RawQuery = strings.Join(pins, "&")
 	return u.String(), nil
 }
 
@@ -243,7 +293,7 @@ func (r ReadRoute) urlPrefix(backend string) (string, error) {
 // objects, and its `tenancy` golden case exists to prove the two have not
 // drifted.
 var (
-	MetricsRead = filteredRoute("metrics", MetricsFilterArg, MetricsFilterPlaceholder,
+	MetricsRead = filteredRoute("metrics", MetricsFilterArgs, MetricsFilterPlaceholder,
 		"/prometheus/api/v1/query",
 		"/prometheus/api/v1/query_range",
 		"/prometheus/api/v1/series",
@@ -297,7 +347,7 @@ var (
 	// — and no flag here admits them.
 	MetricMetadataPath = "/prometheus/api/v1/metadata"
 
-	LogsRead = filteredRoute("logs", LogsFilterArg, LogsFilterPlaceholder,
+	LogsRead = filteredRoute("logs", []string{LogsFilterArg}, LogsFilterPlaceholder,
 		"/select/logsql/.*",
 		"/select/vmui.*",
 	)
@@ -394,7 +444,8 @@ func (b routeBinding) row(allowUnfiltered bool) (VMAuthURLMapRow, error) {
 
 // CarriesFilter reports whether a rendered url_prefix carries the given
 // placeholder as the WHOLE value of the given query argument, which is
-// the only form vmauth substitutes.
+// the only form vmauth substitutes. A route with several spellings is
+// checked once per spelling; CarriesFilters does that.
 //
 // It is exported because the check belongs to whoever is holding a
 // rendered route, and two of them are outside this package: the chart's
@@ -418,4 +469,19 @@ func CarriesFilter(urlPrefix, arg, placeholder string) bool {
 		}
 	}
 	return false
+}
+
+// CarriesFilters reports whether a rendered url_prefix pins EVERY given
+// argument name to the placeholder. It is the check for a route whose
+// store reads more than one spelling of its filter.
+func CarriesFilters(urlPrefix string, args []string, placeholder string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	for _, a := range args {
+		if !CarriesFilter(urlPrefix, a, placeholder) {
+			return false
+		}
+	}
+	return true
 }

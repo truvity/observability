@@ -113,6 +113,8 @@ func TestVMAccessReaderIsSelectedByTheClaimAndHasNoDefault(t *testing.T) {
 		}
 	}
 	assert.Equal(t, "{{.MetricsExtraFilters}}", args["extra_filters"])
+	assert.Equal(t, "{{.MetricsExtraFilters}}", args["extra_filters[]"],
+		"vmselect ORs the array spelling in, and vmauth drops a client argument only when the route sets the same name")
 	assert.Equal(t, "{{.LogsExtraStreamFilters}}", args["extra_stream_filters"])
 	assert.Len(t, reader.Spec.TargetRefs, 2, "metrics and logs; no trace store in this case")
 }

@@ -35,8 +35,9 @@
 #      and a `vm_access` claim a client puts into a token of its own is
 #      ignored;
 #   6. a client-supplied `extra_filters` / `extra_stream_filters` argument
-#      cannot widen the result (the array spelling `extra_filters[]` can: a
-#      KNOWN, pre-existing gap of every vmauth reader, printed, not asserted);
+#      cannot widen the result, and neither can the array spelling
+#      `extra_filters[]` that VictoriaMetrics ORs in beside `extra_filters`
+#      (every metrics route pins both, so vmauth drops the client's copy);
 #   7. both replicas sign with the one key the operator generated, and
 #      deleting the Secret rotates it with no restart and no failed request:
 #      the new key is published beside the old one at once;
@@ -428,17 +429,15 @@ expect "[team-a] + client vm_access (cluster-b) via gateway: ignored" "$(metrics
 
 echo; echo "=== 6. client-supplied filters cannot widen ==="
 expect "extra_filters naming another namespace (metrics)            " "$(metrics "$gw" a --data-urlencode 'extra_filters={k8s_namespace_name="ns-b"}')" "cluster-a/ns-a"
-# KNOWN, PRE-EXISTING, NOT TENANCY-AUTHZ'S: vmauth drops a client argument that
-# clashes with the route's `extra_filters` BY NAME, and VictoriaMetrics also
-# reads the array spelling `extra_filters[]`, which does not clash — so a
-# client adding one (OR-ed with the grant) widens EVERY reader's result, the
-# group principals' straight through vmauth included. Reported rather than
-# asserted: closing it means the route setting `extra_filters[]` as well, in
-# pkg/tenancy and the chart, for every principal.
-widen_gw="$(metrics "$gw" a --data-urlencode 'extra_filters[]={k8s_cluster_name=~".+"}')"
-widen_direct="$(metrics "$direct" a --data-urlencode 'extra_filters[]={k8s_cluster_name=~".+"}')"
-echo "KNOWN extra_filters[] (metrics) via the gateway          -> $widen_gw"
-echo "KNOWN extra_filters[] (metrics) straight to vmauth       -> $widen_direct"
+# vmauth drops a client argument that clashes with the route's own BY NAME, and
+# VictoriaMetrics also reads the array spelling `extra_filters[]` and ORs it with
+# the grant. A route pinning only `extra_filters` therefore let a client widen
+# EVERY reader's result with `extra_filters[]`, the group principals' straight
+# through vmauth included. Every metrics route now pins both spellings.
+expect "extra_filters[] matching everything (metrics), gateway      " "$(metrics "$gw" a --data-urlencode 'extra_filters[]={k8s_cluster_name=~".+"}')" "cluster-a/ns-a"
+expect "extra_filters[] matching everything (metrics), vmauth direct" "$(metrics "$direct" a --data-urlencode 'extra_filters[]={k8s_cluster_name=~".+"}')" "cluster-a/ns-a"
+expect "extra_filters[] naming another namespace (metrics), gateway " "$(metrics "$gw" a --data-urlencode 'extra_filters[]={k8s_namespace_name="ns-b"}')" "cluster-a/ns-a"
+expect "extra_filters[] matching everything, two-group person       " "$(metrics "$gw" ab --data-urlencode 'extra_filters[]={k8s_cluster_name=~".+"}')" "cluster-a/ns-a,cluster-a/ns-b"
 expect "extra_stream_filters naming another namespace (logs)        " "$(logs "$gw" a --data-urlencode 'extra_stream_filters={"kubernetes.pod_namespace"="ns-b"}')" "cluster-a/ns-a"
 expect "extra_stream_filters matching everything (logs)             " "$(logs "$gw" a --data-urlencode 'extra_stream_filters={"k8s.cluster.name"=~".+"}')" "cluster-a/ns-a"
 
@@ -481,7 +480,7 @@ expect "people still read (the old key signs until the switch)      " "$(metrics
 
 echo
 if [ "$fail" = 0 ]; then
-  echo "hack/tenancy-authz-proof.sh: PASS — a person is granted the union of their groups through the gateway, nothing else matches, a client-supplied extra_filters or extra_stream_filters cannot widen it (but see the KNOWN extra_filters[] lines above), workloads are untouched, and the service failing closes the route."
+  echo "hack/tenancy-authz-proof.sh: PASS — a person is granted the union of their groups through the gateway, nothing else matches, a client-supplied extra_filters, extra_filters[] or extra_stream_filters cannot widen it, workloads are untouched, and the service failing closes the route."
 else
   echo "hack/tenancy-authz-proof.sh: FAIL" >&2; exit 1
 fi

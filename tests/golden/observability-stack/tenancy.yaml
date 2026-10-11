@@ -91,6 +91,9 @@ spec:
         - name: extra_filters
           values:
             - "{{.MetricsExtraFilters}}"
+        - name: extra_filters[]
+          values:
+            - "{{.MetricsExtraFilters}}"
       targetRefBasicAuth:
         username:
           name: "observability-store-credentials"
@@ -163,6 +166,9 @@ spec:
         - /prometheus/vmui.*
       query_args:
         - name: extra_filters
+          values:
+            - "{{.MetricsExtraFilters}}"
+        - name: extra_filters[]
           values:
             - "{{.MetricsExtraFilters}}"
       targetRefBasicAuth:

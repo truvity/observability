@@ -277,22 +277,48 @@ The arguments differ per store because the stores do. vmselect OR-s the
 `extra_filters` it is given; VictoriaLogs AND-s every
 `extra_stream_filters` into the query and into every subquery inside it,
 which is what stops a subquery escaping the grant.
+
+The metrics route pins TWO spellings of its argument. vmselect reads
+`extra_filters` and ALSO `extra_filters[]` (searchutil.GetExtraTagFilters
+appends both lists, then ORs them), and vmauth drops a client argument
+only when the route set the SAME name. A route pinning only
+`extra_filters` therefore let a reader send
+`extra_filters[]={k8s_cluster_name=~".+"}` and widen its grant to every
+series in the store. VictoriaLogs reads neither array spelling and AND-s
+everything it does read, so the logs route pins one name. The list lives
+in `filterArgs.*`; `pkg/tenancy` (MetricsFilterArgs) is its twin and
+tests/agreement_test.go fails if they differ.
 */}}
 {{- define "observability-stack.filterArg.metrics" -}}extra_filters{{- end -}}
 {{- define "observability-stack.filterArg.logs" -}}extra_stream_filters{{- end -}}
+{{- define "observability-stack.filterArgs.metrics" -}}
+- extra_filters
+- extra_filters[]
+{{- end -}}
+{{- define "observability-stack.filterArgs.logs" -}}
+- extra_stream_filters
+{{- end -}}
 {{- define "observability-stack.filterPlaceholder.metrics" -}}{{ "{{.MetricsExtraFilters}}" }}{{- end -}}
 {{- define "observability-stack.filterPlaceholder.logs" -}}{{ "{{.LogsExtraStreamFilters}}" }}{{- end -}}
 
 {{- define "observability-stack.readQueryArgs.metrics" -}}
-- name: {{ include "observability-stack.filterArg.metrics" . }}
+{{- range $i, $arg := (fromYamlArray (include "observability-stack.filterArgs.metrics" .)) -}}
+{{ if $i }}
+{{ end -}}
+- name: {{ $arg }}
   values:
-    - {{ include "observability-stack.filterPlaceholder.metrics" . | quote }}
+    - {{ include "observability-stack.filterPlaceholder.metrics" $ | quote }}
+{{- end -}}
 {{- end -}}
 
 {{- define "observability-stack.readQueryArgs.logs" -}}
-- name: {{ include "observability-stack.filterArg.logs" . }}
+{{- range $i, $arg := (fromYamlArray (include "observability-stack.filterArgs.logs" .)) -}}
+{{ if $i }}
+{{ end -}}
+- name: {{ $arg }}
   values:
-    - {{ include "observability-stack.filterPlaceholder.logs" . | quote }}
+    - {{ include "observability-stack.filterPlaceholder.logs" $ | quote }}
+{{- end -}}
 {{- end -}}
 
 {{- /*

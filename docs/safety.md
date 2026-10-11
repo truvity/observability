@@ -783,6 +783,21 @@ function:
   an alternative — so a caller adding an empty one reads everything,
   with the claim, the route and the rendered filter all still exactly
   right. The chart refuses the flag naming either filter argument.
+- **A metrics route pins two spellings of its filter.** vmselect reads
+  `extra_filters` and also `extra_filters[]`, and ORs them (VictoriaMetrics
+  v1.152.0, `app/vmselect/searchutil` `GetExtraTagFilters`). vmauth drops a
+  client argument only when the route sets the SAME name, so a route that
+  pinned only `extra_filters` let a caller send
+  `extra_filters[]={k8s_cluster_name=~".+"}` and widen its grant to every
+  series in the store, with the claim, the route and the rendered filter
+  all still exactly right. Every filtered metrics route (principals, the
+  `vm_access` reader, `tenancy.readers`) now pins both to the same
+  placeholder, and the chart and `pkg/tenancy` are compared argument by
+  argument in `tests/agreement_test.go`. VictoriaLogs reads no array
+  spelling and ANDs every `extra_filters` and `extra_stream_filters` it
+  reads, so a client's own copy can only narrow and the logs route pins
+  one name. `extra_label` is ANDed into each filter and `extra_label[]` is
+  not read.
 - **Not every endpoint under a route reads the argument.** The route is
   a whole `url_map` row; the filter reaches every request in it, but a
   handler that never looks at `extra_filters` is unfiltered anyway. That

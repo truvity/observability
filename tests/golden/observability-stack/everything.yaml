@@ -3580,6 +3580,9 @@ spec:
         - name: extra_filters
           values:
             - "{{.MetricsExtraFilters}}"
+        - name: extra_filters[]
+          values:
+            - "{{.MetricsExtraFilters}}"
       targetRefBasicAuth:
         username:
           name: "example-store-credentials"

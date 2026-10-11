@@ -98,10 +98,10 @@ func (c Config) RenderClaim(p Principal) (Claim, error) {
 	// vmauth substitutes a placeholder with the claim's VALUES, so an
 	// empty list expands to nothing and the query argument disappears
 	// from the request entirely. The only thing stopping a caller from
-	// sending its own `extra_filters` is that such an argument CLASHES
-	// with one the route already set — and once the route's argument is
-	// gone there is no clash, so the caller's filter is forwarded
-	// instead. Refused here rather than checked at the far end, because
+	// sending its own `extra_filters` (or `extra_filters[]`, which the
+	// route pins too) is that such an argument CLASHES with one the
+	// route already set — and once the route's arguments are gone
+	// there is no clash, so the caller's filter is forwarded instead. Refused here rather than checked at the far end, because
 	// at the far end it looks like a successful query.
 	if len(claim.MetricsExtraFilters) == 0 || len(claim.LogsExtraStreamFilters) == 0 {
 		return Claim{}, fmt.Errorf("rendering claim for %q: it carries no filter for one of the signals, which vmauth expands to an ABSENT query argument rather "+

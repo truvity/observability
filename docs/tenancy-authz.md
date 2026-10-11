@@ -87,15 +87,16 @@ filters are; only vmauth applies them, by substituting them into the route
 it forwards on, and it drops a client-supplied `extra_filters` /
 `extra_stream_filters` that clashes, by name, with the route's own.
 
-**Known gap, not introduced here and not closed by this service:** the
-clash is by name, and VictoriaMetrics also reads the array spelling
-`extra_filters[]`, which does not clash with `extra_filters`. Metrics treat
-every filter as an alternative, so a caller adding `extra_filters[]` widens
-its own result, through vmauth directly and through the gateway alike, for
-every reader this chart renders (the group principals included).
-`hack/tenancy-authz-proof.sh` prints it. Closing it means every metrics
-route also setting `extra_filters[]` to the same placeholder, in `pkg/tenancy`
-and the chart.
+**Why every metrics route pins two spellings.** The clash is by name, and
+VictoriaMetrics also reads the array spelling `extra_filters[]` and ORs it
+with `extra_filters`. A route that set only `extra_filters` therefore let a
+caller send `extra_filters[]={k8s_cluster_name=~".+"}` and widen its own
+result, through vmauth directly and through the gateway alike. Every
+filtered metrics route (the group principals, the `vm_access` reader, the
+metrics readers) now sets both spellings to the same placeholder, in
+`pkg/tenancy` and the chart; `hack/tenancy-authz-proof.sh` asserts that the
+array spelling returns only the granted series. The log store reads no array
+spelling and ANDs every filter it reads, so its route pins one name.
 
 How vmauth learns the service's key: **OIDC discovery served by the service
 itself** at `http://<service>.<namespace>.svc:8080`. vmauth accepts an

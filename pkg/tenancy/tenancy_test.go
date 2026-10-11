@@ -527,7 +527,7 @@ func TestVMAuthConfig(t *testing.T) {
 	// substitutes the filters above into; without it the claim is
 	// computed and discarded.
 	assert.Equal(t,
-		[]string{"http://metrics.example:8428?extra_filters={{.MetricsExtraFilters}}"},
+		[]string{"http://metrics.example:8428?extra_filters={{.MetricsExtraFilters}}&extra_filters[]={{.MetricsExtraFilters}}"},
 		viewer.URLMap[0].URLPrefix)
 	assert.Equal(t,
 		[]string{"http://logs.example:9428?extra_stream_filters={{.LogsExtraStreamFilters}}"},
@@ -781,12 +781,12 @@ func TestEveryRenderedReadRouteCarriesItsFilter(t *testing.T) {
 	// here so that a fourth route added without a filter fails this test
 	// rather than joining it.
 	want := []struct {
-		arg         string
+		args        []string
 		placeholder string
 	}{
-		{tenancy.MetricsFilterArg, tenancy.MetricsFilterPlaceholder},
-		{tenancy.LogsFilterArg, tenancy.LogsFilterPlaceholder},
-		{"", ""}, // traces: nothing to carry it in, admitted by name above
+		{tenancy.MetricsFilterArgs, tenancy.MetricsFilterPlaceholder},
+		{[]string{tenancy.LogsFilterArg}, tenancy.LogsFilterPlaceholder},
+		{nil, ""}, // traces: nothing to carry it in, admitted by name above
 	}
 
 	for _, user := range cfg.Users {
@@ -796,15 +796,15 @@ func TestEveryRenderedReadRouteCarriesItsFilter(t *testing.T) {
 			require.Len(t, row.URLPrefix, 1)
 			prefix := row.URLPrefix[0]
 
-			if want[i].arg == "" {
+			if len(want[i].args) == 0 {
 				assert.NotContains(t, prefix, "{{",
 					"route %d is the unscoped one and must not pretend otherwise: %s", i, prefix)
 				continue
 			}
 
-			assert.True(t, tenancy.CarriesFilter(prefix, want[i].arg, want[i].placeholder),
-				"route %d of user %q reaches %s with no %s=%s, so every query it forwards is unfiltered while the claim beside it says otherwise",
-				i, user.Name, prefix, want[i].arg, want[i].placeholder)
+			assert.True(t, tenancy.CarriesFilters(prefix, want[i].args, want[i].placeholder),
+				"route %d of user %q reaches %s without pinning every one of %v to %s, so a query can be unfiltered or widened while the claim beside it says otherwise",
+				i, user.Name, prefix, want[i].args, want[i].placeholder)
 		}
 	}
 }
@@ -828,12 +828,42 @@ func TestValidateRefusesARouteWithoutItsFilter(t *testing.T) {
 		"a route cannot both be unenforceable and carry a filter")
 }
 
+// vmselect ORs `extra_filters[]` with `extra_filters` (searchutil
+// GetExtraTagFilters), and vmauth drops a client argument only when the
+// route sets the SAME name. A metrics route that pins one spelling lets a
+// caller widen its grant with the other, so the route pins both, and a
+// route declared with one is refused.
+func TestMetricsRoutePinsBothExtraFiltersSpellings(t *testing.T) {
+	assert.Equal(t, []string{"extra_filters", "extra_filters[]"}, tenancy.MetricsRead.FilterArgs())
+	assert.Equal(t, []string{"extra_stream_filters"}, tenancy.LogsRead.FilterArgs(),
+		"VictoriaLogs AND-s every extra filter it reads, so a second spelling could only narrow")
+
+	for _, allow := range []bool{false, true} {
+		c := base()
+		c.AllowUnfilteredMetricMetadata = allow
+		c.AllowUnfilteredTraceReads = true
+		cfg, err := c.RenderVMAuth("https://issuer.example")
+		require.NoError(t, err)
+		for _, u := range cfg.Users {
+			prefix := u.URLMap[0].URLPrefix[0]
+			for _, arg := range []string{"extra_filters", "extra_filters[]"} {
+				assert.True(t, tenancy.CarriesFilter(prefix, arg, tenancy.MetricsFilterPlaceholder),
+					"%s does not pin %s", prefix, arg)
+			}
+			assert.False(t, tenancy.CarriesFilters("http://x:8428?extra_filters="+tenancy.MetricsFilterPlaceholder,
+				tenancy.MetricsFilterArgs, tenancy.MetricsFilterPlaceholder),
+				"one spelling is not both")
+		}
+	}
+}
+
 // A placeholder vmauth does not know is forwarded to the store as the
 // literal string `{{.Whatever}}`, so the set of names is closed.
 func TestFilterPlaceholdersAreTheOnesVMAuthSubstitutes(t *testing.T) {
 	assert.Equal(t, "{{.MetricsExtraFilters}}", tenancy.MetricsFilterPlaceholder)
 	assert.Equal(t, "{{.LogsExtraStreamFilters}}", tenancy.LogsFilterPlaceholder)
 	assert.Equal(t, "extra_filters", tenancy.MetricsFilterArg)
+	assert.Equal(t, "extra_filters[]", tenancy.MetricsFilterArrayArg)
 	assert.Equal(t, "extra_stream_filters", tenancy.LogsFilterArg)
 }
 
@@ -877,8 +907,8 @@ func TestTracesRouteIsRefusedUntilItIsAskedFor(t *testing.T) {
 
 	// And it admits the trace route ONLY. A flag that quietly relaxed the
 	// other two would be the same defect with a consent form attached.
-	assert.True(t, tenancy.CarriesFilter(cfg.Users[0].URLMap[0].URLPrefix[0],
-		tenancy.MetricsFilterArg, tenancy.MetricsFilterPlaceholder))
+	assert.True(t, tenancy.CarriesFilters(cfg.Users[0].URLMap[0].URLPrefix[0],
+		tenancy.MetricsFilterArgs, tenancy.MetricsFilterPlaceholder))
 	assert.True(t, tenancy.CarriesFilter(cfg.Users[0].URLMap[1].URLPrefix[0],
 		tenancy.LogsFilterArg, tenancy.LogsFilterPlaceholder))
 }

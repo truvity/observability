@@ -13,6 +13,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/truvity/observability/pkg/tenancy"
 )
 
 const metricsReadersGolden = "golden/observability-stack/tenancy-readers.yaml"
@@ -48,9 +50,14 @@ func TestMetricsReaderHasOnlyTheQueryRoutesAndItsGrant(t *testing.T) {
 			assert.NotContains(t, p, "/select/")
 		}
 
-		require.Len(t, ref.QueryArgs, 1, "%s: the grant must be on the wire, as a query argument", name)
-		assert.Equal(t, "extra_filters", ref.QueryArgs[0].Name)
-		assert.Equal(t, filters, ref.QueryArgs[0].Values,
-			"%s: the reader's grant, one entry per cluster (the store ORs them), literal and not a claim placeholder", name)
+		// Both spellings vmselect ORs in, each carrying the whole grant:
+		// vmauth drops a client argument only when the route sets the
+		// same name, so a reader could widen itself with `extra_filters[]`.
+		require.Len(t, ref.QueryArgs, len(tenancy.MetricsFilterArgs), "%s: the grant must be on the wire, as a query argument per spelling", name)
+		for i, arg := range tenancy.MetricsFilterArgs {
+			assert.Equal(t, arg, ref.QueryArgs[i].Name)
+			assert.Equal(t, filters, ref.QueryArgs[i].Values,
+				"%s: the reader's grant under %s, one entry per cluster (the store ORs them), literal and not a claim placeholder", name, arg)
+		}
 	}
 }
