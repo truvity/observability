@@ -1,0 +1,24 @@
+# The guardduty preset supplies the two GuardDuty mappings ahead of the case's own.
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+topics:
+  - "<the security-alerts topic ARN>"
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
+mappings:
+  - name: budget
+    match: {"_sns.TopicArn": "arn:<partition>:sns:us-east-1:<account>:cost-budgets"}
+    alert:
+      alertname: CloudBudgetThreshold
+      severity: warning
+      labels:
+        source: budgets

@@ -1,0 +1,51 @@
+# The same values as presets-preset, with the preset's mappings written out.
+alertmanager:
+  url: http://vmalertmanager-observability-stack.observability.svc:9093
+
+topics:
+  - "<the security-alerts topic ARN>"
+
+heartbeat:
+  match: {"source": "alert-ingress-heartbeat"}
+  interval: 15m
+
+networkPolicy:
+  alertmanagerPeer:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: vmalertmanager
+mappings:
+  - name: root-credential-usage
+    match: {"detail-type": "GuardDuty Finding", "detail.type": "Policy:IAMUser/RootCredentialUsage"}
+    alert:
+      alertname: RootCredentialUsage
+      severity: critical
+      labels:
+        source: guardduty
+        account: '{{ .account }}'
+        region: '{{ .region }}'
+      annotations:
+        summary: '{{ .detail.title }}'
+        api: '{{ .detail.service.action.awsApiCallAction.api }}'
+        remote_ip: '{{ .detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4 }}'
+        count: '{{ .detail.service.count }}'
+  - name: guardduty
+    match: {"detail-type": "GuardDuty Finding"}
+    alert:
+      alertname: CloudSecurityFinding
+      severity: '{{ if atLeast .detail.severity 7 }}critical{{ else }}warning{{ end }}'
+      labels:
+        source: guardduty
+        account: '{{ .account }}'
+        region: '{{ .region }}'
+        finding_type: '{{ .detail.type }}'
+        finding_id: '{{ .detail.id }}'
+      annotations:
+        summary: '{{ .detail.title }}'
+  - name: budget
+    match: {"_sns.TopicArn": "arn:<partition>:sns:us-east-1:<account>:cost-budgets"}
+    alert:
+      alertname: CloudBudgetThreshold
+      severity: warning
+      labels:
+        source: budgets

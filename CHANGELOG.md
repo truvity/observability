@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `alert-ingress`: the opt-in preset `presets/guardduty.yaml` (list it before your values; nothing renders differently without it) with the two GuardDuty mappings, `root-credential-usage` (critical) and `guardduty` (critical from finding severity 7, else warning), both stamped `source: guardduty`. A preset cannot add to a list a later values file sets, so the chart gains `presetMappings` (a map of lists, default empty, **no default change**): its lists are tried before `mappings`, in the preset names' order, and the validations cover them. New goldens `presets-preset`/`presets-explicit` hold that the preset renders exactly the mappings written out.
+
 ## v0.81.0
 
 - **Changed** `dashboardlint` (`cmd/dashboardlint`, `pkg/dashboardlint`), rule 1: a panel or query datasource may be any `${var}` or `$var` whose template variable has `type: datasource`, not only `$datasource`, so a dashboard with a second datasource variable (for example `logsds` for its log panels) passes. Still refused: a literal datasource uid, and a variable that is undeclared or not of type `datasource`. The `datasource` variable itself is still required (the `cluster` variable chains off it). A dashboard that passed before still passes; the finding text for a refused datasource changed. See docs/dashboards.md.

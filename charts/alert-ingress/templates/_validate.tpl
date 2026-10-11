@@ -83,7 +83,7 @@ misconfiguration when the whole route wildcard the mapping never told
 anyone.
 */}}
 {{- define "alert-ingress.validate.mappings" -}}
-{{- range $i, $m := (.Values.mappings | default list) -}}
+{{- range $i, $m := (include "alert-ingress.allMappings" . | fromYamlArray) -}}
 {{- if not $m.alert.alertname -}}
 {{- fail (printf "alert-ingress: mappings[%d] (%s) has no `alert.alertname`. Every Alertmanager alert needs a name the routing tree and every notification template can refer to." $i (default "unnamed" $m.name)) -}}
 {{- end -}}
