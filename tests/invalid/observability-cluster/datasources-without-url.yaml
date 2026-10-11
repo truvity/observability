@@ -1,7 +1,0 @@
-# expect: datasources.enabled needs datasources.proxyUrl
-cluster: example
-externalGrafana: {enabled: true, url: "https://g.example.org", credentials: {secretName: c}}
-datasources:
-  enabled: true
-  clusters:
-    - {name: example-a, tokenSecret: {name: t, key: token}}

@@ -574,19 +574,6 @@
             }
           }
         },
-        "clusterDatasources": {
-          "type": "array",
-          "description": "Per-cluster datasource users: one bearer-token VMUser per cluster the shared Grafana shows, with the cluster forced server-side on a metrics route (literal extra_filters) and a logs route (literal extra_stream_filters). No traces and no write route. See docs/architecture/cluster-datasources.md.",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["cluster", "tokenSecret"],
-            "properties": {
-              "cluster": { "$ref": "#/definitions/name" },
-              "tokenSecret": { "$ref": "#/definitions/secretRef" }
-            }
-          }
-        },
         "readers": {
           "type": "array",
           "description": "Static-bearer, read-only METRICS QUERY readers, scoped by a grant: a machine in another cluster (another install's `vmalert.remoteEvaluators` entry) queries this store with a token from a Secret. Routes are `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range` only; the grant is enforced as literal `extra_filters` on them. No write, log, trace or admin route.",

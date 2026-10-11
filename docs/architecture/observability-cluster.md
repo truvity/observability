@@ -129,7 +129,7 @@ kind proof. Decision Q3.
 | `GrafanaDashboard` | yes | component charts, `observability-dashboards` |
 | `GrafanaFolder` | yes, only the cluster's own | this chart |
 | `Grafana` | yes, only the external one | this chart |
-| `GrafanaDatasource` | not by a component | R2.2 renders the three logical datasources (forced `k8s_cluster_name` filter) from the platform side |
+| `GrafanaDatasource` | not by a component | the platform renders one datasource set per store; per-cluster datasources were withdrawn ([cluster-datasources.md](cluster-datasources.md)) |
 | alerting kinds (`GrafanaAlertRuleGroup`, `GrafanaContactPoint`, `GrafanaMuteTiming`, `GrafanaNotificationPolicy*`, `GrafanaNotificationTemplate`) | no | alerts are `VMRule`s evaluated by the alerters, never Grafana's |
 | `GrafanaServiceAccount`, `GrafanaManifest`, `GrafanaLibraryPanel` | no | not part of the contract |
 
@@ -263,7 +263,7 @@ and what makes a handover with pruning on dangerous
 
 | Step | What |
 |---|---|
-| R2.2 | the three logical datasources per cluster with the forced `k8s_cluster_name` filter; the folder-scoped Grafana service account per cluster and how its token reaches the Secret |
+| R2.2 | one datasource set per store, isolation from the viewer's own token (per-cluster datasources withdrawn, [cluster-datasources.md](cluster-datasources.md)); the folder-scoped Grafana service account per cluster and how its token reaches the Secret |
 | R2.3 | `rulecheck` and `dashboardlint` as a published gate in a component's CI |
 | R2.4 | the pilot component |
 | slice 2 (done) | `observability-crds` `sets.grafanaOperator` |

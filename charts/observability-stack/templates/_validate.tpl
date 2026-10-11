@@ -50,7 +50,6 @@ vmalert and karma, or the pair splits and pages twice.
 {{- include "observability-stack.validate.writers" . -}}
 {{- include "observability-stack.validate.alertReaders" . -}}
 {{- include "observability-stack.validate.readers" . -}}
-{{- include "observability-stack.validate.clusterDatasources" . -}}
 {{- include "observability-stack.validate.grafana" . -}}
 {{- include "observability-stack.validate.routeOverlap" . -}}
 {{- include "observability-stack.validate.k8sStackClusterLabel" . -}}
@@ -140,9 +139,6 @@ a fetched VMRule, no Grafana for a fetched dashboard.
 {{- if .Values.tenancy.readers -}}
 {{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.readers` is set. There is no proxy here for a reader's bearer token to authenticate against. Clear `tenancy.readers`, or drop `mode` back to \"full\"." -}}
 {{- end -}}
-{{- if .Values.tenancy.clusterDatasources -}}
-{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.clusterDatasources` is set. There is no proxy here for a datasource token to authenticate against. Clear it." -}}
-{{- end -}}
 {{- if .Values.tenancy.alertReaders -}}
 {{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.alertReaders` is set. There is no vmalert here for it to read. Clear `tenancy.alertReaders`, or drop `mode` back to \"full\"." -}}
 {{- end -}}
@@ -200,9 +196,6 @@ every setting that says otherwise instead of quietly ignoring it.
 {{- end -}}
 {{- if .Values.tenancy.readers -}}
 {{- fail "observability-stack: `mode` is \"replica\" but `tenancy.readers` is set. There is no proxy here for a reader's token to authenticate against. Clear it." -}}
-{{- end -}}
-{{- if .Values.tenancy.clusterDatasources -}}
-{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.clusterDatasources` is set. There is no proxy here for a datasource token to authenticate against. Clear it." -}}
 {{- end -}}
 {{- if .Values.tenancy.alertReaders -}}
 {{- fail "observability-stack: `mode` is \"replica\" but `tenancy.alertReaders` is set. There is no vmalert here for it to read. Clear it." -}}
@@ -1750,38 +1743,6 @@ than somebody meant.
 {{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q while `tenancy.readers` is set. A reader's grant is enforced as that query argument on its route, and vmauth drops a client's clashing one only when it is NOT merged: with it merged the caller's own filter is sent beside the grant's, and a caller who may send its own filter may send a wider one. Remove it." (trim $merged)) -}}
 {{- end -}}
 {{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-`tenancy.clusterDatasources`: per-cluster datasource users. The shapes are
-the schema's; the checks here are the ones it cannot make. A cluster name is
-interpolated into a filter expression, so it must be a plain name; a cluster
-twice would render two VMUsers with one object name, of which the operator
-keeps one without saying which.
-*/}}
-{{- define "observability-stack.validate.clusterDatasources" -}}
-{{- $t := .Values.tenancy -}}
-{{- if $t.clusterDatasources -}}
-{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
-{{- if not $eff.vmauth -}}
-{{- fail "observability-stack: `tenancy.clusterDatasources` is set but this install renders no vmauth (`mode` is not \"full\", or `vmauth.enabled` is false). The datasource token authenticates against the proxy; with none, the datasource is configured and unreachable." -}}
-{{- end -}}
-{{- $fullname := include "observability-stack.fullname" . -}}
-{{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
-{{- $seen := dict -}}
-{{- range $d := $t.clusterDatasources -}}
-{{- if not (regexMatch $shape (toString $d.cluster)) -}}
-{{- fail (printf "observability-stack: `tenancy.clusterDatasources` cluster %q is not a plain name (%s). It is interpolated into a filter expression, where `|` or `.*` widens the grant." (toString $d.cluster) $shape) -}}
-{{- end -}}
-{{- if hasKey $seen $d.cluster -}}
-{{- fail (printf "observability-stack: cluster %q appears twice in `tenancy.clusterDatasources`; the second VMUser would collide with the first's object name and the operator keeps one without saying which." $d.cluster) -}}
-{{- end -}}
-{{- $_ := set $seen $d.cluster true -}}
-{{- if gt (len (printf "%s-ds-%s" $fullname $d.cluster)) 63 -}}
-{{- fail (printf "observability-stack: cluster %q makes the VMUser name %q longer than 63 characters, and a truncated name can collide with another's. Shorten it." $d.cluster (printf "%s-ds-%s" $fullname $d.cluster)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

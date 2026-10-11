@@ -149,10 +149,10 @@ the platform selects and checks on.
 
 Dashboards read three logical datasources: `metrics`, `logs`, `traces`.
 Which store answers each is the platform's business and changes across the
-restructure; a dashboard never says. From restructure R2.2 each cluster's
-datasource forces `k8s_cluster_name` on every query (planned; first slice
-in [architecture/cluster-datasources.md](architecture/cluster-datasources.md)),
-so a dashboard must not filter on it itself.
+restructure; a dashboard never says. There is one datasource set per store,
+not per cluster (per-cluster datasources were withdrawn, see
+[architecture/cluster-datasources.md](architecture/cluster-datasources.md)):
+what a viewer can read is decided by the proxy from the viewer's own token.
 
 ## Component side
 
@@ -171,10 +171,9 @@ change when the platform is split.
    chart, not entries in the platform's charts.
 3. **Ship `GrafanaDashboard`s that reference the logical datasources
    `metrics`, `logs` and `traces`.** (the dashboard rules in
-   `docs/dashboards.md`: stable; the logical names and the forced cluster
-   filter: planned, R2.2) No store names, no datasource UIDs and no cluster
-   filters in a dashboard: the per-cluster datasource forces
-   `k8s_cluster_name`.
+   `docs/dashboards.md`: stable; the logical names: planned, R2.2) No store
+   names, no datasource UIDs and no cluster filters in a dashboard: what a
+   viewer can read is decided by the proxy from the viewer's own token.
    How a dashboard reaches the shared Grafana (an instance label, the
    cluster's folder uid, cross-namespace import) is planned with
    `charts/observability-cluster`

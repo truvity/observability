@@ -28,26 +28,6 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | 
 {{- if and .Values.grafanaOperator.enabled (not (dig "crds" "immutable" true (index .Values "grafana-operator"))) -}}
 {{- fail "observability-cluster: grafana-operator.crds.immutable is false, which makes the operator's chart render the Grafana CRDs as templates of this release. They belong to observability-crds (sets.grafanaOperator), applied server-side before this release; leave grafana-operator.crds.immutable at its default" -}}
 {{- end -}}
-{{- if .Values.datasources.enabled -}}
-{{- if not .Values.externalGrafana.enabled -}}
-{{- fail "observability-cluster: datasources.enabled needs externalGrafana.enabled: the datasources are created in the shared Grafana, through the instance the external Grafana resource names" -}}
-{{- end -}}
-{{- if not .Values.datasources.proxyUrl -}}
-{{- fail "observability-cluster: datasources.enabled needs datasources.proxyUrl (the proxy's root URL as the shared Grafana reaches it)" -}}
-{{- end -}}
-{{- if not .Values.datasources.clusters -}}
-{{- fail "observability-cluster: datasources.enabled is true but datasources.clusters is empty: nothing would be rendered" -}}
-{{- end -}}
-{{- $seen := dict -}}
-{{- range $c := .Values.datasources.clusters -}}
-{{- if hasKey $seen $c.name -}}
-{{- fail (printf "observability-cluster: datasources.clusters names %q twice; the second pair would overwrite the first" $c.name) -}}
-{{- end -}}
-{{- $_ := set $seen $c.name true -}}
-{{- end -}}
-{{- else if .Values.datasources.clusters -}}
-{{- fail "observability-cluster: datasources.clusters is set but datasources.enabled is false" -}}
-{{- end -}}
 {{- if .Values.externalGrafana.enabled -}}
 {{- if not .Values.externalGrafana.url -}}
 {{- fail "observability-cluster: externalGrafana.enabled needs externalGrafana.url (the shared Grafana's root URL)" -}}
