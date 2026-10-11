@@ -207,6 +207,76 @@ spec:
     {{- end }}
 {{- end }}
 {{- /*
+The `vm_access` reader (`tenancy.vmAccessReader`, opt-in): the same read
+routes as a principal, with the grant taken from the token's OWN claim.
+
+The `query_args` are the placeholders a principal's routes already carry;
+what differs is that there is no `defaultVMAccessClaim` and the user is
+selected by the claim being present (see the values.yaml comment for the
+selection order and the deny-by-default argument).
+*/}}
+{{- if .Values.tenancy.vmAccessReader.enabled }}
+{{- $vr := .Values.tenancy.vmAccessReader }}
+{{- $vrAudience := $vr.audience | default $root.Values.tenancy.audience }}
+{{- $vrRoutes := $vr.routes | default (list "metrics" "logs" "traces") }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-vm-access" $fullname | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-stack.labels" $root | nindent 4 }}
+    observability.role: reader
+spec:
+  name: vm-access
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: {{ $root.Values.tenancy.issuerUrl | quote }}
+    {{- /*
+    Four claims, all anchored and escaped like a principal's. The two
+    `vm_access.*` keys are vmauth's dotted lookup into the claim object; an
+    array claim matches when any element matches `.+`, i.e. when the list
+    holds at least one non-empty string.
+    */}}
+    matchClaims:
+      aud: {{ printf "^(%s)$" (regexQuoteMeta $vrAudience) | quote }}
+      iss: {{ printf "^(%s)$" (regexQuoteMeta $root.Values.tenancy.issuerUrl) | quote }}
+      vm_access.metrics_extra_filters: ".+"
+      vm_access.logs_extra_stream_filters: ".+"
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    {{- if has "metrics" $vrRoutes }}
+    - static:
+        {{- include "observability-stack.staticTarget" (list $root $metrics $haPeer.metrics) | nindent 8 }}
+      paths:
+        {{- include "observability-stack.readPaths.metrics" $root | nindent 8 }}
+      query_args:
+        {{- include "observability-stack.readQueryArgs.metrics" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- end }}
+    {{- if has "logs" $vrRoutes }}
+    - static:
+        {{- include "observability-stack.staticTarget" (list $root $logs $haPeer.logs) | nindent 8 }}
+      paths:
+        {{- include "observability-stack.readPaths.logs" $root | nindent 8 }}
+      query_args:
+        {{- include "observability-stack.readQueryArgs.logs" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- end }}
+    {{- if and $tracesEnabled (has "traces" $vrRoutes) }}
+    - static:
+        {{- include "observability-stack.staticTarget" (list $root $traces $haPeer.traces) | nindent 8 }}
+      paths:
+        {{- include "observability-stack.readPaths.traces" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-stack.targetAuth" $root | nindent 8 }}
+    {{- end }}
+{{- end }}
+{{- /*
 The writers.
 
 A collector authenticates with a bearer token rather than a person's

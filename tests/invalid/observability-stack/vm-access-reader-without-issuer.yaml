@@ -1,0 +1,14 @@
+# expect: `tenancy.vmAccessReader.enabled` is set but `tenancy.issuerUrl` is empty
+tenancy:
+  audience: example-observability-client
+  vmAccessReader:
+    enabled: true
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
