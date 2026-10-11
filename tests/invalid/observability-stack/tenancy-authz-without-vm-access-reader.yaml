@@ -1,0 +1,40 @@
+# expect: `tenancy.authz.enabled` is set but `tenancy.vmAccessReader.enabled` is not
+# tenancy-authz needs the vm_access reader: it is the only VMUser that applies the minted token's claim.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  vmAccessReader:
+    enabled: false
+  authz:
+    enabled: true
+    securityPolicy:
+      targetRefs:
+        - kind: HTTPRoute
+          name: observability-read
+    networkPolicy:
+      gatewayFrom:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: envoy}
+  principals:
+    - group: example:example-app:deployer
+      grants:
+        - cluster: cluster-a
+          namespaces: [example-app]
+
+# `alertmanager.enabled` defaults to true, and with no `notifications`
+# receiver configured that refusal fires before this fixture ever
+# reaches its own check (see docs/safety.md). This is the minimum
+# receiver that satisfies it, so the fixture is preempted no further.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - {name: acme, appTokenSecret: {name: example-slack-bot, key: token}}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}
+
+# No trace store: its own refusal (tenancy.allowUnfilteredTraceReads) would preempt this fixture.
+victoria-traces-single:
+  enabled: false

@@ -9,7 +9,7 @@
     "sets": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["victoriaMetrics", "prometheusOperator", "grafanaOperator"],
+      "required": ["victoriaMetrics", "prometheusOperator", "grafanaOperator", "envoyGateway", "externalSecrets"],
       "description": "Which CRD sets this release installs. All false is refused at render.",
       "properties": {
         "victoriaMetrics": {
@@ -23,6 +23,14 @@
         "grafanaOperator": {
           "type": "boolean",
           "description": "The grafana-operator's thirteen grafana.integreatly.org kinds. Off by default: nothing installs them until a cluster enables the operator (charts/observability-cluster)."
+        },
+        "envoyGateway": {
+          "type": "boolean",
+          "description": "Envoy Gateway's SecurityPolicy CRD only, the kind charts/observability-stack renders for tenancy.authz. Off by default: Envoy Gateway's own release owns the CRD; turn this on only where it does not."
+        },
+        "externalSecrets": {
+          "type": "boolean",
+          "description": "External Secrets Operator's ExternalSecret and SSHKey CRDs only, the kinds charts/observability-stack renders for tenancy.authz.signingKey.source eso. Off by default: the operator's own release owns them; turn this on only where it does not."
         }
       }
     },
