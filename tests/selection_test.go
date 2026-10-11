@@ -347,3 +347,33 @@ func TestEvaluatorLabelOwnership(t *testing.T) {
 	assert.Contains(t, last, "logs")
 	assert.NotContains(t, last, "metrics")
 }
+
+// TestOldMarkerAloneIsEvaluatedByNobody: the removed LogsQL marker is not
+// accepted by the logs alerter, and the PromQL alerters refuse it, so a
+// LogsQL VMRule carrying only `observability.rule-type: vlogs` can never
+// crash the metrics alerter.
+func TestOldMarkerAloneIsEvaluatedByNobody(t *testing.T) {
+	alerters := map[string]vmalertDoc{}
+
+	for _, doc := range splitDocs(t, "golden/observability-stack/remote-evaluators.yaml") {
+		var a vmalertDoc
+		if err := yaml.Unmarshal(doc, &a); err != nil || a.Kind != "VMAlert" {
+			continue
+		}
+
+		alerters[a.Metadata.Name] = a
+	}
+
+	require.Len(t, alerters, 4)
+
+	for _, labels := range []map[string]string{
+		{"observability.rule-type": "vlogs"},
+		{"observability.rule-type": "vlogs", evaluatorKey: "metrics"},
+		{"observability.rule-type": "vlogs", evaluatorKey: "other-store"},
+	} {
+		for name, a := range alerters {
+			assert.Falsef(t, a.Spec.RuleSelector != nil && a.Spec.RuleSelector.selects(labels),
+				"%v must not be selected by %s", labels, name)
+		}
+	}
+}

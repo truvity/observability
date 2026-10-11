@@ -457,9 +457,9 @@ are below.
 1. Every `VMRule` with LogsQL groups (`type: vlogs`) carries
    `observability.truvity.io/evaluator: logs`. A LogsQL rule that carries
    only the old marker is not loaded by the logs alerter after the bump
-   (it selects `evaluator: logs` only), and the metrics alerter, which no
-   longer refuses the old marker, loads it and exits on a rule it cannot
-   parse. List them with
+   (it selects `evaluator: logs` only), and the PromQL alerters keep
+   refusing the old marker as a defensive exclusion (not acceptance), so it
+   is evaluated by nobody rather than crashing the metrics alerter. List them with
    `kubectl get vmrule -A -o json` and look at each rule's labels. Every
    chart in this repository and every chart that ships LogsQL rules at the
    time of the release already emits it.

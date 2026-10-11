@@ -661,8 +661,8 @@ does not carry it is never evaluated.**
 
 So a rule written in LogsQL **must** be labelled
 `observability.truvity.io/evaluator: logs`. The old marker
-`observability.rule-type: vlogs` is no longer read (removed in 0.74.0, with
-`vmalert.acceptLegacyRuleLabels`). A PromQL rule needs no label, which is what
+`observability.rule-type: vlogs` is no longer accepted (removed in 0.74.0, with
+`vmalert.acceptLegacyRuleLabels`). The metrics alerter and the remote evaluators still exclude it (`observability.rule-type` NotIn `vlogs`): an exclusion, not acceptance, so a rule carrying only the old marker is evaluated by nobody instead of crashing the metrics alerter. A PromQL rule needs no label, which is what
 keeps the rules other charts ship working without changing them. The selection
 design, the removed deprecation window and `rule-type` are in
 [contracts.md](contracts.md), "Rule ownership labels".
