@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.79.1
+
+- Dependency updates.
+
 ## v0.79.0
 
 - **Behaviour change** (fix) `observability-grafana` (`operatorFolders`): v0.78.0 still refused to grant Edit to an operator user that `workloadAuth` had synced, logging `externally synced with role 'unknown'`: it read the role from `/api/org/users/lookup`, whose answer (`UserLookupDTO`: `userId`, `login`, `avatarUrl`) has no `role`. The Job now reads it from the admin endpoint `GET /api/users/:id/orgs` (`UserOrgDTO`: `orgId`, `name`, `role`, from the `org_user` table; the same `users:read` permission as the `/api/users/:id` call it already makes) and takes the entry for org 1. The rules are unchanged: a synced user with role `None` gets Edit and no PATCH, a synced user with another role fails that cluster, a local user keeps the PATCH. The Job's ConfigMap script changes, so the `operator-folders` golden moves; there is no opt-out, and the previous output was the bug.
