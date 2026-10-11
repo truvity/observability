@@ -218,7 +218,8 @@ func (r ReadRoute) validate() error {
 		seen[a] = true
 	}
 	if r.placeholder == MetricsFilterPlaceholder && (!seen[MetricsFilterArg] || !seen[MetricsFilterArrayArg]) {
-		return fmt.Errorf("read route %q carries %s and must pin both %q and %q: vmselect ORs the `extra_filters[]` spelling with the grant and vmauth drops a client "+
+		return fmt.Errorf("read route %q carries %s and must pin both %q and %q: vmselect ORs the `extra_filters[]` "+
+			"spelling with the grant and vmauth drops a client "+
 			"argument only when the route sets the same name, so a route that pins one spelling lets a caller widen its grant with the other",
 			r.name, MetricsFilterPlaceholder, MetricsFilterArg, MetricsFilterArrayArg)
 	}
