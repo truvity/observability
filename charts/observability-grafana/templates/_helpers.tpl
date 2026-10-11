@@ -196,3 +196,52 @@ sub && 'Viewer'
   [auth]
 {{- end -}}
 {{- end -}}
+
+{{- /* The pod spec of the operator-folders Job and CronJob (dict: name, image, secret, userKey, passwordKey). */ -}}
+{{- define "observability-grafana.operatorFoldersPod" }}
+serviceAccountName: {{ .name }}
+automountServiceAccountToken: false
+restartPolicy: OnFailure
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 100
+  seccompProfile:
+    type: RuntimeDefault
+containers:
+  - name: reconcile
+    image: {{ .image | quote }}
+    command: ["sh", "/scripts/reconcile.sh"]
+    envFrom:
+      - configMapRef:
+          name: {{ .name }}
+    env:
+      - name: GRAFANA_ADMIN_USER
+        valueFrom:
+          secretKeyRef:
+            name: {{ .secret | quote }}
+            key: {{ .userKey | quote }}
+      - name: GRAFANA_ADMIN_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: {{ .secret | quote }}
+            key: {{ .passwordKey | quote }}
+    resources:
+      requests: {cpu: 10m, memory: 16Mi}
+      limits: {memory: 64Mi}
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+    volumeMounts:
+      - {name: scripts, mountPath: /scripts, readOnly: true}
+      - {name: work, mountPath: /work}
+volumes:
+  - name: scripts
+    configMap:
+      name: {{ .name }}
+  - name: work
+    emptyDir:
+      medium: Memory
+      sizeLimit: 1Mi
+{{- end }}
