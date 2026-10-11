@@ -821,4 +821,8 @@ groups:
         RecordingRulesNoData:
           expr: sum(vmalert_recording_rules_last_evaluation_samples{recording!~"count:up0"}) without(id) < 1
     "vmoperator": {enabled: true, exclude: [], override: {}}
-    "vmsingle": {enabled: true, exclude: [], override: {}}
+    # -- `churnFactor24h` (0 = upstream's own factor of 3): the factor of
+    # `TooHighChurnRate24h`, which compares 24h of new series to this many
+    # times the hourly active series. A store with short-lived CI workloads
+    # needs a higher one. Only the factor of the expression changes.
+    "vmsingle": {enabled: true, exclude: [], override: {}, churnFactor24h: 0}

@@ -1,0 +1,30 @@
+# The upstream presets case: `karpenter-aware` and `kargo-jobs` supply the
+# kubernetes-apps overrides; `churnFactor24h` the vmsingle factor.
+clusterLabel: k8s_cluster_name
+commonLabels:
+  k8s_cluster_name: example-cluster
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  backups: {enabled: false}
+  volumes: {enabled: false}
+  writePath: {enabled: false}
+  storeLimits: {enabled: false}
+  pendingPods: {enabled: false}
+  nodeClaims: {enabled: false}
+  probes: {enabled: false}
+  nats: {enabled: false}
+  argocd: {enabled: false}
+  eso: {enabled: false}
+  ack: {enabled: false}
+  podSecurity: {enabled: false}
+  podSecurityAudit: {enabled: false}
+  envoyRoutes: {enabled: false}
+  certificates: {enabled: false}
+  restarts: {enabled: false}
+  workloadAbsent: {enabled: false}
+  upstream:
+    enabled: true
+    vmsingle:
+      churnFactor24h: 6

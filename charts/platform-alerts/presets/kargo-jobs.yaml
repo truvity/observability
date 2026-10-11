@@ -1,0 +1,16 @@
+# Preset: `KubeJobFailed` ignores Kargo's own analysis Jobs.
+#
+# Kargo runs its verification and analysis Jobs under a UUID-prefixed name
+# (`<uuid>.<stage>.<n>`) and lets them fail by design when a promotion's check
+# does not pass; the failure is reported by the Kargo rules (`groups.kargo`),
+# not by a Job that stays failed. This takes upstream's `KubeJobFailed` and
+# adds one exclusion: Jobs whose name matches that shape. Takes effect only
+# with `groups.upstream.enabled`. List the file BEFORE your own values;
+# nothing reads it unless it is listed.
+groups:
+  upstream:
+    kubernetes-apps:
+      override:
+        KubeJobFailed:
+          expr: >-
+            kube_job_failed{job="kube-state-metrics",namespace=~".*",job_name!~"[0-9a-f-]{36}\\.[a-z0-9-]+\\.[0-9]+"} > 0
