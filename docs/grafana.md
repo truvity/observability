@@ -121,6 +121,8 @@ workloadAuth:
   issuer: https://issuer.example.org        # the token's `iss`, exactly
   jwksUrl: https://issuer.example.org/keys  # https; the issuer's jwks_uri
   audience: grafana-workload                # the gate; see below
+  noRoleSubjectSuffixes:                    # default; subjects lowered to None
+    - ":k8s:observability:observability-cluster-grafana-operator"
 ```
 
 It renders an `[auth.jwt]` section into `grafana.ini` (verified against
@@ -134,7 +136,7 @@ jwk_set_url = <jwksUrl>
 cache_ttl = 60m
 expect_claims = {"aud":"<audience>","iss":"<issuer>"}
 username_attribute_path = join(':', ['workload', sub])
-role_attribute_path = sub && 'Viewer'
+role_attribute_path = ends_with(sub, ':k8s:observability:observability-cluster-grafana-operator') && 'None' || 'Viewer'
 role_attribute_strict = true
 allow_assign_grafana_admin = false
 skip_org_role_sync = false
@@ -147,9 +149,22 @@ enable_login_token = false
   header, so the proxy's outbound side injects only the standard header. A
   request whose `Authorization` is not a JWT with a `sub` (a service-account
   token, Basic) is not this path's and falls through to normal handling.
-- **The role is a constant.** `role_attribute_path` is an expression that
-  yields `Viewer` and reads nothing from the token but the presence of
-  `sub`; `role_attribute_strict` refuses a role that evaluates to nothing,
+- **The role is a constant per subject.** `role_attribute_path` is an expression
+  that yields `Viewer`, or `None` for a subject that ends in one of
+  `noRoleSubjectSuffixes`, and reads nothing from the token but `sub` (with an
+  empty list it is the earlier constant `sub && 'Viewer'`). The list can only
+  LOWER the role: no value yields more than Viewer. The default lists the
+  per-cluster grafana-operator's subject
+  (`<cluster>:k8s:observability:observability-cluster-grafana-operator`).
+  An operator is role **None** and needs **Edit on its own folder**, granted to
+  the user `workload:<sub>` (Grafana creates it on its first sign-in): None
+  cannot query a datasource, read another folder, create a folder or change a
+  datasource, so the operator can rewrite its own folder's dashboards and
+  nothing else ([architecture/cluster-datasources.md](architecture/cluster-datasources.md)).
+  Any other workload subject, such as observability-mcp's Grafana connector,
+  is a Viewer, as before. A suffix has no whitespace, quote or brace (the
+  schema refuses them: a quote would end the expression).
+  Role-wise, `role_attribute_strict` refuses a role that evaluates to nothing,
   `allow_assign_grafana_admin` is off, and there is no value to change the
   role (a `role` key is refused by the schema). A token cannot ask for more.
 - **Its login is `workload:<sub>`**, a string no person's login has, so it

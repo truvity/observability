@@ -116,7 +116,7 @@ global:
     # When enabled, grafana.ini gets an `[auth.jwt]` section that reads the
     # token from `Authorization: Bearer ...` (Grafana strips the prefix),
     # verifies its signature against `jwksUrl`, and requires `iss` and `aud`
-    # to equal the values below. The identity it creates is ALWAYS a Viewer:
+    # to equal the values below. The identity it creates is a Viewer (or, for a subject in `noRoleSubjectSuffixes`, None):
     # the role is a constant in the rendered config (`role_attribute_path`
     # is not taken from the token; `role_attribute_strict` and
     # `allow_assign_grafana_admin = false` close the rest), and its login is
@@ -138,6 +138,16 @@ global:
       jwksUrl: ""
       # -- The `aud` a workload token carries for Grafana.
       audience: ""
+      # -- Subjects that end in one of these get the role None instead of
+      # Viewer: the per-cluster grafana-operator, which may write dashboards
+      # into ITS folder (folder permission Edit, granted to
+      # `workload:<sub>`) and nothing else: None cannot query a datasource,
+      # read another folder, create a folder or change a datasource. Any other
+      # subject (observability-mcp's Grafana connector) is a Viewer, as before.
+      # This list can only LOWER the role; no value yields more than Viewer.
+      # Empty means every workload is a Viewer. No whitespace, quote or brace.
+      noRoleSubjectSuffixes:
+        - ":k8s:observability:observability-cluster-grafana-operator"
 
 grafana:
   # State lives in the external database; what remains on disk is the

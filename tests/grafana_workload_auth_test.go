@@ -67,7 +67,7 @@ func TestGrafanaWorkloadAuthIsAbsentUnlessEnabled(t *testing.T) {
 	var off int
 	for _, g := range goldens {
 		name := strings.TrimSuffix(filepath.Base(g), ".yaml")
-		if name == "workload-auth" {
+		if strings.HasPrefix(name, "workload-auth") {
 			continue
 		}
 		off++
@@ -76,8 +76,46 @@ func TestGrafanaWorkloadAuthIsAbsentUnlessEnabled(t *testing.T) {
 	assert.Positive(t, off)
 }
 
+// The role expression names no claim but `sub`, yields only Viewer or None,
+// and is strict: nothing in a token can ask for more.
+func assertWorkloadRoleCannotEscalate(t *testing.T, expr string) {
+	t.Helper()
+	rest := strings.NewReplacer("'Viewer'", "", "'None'", "").Replace(expr)
+	assert.NotRegexp(t, regexp.MustCompile(`(?i)groups|role|admin|editor`), rest,
+		"the role expression must not read a claim that could ask for more")
+	for _, lit := range regexp.MustCompile(`'([^']*)'`).FindAllStringSubmatch(expr, -1) {
+		if strings.HasPrefix(lit[1], ":") {
+			continue // an ends_with suffix, not a role
+		}
+		assert.Contains(t, []string{"Viewer", "None"}, lit[1], "the only roles a workload can get")
+	}
+}
+
+// By default the per-cluster grafana-operator's subject is role None (it may
+// write only its own folder: a folder permission Edit); everyone else stays a
+// Viewer.
+func TestGrafanaWorkloadAuthLowersTheOperatorToNone(t *testing.T) {
+	jwt, _ := iniSection(grafanaIni(t, "workload-auth"), "auth.jwt")
+	assert.Equal(t,
+		"ends_with(sub, ':k8s:observability:observability-cluster-grafana-operator') && 'None' || 'Viewer'",
+		jwt["role_attribute_path"])
+	assertWorkloadRoleCannotEscalate(t, jwt["role_attribute_path"])
+	assert.Equal(t, "true", jwt["role_attribute_strict"])
+
+	two, _ := iniSection(grafanaIni(t, "workload-auth-two-suffixes"), "auth.jwt")
+	assert.Equal(t,
+		"ends_with(sub, ':k8s:team-a:writer') && 'None' || ends_with(sub, ':k8s:team-b:writer') && 'None' || 'Viewer'",
+		two["role_attribute_path"])
+	assertWorkloadRoleCannotEscalate(t, two["role_attribute_path"])
+}
+
+func TestGrafanaWorkloadAuthViewersOnlyWhenTheListIsEmpty(t *testing.T) {
+	jwt, _ := iniSection(grafanaIni(t, "workload-auth-viewers-only"), "auth.jwt")
+	assert.Equal(t, "sub && 'Viewer'", jwt["role_attribute_path"], "the constant of earlier releases")
+}
+
 func TestGrafanaWorkloadAuthIsAFixedViewer(t *testing.T) {
-	ini := grafanaIni(t, "workload-auth")
+	ini := grafanaIni(t, "workload-auth-viewers-only")
 
 	jwt, blocks := iniSection(ini, "auth.jwt")
 	assert.Equal(t, 1, blocks, "exactly one [auth.jwt] block")
@@ -89,8 +127,7 @@ func TestGrafanaWorkloadAuthIsAFixedViewer(t *testing.T) {
 	// The role is a constant expression: it names no claim but `sub`'s
 	// presence, yields exactly Viewer, and is strict.
 	assert.Equal(t, "sub && 'Viewer'", jwt["role_attribute_path"])
-	assert.NotRegexp(t, regexp.MustCompile(`(?i)groups|role|admin|editor`), strings.ReplaceAll(jwt["role_attribute_path"], "Viewer", ""),
-		"the role expression must not read a claim that could ask for more")
+	assertWorkloadRoleCannotEscalate(t, jwt["role_attribute_path"])
 	assert.Equal(t, "true", jwt["role_attribute_strict"])
 	assert.Equal(t, "false", jwt["allow_assign_grafana_admin"], "the server-admin flag is never granted")
 	assert.Equal(t, "false", jwt["skip_org_role_sync"], "the role is asserted on every request, not once")

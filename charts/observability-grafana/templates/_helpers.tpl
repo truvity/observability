@@ -150,7 +150,8 @@ What each key does, and why it is this value:
                                 being linked to) a person's existing login.
   role_attribute_path           a CONSTANT expression that yields Viewer
                                 (`sub && 'Viewer'`; `sub` is checked to be
-                                present by Grafana already). Not read from a
+                                present by Grafana already), or None for a
+                                subject ending in `noRoleSubjectSuffixes`. Not read from a
                                 claim, so no token can ask for more. It does
                                 not begin with a quote, which ini would strip.
   role_attribute_strict         a role that evaluates to nothing is refused.
@@ -159,6 +160,22 @@ What each key does, and why it is this value:
   url_login, enable_login_token false: no `?auth_token=` and no session
                                 cookie; every request carries its own token.
 */}}
+{{/*
+The workload `role_attribute_path`: `sub && 'Viewer'` (a constant), or, when
+`noRoleSubjectSuffixes` lists suffixes,
+`ends_with(sub, 'a') && 'None' || ends_with(sub, 'b') && 'None' || 'Viewer'`
+(`&&` binds tighter than `||`). Still no claim is read but `sub`, and no
+value yields more than Viewer.
+*/}}
+{{- define "observability-grafana.workloadRolePath" -}}
+{{- $s := .noRoleSubjectSuffixes | default list -}}
+{{- if $s -}}
+{{- range $s }}ends_with(sub, '{{ . }}') && 'None' || {{ end }}'Viewer'
+{{- else -}}
+sub && 'Viewer'
+{{- end -}}
+{{- end -}}
+
 {{- define "observability-grafana.workloadAuthIni" -}}
 {{- $w := (.Values.global.observabilityGrafana).workloadAuth | default dict -}}
 {{- if $w.enabled }}
@@ -169,7 +186,7 @@ What each key does, and why it is this value:
   cache_ttl = 60m
   expect_claims = {{ dict "iss" $w.issuer "aud" $w.audience | toJson }}
   username_attribute_path = join(':', ['workload', sub])
-  role_attribute_path = sub && 'Viewer'
+  role_attribute_path = {{ include "observability-grafana.workloadRolePath" $w }}
   role_attribute_strict = true
   allow_assign_grafana_admin = false
   skip_org_role_sync = false

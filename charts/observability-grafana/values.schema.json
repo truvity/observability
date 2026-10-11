@@ -214,6 +214,15 @@
                   "type": "string",
                   "pattern": "^[^\\s\"'\\\\{}]*$",
                   "description": "The `aud` only a workload token carries; never a human sign-in client's."
+                },
+                "noRoleSubjectSuffixes": {
+                  "type": "array",
+                  "description": "Subjects ending in one of these get the role None instead of Viewer (the per-cluster grafana-operator, which may only write its own folder). Can only lower the role.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\s\"'\\\\{}]+$"
+                  }
                 }
               }
             }
