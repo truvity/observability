@@ -1,0 +1,101 @@
+# The operator pod's half of externalGrafana.auth.sluisExchange: the token
+# sidecar, and the volume that carries its token to the operator.
+#
+# A subchart's values are read before any template runs, so this chart cannot
+# set them from `externalGrafana.auth.sluisExchange`. List this file before your
+# own values (docs/presets.md), alongside `externalGrafana.auth.sluisExchange.enabled`;
+# the render refuses either one without the other.
+#
+# What it does, in the vendored operator chart's two patched extension points
+# (hack/patches/grafana-operator-extension-points.patch):
+#
+# - `kubeAuth.volume` replaces the volume the operator reads its Grafana token
+#   from (/var/run/secrets/grafana.com/serviceaccount/token) with an in-memory
+#   emptyDir. The Deployment still has exactly ONE volume at that path.
+# - Upstream's projected ServiceAccount token (audience: `kubeAuth.audience`,
+#   which you set to the audience the issuer accepts for exchange,
+#   `access-issuer`) stays as the volume
+#   `kubeauth-subject-token`, mounted only in the sidecar.
+# - The sidecar posts that token to the issuer every `refreshEvery` (RFC 8693,
+#   audience = the exchange client), and writes the access token it gets back
+#   with an atomic rename. It is ready only after the first token is written.
+#   It never prints the token.
+#
+# The parameters (issuer URL, client id, refresh interval) come from the
+# ConfigMap `<release>-operator-token-exchange` that this chart renders.
+grafana-operator:
+  # The sidecar's image, in parts so an estate can point `registry` at a
+  # mirror or pull-through cache (`grafana-operator.tokenExchangeImage.registry`).
+  tokenExchangeImage:
+    registry: docker.io
+    repository: curlimages/curl
+    tag: "8.22.0"
+  kubeAuth:
+    volume:
+      emptyDir:
+        medium: Memory
+        sizeLimit: 1Mi
+  extraContainers:
+    - name: token-exchange
+      image: "{{ .Values.tokenExchangeImage.registry }}/{{ .Values.tokenExchangeImage.repository }}:{{ .Values.tokenExchangeImage.tag }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          set -u
+          dir=/var/run/secrets/grafana.com/serviceaccount
+          subject=/var/run/exchange-subject/token
+          log() { printf '%s token-exchange: %s\n' "$(date -u +%FT%TZ)" "$*"; }
+          while :; do
+            wait=30
+            out=$(curl -sS --max-time 20 -w '\n%{http_code}' -u "${CLIENT_ID}:" \
+              --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+              --data-urlencode "subject_token@${subject}" \
+              --data-urlencode subject_token_type=urn:ietf:params:oauth:token-type:jwt \
+              --data-urlencode "audience=${CLIENT_ID}" \
+              "${ISSUER_URL%/}/token" 2>&1) || true
+            code=$(printf '%s\n' "$out" | tail -n 1)
+            token=$(printf '%s\n' "$out" | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            if [ "$code" = 200 ] && [ -n "$token" ]; then
+              printf '%s' "$token" > "$dir/.token.new"
+              chmod 0644 "$dir/.token.new"
+              mv "$dir/.token.new" "$dir/token"
+              log "token written, next refresh in ${REFRESH_SECONDS}s"
+              wait=$REFRESH_SECONDS
+            else
+              # The status only: the body of a failure is nothing to print, and a body may carry a token.
+              log "exchange failed (http status ${code:-none}), retrying in ${wait}s"
+            fi
+            token=
+            out=
+            sleep "$wait"
+          done
+      envFrom:
+        - configMapRef:
+            name: "{{ .Release.Name }}-operator-token-exchange"
+      readinessProbe:
+        exec:
+          command: ["sh", "-c", "test -s /var/run/secrets/grafana.com/serviceaccount/token"]
+        periodSeconds: 10
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          memory: 32Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 65532
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
+      volumeMounts:
+        - name: kubeauth-token-volume
+          mountPath: /var/run/secrets/grafana.com/serviceaccount
+        - name: kubeauth-subject-token
+          mountPath: /var/run/exchange-subject
+          readOnly: true

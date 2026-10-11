@@ -1,0 +1,6 @@
+# expect: refreshEvery
+cluster: example
+externalGrafana:
+  enabled: true
+  url: https://grafana.example.org
+  auth: {sluisExchange: {enabled: true, issuerUrl: "https://issuer.example.org", refreshEvery: "soon"}}

@@ -1431,10 +1431,27 @@ a component's `GrafanaDashboard` selects the instance on that label.
 | `externalGrafana.enabled` | bool | `false` | Render the `Grafana` resource. Needs `url` and `credentials.secretName`. |
 | `externalGrafana.name` | string | `grafana` | The resource's name. |
 | `externalGrafana.url` | string | `""` | The shared Grafana's root URL, as this cluster reaches it. |
-| `externalGrafana.credentials.secretName`, `.key` | string | `""`, `token` | The Secret holding the Grafana service-account token. Never created or read here. |
+| `externalGrafana.credentials.secretName`, `.key` | string | `""`, `token` | The Secret holding the Grafana service-account token. Never created or read here. Not used (and refused if set) with `auth.sluisExchange.enabled`. |
+| `externalGrafana.auth.sluisExchange.enabled` | bool | `false` | The operator authenticates with a short-lived access token that a sidecar in its pod exchanges for the operator's ServiceAccount token (RFC 8693), instead of a static Secret. `Grafana` gets `spec.client.useKubeAuth: true` and no `apiKey`. With `grafanaOperator.enabled` it needs the preset `operator-sluis-exchange` and `grafana-operator.kubeAuth.audience` (the audience the issuer accepts of the ServiceAccount token for exchange, `access-issuer`; upstream's default is refused). |
+| `externalGrafana.auth.sluisExchange.issuerUrl` | string | `""` | The issuer's base URL; `/token` is called. Required when enabled. |
+| `externalGrafana.auth.sluisExchange.clientId` | string | `grafana-workload` | The exchange client, authenticated by HTTP Basic with an empty secret, and the `audience` asked of the exchange. |
+| `externalGrafana.auth.sluisExchange.refreshEvery` | string | `20m` | How often the sidecar exchanges again (`<n>s`, `<n>m`, `<n>h`). The token lives an hour. |
 | `externalGrafana.caSecret.name`, `.namespace` | string | `""` | A Secret holding the CA that signed the Grafana's certificate. Verification cannot be disabled. |
 | `folder.enabled` | bool | `true` | Render the cluster's `GrafanaFolder`. |
 | `folder.title`, `folder.uid` | string | `""` | Default to `cluster`. The uid is immutable once created (at most 40 of letters, digits, `-`, `_`). |
+
+With the exchange on, the rendered operator pod has the sidecar `token-exchange`
+(image `curlimages/curl`, pinned in the preset; `grafana-operator.tokenExchangeImage.{registry,repository,tag}` override it, for a mirror or pull-through cache), a ConfigMap
+`<release>-operator-token-exchange` with its three parameters, and exactly one
+volume, an in-memory `emptyDir`, at `/var/run/secrets/grafana.com/serviceaccount`
+(the operator mounts it read-only). Upstream's projected ServiceAccount token
+remains as the volume `kubeauth-subject-token`, mounted only in the sidecar. The
+sidecar is ready after the first token is written, refreshes by atomic rename,
+retries every 30 s on failure, and logs only the HTTP status, never a body or a
+token. This needs two extension points that upstream's chart lacks,
+`extraContainers` and `kubeAuth.volume`, patched into the vendored archive by
+`hack/vendor.sh` (`hack/patches/grafana-operator-extension-points.patch`; with
+neither set the Deployment is upstream's).
 
 The schema is strict. Refusals (a URL and a credential Secret when the Grafana
 is on, a valid folder uid, a folder with no Grafana) are render-time `fail`s

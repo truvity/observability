@@ -1,0 +1,48 @@
+--- a/templates/deployment.yaml
++++ b/templates/deployment.yaml
+@@ -107,11 +107,18 @@
+           resources:
+             {{- toYaml . | nindent 12 }}
+           {{- end }}
++        {{- with .Values.extraContainers }}
++        {{- tpl (toYaml .) $ | nindent 8 }}
++        {{- end }}
+       volumes:
+         - name: dashboards-dir
+           emptyDir:
+             {{- toYaml .Values.volumes.dashboards | nindent 12 }}
+         - name: kubeauth-token-volume
++          {{- if .Values.kubeAuth.volume }}
++          {{- toYaml .Values.kubeAuth.volume | nindent 10 }}
++        - name: kubeauth-subject-token
++          {{- end }}
+           projected:
+             sources:
+             - serviceAccountToken:
+--- a/values.yaml
++++ b/values.yaml
+@@ -135,6 +135,13 @@
+   audience: "operator.grafana.com"
+   # -- The frequency with which kubernetes will rotate the token, should never be less than 300
+   expirationSeconds: 3600
++  # -- (observability patch) A volume SOURCE that replaces the volume
++  # `kubeauth-token-volume`, still mounted in the operator at
++  # /var/run/secrets/grafana.com/serviceaccount. Empty keeps upstream's
++  # projected ServiceAccount token there. When set, that projected token
++  # (audience and lifetime above) is kept as volume `kubeauth-subject-token`,
++  # mounted nowhere, for an extra container to read.
++  volume: {}
+ 
+ metricsService:
+   # -- metrics service type
+@@ -215,6 +222,10 @@
+ # -- extra container volume mounts
+ extraVolumeMounts: []
+ 
++# -- (observability patch) extra containers of the operator pod, after the
++# operator's own. Rendered through `tpl`, so `{{ .Release.Name }}` works.
++extraContainers: []
++
+ serviceMonitor:
+   # -- Whether to create a ServiceMonitor
+   enabled: false

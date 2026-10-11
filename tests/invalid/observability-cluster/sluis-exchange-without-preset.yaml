@@ -1,0 +1,9 @@
+# expect: needs the operator pod's half
+# The exchange is on but the token sidecar and its volume (the preset) are not.
+cluster: example
+grafanaOperator: {enabled: true}
+grafana-operator: {kubeAuth: {audience: issuer.example.org}}
+externalGrafana:
+  enabled: true
+  url: https://grafana.example.org
+  auth: {sluisExchange: {enabled: true, issuerUrl: "https://issuer.example.org"}}
