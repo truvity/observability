@@ -56,6 +56,22 @@ the VMRule spends a plain string.
 {{- end -}}
 
 {{/*
+The mappings in the order the binary tries them: every preset's
+(`presetMappings`, one list per preset, in the preset names' order), then the
+consumer's own `mappings`. The first match wins, so a preset's narrow mapping
+(a finding type of its own) stays ahead of a broader one.
+*/}}
+{{- define "alert-ingress.allMappings" -}}
+{{- $all := list -}}
+{{- $p := .Values.presetMappings | default dict -}}
+{{- range $name := keys $p | sortAlpha -}}
+{{- $all = concat $all (get $p $name) -}}
+{{- end -}}
+{{- $out := concat $all (.Values.mappings | default list) -}}
+{{- if $out -}}{{- toYaml $out -}}{{- else -}}[]{{- end -}}
+{{- end -}}
+
+{{/*
 The mounted configuration: exactly the four values the binary reads (see
 cmd/alert-ingress/config.go), rendered once and shared by the ConfigMap
 and the Deployment's own checksum annotation so the two can never drift.
@@ -66,7 +82,7 @@ alertmanager:
 topics:
   {{- toYaml .Values.topics | nindent 2 }}
 mappings:
-  {{- toYaml (.Values.mappings | default list) | nindent 2 }}
+  {{- include "alert-ingress.allMappings" . | nindent 2 }}
 heartbeat:
   match:
     {{- toYaml .Values.heartbeat.match | nindent 4 }}

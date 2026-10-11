@@ -188,6 +188,12 @@ topics: []
 # group of an RE2 match, "" on a miss).
 mappings: []
 
+# -- Mappings that come from a chart preset (`presets/<name>.yaml`, listed
+# before your own values): one list per preset, prepended to `mappings` in the
+# preset names' order. A preset cannot write into `mappings` itself, because a
+# list in a later values file replaces an earlier one. Leave empty yourself.
+presetMappings: {}
+
 # -- Shapes CloudEventUnmapped, the alert a message no rule matches (or whose
 # template fails) becomes, so the routing tree can route it. `labels` are
 # static strings, never templates, added to every such alert; names must be
