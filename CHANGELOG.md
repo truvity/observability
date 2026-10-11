@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.79.0
 
 - **Behaviour change** (**Breaking**) `platform-alerts`: the `platform-alerts.pulumi-drift` rule group no longer exists, so a render that enabled `groups.pulumiDrift` loses it; the goldens `pulumi-drift` and `pulumi-drift-runbook` are deleted with it. Renders that never enabled it are byte-identical. There is no opt-out: the job that fed the gauges is gone, and the key must be deleted from values (see the **Removed** bullet).
 - **Removed** (**Breaking**) `platform-alerts`: `groups.pulumiDrift` and its three alerts (`PulumiDriftDetected`, `PulumiDiffFailing`, `PulumiDriftSignalStale`), with the `pulumi_stack_drift_changes` and `pulumi_stack_diff_error` gauges they read. The scheduled job that pushed them no longer exists, so nothing feeds the rules. The schema refuses unknown keys, so a values file that still sets `groups.pulumiDrift` (even `enabled: false`) fails to render after the bump: delete the key first. Renders that never enabled the group are unchanged.
