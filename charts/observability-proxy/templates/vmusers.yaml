@@ -1,0 +1,481 @@
+{{- $observabilityStackEffective := include "observability-proxy.effectiveEnabled" . | fromYaml }}
+{{- if $observabilityStackEffective.vmauth }}
+{{- $root := . }}
+{{- $haPeer := (include "observability-proxy.ha" . | fromYaml).peer }}
+{{- $fullname := include "observability-proxy.fullname" . }}
+{{- $labels := dict "cluster" .Values.tenancy.clusterLabel "namespace" .Values.tenancy.namespaceLabel }}
+{{- /*
+The log store's field names are NOT the label keys: a label cannot carry
+a dot, and the log-path namespace key is the container-log agent's own
+spelling. See `tenancy.logsNamespaceField` in values.yaml.
+*/}}
+{{- $logFields := dict "cluster" .Values.tenancy.logsClusterField "namespace" .Values.tenancy.logsNamespaceField }}
+{{- $metrics := include "observability-proxy.metrics.url" . }}
+{{- $logs := include "observability-proxy.logs.url" . }}
+{{- $traces := include "observability-proxy.traces.url" . }}
+{{- $tracesEnabled := include "observability-proxy.tracesEnabled" . }}
+{{- /*
+One VMUser per principal, selected by its group.
+
+These are the same entries `pkg/tenancy`'s RenderVMAuth produces, in the
+operator's spelling: the library renders vmauth's own config file
+(`match_claims`, `default_vm_access_claim`, snake_case), the operator
+renders the same config from a CR (`matchClaims`, `defaultVMAccessClaim`,
+camelCase). The `tenancy` golden case and the Go test beside it exist to
+keep the two from drifting: a difference between what a token says a
+person may read and what the proxy lets them read is not a difference
+anyone notices until it matters.
+*/}}
+{{- /*
+`tenancy.authz.retireGroupReaders`: with tenancy-authz on, a person's token is
+exchanged at the gateway for a vm_access token, so the per-principal readers
+matching a person's raw token (their `aud` is a person audience) are a second
+path to the same data. Retired, they are not rendered; the same principals
+stay in tenancy-authz's configuration, which is what grants people access.
+A principal on any other audience (a workload's, a machine's) is never touched.
+*/}}
+{{- $personAud := (include "observability-proxy.authz.personAudiences" . | fromYaml).audiences }}
+{{- $retire := and .Values.tenancy.authz.enabled .Values.tenancy.authz.retireGroupReaders }}
+{{- $kept := list }}
+{{- range $p := .Values.tenancy.principals }}
+{{- if not (and $retire (has ($p.audience | default $.Values.tenancy.audience) $personAud)) }}
+{{- $kept = append $kept $p }}
+{{- end }}
+{{- end }}
+{{- range $i, $p := $kept }}
+{{- /*
+A principal is selected by ONE `group`, or by a list of `groups` with a
+`name` (validated in _validate.tpl): a token carrying any of the listed
+groups selects it. Each group is escaped on its own and the alternation is
+joined afterwards, so the only unescaped `|` in the rendered claim is the
+one this template wrote.
+*/}}
+{{- $principalName := $p.name | default $p.group | default "" }}
+{{- $groupList := $p.groups | default (list $p.group) }}
+{{- $quotedGroups := list }}
+{{- range $g := $groupList }}
+{{- $quotedGroups = append $quotedGroups (regexQuoteMeta $g) }}
+{{- end }}
+{{- $slug := regexReplaceAll "[^a-z0-9]+" (lower $principalName) "-" | trimAll "-" | trunc 40 | trimSuffix "-" }}
+{{- /* Grants sort by cluster, so an unrelated edit produces no diff. */}}
+{{- $byCluster := dict }}
+{{- range $grant := $p.grants }}
+{{- $_ := set $byCluster $grant.cluster $grant }}
+{{- end }}
+{{- $filters := list }}
+{{- $sortedGrants := list }}
+{{- range $cluster := (keys $byCluster | sortAlpha) }}
+{{- $filters = append $filters (include "observability-proxy.filter" (dict "grant" (index $byCluster $cluster) "labels" $labels)) }}
+{{- $sortedGrants = append $sortedGrants (index $byCluster $cluster) }}
+{{- end }}
+{{- $logsFilter := include "observability-proxy.logsFilter" (dict "grants" $sortedGrants "fields" $logFields) }}
+{{- /*
+This principal's OWN audience, when it set one, else the install-wide
+pin. Escaped and anchored exactly like `tenancy.audience` itself — an
+override is still a client id the issuer assigned, not this chart's to
+leave unescaped.
+*/}}
+{{- $effectiveAudience := $p.audience | default $root.Values.tenancy.audience }}
+{{- /*
+Which of the three read routes this principal gets. Unset renders all
+three, which is the render this chart has always produced — a trace
+route among them still needs `$tracesEnabled` below, exactly as before.
+Set, it narrows: `routes: [metrics]` is a reader with no logs or traces
+targetRef at all, not merely an empty filter on those routes.
+*/}}
+{{- $routes := $p.routes | default (list "metrics" "logs" "traces") }}
+{{- $hasMetrics := has "metrics" $routes }}
+{{- $hasLogs := has "logs" $routes }}
+{{- $hasTraces := has "traces" $routes }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-%s" $fullname $slug | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-proxy.labels" $root | nindent 4 }}
+    observability.role: reader
+spec:
+  name: {{ $principalName | quote }}
+  {{- /*
+  The operator identifies a VMUser by its generated credentials Secret
+  unless this is set, and every JWT user generates the same identity — so
+  two JWT VMUsers in one namespace collide, and all but one are dropped
+  from the rendered config with an error only visible in
+  `status.currentSyncError`. A principal that silently disappears is a
+  person who cannot see their own data with no failed object to point at.
+  */}}
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: {{ $root.Values.tenancy.issuerUrl | quote }}
+    {{- /*
+    Two claims, answering two different questions. The group says WHICH
+    PRINCIPAL a token is. The audience says the token was minted for
+    THIS PROXY at all — which vmauth checks nowhere else: it validates
+    expiry and issuer and stops, with no audience option and no look at
+    `aud` of its own. Without the pin, any unexpired token from the
+    issuer is admitted whatever client it was minted for.
+
+    Both values are ESCAPED and ANCHORED, because vmauth compiles a
+    `matchClaims` value as a regular expression and neither value is
+    this chart's: a group is whatever the identity provider calls that
+    population, a client id is whatever the issuer assigned. Escaped, so
+    each means itself; anchored, so each means only itself. A group of
+    `.*` therefore matches the literal `.*` and no other token.
+
+    vmauth anchors a `matchClaims` value itself from v1.152.0, the floor
+    this chart already requires, so the anchors here are the second line
+    rather than the first — a narrowing control that works only when the
+    proxy is patched is a control with a version number in it.
+    */}}
+    matchClaims:
+      {{ $root.Values.tenancy.claimName }}: {{ printf "^(%s)$" (join "|" $quotedGroups) | quote }}
+      aud: {{ printf "^(%s)$" (regexQuoteMeta $effectiveAudience) | quote }}
+    {{- /*
+    The filters this group is entitled to, used when the token itself
+    carries no `vm_access` claim — which is every token, in the shape
+    where the mapping lives in the proxy rather than in the issuer.
+    Without it the token falls through to the unauthorized user and is
+    rejected with nothing saying why.
+    */}}
+    defaultVMAccessClaim:
+      metricsExtraFilters:
+        {{- toYaml $filters | nindent 8 }}
+      {{- /*
+      One entry, naming the log store's own fields. Not the metrics list:
+      those names do not exist on the log path, and a second entry here
+      would be AND-ed rather than OR-ed.
+      */}}
+      logsExtraStreamFilters:
+        {{- toYaml (list $logsFilter) | nindent 8 }}
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  {{- /*
+  Every read route carries `query_args`, and that is what makes the
+  claim above mean anything.
+
+  The claim is not applied because it exists. vmauth substitutes it into
+  the route it picked, and only there: a `targetRef` without the
+  placeholder forwards the query with no filter, while this manifest
+  still shows the principal's grant one block up. See
+  `observability-proxy.readQueryArgs.*` in _helpers.tpl.
+  */}}
+  targetRefs:
+    {{- if $hasMetrics }}
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root $metrics $haPeer.metrics) | nindent 8 }}
+      paths:
+        {{- if $p.metricsQueryOnly }}
+        {{- include "observability-proxy.readPaths.metrics.queryOnly" $root | nindent 8 }}
+        {{- else }}
+        {{- include "observability-proxy.readPaths.metrics" $root | nindent 8 }}
+        {{- end }}
+      query_args:
+        {{- include "observability-proxy.readQueryArgs.metrics" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- end }}
+    {{- if $p.vmalertAPI }}
+    {{- /*
+    The metrics vmalert's alerts and rules, for a principal that said so.
+    NOT filtered: there is no `query_args` because vmalert has no
+    per-namespace concept to substitute the grant into — the same reason
+    `tenancy.alertReaders` needs `allowUnfilteredAlertReads`, which
+    _validate.tpl requires here too. No basic auth: vmalert has none.
+    */}}
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root (include "observability-proxy.vmalert.metrics.url" $root) (ternary (include "observability-proxy.vmalert.metrics.peerUrl" $root) "" (include "observability-proxy.ha.primary" $root | eq "true"))) | nindent 8 }}
+      paths:
+        {{- include "observability-proxy.readPaths.vmalertAPI" $root | nindent 8 }}
+      drop_src_path_prefix_parts: 1
+    {{- end }}
+    {{- if $hasLogs }}
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root $logs $haPeer.logs) | nindent 8 }}
+      paths:
+        {{- include "observability-proxy.readPaths.logs" $root | nindent 8 }}
+      query_args:
+        {{- include "observability-proxy.readQueryArgs.logs" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- end }}
+    {{- if and $tracesEnabled $hasTraces }}
+    {{- /*
+    The trace route, and the one with no `query_args`, because there is
+    no argument to put them in: VictoriaTraces' Jaeger and Tempo select
+    APIs take a tenant id from headers, `hidden_fields_filters` (which
+    hides fields, not rows) and `allow_partial_response`, and nothing
+    else. A principal given these paths reads every namespace's spans on every cluster.
+
+    It renders only when the operator has set
+    `tenancy.allowUnfilteredTraceReads`, which _validate.tpl requires
+    and docs/safety.md explains. The alternative — rendering it anyway,
+    because it looks like the two above — is the defect this chart was
+    fixed to remove.
+    */}}
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root $traces $haPeer.traces) | nindent 8 }}
+      paths:
+        {{- include "observability-proxy.readPaths.traces" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- end }}
+{{- end }}
+{{- /*
+The `vm_access` reader (`tenancy.vmAccessReader`, opt-in): the same read
+routes as a principal, with the grant taken from the token's OWN claim.
+
+The `query_args` are the placeholders a principal's routes already carry;
+what differs is that there is no `defaultVMAccessClaim` and the user is
+selected by the claim being present (see the values.yaml comment for the
+selection order and the deny-by-default argument).
+*/}}
+{{- if .Values.tenancy.vmAccessReader.enabled }}
+{{- $vr := .Values.tenancy.vmAccessReader }}
+{{- /*
+With `tenancy.authz` on, the reader trusts tenancy-authz and nobody else:
+its issuer (discovery and keys fetched from the service itself), pinned in
+`iss`, and the audience the service mints for. The person's own token, from
+the identity provider, no longer matches this user at all: it carries no
+`vm_access`, and its `iss` is not the service's. What is shared with the
+non-authz shape is everything else — the two `vm_access.*` matchers and the
+routes.
+*/}}
+{{- $authz := $root.Values.tenancy.authz }}
+{{- $vrIssuer := ternary (include "observability-proxy.authz.issuerUrl" $root) $root.Values.tenancy.issuerUrl $authz.enabled }}
+{{- $vrAudience := ternary $authz.mintedAudience ($vr.audience | default $root.Values.tenancy.audience) $authz.enabled }}
+{{- $vrRoutes := $vr.routes | default (list "metrics" "logs" "traces") }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-vm-access" $fullname | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-proxy.labels" $root | nindent 4 }}
+    observability.role: reader
+spec:
+  name: vm-access
+  disable_secret_creation: true
+  jwt:
+    oidc:
+      issuer: {{ $vrIssuer | quote }}
+    {{- /*
+    Four claims, all anchored and escaped like a principal's. The two
+    `vm_access.*` keys are vmauth's dotted lookup into the claim object; an
+    array claim matches when any element matches `.+`, i.e. when the list
+    holds at least one non-empty string.
+    */}}
+    matchClaims:
+      aud: {{ printf "^(%s)$" (regexQuoteMeta $vrAudience) | quote }}
+      iss: {{ printf "^(%s)$" (regexQuoteMeta $vrIssuer) | quote }}
+      vm_access.metrics_extra_filters: ".+"
+      vm_access.logs_extra_stream_filters: ".+"
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    {{- if has "metrics" $vrRoutes }}
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root $metrics $haPeer.metrics) | nindent 8 }}
+      paths:
+        {{- include "observability-proxy.readPaths.metrics" $root | nindent 8 }}
+      query_args:
+        {{- include "observability-proxy.readQueryArgs.metrics" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- end }}
+    {{- if has "logs" $vrRoutes }}
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root $logs $haPeer.logs) | nindent 8 }}
+      paths:
+        {{- include "observability-proxy.readPaths.logs" $root | nindent 8 }}
+      query_args:
+        {{- include "observability-proxy.readQueryArgs.logs" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- end }}
+    {{- if and $tracesEnabled (has "traces" $vrRoutes) }}
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root $traces $haPeer.traces) | nindent 8 }}
+      paths:
+        {{- include "observability-proxy.readPaths.traces" $root | nindent 8 }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- end }}
+{{- end }}
+{{- /*
+The writers.
+
+A collector authenticates with a bearer token rather than a person's
+identity, and its routes are WRITE paths only: a token that lives in a
+DaemonSet on every node is the one most likely to leak, and a leaked
+writer that can also read is a leak of every namespace's data rather than of
+the ability to append to it.
+*/}}
+{{- range $w := .Values.tenancy.writers }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-writer-%s" $fullname $w.name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-proxy.labels" $root | nindent 4 }}
+    observability.role: writer
+spec:
+  name: {{ $w.name | quote }}
+  disable_secret_creation: true
+  tokenRef:
+    name: {{ $w.tokenSecret.name | quote }}
+    key: {{ $w.tokenSecret.key | quote }}
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    {{- range $dest := $w.destinations }}
+    {{- if eq $dest "metrics" }}
+    - static:
+        url: {{ $metrics | quote }}
+      paths:
+        {{- include "observability-proxy.writePaths.metrics" $root | nindent 8 }}
+      {{- with (include "observability-proxy.writeQueryArgs.metrics" (dict "cluster" $w.cluster "label" $root.Values.tenancy.clusterLabel)) }}
+      query_args:
+        {{- . | nindent 8 }}
+      {{- end }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- else if eq $dest "logs" }}
+    - static:
+        url: {{ $logs | quote }}
+      paths:
+        {{- include "observability-proxy.writePaths.logs" $root | nindent 8 }}
+      {{- with (include "observability-proxy.writeQueryArgs.logs" (dict "cluster" $w.cluster "field" $root.Values.tenancy.logsClusterField)) }}
+      query_args:
+        {{- . | nindent 8 }}
+      {{- end }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- else if eq $dest "traces" }}
+    - static:
+        url: {{ $traces | quote }}
+      paths:
+        {{- include "observability-proxy.writePaths.traces" $root | nindent 8 }}
+      {{- with (include "observability-proxy.writeQueryArgs.traces" (dict "cluster" $w.cluster "field" $root.Values.tenancy.logsClusterField)) }}
+      query_args:
+        {{- . | nindent 8 }}
+      {{- end }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+    {{- else }}
+    {{- fail (printf "observability-proxy: writer %q names destination %q, which is not one of metrics, logs or traces. A destination nobody recognises renders no route at all, so the writer would be installed and able to write nothing." $w.name $dest) }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- /*
+The metrics readers.
+
+A bearer token that may QUERY this install's metrics store, scoped by a
+grant, for a machine that is not a person and has no OIDC identity: the
+first user is another install's vmalert (`vmalert.remoteEvaluators`)
+evaluating its rules against this store. Modelled on the writers for the
+token and on the principals for the grant.
+
+Two things differ from a principal, both forced. A static token carries no
+`vm_access` claim, so there is no placeholder to substitute: the grant is
+written into the route's `query_args` as LITERAL `extra_filters` and
+`extra_filters[]` values (both spellings, see `filterArgs.metrics`),
+one per grant (VictoriaMetrics ORs them, exactly as it does the claim's
+list). vmauth drops a client query argument that clashes with one the
+route already set (`vmauth.extraArgs.mergeQueryArgs` naming `extra_filters`
+is refused in _validate.tpl), so the caller cannot send its own. And the
+route list is the query-only one, always: `/api/v1/query` and
+`/api/v1/query_range`, which is all a vmalert datasource asks for. No
+series, labels, label values, tsdb status, vmui, metadata, no write
+route, and no log or trace route at all.
+*/}}
+{{- range $r := .Values.tenancy.readers }}
+{{- $byCluster := dict }}
+{{- range $grant := $r.grants }}
+{{- $_ := set $byCluster $grant.cluster $grant }}
+{{- end }}
+{{- $filters := list }}
+{{- range $cluster := (keys $byCluster | sortAlpha) }}
+{{- $filters = append $filters (include "observability-proxy.filter" (dict "grant" (index $byCluster $cluster) "labels" $labels)) }}
+{{- end }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-reader-%s" $fullname $r.name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-proxy.labels" $root | nindent 4 }}
+    observability.role: metrics-reader
+spec:
+  name: {{ $r.name | quote }}
+  disable_secret_creation: true
+  tokenRef:
+    name: {{ $r.tokenSecret.name | quote }}
+    key: {{ $r.tokenSecret.key | quote }}
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root $metrics $haPeer.metrics) | nindent 8 }}
+      paths:
+        {{- include "observability-proxy.readPaths.metrics.queryOnly" $root | nindent 8 }}
+      query_args:
+        {{- /* Every spelling vmselect ORs in, pinned to the same grant: see `filterArgs.metrics`. */}}
+        {{- range $arg := (fromYamlArray (include "observability-proxy.filterArgs.metrics" $root)) }}
+        - name: {{ $arg }}
+          values:
+            {{- toYaml $filters | nindent 12 }}
+        {{- end }}
+      targetRefBasicAuth:
+        {{- include "observability-proxy.targetAuth" $root | nindent 8 }}
+{{- end }}
+{{- /*
+The alert readers: a bearer token that may READ vmalert's own
+`/api/v1/alerts` and nothing else — see `tenancy.alertReaders`'s own doc
+comment in values.yaml for why this is neither a `principal` (a person's
+OIDC identity) nor a `writer` (write-only).
+
+Gated the same way the trace route is (`allowUnfilteredTraceReads`):
+_validate.tpl refuses `alertReaders` without `allowUnfilteredAlertReads`
+set, because nothing here scopes the route by cluster or namespace.
+*/}}
+{{- range $r := .Values.tenancy.alertReaders }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMUser
+metadata:
+  name: {{ printf "%s-alerts-%s" $fullname $r.name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-proxy.labels" $root | nindent 4 }}
+    observability.role: alert-reader
+spec:
+  name: {{ $r.name | quote }}
+  disable_secret_creation: true
+  tokenRef:
+    name: {{ $r.tokenSecret.name | quote }}
+    key: {{ $r.tokenSecret.key | quote }}
+  load_balancing_policy: {{ $root.Values.vmauth.loadBalancingPolicy }}
+  retry_status_codes: {{ toYaml $root.Values.vmauth.retryStatusCodes | nindent 4 }}
+  targetRefs:
+    - static:
+        {{- include "observability-proxy.staticTarget" (list $root (include "observability-proxy.vmalert.metrics.url" $root) (ternary (include "observability-proxy.vmalert.metrics.peerUrl" $root) "" (include "observability-proxy.ha.primary" $root | eq "true"))) | nindent 8 }}
+      paths:
+        {{- include "observability-proxy.readPaths.alerts" $root | nindent 8 }}
+    {{- if $r.alertmanager }}
+    {{- /*
+    The router's own view of the same question: is the alert ACTIVE in
+    Alertmanager, not only firing in vmalert. Exact path, the listing
+    only. vmauth cannot match a method, and `POST /api/v2/alerts` on this
+    path creates alerts, so the edge in front of vmauth must admit GET
+    only (values.schema.json says so); nothing else of Alertmanager's API
+    is routed (no silences, no status, no receivers).
+    */}}
+    - static:
+        url: {{ printf "http://vmalertmanager-%s.%s.svc:9093" $fullname $root.Release.Namespace | quote }}
+      paths:
+        - /api/v2/alerts
+    {{- end }}
+{{- end }}
+{{- end }}

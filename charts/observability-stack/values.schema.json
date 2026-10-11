@@ -803,6 +803,14 @@
         "source": { "type": "string", "enum": ["stack", "chart"], "description": "`stack` (default): this chart renders the alerting plane. `chart`: charts/observability-alerting renders it and this chart renders none of it; install that chart first." }
       }
     },
+    "door": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who renders the Door plane (the vmauth proxy, its VMUsers, tenancy-authz with its SecurityPolicy, and the proxy's NetworkPolicy). See the key's comment in values.yaml and docs/adoption.md (0.81.0).",
+      "properties": {
+        "source": { "type": "string", "enum": ["stack", "chart"], "description": "`stack` (default): this chart renders the Door plane. `chart`: charts/observability-proxy renders it and this chart renders none of it; install that chart first." }
+      }
+    },
     "vmalert": {
       "type": "object",
       "additionalProperties": false,

@@ -1185,6 +1185,12 @@ its own switch and **not** gated by `selfAlerts.enabled`. Both default off.
 |---|---|---|---|
 | `alerting.source` | enum | `stack` | Who renders the alerting plane. `stack`: this chart, as it always did (nothing changes). `chart`: [`charts/observability-alerting`](#chartsobservability-alerting) renders it and this chart renders **none** of: the two vmalerts (four under `ha`) and every `vmalert.remoteEvaluators` VMAlert, the VMAlertmanager, karma (ServiceAccount, ConfigMap, Service, Deployment), the Watchdog rule, the store self-alerts (`-selfalerts`, `-store-alerts`) and the Alertmanager ServiceMonitor. Everything else stays: the proxy and its VMUsers, the NetworkPolicies (including the vmalert and karma ones), the stores, the backups. Refused with `mode: replica` or `operator-only`: those never rendered the plane, so there is nothing to hand over (`observability-stack.validate.alerting`). The values of the plane (`vmalert`, `alertmanager`, `karma`, `notifications`, `selfAlerts`) stay in this chart's schema and are still validated here, so one values file can feed both charts. Roll out in the order [adoption.md](adoption.md) gives (0.71.0). |
 
+### `door` (0.81.0)
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `door.source` | enum | `stack` | Who renders the Door plane. `stack`: this chart, as it always did (nothing changes). `chart`: [`charts/observability-proxy`](#chartsobservability-proxy) renders it and this chart renders **none** of: the `VMAuth`, every `VMUser`, the `tenancy-authz` objects (and its SecurityPolicy and NetworkPolicy) and the proxy's NetworkPolicy. Install that chart first ([adoption.md](adoption.md), "Handing the Door plane to observability-proxy"). Refused with any `mode` but `full`. |
+
 ### The upstream charts
 
 Their own values, pinned in `Chart.yaml` and vendored under the chart's
@@ -1392,6 +1398,43 @@ holds them equal to the stack's.
 chart for every case under `tests/cases/observability-stack` and holds the
 objects byte-identical; the helpers and templates are copies, and that test
 is what keeps them honest.
+
+## `charts/observability-proxy`
+
+The Door plane of an `observability-stack` install as a chart of its own
+([proxy.md](proxy.md)), rendering the objects the stack renders when its
+`door.source` is `stack`, under the **same kind, name and namespace**, so that
+an Application switch adopts them in place ([adoption.md](adoption.md),
+"Handing the Door plane to observability-proxy").
+
+| Object | Name (stack release `observability-stack`) | When |
+|---|---|---|
+| `VMAuth` | `<fullname>` | `vmauth` effective |
+| `VMUser` | `<fullname>-<slug>` | one per `tenancy.principals` entry |
+| `VMUser` | `<fullname>-vm-access`, `<fullname>-writer-<name>`, `<fullname>-reader-<name>`, `<fullname>-alerts-<name>` | `tenancy.vmAccessReader`, `.writers`, `.readers`, `.alertReaders` |
+| `ServiceAccount`, `ConfigMap`, `Service`, `Deployment`, `PodDisruptionBudget`, `ServiceMonitor` | `<fullname>-tenancy-authz` | `tenancy.authz.enabled` |
+| `SSHKey`, `ExternalSecret` | `<fullname>-tenancy-authz-signing` | `tenancy.authz.signingKey.source: eso` |
+| `SecurityPolicy` | per `tenancy.authz.securityPolicy` | `tenancy.authz.securityPolicy.enabled` |
+| `NetworkPolicy` | `<fullname>-proxy`, `<fullname>-tenancy-authz` | `networkPolicy.enabled`; the latter with `tenancy.authz.networkPolicy` |
+
+`<fullname>` is the stack's, derived from `stackReleaseName` as in
+`charts/observability-alerting`. The stores', vmalert's and karma's
+NetworkPolicies stay in the stack.
+
+**Values.** Every key is a key of `observability-stack`'s values, with the same
+name, shape, schema and default: `vmauth`, `tenancy`, and from `networkPolicy`
+only `enabled`, `proxyFrom` and `scrapeFrom`. Keys the Door READS from other
+sections are repeated in their smallest form and must agree with the stack's:
+`mode` (only `full`), `ha`, `interval`, `resources.policy`, `storeCredentials`,
+`stores`, `vmalert.enabled`, `alertmanager.enabled`,
+`nameOverride`/`fullnameOverride`, and the subchart keys that name the stores.
+`stackReleaseName` is this chart's own. The schema is strict, so a values file
+for the stack cannot be passed whole.
+
+The helpers and templates are copies of the stack's (the choice
+`observability-alerting` made); `tests/proxy_chart_test.go` renders the stack
+(switch off and on) and this chart for every case under
+`tests/cases/observability-stack` and holds the objects byte-identical.
 
 ## `charts/observability-cluster`
 

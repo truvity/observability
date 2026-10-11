@@ -1,0 +1,683 @@
+# observability-proxy — the Door plane of an observability-stack install: the
+# authorising proxy (vmauth) and its VMUsers (principals, readers, writers,
+# alert readers, the vm-access reader), tenancy-authz with its Envoy
+# SecurityPolicy, and the proxy's network policies.
+#
+# Every key here is a key of charts/observability-stack/values.yaml, with the
+# same name, shape and default, so moving a section from the stack's values to
+# this chart's is a copy and paste. Keys the Door does not read are not
+# declared (the schema refuses them); a few it READS from the stack's other
+# sections are repeated in their smallest form and must agree with the
+# stack's: they are marked MIRROR below, and docs/adoption.md (0.81.0) lists
+# them.
+#
+# This chart renders objects that observability-stack renders when its
+# `door.source` is `stack`, under the same kind, name and namespace. Do not
+# install both with the stack's `door.source` left at `stack`: they would own
+# the same objects. docs/adoption.md (0.81.0) has the rollout.
+
+# -- The Helm release name of the observability-stack install this chart
+# belongs beside. Every name this chart renders is derived from it exactly as
+# the stack derives it (`<release>-observability-stack`, or the release name
+# itself when that already contains `observability-stack`), as are the labels'
+# `app.kubernetes.io/instance` and the store Services the vmalerts query.
+# Empty means this chart's own release name, which is right only when this
+# release is named like the stack's.
+stackReleaseName: ""
+
+# -- MIRROR: the stack's `nameOverride` / `fullnameOverride`, when it sets them.
+nameOverride: ""
+fullnameOverride: ""
+
+# -- MIRROR: the stack's `mode`. Only `full` runs the proxy.
+mode: full
+
+# -- MIRROR: the stack's `ha`. Under a pair the proxy lists the peer's stores as
+# its fall-over backends; their addresses come from here.
+ha: null
+
+# -- MIRROR: the stack's `interval`, the scrape interval of tenancy-authz's ServiceMonitor.
+interval: 30s
+
+# -- MIRROR: the stack's `resources.policy`, which judges `vmauth.resources` and
+# `tenancy.authz.resources`.
+resources:
+  policy: burstable
+
+# The authorising proxy: vmauth, in front of every read.
+#
+# Nothing else in this namespace may reach a store, which is why the
+# stores themselves run with `-httpAuth.*` (see `storeCredentials` below)
+# and why the network policies exist. The proxy verifies the caller's JWT
+# against the issuer's OIDC discovery document and injects the filters
+# that token is entitled to.
+vmauth:
+  # -- Null by default (rather than `true`): `mode: operator-only` turns
+  # this OFF ITSELF when it is left unset, and `mode: full` turns it ON
+  # — the two are the same "unset" value, resolved by `mode` rather than
+  # written down twice. Set it explicitly (`true` or `false`) to pin it
+  # regardless of mode; an explicit `true` beside `mode: operator-only`
+  # is refused, the same contradiction every component in that mode
+  # refuses (see `mode`'s own comment).
+  enabled: null
+  image:
+    repository: victoriametrics/vmauth
+    # -- The floor is v1.152.0, and the chart refuses an older tag.
+    #
+    # Two reasons, and the second is the one that matters.
+    # `default_vm_access_claim` arrived in v1.147.0: without it a token
+    # that verifies but carries no `vm_access` claim falls through to the
+    # unauthorized user and is rejected, with no way to say what it may
+    # read. And in v1.147.0 through v1.151.x the values in `match_claims`
+    # were matched UNANCHORED (GHSA-f99m-22fh-qw96): a claim value of
+    # `admin` also matched `not-admin-really`, which is an authorisation
+    # bypass in exactly the mechanism this chart uses to select a user.
+    # v1.152.0 anchors them.
+    #
+    # The operator's own default image tag is older than both, so this is
+    # set explicitly rather than left to it.
+    tag: v1.152.0
+  # -- One proxy pod, unless `ha.enabled`: then at least two, which the render
+  # enforces, spread over zones softly and covered by a
+  # PodDisruptionBudget (`maxUnavailable: 1`). The proxy is stateless; a
+  # single pod would take every read and every cross-cluster write with its
+  # zone and defeat the pair behind it.
+  replicaCount: 1
+  # -- CPU request from measurement, no CPU limit, memory request == limit.
+  # See `resources.policy` and `resources` on each store below.
+  resources:
+    # CPU request: vmauth: measured p95 was a few millicores across every
+    # read; 100m keeps room for a burst of dashboard reads, each of which
+    # verifies a JWT. No CPU limit (see `resources.policy`); the memory
+    # request equals its limit.
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 512Mi
+  # -- Extra flags for vmauth. `logInvalidAuthTokens` is on by default: a
+  # rejected token that logs nothing is an access problem nobody can
+  # diagnose, and the log line carries no token material.
+  extraArgs:
+    logInvalidAuthTokens: "true"
+  # -- Paths the proxy must never forward, as regular expressions matched
+  # against the request path.
+  #
+  # `/internal/*` carries the partition and snapshot APIs, and those
+  # endpoints have their OWN query-string auth keys
+  # (`-partitionManageAuthKey`, `-snapshotAuthKey`) which OVERRIDE
+  # `-httpAuth.*` entirely: with such a key set, basic auth is not
+  # consulted at all. A route through this proxy would therefore be a
+  # route around the stores' own authentication, so there is no route.
+  # The chart refuses to render if any user's paths would reach them.
+  deniedPaths:
+    - "/internal/.*"
+    - "/-/reload"
+  # -- Read load balancing. `first_available` sends every read to the first
+  # healthy backend rather than spreading them: with a redundant pair, a
+  # query balanced onto the replica that is still replaying its buffer
+  # after a restart returns a gap, and a gap in a dashboard is read as an
+  # outage. The retry codes are the ones a backend returns while it is
+  # coming back.
+  loadBalancingPolicy: first_available
+  retryStatusCodes: [500, 502, 503]
+
+# Who may read what.
+#
+# `pkg/tenancy` in this repository renders the same principals into the
+# `vm_access` claim an issuer mints. The two shapes must agree, so the
+# `tenancy` golden case is exactly what `RenderVMAuth` produces for the
+# principals in the repository's README, and a Go test compares them.
+tenancy:
+  # -- The issuer this proxy verifies tokens against. vmauth fetches the
+  # OIDC discovery document and the keys from it. Required whenever
+  # `principals` is non-empty: without an issuer nothing verifies a
+  # signature, and a proxy that trusts an unverified token is worse than
+  # no proxy.
+  issuerUrl: ""
+  # -- The client id this proxy's own tokens are minted under, pinned
+  # into every reader's `matchClaims` as `aud`. Required whenever
+  # `principals` is non-empty.
+  #
+  # vmauth validates a token's expiry and, under OIDC discovery, its
+  # issuer. It has no audience option and never inspects `aud` on its
+  # own. So without this pin each reader below is selected by its group
+  # alone, and every unexpired token the issuer minted is admitted
+  # whatever client it was minted for: a token the same person holds for
+  # another application of the same issuer reads their namespaces here,
+  # and nothing reports it, because the token verifies and the filters
+  # apply.
+  #
+  # The claim name is `aud` and is not a value: it is the name OpenID
+  # Connect gives the claim, and a second spelling of it is a way to pin
+  # nothing while the configuration reads as though something were
+  # pinned.
+  #
+  # The value is whatever the issuer registered this proxy's client
+  # under. vmauth compiles every `matchClaims` value as a REGULAR
+  # EXPRESSION, so the chart escapes it and anchors it: a client id
+  # carrying `.`, `|` or `@` pins itself and nothing else. It is escaped
+  # rather than refused — unlike a cluster or namespace name, which this
+  # chart holds to a narrow shape — because the issuer chooses a client
+  # id and this chart does not, and a shape refusal here would lock out
+  # an estate whose issuer mints ids with dots in them. What is still
+  # refused is a value no issuer mints: one carrying whitespace or a
+  # newline.
+  #
+  # It works whether the issuer mints `aud` as a string or as a list:
+  # vmauth matches a `matchClaims` entry against an array claim element
+  # by element.
+  audience: ""
+  # -- The token claim carrying the caller's groups. It may not be `aud`,
+  # which the audience above is pinned under: both are entries in one
+  # `matchClaims` map, and one would overwrite the other.
+  claimName: groups
+  # -- OPT-IN, default off. A reader selected by the token's OWN `vm_access`
+  # claim instead of by a group: the issuer states, per person, which
+  # clusters and namespaces they may read, and this one VMUser applies it.
+  #
+  # The VMUser matches a token whose `aud` is the audience, whose `iss` is
+  # `issuerUrl` AND whose `vm_access` carries BOTH a non-empty
+  # `metrics_extra_filters` and a non-empty `logs_extra_stream_filters`
+  # (vmauth's `match_claims` reaches into the object by a dotted key). It
+  # sets NO `defaultVMAccessClaim`, so a token that does not carry the claim
+  # never reaches it: it falls to the group-matched `principals` below, and
+  # with none that match, to a plain 401 (this chart renders no unauthorized
+  # user). That is DENY BY DEFAULT: an absent or half-filled claim can never
+  # expand to "no filter" on this reader, which is what an empty
+  # `{{.MetricsExtraFilters}}` would otherwise mean.
+  #
+  # Coexistence with `principals`: vmauth tries users with MORE `match_claims`
+  # first (stable sort), first match wins. This reader carries four claims
+  # (`aud`, `iss`, and the two `vm_access` lists) against a principal's two
+  # (group, `aud`), so a token WITH a complete `vm_access` uses this reader
+  # whatever groups it also carries, and a token without keeps the group
+  # readers. Remove the principals once every token carries the claim.
+  #
+  # The metrics lists are OR-ed by the store; the logs list must be ONE
+  # stream filter (`_stream:{a or b}`), because the store ANDs several. Traces
+  # behave as for a principal: the route renders only with a trace store, and
+  # then needs `allowUnfilteredTraceReads`, because no filter reaches it.
+  vmAccessReader:
+    enabled: false
+    # -- The `aud` this reader pins. Empty means `tenancy.audience`.
+    audience: ""
+    # -- Which of `metrics`, `logs`, `traces` it gets; unset means all three.
+    routes: []
+  # -- OPT-IN, default off. `tenancy-authz`: the Envoy external authorisation
+  # service that turns a person's GROUPS into the `vm_access` claim the
+  # reader above applies.
+  #
+  # Why it exists. vmauth selects ONE user per token by `matchClaims`, so a
+  # person holding two groups reads whatever the first matching group allows
+  # and never both; and it can template filters only from a `vm_access`
+  # claim, which the identity provider does not (and should not) mint. This
+  # service sits in front of vmauth on the read route. For each request it
+  # verifies the person's token against `upstreamIssuer`, finds EVERY
+  # principal in `tenancy.principals` whose group the token holds, unions
+  # their grants, and answers with an `Authorization` header carrying a
+  # short-lived token of its own whose `vm_access` is that union. vmauth then
+  # trusts ONLY this service's issuer for that claim, and stays the point
+  # that enforces it. docs/tenancy-authz.md has the flow, the trust model and
+  # the failure modes.
+  #
+  # The principals are the SAME `tenancy.principals` the VMUsers render
+  # from, so the two cannot drift. A principal belongs to the people's path
+  # when its audience (its own `audience`, else `tenancy.audience`) is one of
+  # `personAudiences`; the others (a workload's own audience) are not in the
+  # service's configuration at all, and a token for them is passed through
+  # unchanged to vmauth's own readers.
+  #
+  # Requires `tenancy.vmAccessReader.enabled`, which this switch re-points at
+  # the service's issuer, and a `securityPolicy.targetRefs` naming the
+  # HTTPRoute(s) the people read through (the route is rendered outside this
+  # chart).
+  authz:
+    enabled: false
+    image:
+      repository: ghcr.io/truvity/observability/tenancy-authz
+      # -- Empty: this chart's own appVersion, the release that built both.
+      tag: ""
+      digest: ""
+      pullPolicy: IfNotPresent
+    # -- Two, so one pod restarting does not turn every dashboard into a
+    # 5xx: the service is on the read path and fails closed.
+    replicas: 2
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 64Mi
+    nodeSelector: {}
+    tolerations: []
+    priorityClassName: ""
+    # -- The identity provider people sign in with. Empty means
+    # `tenancy.issuerUrl`.
+    upstreamIssuer: ""
+    # -- The `aud` values that mark a token as a person's. Empty means
+    # `[tenancy.audience]`.
+    personAudiences: []
+    # -- The `aud` of the tokens the service mints, and the one the reader
+    # pins. It may not be a person audience.
+    mintedAudience: vmauth
+    # -- How long a minted token lives at most (it never outlives the
+    # person's own). 30s to 1h.
+    tokenTTL: 5m
+    signingKey:
+      # -- Where the ES256 signing key comes from. The service only READS it,
+      # from a mounted Secret (file `privateKey`); it makes no key and holds no
+      # credential to the cluster API.
+      #
+      # `eso` (default): External Secrets Operator generates it. The chart
+      # renders a `generators.external-secrets.io/v1alpha1` SSHKey (ECDSA,
+      # 256 bits) and an `external-secrets.io/v1` ExternalSecret with
+      # `refreshPolicy: CreatedOnce`, which creates the Secret
+      # `<release>-tenancy-authz-signing` once and never changes it. Needs
+      # the operator and its CRDs on the cluster.
+      #
+      # `existingSecret`: a Secret you own, named in `existingSecret`, holding
+      # the key in the file `privateKey` (OpenSSH, PKCS#8 or SEC1 PEM; P-256).
+      #
+      # Rotation, either way: replace the Secret's content (with `eso`, delete
+      # the Secret: the operator recreates it with a new key). The kubelet
+      # refreshes the mount and the service picks the new key up with no
+      # restart: it PUBLISHES it at once and starts SIGNING with it after
+      # seven minutes (vmauth refetches the key set on a five-minute timer
+      # and never on an unknown key id), and keeps the old one published for
+      # the life of the tokens it signed. See docs/tenancy-authz.md.
+      source: eso
+      # -- The Secret, when `source: existingSecret`.
+      existingSecret: ""
+    # -- The clusters the trace store serves. The trace store cannot be
+    # filtered, so a person reads traces only with allNamespaces on EVERY
+    # cluster listed here; anyone narrower gets 403 on the trace endpoints.
+    # Empty means the union of the clusters named by any person principal's
+    # grants.
+    traceClusters: []
+    # -- Retire the per-principal VMUsers of PERSON principals (those whose
+    # audience, their own or `tenancy.audience`, is in `personAudiences`).
+    # With the service on, a person is granted through it: the gateway
+    # exchanges their token for a `vm_access` one. The group readers still
+    # match a person's raw token sent straight to vmauth, which is a second
+    # path to the same data and can drift from the first. True stops
+    # rendering them; the principals stay in the service's configuration.
+    # Kept: the vm_access reader, and every principal on another audience
+    # (a workload's or a machine's), `readers`, `alertReaders`, `writers`.
+    # Needs `enabled` and `securityPolicy.enabled` (the chart must render the
+    # policy that puts the route behind the service). Default false: a
+    # consumer whose people also reach vmauth another way is not broken.
+    retireGroupReaders: false
+    securityPolicy:
+      # -- Annotations on the SecurityPolicy. The policy fails closed, so it
+      # must apply AFTER the Deployment, ExternalSecret and Service (a read
+      # through the route is refused until the pods are Ready). The default
+      # is an Argo CD sync wave after them; the other objects of this
+      # component sit in wave 0. Set the key to null to drop it.
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+      # -- Render the Envoy Gateway `SecurityPolicy` that attaches the service
+      # to the read route. Off, the consumer renders its own and points
+      # `extAuth.http` at this chart's Service.
+      enabled: true
+      # -- The HTTPRoutes in this namespace the people read through:
+      # `[{kind: HTTPRoute, name: <route>}]`. Required while `enabled`.
+      targetRefs: []
+    networkPolicy:
+      # -- Who may call the check endpoint: the Envoy Gateway proxy pods that
+      # serve the route. `NetworkPolicyPeer` objects, passed through
+      # untouched. Required while `networkPolicy.enabled`: the service fails
+      # closed, so a policy that hides it from Envoy is an outage for every
+      # person, and there is no default that is right for an estate this
+      # chart cannot see.
+      gatewayFrom: []
+  # -- The keys the filters select on, per signal.
+  #
+  # The scoping key is the CLUSTER and the NAMESPACE, under OpenTelemetry's
+  # names spelled the way each store can carry them: on metrics a label
+  # cannot hold a dot, and on logs the namespace key is the container-log
+  # agent's own native field, because that agent cannot rename a field and
+  # the gateway can — so the gateway yields and writes the same spelling.
+  # These defaults are what charts/observability-emitters stamps and what
+  # `pkg/tenancy` defaults to; `tests/agreement_test.go` reads them back
+  # out of that chart's rendered manifest and fails on any drift. They are
+  # values so an estate whose collectors were not built here can state
+  # what its telemetry actually carries — a filter selecting on one name
+  # against telemetry labelled with another returns an empty result rather
+  # than an error, which reads as "no data" rather than as a mistake.
+  #
+  # The environment tier (`deployment_environment_name`) is deliberately
+  # not among them: two clusters can share a tier, so a filter on it would
+  # select both. It rides on every signal for dashboards and is never a key.
+  clusterLabel: k8s_cluster_name
+  namespaceLabel: k8s_namespace_name
+  logsClusterField: k8s.cluster.name
+  logsNamespaceField: kubernetes.pod_namespace
+  # -- The name THIS install's own cluster is known by. Optional, and
+  # unrelated to whether this install runs a store at all.
+  #
+  # It exists only so `tenancy.writers[].cluster` has something to be
+  # refused against: a writer pinned to THIS value would be pinning
+  # itself to the same identity the unscoped, local writer already has —
+  # not a remote cluster's identity, which is the only thing
+  # `writers[].cluster` is for. Left unset (the default), that one
+  # refusal does nothing; every other writer check still applies.
+  ownCluster: ""
+  # -- Admit the trace read route although nothing can scope it.
+  #
+  # The proxy enforces a grant by substituting the principal's filter
+  # into the route it forwards on. VictoriaTraces' Jaeger and Tempo
+  # select APIs accept no query argument to substitute it into: their
+  # handlers take a tenant id from headers, `hidden_fields_filters`
+  # (which hides FIELDS from a result, not rows) and
+  # `allow_partial_response`, and nothing else. There is therefore no
+  # way, through this proxy, to give one principal a narrower view of
+  # traces than another.
+  #
+  # So with a trace store and `principals` both set, the chart refuses
+  # to render until this is `true`. Setting it says, in a place people
+  # read: **every principal who can reach the proxy reads every
+  # namespace's spans on every cluster.** Metrics and logs are unaffected by it; it admits
+  # the trace route and nothing else.
+  #
+  # The alternative — rendering the trace route anyway, because it looks
+  # like the other two — is the failure this value exists to prevent: a
+  # route that carries a grant nobody applies is indistinguishable, from
+  # the outside, from one that does.
+  allowUnfilteredTraceReads: false
+  # -- Admit `/api/v1/metadata` on the metrics read route.
+  #
+  # The endpoint returns every metric NAME in this store with its type
+  # and help string, and no filter reaches it -- measured against the
+  # store, an `extra_filters` naming a namespace that matches nothing
+  # returns the same body as no filter at all. So with this on, every
+  # principal learns which metrics exist, whatever their grant says. On
+  # an install whose grants are all `allNamespaces` that is nothing they
+  # could not already query; on one with per-namespace grants it is a
+  # list of the components and products another tenant runs.
+  #
+  # Its three siblings are admitted by nothing, because what they leak is
+  # per-principal rather than bounded: `/status/active_queries` and
+  # `/status/top_queries` return other principals' query TEXT, and
+  # `/status/metric_names_stats` returns names with per-tenant counts.
+  #
+  # Off by default, and the cost of off is visible rather than hidden:
+  # Grafana's Prometheus-family datasources ask for this endpoint to put
+  # descriptions on metric names, and write a 401 into their own logs
+  # when the proxy does not route it. The query builder keeps working --
+  # metric names come from `/label/__name__/values`, which IS filtered --
+  # and only the descriptions are missing. An operator reading that 401
+  # should find this value rather than a mystery.
+  allowUnfilteredMetricMetadata: false
+  # -- One entry per named population. Each renders one vmauth user,
+  # selected by `group` matched against `claimName`.
+  #
+  #   principals:
+  #     - group: example:k8s:viewer
+  #       grants:
+  #         - cluster: example-cluster
+  #           allNamespaces: true
+  #     - group: example:example-app:deployer
+  #       grants:
+  #         - cluster: example-cluster
+  #           namespaces: [example-app]
+  #
+  # A grant is namespaces ON a cluster. A project, a team or a product is
+  # not a label anywhere in the telemetry: it is a derivation from a name
+  # to a list of namespaces that lives with whoever writes these grants,
+  # so adding a namespace to a project is a visible edit here rather than
+  # a label somebody forgets. `namespaces` and `allNamespaces` are
+  # mutually exclusive and one is required: an empty list is refused
+  # rather than read as "everything", because a project that expands to
+  # no namespaces is the likeliest way a grant widens by accident. Names
+  # must match the plain-name shape `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` —
+  # they are interpolated into a filter expression, so a name carrying
+  # `|` or `.*` would widen the grant it appears in, and such a name is
+  # refused rather than escaped.
+  #
+  # A role held under one group PER CLUSTER is one principal with every
+  # spelling in `groups` (and a `name`, since there is no single group to
+  # name it after) and one grant per cluster:
+  #
+  #   principals:
+  #     - name: k8s:viewer
+  #       groups: [cluster-a:k8s:viewer, cluster-b:k8s:viewer]
+  #       grants:
+  #         - {cluster: cluster-a, allNamespaces: true}
+  #         - {cluster: cluster-b, allNamespaces: true}
+  #
+  # A token carrying ANY listed group selects it and reads EVERY grant, so
+  # this is right only while every holder of one spelling holds them all.
+  # It is also what makes a multi-cluster reader work at all: vmauth takes
+  # the FIRST user a token matches, never a union, so one principal per
+  # cluster shows a holder of every group one cluster.
+  #
+  # Two more fields, both optional, both per-principal:
+  #
+  #   principals:
+  #     - group: example:url-shortener:metrics-gate
+  #       audience: metrics-gate
+  #       routes: [metrics]
+  #       metricsQueryOnly: true
+  #       grants:
+  #         - cluster: example-cluster
+  #           namespaces: [example-app]
+  #
+  # `audience` overrides `tenancy.audience` for THIS principal's own
+  # `matchClaims.aud` — a machine reader minted under its own client id
+  # rather than the one people's Grafana tokens carry, for instance. Unset
+  # falls back to `tenancy.audience`, which stays required regardless.
+  # Escaped and anchored exactly the same way, and refused under the same
+  # terms: whitespace, a newline, or being present and empty.
+  #
+  # `routes` narrows which of the three read routes this principal gets
+  # at all — unset renders all three, exactly as before (a trace route
+  # among them still needs a trace store and
+  # `tenancy.allowUnfilteredTraceReads`, unaffected by this). `[metrics]`
+  # is a reader with no logs or traces `targetRef` in its `VMUser` at all,
+  # not merely an unused filter on those routes. A restriction that would
+  # render no route — an empty list, or `traces` alone with no trace
+  # store enabled — is refused rather than installed as a reader who can
+  # read nothing.
+  #
+  # `metricsQueryOnly` narrows the metrics route itself, when this
+  # principal has one, to exactly `/prometheus/api/v1/query` and
+  # `/prometheus/api/v1/query_range` — no series, labels, label values,
+  # tsdb status or vmui. The shape a verification gate needs and nothing
+  # past it. Refused if `routes` excludes `metrics`: there would be
+  # nothing left to narrow.
+  #
+  # `vmalertAPI: true` adds the metrics vmalert's alerts and rules to this
+  # principal: `/prometheus/vmalert/api/v1/alerts` and `.../rules`,
+  # forwarded to vmalert as `/vmalert/api/v1/...` (the paths a stock
+  # VictoriaMetrics MCP server asks for). UNFILTERED — vmalert has no
+  # per-namespace concept, so the principal's grants do not scope what it
+  # reads here — hence it requires `allowUnfilteredAlertReads`, exactly
+  # as `alertReaders` does. Refused if `routes` excludes `metrics`, or
+  # `vmalert.enabled` is false.
+  principals: []
+  # -- The writers: collectors and agents that push, authenticated by a
+  # bearer token rather than by a person's identity.
+  #
+  #   writers:
+  #     - name: metrics-agent
+  #       tokenSecret:
+  #         name: example-writer-token
+  #         key: token
+  #       destinations: [metrics]
+  #
+  # The token is the caller's: this chart takes the NAME of a Secret and
+  # never a value. A writer may not read — its paths are the write paths
+  # of the destinations it names, and nothing else.
+  #
+  # One more field, optional:
+  #
+  #   writers:
+  #     - name: stage-remote
+  #       tokenSecret: {name: stage-writer-token, key: token}
+  #       destinations: [metrics, logs, traces]
+  #       cluster: stage
+  #
+  # `cluster` FORCES every series, log record and span this writer sends
+  # to belong to that cluster, overriding whatever `k8s_cluster_name` (or
+  # the log/trace equivalent) the writer's own collector config claims —
+  # a bearer token alone proves nothing about which cluster it actually
+  # ran on, so without this a writer could claim to be any cluster at
+  # all. It does this per destination, by forcing a query argument onto
+  # the write route:
+  #
+  #   - metrics: `extra_label=<tenancy.clusterLabel>=<cluster>` on
+  #     `/api/v1/write` and `/opentelemetry/v1/metrics`. VictoriaMetrics
+  #     appends this label to a series AFTER the ones the client sent and
+  #     then keeps only the LAST value for a duplicate label name when it
+  #     indexes the series — so it overrides, it does not sit beside a
+  #     spoofed one as a second, ignored label. Verified against the
+  #     pinned vmsingle version's own source and confirmed live: a
+  #     series sent with `k8s_cluster_name=prod` through a writer pinned
+  #     to `stage` is stored, and queries back, as `k8s_cluster_name=stage`.
+  #   - logs: `extra_fields=<tenancy.logsClusterField>=<cluster>` on
+  #     every log write path. VictoriaLogs documents this as an
+  #     override: "if the log entry contains fields from extra_fields,
+  #     then they are overwritten by the values specified in
+  #     extra_fields." Confirmed live the same way.
+  #   - traces: `extra_fields=resource_attr:<tenancy.logsClusterField>=<cluster>`
+  #     on the OTLP trace write path. VictoriaTraces stores every OTLP
+  #     resource attribute as a field named `resource_attr:<name>` —
+  #     confirmed by reading a live ingest back, since neither this nor
+  #     the override behaviour (same "overwritten by extra_fields"
+  #     contract as logs) is documented with the prefix spelled out
+  #     anywhere public. Forcing the bare attribute name instead of the
+  #     prefixed one would add a second, inert field beside the real one
+  #     and enforce nothing — confirmed live that leaving the prefix off
+  #     does exactly that.
+  #
+  # Unset (the default) is the unscoped, LOCAL writer's shape: a
+  # collector writing to the store beside it, exactly as
+  # charts/observability-emitters has always done, and it renders
+  # identically to how it always has — no `query_args` on its
+  # `targetRefs` at all. `cluster` is for a REMOTE writer, one whose
+  # collector runs on a different cluster than this install.
+  #
+  # Refused: a `cluster` that is not a plain name (the same shape a
+  # grant's `cluster` is held to, since it is interpolated the same way);
+  # a `cluster` equal to `tenancy.ownCluster` — that identity belongs to
+  # the unscoped, local writer, not to a second, pinned one; two writers
+  # naming the same `cluster`; and two writers sharing one `name` (the
+  # second `VMUser` this chart would render collides with the first's
+  # object name, and the operator drops all but one with no error outside
+  # `status.currentSyncError`).
+  writers: []
+  # -- The metrics readers: a static bearer token that may QUERY this
+  # install's metrics store, scoped by a grant, for a machine rather than
+  # a person — the first use is another install's
+  # `vmalert.remoteEvaluators` entry evaluating its rules against this
+  # store (docs/notifications.md, "Evaluating another store's rules").
+  #
+  #   readers:
+  #     - name: central-evaluator
+  #       tokenSecret:
+  #         name: example-metrics-read-token
+  #         key: token
+  #       grants:
+  #         - cluster: example-cluster
+  #           allNamespaces: true
+  #
+  # The token is the caller's: this chart takes the NAME of a Secret and
+  # never a value. `grants` has the shape a principal's has and is
+  # enforced the way a principal's is, by a filter vmauth forces onto the
+  # route — here as literal `extra_filters` query arguments (one per
+  # grant, ORed by the store), because a static token has no claim to
+  # substitute from. A reader gets `/prometheus/api/v1/query` and
+  # `/prometheus/api/v1/query_range` and nothing else: no series, labels,
+  # tsdb status or vmui, no write route, no logs, no traces, no alerts.
+  # An empty grant list is refused; "everything on a cluster" is
+  # `allNamespaces: true`, written out. Needs the proxy (`mode: full`,
+  # vmauth rendered); two readers sharing a `name` are refused.
+  readers: []
+  # -- Admit the alerts-reader route although nothing can scope it.
+  #
+  # vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster
+  # concept to filter on — it lists every active alert this install's
+  # METRICS vmalert is evaluating, cluster-wide, the same "nothing
+  # scopes this route" shape `allowUnfilteredTraceReads` already exists
+  # for. So with a metrics vmalert enabled and `alertReaders` both set,
+  # the chart refuses to render until this is `true`: **every reader
+  # named below reads every active alert on this install.** It admits
+  # the alerts route and nothing else — the stores' own read routes are
+  # unaffected.
+  allowUnfilteredAlertReads: false
+  # -- Bearer-token readers of vmalert's own `/api/v1/alerts` — a
+  # different shape from `principals` (a person's OIDC identity, scoped
+  # per namespace) and from `writers` (a bearer token, write-only): this
+  # is a bearer token that may READ one route with nothing to scope it
+  # by, for a caller outside the estate's own issuer entirely — the
+  # status box pulling the deadman and the per-company signal off this
+  # install's own alerting state (docs/statusbox.md "internal → status,
+  # pulled").
+  #
+  #   alertReaders:
+  #     - name: statusbox
+  #       tokenSecret:
+  #         name: example-alerts-read-token
+  #         key: token
+  #
+  # Only the METRICS vmalert is routed to (see vmalert.watchdog's own
+  # doc comment: the Watchdog rule is always evaluated there). A rule
+  # that needs the LOGS alerter's own active-alert state is not reachable
+  # through this route yet — nothing in this repository writes one today
+  # (docs/statusbox.md, "internal → status, pulled").
+  alertReaders: []
+
+# -- MIRROR: the stack's `vmalert.enabled` / `alertmanager.enabled`: whether the
+# routes to the vmalert API and to Alertmanager have something behind them.
+# Null follows `mode`, as in the stack.
+vmalert:
+  enabled: null
+alertmanager:
+  enabled: null
+
+# -- MIRROR: the stack's `storeCredentials`; the vmalerts authenticate to the
+# stores with it.
+storeCredentials:
+  secretName: observability-store-credentials
+  usernameKey: username
+  passwordKey: password
+
+# -- MIRROR: the stack's `stores` (a store this install does not run itself).
+stores:
+  metrics:
+    url: ""
+  logs:
+    url: ""
+  traces:
+    url: ""
+
+# Network policies.
+#
+# MIRROR, reduced: the three keys of the stack's `networkPolicy` the proxy's
+# own policy and tenancy-authz read. The stores', vmalert's and karma's
+# policies stay with the stack (`writersFrom`, `clientsFrom`, `karmaFrom`
+# are its keys, not declared here).
+networkPolicy:
+  enabled: true
+  # -- Who may reach the proxy. Empty means every pod in the release's own
+  # namespace; an estate whose Grafana or console lives elsewhere adds its
+  # namespace here. Entries are `NetworkPolicyPeer` objects, passed through.
+  proxyFrom: []
+  # -- Who may scrape the proxy's config-reloader port. Empty means the metrics
+  # agent charts/observability-emitters renders (`app.kubernetes.io/name:
+  # vmagent`) in the release's own namespace. A non-empty list REPLACES that
+  # default.
+  scrapeFrom: []
+
+# -- MIRROR: the few keys of the stack's subcharts this chart reads: whether a
+# store is on (the trace routes) and the store Services' names. The rest of
+# those sections is the stack's.
+victoria-metrics-k8s-stack:
+  enabled: true
+  vmsingle:
+    enabled: true
+victoria-logs-single:
+  enabled: true
+victoria-traces-single:
+  enabled: true

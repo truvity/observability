@@ -25,6 +25,7 @@ vmalert and karma, or the pair splits and pages twice.
 */ -}}
 {{- define "observability-stack.validate" -}}
 {{- include "observability-stack.validate.alerting" . -}}
+{{- include "observability-stack.validate.door" . -}}
 {{- include "observability-stack.validate.mode" . -}}
 {{- include "observability-stack.validate.ha" . -}}
 {{- include "observability-stack.validate.retention" . -}}
@@ -2249,6 +2250,26 @@ first; this is the same check for a render that bypasses the schema).
 {{- end -}}
 {{- if and (eq $src "chart") (ne (.Values.mode | default "full") "full") -}}
 {{- fail (printf "observability-stack: `alerting.source` is \"chart\" with `mode: %s`. Only a `mode: full` install renders the vmalerts, Alertmanager, karma, the Watchdog rule and the self-alerts, so there is nothing to hand over here. Remove `alerting.source` (or set it to \"stack\"), and install charts/observability-alerting only beside a full install." (.Values.mode | default "full")) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`door.source: chart` hands the Door plane (the vmauth proxy, its VMUsers,
+tenancy-authz with its SecurityPolicy, and the proxy's NetworkPolicy) to
+charts/observability-proxy (docs/adoption.md, 0.81.0). Only a `mode: full`
+install renders the Door, so a leftover `chart` elsewhere is a mistake that
+would read as a decision. The key's value is also the only thing that stops
+this chart rendering the objects the other chart owns, so a misspelling must
+not fall through to `stack` (the schema's enum refuses it first; this is the
+same check for a render that bypasses the schema).
+*/}}
+{{- define "observability-stack.validate.door" -}}
+{{- $src := (.Values.door).source | default "stack" -}}
+{{- if not (has $src (list "stack" "chart")) -}}
+{{- fail (printf "observability-stack: `door.source` is %q; it must be \"stack\" (this chart renders the Door plane) or \"chart\" (charts/observability-proxy does)." $src) -}}
+{{- end -}}
+{{- if and (eq $src "chart") (ne (.Values.mode | default "full") "full") -}}
+{{- fail (printf "observability-stack: `door.source` is \"chart\" with `mode: %s`. Only a `mode: full` install renders the proxy, its VMUsers and tenancy-authz, so there is nothing to hand over here. Remove `door.source` (or set it to \"stack\"), and install charts/observability-proxy only beside a full install." (.Values.mode | default "full")) -}}
 {{- end -}}
 {{- end -}}
 
