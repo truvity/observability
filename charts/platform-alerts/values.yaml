@@ -750,45 +750,6 @@ groups:
     severity: critical
     keepClusterLabel: false
 
-  # Infrastructure-as-code drift (Pulumi).
-  #
-  # Off by default. A scheduled job previews every stack and PUSHES two
-  # gauges per stack, once per run (OTLP, through the store's external
-  # ingest, docs/external-ingest.md), so these rules read the latest sample
-  # over `lookback` instead of an instant value:
-  #   pulumi_stack_drift_changes{scope, stack}  planned creates + updates +
-  #                                              deletes + replaces; 0 when clean;
-  #                                              sent only when the preview worked
-  #   pulumi_stack_diff_error{scope, stack}     1 when the preview itself failed,
-  #                                              0 otherwise; sent for every stack
-  # The labels are the program directory (`scope`) and the stack name, so
-  # cardinality is the number of stacks.
-  pulumiDrift:
-    enabled: false
-    # -- How far back the latest sample counts. 36h is a nightly job plus a
-    # late run; a longer window would keep an old value alive after the job
-    # stopped.
-    lookback: 36h
-    # -- How long the gauge must stay above zero before firing. Two nights:
-    # one is a change merged and not yet applied, two is a decision nobody
-    # took.
-    for: 2d
-    severity: warning
-    # -- Severity of `PulumiDiffFailing`: a stack nobody can preview.
-    errorSeverity: warning
-    # -- `PulumiDriftSignalStale` fires for a stack last seen longer ago
-    # than this. Equal to `lookback` by default: past it the two rules above
-    # have gone blind.
-    staleAfter: 36h
-    # -- How far back the deadman looks for a stack it should have seen.
-    staleLookback: 7d
-    staleSeverity: warning
-    # -- A runbook link for all three alerts, instead of the top-level
-    # `runbookBaseUrl` + the alert's name. For an estate whose runbook for
-    # this signal is one page. Empty keeps the convention.
-    runbookUrl: ""
-    keepClusterLabel: false
-
   # -- THE VENDORED UPSTREAM RULE PACK (restructure step 4). OFF by default; see
   # upstream/PIN.yaml for the pinned sources and docs/reference.md for the keys.
   #

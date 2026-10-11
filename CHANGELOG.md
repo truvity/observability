@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Removed** (**Breaking**) `platform-alerts`: `groups.pulumiDrift` and its three alerts (`PulumiDriftDetected`, `PulumiDiffFailing`, `PulumiDriftSignalStale`), with the `pulumi_stack_drift_changes` and `pulumi_stack_diff_error` gauges they read. The scheduled job that pushed them no longer exists, so nothing feeds the rules. The schema refuses unknown keys, so a values file that still sets `groups.pulumiDrift` (even `enabled: false`) fails to render after the bump: delete the key first. Renders that never enabled the group are unchanged.
+
 ## v0.78.1
 
 - Dependency updates.

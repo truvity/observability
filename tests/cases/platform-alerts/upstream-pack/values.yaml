@@ -25,7 +25,6 @@ groups:
   certificates: {enabled: false}
   restarts: {enabled: false}
   workloadAbsent: {enabled: false}
-  pulumiDrift: {enabled: false}
   upstream:
     enabled: true
     alertmanagerNamespace: example-observability

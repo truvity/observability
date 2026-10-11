@@ -449,6 +449,16 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### `platform-alerts` drops the Pulumi drift group (0.79.0)
+
+**`groups.pulumiDrift` is removed.** Before the bump, delete the
+`pulumiDrift` key from your `platform-alerts` values, wherever the group
+sits (`groups.pulumiDrift`, enabled or not): the schema now refuses it,
+so the chart fails to render rather than ignoring it. If you had the
+group enabled, the three alerts (`PulumiDriftDetected`,
+`PulumiDiffFailing`, `PulumiDriftSignalStale`) disappear from the
+render; nothing else moves.
+
 ### 0.73.0 → 0.74.0
 
 **The old LogsQL marker `observability.rule-type: vlogs` and
