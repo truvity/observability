@@ -170,7 +170,10 @@ spec:
   itself in the cluster's folder with `folderUID: <cluster>` (a uid does not depend on the
   dashboard's namespace), and sets `allowCrossNamespaceImport:
   true`, because the `Grafana` lives in the platform namespace and the
-  dashboard in the component's. This label, the folder uid rule and the flag are
+  dashboard in the component's. A component that also renders its own
+  `GrafanaFolder` (a subfolder, `parentFolderUID: <cluster>`) sets the same flag
+  on it: the operator skips a folder in another namespace than the `Grafana`
+  without it, and the dashboard then fails with 403. This label, the folder uid rule and the flag are
   a component-facing contract, and move [contracts.md](../contracts.md) to 1.2 when
   the chart is stable. Decision Q6.
 - **The cluster's folder.** `GrafanaFolder` titled and uid'd after the cluster
@@ -319,7 +322,7 @@ credential to mint, store, rotate and leak; see
 [cluster-datasources.md](cluster-datasources.md)).
 
 **Q6. The component-facing selector: the label** `observability.truvity.io/grafana: shared`,
-with `folderUID: <cluster>` and `allowCrossNamespaceImport: true`. A mutating
+with `folderUID: <cluster>` and `allowCrossNamespaceImport: true` (on a component's own `GrafanaFolder` too). A mutating
 default is reconsidered only if the pilot shows the three fields written badly.
 
 **Q7. The VictoriaMetrics operator** stays `observability-stack` with
