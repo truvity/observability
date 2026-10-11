@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.78.1
+
+- Dependency updates.
+
 ## v0.78.0
 
 - **Behaviour change** (fix) `observability-grafana` (`operatorFolders`): the reconcile Job never granted Edit to an operator user that had already signed in through `workloadAuth`. Grafana syncs that user from the token (`isExternallySynced` on `/api/users/:id`) and answers a role change with 403, so the Job's `PATCH /api/org/users/:id` failed and it skipped the grant. It now reads `isExternallySynced`: for a synced user it makes no PATCH and checks the org role is `None` (what the `noRoleSubjectSuffixes` mapping sets at every sign-in), then grants Edit; a synced user whose role is not `None` fails that cluster with a log line naming the role mapping, and Edit is not granted. A local user keeps the PATCH, and a 403 on it now logs Grafana's `message`. The Job's ConfigMap script changes, so the `operator-folders` golden moves; there is no opt-out, and the previous output was the bug.
