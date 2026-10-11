@@ -323,9 +323,14 @@ func TestEvaluatorLabelRequired(t *testing.T) {
 		labelled(`{observability.truvity.io/evaluator: other-store}`, "prometheus")))
 }
 
-// A LogsQL rule is evaluated by the logs alerter only.
+// A LogsQL rule is evaluated by the logs alerter only, and a LogsQL rule
+// without `evaluator: logs` is a violation with no flag.
 func TestEvaluatorLabelLogsQL(t *testing.T) {
-	o := rulecheck.LintOptions{RequireEvaluator: true}
+	o := rulecheck.LintOptions{}
+
+	vs0 := lintLabels(t, o, labelled("{}", "vlogs"))
+	require.Len(t, vs0, 1)
+	assert.Contains(t, vs0[0].Msg, "missing")
 
 	assert.Empty(t, lintLabels(t, o, labelled(`{observability.truvity.io/evaluator: logs}`, "vlogs")))
 

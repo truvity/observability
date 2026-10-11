@@ -10,7 +10,7 @@ metric name has not been confirmed renders NOTHING, never a guess.
 
 All nineteen are MetricsQL, evaluated by the metrics vmalert
 (templates/vmalert.yaml): every counter here lives on a component's own
-/metrics endpoint, so none carries `observability.rule-type: vlogs`, and
+/metrics endpoint, so none carries `observability.truvity.io/evaluator: logs`, and
 none needs a special ruleSelector entry — the metrics alerter already
 takes everything that is not marked as LogsQL.
 

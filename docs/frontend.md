@@ -362,7 +362,7 @@ policy.
 
 ## Alerts
 
-One VMRule, `observability.rule-type: vlogs`, each group `type: vlogs`
+One VMRule, `observability.truvity.io/evaluator: logs`, each group `type: vlogs`
 (see [reference.md](reference.md): the label chooses the alerter, the type
 chooses the language). Every query starts `_time:<window>` and
 `telemetry.source:faro`: vmalert adds no time filter to a LogsQL rule. All

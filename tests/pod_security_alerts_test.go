@@ -45,7 +45,7 @@ func TestPodSecurityAlertRendersAsALogsVMRule(t *testing.T) {
 			continue
 		}
 
-		if rule.Metadata.Labels["observability.rule-type"] != "vlogs" {
+		if rule.Metadata.Labels["observability.truvity.io/evaluator"] != "logs" {
 			metrics++
 
 			continue

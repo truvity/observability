@@ -2,7 +2,7 @@
 {{- if $r.enabled }}
 {{- /*
 Issues, built on the log store. Every rule is LogsQL for the LOGS vmalert:
-the VMRule carries `observability.rule-type: vlogs` (which alerter loads it)
+the VMRule carries `observability.truvity.io/evaluator: logs` (which alerter loads it)
 and each group `type: vlogs` (which language the operator parses it as); see
 docs/reference.md. They read what the pipeline wrote: resource attributes
 `telemetry.source`, `app`, and `k8s.cluster.name` (the gateway's), record
@@ -43,7 +43,6 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "observability-rum.labels" . | nindent 4 }}
-    observability.rule-type: vlogs
     observability.truvity.io/evaluator: logs
     observability.truvity.io/rule-type: alert
 spec:

@@ -64,8 +64,8 @@ func TestOwnChartsStampOwnershipLabels(t *testing.T) {
 
 			if r.LogsQL() {
 				assert.Equalf(t, contracts.EvaluatorLogs, ev, "%s: LogsQL VMRule %s", f, res)
-				assert.Equalf(t, "vlogs", r.Labels["observability.rule-type"],
-					"%s: LogsQL VMRule %s lost the old marker while it is still accepted", f, res)
+				assert.NotContainsf(t, r.Labels, "observability.rule-type",
+					"%s: LogsQL VMRule %s still carries the removed old marker", f, res)
 			}
 		}
 	}

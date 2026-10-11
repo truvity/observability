@@ -411,10 +411,6 @@ spec:
         operator: NotIn
         values:
           - "logs"
-      - key: observability.rule-type
-        operator: NotIn
-        values:
-          - vlogs
   ruleNamespaceSelector: {}
   resources:
     limits:
@@ -481,12 +477,7 @@ spec:
         - ALL
   ruleSelector:
     matchLabels:
-      observability.rule-type: vlogs
-    matchExpressions:
-      - key: observability.truvity.io/evaluator
-        operator: NotIn
-        values:
-          - "metrics"
+      observability.truvity.io/evaluator: logs
   ruleNamespaceSelector: {}
   resources:
     limits:
