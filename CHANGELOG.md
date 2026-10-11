@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.82.0
 
 - **Added** `platform-alerts`: `watches`, a list (default empty, **no default change**: every existing golden is byte-identical) of series watches, each rendered as a VMRule of its own named `name` with one group of the same name. A rule is `kind: absent` (`absent_over_time(<metric>{<selector>}[<window>])`) or `kind: heartbeat` (that, or `increase(...) == 0`), for a series the chart has no group for (a function's own gauge, a probe's counter); `selector`, `window` (15m), `for` (5m), `labels` (all of them, `severity` required; `commonLabels` are not added) and `annotations` are the consumer's, and `evaluator` names a remote evaluator whose store holds the series. The selector text is verbatim so a consumer replacing a hand-written VMRule keeps its expressions, and with them the alerts' identity. A render with every group disabled is allowed when `watches` is set. New golden `watches`.
 - **Added** `alert-ingress`: the opt-in preset `presets/guardduty.yaml` (list it before your values; nothing renders differently without it) with the two GuardDuty mappings, `root-credential-usage` (critical) and `guardduty` (critical from finding severity 7, else warning), both stamped `source: guardduty`. A preset cannot add to a list a later values file sets, so the chart gains `presetMappings` (a map of lists, default empty, **no default change**): its lists are tried before `mappings`, in the preset names' order, and the validations cover them. New goldens `presets-preset`/`presets-explicit` hold that the preset renders exactly the mappings written out.
