@@ -10,12 +10,13 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Kargo's Warehouse watches the observability-cluster chart. The shared
-// publish-charts action pushes the `charts` list in order, so when
-// observability-cluster is last, Freight appears only after every chart of the
+// Kargo's Warehouse watches the observability-stack chart, which is installed
+// on every cluster (promoted-version verification looks it up everywhere). The
+// shared publish-charts action pushes the `charts` list in order, so when
+// observability-stack is last, Freight appears only after every chart of the
 // release is published. Moving it up would let a promotion start against a
 // release that is still half-pushed.
-func TestReleaseWorkflowPushesObservabilityClusterLast(t *testing.T) {
+func TestReleaseWorkflowPushesObservabilityStackLast(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "release.yaml"))
 	require.NoError(t, err)
 
@@ -38,11 +39,12 @@ func TestReleaseWorkflowPushesObservabilityClusterLast(t *testing.T) {
 		var charts []string
 		require.NoErrorf(t, json.Unmarshal([]byte(s), &charts), "job %q: `charts` is not a JSON list", name)
 		require.NotEmptyf(t, charts, "job %q: `charts` is empty", name)
-		require.Equalf(t, "observability-cluster", charts[len(charts)-1],
-			"job %q: the last chart pushed is %q, but it must be observability-cluster: Kargo's Warehouse "+
-				"watches that chart and publish-charts pushes in list order, so the Freight appears only "+
-				"once every chart is published. Put observability-cluster last in `charts:` of "+
-				".github/workflows/release.yaml.", name, charts[len(charts)-1])
+		require.Equalf(t, "observability-stack", charts[len(charts)-1],
+			"job %q: the last chart pushed is %q, but it must be observability-stack: Kargo's Warehouse "+
+				"watches this chart and publish-charts pushes in list order, so the Freight appears only "+
+				"once every chart is published; it must be pushed last AND be installed on every cluster, "+
+				"so promoted-version verification finds it everywhere. When R4 dissolves the stack, move "+
+				"this to observability-operator. Put it last in `charts:` of .github/workflows/release.yaml.", name, charts[len(charts)-1])
 	}
 	require.True(t, found, "no job in release.yaml passes `charts:`; this test would pass vacuously")
 }

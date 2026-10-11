@@ -32,10 +32,12 @@ jobs:
       # (see .goreleaser.yaml) and cuts the GitHub release + changelog; every chart below is then
       # packaged at the tag's version and pushed to
       # oci://ghcr.io/truvity/charts/<name>.
-      # Keep observability-cluster LAST. Kargo's Warehouse watches that chart, and the
-      # shared publish-charts action pushes in list order, so the Freight appears only
-      # once every chart is published. tests/release_chart_order_test.go enforces it.
-      charts: '["observability-crds", "observability-emitters", "observability-stack", "platform-alerts", "alert-ingress", "observability-dashboards", "observability-grafana", "observability-mcp", "observability-rum", "observability-projects", "observability-portal", "observability-alerting", "observability-cluster"]'
+      # Keep observability-stack LAST. Kargo's Warehouse watches that chart, and the shared
+      # publish-charts action pushes in list order, so the Freight appears only once every
+      # chart is published. It must also be installed on every cluster, so promoted-version
+      # verification finds it everywhere. When the stack is dissolved, move this to
+      # observability-operator. tests/release_chart_order_test.go enforces it.
+      charts: '["observability-crds", "observability-emitters", "platform-alerts", "alert-ingress", "observability-dashboards", "observability-grafana", "observability-mcp", "observability-rum", "observability-projects", "observability-portal", "observability-alerting", "observability-cluster", "observability-stack"]'
       # ko names each image after its cmd directory
       # (base_import_paths in .goreleaser.yaml), so this nests them as
       # ghcr.io/truvity/observability/alert-ingress and
