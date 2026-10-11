@@ -1,0 +1,52 @@
+---
+# Source: platform-alerts/templates/watches.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: example-telemetry-absent
+  labels:
+    app.kubernetes.io/name: example-telemetry-absent
+    app.kubernetes.io/part-of: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+  annotations:
+    argocd.argoproj.io/sync-wave: "95"
+spec:
+  groups:
+    - name: example-telemetry-absent
+      rules:
+        - alert: TelemetryAbsent
+          expr: "absent_over_time(example_gauge{k8s_cluster_name=\"example-cluster\",job=\"example-job\"}[15m])"
+          for: 5m
+          labels:
+            k8s_cluster_name: example-cluster
+            service: example
+            severity: warning
+          annotations:
+            summary: example's telemetry stopped arriving
+
+---
+# Source: platform-alerts/templates/watches.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: example-heartbeat
+  labels:
+    app.kubernetes.io/name: example-heartbeat
+    app.kubernetes.io/part-of: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: example-remote
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: example-heartbeat
+      rules:
+        - alert: ExampleProbeMissing
+          expr: "absent_over_time(example_probe_runs_total{k8s_cluster_name=\"other-cluster\",job=\"example-probe\"}[15m]) or (increase(example_probe_runs_total{k8s_cluster_name=\"other-cluster\",job=\"example-probe\"}[15m]) == 0)"
+          for: 5m
+          labels:
+            k8s_cluster_name: other-cluster
+            severity: warning

@@ -9,8 +9,8 @@ time, with a fixture under tests/invalid for each.
 {{- range $name, $group := .Values.groups -}}
 {{- if $group.enabled -}}{{- $enabled = append $enabled $name -}}{{- end -}}
 {{- end -}}
-{{- if not $enabled -}}
-{{- fail "platform-alerts: every group is disabled, so this release would render no rules at all. Enable at least one group, or do not install the chart." -}}
+{{- if and (not $enabled) (not .Values.watches) -}}
+{{- fail "platform-alerts: every group is disabled, so this release would render no rules at all. Enable at least one group or a watch, or do not install the chart." -}}
 {{- end -}}
 
 {{- $storeGroups := include "platform-alerts.storeGroups" . -}}

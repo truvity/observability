@@ -1,0 +1,61 @@
+{{- /*
+Series watches (`watches`): VMRule objects of their own, one per entry, whose
+rules fire on the ABSENCE or the stalling of a series the estate names. They
+exist for the case no other group can cover: a rule on a metric the chart does
+not know (a function's own gauge, a probe's heartbeat counter) sits silent when
+the series was never sent, because an absent series never crosses a threshold.
+
+A watch is its own object, named by `name` (also the one rule group's name), so
+a consumer that used to hand-write such an object keeps its VMRule name and its
+group, and vmalert keeps the alerts' identity. The rule's `commonLabels` are
+NOT added: the watch states every label it carries (the cluster included),
+because the series it reads may belong to another cluster than the one the
+rules run on.
+
+Rule kinds:
+  absent     absent_over_time(<metric>{<selector>}[<window>])
+  heartbeat  the above, or (increase(<metric>{<selector>}[<window>]) == 0):
+             either the series is gone, or it is there and did not move.
+*/ -}}
+{{- range $w := .Values.watches }}
+{{- if not $w.rules }}
+{{- fail (printf "platform-alerts: watches[%s] has no rules." $w.name) }}
+{{- end }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ $w.name }}
+  labels:
+    app.kubernetes.io/name: {{ $w.name }}
+    app.kubernetes.io/part-of: {{ $.Chart.Name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    {{- toYaml (merge (dict "observability.truvity.io/evaluator" (default "metrics" $w.evaluator) "observability.truvity.io/rule-type" "alert") (deepCopy $.Values.ruleLabels)) | nindent 4 }}
+  {{- with $w.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: {{ $w.name }}
+      rules:
+        {{- range $r := $w.rules }}
+        {{- $sel := "" }}
+        {{- if $r.selector }}{{ $sel = printf "{%s}" $r.selector }}{{ end }}
+        {{- $series := printf "%s%s[%s]" $r.metric $sel (default "15m" $r.window) }}
+        {{- $expr := printf "absent_over_time(%s)" $series }}
+        {{- if eq (default "absent" $r.kind) "heartbeat" }}
+        {{- $expr = printf "absent_over_time(%s) or (increase(%s) == 0)" $series $series }}
+        {{- end }}
+        - alert: {{ $r.alert }}
+          expr: {{ $expr | quote }}
+          for: {{ default "5m" $r.for }}
+          labels:
+            {{- toYaml $r.labels | nindent 12 }}
+          {{- with $r.annotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+{{- end }}

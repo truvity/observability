@@ -1,0 +1,45 @@
+# Series watches: an absence rule on a gauge a function re-reports, and a
+# heartbeat rule evaluated by a remote evaluator. Every other group is off.
+clusterLabel: k8s_cluster_name
+commonLabels:
+  k8s_cluster_name: example-cluster
+groups:
+  backups: {enabled: false}
+  volumes: {enabled: false}
+  writePath: {enabled: false}
+  storeLimits: {enabled: false}
+  pendingPods: {enabled: false}
+  nodeClaims: {enabled: false}
+  probes: {enabled: false}
+  nats: {enabled: false}
+  argocd: {enabled: false}
+  eso: {enabled: false}
+  ack: {enabled: false}
+  podSecurity: {enabled: false}
+  podSecurityAudit: {enabled: false}
+  envoyRoutes: {enabled: false}
+  certificates: {enabled: false}
+  restarts: {enabled: false}
+  workloadAbsent: {enabled: false}
+  upstream: {enabled: false}
+  kargo: {enabled: false}
+  nodeMemoryPressure: {enabled: false}
+watches:
+  - name: example-telemetry-absent
+    annotations:
+      argocd.argoproj.io/sync-wave: "95"
+    rules:
+      - alert: TelemetryAbsent
+        metric: example_gauge
+        selector: 'k8s_cluster_name="example-cluster",job="example-job"'
+        labels: {severity: warning, k8s_cluster_name: example-cluster, service: example}
+        annotations:
+          summary: "example's telemetry stopped arriving"
+  - name: example-heartbeat
+    evaluator: example-remote
+    rules:
+      - alert: ExampleProbeMissing
+        kind: heartbeat
+        metric: example_probe_runs_total
+        selector: 'k8s_cluster_name="other-cluster",job="example-probe"'
+        labels: {severity: warning, k8s_cluster_name: other-cluster}

@@ -826,3 +826,26 @@ groups:
     # times the hourly active series. A store with short-lived CI workloads
     # needs a higher one. Only the factor of the expression changes.
     "vmsingle": {enabled: true, exclude: [], override: {}, churnFactor24h: 0}
+
+# -- SERIES WATCHES: one VMRule per entry, for a series the chart does not know
+# and an estate must see go missing (a function's own gauge, a probe's
+# heartbeat counter). Empty renders nothing. Each entry:
+#
+#   name        the VMRule's name and its one group's name (required)
+#   evaluator   `observability.truvity.io/evaluator` of the object; default
+#               `metrics`, or the name of a remote evaluator whose store holds
+#               the series
+#   annotations annotations of the object (an Argo CD sync wave, say)
+#   rules[]:
+#     alert       the alert's name (required)
+#     kind        `absent` (default) or `heartbeat` (absent, or did not move)
+#     metric      the series' name (required)
+#     selector    the label matchers inside the braces, verbatim, e.g.
+#                 `job="probe",namespace="x"` (empty: no braces). Verbatim,
+#                 because the text is part of the rule's identity
+#     window      look-back of the absence test, default 15m
+#     for         default 5m
+#     labels      the alert's labels, ALL of them (`severity` is required);
+#                 `commonLabels` are not added here
+#     annotations the alert's annotations
+watches: []
