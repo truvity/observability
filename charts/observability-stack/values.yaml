@@ -477,6 +477,19 @@ tenancy:
     # Empty means the union of the clusters named by any person principal's
     # grants.
     traceClusters: []
+    # -- Retire the per-principal VMUsers of PERSON principals (those whose
+    # audience, their own or `tenancy.audience`, is in `personAudiences`).
+    # With the service on, a person is granted through it: the gateway
+    # exchanges their token for a `vm_access` one. The group readers still
+    # match a person's raw token sent straight to vmauth, which is a second
+    # path to the same data and can drift from the first. True stops
+    # rendering them; the principals stay in the service's configuration.
+    # Kept: the vm_access reader, and every principal on another audience
+    # (a workload's or a machine's), `readers`, `alertReaders`, `writers`.
+    # Needs `enabled` and `securityPolicy.enabled` (the chart must render the
+    # policy that puts the route behind the service). Default false: a
+    # consumer whose people also reach vmauth another way is not broken.
+    retireGroupReaders: false
     securityPolicy:
       # -- Annotations on the SecurityPolicy. The policy fails closed, so it
       # must apply AFTER the Deployment, ExternalSecret and Service (a read

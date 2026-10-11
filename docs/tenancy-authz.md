@@ -196,6 +196,24 @@ tenancy:
 - The `kid` is the RFC 7638 thumbprint of the public key, so every replica
   names the same key the same way.
 
+## Retiring the group readers
+
+With the service on, the per-principal VMUsers of person principals still
+render and still match a person's raw token (`aud` a person audience, plus
+`groups`), so a token sent straight to vmauth works beside the path through
+the gateway: two paths to the same data that can drift. `tenancy.authz.retireGroupReaders:
+true` stops rendering those VMUsers; the principals stay in the service's
+configuration, which is what grants people access, and a raw person token sent
+to vmauth is then refused with 401. It keeps the vm-access reader and every
+principal on another audience (workloads, machines), `readers`, `alertReaders`
+and `writers`. It is refused without `tenancy.authz.enabled` and without
+`securityPolicy.enabled`: the chart must render the policy that puts the read
+route behind the service, or it cannot know people have that path. Every
+route people read through (metrics, logs, traces) must be behind the policy;
+person principals cannot narrow `routes` or set `vmalertAPI` under the service
+anyway, so no alert or rule API is served to them by a group reader that
+retirement could break. Default false.
+
 ## The cache
 
 A dashboard fires dozens of queries with one token. Minted tokens are cached

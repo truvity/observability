@@ -519,6 +519,7 @@
               "items": {"type": "string", "minLength": 1},
               "description": "The clusters the trace store serves. A person reads traces only with allNamespaces on every one of them. Empty means the union of the clusters named by any person principal's grants."
             },
+            "retireGroupReaders": {"type": "boolean", "description": "Do not render the per-principal VMUsers of person principals; tenancy-authz grants people access. Needs authz.enabled and securityPolicy.enabled."},
             "securityPolicy": {
               "type": "object",
               "additionalProperties": false,

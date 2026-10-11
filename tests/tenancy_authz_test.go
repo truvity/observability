@@ -33,6 +33,7 @@ import (
 
 const (
 	authzGolden       = "golden/observability-stack/tenancy-authz.yaml"
+	authzGoldenRetired = "golden/observability-stack/tenancy-authz-retired.yaml"
 	authzGoldenSecret = "golden/observability-stack/tenancy-authz-existing-secret.yaml"
 	authzName         = "observability-stack-tenancy-authz"
 	authzIssuer       = "http://observability-stack-tenancy-authz.default.svc:8080"
@@ -376,4 +377,32 @@ func TestTheSecurityPolicyAppliesAfterTheDeploymentItDependsOn(t *testing.T) {
 		})
 		assert.Nil(t, dig(d, "metadata", "annotations", "argocd.argoproj.io/sync-wave"), "%s stays in the default wave, ahead of the policy", kind)
 	}
+}
+
+// `tenancy.authz.retireGroupReaders`: the person principals' VMUsers are not
+// rendered (their raw token would be a second path to the same data), while
+// the service still holds every one of those principals, the workload's
+// VMUser is unchanged and the vm-access reader is still there.
+func TestRetiredGroupReadersLeaveOnlyTheServiceAndTheWorkloadReaders(t *testing.T) {
+	names := func(golden string) map[string]vmUser {
+		m := map[string]vmUser{}
+		for _, u := range readVMUsers(t, golden) {
+			m[u.Spec.Name] = u
+		}
+		return m
+	}
+	before, after := names(authzGolden), names(authzGoldenRetired)
+
+	for _, person := range []string{"k8s:viewer", "example:example-app:deployer"} {
+		assert.Contains(t, before, person, "without retirement the person's reader renders")
+		assert.NotContains(t, after, person, "retired: the person's reader must not render")
+	}
+	assert.Contains(t, after, "cluster-a:example-app:reader", "the workload's reader stays")
+	assert.Contains(t, after, "vm-access", "the minted-token reader stays")
+	assert.Equal(t, before["cluster-a:example-app:reader"], after["cluster-a:example-app:reader"],
+		"the workload's reader is byte-for-byte what it was")
+
+	// What grants people access is untouched.
+	assert.Equal(t, authzConfigOf(t, authzGolden).Principals, authzConfigOf(t, authzGoldenRetired).Principals,
+		"the service keeps every person principal")
 }
