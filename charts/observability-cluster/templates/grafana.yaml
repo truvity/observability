@@ -11,11 +11,19 @@ metadata:
     {{- include "observability-cluster.labels" . | nindent 4 }}
     {{- include "observability-cluster.instanceLabels" . | nindent 4 }}
 spec:
+  {{- if .Values.externalGrafana.auth.sluisExchange.enabled }}
+  client:
+    # The token is a file the operator reads again whenever it expires; the
+    # token sidecar of the operator pod keeps it fresh.
+    useKubeAuth: true
+  {{- end }}
   external:
     url: {{ .Values.externalGrafana.url | quote }}
+    {{- if not .Values.externalGrafana.auth.sluisExchange.enabled }}
     apiKey:
       name: {{ .Values.externalGrafana.credentials.secretName | quote }}
       key: {{ .Values.externalGrafana.credentials.key | quote }}
+    {{- end }}
     {{- if .Values.externalGrafana.caSecret.name }}
     tls:
       certSecretRef:

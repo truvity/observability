@@ -1,0 +1,9 @@
+# expect: needs grafana-operator.kubeAuth.audience
+# With the operator on, the audience of the ServiceAccount token the issuer
+# expects is a value, not a default.
+cluster: example
+grafanaOperator: {enabled: true}
+externalGrafana:
+  enabled: true
+  url: https://grafana.example.org
+  auth: {sluisExchange: {enabled: true, issuerUrl: "https://issuer.example.org"}}

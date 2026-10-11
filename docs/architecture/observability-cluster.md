@@ -300,6 +300,24 @@ service account gets Edit on its own folder only (R2.2), so the token cannot
 touch another cluster's dashboards. Those clusters set `folder.enabled: false`;
 the folder resource stays for a cluster whose token may adopt it.
 
+**Operator authentication (R2.2, E3 A): an exchanged token, not a static Secret.**
+With `externalGrafana.auth.sluisExchange.enabled`, the operator's `Grafana`
+resource sets `spec.client.useKubeAuth: true`. The operator then reads
+`/var/run/secrets/grafana.com/serviceaccount/token` again whenever it has
+expired (it treats a token as expired 30 s early, and recovers without a
+restart once the file is rewritten). A sidecar in the operator pod keeps that
+file fresh: every `refreshEvery` it posts the operator's own projected
+ServiceAccount token to the issuer's `/token` as an RFC 8693 exchange for the
+client `grafana-workload` and writes the access token with an atomic rename
+into an in-memory volume shared with the operator. Upstream's chart already
+mounts a projected token volume at that very path, so the volume is replaced,
+not added to, through a patched `kubeAuth.volume` of the vendored chart. Grafana
+accepts the access token (`[auth.jwt]`), which maps the operator's subject to
+the role None; the folder permission (Q5) is what lets it write its own
+dashboards. Rejected: a static service account token per cluster (a long-lived
+credential to mint, store, rotate and leak; see
+[cluster-datasources.md](cluster-datasources.md)).
+
 **Q6. The component-facing selector: the label** `observability.truvity.io/grafana: shared`,
 with `folderUID: <cluster>` and `allowCrossNamespaceImport: true`. A mutating
 default is reconsidered only if the pilot shows the three fields written badly.

@@ -18,6 +18,14 @@
 #   without rendering the CRDs as templates instead, so the subchart is not
 #   shipped. tests/observability_cluster_test.go fails if it comes back.
 #
+# Two small extension points are patched into the operator's Deployment
+# template afterwards (hack/patches/grafana-operator-extension-points.patch):
+# `extraContainers` (rendered through tpl) and `kubeAuth.volume` (a volume
+# source that replaces the projected token volume). Upstream offers neither,
+# and the token sidecar of observability-cluster (externalGrafana.auth) needs
+# both. With neither set the Deployment renders as upstream's. `patch` fails
+# loudly if a version bump moves the lines it touches.
+#
 # The repack is deterministic (sorted names, epoch mtime, no owners, gzip
 # without a timestamp), so running this twice yields the same bytes.
 set -euo pipefail
@@ -33,6 +41,7 @@ if [ "$chart" = observability-cluster ]; then
     work="$(mktemp -d)"
     tar -xzf "$tgz" -C "$work"
     rm -rf "$work/grafana-operator/charts/crds"
+    patch -p1 -d "$work/grafana-operator" < "$root/hack/patches/grafana-operator-extension-points.patch"
     # An emptied charts/ directory goes too: nothing else lives in it.
     rmdir "$work/grafana-operator/charts" 2>/dev/null || true
     (cd "$work" && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
