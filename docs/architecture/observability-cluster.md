@@ -173,7 +173,12 @@ spec:
   dashboard in the component's. A component that also renders its own
   `GrafanaFolder` (a subfolder, `parentFolderUID: <cluster>`) sets the same flag
   on it: the operator skips a folder in another namespace than the `Grafana`
-  without it, and the dashboard then fails with 403. This label, the folder uid rule and the flag are
+  without it, and the dashboard then fails with 403. Dashboard uids must be
+  unique across clusters: derive them from the cluster folder uid (every
+  cluster's operator writes into the one shared Grafana, where uids are global,
+  and a fixed uid fails with 403 on the second cluster). A component also puts its
+  `GrafanaFolder` in sync wave 0 and its `GrafanaDashboard` in wave 1, so the
+  folder exists first. This label, the folder uid rule and the flag are
   a component-facing contract, and move [contracts.md](../contracts.md) to 1.2 when
   the chart is stable. Decision Q6.
 - **The cluster's folder.** `GrafanaFolder` titled and uid'd after the cluster
