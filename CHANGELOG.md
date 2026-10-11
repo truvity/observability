@@ -4,6 +4,11 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change** `observability-stack` (`tenancy.authz`), `cmd/tenancy-authz`, `pkg/tenancy`: people whose access is narrower than the whole store now get **no traces**. The trace store cannot be filtered, and the `vm-access` reader serves traces to every minted token, so a person holding only a namespace group could read every tenant's spans. `tenancy-authz` now answers **403** (new outcome `forbidden_traces` on `tenancy_authz_checks_total`) when the checked path is a trace path (`pkg/tenancy` `IsTracesPath`, the `TracesRead` paths matched with the same regular expressions) and the person lacks `allNamespaces` on EVERY cluster the store serves; grants are unioned first (`Config.WholeStoreReach`), so a whole-cluster group plus a namespace group counts. People with whole-store reach keep traces, and a workload's token passes through untouched. Only an install with `tenancy.authz.enabled` is affected.
+- **Added** `observability-stack`: `tenancy.authz.traceClusters` (the clusters the trace store serves; empty means the union of the clusters named by any person principal's grants, rendered into the service's `authz.traceClusters`; an empty list in the service refuses traces to every person) and `tenancy.authz.securityPolicy.annotations`. **Default change**: the `SecurityPolicy` now carries `argocd.argoproj.io/sync-wave: "1"` by default, so Argo CD applies it after the Deployment, Service and `ExternalSecret` (wave 0); it fails closed, and applied before the pods are Ready every read through the route fails. Set the key to `null` to drop it. The new keys are in `tests/stack-keys.yaml` `fixes`; the `tenancy-authz` and `tenancy-authz-existing-secret` goldens move (the config's `traceClusters`, the checksum, the annotation). `hack/tenancy-authz-proof.sh` now asserts 403 on `/select/jaeger/api/services` for a namespace-only person and for a whole-cluster person missing a cluster, and 200 for a person with every namespace on every cluster. See docs/tenancy-authz.md.
+
 ## v0.76.1
 
 - Dependency updates.

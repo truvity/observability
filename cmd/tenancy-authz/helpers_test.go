@@ -121,6 +121,7 @@ func testConfig(upstream, own string) Config {
 				{Group: "team-a", Grants: []tenancy.Grant{{Cluster: "cluster-a", Namespaces: []string{"app-a"}}}},
 				{Group: "team-b", Grants: []tenancy.Grant{{Cluster: "cluster-a", Namespaces: []string{"app-b"}}}},
 				{Group: "ops", Grants: []tenancy.Grant{{Cluster: "cluster-b", AllNamespaces: true}}},
+				{Group: "fleet", Grants: []tenancy.Grant{{Cluster: "cluster-a", AllNamespaces: true}, {Cluster: "cluster-b", AllNamespaces: true}}},
 			},
 		},
 		Authz: AuthzConfig{
@@ -131,6 +132,7 @@ func testConfig(upstream, own string) Config {
 			TokenTTL:        5 * time.Minute,
 			Leeway:          10 * time.Second,
 			SigningKey:      SigningKeyConfig{File: "/keys/privateKey"},
+			TraceClusters:   []string{"cluster-a", "cluster-b"},
 		},
 	}
 }
@@ -165,7 +167,12 @@ func newHarness(t *testing.T) *harness {
 
 // check sends an ext_authz style request carrying the bearer token.
 func (h *harness) check(authorization string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/check/api/v1/query?query=up", nil)
+	return h.checkPath("/check/api/v1/query?query=up", authorization)
+}
+
+// checkPath is check for a chosen path (the original path follows /check).
+func (h *harness) checkPath(target, authorization string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, target, nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
 	}

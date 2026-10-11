@@ -514,11 +514,21 @@
                 "existingSecret": {"type": "string", "description": "The Secret holding the key as file privateKey, when source is existingSecret."}
               }
             },
+            "traceClusters": {
+              "type": "array",
+              "items": {"type": "string", "minLength": 1},
+              "description": "The clusters the trace store serves. A person reads traces only with allNamespaces on every one of them. Empty means the union of the clusters named by any person principal's grants."
+            },
             "securityPolicy": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
                 "enabled": {"type": "boolean"},
+                "annotations": {
+                  "type": "object",
+                  "additionalProperties": {"type": ["string", "null"]},
+                  "description": "Annotations on the SecurityPolicy. Defaults to an Argo CD sync wave after the rest of the component, because the policy fails closed."
+                },
                 "targetRefs": {
                   "type": "array",
                   "items": {

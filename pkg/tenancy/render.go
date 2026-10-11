@@ -275,6 +275,83 @@ func orDefault(v, def string) string {
 	return v
 }
 
+// clusterReach is what a set of selected principals may read on one cluster.
+type clusterReach struct {
+	all        bool
+	namespaces map[string]bool
+}
+
+// reachFor selects every principal one of the groups selects (compared
+// exactly, never as a pattern) and merges their grants per cluster. It
+// returns the selected principals' labels, empty when none is selected,
+// and the merged reach. ClaimForGroups and WholeStoreReach both read it, so
+// the two cannot disagree about what a set of groups holds.
+func (c Config) reachFor(groups []string) ([]string, map[string]*clusterReach) {
+	held := make(map[string]bool, len(groups))
+	for _, g := range groups {
+		held[g] = true
+	}
+
+	byCluster := map[string]*clusterReach{}
+	var matched []string
+
+	for _, p := range c.Principals {
+		selected := false
+		for _, g := range p.groupList() {
+			if held[g] {
+				selected = true
+				break
+			}
+		}
+		if !selected {
+			continue
+		}
+		matched = append(matched, p.label())
+		for _, g := range p.Grants {
+			r := byCluster[g.Cluster]
+			if r == nil {
+				r = &clusterReach{namespaces: map[string]bool{}}
+				byCluster[g.Cluster] = r
+			}
+			if g.AllNamespaces {
+				r.all = true
+			}
+			for _, ns := range g.Namespaces {
+				r.namespaces[ns] = true
+			}
+		}
+	}
+	return matched, byCluster
+}
+
+// WholeStoreReach reports whether a caller holding the given groups may
+// read EVERY namespace on EVERY one of the given clusters: some selected
+// principal grants allNamespaces on each of them. The clusters are the ones
+// the store serves.
+//
+// It is the question the trace store forces. Its select APIs accept no
+// filter (see TracesRead), so a caller can be given all of its spans or
+// none; narrower than the whole store means none. A caller who holds a
+// whole-cluster group AND a namespace group has whole-store reach: grants
+// are unioned, as in ClaimForGroups. Namespace grants never add up to a
+// cluster, however many are listed.
+//
+// An empty cluster list is false: with nothing named as served, nobody can
+// be shown to see all of it, and the safe answer to a question about
+// unfilterable data is no.
+func (c Config) WholeStoreReach(groups, clusters []string) bool {
+	if len(clusters) == 0 {
+		return false
+	}
+	_, byCluster := c.reachFor(groups)
+	for _, cl := range clusters {
+		if r := byCluster[cl]; r == nil || !r.all {
+			return false
+		}
+	}
+	return true
+}
+
 // ClaimForGroups returns the vm_access claim body for a caller who holds
 // the given groups: the UNION of what every principal those groups select
 // may read.
@@ -299,44 +376,7 @@ func orDefault(v, def string) string {
 // refusal: an empty claim is not a narrow grant, it is no grant enforced.
 // An error means the configuration itself is unusable.
 func (c Config) ClaimForGroups(groups []string) (Claim, bool, error) {
-	held := make(map[string]bool, len(groups))
-	for _, g := range groups {
-		held[g] = true
-	}
-
-	type reach struct {
-		all        bool
-		namespaces map[string]bool
-	}
-	byCluster := map[string]*reach{}
-	var matched []string
-
-	for _, p := range c.Principals {
-		selected := false
-		for _, g := range p.groupList() {
-			if held[g] {
-				selected = true
-				break
-			}
-		}
-		if !selected {
-			continue
-		}
-		matched = append(matched, p.label())
-		for _, g := range p.Grants {
-			r := byCluster[g.Cluster]
-			if r == nil {
-				r = &reach{namespaces: map[string]bool{}}
-				byCluster[g.Cluster] = r
-			}
-			if g.AllNamespaces {
-				r.all = true
-			}
-			for _, ns := range g.Namespaces {
-				r.namespaces[ns] = true
-			}
-		}
-	}
+	matched, byCluster := c.reachFor(groups)
 	if len(matched) == 0 {
 		return Claim{}, false, nil
 	}

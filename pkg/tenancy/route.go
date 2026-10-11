@@ -385,6 +385,25 @@ var (
 	)
 )
 
+// Matches reports whether a request path is one the route admits, the way
+// vmauth reads src_paths: each is a regular expression anchored at both
+// ends.
+func (r ReadRoute) Matches(path string) bool {
+	for _, p := range r.paths {
+		re, err := regexp.Compile("^(?:" + p + ")$")
+		if err == nil && re.MatchString(path) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsTracesPath reports whether path is one of the trace store's read
+// endpoints (TracesRead's paths, matched with the same anchored regular
+// expressions vmauth uses). A caller deciding who may reach those
+// endpoints asks it, rather than keeping a second copy of the paths.
+func IsTracesPath(path string) bool { return TracesRead.Matches(path) }
+
 // MetricsReadPaths, LogsReadPaths and TracesReadPaths are the routes'
 // paths, kept as plain lists for callers that only want to know what a
 // reader may call.
