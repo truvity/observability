@@ -449,7 +449,7 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
-### `platform-alerts` drops the Pulumi drift group (0.79.0)
+### 0.78.1 → 0.79.0
 
 **`groups.pulumiDrift` is removed.** Before the bump, delete the
 `pulumiDrift` key from your `platform-alerts` values, wherever the group
