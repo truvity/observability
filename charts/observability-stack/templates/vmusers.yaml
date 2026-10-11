@@ -364,7 +364,8 @@ token and on the principals for the grant.
 
 Two things differ from a principal, both forced. A static token carries no
 `vm_access` claim, so there is no placeholder to substitute: the grant is
-written into the route's `query_args` as LITERAL `extra_filters` values,
+written into the route's `query_args` as LITERAL `extra_filters` and
+`extra_filters[]` values (both spellings, see `filterArgs.metrics`),
 one per grant (VictoriaMetrics ORs them, exactly as it does the claim's
 list). vmauth drops a client query argument that clashes with one the
 route already set (`vmauth.extraArgs.mergeQueryArgs` naming `extra_filters`
@@ -405,9 +406,12 @@ spec:
       paths:
         {{- include "observability-stack.readPaths.metrics.queryOnly" $root | nindent 8 }}
       query_args:
-        - name: {{ include "observability-stack.filterArg.metrics" $root }}
+        {{- /* Every spelling vmselect ORs in, pinned to the same grant: see `filterArgs.metrics`. */}}
+        {{- range $arg := (fromYamlArray (include "observability-stack.filterArgs.metrics" $root)) }}
+        - name: {{ $arg }}
           values:
             {{- toYaml $filters | nindent 12 }}
+        {{- end }}
       targetRefBasicAuth:
         {{- include "observability-stack.targetAuth" $root | nindent 8 }}
 {{- end }}

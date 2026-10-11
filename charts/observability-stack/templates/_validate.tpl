@@ -1545,9 +1545,9 @@ discarded. This is the one refusal in this file that guards against an
 edit to this chart rather than against a value somebody wrote.
 */}}
 {{- range $signal := (list "metrics" "logs") -}}
-{{- $arg := include (printf "observability-stack.filterArg.%s" $signal) $ -}}
 {{- $placeholder := include (printf "observability-stack.filterPlaceholder.%s" $signal) $ -}}
 {{- $args := fromYamlArray (include (printf "observability-stack.readQueryArgs.%s" $signal) $) -}}
+{{- range $arg := (fromYamlArray (include (printf "observability-stack.filterArgs.%s" $signal) $)) -}}
 {{- $found := false -}}
 {{- range $a := $args -}}
 {{- if and (eq $a.name $arg) (has $placeholder $a.values) -}}
@@ -1555,7 +1555,8 @@ edit to this chart rather than against a value somebody wrote.
 {{- end -}}
 {{- end -}}
 {{- if not $found -}}
-{{- fail (printf "observability-stack: the %s read route does not carry %s=%s. vmauth applies a `vm_access` claim ONLY by substituting a placeholder into the route, so without it every principal's query reaches the store unfiltered while `defaultVMAccessClaim` beside it still states the grant. Nothing downstream reports that: the render succeeds, the install succeeds, and a query for one namespace returns exactly what it would have returned if the filter had been applied." $signal $arg $placeholder) -}}
+{{- fail (printf "observability-stack: the %s read route does not carry %s=%s. A metrics route must pin BOTH `extra_filters` and `extra_filters[]`: vmselect ORs the array spelling in and vmauth drops a client argument only when the route sets the same name. vmauth applies a `vm_access` claim ONLY by substituting a placeholder into the route, so without it every principal's query reaches the store unfiltered while `defaultVMAccessClaim` beside it still states the grant. Nothing downstream reports that: the render succeeds, the install succeeds, and a query for one namespace returns exactly what it would have returned if the filter had been applied." $signal $arg $placeholder) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- /*

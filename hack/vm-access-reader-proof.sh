@@ -187,6 +187,24 @@ expect "only a logs list (half-filled): never the vm-access user, 401      " log
 expect "both lists empty: 401                                              " empty-lists "HTTP 401"
 expect "complete claim, another audience: 401                              " claim-a-wrong-aud "HTTP 401"
 
+# A client's own `extra_filters[]` is ORed into the grant by VictoriaMetrics
+# unless the route pins that spelling too; vmauth drops a client argument only
+# when the route sets the same name.
+widen_as() {
+  local tok="$1"
+  qcurl -H "Authorization: Bearer $(cat "$work/token-$tok")" -G "http://vma-vmauth:8427/prometheus/api/v1/query" \
+    --data-urlencode 'query=probe_up' --data-urlencode 'extra_filters[]={k8s_cluster_name=~".+"}' \
+    | python3 -c 'import json,sys; print("metrics=[" + ",".join(sorted(r["metric"]["k8s_cluster_name"] for r in json.load(sys.stdin)["data"]["result"])) + "]")'
+}
+expect_widen() {
+  local label="$1" tok="$2" want="$3" got
+  got="$(widen_as "$tok")"
+  if [ "$got" = "$want" ]; then echo "PASS  $label -> $got"; else echo "FAIL  $label -> $got (wanted $want)" >&2; fail=1; fi
+}
+echo; echo "=== a client-supplied extra_filters[] cannot widen a grant ==="
+expect_widen "complete claim (cluster-a) + extra_filters[] matching all    " claim-a "metrics=[cluster-a]"
+expect_widen "group principal + extra_filters[] matching all               " groups-only "metrics=[cluster-a,cluster-b,cluster-c]"
+
 echo
 if [ "$fail" = 0 ]; then
   echo "hack/vm-access-reader-proof.sh: PASS — a complete vm_access claim is applied by the vm-access user and wins over groups, a token without it keeps the group readers, and an absent or half-filled claim with no known group gets 401."

@@ -305,11 +305,21 @@ func TestOnlyTheTraceRouteIsUnfiltered(t *testing.T) {
 // would render, install, and enforce something other than the grant — or
 // nothing at all, since vmauth forwards an unknown placeholder to the
 // store as a literal string.
+//
+// The set of ARGUMENT NAMES is compared, not just their placeholders: the
+// metrics store ORs `extra_filters[]` in beside `extra_filters`, and vmauth
+// drops a client argument only when the route sets the same name, so a
+// chart that pins one spelling while the library pins two (or the other
+// way round) leaves a reader able to widen its own grant.
 func TestChartUsesTheLibrarysFilterArguments(t *testing.T) {
-	want := map[string]string{
-		tenancy.MetricsFilterArg: tenancy.MetricsFilterPlaceholder,
-		tenancy.LogsFilterArg:    tenancy.LogsFilterPlaceholder,
+	want := map[string]string{}
+	for _, a := range tenancy.MetricsRead.FilterArgs() {
+		want[a] = tenancy.MetricsFilterPlaceholder
 	}
+	for _, a := range tenancy.LogsRead.FilterArgs() {
+		want[a] = tenancy.LogsFilterPlaceholder
+	}
+	require.Contains(t, want, "extra_filters[]", "the library no longer pins the array spelling vmselect ORs in")
 
 	seen := map[string]string{}
 	for _, user := range readVMUsers(t, "golden/observability-stack/tenancy.yaml") {
@@ -336,11 +346,11 @@ func TestChartUsesTheLibrarysFilterArguments(t *testing.T) {
 // so the chart cannot be judged by a looser rule than the library is.
 func carriesAFilter(ref vmTargetRef) bool {
 	prefix := ref.urlPrefix()
-	for arg, placeholder := range map[string]string{
-		tenancy.MetricsFilterArg: tenancy.MetricsFilterPlaceholder,
-		tenancy.LogsFilterArg:    tenancy.LogsFilterPlaceholder,
-	} {
-		if tenancy.CarriesFilter(prefix, arg, placeholder) {
+	// EVERY spelling the library pins for a signal, not any one of them:
+	// a route carrying `extra_filters` alone does not apply the grant,
+	// it hands the caller `extra_filters[]`.
+	for _, route := range []tenancy.ReadRoute{tenancy.MetricsRead, tenancy.LogsRead} {
+		if tenancy.CarriesFilters(prefix, route.FilterArgs(), route.Placeholder()) {
 			return true
 		}
 	}
