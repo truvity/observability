@@ -69,39 +69,33 @@ upstream group, `evaluator: metrics`, and `rule-type` `recording` when the
 group (after `exclude`) holds recordings only, else `alert`. The sync job's
 own VMRules, which the pack replaces, carry no label.
 
-Selector design. One `ruleSelector` cannot be a union of two labels, so the
-selectors say what they refuse where they can, and a switch picks the one
-label the logs alerter requires:
+Selector design. Each `ruleSelector` reads `evaluator` only:
 
-| Alerter | `vmalert.acceptLegacyRuleLabels: true` (default) | `false` |
-|---|---|---|
-| metrics | `evaluator` NotIn {`logs`, remote names} and `observability.rule-type` NotIn {`vlogs`} | `evaluator` NotIn {`logs`, remote names} |
-| logs | `observability.rule-type=vlogs` and `evaluator` NotIn {`metrics`, remote names} | `evaluator=logs` |
-| remote `<n>` | `evaluator=<n>` and `observability.rule-type` NotIn {`vlogs`} | `evaluator=<n>` |
+| Alerter | Selects |
+|---|---|
+| metrics | `evaluator` NotIn {`logs`, remote names} |
+| logs | `evaluator=logs` |
+| remote `<n>` | `evaluator=<n>` |
 
-The metrics alerter accepts both spellings in either mode, and still takes
-an unlabelled rule (the rules a vendored chart ships carry no labels). The
-logs alerter is where the old and the new spelling cannot both be matched,
-so a LogsQL rule carries both spellings during the window (this
-repository's charts emit both). A rule that names an evaluator no alerter
+The metrics alerter still takes an unlabelled rule (the rules a vendored
+chart ships carry no labels). A rule that names an evaluator no alerter
 runs is evaluated by nobody; a typo in a remote name used to be that, and
 the metrics alerter now takes any unknown evaluator value (the cost of
 accepting `metrics` and no label with one selector).
 
-Deprecation window. The old spelling `observability.rule-type: vlogs` (the
-LogsQL marker; not the new `rule-type`, which has other values and another
-meaning) is accepted until every chart that ships LogsQL rules emits
-`observability.truvity.io/evaluator: logs`. It is removed in a later minor,
-not before v0.73, and the removal is announced in the CHANGELOG:
-`vmalert.acceptLegacyRuleLabels` and the old selector terms go with it. The
-removal is not tied to a fixed version. A component sets `evaluator: logs` on
-its LogsQL rules now, keeps the old label until the removal is announced,
-and sets the switch to `false` in an install once no rule needs the old one.
+Removed in 0.74.0. The old LogsQL marker `observability.rule-type: vlogs`
+(not the new `rule-type`, which has other values and another meaning) and
+the switch `vmalert.acceptLegacyRuleLabels` are gone from the stack and the
+alerting chart, and no chart here emits the marker any more. A LogsQL rule
+that carries only the old marker is no longer loaded by the logs alerter,
+and the metrics alerter loads it and exits on a rule it cannot parse: it
+must carry `observability.truvity.io/evaluator: logs`.
 
-`rulecheck -require-evaluator` makes a `VMRule` without an `evaluator`
-label a violation (and a LogsQL rule whose evaluator is not `logs`). It is
-off by default, because vendored rules carry no label and are still
-evaluated; a component chart's CI turns it on. The `rule-type` value check
+`rulecheck`: a LogsQL rule whose evaluator is not `logs` is always a
+violation (since 0.74.0; the metrics alerter would load it and exit).
+`-require-evaluator` also makes a `VMRule` without an `evaluator` label a
+violation; that part is off by default, because vendored rules carry no
+label and are still evaluated, and a component chart's CI turns it on. The `rule-type` value check
 is always on.
 
 ### Alerting plane object names (stable; who renders them moves)

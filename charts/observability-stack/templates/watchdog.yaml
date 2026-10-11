@@ -4,7 +4,7 @@ The alert the outside watcher waits for.
 
 `vector(1)` is always true, so this fires for as long as rules are being
 evaluated at all — the METRICS vmalert (see templates/vmalert.yaml's
-ruleSelector: this rule carries no `observability.rule-type: vlogs`
+ruleSelector: this rule carries no `observability.truvity.io/evaluator: logs`
 label, so the metrics alerter is the one that loads it). It lives here
 rather than in charts/platform-alerts because it is not a rule about the
 estate: it is this install reporting that it is still alive.

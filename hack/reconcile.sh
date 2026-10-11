@@ -119,7 +119,7 @@ metadata:
   name: reconcile-logs-rule
   namespace: observability-elsewhere
   labels:
-    observability.rule-type: vlogs
+    observability.truvity.io/evaluator: logs
 spec:
   groups:
     - name: reconcile.logs-rule

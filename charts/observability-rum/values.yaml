@@ -169,7 +169,7 @@ global:
             memory: 256Mi
 
 # -- Alerts, LogsQL, evaluated by the LOGS vmalert (the VMRule carries
-# `observability.rule-type: vlogs` and its groups `type: vlogs`). Every
+# `observability.truvity.io/evaluator: logs` and its groups `type: vlogs`). Every
 # window and threshold is a value; docs/frontend.md says what each costs.
 rules:
   enabled: true

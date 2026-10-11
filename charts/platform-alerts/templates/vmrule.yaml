@@ -56,7 +56,7 @@ on it would add nothing but a way to fail.
 The metrics VMRule renders when at least one group other than `podSecurity`
 is on. `podSecurity` and `podSecurityAudit` are LogsQL and have an object of their own below: one
 VMRule cannot serve both alerters, because the metrics vmalert takes every
-rule NOT marked `observability.rule-type: vlogs` (or `observability.truvity.io/evaluator: logs`) and the logs one only
+rule NOT marked `observability.truvity.io/evaluator: logs` and the logs one only
 those that are.
 */ -}}
 {{- /* `upstream` is the vendored pack: its own objects, templates/upstream.yaml. */ -}}
@@ -1619,10 +1619,9 @@ metadata:
     app.kubernetes.io/name: {{ .Chart.Name }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    {{- /* Both spellings of "evaluated by the logs alerter": the old
-           `observability.rule-type` (accepted until every LogsQL chart emits the new one) and the new
-           `observability.truvity.io/evaluator`. The chart's win over `ruleLabels`. */}}
-    {{- toYaml (merge (dict "observability.rule-type" "vlogs" "observability.truvity.io/evaluator" "logs" "observability.truvity.io/rule-type" "alert") .Values.ruleLabels) | nindent 4 }}
+    {{- /* `observability.truvity.io/evaluator: logs` is what makes the logs
+           alerter evaluate this VMRule. The chart's win over `ruleLabels`. */}}
+    {{- toYaml (merge (dict "observability.truvity.io/evaluator" "logs" "observability.truvity.io/rule-type" "alert") .Values.ruleLabels) | nindent 4 }}
 spec:
   groups:
 {{- if .Values.groups.podSecurity.enabled }}

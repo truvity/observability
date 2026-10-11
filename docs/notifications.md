@@ -785,8 +785,8 @@ evaluated against the wrong store, and the selector cannot be empty. The
 exclusion renders only when `remoteEvaluators` is non-empty: with the list
 empty the render is byte-identical to before. A rule labelled with a name
 no entry declares is evaluated by nobody: keep the label and the entry
-together. Rules are PromQL (`observability.rule-type: vlogs` is not
-supported on an evaluator and such a rule is evaluated by nobody).
+together. Rules are PromQL (`observability.truvity.io/evaluator: logs` is not
+supported on a remote evaluator and such a rule is evaluated by nobody).
 
 ### Refusals
 
