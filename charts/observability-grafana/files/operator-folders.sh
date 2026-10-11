@@ -1,6 +1,6 @@
 set -u
 base="${GRAFANA_URL%/}"
-auth=/work/auth
+auth=${AUTH_FILE:-/work/auth}
 # The credentials live in a curl config file in memory, never in argv or logs.
 umask 077
 printf 'user = "%s:%s"\n' "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD" > "$auth"
@@ -56,8 +56,29 @@ for c in $CLUSTERS; do
   uid=$(idof)
   [ -n "$uid" ] || { log "operator user for $c has no id"; failed=1; continue; }
 
-  call PATCH "/api/org/users/$uid" '{"role":"None"}'
-  need "set role None for $c" 200 || continue
+  # A user Grafana syncs from the workload sign-in ([auth.jwt]) is externally
+  # synced: Grafana answers a role change with 403, and the role is already set
+  # by the chart's role mapping at every sign-in. `isExternallySynced` is only
+  # on /api/users/:id (the lookup carries `authLabels` alone).
+  call GET "/api/users/$uid"
+  need "read operator user for $c" 200 || continue
+  if printf '%s' "$body" | grep -q '"isExternallySynced":true'; then
+    call GET "/api/org/users/lookup?query=$enc&limit=100"
+    need "read org role of operator user for $c" 200 || continue
+    role=$(printf '%s' "$body" | sed 's/{"orgId"/\n&/g' | grep "\"userId\":$uid[,}]" | sed -n 's/.*"role":"\([^"]*\)".*/\1/p' | head -n 1)
+    if [ "$role" != None ]; then
+      log "operator user for $c is externally synced with role '${role:-unknown}', not None: fix the workloadAuth role mapping (noRoleSubjectSuffixes); not granting Edit"
+      failed=1; continue
+    fi
+  else
+    call PATCH "/api/org/users/$uid" '{"role":"None"}'
+    if [ "$code" = 403 ]; then
+      # Grafana's reason is a short message; never the whole body.
+      msg=$(printf '%s' "$body" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p' | head -n 1 | cut -c1-200)
+      log "set role None for $c refused: ${msg:-no message}"
+    fi
+    need "set role None for $c" 200 || continue
+  fi
   call POST "/api/access-control/folders/$c/users/$uid" '{"permission":"Edit"}'
   need "grant Edit on $c" 200 || continue
   log "cluster $c reconciled"
