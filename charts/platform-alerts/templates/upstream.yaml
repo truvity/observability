@@ -34,6 +34,9 @@ after `exclude`: `recording` when every remaining rule is a recording, else
 {{- $names := dict -}}
 {{- range $pin.groups }}
 {{- $cfg := get $u .name -}}
+{{- if and (ne .name "vmsingle") (get $cfg "churnFactor24h") -}}
+{{- fail (printf "platform-alerts: groups.upstream.%s.churnFactor24h: only the vmsingle group has a churn rule." .name) -}}
+{{- end -}}
 {{- if $cfg.enabled }}
 {{- $raw := $.Files.Get (printf "upstream/%s" .file) | replace $pin.placeholders.clusterLabel $.Values.clusterLabel | replace $pin.placeholders.alertmanagerNamespace $am -}}
 {{- $g := fromYaml $raw -}}
