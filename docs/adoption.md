@@ -449,7 +449,7 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
-### The old LogsQL rule marker is removed (0.74.0)
+### 0.73.0 → 0.74.0
 
 **The old LogsQL marker `observability.rule-type: vlogs` and
 `vmalert.acceptLegacyRuleLabels` are removed.** Check, before the bump:
