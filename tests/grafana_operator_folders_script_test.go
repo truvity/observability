@@ -18,7 +18,9 @@ import (
 // The reconcile script is run for real (sh + curl) against a fake Grafana
 // that answers the way Grafana 13 does: /api/users/lookup carries only
 // `authLabels`, /api/users/:id carries `isExternallySynced`, and a role change
-// of an externally synced user is a 403.
+// of an externally synced user is a 403. The org role is NOT in the lookups
+// (`/api/org/users/lookup` is a UserLookupDTO without `role`): only
+// /api/users/:id/orgs carries it.
 
 type fakeGrafana struct {
 	mu       sync.Mutex
@@ -53,8 +55,11 @@ func (f *fakeGrafana) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && r.URL.Path == fmt.Sprintf("/api/users/%d", fakeUID):
 		reply(200, fmt.Sprintf(`{"id":%d,"isExternal":%t,"isExternallySynced":%t,"isGrafanaAdminExternallySynced":false}`, fakeUID, f.external, f.external))
 	case r.Method == "GET" && r.URL.Path == "/api/org/users/lookup":
-		reply(200, fmt.Sprintf(`[{"orgId":1,"userId":99,"login":"other","role":"Admin"},`+
-			`{"orgId":1,"userId":%d,"login":"x","role":"%s","accessControl":{"a":true}}]`, fakeUID, f.role))
+		// UserLookupDTO: userId, login, avatarUrl. NO role.
+		reply(200, fmt.Sprintf(`[{"userId":99,"login":"other","avatarUrl":"/avatar/a"},{"userId":%d,"login":"x","avatarUrl":"/avatar/b"}]`, fakeUID))
+	case r.Method == "GET" && r.URL.Path == fmt.Sprintf("/api/users/%d/orgs", fakeUID):
+		// UserOrgDTO list (pkg/api GetUserOrgList): orgId, name, role.
+		reply(200, fmt.Sprintf(`[{"orgId":1,"name":"Main Org.","role":"%s"},{"orgId":2,"name":"Zed","role":"Admin"}]`, f.role))
 	case r.Method == "PATCH" && r.URL.Path == fmt.Sprintf("/api/org/users/%d", fakeUID):
 		if f.external {
 			reply(403, `{"message":"Cannot change role for externally synced user"}`)
