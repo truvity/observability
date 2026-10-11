@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `deploy/pulumi/auditlogreader`: `Deploy`, the Pod Identity role of the CloudWatch reader that `observability-emitters` `cloudwatchLogs` runs (the cluster's API-server audit log): one role per cluster, named `<cluster>-observability-audit-reader`, in the cluster's account, read-only on `/aws/eks/<cluster>/cluster` (`DescribeLogGroups` on the account's groups in the region, which cannot be scoped tighter). Namespace `observability` and ServiceAccount `observability-cloudwatch` are exported constants and must match the chart's `cloudwatchLogs.serviceAccount.name`. The Pulumi names of the children (`audit-log-reader/<role>/role`, `/policy`, `/pia-<key>`) are fixed so a stack that created them under those names keeps its URNs. No existing resource or golden changes.
+
 ## v0.81.0
 
 - **Changed** `dashboardlint` (`cmd/dashboardlint`, `pkg/dashboardlint`), rule 1: a panel or query datasource may be any `${var}` or `$var` whose template variable has `type: datasource`, not only `$datasource`, so a dashboard with a second datasource variable (for example `logsds` for its log panels) passes. Still refused: a literal datasource uid, and a variable that is undeclared or not of type `datasource`. The `datasource` variable itself is still required (the `cluster` variable chains off it). A dashboard that passed before still passes; the finding text for a refused datasource changed. See docs/dashboards.md.
