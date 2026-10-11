@@ -1,0 +1,57 @@
+# The same values as upstream-presets-preset, written out in full.
+clusterLabel: k8s_cluster_name
+commonLabels:
+  k8s_cluster_name: example-cluster
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+groups:
+  backups: {enabled: false}
+  volumes: {enabled: false}
+  writePath: {enabled: false}
+  storeLimits: {enabled: false}
+  pendingPods: {enabled: false}
+  nodeClaims: {enabled: false}
+  probes: {enabled: false}
+  nats: {enabled: false}
+  argocd: {enabled: false}
+  eso: {enabled: false}
+  ack: {enabled: false}
+  podSecurity: {enabled: false}
+  podSecurityAudit: {enabled: false}
+  envoyRoutes: {enabled: false}
+  certificates: {enabled: false}
+  restarts: {enabled: false}
+  workloadAbsent: {enabled: false}
+  upstream:
+    enabled: true
+    kubernetes-apps:
+      override:
+        KubeDaemonSetMisScheduled:
+          for: 30m
+          expr: >-
+            kube_daemonset_status_number_misscheduled{job="kube-state-metrics",namespace=~".*"} > 0
+            unless on (k8s_cluster_name)
+            (count by (k8s_cluster_name) (kube_node_spec_taint{key="karpenter.sh/disrupted"}) > 0)
+        KubeDaemonSetRolloutStuck:
+          expr: >-
+            (
+              (
+                (
+                  (kube_daemonset_status_current_number_scheduled{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+                  or (kube_daemonset_status_number_misscheduled{job="kube-state-metrics",namespace=~".*"} != 0)
+                )
+                or (kube_daemonset_status_updated_number_scheduled{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+              )
+              or (kube_daemonset_status_number_available{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+            )
+            and (changes(kube_daemonset_status_updated_number_scheduled{job="kube-state-metrics",namespace=~".*"}[5m]) == 0)
+            unless on (k8s_cluster_name)
+            (count by (k8s_cluster_name) (kube_node_spec_taint{key="karpenter.sh/disrupted"}) > 0)
+        KubeJobFailed:
+          expr: >-
+            kube_job_failed{job="kube-state-metrics",namespace=~".*",job_name!~"[0-9a-f-]{36}\\.[a-z0-9-]+\\.[0-9]+"} > 0
+    vmsingle:
+      override:
+        TooHighChurnRate24h:
+          expr: sum(increase(vm_new_timeseries_created_total[24h])) by(instance) > (sum(vm_cache_entries{type="storage/hour_metric_ids"}) by(instance) * 6)

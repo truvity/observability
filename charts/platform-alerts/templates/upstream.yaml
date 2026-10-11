@@ -55,6 +55,12 @@ after `exclude`: `recording` when every remaining rule is a recording, else
 {{- if not (has $name $cfg.exclude) }}
 {{- $r := . -}}
 {{- with get $cfg.override $name }}{{- $r = mergeOverwrite (deepCopy $r) (deepCopy .) }}{{- end -}}
+{{- if and (eq $g.name "vmsingle") (eq $name "TooHighChurnRate24h") (get $cfg "churnFactor24h") -}}
+{{- if not (regexMatch "\\* [0-9.]+\\)$" $r.expr) -}}
+{{- fail "platform-alerts: groups.upstream.vmsingle.churnFactor24h: the vendored TooHighChurnRate24h expression no longer ends in `* <factor>)`; update the template with the vendored rule." -}}
+{{- end -}}
+{{- $r = mergeOverwrite (deepCopy $r) (dict "expr" (regexReplaceAll "\\* [0-9.]+\\)$" $r.expr (printf "* %v)" (get $cfg "churnFactor24h")))) -}}
+{{- end -}}
 {{- $kept = append $kept $r -}}
 {{- end -}}
 {{- end -}}
