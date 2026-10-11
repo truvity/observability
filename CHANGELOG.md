@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Removed** (**Breaking**) `platform-alerts`: `groups.pulumiDrift` and its three alerts (`PulumiDriftDetected`, `PulumiDiffFailing`, `PulumiDriftSignalStale`), with the `pulumi_stack_drift_changes` and `pulumi_stack_diff_error` gauges they read. The scheduled job that pushed them no longer exists, so nothing feeds the rules. The schema refuses unknown keys, so a values file that still sets `groups.pulumiDrift` (even `enabled: false`) fails to render after the bump: delete the key first. Renders that never enabled the group are unchanged.
+
 ## v0.78.0
 
 - **Added** `observability-stack`: the opt-in preset `presets/serverless-stream-aggregation.yaml` (list it before your values; nothing renders differently without it). It sets `victoria-metrics-k8s-stack.vmsingle.spec.streamAggrConfig` so the metrics store aggregates serverless per-instance series at ingestion: for `telemetry_source="external"` and `namespace="external"` (the stamps of the external OTLP receiver; change the `match` lines if `otlp.external.namespace` differs) `instance` and `faas_instance` are dropped; names ending `_total`, `_bucket`, `_sum` or `_count` use `total` (reset-safe), every other name `max`; names are kept, interval `1m`, `staleness_interval: 1h`, `keepInput: false` (only matched series are replaced). A `rate()` or `increase()` over those series needs a range of at least `2m`. Cuts the series created per day by serverless execution environments (about 274k a day measured on one estate). New refusals (`validate.streamAggr`) for a rule with no `telemetry_source=` match, a `without` naming a tenant-separating label (cluster label, `namespace`, `owner`, `cloud_account_id`, `telemetry_source`, `le`, `__name__`), `keepInput`/`dropInput: true`, a bad `interval`, no `outputs`, or `keep_metric_names` with two outputs. `hack/serverless-stream-aggregation-proof.sh` proves it against the pinned VictoriaMetrics. See docs/safety.md, "Metric churn: serverless sources".
