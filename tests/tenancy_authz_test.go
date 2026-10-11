@@ -87,7 +87,7 @@ func TestTenancyAuthzIsAbsentUnlessEnabled(t *testing.T) {
 
 func TestTheServicesPrincipalsAreThePeoplesVMUsersGrants(t *testing.T) {
 	cfg := authzConfigOf(t, authzGolden)
-	require.NoError(t, cfg.Config.Validate(), "the service refuses to start on a configuration the library refuses")
+	require.NoError(t, cfg.Validate(), "the service refuses to start on a configuration the library refuses")
 
 	users := readVMUsers(t, authzGolden)
 	byName := map[string]vmUser{}
@@ -136,7 +136,7 @@ func TestTheServicesPrincipalsAreThePeoplesVMUsersGrants(t *testing.T) {
 
 	// The workload's principal is not the service's.
 	for _, p := range cfg.Principals {
-		assert.NotEqual(t, "cluster-a:example-app:reader", p.Group, "a workload principal in the service's configuration would grant its reach to a person holding the group")
+		assert.NotEqual(t, "cluster-a:example-app:reader", p.Group, "a workload principal here would grant its reach to a person holding the group")
 	}
 	_, hasWorkload := byName["cluster-a:example-app:reader"]
 	assert.True(t, hasWorkload, "the workload's own VMUser is unchanged")

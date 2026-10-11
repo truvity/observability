@@ -52,13 +52,13 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	// Superseded keys stay published for as long as a token they signed can
 	// live, and a margin.
 	keyring, err := NewKeyring(cfg.Authz.SigningKey.File, cfg.Authz.TokenTTL+10*time.Minute)
 	if err != nil {
 		logger.Error("loading the signing key", "error", err.Error())
+		stop()
 		os.Exit(1)
 	}
 	logger.Info("signing key loaded", "kid", keyring.KeyID())

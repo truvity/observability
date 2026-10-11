@@ -88,6 +88,11 @@ kubectl apply --server-side -f "$crds_golden" >/dev/null
 # client-side annotation cap, so this is server-side on purpose, as it is
 # for the cluster.
 kubectl apply --server-side -f "$root/tests/golden/observability-crds/grafana-operator-only.yaml" >/dev/null
+# And the two single-kind sets observability-stack renders objects of for
+# `tenancy.authz`: Envoy Gateway's SecurityPolicy, and External Secrets'
+# ExternalSecret and SSHKey.
+kubectl apply --server-side -f "$root/tests/golden/observability-crds/envoy-gateway-only.yaml" >/dev/null
+kubectl apply --server-side -f "$root/tests/golden/observability-crds/external-secrets-only.yaml" >/dev/null
 kubectl wait --for=condition=Established --timeout=180s crd --all >/dev/null
 
 docs_dir="$(mktemp -d -t observability-apply.XXXXXX)"
