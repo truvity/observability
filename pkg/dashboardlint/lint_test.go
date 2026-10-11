@@ -43,6 +43,8 @@ func TestInvalidFixturesFailTheirNamedRule(t *testing.T) {
 		rule int
 	}{
 		{"rule1-literal-datasource.json", 1},
+		{"rule1-unknown-datasource-variable.json", 1},
+		{"rule1-non-datasource-variable.json", 1},
 		{"rule2-no-cluster-variable.json", 2},
 		{"rule3-namespace-scoped-no-namespace-variable.json", 3},
 		{"rule4-title-missing-cluster.json", 4},
@@ -96,4 +98,15 @@ func TestLogsFieldValuesVariablesPass(t *testing.T) {
 		}
 	}
 	assert.True(t, gotRule, "a logs `cluster` variable that is only a filter must fail rule 2, got: %v", findings)
+}
+
+// Rule 1 accepts any variable of type `datasource`, not only the one named
+// `datasource`: a product dashboard keeps a second one (`logsds`) for its log
+// panels. The literal uid and the unknown variable stay refused (the invalid
+// fixtures above).
+func TestSecondDatasourceVariablePasses(t *testing.T) {
+	path := filepath.Join("..", "..", "tests", "dashboardlint", "valid", "rule1-second-datasource-variable.json")
+	findings, err := dashboardlint.LintFile(path)
+	require.NoError(t, err)
+	assert.Empty(t, findings)
 }

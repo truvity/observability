@@ -174,6 +174,38 @@ func isDatasourceVarRef(uid string) bool {
 	return uid == "$datasource" || uid == "${datasource}" || uid == mixedSentinel
 }
 
+// datasourceVarNames returns the names of every template variable of type
+// `datasource`.
+func datasourceVarNames(vars map[string]variable) map[string]bool {
+	out := map[string]bool{}
+	for n, v := range vars {
+		if v.Type == "datasource" {
+			out[n] = true
+		}
+	}
+	return out
+}
+
+// isAnyDatasourceVarRef reports whether uid is `${var}` or `$var` for a
+// variable of type `datasource` (or the Mixed sentinel). A dashboard may
+// carry a second one, e.g. `logsds` for its log panels; a literal uid and
+// a variable that is not a datasource variable are still refused.
+func isAnyDatasourceVarRef(uid string, dsVars map[string]bool) bool {
+	if uid == mixedSentinel {
+		return true
+	}
+	name := ""
+	switch {
+	case strings.HasPrefix(uid, "${") && strings.HasSuffix(uid, "}"):
+		name = uid[2 : len(uid)-1]
+	case strings.HasPrefix(uid, "$"):
+		name = uid[1:]
+	default:
+		return false
+	}
+	return dsVars[name]
+}
+
 // Lint runs the six-rule contract against one dashboard's raw JSON.
 // `name` is used only to label findings.
 func Lint(name string, raw []byte) ([]Finding, error) {
@@ -197,6 +229,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 	if !hasDS || dsVar.Type != "datasource" {
 		add(1, "no template variable named `datasource` of type `datasource` — every panel needs one to point at, or it is pinned to whatever Grafana calls default")
 	}
+
+	dsVars := datasourceVarNames(byName)
 
 	var allPanels []panel
 	for _, p := range d.Panels {
@@ -222,8 +256,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 				panelUID, panelSet = u, true
 			}
 		}
-		if panelSet && !isDatasourceVarRef(panelUID) {
-			add(1, "panel %q has a literal datasource %q instead of the `datasource` variable", p.Title, panelUID)
+		if panelSet && !isAnyDatasourceVarRef(panelUID, dsVars) {
+			add(1, "panel %q has a datasource %q that is not a datasource-type template variable (use `$datasource` or another variable of type `datasource`)", p.Title, panelUID)
 			continue
 		}
 		if panelSet && panelUID != mixedSentinel {
@@ -244,8 +278,8 @@ func Lint(name string, raw []byte) ([]Finding, error) {
 			if !ok {
 				continue
 			}
-			if !isDatasourceVarRef(uid) {
-				add(1, "panel %q, query %q has a literal datasource %q instead of the `datasource` variable", p.Title, t.Expr, uid)
+			if !isAnyDatasourceVarRef(uid, dsVars) {
+				add(1, "panel %q, query %q has a datasource %q that is not a datasource-type template variable (use `$datasource` or another variable of type `datasource`)", p.Title, t.Expr, uid)
 			}
 		}
 	}

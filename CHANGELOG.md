@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Changed** `dashboardlint` (`cmd/dashboardlint`, `pkg/dashboardlint`), rule 1: a panel or query datasource may be any `${var}` or `$var` whose template variable has `type: datasource`, not only `$datasource`, so a dashboard with a second datasource variable (for example `logsds` for its log panels) passes. Still refused: a literal datasource uid, and a variable that is undeclared or not of type `datasource`. The `datasource` variable itself is still required (the `cluster` variable chains off it). A dashboard that passed before still passes; the finding text for a refused datasource changed. See docs/dashboards.md.
+
 ## v0.80.0
 
 - **Added** `observability-stack`: `tenancy.authz.retireGroupReaders` (default `false`). **No default change**: with it off, every render is byte-identical. When `true`, the per-principal VMUsers of person principals (those whose audience, their own or `tenancy.audience`, is in `tenancy.authz.personAudiences`) are not rendered. They stay in `tenancy-authz`'s ConfigMap, which is what grants people access; a person's raw token sent straight to vmauth then gets 401 instead of a group reader's reach, so there is one path for people. Kept: the `vm-access` reader, every principal on another audience (MCP, gate and trace readers), `tenancy.readers`, `alertReaders` and `writers`. Refused: `retireGroupReaders` without `tenancy.authz.enabled`, or without `tenancy.authz.securityPolicy.enabled` (the chart cannot see a policy you render yourself). New goldens/fixtures: `tenancy-authz-retired` and two invalid cases; the key is in `tests/stack-keys.yaml` `fixes`. `hack/tenancy-authz-proof.sh` now asserts a person token sent straight to vmauth gets 401 with retirement on. See docs/tenancy-authz.md.
