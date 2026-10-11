@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `pkg/statusbox/ec2`: `NewDNSRegisterRole` (with `DNSRegisterRoleArgs`, `DNSRegisterPolicy`, `DNSRegisterTrustPolicy`), the role a box with `SelfRegister` assumes to write its own record: a managed policy allowing `route53:ChangeResourceRecordSets` on one hosted zone for one record name, type A, action UPSERT only (three `ForAllValues` conditions), a role trusting exactly the box's instance role, and the attachment. `ResourceNamePrefix` is put before the three Pulumi names so a stack that created them under a prefix keeps its URNs; the policy documents are compact JSON. No existing resource or golden changes.
+
 ## v0.81.0
 
 - **Changed** `dashboardlint` (`cmd/dashboardlint`, `pkg/dashboardlint`), rule 1: a panel or query datasource may be any `${var}` or `$var` whose template variable has `type: datasource`, not only `$datasource`, so a dashboard with a second datasource variable (for example `logsds` for its log panels) passes. Still refused: a literal datasource uid, and a variable that is undeclared or not of type `datasource`. The `datasource` variable itself is still required (the `cluster` variable chains off it). A dashboard that passed before still passes; the finding text for a refused datasource changed. See docs/dashboards.md.
