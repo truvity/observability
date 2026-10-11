@@ -1,0 +1,17 @@
+{{- if and .Values.externalGrafana.enabled .Values.externalGrafana.auth.sluisExchange.enabled }}
+# The parameters of the operator pod's token sidecar (presets/operator-sluis-exchange.yaml
+# reads them through envFrom). Nothing secret: the exchange client is
+# authenticated with an empty secret and proves itself by the pod's own
+# ServiceAccount token.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-operator-token-exchange
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observability-cluster.labels" . | nindent 4 }}
+data:
+  ISSUER_URL: {{ .Values.externalGrafana.auth.sluisExchange.issuerUrl | quote }}
+  CLIENT_ID: {{ .Values.externalGrafana.auth.sluisExchange.clientId | quote }}
+  REFRESH_SECONDS: {{ include "observability-cluster.refreshSeconds" . | quote }}
+{{- end }}

@@ -1,0 +1,14 @@
+# The operator authenticating with an exchanged token (presets/operator-sluis-exchange.yaml).
+cluster: example-cluster
+grafanaOperator:
+  enabled: true
+grafana-operator:
+  kubeAuth:
+    audience: issuer.example.org
+externalGrafana:
+  enabled: true
+  url: https://grafana.example.org
+  auth:
+    sluisExchange:
+      enabled: true
+      issuerUrl: https://issuer.example.org

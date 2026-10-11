@@ -1,0 +1,6 @@
+# expect: needs externalGrafana.auth.sluisExchange.issuerUrl
+cluster: example
+externalGrafana:
+  enabled: true
+  url: https://grafana.example.org
+  auth: {sluisExchange: {enabled: true}}

@@ -1,0 +1,10 @@
+# expect: token sidecar would find no ConfigMap
+# The operator pod's half is listed but the exchange itself is not enabled.
+cluster: example
+grafanaOperator: {enabled: true}
+grafana-operator:
+  kubeAuth: {volume: {emptyDir: {}}}
+externalGrafana:
+  enabled: true
+  url: https://grafana.example.org
+  credentials: {secretName: grafana-credentials}
