@@ -296,9 +296,17 @@ spec:
     headersToExtAuth:
       - authorization
     http:
+      {{- /*
+      group, kind and weight are the API server's defaults, written out so
+      Argo CD's diff against the live object settles instead of showing them
+      as drift forever.
+      */}}
       backendRefs:
-        - name: {{ $name }}
+        - group: ""
+          kind: Service
+          name: {{ $name }}
           port: 8080
+          weight: 1
       path: /check
       headersToBackend:
         - authorization
