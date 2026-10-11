@@ -32,11 +32,11 @@ import (
 // hack/tenancy-authz-proof.sh shows the behaviour on real vmauth and Envoy.
 
 const (
-	authzGolden       = "golden/observability-stack/tenancy-authz.yaml"
+	authzGolden        = "golden/observability-stack/tenancy-authz.yaml"
 	authzGoldenRetired = "golden/observability-stack/tenancy-authz-retired.yaml"
-	authzGoldenSecret = "golden/observability-stack/tenancy-authz-existing-secret.yaml"
-	authzName         = "observability-stack-tenancy-authz"
-	authzIssuer       = "http://observability-stack-tenancy-authz.default.svc:8080"
+	authzGoldenSecret  = "golden/observability-stack/tenancy-authz-existing-secret.yaml"
+	authzName          = "observability-stack-tenancy-authz"
+	authzIssuer        = "http://observability-stack-tenancy-authz.default.svc:8080"
 )
 
 // authzConfig is the service's configuration file as the chart renders it.
