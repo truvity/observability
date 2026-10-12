@@ -1550,7 +1550,7 @@ spec:
                 - name: STORE_URL
                   value: "http://observability-stack-victoria-logs-single-server.observability.svc:9428"
                 - name: DESTINATION
-                  value: ":s3,env_auth=true:example-backups/observability/logs"
+                  value: ":s3,env_auth=true:example-backups/observability/logs-daily"
                 # rclone reads these as its S3 backend options. With
                 # `aws:kms` it knows the ETag is not an MD5 and verifies
                 # `--checksum` against the MD5 it stores in the object's
@@ -1623,7 +1623,10 @@ spec:
                     # SSE-KMS bucket) and storage growing without bound.
                     # Keyed on the day, `rclone sync --checksum` uploads only
                     # the parts that changed since the last run and deletes
-                    # the ones the store has merged away.
+                    # the ones the store has merged away. (`prefix` defaults to
+                    # `logs-daily`, a sibling of the legacy `logs`, so a lifecycle
+                    # rule on `logs/` removes the old per-run copies and cannot
+                    # match a day written here.)
                     day=$(basename "$(dirname "$(dirname "$path")")")
                     case "$day" in
                       [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;

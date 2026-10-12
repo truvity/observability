@@ -1786,8 +1786,8 @@ backup:
   logs:
     enabled: true
     schedule: "37 * * * *"
-    # -- `<destination>/<prefix>`. See `backup.metrics.prefix`.
-    prefix: logs
+    # -- `<destination>/<prefix>`; the job writes `<destination>/<prefix>/<YYYYMMDD>`. Default `logs-daily`: a sibling of the old `logs`, not under it (a lifecycle rule filters on a plain key prefix, so `logs/` could not tell the old per-run copies from the new per-day ones). See `backup.metrics.prefix`.
+    prefix: logs-daily
     # -- This store's OWN backup ServiceAccount, under `auth.mode:
     # ambient` or `credentialProcess` — for an estate that gives each
     # store its own least-privilege role (IRSA annotation, or an EKS Pod
