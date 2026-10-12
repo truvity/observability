@@ -23,9 +23,8 @@ fullnameOverride: ""
 image:
   # -- ko names the image after cmd/alert-ingress's own directory
   # (base_import_paths, .goreleaser.yaml), nested under the release
-  # workflow's ko-docker-repo — the same pattern truvity/cloudflare's
-  # r2-broker chart and truvity/access-roster's charts use for their own
-  # images.
+  # workflow's ko-docker-repo — the same pattern truvity/access-roster's
+  # charts use for their own images.
   repository: ghcr.io/truvity/observability/alert-ingress
   # -- Empty: defaults to .Chart.AppVersion, stamped at release, so an
   # install that never sets this tracks the chart's own version exactly.
