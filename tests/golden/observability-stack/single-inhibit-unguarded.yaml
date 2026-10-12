@@ -1599,7 +1599,23 @@ spec:
                   for path in $(echo "$created" | tr -d '[]"' | tr ',' ' '); do
                     test -d "$path" || { echo "snapshot $path is not on this volume" >&2; exit 1; }
                     test -n "$(ls -A "$path")" || { echo "snapshot $path is empty" >&2; exit 1; }
-                    rclone sync "$path" "$DESTINATION/$(basename "$path")" --checksum
+                    # The destination is the PARTITION's day (the snapshot
+                    # path is <data>/partitions/<YYYYMMDD>/snapshots/<name>),
+                    # NOT the snapshot's own name. The name is a fresh
+                    # timestamp-id on every run, so keying the destination on
+                    # it made every run a full copy of every partition under
+                    # a new prefix, and nothing removed the old ones: tens of
+                    # thousands of PutObjects per run (each a KMS call on an
+                    # SSE-KMS bucket) and storage growing without bound.
+                    # Keyed on the day, `rclone sync --checksum` uploads only
+                    # the parts that changed since the last run and deletes
+                    # the ones the store has merged away.
+                    day=$(basename "$(dirname "$(dirname "$path")")")
+                    case "$day" in
+                      [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+                      *) echo "snapshot $path is not under partitions/<YYYYMMDD>/snapshots: refusing to guess a destination" >&2; exit 1 ;;
+                    esac
+                    rclone sync "$path" "$DESTINATION/$day" --checksum
                     wget -q -O- --header="$auth" --post-data='' \
                       "$STORE_URL/internal/partition/snapshot/delete?path=$path"
                   done
