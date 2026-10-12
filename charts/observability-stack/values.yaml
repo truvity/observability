@@ -1708,7 +1708,7 @@ backup:
     credentialProcess:
       # -- The full command line vmbackup's AWS SDK execs to obtain
       # credentials, e.g. a broker CLI presenting the projected token
-      # below: `/var/run/backup-tools/r2-broker exchange
+      # below: `/var/run/backup-tools/credential-helper exchange
       # --subject-token-file /var/run/backup-token/token`. Those
       # two paths are this chart's own fixed mount points — see
       # `toolsImage` and `serviceAccountToken`. **Required.**
@@ -1723,8 +1723,8 @@ backup:
         tag: ""
         # -- The directory inside `toolsImage` the initContainer copies,
         # recursively, into `/var/run/backup-tools`. Only the directory's
-        # CONTENTS move — a binary at `/usr/local/bin/r2-broker` in
-        # `toolsImage` lands at `/var/run/backup-tools/r2-broker`,
+        # CONTENTS move — a binary at `/usr/local/bin/credential-helper` in
+        # `toolsImage` lands at `/var/run/backup-tools/credential-helper`,
         # whatever this path is set to.
         sourcePath: /usr/local/bin
       # -- A projected ServiceAccount token volume, mounted at the fixed

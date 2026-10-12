@@ -7,9 +7,8 @@
 # (cmd/mcp-aggregator, charts/observability-mcp) and tenancy-authz
 # (cmd/tenancy-authz, charts/observability-stack) are Kubernetes-only HTTP
 # services — no laptop CLI use case, so linux/amd64 and linux/arm64 only,
-# unlike a credential helper such as cloudflare's r2broker or
-# sluis's sluisctl, which also build darwin/windows for a
-# person's own machine.
+# unlike a credential helper such as sluis's sluisctl, which also
+# builds darwin/windows for a person's own machine.
 version: 2
 
 # The portal's page is built before anything else: its image is assembled

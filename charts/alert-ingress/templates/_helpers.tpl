@@ -32,7 +32,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/*
 image.tag empty resolves to .Chart.AppVersion — the house pattern
-(truvity/cloudflare's r2-broker chart, truvity/access-roster's charts):
+(truvity/access-roster's charts):
 an install that never sets a tag tracks the chart's own version exactly,
 and the release workflow stamps both from the same git tag.
 */}}
