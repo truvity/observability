@@ -813,7 +813,7 @@ a backup that stopped.
 | `backup.metrics.s3ForcePathStyle` | `""`/`"true"`/`"false"` | `""` | `vmbackup -s3ForcePathStyle`. `""` renders no flag at all, so vmbackup's own default (`true`) applies. |
 | **`backup.logs.enabled` is `true` BY DEFAULT** | bool | `true` | The partition snapshot API: create, copy, delete. **Turning `backup.enabled` on with nothing else set backs up logs too** — see the warning below. |
 | `backup.logs.schedule` | cron | `37 * * * *` | |
-| `backup.logs.prefix` / `backup.traces.prefix` | path | `logs` / `traces` | 0.11.0. `<destination>/<prefix>`. |
+| `backup.logs.prefix` / `backup.traces.prefix` | path | `logs-daily` / `traces` | 0.11.0. `<destination>/<prefix>`; the logs job writes `<destination>/<prefix>/<YYYYMMDD>`, one prefix per day-partition. The default was `logs` up to 0.82.2, where it was a mix of per-run copies (0.82.1 and older) and day prefixes (0.82.2): `<destination>/logs/` is legacy, and the job neither reads nor deletes it. Restore a day from `<destination>/logs-daily/<YYYYMMDD>/`. |
 | `backup.traces.enabled` | bool | `false` | The vendor's documented procedure: sync, detach, sync, attach. |
 | `backup.traces.schedule` | cron | `57 * * * *` | |
 | `backup.image` | `{repository, tag}` | `rclone/rclone:1.73.0` | Needs a shell, `rclone` and busybox `wget`. |
@@ -909,7 +909,7 @@ of a store that needs it.
 ServiceAccount by default, so metrics, logs and traces share one IAM
 role, and that role has to reach all three prefixes. An estate that
 gives each store its own role — the metrics backup can write only
-`<destination>/metrics*`, the log backup only `<destination>/logs` —
+`<destination>/metrics*`, the log backup only `<destination>/logs-daily` —
 sets a ServiceAccount per store (0.10.0):
 
 ```yaml
