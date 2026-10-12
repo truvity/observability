@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change: the logs backup job writes to one stable prefix per day-partition.** It used to `rclone sync` each snapshot to `<destination>/logs/<snapshot-name>`, and the snapshot name is a new timestamp on every run, so every run was a full copy of every partition under a new prefix, and nothing removed the old ones. The destination is now `<destination>/logs/<YYYYMMDD>` (the partition's day, read from the snapshot path; the job refuses a path of another shape), so a run uploads only the parts that changed and deletes the ones the store merged away. On an SSE-KMS bucket this cuts the per-run PutObjects, and so the KMS calls, to the changed parts. The per-snapshot prefixes earlier versions wrote stay in the bucket, and the job does not delete them: remove them (or let a lifecycle rule expire them) yourself. The first run after the upgrade uploads every partition once.
+
 ## v0.82.1
 
 - Dependency updates.
