@@ -38,13 +38,13 @@ backup:
   auth:
     mode: credentialProcess
     credentialProcess:
-      command: "/var/run/backup-tools/credential-helper exchange --subject-token-file /var/run/backup-token/token"
+      command: "/var/run/backup-tools/r2-broker exchange --subject-token-file /var/run/backup-token/token"
       toolsImage:
-        repository: example.com/mirror/credential-helper
+        repository: example.com/mirror/r2-broker
         tag: "1.0.0"
         sourcePath: /usr/local/bin
       serviceAccountToken:
-        audience: https://example.com/credential-helper
+        audience: https://example.com/r2-broker
         path: token
   metrics:
     enabled: true
