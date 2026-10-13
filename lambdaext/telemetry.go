@@ -16,14 +16,14 @@ import (
 
 // Telemetry API settings and their AWS-documented bounds.
 const (
-	EnvPlatformLogs     = "SLUIS_PLATFORM_LOGS"
-	EnvFunctionLogs     = "SLUIS_FUNCTION_LOGS"
-	EnvExtensionLogs    = "SLUIS_EXTENSION_LOGS"
-	EnvTelemetryListen  = "SLUIS_TELEMETRY_LISTEN"
-	EnvBufferMaxItems   = "SLUIS_TELEMETRY_BUFFER_MAX_ITEMS"
-	EnvBufferMaxBytes   = "SLUIS_TELEMETRY_BUFFER_MAX_BYTES"
-	EnvBufferTimeoutMs  = "SLUIS_TELEMETRY_BUFFER_TIMEOUT_MS"
-	EnvBufferQueueItems = "SLUIS_TELEMETRY_BUFFER_QUEUE_ITEMS"
+	EnvPlatformLogs     = "OTLP_LAMBDA_PLATFORM_LOGS"
+	EnvFunctionLogs     = "OTLP_LAMBDA_FUNCTION_LOGS"
+	EnvExtensionLogs    = "OTLP_LAMBDA_EXTENSION_LOGS"
+	EnvTelemetryListen  = "OTLP_LAMBDA_TELEMETRY_LISTEN"
+	EnvBufferMaxItems   = "OTLP_LAMBDA_TELEMETRY_BUFFER_MAX_ITEMS"
+	EnvBufferMaxBytes   = "OTLP_LAMBDA_TELEMETRY_BUFFER_MAX_BYTES"
+	EnvBufferTimeoutMs  = "OTLP_LAMBDA_TELEMETRY_BUFFER_TIMEOUT_MS"
+	EnvBufferQueueItems = "OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_ITEMS"
 
 	telemetryAPIPath    = "/2022-07-01/telemetry"
 	telemetrySchema     = "2022-12-13"
@@ -48,8 +48,8 @@ type TelemetryConfig struct {
 	// QueueItems bounds the records held here waiting for an export; beyond
 	// it the oldest are dropped and counted.
 	QueueItems int
-	// Deprecated is the ACCESS_ROSTER_ names that were read because their
-	// SLUIS_ name was not set. Names only, never values.
+	// Deprecated is the old (SLUIS_, ACCESS_ROSTER_) names that were read because their
+	// OTLP_LAMBDA_ name was not set. Names only, never values.
 	Deprecated []string
 }
 
@@ -86,7 +86,7 @@ func (c TelemetryConfig) types() []string {
 // every invalid one.
 func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 	c := TelemetryConfig{
-		Platform: true, Listen: defaultTelemetryAdr,
+		Platform: true, Function: true, Listen: defaultTelemetryAdr,
 		MaxItems: 1000, MaxBytes: 262144, TimeoutMs: 1000, QueueItems: 5000,
 	}
 	var problems []error
@@ -168,6 +168,7 @@ type Telemetry struct {
 	TokenTimeout time.Duration
 
 	mu      sync.Mutex
+	inv     invocationTrace
 	queue   []*LogRecord
 	dropped int
 	failing bool
@@ -238,6 +239,7 @@ func (t *Telemetry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	recs := make([]*LogRecord, 0, len(events))
 	for _, ev := range events {
 		if rec, ok := MapEvent(ev, now); ok {
+			t.correlate(ev, rec)
 			recs = append(recs, rec)
 		}
 	}

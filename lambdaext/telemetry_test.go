@@ -236,7 +236,7 @@ func TestLoadTelemetryConfig(t *testing.T) {
 	env := map[string]string{}
 	get := func(k string) string { return env[k] }
 	c, err := lambdaext.LoadTelemetryConfig(get)
-	if err != nil || !c.Platform || c.Function || c.Extension || c.Listen != "sandbox.localdomain:4243" ||
+	if err != nil || !c.Platform || !c.Function || c.Extension || c.Listen != "sandbox.localdomain:4243" ||
 		c.MaxItems != 1000 || c.MaxBytes != 262144 || c.TimeoutMs != 1000 || c.QueueItems != 5000 {
 		t.Fatalf("defaults: %+v %v", c, err)
 	}
@@ -247,6 +247,7 @@ func TestLoadTelemetryConfig(t *testing.T) {
 		t.Fatalf("set: %+v %v", c, err)
 	}
 	env[lambdaext.EnvFunctionLogs] = "false"
+	env[lambdaext.EnvPlatformLogs] = "false"
 	if c, _ = lambdaext.LoadTelemetryConfig(get); c.Enabled() {
 		t.Fatal("nothing subscribed must be disabled")
 	}
@@ -446,7 +447,7 @@ func telemetryEnv(t *testing.T, rt *fakeRuntime, sts *fakeSTS, issuer *fakeIssue
 	env := append(baseEnv(rt, sts, issuer, up, freeAddr(t)),
 		"AWS_LAMBDA_FUNCTION_NAME=billing", "AWS_LAMBDA_FUNCTION_VERSION=$LATEST",
 		"AWS_LAMBDA_LOG_STREAM_NAME=2026/10/02/[$LATEST]abc", "AWS_REGION=eu-west-1",
-		"SLUIS_PLATFORM_LOGS=true", "SLUIS_TELEMETRY_LISTEN="+listen)
+		"OTLP_LAMBDA_PLATFORM_LOGS=true", "OTLP_LAMBDA_TELEMETRY_LISTEN="+listen)
 	return append(env, extra...)
 }
 
@@ -455,7 +456,7 @@ func TestExtensionForwardsPlatformLogs(t *testing.T) {
 	issuer := newFakeIssuer(t, 900)
 	listen := freeAddr(t)
 	ext := startExtension(t, telemetryEnv(t, rt, sts, issuer, up, listen,
-		"SLUIS_FUNCTION_LOGS=true", "SLUIS_TELEMETRY_BUFFER_TIMEOUT_MS=250"))
+		"OTLP_LAMBDA_FUNCTION_LOGS=true", "OTLP_LAMBDA_TELEMETRY_BUFFER_TIMEOUT_MS=250"))
 
 	eventually(t, "the subscription", func() bool { return len(rt.subscriptions()) == 1 })
 	var sub struct {
@@ -524,17 +525,17 @@ func TestExtensionForwardsPlatformLogs(t *testing.T) {
 	}
 }
 
-func TestExtensionSubscribesToPlatformOnlyByDefaultAndCanBeOff(t *testing.T) {
+func TestExtensionSubscribesToPlatformAndFunctionByDefaultAndCanBeOff(t *testing.T) {
 	rt, sts, up := newFakeRuntime(t), newFakeSTS(t), newFakeUpstream(t)
 	issuer := newFakeIssuer(t, 900)
 	startExtension(t, telemetryEnv(t, rt, sts, issuer, up, freeAddr(t)))
 	eventually(t, "the subscription", func() bool { return len(rt.subscriptions()) == 1 })
-	if !strings.Contains(rt.subscriptions()[0], `"types":["platform"]`) {
+	if !strings.Contains(rt.subscriptions()[0], `"types":["platform","function"]`) {
 		t.Fatalf("default types: %s", rt.subscriptions()[0])
 	}
 
 	rt2 := newFakeRuntime(t)
-	ext := startExtension(t, telemetryEnv(t, rt2, sts, issuer, up, freeAddr(t), "SLUIS_PLATFORM_LOGS=false"))
+	ext := startExtension(t, telemetryEnv(t, rt2, sts, issuer, up, freeAddr(t), "OTLP_LAMBDA_PLATFORM_LOGS=false", "OTLP_LAMBDA_FUNCTION_LOGS=false"))
 	eventually(t, "the first next", func() bool { _, _, n := rt2.state(); return n >= 1 })
 	time.Sleep(300 * time.Millisecond)
 	if len(rt2.subscriptions()) != 0 {
@@ -553,7 +554,7 @@ func TestExtensionKeepsRunningWhenTheSubscriptionIsRefused(t *testing.T) {
 	rt.subStatus = http.StatusForbidden
 	rt.mu.Unlock()
 	addr := freeAddr(t)
-	env := telemetryEnv(t, rt, sts, issuer, up, freeAddr(t), "SLUIS_LISTEN="+addr)
+	env := telemetryEnv(t, rt, sts, issuer, up, freeAddr(t), "OTLP_LAMBDA_LISTEN="+addr)
 	ext := startExtension(t, env)
 	eventually(t, "a log line", func() bool { return strings.Contains(ext.logs.String(), "Lambda telemetry logs are off") })
 	// The OTLP proxy is unaffected.
