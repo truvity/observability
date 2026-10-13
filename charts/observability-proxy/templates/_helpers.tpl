@@ -757,7 +757,7 @@ happens to hold that group read what the workload reads.
 {{- $t := .Values.tenancy -}}
 {{- $person := include "observability-proxy.authz.personAudiences" . | fromYaml -}}
 {{- $out := list -}}
-{{- range $p := $t.principals -}}
+{{- range $p := (include "observability-proxy.tenancy.principals" $ | fromYaml).principals -}}
 {{- $aud := $p.audience | default $t.audience -}}
 {{- if has $aud $person.audiences -}}
 {{- $byCluster := dict -}}
@@ -828,4 +828,40 @@ The whole configuration file of tenancy-authz.
       "traceClusters" (include "observability-proxy.authz.traceClusters" . | fromYaml).clusters
       "signingKey" (dict "file" "/etc/tenancy-authz/signing/privateKey")) -}}
 {{- toYaml $cfg -}}
+{{- end -}}
+
+{{/*
+`tenancy.identities` (a generic list of "groups -> reach") and the older
+`tenancy.principals`, as ONE list of principals: `{principals: [...]}`, in the
+shape of `tenancy.principals` (so every consumer of that list renders an
+identity exactly as it renders the principal written out by hand).
+
+An identity `{name, groups, reach}` becomes the principal
+`{name, groups, grants}`. Reach `clusters: [{cluster, namespaces}]` is the
+grants one for one; reach `wholeStore: true` is `allNamespaces` on each
+cluster of `tenancy.storeClusters`. Its refusals run first, here, so that no
+template ever works on an identity the validator has not read.
+*/}}
+{{- define "observability-proxy.tenancy.principals" -}}
+{{- include "observability-proxy.validate.identities" . -}}
+{{- $t := .Values.tenancy -}}
+{{- $out := list -}}
+{{- range $p := ($t.principals | default list) -}}
+{{- $out = append $out $p -}}
+{{- end -}}
+{{- range $id := ($t.identities | default list) -}}
+{{- $reach := $id.reach | default dict -}}
+{{- $grants := list -}}
+{{- if $reach.wholeStore -}}
+{{- range $c := ($t.storeClusters | default list) -}}
+{{- $grants = append $grants (dict "cluster" $c "allNamespaces" true) -}}
+{{- end -}}
+{{- else -}}
+{{- range $c := ($reach.clusters | default list) -}}
+{{- $grants = append $grants (dict "cluster" $c.cluster "namespaces" ($c.namespaces | default list)) -}}
+{{- end -}}
+{{- end -}}
+{{- $out = append $out (dict "name" $id.name "groups" $id.groups "grants" $grants) -}}
+{{- end -}}
+{{- toYaml (dict "principals" $out) -}}
 {{- end -}}

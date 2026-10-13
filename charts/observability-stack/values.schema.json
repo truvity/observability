@@ -553,6 +553,77 @@
             }
           }
         },
+        "identities": {
+          "type": "array",
+          "description": "Who may read what, as a generic list of groups to reach. Beside the deprecated `principals`, which it renders into the same VMUsers and tenancy-authz entries; a name or group may not be in both.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "groups",
+              "reach"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The principal's name, which names its VMUser."
+              },
+              "groups": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Token groups; a token carrying ANY of them selects this identity and reads its whole reach."
+              },
+              "reach": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Exactly one of `wholeStore` and `clusters` (checked at render time).",
+                "properties": {
+                  "wholeStore": {
+                    "type": "boolean",
+                    "description": "Every namespace of every cluster in `tenancy.storeClusters`. The only reach that reads traces."
+                  },
+                  "clusters": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "cluster",
+                        "namespaces"
+                      ],
+                      "properties": {
+                        "cluster": {
+                          "$ref": "#/definitions/name"
+                        },
+                        "namespaces": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "$ref": "#/definitions/name"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "storeClusters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/name"
+          },
+          "description": "Every cluster whose telemetry the store holds: what `identities[].reach.wholeStore` expands to. Required when an identity is wholeStore."
+        },
         "principals": {
           "type": "array",
           "items": {
