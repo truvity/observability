@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.82.3
 
 - **Behaviour change: the logs backup moves to a new top-level prefix, `backup.logs.prefix` defaults to `logs-daily` (was `logs`).** The job still writes one prefix per day-partition, now `<destination>/logs-daily/<YYYYMMDD>` (the fail-closed day check is unchanged). 0.82.2 wrote the day prefixes under `<destination>/logs/`, beside the per-run `<destination>/logs/<timestamp>-<id>/` copies that 0.82.1 and older left behind, and a bucket lifecycle rule filters on a plain key prefix, so it could not expire the old copies without also matching the new days. `logs-daily` is a sibling of `logs`, not under it, so a rule on `logs/` removes exactly the legacy data. `<destination>/logs/` is now legacy: the job neither reads nor deletes it, so expire it with a lifecycle rule on that prefix (or remove it yourself). The first run after the upgrade uploads every partition once under the new prefix. Restore a day from `<destination>/logs-daily/<YYYYMMDD>/`. A consumer that sets `backup.logs.prefix` explicitly is unaffected. Every golden that renders the logs backup job changes (the `DESTINATION` value).
 
