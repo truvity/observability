@@ -91,6 +91,13 @@ func TestKubeletBucketDropDefault(t *testing.T) {
 		"csi_operations_seconds_bucket",
 		"workqueue_queue_duration_seconds_bucket",
 		"workqueue_work_duration_seconds_bucket",
+		"kubelet_pod_start_total_duration_seconds_bucket",
+		"kubelet_pod_start_sli_duration_seconds_bucket",
+		"kubelet_image_pull_duration_seconds_bucket",
+		"kubelet_run_podsandbox_duration_seconds_bucket",
+		"kubelet_volume_metric_collection_duration_seconds_bucket",
+		"dra_operations_duration_seconds_bucket",
+		"authentication_token_cache_request_duration_seconds_bucket",
 	} {
 		assert.Falsef(t, survives(cfgs, dropped), "%s is read by nothing and is dropped by default", dropped)
 	}
@@ -98,6 +105,14 @@ func TestKubeletBucketDropDefault(t *testing.T) {
 		"kubelet_runtime_operations_duration_seconds_bucket",
 		"storage_operation_duration_seconds_bucket",
 		"rest_client_request_duration_seconds_bucket",
+		// Read by the kubelet dashboard or an upstream kubelet rule.
+		"kubelet_pod_worker_duration_seconds_bucket",
+		"kubelet_cgroup_manager_duration_seconds_bucket",
+		"kubelet_pod_start_duration_seconds_bucket",
+		"kubelet_pleg_relist_duration_seconds_bucket",
+		// The _sum and _count of a dropped histogram stay.
+		"kubelet_image_pull_duration_seconds_sum",
+		"kubelet_image_pull_duration_seconds_count",
 		"rest_client_response_size_bytes_sum",
 		"rest_client_response_size_bytes_count",
 		"workqueue_depth",
@@ -252,8 +267,7 @@ func TestCINodePoolFurtherDrops(t *testing.T) {
 	const g = "golden/observability-emitters/kubelet-ci-nodepools.yaml"
 	kub := scrapeJobMetricRelabelConfigs(t, g, "kubelet")
 	for _, name := range []string{
-		"kubelet_pod_worker_duration_seconds_bucket", "kubelet_image_pull_duration_seconds_bucket",
-		"dra_operations_duration_seconds_bucket", "kubelet_pod_start_duration_seconds_bucket",
+		"kubelet_pod_worker_duration_seconds_bucket", "kubelet_pod_start_duration_seconds_bucket",
 	} {
 		_, keep := run(kub, "ci-runners", name)
 		assert.Falsef(t, keep, "%s on a CI pool is dropped", name)
@@ -282,4 +296,18 @@ func TestCINodePoolFurtherDrops(t *testing.T) {
 	plain := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/minimal.yaml", "cadvisor")
 	_, keep := run(plain, "ci-runners", "container_fs_reads_total")
 	assert.True(t, keep)
+}
+
+// The cAdvisor network packet and error counters are read by the pod and
+// namespace network panels of the Kubernetes views dashboards, so they are
+// NOT dropped by default (nor is the `flag` metric, which seven Victoria
+// dashboards read). A test so that a later drop has to face that.
+func TestCadvisorNetworkCountersKeptByDefault(t *testing.T) {
+	cfgs := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/minimal.yaml", "cadvisor")
+	for _, dir := range []string{"receive", "transmit"} {
+		for _, k := range []string{"bytes", "packets", "errors", "packets_dropped"} {
+			name := "container_network_" + dir + "_" + k + "_total"
+			assert.Truef(t, survives(cfgs, name), "%s is read by a dashboard and survives", name)
+		}
+	}
 }

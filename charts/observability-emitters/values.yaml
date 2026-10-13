@@ -478,6 +478,44 @@ metrics:
         - kube_pod_container_status_restarts_total
       # -- Added to `ephemeralKeepMetrics` above rather than replacing it.
       extraEphemeralKeepMetrics: []
+      # -- Exact kube-state-metrics names dropped in EVERY namespace.
+      # Today one: `kube_pod_tolerations`, a series per pod per toleration
+      # that no dashboard or rule here reads and that mints a new set with
+      # every pod. Set to `[]` to store it again. REPLACED wholesale when
+      # set; widen with `extraMetricNames`.
+      metricNames:
+        - kube_pod_tolerations
+      # -- Added to `metricNames` above rather than replacing it.
+      extraMetricNames: []
+      # -- OPT-IN (off by default, no change to the render): the series of
+      # SHORT-LIVED Jobs, for example a CronJob that runs every few
+      # minutes. Each run is a new Job and a new pod, and kube-state-metrics
+      # mints about thirty `kube_pod_*` series per pod and thirteen
+      # `kube_job_*` series per Job that nothing reads a second time.
+      #
+      # With `enabled: true`, `namePattern` is a regular expression
+      # (write it WITHOUT `^`/`$`; the chart anchors it) over Job names:
+      #   - every `kube_pod_*` series whose `pod` matches `(<pattern>)-.*`
+      #     is dropped (a Job's pods are named `<job>-<suffix>`);
+      #   - of the `kube_job_*` series whose `job_name` matches
+      #     `<pattern>` or `<pattern>-*` (a CronJob's Jobs are named
+      #     `<cronjob>-<timestamp>`) only `keepMetrics` are stored.
+      # `keepMetrics` are the three the BackupJobFailed alert reads
+      # (`kube_job_created`, `kube_job_owner`, `kube_job_status_failed`). A
+      # pattern names the Jobs or CronJobs. Example:
+      #   namePattern: "nightly-backup|queue-janitor"
+      # What stops existing for the matched Jobs and pods: every other
+      # `kube_job_*` and `kube_pod_*` series, so the upstream pod and Job
+      # alerts (KubeJobFailed, KubePodNotReady ...), the pod-owner
+      # recordings and the pod dashboards show nothing for them. Enabled
+      # with an empty pattern, or a pattern with `enabled: false`, is refused.
+      ephemeralJobs:
+        enabled: false
+        namePattern: ""
+        keepMetrics:
+          - kube_job_created
+          - kube_job_owner
+          - kube_job_status_failed
     # -- A default DROP for the KUBELET scrape's own series that no
     # dashboard or rule here reads and that cost the most. Today one:
     # `kubernetes_feature_enabled`, the kubelet's feature-gate gauge, one
@@ -519,6 +557,16 @@ metrics:
         - csi_operations_seconds_bucket
         - workqueue_queue_duration_seconds_bucket
         - workqueue_work_duration_seconds_bucket
+        # Churn-heavy kubelet histograms nothing here reads (checked
+        # against every dashboard and rule). Their `_sum` and `_count`
+        # are kept.
+        - kubelet_pod_start_total_duration_seconds_bucket
+        - kubelet_pod_start_sli_duration_seconds_bucket
+        - kubelet_image_pull_duration_seconds_bucket
+        - kubelet_run_podsandbox_duration_seconds_bucket
+        - kubelet_volume_metric_collection_duration_seconds_bucket
+        - dra_operations_duration_seconds_bucket
+        - authentication_token_cache_request_duration_seconds_bucket
       # -- Added to `bucketMetrics` above rather than replacing it.
       extraBucketMetrics: []
       # -- Karpenter NodePool names whose nodes are short-lived CI nodes.

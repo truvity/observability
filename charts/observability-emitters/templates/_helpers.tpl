@@ -336,6 +336,11 @@ The pod-level kube-state-metrics churn drop for ephemeral (CI) namespaces,
 as scrape-level rules of the metrics agent (see
 `metrics.scrape.kubeStateMetricsDrop` in values.yaml). Empty when off.
 
+Three parts: exact metric names dropped everywhere (`metricNames`), the
+ephemeral-namespace pod drop, and the opt-in `ephemeralJobs` drop: for pods
+named `<pattern>-*` every `kube_pod_*`; for Jobs named `<pattern>` every
+`kube_job_*` but `keepMetrics`.
+
 A global scrape rule runs before the job's own relabeling, when the object's
 namespace is still `exported_namespace` (the target's `namespace` is the
 kube-state-metrics pod's). Same scratch-label shape as the cadvisor drop,
@@ -345,16 +350,29 @@ the scratch label.
 */}}
 {{- define "observability-emitters.scrapeConfig.kubeStateMetricsDropRelabelConfigs" -}}
 {{- $kd := .Values.metrics.scrape.kubeStateMetricsDrop -}}
-{{- if and $kd.enabled $kd.ephemeralNamespaces -}}
-{{- $keep := concat ($kd.ephemeralKeepMetrics | default list) ($kd.extraEphemeralKeepMetrics | default list) -}}
 {{- $steps := list -}}
+{{- if $kd.enabled -}}
+{{- $names := concat ($kd.metricNames | default list) ($kd.extraMetricNames | default list) -}}
+{{- if $names -}}
+{{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__]\n  regex: ^(%s)$" (join "|" $names)) -}}
+{{- end -}}
+{{- if $kd.ephemeralNamespaces -}}
+{{- $keep := concat ($kd.ephemeralKeepMetrics | default list) ($kd.extraEphemeralKeepMetrics | default list) -}}
 {{- if $keep -}}
 {{- $steps = append $steps (printf "- action: replace\n  sourceLabels: [__name__]\n  regex: ^(%s)$\n  targetLabel: __ksm_keep_ephemeral__\n  replacement: \"yes\"" (join "|" $keep)) -}}
 {{- end -}}
 {{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__, exported_namespace, __ksm_keep_ephemeral__]\n  separator: \";\"\n  regex: ^kube_pod_.*;(?:%s);$" $kd.ephemeralNamespaces) -}}
 {{- $steps = append $steps "- action: labeldrop\n  regex: __ksm_keep_ephemeral__" -}}
-{{- join "\n" $steps -}}
 {{- end -}}
+{{- if $kd.ephemeralJobs.enabled -}}
+{{- $pat := $kd.ephemeralJobs.namePattern -}}
+{{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__, exported_pod]\n  separator: \";\"\n  regex: ^kube_pod_.*;(?:%s)-.*$" $pat) -}}
+{{- $steps = append $steps (printf "- action: replace\n  sourceLabels: [__name__]\n  regex: ^(%s)$\n  targetLabel: __ksm_keep_job__\n  replacement: \"yes\"" (join "|" $kd.ephemeralJobs.keepMetrics)) -}}
+{{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__, job_name, __ksm_keep_job__]\n  separator: \";\"\n  regex: ^kube_job_.*;(?:%s)(?:-.*)?;$" $pat) -}}
+{{- $steps = append $steps "- action: labeldrop\n  regex: __ksm_keep_job__" -}}
+{{- end -}}
+{{- end -}}
+{{- join "\n" $steps -}}
 {{- end -}}
 
 {{- define "observability-emitters.vmagent.spec" -}}
