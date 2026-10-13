@@ -1,0 +1,31 @@
+# expect: is also a person audience
+# A minted token would be taken for a person's if it ever came back.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  vmAccessReader:
+    enabled: true
+  authz:
+    enabled: true
+    securityPolicy:
+      targetRefs:
+      - kind: HTTPRoute
+        name: observability-read
+    networkPolicy:
+      gatewayFrom:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: envoy
+    mintedAudience: example-observability-client
+  identities:
+  - groups:
+    - example:example-app:deployer
+    reach:
+      clusters:
+      - cluster: cluster-a
+        namespaces:
+        - example-app
+victoria-traces-single:
+  enabled: false

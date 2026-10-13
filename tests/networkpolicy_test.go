@@ -52,7 +52,7 @@ type networkPolicyDoc struct {
 // default the three store policies fall back to) must also be admitted
 // to the proxy pod on 8435, the config-reloader sidecar's port.
 func TestProxyPolicyAdmitsReloaderScrape(t *testing.T) {
-	goldens, err := filepath.Glob("golden/observability-stack/*.yaml")
+	goldens, err := filepath.Glob("golden/observability-proxy/*.yaml")
 	require.NoError(t, err)
 	require.NotEmpty(t, goldens)
 
@@ -98,7 +98,7 @@ func TestProxyPolicyAdmitsReloaderScrape(t *testing.T) {
 
 				// The default this chart falls back to when
 				// `networkPolicy.scrapeFrom` is unset — none of the
-				// fixtures under tests/cases/observability-stack override
+				// fixtures under tests/cases/observability-proxy override
 				// it, so every golden's reloader rule must show exactly
 				// this peer.
 				want := map[string]any{
@@ -117,7 +117,7 @@ func TestProxyPolicyAdmitsReloaderScrape(t *testing.T) {
 		}
 	}
 
-	assert.Positive(t, seen, "no proxy NetworkPolicy found in any observability-stack golden; "+
+	assert.Positive(t, seen, "no proxy NetworkPolicy found in any observability-proxy golden; "+
 		"this check went blind rather than passing")
 }
 

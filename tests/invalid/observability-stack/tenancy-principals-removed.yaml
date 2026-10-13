@@ -1,0 +1,10 @@
+# expect: additional properties 'principals' not allowed
+# `tenancy.principals` was removed with the Door plane; the stack declares only
+# `tenancy.clusterLabel`, and readers are `tenancy.identities` of
+# charts/observability-proxy.
+tenancy:
+  principals:
+    - group: example:k8s:viewer
+      grants:
+        - cluster: example-cluster
+          allNamespaces: true

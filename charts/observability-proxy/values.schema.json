@@ -106,7 +106,7 @@
         "operator-only",
         "replica"
       ],
-      "description": "\"replica\": the second half of a high-availability pair — the three stores and nothing else; a CONTRACT like operator-only (docs/high-availability.md). \"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs — see charts/observability-crds) — no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, the three stores, and tenancy.principals/writers/readers/alertReaders left empty) — the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
+      "description": "\"replica\": the second half of a high-availability pair — the three stores and nothing else; a CONTRACT like operator-only (docs/high-availability.md). \"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs — see charts/observability-crds) — no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, and the three stores) — the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
     },
     "ha": {
       "description": "Zone-redundant mode (docs/high-availability.md). Unset (null) or `false`: the single install. `true`: the legacy boolean, accepted and refused with fewer than two zones, nothing else. An object with `enabled: true`: this release is one half of a pair.",
@@ -334,7 +334,7 @@
         },
         "audience": {
           "$ref": "#/definitions/audience",
-          "description": "The client id this proxy's tokens are minted under, pinned into every reader's matchClaims as `aud`. REQUIRED whenever principals are set: vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else - it has no audience option and never inspects aud itself - so without this pin any unexpired token from that issuer is admitted whatever client it was minted for. Escaped and anchored where it is rendered, so whatever the issuer assigned pins itself and nothing else."
+          "description": "The client id this proxy's tokens are minted under, pinned into every reader's matchClaims as `aud`. REQUIRED whenever identities are set: vmauth validates a token's expiry and, under OIDC discovery, its issuer, and nothing else - it has no audience option and never inspects aud itself - so without this pin any unexpired token from that issuer is admitted whatever client it was minted for. Escaped and anchored where it is rendered, so whatever the issuer assigned pins itself and nothing else."
         },
         "claimName": {
           "type": "string",
@@ -540,89 +540,6 @@
             }
           }
         },
-        "principals": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "grants"
-            ],
-            "properties": {
-              "group": {
-                "type": "string",
-                "minLength": 1,
-                "description": "The group a token's claim must equal. Exactly one of `group` and `groups` is required (checked at render time)."
-              },
-              "groups": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "description": "Several group spellings for ONE principal: a token carrying ANY of them selects it and reads EVERY grant. Requires `name`; refused beside `group`. A token holding only one of the groups reads all the grants, which is correct only while every holder of one spelling holds them all - otherwise mint per-person vm_access claims instead. Each entry is escaped and anchored like `group`."
-              },
-              "name": {
-                "type": "string",
-                "minLength": 1,
-                "description": "The VMUser's name when `groups` is used."
-              },
-              "audience": {
-                "$ref": "#/definitions/audience",
-                "description": "This principal's OWN audience, overriding `tenancy.audience` for its `matchClaims.aud` alone. Optional: unset, this principal is pinned to `tenancy.audience` like any other, which stays REQUIRED whenever `principals` is set — this is a per-reader override, not a replacement. Escaped and anchored exactly as `tenancy.audience` is; the same refusal applies to a value no issuer mints (empty, whitespace, a newline). The reader `tenancy.alertReaders` cannot use this: it has no OIDC identity to pin an audience on in the first place."
-              },
-              "routes": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "type": "string",
-                  "enum": [
-                    "metrics",
-                    "logs",
-                    "traces"
-                  ]
-                },
-                "description": "Which of this proxy's three read routes this principal gets. Optional: unset renders all three (subject to the same gates as always — a trace route still needs a trace store enabled and `tenancy.allowUnfilteredTraceReads`). Set to narrow a principal to fewer signals, for example `[metrics]` for a machine reader with no business reading logs or traces. An empty list is refused by the schema rather than read as \"nothing\", the same as `writers[].destinations`."
-              },
-              "metricsQueryOnly": {
-                "type": "boolean",
-                "description": "Narrow the metrics route (when this principal has one) to exactly `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range` — no series, labels, label values, tsdb status or vmui. Off by default, which keeps the full metrics read route. Refused when `routes` is set and excludes `metrics`: there would be nothing left for it to narrow."
-              },
-              "vmalertAPI": {
-                "type": "boolean",
-                "description": "Give this principal the metrics vmalert's alerts and rules: `/prometheus/vmalert/api/v1/alerts` and `/prometheus/vmalert/api/v1/rules`, forwarded to vmalert as `/vmalert/api/v1/...`. Off by default. UNFILTERED: vmalert has no per-namespace or per-cluster concept, so this principal's grants do not scope what it reads here; it needs `tenancy.allowUnfilteredAlertReads`, like `alertReaders`. Refused when `routes` excludes `metrics`, or `vmalert.enabled` is false."
-              },
-              "grants": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "cluster"
-                  ],
-                  "properties": {
-                    "cluster": {
-                      "$ref": "#/definitions/name"
-                    },
-                    "namespaces": {
-                      "type": "array",
-                      "minItems": 1,
-                      "items": {
-                        "$ref": "#/definitions/name"
-                      },
-                      "description": "An EMPTY list is refused rather than read as everything: a project that expands to no namespaces is the likeliest way a grant widens by accident."
-                    },
-                    "allNamespaces": {
-                      "type": "boolean"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
         "writers": {
           "type": "array",
           "items": {
@@ -736,7 +653,7 @@
         },
         "identities": {
           "type": "array",
-          "description": "Who may read what, as a generic list of groups to reach. Beside the deprecated `principals`, which it renders into the same VMUsers and tenancy-authz entries; a name or group may not be in both.",
+          "description": "Who may read what, as a list of groups to reach: every person, every workload's reader (`audience`, `workload`) and per-cluster `allNamespaces`. Each entry renders one VMUser and one tenancy-authz entry; a name or a group may appear only once.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -748,7 +665,7 @@
               "name": {
                 "type": "string",
                 "minLength": 1,
-                "description": "The principal's name, which names its VMUser. May be left out only when `groups` has a single entry, which then names it (the single-`group` principal)."
+                "description": "The principal's name, which names its VMUser. May be left out only when `groups` has a single entry, which then names it (the single-group entry)."
               },
               "groups": {
                 "type": "array",

@@ -1,0 +1,21 @@
+# expect: there is no person audience
+# No personAudiences and no tenancy.audience: nothing would be exchanged.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  claimName: groups
+  vmAccessReader:
+    enabled: true
+  authz:
+    enabled: true
+    securityPolicy:
+      targetRefs:
+      - kind: HTTPRoute
+        name: observability-read
+    networkPolicy:
+      gatewayFrom:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: envoy
+victoria-traces-single:
+  enabled: false

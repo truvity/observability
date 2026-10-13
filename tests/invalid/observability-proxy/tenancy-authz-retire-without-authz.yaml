@@ -1,0 +1,18 @@
+# expect: `tenancy.authz.retireGroupReaders` is set but `tenancy.authz.enabled` is not
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  authz:
+    retireGroupReaders: true
+  identities:
+  - groups:
+    - example:example-app:deployer
+    reach:
+      clusters:
+      - cluster: cluster-a
+        namespaces:
+        - example-app
+victoria-traces-single:
+  enabled: false

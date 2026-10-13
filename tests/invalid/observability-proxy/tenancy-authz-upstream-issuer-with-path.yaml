@@ -1,0 +1,31 @@
+# expect: is not a bare http(s) URL
+# The service compares the issuer to `iss` as a string; a path is a mismatch waiting to happen.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  vmAccessReader:
+    enabled: true
+  authz:
+    enabled: true
+    securityPolicy:
+      targetRefs:
+      - kind: HTTPRoute
+        name: observability-read
+    networkPolicy:
+      gatewayFrom:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: envoy
+    upstreamIssuer: https://idp.example/realms/main
+  identities:
+  - groups:
+    - example:example-app:deployer
+    reach:
+      clusters:
+      - cluster: cluster-a
+        namespaces:
+        - example-app
+victoria-traces-single:
+  enabled: false
