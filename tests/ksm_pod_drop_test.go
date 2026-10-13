@@ -90,3 +90,71 @@ func TestKubeStateMetricsPodDropEmptyRestoresOldRender(t *testing.T) {
 		assert.NotContains(t, c.TargetLabel, "__ksm_keep", "no rule of the drop is rendered")
 	}
 }
+
+func ksmSeriesLabels(cfgs []*relabel.Config, labelsIn map[string]string) (map[string]string, bool) {
+	lb := labels.NewBuilder(labels.FromMap(labelsIn))
+	keep := relabel.ProcessBuilder(lb, cfgs...)
+	return lb.Labels().Map(), keep
+}
+
+// kube_pod_tolerations is dropped in every namespace by default (nothing
+// reads it); `extraMetricNames`/`metricNames: []` give it back.
+func TestKubeStateMetricsTolerationsDroppedByDefault(t *testing.T) {
+	cfgs := globalScrapeRelabelConfigs(t, "golden/observability-emitters/minimal.yaml")
+	for _, ns := range []string{"team-a", "observability"} {
+		_, keep := ksmSeries(cfgs, "kube_pod_tolerations", ns)
+		assert.Falsef(t, keep, "kube_pod_tolerations in %s is dropped", ns)
+		_, keep = ksmSeries(cfgs, "kube_pod_info", ns)
+		assert.Truef(t, keep, "kube_pod_info in %s is kept", ns)
+	}
+}
+
+// The opt-in drop of short-lived Jobs' series.
+func TestKubeStateMetricsEphemeralJobs(t *testing.T) {
+	cfgs := globalScrapeRelabelConfigs(t, "golden/observability-emitters/ksm-ephemeral-jobs.yaml")
+	pod := func(name, pod string) map[string]string {
+		return map[string]string{"__name__": name, "namespace": "observability", "pod": "ksm-0", "exported_namespace": "team-a", "exported_pod": pod}
+	}
+	job := func(name, jobName string) map[string]string {
+		return map[string]string{"__name__": name, "namespace": "observability", "pod": "ksm-0", "exported_namespace": "team-a", "job_name": jobName}
+	}
+	// Pods of a matching Job or CronJob: every kube_pod_* series goes.
+	for _, p := range []string{"nightly-backup-29000-abcde", "queue-janitor-xyz12", "nightly-backup-x"} {
+		for _, m := range []string{"kube_pod_info", "kube_pod_status_phase", "kube_pod_container_info", "kube_pod_owner"} {
+			_, keep := ksmSeriesLabels(cfgs, pod(m, p))
+			assert.Falsef(t, keep, "%s of %s is dropped", m, p)
+		}
+	}
+	// Other pods, and near-miss names, are untouched.
+	for _, p := range []string{"web-0", "nightly-backups-1", "my-nightly-backup-1", "queue-janitorx"} {
+		_, keep := ksmSeriesLabels(cfgs, pod("kube_pod_info", p))
+		assert.Truef(t, keep, "kube_pod_info of %s is kept", p)
+	}
+	// Jobs: only the three the BackupJobFailed alert reads survive.
+	for _, j := range []string{"nightly-backup", "nightly-backup-29000", "queue-janitor-29001"} {
+		for _, m := range []string{"kube_job_created", "kube_job_owner", "kube_job_status_failed"} {
+			got, keep := ksmSeriesLabels(cfgs, job(m, j))
+			require.Truef(t, keep, "%s of %s is kept", m, j)
+			_, scratch := got["__ksm_keep_job__"]
+			assert.False(t, scratch, "scratch label must not leak")
+		}
+		for _, m := range []string{"kube_job_labels", "kube_job_status_start_time", "kube_job_status_active", "kube_job_failed", "kube_job_info"} {
+			_, keep := ksmSeriesLabels(cfgs, job(m, j))
+			assert.Falsef(t, keep, "%s of %s is dropped", m, j)
+		}
+	}
+	for _, j := range []string{"other-job", "nightly-backups", "x-nightly-backup"} {
+		_, keep := ksmSeriesLabels(cfgs, job("kube_job_labels", j))
+		assert.Truef(t, keep, "kube_job_labels of %s is kept", j)
+	}
+}
+
+// Off by default: the minimal render carries no ephemeral-Job rule.
+func TestKubeStateMetricsEphemeralJobsOffByDefault(t *testing.T) {
+	cfgs := globalScrapeRelabelConfigs(t, "golden/observability-emitters/minimal.yaml")
+	_, keep := ksmSeriesLabels(cfgs, map[string]string{"__name__": "kube_job_labels", "job_name": "nightly-backup", "exported_pod": "nightly-backup-1"})
+	assert.True(t, keep)
+	for _, c := range cfgs {
+		assert.NotContains(t, c.TargetLabel, "__ksm_keep_job__")
+	}
+}

@@ -718,6 +718,10 @@ metadata:
 spec:
   disableSelfServiceScrape: true
   globalScrapeMetricRelabelConfigs:
+  - action: drop
+    regex: ^(kube_pod_tolerations)$
+    sourceLabels:
+    - __name__
   - action: replace
     regex: ^(kube_pod_status_unschedulable|kube_pod_container_status_last_terminated_reason|kube_pod_container_status_restarts_total)$
     replacement: "yes"
@@ -766,7 +770,7 @@ spec:
           regex: ^(kubernetes_feature_enabled)$
         - action: drop
           source_labels: [__name__]
-          regex: ^(rest_client_rate_limiter_duration_seconds_bucket|rest_client_response_size_bytes_bucket|rest_client_request_size_bytes_bucket|volume_operation_total_seconds_bucket|kubelet_http_requests_duration_seconds_bucket|csi_operations_seconds_bucket|workqueue_queue_duration_seconds_bucket|workqueue_work_duration_seconds_bucket)$
+          regex: ^(rest_client_rate_limiter_duration_seconds_bucket|rest_client_response_size_bytes_bucket|rest_client_request_size_bytes_bucket|volume_operation_total_seconds_bucket|kubelet_http_requests_duration_seconds_bucket|csi_operations_seconds_bucket|workqueue_queue_duration_seconds_bucket|workqueue_work_duration_seconds_bucket|kubelet_pod_start_total_duration_seconds_bucket|kubelet_pod_start_sli_duration_seconds_bucket|kubelet_image_pull_duration_seconds_bucket|kubelet_run_podsandbox_duration_seconds_bucket|kubelet_volume_metric_collection_duration_seconds_bucket|dra_operations_duration_seconds_bucket|authentication_token_cache_request_duration_seconds_bucket)$
     - job_name: cadvisor
       scheme: https
       honor_labels: false
