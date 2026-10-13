@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.85.0
 
 - **Added** `observability-stack` and `observability-proxy`: `tenancy.identities` now expresses EVERY principal `tenancy.principals` can, workload readers included (default empty, so **no default change**: every existing golden is byte-identical). New optional fields, equal in both schemas: `audience` (a principal's `audience`), `workload: {routes, metricsQueryOnly, vmalertAPI}` (the principal's three knobs, with their refusals), `reach.clusters[].allNamespaces: true` (instead of `namespaces`: whole-cluster reach on some clusters only), and `name` may be left out when `groups` has a single entry (the single-`group` principal). Every principal field maps to exactly one identity field (table in docs/tenancy-authz.md), and the new cases `<case>-as-identities` (ten, covering every principal shape in the cases) render byte for byte what the principal case does; `tenancy-authz-identities` now writes its workload reader as an identity and its golden is unchanged. New refusals: a cluster entry with both or neither of `namespaces` and `allNamespaces`, a missing `name` with several groups, and the principal checks (`audience`, `routes`, `metricsQueryOnly`, `vmalertAPI`) on an identity's `audience` and `workload`; a negative fixture covers each. **`tenancy.principals` is fully replaceable and will be removed in the next breaking release**; docs/adoption.md ("Switching `tenancy.principals` to `tenancy.identities`") now covers workloads.
 
