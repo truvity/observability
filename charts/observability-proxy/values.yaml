@@ -495,7 +495,29 @@ tenancy:
   # reads here — hence it requires `allowUnfilteredAlertReads`, exactly
   # as `alertReaders` does. Refused if `routes` excludes `metrics`, or
   # `vmalert.enabled` is false.
+  #
+  # DEPRECATED: `identities` below is the generic shape of the same data
+  # (name, groups, reach), and this key will be removed in a later
+  # release. Same values, new shape: render both ways and compare
+  # (docs/adoption.md). Until then both may be set together, provided no
+  # name or group is in both.
   principals: []
+  # -- Who may read what, as a generic list of "groups -> reach". Each entry
+  # is `{name, groups, reach}`: `name` is the principal (and its VMUser),
+  # `groups` the token groups (a token holding ANY of them selects it), and
+  # `reach` EITHER `wholeStore: true` (every cluster of `storeClusters`, all
+  # namespaces) OR `clusters: [{cluster, namespaces: [...]}]`. An identity
+  # renders exactly the principal `{name, groups, grants}` would: the same
+  # VMUser and the same tenancy-authz entry. A name or a group may not
+  # appear in both `identities` and `principals`. There is no field for
+  # traces: only whole-store reach reads them (docs/tenancy-authz.md), and
+  # a trace store still needs `allowUnfilteredTraceReads`.
+  identities: []
+  # -- Every cluster whose telemetry the store holds: what an identity's
+  # `reach.wholeStore` expands to (`allNamespaces` on each). Required when
+  # any identity is `wholeStore`; a cluster missing here is a cluster that
+  # reach does not cover.
+  storeClusters: []
   # -- The writers: collectors and agents that push, authenticated by a
   # bearer token rather than by a person's identity.
   #

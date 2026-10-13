@@ -13,7 +13,7 @@ reason: vmauth cannot turn a *list of groups* into a *union of filters*.
   provider's tokens carry **groups**; putting store query syntax into the
   sign-in service was tried and rejected.
 
-So the grant is computed here, from the same `tenancy.principals` the
+So the grant is computed here, from the same `tenancy.principals` (or `tenancy.identities`) the
 VMUsers render from, and handed to vmauth in a token vmauth trusts for that
 purpose and no other.
 
@@ -161,7 +161,7 @@ tenancy:
     networkPolicy:
       gatewayFrom:                        # the Envoy proxy pods
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: envoy-gateway-system}}
-  principals: [...]                       # as before
+  identities: [...]                       # who may read what, see below (or the deprecated `principals`)
 ```
 
 - **Apply order.** The `SecurityPolicy` fails closed, so applied before the
@@ -195,6 +195,45 @@ tenancy:
   CRDs, for the same reason as `sets.envoyGateway`.
 - The `kid` is the RFC 7638 thumbprint of the public key, so every replica
   names the same key the same way.
+
+## Identities: a generic list of groups to reach
+
+`tenancy.identities` is the shape the service's configuration already has,
+written directly: a list of entries `{name, groups, reach}`. `name` is the
+principal (and names its VMUser), `groups` are the token groups (a token
+holding ANY of them selects the entry), and `reach` is exactly one of:
+
+```yaml
+tenancy:
+  storeClusters: [cluster-a, cluster-b]   # every cluster the store holds
+  identities:
+    - name: platform
+      groups: [cluster-a:platform, cluster-b:platform]
+      reach: {wholeStore: true}           # every namespace of storeClusters
+    - name: example-app
+      groups: [example:example-app]
+      reach:
+        clusters:                         # per cluster, a set of namespaces
+          - cluster: cluster-a
+            namespaces: [example-app, other-app]
+```
+
+An identity renders the same objects the principal `{name, groups, grants}`
+would: `wholeStore` is `allNamespaces: true` on each cluster of
+`tenancy.storeClusters` (a cluster missing from that list is a cluster the
+reach does not cover), and `clusters` is the grants one for one. The render
+refuses a name or a group written both under `identities` and under
+`principals` (or twice in one), an empty `groups`, a reach with both
+`wholeStore` and `clusters` or with neither, and a `wholeStore` without
+`storeClusters`. The old key still works, deprecated; docs/adoption.md says
+how to switch.
+
+**Namespace-only reach never gets traces.** There is no traces field: it
+follows from the reach. The trace store cannot be filtered, so the service
+answers traces only to a person holding `allNamespaces` on every cluster the
+trace store serves (see "Traces"), which is `wholeStore` and nothing narrower.
+An entry whose reach is `clusters` with namespaces is refused traces (403,
+`forbidden_traces`) however many clusters it lists.
 
 ## Retiring the group readers
 

@@ -449,6 +449,44 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### Switching `tenancy.principals` to `tenancy.identities` (named, not versioned)
+
+**Nothing moves on the bump.** `tenancy.identities` is a new, empty-by-default
+key beside `tenancy.principals`, in both `observability-stack` and
+`observability-proxy`: every existing render is byte-identical. `principals`
+is **deprecated** and will be removed in a later release; the release that
+removes it will say so in CHANGELOG.md. Until then the two keys may be set
+together, provided no principal name and no group is written under both
+(the render refuses it).
+
+**How to switch: same values, new shape.** An entry becomes
+`{name, groups, reach}`:
+
+| `principals[]` | `identities[]` |
+|---|---|
+| `name` (or the single `group`) | `name` |
+| `groups` (or the single `group`) | `groups` (a list, any one matches) |
+| `grants: [{cluster, namespaces}]` | `reach: {clusters: [{cluster, namespaces}]}` |
+| `grants` with `allNamespaces: true` on every cluster the store holds | `reach: {wholeStore: true}`, with those clusters in `tenancy.storeClusters` |
+
+A principal's `audience`, `routes`, `metricsQueryOnly` and `vmalertAPI` have no
+identity form: an entry that sets any of them (a workload's reader) stays a
+principal for now, and so does one with `allNamespaces` on only some of the
+clusters it names.
+
+1. Render today's values and keep the output (`helm template … > before.yaml`).
+2. Move the entries to `identities`, add `storeClusters` when any is
+   `wholeStore`, and delete them from `principals`. Write the single-`group`
+   form as `name: <group>`, `groups: [<group>]`, and keep the order.
+3. Render again (`> after.yaml`) and `diff before.yaml after.yaml`: the diff
+   must be empty. A `group:` principal renders its tenancy-authz entry as
+   `group:` and an identity as `name` + `groups`, so a single-group principal
+   shows that one difference in the ConfigMap (and the checksum annotation
+   that follows it); write it as `name` + a one-element `groups` under
+   `principals` first, diff, then switch the key. The repository holds the
+   proof for the multi-group form: the `tenancy-authz-identities` and
+   `tenancy-authz-identities-principals` cases render byte for byte the same.
+
 ### Handing the Door plane to observability-proxy (0.81.0)
 
 **Nothing moves on the bump.** `observability-stack`'s new `door.source`

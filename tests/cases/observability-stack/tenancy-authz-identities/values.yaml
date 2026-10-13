@@ -1,0 +1,69 @@
+# The cluster's DNS suffix is an input, and this file sets it to a
+# neutral placeholder: a golden render is a tracked file in a public
+# repository, and the default suffix would put in-cluster names into one.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+# tenancy.identities, the generic group-to-reach list, proven equal to the
+# principals it replaces. This case and tenancy-authz-identities-principals render the
+# SAME tenancy: the person entries below are the tenancy-authz case's people,
+# written once as `principals` (name + groups + grants) and once as
+# `identities` (name + groups + reach), and tests/identities_test.go holds
+# that the two renders are byte for byte the same. The workload principal on
+# its own audience stays a principal in both: an identity has no audience or
+# routes, and a workload reader is not what identities are for.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  vmAccessReader:
+    enabled: true
+  authz:
+    enabled: true
+    securityPolicy:
+      targetRefs:
+        - kind: HTTPRoute
+          name: observability-read
+    networkPolicy:
+      gatewayFrom:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: example-gateway}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: envoy}
+  principals:
+    # A workload's own audience: not a person's, so not the service's.
+    - group: cluster-a:example-app:reader
+      audience: reader
+      routes: [metrics]
+      metricsQueryOnly: true
+      grants:
+        - cluster: cluster-a
+          namespaces: [example-app]
+  # `wholeStore` is allNamespaces on every cluster listed here.
+  storeClusters: [cluster-a, cluster-b]
+  identities:
+    - name: k8s:viewer
+      groups:
+        - cluster-a:k8s:viewer
+        - cluster-b:k8s:viewer
+      reach:
+        wholeStore: true
+    - name: example:example-app:deployer
+      groups: [example:example-app:deployer]
+      reach:
+        clusters:
+          - cluster: cluster-a
+            namespaces: [example-app, other-app]
+
+# Off, so the render is the tenancy and nothing else.
+vmalert:
+  enabled: false
+alertmanager:
+  enabled: false
+victoria-metrics-k8s-stack:
+  enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false
