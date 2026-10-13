@@ -1541,6 +1541,117 @@ spec:
               down. Its pods' events and the ReplicaSet's conditions name why.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "DeploymentNoAvailableReplicas")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
+    {{- if .Values.groups.arcRunners.enabled }}
+    {{- $g := .Values.groups.arcRunners }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    - name: platform-alerts.arc-runners
+      interval: {{ .Values.interval }}
+      rules:
+        # A runner that has been reporting itself stuck for too long.
+        #
+        # `runner_watchdog_stuck` is 1 while an IDLE runner (no job) shows an
+        # upstream ARC #4307 signature past the watchdog's own grace. The
+        # runner's readiness probe fails then, and the janitor deletes the
+        # runner within about two minutes, so a runner stuck for `stuck.for`
+        # means the janitor is not doing its job. One series per runner pod;
+        # a deleted pod's series ends and the alert resolves.
+        - alert: ARCRunnerStuck
+          expr: >-
+            max by ({{ $b }}namespace, pod) (runner_watchdog_stuck) == 1
+          for: {{ $g.stuck.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.stuck.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "ARC runner {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}} has been stuck for {{ $g.stuck.for }}"
+            description: >-
+              The runner watchdog reports runner pod {{`{{ $labels.pod }}`}}
+              stuck (an idle runner that cannot take a job, upstream ARC
+              #4307). The janitor should have deleted it within about two
+              minutes, so it is not working: check the janitor CronJob in
+              {{`{{ $labels.namespace }}`}} (suspended, failing, or lacking
+              the right to delete the EphemeralRunner), then delete the
+              EphemeralRunner by hand.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ARCRunnerStuck")) }}{{ . | nindent 12 }}{{- end }}
+        {{- if $g.detections.enabled }}
+        # How often the stuck state is reached at all.
+        #
+        # Each detection is a runner the janitor then deletes, so this is
+        # not an outage: it is how often upstream ARC #4307 bites. The sum
+        # is per namespace because the runner pods are short-lived.
+        - alert: ARCRunnerStuckDetectionsHigh
+          expr: >-
+            sum by ({{ $b }}namespace) (increase(runner_watchdog_stuck_detections_total[{{ $g.detections.window }}])) > {{ $g.detections.threshold }}
+          for: {{ $g.detections.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.detections.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "More than {{ $g.detections.threshold }} stuck ARC runners in {{ $g.detections.window }} in {{`{{ $labels.namespace }}`}}"
+            description: >-
+              The runner watchdogs in {{`{{ $labels.namespace }}`}} detected
+              {{`{{ $value | humanize }}`}} stuck runners within the last
+              {{ $g.detections.window }}. The janitor cleans each of them up;
+              the count is for the frequency of upstream ARC #4307 (cancelled
+              or interrupted jobs leaving a runner that cannot take work).
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ARCRunnerStuckDetectionsHigh")) }}{{ . | nindent 12 }}{{- end }}
+        {{- end }}
+        {{- if $g.jobsWaiting.enabled }}
+        # Jobs GitHub has assigned to a scale set that no runner has taken.
+        #
+        # `gha_assigned_jobs` counts the jobs assigned to the scale set and
+        # `gha_running_jobs` those running or about to run, both from the
+        # listener's statistics poll, so the difference is the jobs waiting
+        # for a runner. A runner starting from zero shows up here for a
+        # minute or two; `jobsWaiting.for` covers that. Both gauges come
+        # from the same listener pod, so the subtraction matches on `pod`
+        # and `name` (two organizations can reuse a scale set name).
+        - alert: ARCJobsWaiting
+          expr: >-
+            max by ({{ $b }}pod, name) (gha_assigned_jobs)
+            - max by ({{ $b }}pod, name) (gha_running_jobs)
+            > 0
+          for: {{ $g.jobsWaiting.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.jobsWaiting.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "{{`{{ $value }}`}} job(s) wait for a runner of scale set {{`{{ $labels.name }}`}} for {{ $g.jobsWaiting.for }}"
+            description: >-
+              Scale set {{`{{ $labels.name }}`}} (listener
+              {{`{{ $labels.pod }}`}}) has had assigned jobs without a runner
+              for {{ $g.jobsWaiting.for }}. Runners are not starting (no node
+              capacity, the pool at its maximum, a registration or image-pull
+              failure) or are stuck (see ARCRunnerStuck). Read the scale
+              set's EphemeralRunners and the pending runner pods.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ARCJobsWaiting")) }}{{ . | nindent 12 }}{{- end }}
+        {{- end }}
+        {{- if $g.startup.enabled }}
+        # The time from a job's assignment to a runner taking it, slow.
+        #
+        # `gha_job_startup_duration_seconds` is observed when a job STARTS,
+        # so a job still waiting is not in it yet (that is ARCJobsWaiting);
+        # this is the trend of the jobs that did get a runner. The
+        # histogram has no scale set label, so it is told apart by the
+        # listener `pod`. The second line keeps a quiet scale set from
+        # alerting on a few jobs.
+        - alert: ARCJobStartupSlow
+          expr: >-
+            histogram_quantile(0.95, sum by ({{ $b }}pod, le) (increase(gha_job_startup_duration_seconds_bucket[{{ $g.startup.window }}])))
+            > {{ $g.startup.thresholdSeconds }}
+            and
+            sum by ({{ $b }}pod) (increase(gha_job_startup_duration_seconds_count[{{ $g.startup.window }}])) >= {{ $g.startup.minJobs }}
+          for: {{ $g.startup.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.startup.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Jobs of ARC listener {{`{{ $labels.pod }}`}} wait {{`{{ $value | humanizeDuration }}`}} for a runner at the 95th percentile"
+            description: >-
+              Over the last {{ $g.startup.window }}, the 95th percentile of
+              the time between a job being assigned to the scale set and a
+              runner starting it was above {{ $g.startup.thresholdSeconds }}s
+              for {{ $g.startup.for }}. Runners are slow to start: node
+              provisioning, image pulls, or the pool running at its maximum.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ARCJobStartupSlow")) }}{{ . | nindent 12 }}{{- end }}
+        {{- end }}
+    {{- end }}
 {{- end }}
 {{- if or .Values.groups.podSecurity.enabled .Values.groups.podSecurityAudit.enabled }}
 ---
