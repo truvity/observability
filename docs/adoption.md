@@ -559,12 +559,12 @@ For a matching Job only `kube_job_created`, `kube_job_owner` and
 (`KubeJobFailed`, `KubePodNotReady` ...) and the pod views then show nothing
 for those Jobs, which is the point.
 
-### Removing the Door plane from observability-stack, and `tenancy.principals` (breaking; lands in the release after v0.87.0)
+### 0.87.0 → 0.88.0
 
-This is a named entry, not a versioned one: the release is cut by CI after
-this change merges, and it is the first one after v0.87.0 (CHANGELOG.md has
-the two `**Breaking**` bullets under that version's heading). It asks three
-things of an operator, **in this order**.
+**Removing the Door plane from observability-stack, and `tenancy.principals` (breaking).**
+
+CHANGELOG.md has the two `**Breaking**` bullets under `## v0.88.0`. The
+upgrade asks three things of an operator, **in this order**.
 
 **What changes.** `observability-stack` renders no `VMAuth`, no `VMUser`, no
 `tenancy-authz` object and not the proxy's NetworkPolicy, whatever its values
