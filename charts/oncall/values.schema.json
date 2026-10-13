@@ -145,6 +145,49 @@
                   "minLength": 1
                 }
               }
+            },
+            "values": {
+              "type": "object",
+              "description": "GoAlert's configuration, the JSON shape `goalert get-config` prints."
+            },
+            "secretEnv": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "secretKeyRef"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Z_][A-Z0-9_]*$",
+                    "not": {
+                      "pattern": "^(GOALERT_|PGPASSWORD$)"
+                    },
+                    "description": "Not a GOALERT_ flag and not PGPASSWORD: those are the chart's."
+                  },
+                  "secretKeyRef": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "key"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         },

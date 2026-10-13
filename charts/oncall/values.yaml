@@ -77,12 +77,20 @@ goalert:
   # sign-in, the Webhook contact method, message bundling, ...). Unset, the
   # default, the configuration is whatever an admin sets in the UI.
   #
-  # Set to a Secret key holding the whole configuration as JSON (the shape
-  # `goalert get-config` prints), and every pod start runs `goalert
-  # migrate` and then `goalert set-config` with it, so the UI's admin
-  # page is overwritten by git on every rollout. A Secret, because the
-  # configuration carries the OIDC client secret. See docs/oncall.md.
+  # Set, every pod start runs `goalert migrate` and then `goalert
+  # set-config` as init containers, so the admin page is overwritten by
+  # git on every rollout. Two ways, one at a time:
+  #   - `values`: the configuration as values (the JSON shape `goalert
+  #     get-config` prints). A secret in it is written `$(NAME)` and
+  #     named in `secretEnv`, which Kubernetes expands from a Secret when
+  #     the init container starts: the value never reaches the manifest.
+  #   - `existingSecret`: the whole JSON in a Secret key.
+  # See docs/oncall.md.
   config:
+    values: {}
+    # -- Environment variables from Secrets for `$(NAME)` references in
+    # `values`: [{name: OIDC_CLIENT_SECRET, secretKeyRef: {name, key}}].
+    secretEnv: []
     existingSecret:
       name: ""
       key: config.json

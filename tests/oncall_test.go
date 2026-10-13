@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -65,7 +66,19 @@ func TestOncallRendersNoSecretValue(t *testing.T) {
 					m := e.(map[string]any)
 					name := asString(m["name"])
 					switch name {
-					case "PGPASSWORD", "GOALERT_DATA_ENCRYPTION_KEY", "GOALERT_DATA":
+					case "GOALERT_DATA":
+						// From a Secret, or values whose secrets are all
+						// `$(NAME)` references Kubernetes expands at start.
+						if m["value"] == nil {
+							assert.NotNilf(t, dig(m, "valueFrom", "secretKeyRef"), "%s: GOALERT_DATA has no source", g)
+							continue
+						}
+						var cfg map[string]any
+						require.NoError(t, json.Unmarshal([]byte(asString(m["value"])), &cfg))
+						if s, ok := dig(cfg, "OIDC", "ClientSecret").(string); ok {
+							assert.Truef(t, strings.HasPrefix(s, "$("), "%s: GOALERT_DATA carries a literal OIDC client secret", g)
+						}
+					case "PGPASSWORD", "GOALERT_DATA_ENCRYPTION_KEY":
 						assert.NotNilf(t, dig(m, "valueFrom", "secretKeyRef"), "%s: %s is not from a Secret", g, name)
 						assert.Nilf(t, m["value"], "%s: %s has a literal value", g, name)
 					case "GOALERT_DB_URL":

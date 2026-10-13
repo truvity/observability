@@ -18,8 +18,24 @@ goalert:
       configMap: example-private-ca
       key: ca-certificates.crt
   config:
-    existingSecret:
-      name: oncall-goalert-config
+    values:
+      General:
+        ApplicationName: On call
+      OIDC:
+        Enable: true
+        NewUsers: true
+        IssuerURL: https://issuer.example
+        ClientID: oncall
+        ClientSecret: $(OIDC_CLIENT_SECRET)
+      Webhook:
+        Enable: true
+        AllowedURLs:
+          - http://oncall-telegram-relay.oncall.svc:8080/v1/notify/
+    secretEnv:
+      - name: OIDC_CLIENT_SECRET
+        secretKeyRef:
+          name: oncall-client
+          key: client-secret
   extraEnv:
     - name: GOALERT_KUBERNETES_COOLDOWN
       value: 5s
