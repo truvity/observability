@@ -4,10 +4,6 @@
 # OOM-killed by it. Only the CPU limit may be left out.
 resources:
   policy: burstable
-# No proxy: no principals to admit, so none of the tenancy refusals
-# apply and none can preempt this fixture's own.
-vmauth:
-  enabled: false
 
 vmalert:
   resources:

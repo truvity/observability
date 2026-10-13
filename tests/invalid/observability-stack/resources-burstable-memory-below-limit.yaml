@@ -4,10 +4,6 @@
 # pressure, which is what `guaranteed` existed to prevent.
 resources:
   policy: burstable
-# No proxy: no principals to admit, so none of the tenancy refusals
-# apply and none can preempt this fixture's own.
-vmauth:
-  enabled: false
 
 alertmanager:
   resources:

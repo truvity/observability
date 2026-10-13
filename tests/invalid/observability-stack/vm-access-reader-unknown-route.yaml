@@ -1,7 +1,0 @@
-# expect: at '/tenancy/vmAccessReader/routes/0'
-tenancy:
-  issuerUrl: https://issuer.example
-  audience: example-observability-client
-  vmAccessReader:
-    enabled: true
-    routes: [alerts]

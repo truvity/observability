@@ -1,0 +1,21 @@
+# expect: neither `tenancy.authz.upstreamIssuer` nor `tenancy.issuerUrl` is
+# No identity provider to verify a person's token against.
+stackReleaseName: observability-stack
+tenancy:
+  audience: example-observability-client
+  claimName: groups
+  vmAccessReader:
+    enabled: true
+  authz:
+    enabled: true
+    securityPolicy:
+      targetRefs:
+      - kind: HTTPRoute
+        name: observability-read
+    networkPolicy:
+      gatewayFrom:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: envoy
+victoria-traces-single:
+  enabled: false

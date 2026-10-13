@@ -47,8 +47,3 @@ victoria-logs-single:
   enabled: false
 victoria-traces-single:
   enabled: false
-
-tenancy:
-  principals: []
-  writers: []
-  alertReaders: []

@@ -1,0 +1,21 @@
+# expect: `vmauth.replicaCount` is 1
+# The proxy is what both stores are read through: one pod takes every read
+# with its zone.
+stackReleaseName: observability-stack
+ha:
+  enabled: true
+  peer:
+    metrics: http://peer-metrics.example.svc:8428
+    logs: http://peer-logs.example.svc:9428
+    traces: http://peer-traces.example.svc:10428
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  identities:
+  - groups:
+    - example:k8s:viewer
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true

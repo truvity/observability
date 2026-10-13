@@ -1,0 +1,7 @@
+# expect: the vm_access reader's audience
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  vmAccessReader:
+    enabled: true
+    audience: one another

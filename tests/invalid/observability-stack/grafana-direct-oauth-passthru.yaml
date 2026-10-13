@@ -1,8 +1,7 @@
 # expect: sets `jsonData.oauthPassThru: true`, but `vmauth` is off
 # Without the proxy there is nothing to scope a person's token, and the
 # store it reaches directly answers 401 to one.
-# No proxy: no principals to admit, so none of the tenancy refusals
-# apply and none can preempt this fixture's own.
+# No proxy (`vmauth.enabled: false`): Grafana reads the stores directly.
 vmauth:
   enabled: false
 

@@ -4,14 +4,6 @@
 # namespace; a route on anything else matches nothing a rule actually
 # carries and pages nobody while looking exactly like a route that
 # works.
-tenancy:
-  issuerUrl: https://issuer.example
-  audience: example-observability-client
-  principals:
-    - group: example:k8s:viewer
-      grants:
-        - cluster: example-cluster
-          allNamespaces: true
 
 notifications:
   externalUrl: https://grafana.example

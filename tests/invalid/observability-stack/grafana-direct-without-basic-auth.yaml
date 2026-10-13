@@ -1,7 +1,6 @@
 # expect: does not authenticate to the store, and `vmauth` is off
 # A datasource pointed at a store with no credential: 401 on every panel.
-# No proxy: no principals to admit, so none of the tenancy refusals
-# apply and none can preempt this fixture's own.
+# No proxy (`vmauth.enabled: false`): Grafana reads the stores directly.
 vmauth:
   enabled: false
 

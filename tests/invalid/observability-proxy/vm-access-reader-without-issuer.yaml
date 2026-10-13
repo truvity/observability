@@ -1,0 +1,6 @@
+# expect: `tenancy.vmAccessReader.enabled` is set but `tenancy.issuerUrl` is empty
+stackReleaseName: observability-stack
+tenancy:
+  audience: example-observability-client
+  vmAccessReader:
+    enabled: true

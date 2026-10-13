@@ -66,7 +66,7 @@ def run(*cmd, cwd=None, env=None):
 def routes():
     """The path regexes vmauth would serve the reader principal."""
     out = []
-    with open(os.path.join(ROOT, "tests/golden/observability-stack/tenancy-mcp-reader.yaml")) as f:
+    with open(os.path.join(ROOT, "tests/golden/observability-proxy/tenancy-mcp-reader.yaml")) as f:
         for d in yaml.safe_load_all(f):
             if d and d.get("kind") == "VMUser" and d["spec"]["name"] == "example:mcp:reader":
                 for ref in d["spec"]["targetRefs"]:

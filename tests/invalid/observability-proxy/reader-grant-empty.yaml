@@ -1,0 +1,11 @@
+# expect: neither `namespaces` nor `allNamespaces`
+# A cluster with neither list nor allNamespaces is refused, not read as everything.
+stackReleaseName: observability-stack
+tenancy:
+  readers:
+  - name: edge-evaluator
+    tokenSecret:
+      name: example-read-token
+      key: token
+    grants:
+    - cluster: example-edge

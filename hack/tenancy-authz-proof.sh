@@ -86,7 +86,7 @@ vm_tgz=("$root"/charts/observability-stack/charts/victoria-metrics-k8s-stack-*.t
 vm_tag="$(tar -xzOf "${vm_tgz[0]}" victoria-metrics-k8s-stack/Chart.yaml | awk '/^appVersion:/ { print $2 }')"
 vl_tgz=("$root"/charts/observability-stack/charts/victoria-logs-single-*.tgz)
 vl_tag="$(tar -xzOf "${vl_tgz[0]}" victoria-logs-single/Chart.yaml | awk '/^appVersion:/ { print $2 }')"
-vmauth_tag="$(awk '/^vmauth:/{m=1} m && /^ *tag: /{print $2; exit}' "$root/charts/observability-stack/values.yaml")"
+vmauth_tag="$(awk '/^vmauth:/{m=1} m && /^ *tag: /{print $2; exit}' "$root/charts/observability-proxy/values.yaml")"
 echo "vmauth $vmauth_tag, victoria-metrics $vm_tag, victoria-logs $vl_tag (the chart's pins), Envoy Gateway $eg_version"
 
 # --- the service image --------------------------------------------------
@@ -104,6 +104,7 @@ docker build -q -t tenancy-authz:proof "$work/image" >/dev/null
 # Principals: two namespace groups on one cluster, an operations group on
 # another cluster, and a workload on its own audience (metrics only).
 cat > "$work/values.yaml" <<EOF
+stackReleaseName: x
 tenancy:
   issuerUrl: http://oidc.$ns.svc:8080
   audience: grafana
@@ -121,25 +122,30 @@ tenancy:
     networkPolicy:
       gatewayFrom:
         - podSelector: {}
-  principals:
-    - group: team-a
-      grants:
-        - {cluster: cluster-a, namespaces: [ns-a]}
-    - group: team-b
-      grants:
-        - {cluster: cluster-a, namespaces: [ns-b]}
-    - group: ops
-      grants:
-        - {cluster: cluster-b, allNamespaces: true}
-    - group: fleet
-      grants:
-        - {cluster: cluster-a, allNamespaces: true}
-        - {cluster: cluster-b, allNamespaces: true}
-    - group: cluster-a:ns-a:reader
+  identities:
+    - groups: [team-a]
+      reach:
+        clusters:
+          - {cluster: cluster-a, namespaces: [ns-a]}
+    - groups: [team-b]
+      reach:
+        clusters:
+          - {cluster: cluster-a, namespaces: [ns-b]}
+    - groups: [ops]
+      reach:
+        clusters:
+          - {cluster: cluster-b, allNamespaces: true}
+    - groups: [fleet]
+      reach:
+        clusters:
+          - {cluster: cluster-a, allNamespaces: true}
+          - {cluster: cluster-b, allNamespaces: true}
+    - groups: [cluster-a:ns-a:reader]
       audience: reader
-      routes: [metrics]
-      grants:
-        - {cluster: cluster-a, namespaces: [ns-a]}
+      workload: {routes: [metrics]}
+      reach:
+        clusters:
+          - {cluster: cluster-a, namespaces: [ns-a]}
 stores:
   traces:
     url: http://vt.$ns.svc:10428
@@ -151,7 +157,7 @@ victoria-metrics-k8s-stack: {enabled: false}
 victoria-logs-single: {enabled: false}
 victoria-traces-single: {enabled: false}
 EOF
-helm template x "$root/charts/observability-stack" --namespace "$ns" -f "$work/values.yaml" > "$work/chart.yaml"
+helm template x "$root/charts/observability-proxy" --namespace "$ns" -f "$work/values.yaml" > "$work/chart.yaml"
 
 # convert [suffix]: translate the rendered chart{suffix}.yaml into vmauth.yml
 # (suffix empty) or vmauth{suffix}.yml; only the first also writes authz.yaml.
@@ -547,7 +553,7 @@ expect "people still read (the old key signs until the switch)      " "$(metrics
 echo; echo "=== 10. retireGroupReaders: one path for people ==="
 # The same values with the person principals' own VMUsers retired. vmauth gets
 # the config rendered from THAT chart; the service and the route are unchanged.
-helm template x "$root/charts/observability-stack" --namespace "$ns" -f "$work/values.yaml" \
+helm template x "$root/charts/observability-proxy" --namespace "$ns" -f "$work/values.yaml" \
   --set tenancy.authz.retireGroupReaders=true > "$work/chart-retired.yaml"
 convert -retired
 kn create configmap vmauth-config --from-file=vmauth.yml="$work/vmauth-retired.yml" --dry-run=client -o yaml | kn replace -f - >/dev/null

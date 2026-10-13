@@ -31,32 +31,5 @@ victoria-metrics-k8s-stack:
       alertmanager:
         enabled: false
 
-tenancy:
-  issuerUrl: https://issuer.example
-  audience: example-observability-client
-  # The trace store is on by default, and this proxy cannot scope trace
-  # reads: vmauth applies a grant by substituting it into the route, and
-  # VictoriaTraces' Jaeger and Tempo select APIs accept no query
-  # argument to substitute it into. So every principal below reads every
-  # namespace's spans on every cluster, and the chart refuses to render until that is
-  # written down. docs/safety.md has the mechanism; the alternative is
-  # `victoria-traces-single.enabled: false`.
-  allowUnfilteredTraceReads: true
-  principals:
-    - group: example:k8s:viewer
-      grants:
-        - cluster: example-cluster
-          allNamespaces: true
-  # The realistic evaluate-only shape (docs/statusbox.md "internal →
-  # status, pulled"): no Alertmanager at all, and the Watchdog VMRule
-  # (templates/watchdog.yaml) is still there for this to read — proving
-  # the rule is no longer trapped inside `alertmanager.enabled`.
-  allowUnfilteredAlertReads: true
-  alertReaders:
-    - name: statusbox
-      tokenSecret:
-        name: example-alerts-read-token
-        key: token
-
 notifications:
   mode: evaluate-only

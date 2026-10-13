@@ -1,0 +1,29 @@
+# A Door case for charts/observability-proxy. It began as the Door half of the
+# stack case of the same name, from the release in which the stack stopped
+# rendering the Door: the stack's values kept to the keys this chart declares,
+# with `stackReleaseName: observability-stack
+alertmanager:
+  enabled: false
+vmalert: {}
+victoria-metrics-k8s-stack:
+  defaultRules:
+    sources:
+      alertmanager:
+        enabled: false
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  allowUnfilteredAlertReads: true
+  alertReaders:
+  - name: statusbox
+    tokenSecret:
+      name: example-alerts-read-token
+      key: token
+  identities:
+  - groups:
+    - example:k8s:viewer
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true

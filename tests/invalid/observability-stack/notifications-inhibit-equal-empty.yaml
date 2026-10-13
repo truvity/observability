@@ -1,9 +1,5 @@
 # expect: at '/notifications/inhibit/equal'
 # An inhibit rule with no `equal` lets ANY critical mute EVERY warning.
-# No proxy: no principals to admit, so none of the tenancy refusals
-# apply and none can preempt this fixture's own.
-vmauth:
-  enabled: false
 
 # The minimum receiver that keeps the "no receiver configured" refusal
 # (Alertmanager is on by default) from preempting this fixture's own.

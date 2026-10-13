@@ -13,15 +13,20 @@ proxy. That proxy and what it needs to decide are the **Door**:
   gateway's SecurityPolicy;
 - the NetworkPolicies of the proxy and of tenancy-authz.
 
-Until 0.81.0 only `observability-stack` renders them. From 0.81.0 either chart
-can: `observability-stack` by default, or `observability-proxy` once the stack's
-`door.source` is `chart`. The objects keep their kind, name and namespace
-whichever chart owns them, so a consumer moves them between Applications
-without a delete ([adoption.md](adoption.md), "Handing the Door plane to observability-proxy"). This is a move
-and nothing else: the values keys are the stack's (`vmauth.*`, `tenancy.*`, the
-proxy half of `networkPolicy.*`), the service code (`cmd/tenancy-authz`) and its
-image are unchanged, and `tests/proxy_chart_test.go` holds the two charts'
-renders byte-identical.
+Until 0.81.0 only `observability-stack` rendered them. From 0.81.0 either chart
+could (the stack by default, or `observability-proxy` once the stack's
+`door.source` was `chart`). The release that removed the Door plane from the
+stack ([adoption.md](adoption.md), "Removing the Door plane from
+observability-stack, and `tenancy.principals`") left `observability-proxy` the
+only chart that renders it: the stack renders none of these objects and its
+schema refuses the Door's keys. The objects kept their kind, name and
+namespace across the move, so a consumer moved them between Applications
+without a delete ([adoption.md](adoption.md), "Handing the Door plane to
+observability-proxy"). The values keys (`vmauth.*`, `tenancy.*`, the proxy half
+of `networkPolicy.*`) are this chart's, with `tenancy.identities` as the one
+list of who may read what; the service code (`cmd/tenancy-authz`) and its image
+did not change, and `tests/proxy_chart_test.go` holds that the stack renders no
+Door object and the proxy renders all of them.
 
 Out of scope here, and planned for later steps: a redesigned identities list
 and a people block for the Door. Neither exists in this chart yet.

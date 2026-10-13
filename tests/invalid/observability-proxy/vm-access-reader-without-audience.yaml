@@ -1,0 +1,7 @@
+# expect: neither `tenancy.vmAccessReader.audience` nor `tenancy.audience` is
+# vmauth never inspects `aud`: without the pin any token of the issuer that carries a claim would be admitted.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  vmAccessReader:
+    enabled: true

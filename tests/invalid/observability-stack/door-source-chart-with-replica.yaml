@@ -1,6 +1,0 @@
-# expect: `door.source` is "chart" with `mode: replica`
-# A replica never rendered the Door plane, so there is nothing to hand over; a
-# leftover `chart` there is a mistake that would read as a decision.
-mode: replica
-door:
-  source: chart

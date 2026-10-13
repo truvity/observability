@@ -1,0 +1,12 @@
+# expect: does not match pattern
+# Upper case and underscores are not a DNS label.
+stackReleaseName: observability-stack
+tenancy:
+  readers:
+  - name: Bad_Name
+    tokenSecret:
+      name: example-read-token
+      key: token
+    grants:
+    - cluster: example-edge
+      allNamespaces: true

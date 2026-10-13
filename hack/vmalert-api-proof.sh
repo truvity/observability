@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hack/vmalert-api-proof.sh — REAL proof, against the pinned vmauth,
-# VictoriaMetrics and vmalert binaries, that a `tenancy.principals[]` entry
+# VictoriaMetrics and vmalert binaries, that a `tenancy.identities[]` entry
 # with `vmalertAPI: true` reads the metrics vmalert's alerts and rules at
 # `/prometheus/vmalert/api/v1/{alerts,rules}` (vmauth drops the first path
 # part, so vmalert receives `/vmalert/api/v1/...`), and that a principal
@@ -13,7 +13,7 @@
 #   vmsingle   holding one series
 #   vmalert    evaluating an always-firing rule against it
 #   vmauth     configured FROM THE RENDERED CHART
-#              (tests/cases/observability-stack/tenancy-vmalert-api, through
+#              (tests/cases/observability-proxy/tenancy-vmalert-api, through
 #              `helm template`), each VMUser translated into vmauth's own file
 #              format field for field, `drop_src_path_prefix_parts` included.
 #
@@ -46,11 +46,11 @@ python3 -c 'import yaml, jwt, cryptography' 2>/dev/null || { echo "needs python3
 
 vm_tgz=("$root"/charts/observability-stack/charts/victoria-metrics-k8s-stack-*.tgz)
 vm_tag="$(tar -xzOf "${vm_tgz[0]}" victoria-metrics-k8s-stack/Chart.yaml | awk '/^appVersion:/ { print $2 }')"
-vmauth_tag="$(awk '/^vmauth:/{m=1} m && /^ *tag: /{print $2; exit}' "$root/charts/observability-stack/values.yaml")"
+vmauth_tag="$(awk '/^vmauth:/{m=1} m && /^ *tag: /{print $2; exit}' "$root/charts/observability-proxy/values.yaml")"
 echo "vmauth $vmauth_tag, victoria-metrics and vmalert $vm_tag (the chart's pins)"
 
-helm template x "$root/charts/observability-stack" \
-  -f "$root/tests/cases/observability-stack/tenancy-vmalert-api/values.yaml" > "$work/chart.yaml"
+helm template x "$root/charts/observability-proxy" \
+  -f "$root/tests/cases/observability-proxy/tenancy-vmalert-api/values.yaml" > "$work/chart.yaml"
 
 python3 - "$work" <<'PY'
 import sys, yaml

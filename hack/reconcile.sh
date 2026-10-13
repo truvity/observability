@@ -32,6 +32,10 @@ namespace=observability
 
 crds_golden="$root/tests/golden/observability-crds/minimal.yaml"
 values="$root/tests/cases/observability-stack/minimal/values.yaml"
+# The Door (the VMAuth and every VMUser) is observability-proxy's, not the
+# stack's: the 0.3.1 shape this script guards (a VMAuth the operator refuses)
+# is only visible with the proxy chart installed beside the stack.
+proxy_values="$root/tests/cases/observability-proxy/minimal/values.yaml"
 
 for tool in kind kubectl helm; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -99,6 +103,10 @@ helm install observability-stack "$root/charts/observability-stack" \
 echo "waiting for the operator"
 kubectl wait --namespace "$namespace" --for=condition=Available --timeout=300s \
   deployment -l app.kubernetes.io/name=victoria-metrics-operator >/dev/null
+
+echo "installing the Door plane (observability-proxy) beside it"
+helm install observability-proxy "$root/charts/observability-proxy" \
+  --namespace "$namespace" --values "$proxy_values" --no-hooks >/dev/null
 
 # A rule in ANOTHER namespace, to settle what `ruleNamespaceSelector: {}`
 # actually reaches. The chart sets it empty meaning "every namespace", on

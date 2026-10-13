@@ -56,17 +56,15 @@ type vmuserRoles struct {
 
 // TestMetricMetadataIsOptInAndSiblingsNever holds both halves at once.
 func TestMetricMetadataIsOptInAndSiblingsNever(t *testing.T) {
-	goldens, err := filepath.Glob("golden/observability-stack/*.yaml")
+	goldens, err := filepath.Glob("golden/observability-proxy/*.yaml")
 	require.NoError(t, err)
 	require.NotEmpty(t, goldens)
 
 	// The case that opts in, by the name of its golden. Every other
 	// golden must not carry the path at all.
 	optedIn := map[string]bool{
-		"everything.yaml":                       true,
-		"tenancy-mcp-reader.yaml":               true,
-		"everything-as-identities.yaml":         true,
-		"tenancy-mcp-reader-as-identities.yaml": true,
+		"everything.yaml":         true,
+		"tenancy-mcp-reader.yaml": true,
 	}
 
 	var seenReaders, seenOptedIn int

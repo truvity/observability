@@ -37,7 +37,7 @@ A principal on any other audience (a workload's, a machine's) is never touched.
 {{- $personAud := (include "observability-proxy.authz.personAudiences" . | fromYaml).audiences }}
 {{- $retire := and .Values.tenancy.authz.enabled .Values.tenancy.authz.retireGroupReaders }}
 {{- $kept := list }}
-{{- range $p := (include "observability-proxy.tenancy.principals" $ | fromYaml).principals }}
+{{- range $p := (include "observability-proxy.tenancy.resolved" $ | fromYaml).principals }}
 {{- if not (and $retire (has ($p.audience | default $.Values.tenancy.audience) $personAud)) }}
 {{- $kept = append $kept $p }}
 {{- end }}

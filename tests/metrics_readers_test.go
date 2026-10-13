@@ -1,6 +1,6 @@
 // tenancy.readers: static-bearer, read-only METRICS QUERY readers.
 //
-// tests/cases/observability-stack/tenancy-readers renders two readers beside
+// tests/cases/observability-proxy/tenancy-readers renders two readers beside
 // a principal and a writer. This is the Go side of proving the render did
 // what the values file asked: a reader's VMUser carries the two query
 // routes and nothing else, and its grant is written onto the route as
@@ -17,7 +17,7 @@ import (
 	"github.com/truvity/observability/pkg/tenancy"
 )
 
-const metricsReadersGolden = "golden/observability-stack/tenancy-readers.yaml"
+const metricsReadersGolden = "golden/observability-proxy/tenancy-readers.yaml"
 
 func TestMetricsReaderHasOnlyTheQueryRoutesAndItsGrant(t *testing.T) {
 	users := readVMUsers(t, metricsReadersGolden)
