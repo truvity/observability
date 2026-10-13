@@ -418,7 +418,10 @@ default:
   comes from the data, so it equals the name.
 
 Install one such release per cluster in the namespace the alerter selects
-rules from, with `rules.extraLabels` naming the owner. Golden: `rules-only`.
+rules from, with `rules.extraLabels` naming the owner. The VMRule is named
+after `alloy.fullnameOverride` (default `observability-rum`), so give each
+release its own, or two releases in one namespace render the same VMRule.
+Golden: `rules-only`.
 
 ## What ArgoCD shows
 
