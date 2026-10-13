@@ -672,6 +672,10 @@ metadata:
 spec:
   disableSelfServiceScrape: true
   globalScrapeMetricRelabelConfigs:
+  - action: drop
+    regex: ^(kube_pod_tolerations)$
+    sourceLabels:
+    - __name__
   - action: labeldrop
     regex: exported_(k8s_cluster_name|k8s_namespace_name|deployment_environment_name)
   image:

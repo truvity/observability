@@ -26,6 +26,7 @@ instead.
 {{- include "observability-emitters.validate.metrics" . -}}
 {{- include "observability-emitters.validate.logs" . -}}
 {{- include "observability-emitters.validate.kubeStateMetrics" . -}}
+{{- include "observability-emitters.validate.ephemeralJobs" . -}}
 {{- include "observability-emitters.validate.nodeExporter" . -}}
 {{- include "observability-emitters.validate.otlp" . -}}
 {{- include "observability-emitters.validate.cloudwatchLogs" . -}}
@@ -524,6 +525,27 @@ worst of the four is a series that IS collected but is filed under the
 wrong namespace forever, which is the one this block spends the most
 words on.
 */}}
+{{/*
+`metrics.scrape.kubeStateMetricsDrop.ephemeralJobs`: an enabled drop with no
+pattern would render a rule matching nothing (or, worse, everything), and a
+pattern with the drop disabled is a setting that silently does nothing.
+Both are refused.
+*/}}
+{{- define "observability-emitters.validate.ephemeralJobs" -}}
+{{- $ej := .Values.metrics.scrape.kubeStateMetricsDrop.ephemeralJobs -}}
+{{- if $ej.enabled -}}
+{{- if not $ej.namePattern -}}
+{{- fail "observability-emitters: `metrics.scrape.kubeStateMetricsDrop.ephemeralJobs.enabled` is true with an empty `namePattern`. The pattern is the only thing that says which Jobs are short-lived; without it the drop has nothing to match. Set `namePattern` to a regular expression over the Job names (for example `my-janitor|my-backup`), or set `enabled: false`." -}}
+{{- end -}}
+{{- if or (hasPrefix "^" $ej.namePattern) (hasSuffix "$" $ej.namePattern) -}}
+{{- fail (printf "observability-emitters: `metrics.scrape.kubeStateMetricsDrop.ephemeralJobs.namePattern` is %q. The chart anchors the pattern itself; write it WITHOUT `^` or `$`." $ej.namePattern) -}}
+{{- end -}}
+{{- $_ := mustRegexMatch $ej.namePattern "" -}}
+{{- else if $ej.namePattern -}}
+{{- fail (printf "observability-emitters: `metrics.scrape.kubeStateMetricsDrop.ephemeralJobs.namePattern` is %q but `enabled` is false, so nothing is dropped. Set `enabled: true`, or clear the pattern." $ej.namePattern) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "observability-emitters.validate.kubeStateMetrics" -}}
 {{- if .Values.kubeStateMetrics.enabled -}}
 {{- $ksm := index .Values "kube-state-metrics" -}}

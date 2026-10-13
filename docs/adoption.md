@@ -449,6 +449,70 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### Fewer churning emitter series
+
+`observability-emitters` now stores fewer series that nothing reads and
+that a store mints anew every day. This is a **default change** (the
+Prometheus-side data simply stops being written; nothing already stored is
+removed).
+
+What disappears by default, on the next sync:
+
+- `kube_pod_tolerations` (kube-state-metrics, every namespace).
+- The `_bucket` series of these kubelet histograms:
+  `kubelet_pod_start_total_duration_seconds`,
+  `kubelet_pod_start_sli_duration_seconds`,
+  `kubelet_image_pull_duration_seconds`,
+  `kubelet_run_podsandbox_duration_seconds`,
+  `kubelet_volume_metric_collection_duration_seconds`,
+  `dra_operations_duration_seconds` and
+  `authentication_token_cache_request_duration_seconds`. Their `_sum` and
+  `_count` stay.
+
+What is deliberately **kept**, because a shipped dashboard or rule reads it:
+the buckets of `storage_operation_duration_seconds`,
+`kubelet_runtime_operations_duration_seconds`,
+`rest_client_request_duration_seconds` and the kubelet pod-worker, pod-start,
+cgroup-manager and PLEG families; the cAdvisor network packet, error and
+dropped-packet counters (the Kubernetes views panels); and the `flag` metric
+(the Command-line flags panel of the Victoria dashboards). If your estate
+reads none of them it can drop them itself with
+`metrics.scrape.cadvisorDrop.extraMetricNames` or
+`metrics.scrape.kubeletDrop.extraBucketMetrics`.
+
+To keep any of the default drops, set the list that holds it to the
+remaining names. For example, to keep `kube_pod_tolerations`:
+
+```yaml
+metrics:
+  scrape:
+    kubeStateMetricsDrop:
+      metricNames: []
+```
+
+and to keep every kubelet bucket: `metrics.scrape.kubeletDrop.bucketMetrics: []`
+(or `kubeletDrop.enabled: false` for all kubelet drops). A list you set
+replaces the default; `extra...` keys add to it.
+
+The new opt-in, off by default, is for short-lived Jobs. A CronJob that
+runs every few minutes creates a Job and a pod each time, about 13
+`kube_job_*` series per Job and 30 `kube_pod_*` per pod, all new. Name them:
+
+```yaml
+metrics:
+  scrape:
+    kubeStateMetricsDrop:
+      ephemeralJobs:
+        enabled: true
+        namePattern: "nightly-backup|queue-janitor"
+```
+
+For a matching Job only `kube_job_created`, `kube_job_owner` and
+`kube_job_status_failed` are stored (what `BackupJobFailed` reads); all
+`kube_pod_*` series of its pods are dropped. The other pod and Job alerts
+(`KubeJobFailed`, `KubePodNotReady` ...) and the pod views then show nothing
+for those Jobs, which is the point.
+
 ### Handing the Door plane to observability-proxy (0.81.0)
 
 **Nothing moves on the bump.** `observability-stack`'s new `door.source`
