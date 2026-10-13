@@ -1,0 +1,17 @@
+# A RULES-ONLY release scoped to one cluster: only the VMRule is rendered
+# (no Alloy, Role, Service, NetworkPolicy or source-map server), and every
+# query reads that cluster's rows alone. This is how one logs store that
+# holds several clusters' browser data carries one release per cluster.
+receivers:
+  enabled: false
+
+rules:
+  clusterFilter: stage
+  extraLabels:
+    owner: web
+  recording:
+    webVitals:
+      enabled: true
+
+dashboards:
+  enabled: false

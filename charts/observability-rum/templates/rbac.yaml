@@ -6,6 +6,7 @@ the namespace, plus a ClusterRole) is off; `alloy.rbac.create: true` is
 refused.
 */ -}}
 {{- include "observability-rum.validate" . -}}
+{{- if .Values.receivers.enabled }}
 {{- $full := include "observability-rum.fullname" . -}}
 {{- $apps := include "observability-rum.apps" . | fromYamlArray -}}
 {{- $names := list -}}
@@ -43,3 +44,5 @@ subjects:
   - kind: ServiceAccount
     name: {{ .Values.alloy.serviceAccount.name | default $full }}
     namespace: {{ .Release.Namespace }}
+
+{{- end }}

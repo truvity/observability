@@ -1,4 +1,4 @@
-{{- if .Values.networkPolicy.enabled }}
+{{- if and .Values.receivers.enabled .Values.networkPolicy.enabled }}
 {{- /*
 Ingress only (docs/frontend.md says why not egress). The first policy that
 selects a pod default-denies it, so `ingressFrom` is the whole allow-list;

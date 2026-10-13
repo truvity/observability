@@ -1,0 +1,7 @@
+# expect: `rules.clusterFilter` "Stage; drop" is not a cluster name
+receivers:
+  enabled: false
+rules:
+  clusterFilter: "Stage; drop"
+dashboards:
+  enabled: false

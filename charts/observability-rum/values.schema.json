@@ -187,7 +187,11 @@
                       "additionalProperties": false,
                       "properties": {
                         "mode": {
-                          "enum": ["anonymous", "ecr", "dockerConfig"]
+                          "enum": [
+                            "anonymous",
+                            "ecr",
+                            "dockerConfig"
+                          ]
                         },
                         "dockerConfigSecret": {
                           "type": "object",
@@ -299,6 +303,15 @@
         }
       }
     },
+    "receivers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
     "rules": {
       "type": "object",
       "additionalProperties": false,
@@ -402,6 +415,9 @@
               }
             }
           }
+        },
+        "clusterFilter": {
+          "type": "string"
         }
       }
     },

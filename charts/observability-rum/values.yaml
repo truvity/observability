@@ -168,6 +168,16 @@ global:
           limits:
             memory: 256Mi
 
+# -- The receivers: the Alloy subchart (Deployment, ConfigMap, ServiceAccount),
+# the app-key Role, the Service, the NetworkPolicy and the source-map server.
+# `false` renders a RULES-ONLY release: nothing but the VMRule (and the
+# dashboards, if enabled), for an estate that evaluates the alerts of a
+# cluster elsewhere than where the receivers run. `global.observabilityRum`,
+# `alloy`, `networkPolicy` and `sourcemaps` are then unused (and a
+# `networkPolicy.enabled: true` is refused).
+receivers:
+  enabled: true
+
 # -- Alerts, LogsQL, evaluated by the LOGS vmalert (the VMRule carries
 # `observability.truvity.io/evaluator: logs` and its groups `type: vlogs`). Every
 # window and threshold is a value; docs/frontend.md says what each costs.
@@ -175,6 +185,12 @@ rules:
   enabled: true
   # -- Labels added to every alert (e.g. an owner), beside `severity`.
   extraLabels: {}
+  # -- Scope every query to one cluster: adds `k8s.cluster.name:="<name>"`
+  # to the filter of every rule, so one logs store that holds several
+  # clusters' browser data can carry one release per cluster without the
+  # releases alerting on each other's data. Alerts already carry a `cluster`
+  # label from the data. Empty (the default): no filter, every cluster.
+  clusterFilter: ""
   # -- The evaluation interval of every group.
   interval: 1m
   # -- At most this many fingerprints can fire per rule per evaluation,

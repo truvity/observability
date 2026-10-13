@@ -32,8 +32,12 @@ are `validate`.
 */}}
 
 {{- define "observability-rum.validate" -}}
+{{- if .Values.receivers.enabled -}}
 {{- include "observability-rum.validate.config" . -}}
 {{- include "observability-rum.validate.alloy" . -}}
+{{- else if .Values.networkPolicy.enabled -}}
+{{- fail "observability-rum: `networkPolicy.enabled` with `receivers.enabled: false`. The policy selects the Alloy pods, and a rules-only release has none; turn one of them off." -}}
+{{- end -}}
 {{- include "observability-rum.validate.networkPolicy" . -}}
 {{- include "observability-rum.validate.rules" . -}}
 {{- include "observability-rum.validate.dashboards" . -}}
@@ -216,6 +220,9 @@ touch, and one receiver per app makes it per app anyway.
 {{- define "observability-rum.validate.rules" -}}
 {{- $r := .Values.rules -}}
 {{- if $r.enabled -}}
+{{- if and $r.clusterFilter (not (regexMatch "^[a-z][a-z0-9-]*$" ($r.clusterFilter | toString))) -}}
+{{- fail (printf "observability-rum: `rules.clusterFilter` %q is not a cluster name (lowercase letters, digits and hyphens, starting with a letter). It becomes `k8s.cluster.name:=<name>` in every query." $r.clusterFilter) -}}
+{{- end -}}
 {{- $dur := "^[1-9][0-9]*[mhdw]$" -}}
 {{- range $path, $v := dict "newIssue.window" $r.newIssue.window "newIssue.history" $r.newIssue.history "regressed.window" $r.regressed.window "regressed.quietFor" $r.regressed.quietFor "regressed.history" $r.regressed.history "errorRate.window" $r.errorRate.window "recording.webVitals.window" $r.recording.webVitals.window -}}
 {{- if not (regexMatch $dur ($v | toString)) -}}

@@ -400,6 +400,26 @@ rules, runs the `stats` query and writes the result through the alerter's
 The dashboards do not need them, because they compute p75 from the log rows at
 query time; turn them on for long ranges or to alert on a vital.
 
+### Rules only, for one cluster
+
+When one logs store holds the browser data of several clusters and one
+alerter evaluates for all of them, the clusters that only forward their data
+need the alerts without the receivers. Two values do it, and neither changes a
+default:
+
+- `receivers.enabled: false` renders the VMRule (and the dashboards, if
+  enabled) and nothing else: no Alloy, no app-key Role, no Service, no
+  NetworkPolicy, no source-map server. `global.observabilityRum` is then
+  unused (no endpoint or app is required). `networkPolicy.enabled` with it is
+  refused.
+- `rules.clusterFilter: <name>` adds `k8s.cluster.name:="<name>"` to the
+  filter of every query, recording rules included, so one release per cluster
+  never alerts on another cluster's rows. The alert's `cluster` label already
+  comes from the data, so it equals the name.
+
+Install one such release per cluster in the namespace the alerter selects
+rules from, with `rules.extraLabels` naming the owner. Golden: `rules-only`.
+
 ## What ArgoCD shows
 
 Two things looked like drift on a live cluster, and neither is the Application
@@ -456,6 +476,8 @@ Each has a fixture under `tests/invalid/observability-rum/`.
 
 | Refused | Why |
 |---|---|
+| `rules.clusterFilter` that is not a cluster name | It is written into every LogsQL query; only lowercase letters, digits and hyphens are allowed |
+| `networkPolicy.enabled` with `receivers.enabled: false` | The policy selects Alloy pods that a rules-only release does not render |
 | An empty or non-http(s) `otlp.endpoint` | Browser data going nowhere |
 | No apps; a name that is not a short slug, is `http-metrics`, or repeats | The name is the port name and the identity |
 | An app with no `apiKeySecret` name or key | A receiver with no key accepts anyone |
