@@ -454,7 +454,7 @@ are below.
 **Do this before the release that removes `tenancy.principals`** (the next
 section). `tenancy.identities` has expressed **every** principal since v0.85.0,
 a workload's reader included, with a byte-identical render, and the release
-after v0.86.0 removes `principals` from `observability-stack` (together with
+after v0.87.0 removes `principals` from `observability-stack` (together with
 the Door plane) and from `observability-proxy`: a values file that still has
 the key is refused by the schema. Until that release the two keys may be set
 together, provided no principal name and no group is written under both (the
@@ -559,10 +559,10 @@ For a matching Job only `kube_job_created`, `kube_job_owner` and
 (`KubeJobFailed`, `KubePodNotReady` ...) and the pod views then show nothing
 for those Jobs, which is the point.
 
-### Removing the Door plane from observability-stack, and `tenancy.principals` (breaking; lands in the release after v0.86.0)
+### Removing the Door plane from observability-stack, and `tenancy.principals` (breaking; lands in the release after v0.87.0)
 
 This is a named entry, not a versioned one: the release is cut by CI after
-this change merges, and it is the first one after v0.86.0 (CHANGELOG.md has
+this change merges, and it is the first one after v0.87.0 (CHANGELOG.md has
 the two `**Breaking**` bullets under that version's heading). It asks three
 things of an operator, **in this order**.
 
@@ -623,7 +623,7 @@ version with `door.source: chart` and prune off before anything else.
 > from `observability-stack` (the next section): the stack no longer has
 > `door.source`, and renders no Door object whatever its values say. This
 > section is the procedure for doing it, and it is written for the releases
-> in which `door.source` still exists (0.81.0 up to v0.86.0).
+> in which `door.source` still exists (0.81.0 up to v0.87.0).
 
 **Nothing moves on the bump.** `observability-stack`'s new `door.source`
 defaults to `stack` and the new chart `observability-proxy` is not installed
