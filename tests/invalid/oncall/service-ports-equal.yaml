@@ -1,0 +1,16 @@
+# expect: `service.port` and `service.metricsPort` must differ
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: k
+  database:
+    host: h
+    passwordSecret:
+      name: p
+relay:
+  secret:
+    name: r
+networkPolicy:
+  goalertFrom: [{namespaceSelector: {}}]
+  databasePeers: [{podSelector: {}}]
+service: {port: 2112}

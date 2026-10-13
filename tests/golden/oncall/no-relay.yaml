@@ -1,0 +1,145 @@
+---
+# Source: oncall/templates/goalert.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oncall-goalert
+  labels:
+    app.kubernetes.io/name: oncall
+    app.kubernetes.io/instance: oncall
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: oncall
+    app.kubernetes.io/component: goalert
+# GoAlert never calls the Kubernetes API.
+automountServiceAccountToken: false
+
+---
+# Source: oncall/templates/goalert.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: oncall-goalert
+  labels:
+    app.kubernetes.io/name: oncall
+    app.kubernetes.io/instance: oncall
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: oncall
+    app.kubernetes.io/component: goalert
+spec:
+  selector:
+    app.kubernetes.io/name: oncall
+    app.kubernetes.io/instance: oncall
+    app.kubernetes.io/component: goalert
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: oncall/templates/goalert.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oncall-goalert
+  labels:
+    app.kubernetes.io/name: oncall
+    app.kubernetes.io/instance: oncall
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: oncall
+    app.kubernetes.io/component: goalert
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oncall
+      app.kubernetes.io/instance: oncall
+      app.kubernetes.io/component: goalert
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: oncall
+        app.kubernetes.io/instance: oncall
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/part-of: oncall
+        app.kubernetes.io/component: goalert
+    spec:
+      serviceAccountName: oncall-goalert
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: goalert
+          image: "docker.io/goalert/goalert:v0.35.0"
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/bin/goalert"]
+          env:
+            - name: GOALERT_DB_URL
+              value: "postgres://goalert@oncall-pg-rw.oncall.svc:5432/goalert?sslmode=require"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "oncall-pg-app"
+                  key: "password"
+            - name: GOALERT_DATA_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "oncall-goalert-key"
+                  key: "key"
+            - name: GOALERT_JSON
+              value: "true"
+            - name: GOALERT_LISTEN
+              value: ":8081"
+            - name: GOALERT_LISTEN_PROMETHEUS
+              value: ":2112"
+            - name: GOALERT_PUBLIC_URL
+              value: "https://oncall.example"
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 2112
+              protocol: TCP
+          # /health answers 500 while GoAlert is starting (migrations run
+          # at start) or shutting down, 200 otherwise.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "oncall",
+  "description": "GoAlert and telegram-relay. Strict: an unknown key fails the render, because a typo in a paging path is a page that never arrives.",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "networkPolicyPeer": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "One entry of a NetworkPolicy `to`/`from` list (podSelector, namespaceSelector and/or ipBlock), as the API shapes it."
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h)$"
+    }
+  },
+  "properties": {
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "goalert": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^(sha256:[a-f0-9]{64})?$"
+            }
+          }
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "publicURL": {
+          "type": "string"
+        },
+        "dataEncryptionKeySecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "database": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "user": {
+              "type": "string",
+              "minLength": 1
+            },
+            "passwordSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "sslMode": {
+              "enum": [
+                "disable",
+                "require",
+                "verify-ca",
+                "verify-full"
+              ]
+            },
+            "ca": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "configMap": {
+                  "type": "string"
+                },
+                "secret": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "extraEnv": {
+          "type": "array"
+        },
+        "resources": {
+          "type": "object"
+        },
+        "nodeSelector": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array"
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "annotations": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "relay": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
+            }
+          }
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "secret": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "botTokenKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sharedSecretKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recipientsKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "telegramAPIURL": {
+          "type": "string",
+          "pattern": "^https?://[^/]+"
+        },
+        "sendTimeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s)$"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "resources": {
+          "type": "object"
+        },
+        "nodeSelector": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array"
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "annotations": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "httpRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "parentRefs": {
+          "type": "array"
+        },
+        "hostnames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "goalertFrom": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/networkPolicyPeer"
+          }
+        },
+        "databasePeers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/networkPolicyPeer"
+          }
+        },
+        "metricsFrom": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/networkPolicyPeer"
+          }
+        },
+        "dns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/networkPolicyPeer"
+          }
+        },
+        "goalertHTTPS": {
+          "type": "boolean"
+        }
+      }
+    },
+    "selfMonitor": {
+      "type": "boolean"
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deliveryFailing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "severity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            }
+          }
+        }
+      }
+    }
+  }
+}

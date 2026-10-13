@@ -1,0 +1,179 @@
+{{- include "oncall.validate" . -}}
+{{- $full := include "oncall.goalertName" . -}}
+{{- $g := .Values.goalert -}}
+{{- $ca := or $g.database.ca.configMap $g.database.ca.secret -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: goalert
+  {{- with $g.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+# GoAlert never calls the Kubernetes API.
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: goalert
+spec:
+  selector:
+    {{- include "oncall.goalertSelector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: goalert
+spec:
+  replicas: {{ $g.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "oncall.goalertSelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oncall.labels" . | nindent 8 }}
+        app.kubernetes.io/component: goalert
+    spec:
+      serviceAccountName: {{ $full }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "oncall.restrictedPod" . | nindent 8 }}
+      {{- if $g.config.existingSecret.name }}
+      # Declarative configuration: migrate first (set-config needs the
+      # schema), then replace GoAlert's stored configuration with the
+      # Secret's JSON. Every rollout re-applies it, so an edit made on the
+      # admin page lasts only until the next one.
+      initContainers:
+        - name: migrate
+          image: {{ include "oncall.goalertImage" . | quote }}
+          imagePullPolicy: {{ $g.image.pullPolicy }}
+          command: ["/usr/bin/goalert", "migrate"]
+          env:
+            {{- include "oncall.goalertEnv" . | nindent 12 }}
+          securityContext:
+            {{- include "oncall.restrictedContainer" . | nindent 12 }}
+          resources:
+            {{- toYaml $g.resources | nindent 12 }}
+          {{- if $ca }}
+          volumeMounts:
+            - name: db-ca
+              mountPath: /etc/oncall/db-ca
+              readOnly: true
+          {{- end }}
+        - name: set-config
+          image: {{ include "oncall.goalertImage" . | quote }}
+          imagePullPolicy: {{ $g.image.pullPolicy }}
+          command: ["/usr/bin/goalert", "set-config"]
+          env:
+            {{- include "oncall.goalertEnv" . | nindent 12 }}
+            # set-config reads --data from GOALERT_DATA.
+            - name: GOALERT_DATA
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $g.config.existingSecret.name | quote }}
+                  key: {{ $g.config.existingSecret.key | quote }}
+          securityContext:
+            {{- include "oncall.restrictedContainer" . | nindent 12 }}
+          resources:
+            {{- toYaml $g.resources | nindent 12 }}
+          {{- if $ca }}
+          volumeMounts:
+            - name: db-ca
+              mountPath: /etc/oncall/db-ca
+              readOnly: true
+          {{- end }}
+      {{- end }}
+      containers:
+        - name: goalert
+          image: {{ include "oncall.goalertImage" . | quote }}
+          imagePullPolicy: {{ $g.image.pullPolicy }}
+          command: ["/usr/bin/goalert"]
+          env:
+            {{- include "oncall.goalertEnv" . | nindent 12 }}
+            - name: GOALERT_LISTEN
+              value: {{ printf ":%d" (.Values.service.port | int) | quote }}
+            - name: GOALERT_LISTEN_PROMETHEUS
+              value: {{ printf ":%d" (.Values.service.metricsPort | int) | quote }}
+            - name: GOALERT_PUBLIC_URL
+              value: {{ $g.publicURL | quote }}
+            {{- with $g.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+          # /health answers 500 while GoAlert is starting (migrations run
+          # at start) or shutting down, 200 otherwise.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            {{- include "oncall.restrictedContainer" . | nindent 12 }}
+          resources:
+            {{- toYaml $g.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if $ca }}
+            - name: db-ca
+              mountPath: /etc/oncall/db-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if $g.database.ca.configMap }}
+        - name: db-ca
+          configMap:
+            name: {{ $g.database.ca.configMap | quote }}
+        {{- else if $g.database.ca.secret }}
+        - name: db-ca
+          secret:
+            secretName: {{ $g.database.ca.secret | quote }}
+        {{- end }}
+      {{- with $g.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $g.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $g.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

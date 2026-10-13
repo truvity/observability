@@ -1,0 +1,15 @@
+# expect: `networkPolicy.databasePeers` is empty
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: k
+  database:
+    host: h
+    passwordSecret:
+      name: p
+relay:
+  secret:
+    name: r
+networkPolicy:
+  goalertFrom: [{namespaceSelector: {}}]
+  databasePeers: []

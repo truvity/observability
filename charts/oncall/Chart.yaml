@@ -1,0 +1,20 @@
+apiVersion: v2
+name: oncall
+description: >-
+  On-call for an estate whose one router is Alertmanager: GoAlert for
+  schedules, escalation and acknowledgement, and telegram-relay, which
+  turns GoAlert's webhook contact method into a Telegram message to the
+  person being paged.
+type: application
+# Stamped from the tag by the release workflow; never moved by hand.
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - alerting
+  - on-call
+  - goalert
+  - telegram
+home: https://github.com/truvity/observability
+sources:
+  - https://github.com/truvity/observability
+  - https://github.com/target/goalert

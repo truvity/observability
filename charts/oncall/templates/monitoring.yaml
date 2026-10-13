@@ -1,0 +1,76 @@
+{{- include "oncall.validate" . -}}
+{{- if .Values.selfMonitor }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "oncall.goalertName" . }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: goalert
+spec:
+  selector:
+    matchLabels:
+      {{- include "oncall.goalertSelector" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+{{- if .Values.relay.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "oncall.relayName" . }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telegram-relay
+spec:
+  selector:
+    matchLabels:
+      {{- include "oncall.relaySelector" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+{{- end }}
+{{- end }}
+{{- $df := .Values.rules.deliveryFailing -}}
+{{- if and .Values.relay.enabled $df.enabled }}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ include "oncall.relayName" . }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telegram-relay
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: oncall.telegram-relay
+      interval: 1m
+      rules:
+        # GoAlert marks every webhook it handed over as sent and never
+        # reads the answer, so a page Telegram refused, a recipient the
+        # relay does not know, or a Secret that did not mount is visible
+        # nowhere but here. Summed over the replicas (and the payload
+        # types), keeping the cluster and the result.
+        - alert: TelegramRelayDeliveryFailing
+          expr: >-
+            sum without (pod, instance, type) (
+              increase(telegram_relay_notifications_total{result=~"telegram_error|unknown_recipient|config_error"}[{{ $df.window }}])
+            ) > 0
+          labels:
+            severity: {{ $df.severity | quote }}
+          annotations:
+            summary: "telegram-relay failed to deliver GoAlert notifications ({{ "{{" }} $labels.result {{ "}}" }})"
+            description: >-
+              In the last {{ $df.window }} the relay could not deliver at least
+              one GoAlert notification to Telegram (result
+              {{ "{{" }} $labels.result {{ "}}" }}). GoAlert counts these as sent,
+              so the person was NOT paged and escalation proceeds only on
+              its timer. telegram_error: Telegram refused or timed out
+              (403 means the person blocked the bot or never pressed Start);
+              unknown_recipient: a contact-method URL names a recipient the
+              recipients file lacks; config_error: the relay's Secret did
+              not read. See the relay's logs.
+{{- end }}

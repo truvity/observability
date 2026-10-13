@@ -1,0 +1,112 @@
+{{- if .Values.relay.enabled }}
+{{- include "oncall.validate" . -}}
+{{- $full := include "oncall.relayName" . -}}
+{{- $r := .Values.relay -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telegram-relay
+  {{- with $r.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telegram-relay
+spec:
+  selector:
+    {{- include "oncall.relaySelector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $r.port }}
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telegram-relay
+spec:
+  replicas: {{ $r.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "oncall.relaySelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oncall.labels" . | nindent 8 }}
+        app.kubernetes.io/component: telegram-relay
+    spec:
+      serviceAccountName: {{ $full }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "oncall.restrictedPod" . | nindent 8 }}
+      containers:
+        - name: telegram-relay
+          image: {{ include "oncall.relayImage" . | quote }}
+          imagePullPolicy: {{ $r.image.pullPolicy }}
+          args:
+            - {{ printf "--listen=:%d" ($r.port | int) | quote }}
+            - {{ printf "--admin-listen=:%d" ($r.metricsPort | int) | quote }}
+            - {{ printf "--bot-token-file=/etc/telegram-relay/%s" $r.secret.botTokenKey | quote }}
+            - {{ printf "--shared-secret-file=/etc/telegram-relay/%s" $r.secret.sharedSecretKey | quote }}
+            - {{ printf "--recipients-file=/etc/telegram-relay/%s" $r.secret.recipientsKey | quote }}
+            - {{ printf "--telegram-api-url=%s" $r.telegramAPIURL | quote }}
+            - {{ printf "--send-timeout=%s" $r.sendTimeout | quote }}
+          ports:
+            - name: http
+              containerPort: {{ $r.port }}
+              protocol: TCP
+            # Not in the Service: nothing routed to the webhook port can
+            # reach /metrics.
+            - name: metrics
+              containerPort: {{ $r.metricsPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+          # Ready only while the three mounted files read and parse: a
+          # Secret that never arrived keeps the pod out of the Service.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+          securityContext:
+            {{- include "oncall.restrictedContainer" . | nindent 12 }}
+          resources:
+            {{- toYaml $r.resources | nindent 12 }}
+          volumeMounts:
+            - name: secret
+              mountPath: /etc/telegram-relay
+              readOnly: true
+      volumes:
+        - name: secret
+          secret:
+            secretName: {{ $r.secret.name | quote }}
+            defaultMode: 0440
+      {{- with $r.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $r.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $r.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

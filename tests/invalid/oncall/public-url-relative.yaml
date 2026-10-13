@@ -1,0 +1,15 @@
+# expect: must be an absolute http(s) URL
+goalert:
+  publicURL: oncall.example
+  dataEncryptionKeySecret:
+    name: k
+  database:
+    host: h
+    passwordSecret:
+      name: p
+relay:
+  secret:
+    name: r
+networkPolicy:
+  goalertFrom: [{namespaceSelector: {}}]
+  databasePeers: [{podSelector: {}}]

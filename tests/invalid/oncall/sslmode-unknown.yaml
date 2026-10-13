@@ -1,0 +1,16 @@
+# expect: at '/goalert/database/sslMode'
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: k
+  database:
+    host: h
+    sslMode: prefer
+    passwordSecret:
+      name: p
+relay:
+  secret:
+    name: r
+networkPolicy:
+  goalertFrom: [{namespaceSelector: {}}]
+  databasePeers: [{podSelector: {}}]

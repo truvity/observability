@@ -1,0 +1,16 @@
+# expect: names both a configMap and a secret
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: k
+  database:
+    host: h
+    ca: {configMap: a, secret: b}
+    passwordSecret:
+      name: p
+relay:
+  secret:
+    name: r
+networkPolicy:
+  goalertFrom: [{namespaceSelector: {}}]
+  databasePeers: [{podSelector: {}}]

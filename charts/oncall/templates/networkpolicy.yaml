@@ -1,0 +1,126 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- include "oncall.validate" . -}}
+{{- $np := .Values.networkPolicy -}}
+{{- /*
+Default-deny for every pod of this release, both directions, and then the
+allows below and nothing else. Policies are additive, so the deny is its
+own object: an allow added later cannot accidentally widen it, and
+deleting an allow fails closed. The database's own pods are NOT selected
+(they are another chart's); a namespace-wide deny is the estate's choice.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "oncall.fullname" . }}-default-deny
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "oncall.releaseSelector" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "oncall.goalertName" . }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: goalert
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "oncall.goalertSelector" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # People (through the gateway) and Alertmanager, on the HTTP port.
+    - from:
+        {{- toYaml $np.goalertFrom | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+    # The metrics port.
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.service.metricsPort }}
+      {{- with $np.metricsFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    # PostgreSQL.
+    - to:
+        {{- toYaml $np.databasePeers | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.goalert.database.port }}
+    {{- if .Values.relay.enabled }}
+    # The relay: a user's Webhook contact method points at it.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "oncall.relaySelector" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.relay.port }}
+    {{- end }}
+    {{- include "oncall.dnsEgress" . | nindent 4 }}
+    {{- if $np.goalertHTTPS }}
+    # The OIDC issuer and any HTTPS webhook. A NetworkPolicy cannot pin a
+    # hostname, so this is HTTPS to anywhere, stated as that.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+{{- if .Values.relay.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "oncall.relayName" . }}
+  labels:
+    {{- include "oncall.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telegram-relay
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "oncall.relaySelector" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # GoAlert only: the relay is no one else's webhook.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "oncall.goalertSelector" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.relay.port }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.relay.metricsPort }}
+      {{- with $np.metricsFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    {{- include "oncall.dnsEgress" . | nindent 4 }}
+    # The Telegram Bot API, HTTPS to anywhere: its addresses are not a
+    # CIDR anyone publishes as stable.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}
+{{- end }}
+

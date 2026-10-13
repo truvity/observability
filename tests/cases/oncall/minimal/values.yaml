@@ -1,0 +1,26 @@
+# The smallest values file that renders: GoAlert on its database, the
+# relay with its Secret, the default-deny with the two allows it cannot
+# guess. `relay.image` is left out, proving the chart's own default (the
+# image the release builds, tagged at .Chart.AppVersion).
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: oncall-goalert-key
+  database:
+    host: oncall-pg-rw.oncall.svc
+    passwordSecret:
+      name: oncall-pg-app
+
+relay:
+  secret:
+    name: oncall-telegram-relay
+
+networkPolicy:
+  goalertFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway
+  databasePeers:
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: oncall-pg

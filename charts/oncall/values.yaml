@@ -1,0 +1,213 @@
+# oncall — the people half of alerting.
+#
+# Alertmanager stays the one router (docs/doctrine.md#one-router): it
+# decides WHICH alerts page. This chart decides WHO is paged, in what
+# order, and records that they acknowledged. Two workloads:
+#
+#   - GoAlert (upstream image, unmodified): schedules, escalation policies,
+#     acknowledgement, and its own alert log, which is the incident record.
+#     Alertmanager posts to its Alertmanager integration.
+#   - telegram-relay (cmd/telegram-relay): GoAlert has no Telegram contact
+#     method, but every user can add a Webhook one. The relay is that
+#     webhook: it turns GoAlert's document into a Telegram message from one
+#     bot to the person's own chat.
+#
+# The chart renders no database and no secret value. PostgreSQL is a
+# cluster the estate runs (for example with CloudNativePG); every
+# credential is the name of a Secret the estate already delivers. See
+# docs/oncall.md.
+
+# -- Name overrides for the objects this chart renders.
+nameOverride: ""
+fullnameOverride: ""
+
+goalert:
+  image:
+    # -- The upstream image. Multi-arch (amd64, arm64). Point it at a
+    # registry mirror or pull-through cache if nodes cannot reach Docker Hub.
+    repository: docker.io/goalert/goalert
+    tag: v0.35.0
+    # -- Optional `sha256:...`; when set the image is pulled by digest.
+    digest: ""
+    pullPolicy: IfNotPresent
+
+  # -- GoAlert runs several instances against one database (the engine
+  # coordinates through it), so more than one replica is allowed.
+  replicaCount: 1
+
+  # -- REQUIRED. The externally routable URL people open (an absolute
+  # http(s) URL, no trailing slash). Every link in a page, the OIDC
+  # callback and the Alertmanager integration URL GoAlert shows are built
+  # from it.
+  publicURL: ""
+
+  # -- The data encryption key: GoAlert encrypts its signing keys and
+  # stored secrets with it. REQUIRED, from an existing Secret. Losing it
+  # makes the database's encrypted data unreadable; keep it beside the
+  # database's backups.
+  dataEncryptionKeySecret:
+    name: ""
+    key: key
+
+  # -- PostgreSQL. GoAlert connects as `user` with the password from
+  # `passwordSecret`, passed as PGPASSWORD so it never appears in a URL or
+  # an argument.
+  database:
+    # -- REQUIRED. The read-write Service of the cluster.
+    host: ""
+    port: 5432
+    name: goalert
+    user: goalert
+    # -- REQUIRED. A CloudNativePG cluster bootstrapped with
+    # `owner: goalert` mints `<cluster>-app` with a `password` key.
+    passwordSecret:
+      name: ""
+      key: password
+    # -- disable, require, verify-ca or verify-full.
+    sslMode: verify-full
+    # -- The CA that verifies the server, from a ConfigMap OR a Secret
+    # (one of the two names, or neither to use the system roots). Mounted
+    # at /etc/oncall/db-ca/<key> and passed as `sslrootcert`.
+    ca:
+      configMap: ""
+      secret: ""
+      key: ca.crt
+
+  # -- Declarative GoAlert configuration (the admin "Config" page: OIDC
+  # sign-in, the Webhook contact method, message bundling, ...). Unset, the
+  # default, the configuration is whatever an admin sets in the UI.
+  #
+  # Set to a Secret key holding the whole configuration as JSON (the shape
+  # `goalert get-config` prints), and every pod start runs `goalert
+  # migrate` and then `goalert set-config` with it, so the UI's admin
+  # page is overwritten by git on every rollout. A Secret, because the
+  # configuration carries the OIDC client secret. See docs/oncall.md.
+  config:
+    existingSecret:
+      name: ""
+      key: config.json
+
+  # -- Extra environment variables for GoAlert (GOALERT_* flags), as
+  # written. Never put a secret value here; use `valueFrom`.
+  extraEnv: []
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  serviceAccount:
+    # -- Annotations on GoAlert's own ServiceAccount.
+    annotations: {}
+
+relay:
+  # -- Render telegram-relay. Off leaves GoAlert's other contact methods.
+  enabled: true
+  image:
+    # -- ko names the image after cmd/telegram-relay (base_import_paths,
+    # .goreleaser.yaml), nested under the release workflow's ko-docker-repo.
+    repository: ghcr.io/truvity/observability/telegram-relay
+    # -- Empty: .Chart.AppVersion, stamped at release.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  # -- REQUIRED while enabled. One existing Secret with three keys:
+  #   botTokenKey      the Telegram bot token (@BotFather)
+  #   sharedSecretKey  the secret every webhook URL carries (`?token=`),
+  #                    at least 16 bytes
+  #   recipientsKey    YAML mapping a recipient name to a numeric chat id:
+  #                      alice: 123456789
+  # Mounted as files and re-read on every page: a rotation or a new
+  # recipient needs no restart.
+  secret:
+    name: ""
+    botTokenKey: bot-token
+    sharedSecretKey: shared-secret
+    recipientsKey: recipients.yaml
+
+  # -- The Bot API base URL.
+  telegramAPIURL: https://api.telegram.org
+  # -- Budget for one Telegram call. GoAlert gives a webhook 3s in total.
+  sendTimeout: 2500ms
+
+  # -- `port` serves only POST /v1/notify/{recipient}; `metricsPort` serves
+  # /metrics, /healthz and /readyz and is not in the Service.
+  port: 8080
+  metricsPort: 9090
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      memory: 64Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  serviceAccount:
+    annotations: {}
+
+service:
+  # -- GoAlert's HTTP port: the UI, the API and the integrations.
+  port: 8081
+  # -- GoAlert's Prometheus port (`--listen-prometheus`); not in the Service.
+  metricsPort: 2112
+
+# -- An HTTPRoute for GoAlert's UI and API (Gateway API). Off by default.
+httpRoute:
+  enabled: false
+  # -- Required while enabled, passed through as written.
+  #   - {group: gateway.networking.k8s.io, kind: ListenerSet, name: oncall, namespace: gateway}
+  parentRefs: []
+  # -- Required while enabled; must include the host of `goalert.publicURL`.
+  hostnames: []
+  annotations: {}
+  labels: {}
+
+# -- NetworkPolicies. Enabled, the chart renders a default-deny policy for
+# both workloads and then exactly the allows below; nothing else reaches
+# them or is reached by them.
+networkPolicy:
+  enabled: true
+  # -- Peers allowed to reach GoAlert's HTTP port: the gateway that serves
+  # people and Alertmanager, which posts alerts. REQUIRED (non-empty)
+  # while enabled: an empty list would be GoAlert reachable by nobody.
+  goalertFrom: []
+  # -- Peers GoAlert's PostgreSQL is (the cluster's instance pods).
+  # REQUIRED while enabled.
+  databasePeers: []
+  # -- Peers allowed to scrape both metrics ports. Empty: any source, the
+  # metrics ports only.
+  metricsFrom: []
+  # -- DNS peers. Empty: port 53 to any destination (the cluster resolver
+  # is not a pod on every cluster).
+  dns: []
+  # -- GoAlert's HTTPS egress to anywhere, for the OIDC issuer (discovery,
+  # token and user-info calls) and any HTTPS webhook contact method. A
+  # NetworkPolicy cannot pin a hostname. Off leaves GoAlert reaching only
+  # its database and the relay.
+  goalertHTTPS: true
+
+# -- Render PodMonitors for both metrics ports.
+selfMonitor: true
+
+# -- The relay's own alert. GoAlert records every webhook it handed over as
+# sent and never reads the answer, so a page Telegram refused is visible
+# only in the relay's counter.
+rules:
+  deliveryFailing:
+    enabled: true
+    # -- Route this to a channel that does NOT depend on the relay (Slack,
+    # say): a failing page path cannot page about itself.
+    severity: warning
+    window: 15m
