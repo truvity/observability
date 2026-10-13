@@ -741,7 +741,6 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "name",
               "groups",
               "reach"
             ],
@@ -749,7 +748,7 @@
               "name": {
                 "type": "string",
                 "minLength": 1,
-                "description": "The principal's name, which names its VMUser."
+                "description": "The principal's name, which names its VMUser. May be left out only when `groups` has a single entry, which then names it (the single-`group` principal)."
               },
               "groups": {
                 "type": "array",
@@ -759,6 +758,39 @@
                   "minLength": 1
                 },
                 "description": "Token groups; a token carrying ANY of them selects this identity and reads its whole reach."
+              },
+              "audience": {
+                "$ref": "#/definitions/audience",
+                "description": "This identity's OWN audience, overriding `tenancy.audience` for its `matchClaims.aud` alone (a workload's token is minted under its own client id). Unset falls back to `tenancy.audience`, which stays required. Escaped and anchored as `tenancy.audience` is; present and empty is refused."
+              },
+              "workload": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "The knobs a workload's reader sets and a person's never does; every one optional. A person's identity (under tenancy-authz) may set none of them.",
+                "properties": {
+                  "routes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "metrics",
+                        "logs",
+                        "traces"
+                      ]
+                    },
+                    "description": "Which of the three read routes this identity gets. Unset renders all three. A restriction that would render no route is refused."
+                  },
+                  "metricsQueryOnly": {
+                    "type": "boolean",
+                    "description": "Narrow the metrics route to `/prometheus/api/v1/query` and `/prometheus/api/v1/query_range`. Refused when `routes` excludes `metrics`."
+                  },
+                  "vmalertAPI": {
+                    "type": "boolean",
+                    "description": "Add the metrics vmalert's alerts and rules, UNFILTERED: needs `tenancy.allowUnfilteredAlertReads` and `vmalert.enabled`, and `routes` (if set) must include `metrics`."
+                  }
+                }
               },
               "reach": {
                 "type": "object",
@@ -776,8 +808,7 @@
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "cluster",
-                        "namespaces"
+                        "cluster"
                       ],
                       "properties": {
                         "cluster": {
@@ -788,7 +819,12 @@
                           "minItems": 1,
                           "items": {
                             "$ref": "#/definitions/name"
-                          }
+                          },
+                          "description": "Namespaces on that cluster. Exactly one of `namespaces` and `allNamespaces: true` (checked at render time)."
+                        },
+                        "allNamespaces": {
+                          "type": "boolean",
+                          "description": "Every namespace on that cluster: whole-cluster reach on some clusters only. `reach.wholeStore` is the same on every cluster of `tenancy.storeClusters`."
                         }
                       }
                     }

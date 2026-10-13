@@ -1,0 +1,26 @@
+# The case `tenancy-multi-group` with every principal of `tenancy.principals` rewritten as an
+# identity of `tenancy.identities` (docs/tenancy-authz.md has the mapping).
+# tests/identities_test.go holds that it renders byte for byte what `tenancy-multi-group` does.
+# Do not edit by hand: change `tenancy-multi-group` and rewrite.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  identities:
+  - name: k8s:viewer
+    groups: ['cluster-a:k8s:viewer', 'cluster-b:k8s:viewer', 'cluster-c:k8s:viewer']
+    reach:
+      clusters:
+      - {cluster: cluster-a, allNamespaces: true}
+      - {cluster: cluster-b, allNamespaces: true}
+      - {cluster: cluster-c, allNamespaces: true}
+  - groups: ['example:example-app:deployer']
+    reach:
+      clusters:
+      - cluster: cluster-a
+        namespaces: [example-app]
+networkPolicy: {enabled: false}
+victoria-metrics-k8s-stack: {enabled: false}
+victoria-logs-single: {enabled: false}
+victoria-traces-single: {enabled: false}

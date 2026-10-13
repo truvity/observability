@@ -23,20 +23,20 @@ tenancy:
         podSelector:
           matchLabels:
             app.kubernetes.io/name: envoy
-  principals:
-  - group: cluster-a:example-app:reader
-    audience: reader
-    routes:
-    - metrics
-    metricsQueryOnly: true
-    grants:
-    - cluster: cluster-a
-      namespaces:
-      - example-app
   storeClusters:
   - cluster-a
   - cluster-b
   identities:
+  # A workload's reader, on its own audience: not a person's, so not the service's.
+  - groups: [cluster-a:example-app:reader]
+    audience: reader
+    workload:
+      routes: [metrics]
+      metricsQueryOnly: true
+    reach:
+      clusters:
+      - cluster: cluster-a
+        namespaces: [example-app]
   - name: k8s:viewer
     groups:
     - cluster-a:k8s:viewer

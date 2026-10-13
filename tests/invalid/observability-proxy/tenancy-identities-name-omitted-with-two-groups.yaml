@@ -1,0 +1,20 @@
+# expect: has no `name`, and not exactly one group
+# The name may be left out only for a single group, which then names the entry (the single-group principal).
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  identities:
+    - groups: [cluster-a:example-app, cluster-b:example-app]
+      reach:
+        clusters:
+          - cluster: cluster-a
+            namespaces: [example-app]
+
+
+victoria-metrics-k8s-stack:
+  enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

@@ -199,9 +199,13 @@ tenancy:
 ## Identities: a generic list of groups to reach
 
 `tenancy.identities` is the shape the service's configuration already has,
-written directly: a list of entries `{name, groups, reach}`. `name` is the
-principal (and names its VMUser), `groups` are the token groups (a token
-holding ANY of them selects the entry), and `reach` is exactly one of:
+written directly: a list of entries `{name, groups, reach}`, plus two optional
+parts for a workload's reader (`audience`, `workload`). It expresses every
+principal `tenancy.principals` can, people and workloads alike, so the old key
+is fully replaceable and will be removed in the next breaking release.
+
+`name` is the principal (and names its VMUser), `groups` are the token groups
+(a token holding ANY of them selects the entry), and `reach` is exactly one of:
 
 ```yaml
 tenancy:
@@ -213,27 +217,69 @@ tenancy:
     - name: example-app
       groups: [example:example-app]
       reach:
-        clusters:                         # per cluster, a set of namespaces
+        clusters:                         # per cluster, namespaces OR allNamespaces
           - cluster: cluster-a
             namespaces: [example-app, other-app]
+          - cluster: cluster-b
+            allNamespaces: true           # the whole cluster, on this one only
+    - groups: [example:url-shortener:metrics-gate]   # no name: the sole group names it
+      audience: metrics-gate              # a workload's own client id
+      workload:                           # what only a workload's reader sets
+        routes: [metrics]
+        metricsQueryOnly: true
+      reach:
+        clusters:
+          - {cluster: cluster-a, namespaces: [example-app]}
 ```
 
-An identity renders the same objects the principal `{name, groups, grants}`
-would: `wholeStore` is `allNamespaces: true` on each cluster of
-`tenancy.storeClusters` (a cluster missing from that list is a cluster the
-reach does not cover), and `clusters` is the grants one for one. The render
-refuses a name or a group written both under `identities` and under
-`principals` (or twice in one), an empty `groups`, a reach with both
-`wholeStore` and `clusters` or with neither, and a `wholeStore` without
-`storeClusters`. The old key still works, deprecated; docs/adoption.md says
-how to switch.
+An identity renders the same objects the principal it maps to would. The
+mapping is total and lossless, in both directions:
+
+| `tenancy.principals[]` | `tenancy.identities[]` |
+|---|---|
+| `name` (with `groups`) | `name` |
+| `group: g` (no `name`) | `groups: [g]`, `name` left out: the sole group names the entry. `name` is optional only with exactly one group |
+| `groups: [...]` | `groups: [...]` |
+| `audience` | `audience` |
+| `routes` | `workload.routes` |
+| `metricsQueryOnly` | `workload.metricsQueryOnly` |
+| `vmalertAPI` | `workload.vmalertAPI` |
+| `grants[]: {cluster, namespaces}` | `reach.clusters[]: {cluster, namespaces}` |
+| `grants[]: {cluster, allNamespaces: true}` | `reach.clusters[]: {cluster, allNamespaces: true}`, on any subset of the clusters |
+| `allNamespaces: true` on every cluster of the store | `reach.wholeStore: true` (shorthand; the clusters go in `tenancy.storeClusters`) |
+
+`wholeStore` is `allNamespaces: true` on each cluster of `tenancy.storeClusters`
+(a cluster missing from that list is a cluster the reach does not cover). A
+principal with `allNamespaces` on only some of its clusters is `reach.clusters`
+with `allNamespaces: true` on those and `namespaces` on the rest.
+
+`audience` and `workload` mean what the principal's fields mean, with the same
+refusals: an `audience` that is empty or carries whitespace; `workload.routes`
+that would render no route (an empty list is refused by the schema, `traces`
+alone with no trace store is refused at render time); `metricsQueryOnly` or
+`vmalertAPI` with `routes` that exclude `metrics`; `vmalertAPI` without
+`tenancy.allowUnfilteredAlertReads` or with `vmalert.enabled` false. A cluster
+entry sets exactly one of `namespaces` and `allNamespaces: true`. The render
+also refuses a name or a group written both under `identities` and under
+`principals` (or twice in one), an empty `groups`, a missing `name` with more
+than one group, a reach with both `wholeStore` and `clusters` or with neither,
+and a `wholeStore` without `storeClusters`.
+
+**The service only applies a person's identity.** An identity belongs to the
+people's path when its audience (its own, else `tenancy.audience`) is a person
+audience, exactly as for a principal. One on a workload's own `audience` is not
+in the service's configuration: a token for it passes through to vmauth's own
+reader. Under the service a person's identity may not set `workload.routes`,
+`workload.metricsQueryOnly` or `workload.vmalertAPI` (the service mints one
+claim per person and the routes belong to the reader, not the claim).
 
 **Namespace-only reach never gets traces.** There is no traces field: it
 follows from the reach. The trace store cannot be filtered, so the service
 answers traces only to a person holding `allNamespaces` on every cluster the
-trace store serves (see "Traces"), which is `wholeStore` and nothing narrower.
-An entry whose reach is `clusters` with namespaces is refused traces (403,
-`forbidden_traces`) however many clusters it lists.
+trace store serves (see "Traces"), which is `wholeStore`, or `reach.clusters`
+with `allNamespaces: true` on every one of them. An entry whose reach leaves
+any trace cluster namespace-scoped is refused traces (403, `forbidden_traces`).
+docs/adoption.md says how to switch from `principals`.
 
 ## Retiring the group readers
 

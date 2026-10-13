@@ -451,41 +451,46 @@ are below.
 
 ### Switching `tenancy.principals` to `tenancy.identities` (named, not versioned)
 
-**Nothing moves on the bump.** `tenancy.identities` is a new, empty-by-default
-key beside `tenancy.principals`, in both `observability-stack` and
-`observability-proxy`: every existing render is byte-identical. `principals`
-is **deprecated** and will be removed in a later release; the release that
-removes it will say so in CHANGELOG.md. Until then the two keys may be set
-together, provided no principal name and no group is written under both
-(the render refuses it).
+**Nothing moves on the bump.** `tenancy.identities` extends a key that already
+exists, beside `tenancy.principals`, in both `observability-stack` and
+`observability-proxy`: every existing render is byte-identical. An identity now
+expresses **every** principal, a workload's reader included, so `principals` is
+**fully replaceable** and will be removed in the next breaking release; that
+release will say so in CHANGELOG.md. Until then the two keys may be set
+together, provided no principal name and no group is written under both (the
+render refuses it).
 
 **How to switch: same values, new shape.** An entry becomes
-`{name, groups, reach}`:
+`{name, groups, reach}` plus, for a workload's reader, `audience` and `workload`:
 
 | `principals[]` | `identities[]` |
 |---|---|
-| `name` (or the single `group`) | `name` |
-| `groups` (or the single `group`) | `groups` (a list, any one matches) |
+| `name` (with `groups`) | `name` |
+| `group: g` (no `name`) | `groups: [g]`, `name` left out |
+| `groups: [...]` | `groups: [...]` |
+| `audience` | `audience` |
+| `routes` | `workload.routes` |
+| `metricsQueryOnly` | `workload.metricsQueryOnly` |
+| `vmalertAPI` | `workload.vmalertAPI` |
 | `grants: [{cluster, namespaces}]` | `reach: {clusters: [{cluster, namespaces}]}` |
-| `grants` with `allNamespaces: true` on every cluster the store holds | `reach: {wholeStore: true}`, with those clusters in `tenancy.storeClusters` |
-
-A principal's `audience`, `routes`, `metricsQueryOnly` and `vmalertAPI` have no
-identity form: an entry that sets any of them (a workload's reader) stays a
-principal for now, and so does one with `allNamespaces` on only some of the
-clusters it names.
+| a grant `{cluster, allNamespaces: true}`, on some clusters or all | `reach.clusters[]: {cluster, allNamespaces: true}` |
+| `allNamespaces: true` on every cluster the store holds | `reach: {wholeStore: true}`, with those clusters in `tenancy.storeClusters` (optional shorthand) |
 
 1. Render today's values and keep the output (`helm template … > before.yaml`).
-2. Move the entries to `identities`, add `storeClusters` when any is
-   `wholeStore`, and delete them from `principals`. Write the single-`group`
-   form as `name: <group>`, `groups: [<group>]`, and keep the order.
+2. Move the entries to `identities` (add `storeClusters` if any uses
+   `wholeStore`), delete them from `principals`, and keep the order: a list
+   is rendered principals first, then identities, and VMUsers follow it.
 3. Render again (`> after.yaml`) and `diff before.yaml after.yaml`: the diff
-   must be empty. A `group:` principal renders its tenancy-authz entry as
-   `group:` and an identity as `name` + `groups`, so a single-group principal
-   shows that one difference in the ConfigMap (and the checksum annotation
-   that follows it); write it as `name` + a one-element `groups` under
-   `principals` first, diff, then switch the key. The repository holds the
-   proof for the multi-group form: the `tenancy-authz-identities` and
-   `tenancy-authz-identities-principals` cases render byte for byte the same.
+   must be empty. The repository holds the proof: for every principal shape in
+   its cases (`group` and `groups` + `name`, `audience`, `routes`,
+   `metricsQueryOnly`, `vmalertAPI`, `namespaces`, `allNamespaces` on all or on
+   some clusters) the `<case>-as-identities` case renders byte for byte what
+   the principal case does (tests/identities_test.go).
+
+A single-`group` principal keeps its tenancy-authz entry as `group:` only if
+you leave the identity's `name` out; writing `name: g` beside `groups: [g]`
+renders the entry as `name` + `groups`, which selects the same people and
+differs in the ConfigMap's text (and the checksum annotation that follows it).
 
 ### Fewer churning emitter series
 

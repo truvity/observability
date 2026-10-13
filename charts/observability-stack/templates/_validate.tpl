@@ -1476,28 +1476,7 @@ wrong: an audience that is present but says nothing, or a restriction
 that, combined with what else this principal set or what this install
 has enabled, renders no route at all.
 */}}
-{{- if and (hasKey $p "audience") (not (regexMatch $audienceShape (toString $p.audience))) -}}
-{{- fail (printf "observability-stack: principal %q sets `audience` to %q, which is not an identifier (%s). Like `tenancy.audience`, a client id may otherwise carry a dot, a `|` or an `@` — the issuer assigns it, this chart does not — and is escaped and anchored where it is rendered, so it pins itself and nothing else. What is refused is a value no issuer mints: empty, or carrying whitespace or a newline, which is how a value that arrived from the wrong place looks. Leave `audience` out entirely to fall back to `tenancy.audience`, rather than setting it to nothing." $principalName (toString $p.audience) $audienceShape) -}}
-{{- end -}}
-{{- $routes := $p.routes | default (list "metrics" "logs" "traces") -}}
-{{- $rendersTraces := and (has "traces" $routes) (include "observability-stack.tracesEnabled" $) -}}
-{{- if not (or (has "metrics" $routes) (has "logs" $routes) $rendersTraces) -}}
-{{- fail (printf "observability-stack: principal %q's `routes` (%s) renders no route at all. Metrics and logs render whenever named; `traces` renders only when a trace store is enabled (independent of `tenancy.allowUnfilteredTraceReads`, checked next). A principal that may read nothing is written by leaving it out of `tenancy.principals` entirely, not by restricting it to nothing." $principalName (join ", " $routes)) -}}
-{{- end -}}
-{{- if $p.vmalertAPI -}}
-{{- if not (has "metrics" $routes) -}}
-{{- fail (printf "observability-stack: principal %q sets `vmalertAPI: true` but its `routes` (%s) does not include `metrics`. The alerts and rules routes belong to a metrics reader: they are vmalert's view of the same store, and a principal with no metrics route has no business reading what its rules say." $principalName (join ", " $routes)) -}}
-{{- end -}}
-{{- if not $.Values.tenancy.allowUnfilteredAlertReads -}}
-{{- fail (printf "observability-stack: principal %q sets `vmalertAPI: true` but `tenancy.allowUnfilteredAlertReads` is not. vmalert's alerts and rules have no per-namespace or per-cluster concept to filter on, so this principal's own grant would NOT scope them: it would read every alert and every rule's expression and labels this install's metrics vmalert holds, cluster-wide. Set `tenancy.allowUnfilteredAlertReads: true` and record that, or remove `vmalertAPI`." $principalName) -}}
-{{- end -}}
-{{- if not (include "observability-stack.effectiveEnabled" $ | fromYaml).vmalert -}}
-{{- fail (printf "observability-stack: principal %q sets `vmalertAPI: true` but `vmalert.enabled` is false. There is no vmalert for these routes to read." $principalName) -}}
-{{- end -}}
-{{- end -}}
-{{- if and $p.metricsQueryOnly (not (has "metrics" $routes)) -}}
-{{- fail (printf "observability-stack: principal %q sets `metricsQueryOnly: true` but its `routes` (%s) does not include `metrics`. metricsQueryOnly narrows the metrics route to its two query paths; with no metrics route requested there is nothing for it to narrow, and the flag would mean nothing." $principalName (join ", " $routes)) -}}
-{{- end -}}
+{{- include "observability-stack.validate.principalRoutes" (dict "p" $p "name" $principalName "kind" "principal" "root" $) -}}
 {{- end -}}
 {{- /*
 The trace route cannot be scoped, so it is not rendered until somebody
@@ -2346,7 +2325,7 @@ principal says. Refused, not guessed.
 {{- if has $aud $person -}}
 {{- $label := $p.name | default $p.group -}}
 {{- if or $p.routes $p.metricsQueryOnly $p.vmalertAPI -}}
-{{- fail (printf "observability-stack: principal %q is a person's principal but sets `routes`, `metricsQueryOnly` or `vmalertAPI`. With `tenancy.authz` on, the service mints one claim per person and the vm_access reader gives every claim the same routes, so the narrowing would be dropped and the person would read more than this principal says. Give a narrower population its own audience (and keep it out of `personAudiences`), or leave the narrowing off." $label) -}}
+{{- fail (printf "observability-stack: principal %q is a person's principal but sets `routes`, `metricsQueryOnly` or `vmalertAPI` (an identity writes them under `workload`). With `tenancy.authz` on, the service mints one claim per person and the vm_access reader gives every claim the same routes, so the narrowing would be dropped and the person would read more than this principal says. Give a narrower population its own audience (and keep it out of `personAudiences`), or leave the narrowing off." $label) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -2452,8 +2431,46 @@ than the sender wrote and nothing says so. Refused:
 {{- end -}}
 
 {{/*
-`tenancy.identities`: each entry is `{name, groups, reach}`, and the reach is
-either `wholeStore: true` or `clusters: [{cluster, namespaces}]`. Refused: a
+The checks one reader's OWN audience and OWN route restriction share, whichever
+key wrote it: a `tenancy.principals` entry (`audience`, `routes`, `metricsQueryOnly`,
+`vmalertAPI`) or a `tenancy.identities` entry (`audience`, `workload.routes`,
+`workload.metricsQueryOnly`, `workload.vmalertAPI`, handed in under the principal's names).
+Takes `{p, name, kind, root}`.
+*/}}
+{{- define "observability-stack.validate.principalRoutes" -}}
+{{- $p := .p -}}
+{{- $name := .name -}}
+{{- $kind := .kind -}}
+{{- $root := .root -}}
+{{- $audienceShape := "^\\S+$" -}}
+{{- if and (hasKey $p "audience") (not (regexMatch $audienceShape (toString $p.audience))) -}}
+{{- fail (printf "observability-stack: %s %q sets `audience` to %q, which is not an identifier (%s). Like `tenancy.audience`, a client id may otherwise carry a dot, a `|` or an `@` — the issuer assigns it, this chart does not — and is escaped and anchored where it is rendered, so it pins itself and nothing else. What is refused is a value no issuer mints: empty, or carrying whitespace or a newline, which is how a value that arrived from the wrong place looks. Leave `audience` out entirely to fall back to `tenancy.audience`, rather than setting it to nothing." $kind $name (toString $p.audience) $audienceShape) -}}
+{{- end -}}
+{{- $routes := $p.routes | default (list "metrics" "logs" "traces") -}}
+{{- $rendersTraces := and (has "traces" $routes) (include "observability-stack.tracesEnabled" $root) -}}
+{{- if not (or (has "metrics" $routes) (has "logs" $routes) $rendersTraces) -}}
+{{- fail (printf "observability-stack: %s %q's `routes` (%s) renders no route at all. Metrics and logs render whenever named; `traces` renders only when a trace store is enabled (independent of `tenancy.allowUnfilteredTraceReads`, checked next). A principal that may read nothing is written by leaving it out of `tenancy.principals` entirely, not by restricting it to nothing." $kind $name (join ", " $routes)) -}}
+{{- end -}}
+{{- if $p.vmalertAPI -}}
+{{- if not (has "metrics" $routes) -}}
+{{- fail (printf "observability-stack: %s %q sets `vmalertAPI: true` but its `routes` (%s) does not include `metrics`. The alerts and rules routes belong to a metrics reader: they are vmalert's view of the same store, and a principal with no metrics route has no business reading what its rules say." $kind $name (join ", " $routes)) -}}
+{{- end -}}
+{{- if not $root.Values.tenancy.allowUnfilteredAlertReads -}}
+{{- fail (printf "observability-stack: %s %q sets `vmalertAPI: true` but `tenancy.allowUnfilteredAlertReads` is not. vmalert's alerts and rules have no per-namespace or per-cluster concept to filter on, so this principal's own grant would NOT scope them: it would read every alert and every rule's expression and labels this install's metrics vmalert holds, cluster-wide. Set `tenancy.allowUnfilteredAlertReads: true` and record that, or remove `vmalertAPI`." $kind $name) -}}
+{{- end -}}
+{{- if not (include "observability-stack.effectiveEnabled" $root | fromYaml).vmalert -}}
+{{- fail (printf "observability-stack: %s %q sets `vmalertAPI: true` but `vmalert.enabled` is false. There is no vmalert for these routes to read." $kind $name) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $p.metricsQueryOnly (not (has "metrics" $routes)) -}}
+{{- fail (printf "observability-stack: %s %q sets `metricsQueryOnly: true` but its `routes` (%s) does not include `metrics`. metricsQueryOnly narrows the metrics route to its two query paths; with no metrics route requested there is nothing for it to narrow, and the flag would mean nothing." $kind $name (join ", " $routes)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`tenancy.identities`: each entry is `{name, groups, reach}` (and optionally `audience`
+and `workload`), and the reach is either `wholeStore: true` or
+`clusters: [{cluster, namespaces | allNamespaces}]`. Refused: a
 name or a group in both `identities` and `principals` (or twice in either),
 an empty `groups`, a reach that is both or neither, and the shapes of every
 cluster and namespace (names are interpolated into filters, as for a grant).
@@ -2471,14 +2488,20 @@ cluster and namespace (names are interpolated into filters, as for a grant).
 {{- end -}}
 {{- range $i, $id := ($t.identities | default list) -}}
 {{- $label := printf "tenancy.identities[%d]" $i -}}
-{{- if not $id.name -}}
-{{- fail (printf "observability-stack: %s has no `name`. The name is the principal's, and the object a VMUser is named after." $label) -}}
+{{- /* No `name` is the single-`group` principal: the sole group names the entry. */ -}}
+{{- $sole := "" -}}
+{{- if eq (len ($id.groups | default list)) 1 -}}
+{{- $sole = toString (first $id.groups) -}}
 {{- end -}}
-{{- $label = printf "tenancy.identities[%d] (%q)" $i $id.name -}}
-{{- if hasKey $names $id.name -}}
-{{- fail (printf "observability-stack: the name %q is in `tenancy.identities` and also in `tenancy.%s`. One principal name, one place: the second would render a VMUser of the same name and one of them would silently not apply." $id.name (get $names $id.name)) -}}
+{{- $name := $id.name | default $sole -}}
+{{- if not $name -}}
+{{- fail (printf "observability-stack: %s has no `name`, and not exactly one group to name it after. The name is the principal's, and the object a VMUser is named after; it may be left out only when `groups` has a single entry." $label) -}}
 {{- end -}}
-{{- $_ := set $names $id.name "identities" -}}
+{{- $label = printf "tenancy.identities[%d] (%q)" $i $name -}}
+{{- if hasKey $names $name -}}
+{{- fail (printf "observability-stack: the name %q is in `tenancy.identities` and also in `tenancy.%s`. One principal name, one place: the second would render a VMUser of the same name and one of them would silently not apply." $name (get $names $name)) -}}
+{{- end -}}
+{{- $_ := set $names $name "identities" -}}
 {{- if not $id.groups -}}
 {{- fail (printf "observability-stack: %s has an empty `groups`. The groups are what a token's claim is matched against; an entry with none selects nobody." $label) -}}
 {{- end -}}
@@ -2512,15 +2535,33 @@ cluster and namespace (names are interpolated into filters, as for a grant).
 {{- fail (printf "observability-stack: %s names cluster %q twice. Merge them, or one is silently ignored." $label $c.cluster) -}}
 {{- end -}}
 {{- $_ := set $seen $c.cluster true -}}
-{{- if not $c.namespaces -}}
-{{- fail (printf "observability-stack: %s has cluster %q with no `namespaces`. An empty list is refused rather than read as \"everything\": whole-cluster reach is written `reach.wholeStore: true`." $label $c.cluster) -}}
+{{- if and $c.allNamespaces $c.namespaces -}}
+{{- fail (printf "observability-stack: %s has cluster %q with both `allNamespaces` and a `namespaces` list. One of them is wrong, and guessing which is how a grant quietly widens." $label $c.cluster) -}}
 {{- end -}}
-{{- range $ns := $c.namespaces -}}
+{{- if and (not $c.allNamespaces) (not $c.namespaces) -}}
+{{- fail (printf "observability-stack: %s has cluster %q with neither `namespaces` nor `allNamespaces: true`. An empty list is refused rather than read as \"everything\": whole-cluster reach is written `allNamespaces: true`, and `reach.wholeStore: true` covers every cluster of `tenancy.storeClusters`." $label $c.cluster) -}}
+{{- end -}}
+{{- range $ns := ($c.namespaces | default list) -}}
 {{- if not (regexMatch $shape (toString $ns)) -}}
 {{- fail (printf "observability-stack: %s has namespace %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $label (toString $ns) $shape) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- $w := $id.workload | default dict -}}
+{{- $wp := dict -}}
+{{- if hasKey $id "audience" -}}
+{{- $_ := set $wp "audience" $id.audience -}}
+{{- end -}}
+{{- if $w.routes -}}
+{{- $_ := set $wp "routes" $w.routes -}}
+{{- end -}}
+{{- if $w.metricsQueryOnly -}}
+{{- $_ := set $wp "metricsQueryOnly" true -}}
+{{- end -}}
+{{- if $w.vmalertAPI -}}
+{{- $_ := set $wp "vmalertAPI" true -}}
+{{- end -}}
+{{- include "observability-stack.validate.principalRoutes" (dict "p" $wp "name" $name "kind" "identity" "root" $) -}}
 {{- end -}}
 {{- range $c := ($t.storeClusters | default list) -}}
 {{- if not (regexMatch $shape (toString $c)) -}}
