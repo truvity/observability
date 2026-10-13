@@ -88,7 +88,7 @@ moment the environment may be frozen.
 | `platform.restoreStart` / `restoreRuntimeDone` / `restoreReport` | as above | `RESTORE_...` | `status`, `errorType`, `durationMs` |
 | `platform.logsDropped` | WARN | `LOGS_DROPPED Reason: <r>` | `droppedRecords`, `droppedBytes` |
 | `platform.telemetrySubscription` and other `platform.*` | INFO | the event name and status | `status` |
-| `function` (opt-in) | INFO, or the JSON log's `level` | the line | `requestId` for JSON logs |
+| `function` (default on) | INFO, or the JSON line's `level` | the line, or its `msg`/`message` | the JSON line's other keys; `requestId` for Lambda JSON logs |
 | `extension` (opt-in) | INFO | the line | |
 
 Every record has `event.name` (the event type above), `requestId` and
@@ -102,17 +102,36 @@ function name), `faas.name`, `faas.version`, `faas.instance` (the log
 stream), `faas.max_memory`, `cloud.provider=aws`, `cloud.platform=aws_lambda`
 and `cloud.region`.
 
-**Function and extension logs are off by default.** A function that already
-exports its logs through OpenTelemetry would then send each line twice (once
-through its SDK, once as a Telemetry API `function` record), and would pay for
-it twice. Turn `SLUIS_FUNCTION_LOGS` on for a function that writes to
-stdout and has no OTel logs SDK: it is then the way those lines reach the
-log store without CloudWatch. Platform events are never in the SDK's logs, so
-they have no duplicate. Note that Lambda still writes the same lines to
-CloudWatch Logs unless the function role's logging is denied there; the
+**Function logs are forwarded by default; extension logs are not.** Every line
+the function writes to stdout/stderr reaches the log store through the
+extension, with no CloudWatch in the path. That is a **duplicate** for a
+function that already exports its logs through an OpenTelemetry logs SDK: each
+line would arrive once from the SDK and once from the Telemetry API. Such a
+function sets `OTLP_LAMBDA_FUNCTION_LOGS=false`. Platform events are never in
+the SDK's logs, so they have no duplicate. Lambda still writes the same lines
+to CloudWatch Logs unless the function role's logging is denied there; the
 extension does not turn that off.
 
-The queue is bounded in memory (`SLUIS_TELEMETRY_BUFFER_QUEUE_ITEMS`,
+**A function log line that is a JSON object is lifted**, whether the function
+logs text (a JSON line printed to stdout) or uses Lambda's JSON log format:
+
+| Key | Becomes |
+|---|---|
+| `trace_id` (32 hex) and `span_id` (16 hex) | the record's trace id and span id. Not all zero, else ignored. `trace_flags` (2 hex), when present, is the record's flags. |
+| `level` | the severity (`trace`/`debug`, `info`, `warn`/`warning`, `error`, `fatal`/`critical`/`panic`, any case). A value that is not one of these stays an attribute. |
+| `msg`, else `message` | the body |
+| `time`, else `timestamp` (RFC 3339) | the record's timestamp (else the event's time) |
+| `requestId` | `requestId` and `faas.invocation_id` |
+| any other key | an attribute: strings, integers and floats as such, booleans as `"true"`/`"false"`, objects and arrays as JSON text, `null` dropped; at most 64 per line |
+
+With no `msg`/`message` the whole line is the body. A line that is not a JSON
+object is forwarded as its text. **X-Ray is the fallback for the trace
+context:** a function log line with no valid `trace_id` takes the X-Ray trace of
+the invocation the platform last announced (`platform.start`), unless the line
+names a different `requestId`; after `platform.runtimeDone` a line takes none.
+A `trace_id` in the line always wins.
+
+The queue is bounded in memory (`OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_ITEMS`,
 5000 records, a few MB at most). If exports cannot keep up, the **oldest**
 records are dropped and the next export starts with a WARN record saying how
 many were. The export is fail-open like the rest: with no token or a failing
@@ -149,31 +168,34 @@ logged.
 
 ## Configuration
 
-All settings are environment variables on the function, named `SLUIS_*`. The
-extension still reads the `ACCESS_ROSTER_*` spelling each had before the
-rename (`ACCESS_ROSTER_ISSUER` for `SLUIS_ISSUER`, and so on) when the `SLUIS_`
-one is unset or blank; the new name wins. For each old name it uses, the
-extension logs one deprecation line at start that names the variable and never
-its value. Set the `SLUIS_*` names and drop the old ones.
+All settings are environment variables on the function, named `OTLP_LAMBDA_*`.
+Two earlier spellings are still read, so a function that sets only the old
+names works unchanged: `SLUIS_*` (the same name with that prefix, except
+`OTLP_LAMBDA_ENDPOINT`, which was `SLUIS_OTLP_ENDPOINT`) and, before it,
+`ACCESS_ROSTER_*`. The newest name wins; a blank value falls through to the next.
+For each old name it uses, the extension logs one deprecation line at start
+that names the variable and never its value. Set the `OTLP_LAMBDA_*` names and
+drop the old ones. A layer version older than the generic names reads only the
+old ones, so set both while a function may still run one.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SLUIS_ISSUER` | required | The issuer's base URL. |
-| `SLUIS_AUDIENCE` | required | The audience asked of STS for the identity token. What the issuer's AWS verifier expects; the role policy pins it (below). |
-| `SLUIS_OTLP_ENDPOINT` | required | The OTLP/HTTP base URL, `https`. The extension appends `/v1/traces`, `/v1/metrics`, `/v1/logs`. Plain `http` is accepted only for a loopback host. |
-| `SLUIS_OTLP_AUDIENCE` | `otlp` | The exchange's audience and client id: the roster client that the OTLP endpoint accepts. |
-| `SLUIS_LISTEN` | `127.0.0.1:4318` | The proxy's address. |
-| `SLUIS_STS_DURATION_SECONDS` | `300` | Lifetime asked of the STS token (60 to 3600). It is used once, for the exchange. |
-| `SLUIS_STS_ALGORITHM` | `ES384` | Signing algorithm asked of STS (`ES384` or `RS256`). |
-| `SLUIS_PLATFORM_LOGS` | `true` | Subscribe to Telemetry API `platform` events and forward them as OTLP logs. |
-| `SLUIS_FUNCTION_LOGS` | `false` | Also forward `function` logs (the function's stdout/stderr). Duplicates logs the function exports itself; see [Platform logs](#platform-logs). |
-| `SLUIS_EXTENSION_LOGS` | `false` | Also forward `extension` logs (other extensions' output). |
-| `SLUIS_TELEMETRY_LISTEN` | `sandbox.localdomain:4243` | The Telemetry API destination. Bound on all interfaces of the sandbox at that port when the host is `sandbox.localdomain`. |
-| `SLUIS_TELEMETRY_BUFFER_MAX_ITEMS` | `1000` | The platform's batch size in events (1000 to 10000). |
-| `SLUIS_TELEMETRY_BUFFER_MAX_BYTES` | `262144` | The platform's batch size in bytes (262144 to 1048576). |
-| `SLUIS_TELEMETRY_BUFFER_TIMEOUT_MS` | `1000` | The platform's longest wait before delivering a batch (25 to 30000). |
-| `SLUIS_TELEMETRY_BUFFER_QUEUE_ITEMS` | `5000` | Records held in the extension waiting for an export (100 to 1000000); beyond it the oldest are dropped and counted. |
-| `SLUIS_TOKEN_FILE` | unset | If set, each access token is also written here (mode 0600, replaced atomically; the directory is created 0700). For a function that runs its own collector with a bearer-token-from-file extension. Off by default. Use a path under `/tmp`. |
+| `OTLP_LAMBDA_ISSUER` | required | The issuer's base URL. |
+| `OTLP_LAMBDA_AUDIENCE` | required | The audience asked of STS for the identity token. What the issuer's AWS verifier expects; the role policy pins it (below). |
+| `OTLP_LAMBDA_ENDPOINT` | required | The OTLP/HTTP base URL, `https`. The extension appends `/v1/traces`, `/v1/metrics`, `/v1/logs`. Plain `http` is accepted only for a loopback host. |
+| `OTLP_LAMBDA_OTLP_AUDIENCE` | `otlp` | The exchange's audience and client id: the roster client that the OTLP endpoint accepts. |
+| `OTLP_LAMBDA_LISTEN` | `127.0.0.1:4318` | The proxy's address. |
+| `OTLP_LAMBDA_STS_DURATION_SECONDS` | `300` | Lifetime asked of the STS token (60 to 3600). It is used once, for the exchange. |
+| `OTLP_LAMBDA_STS_ALGORITHM` | `ES384` | Signing algorithm asked of STS (`ES384` or `RS256`). |
+| `OTLP_LAMBDA_PLATFORM_LOGS` | `true` | Subscribe to Telemetry API `platform` events and forward them as OTLP logs. |
+| `OTLP_LAMBDA_FUNCTION_LOGS` | `true` | Forward `function` logs (the function's stdout/stderr), lifting JSON lines. Set `false` for a function that exports its logs through its own OTel logs SDK, or each line arrives twice; see [Platform logs](#platform-logs). |
+| `OTLP_LAMBDA_EXTENSION_LOGS` | `false` | Also forward `extension` logs (other extensions' output). |
+| `OTLP_LAMBDA_TELEMETRY_LISTEN` | `sandbox.localdomain:4243` | The Telemetry API destination. Bound on all interfaces of the sandbox at that port when the host is `sandbox.localdomain`. |
+| `OTLP_LAMBDA_TELEMETRY_BUFFER_MAX_ITEMS` | `1000` | The platform's batch size in events (1000 to 10000). |
+| `OTLP_LAMBDA_TELEMETRY_BUFFER_MAX_BYTES` | `262144` | The platform's batch size in bytes (262144 to 1048576). |
+| `OTLP_LAMBDA_TELEMETRY_BUFFER_TIMEOUT_MS` | `1000` | The platform's longest wait before delivering a batch (25 to 30000). |
+| `OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_ITEMS` | `5000` | Records held in the extension waiting for an export (100 to 1000000); beyond it the oldest are dropped and counted. |
+| `OTLP_LAMBDA_TOKEN_FILE` | unset | If set, each access token is also written here (mode 0600, replaced atomically; the directory is created 0700). For a function that runs its own collector with a bearer-token-from-file extension. Off by default. Use a path under `/tmp`. |
 
 STS needs a **regional** endpoint (the global one does not support the
 call): the SDK picks it from `AWS_REGION`, which Lambda sets. The extension

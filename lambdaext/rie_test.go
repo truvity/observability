@@ -70,9 +70,9 @@ done
 		"-v", filepath.Join(root, "task")+":/var/task:ro",
 		"-e", "AWS_REGION=eu-west-1", "-e", "AWS_ACCESS_KEY_ID=AKIDEXAMPLE", "-e", "AWS_SECRET_ACCESS_KEY=secret",
 		"-e", "AWS_SESSION_TOKEN=session", "-e", "AWS_ENDPOINT_URL_STS="+sts.URL, "-e", "AWS_EC2_METADATA_DISABLED=true",
-		"-e", "SLUIS_ISSUER="+issuer.URL, "-e", "SLUIS_AUDIENCE="+issuer.URL,
-		"-e", "SLUIS_OTLP_ENDPOINT="+up.URL,
-		"-e", "SLUIS_FUNCTION_LOGS=true", "-e", "SLUIS_EXTENSION_LOGS=true",
+		"-e", "OTLP_LAMBDA_ISSUER="+issuer.URL, "-e", "OTLP_LAMBDA_AUDIENCE="+issuer.URL,
+		"-e", "OTLP_LAMBDA_ENDPOINT="+up.URL,
+		"-e", "OTLP_LAMBDA_FUNCTION_LOGS=true", "-e", "OTLP_LAMBDA_EXTENSION_LOGS=true",
 		"public.ecr.aws/lambda/provided:al2023", "handler")
 	logs := &syncBuffer{}
 	run.Stdout, run.Stderr = logs, logs

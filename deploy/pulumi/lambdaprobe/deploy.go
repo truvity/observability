@@ -146,19 +146,28 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, cfg *Config, in Inputs) erro
 		return fmt.Errorf("create log group: %w", err)
 	}
 
-	// The layer reads SLUIS_* first and ACCESS_ROSTER_* as a fallback (v0.69.0).
-	// Both are set, new name winning, because Layer.Version may name a layer
-	// older than that, which reads only the old names.
+	// The layer reads OTLP_LAMBDA_* first, then SLUIS_* (v0.69.0), then
+	// ACCESS_ROSTER_*. All three are set, the newest winning, because
+	// Layer.Version may name a layer older than the generic names, which reads
+	// only the earlier ones. FUNCTION_LOGS is off: the probe exports its log line
+	// through its own OTel SDK, and a layer that forwards function logs by
+	// default would send it twice. A layer older than the setting ignores it.
 	settings := map[string]string{
 		"ISSUER":        probe.IssuerURL,
 		"AUDIENCE":      probe.STSAudience(),
 		"OTLP_ENDPOINT": probe.OTLPEndpoint,
+		"FUNCTION_LOGS": "false",
 	}
 	if probe.OTLPAudience != "" {
 		settings["OTLP_AUDIENCE"] = probe.OTLPAudience
 	}
 	env := pulumi.StringMap{"OTEL_SERVICE_NAME": pulumi.String(probe.FunctionName)}
 	for name, value := range settings {
+		generic := name
+		if name == "OTLP_ENDPOINT" {
+			generic = "ENDPOINT" // the generic name drops the redundant OTLP_
+		}
+		env["OTLP_LAMBDA_"+generic] = pulumi.String(value)
 		env["SLUIS_"+name] = pulumi.String(value)
 		env["ACCESS_ROSTER_"+name] = pulumi.String(value)
 	}

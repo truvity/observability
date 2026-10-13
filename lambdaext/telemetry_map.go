@@ -246,38 +246,29 @@ func traceContext(p *platformRecord) (traceID, spanID []byte, flags uint32) {
 }
 
 // mapPlain maps a function or extension log line. The record is a string, or
-// an object for a function configured to log JSON (timestamp, level,
-// message); the level, when there is one, sets the severity.
+// an object for a function configured to log JSON. A line that is a JSON
+// object, whichever way it arrived, is lifted (see liftJSON); any other line
+// is the body as text.
 func mapPlain(rec *LogRecord, raw json.RawMessage) {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		s = strings.TrimRight(s, "\n")
+		if obj, ok := decodeObject([]byte(strings.TrimSpace(s))); ok {
+			liftJSON(rec, obj)
+			if rec.Body == "" {
+				rec.Body = s
+			}
+			return
+		}
 		rec.Body = s
 		return
 	}
-	var obj struct {
-		Level     string `json:"level"`
-		Message   any    `json:"message"`
-		RequestID string `json:"requestId"`
+	if obj, ok := decodeObject(raw); ok {
+		liftJSON(rec, obj)
+		if rec.Body == "" {
+			rec.Body = string(raw)
+		}
+		return
 	}
-	text := string(raw)
-	if json.Unmarshal(raw, &obj) == nil {
-		switch strings.ToUpper(obj.Level) {
-		case "TRACE", "DEBUG":
-			rec.Severity = SeverityDebug
-		case "WARN", "WARNING":
-			rec.Severity = SeverityWarn
-		case "ERROR":
-			rec.Severity = SeverityError
-		case "FATAL", "CRITICAL":
-			rec.Severity = SeverityFatal
-		}
-		if m, ok := obj.Message.(string); ok {
-			text = m
-		}
-		if obj.RequestID != "" {
-			rec.Attrs = append(rec.Attrs, strAttr("requestId", obj.RequestID), strAttr("faas.invocation_id", obj.RequestID))
-		}
-	}
-	rec.Body = text
+	rec.Body = string(raw)
 }

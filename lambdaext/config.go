@@ -20,14 +20,14 @@ import (
 
 // Environment variable names.
 const (
-	EnvIssuer        = "SLUIS_ISSUER"
-	EnvAudience      = "SLUIS_AUDIENCE"
-	EnvOTLPAudience  = "SLUIS_OTLP_AUDIENCE"
-	EnvOTLPEndpoint  = "SLUIS_OTLP_ENDPOINT"
-	EnvListen        = "SLUIS_LISTEN"
-	EnvSTSDuration   = "SLUIS_STS_DURATION_SECONDS"
-	EnvSTSAlgorithm  = "SLUIS_STS_ALGORITHM"
-	EnvTokenFile     = "SLUIS_TOKEN_FILE"
+	EnvIssuer        = "OTLP_LAMBDA_ISSUER"
+	EnvAudience      = "OTLP_LAMBDA_AUDIENCE"
+	EnvOTLPAudience  = "OTLP_LAMBDA_OTLP_AUDIENCE"
+	EnvOTLPEndpoint  = "OTLP_LAMBDA_ENDPOINT"
+	EnvListen        = "OTLP_LAMBDA_LISTEN"
+	EnvSTSDuration   = "OTLP_LAMBDA_STS_DURATION_SECONDS"
+	EnvSTSAlgorithm  = "OTLP_LAMBDA_STS_ALGORITHM"
+	EnvTokenFile     = "OTLP_LAMBDA_TOKEN_FILE"
 	defaultListen    = "127.0.0.1:4318"
 	defaultAlgorithm = "ES384"
 	defaultOTLPAud   = "otlp"
@@ -54,8 +54,8 @@ type Config struct {
 	Algorithm string
 	// TokenFile, when set, receives each access token (0600, atomically).
 	TokenFile string
-	// Deprecated is the ACCESS_ROSTER_ names that were read because their
-	// SLUIS_ name was not set. Names only, never values.
+	// Deprecated is the old (SLUIS_, ACCESS_ROSTER_) names that were read because their
+	// OTLP_LAMBDA_ name was not set. Names only, never values.
 	Deprecated []string
 }
 
