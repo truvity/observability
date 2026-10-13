@@ -3,8 +3,8 @@
 // and pkg/statusbox/ec2 (docs/statusbox.md has the design and the Gatus boot
 // constraints).
 //
-// The package renders both Gatus instances from one catalogue and creates the
-// machine. Everything about the estate arrives in Inputs: the AWS provider (so
+// The package renders both ops instances from one catalogue, one public narrow
+// instance per entry of Inputs.Pages, and creates the machine. Everything about the estate arrives in Inputs: the AWS provider (so
 // its resource name stays the caller's), the host groups, and the names of the
 // SSM parameters the box reads its secrets from at boot. The tunnel itself is
 // the caller's, built with the Cloudflare module.
@@ -29,6 +29,11 @@ const (
 	// PublicPort is the public ops instance's loopback port: a tunnel's
 	// ingress targets it.
 	PublicPort = 8082
+
+	// FirstPagePort is the lowest port a public page (Inputs.Pages) should
+	// take: the caller hands out FirstPagePort, FirstPagePort+1, ... and points
+	// each page's tunnel ingress rule at its own. PagePort does the counting.
+	FirstPagePort = 8083
 
 	// publicInstanceName / privateInstanceName are the two ops instances.
 	publicInstanceName  = "ops"
@@ -62,9 +67,31 @@ type (
 		PublicHostname string
 		OIDC           OIDC
 
+		// Pages are the public, narrow, no-auth pages (statusbox.RenderPublicPage),
+		// each one more Public instance on the box. Empty (the default) changes
+		// nothing: the render is the two ops instances alone.
+		Pages []Page
+
 		// EC2 is the box itself: network, replicas, and the SSM parameter
 		// names the secrets are read from.
 		EC2 EC2Inputs
+	}
+
+	// Page is one public narrow page: the instance that serves it and what it
+	// shows.
+	Page struct {
+		// Name is the Gatus instance name (statusbox.Instance.Name), e.g.
+		// statusbox.PageInstanceName(code, environment). Its SQLite file is
+		// /data/<Name>.db.
+		Name string
+		// Hostname is the page's public address: the tunnel ingress rule the
+		// caller creates for it targets Port on the box's loopback.
+		Hostname string
+		// Port is the instance's loopback port (see FirstPagePort).
+		Port int
+		// Title, Groups: see statusbox.PublicPage.
+		Title  string
+		Groups []statusbox.PublicGroup
 	}
 
 	// EC2Inputs describe the box: an Auto Scaling group of one with a warm
@@ -170,6 +197,10 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 		return errors.New("status: a public page needs EC2.OIDCClientSecretParameter and EC2.TunnelTokenParameter")
 	}
 
+	if len(in.Pages) > 0 && in.EC2.TunnelTokenParameter == "" {
+		return errors.New("status: Pages are served through the tunnel and need EC2.TunnelTokenParameter")
+	}
+
 	// Both instances render from the SAME inputs, differing only in the
 	// security block and in which one pages (see OpsCatalogue).
 	breakglassConfig, err := statusbox.RenderGatus(OpsCatalogue(in.catalogue(false)))
@@ -191,11 +222,57 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, in Inputs) error {
 
 		instances = append(instances, statusbox.Instance{Name: publicInstanceName, Port: PublicPort, Public: true, Config: opsConfig})
 		hostnames[publicInstanceName] = in.PublicHostname
-	} else {
+	} else if len(in.Pages) == 0 {
 		logger.InfoContext(c.Context(), "status: no public hostname: no tunnel, every instance private")
 	}
 
+	pages, err := pageInstances(in.Pages)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range pages {
+		instances = append(instances, p.instance)
+		hostnames[p.instance.Name] = p.hostname
+	}
+
 	return deployEC2(c, logger, in, instances, hostnames)
+}
+
+// PagePort is the loopback port of the i-th page (0-based) when a caller
+// numbers its pages from FirstPagePort.
+func PagePort(i int) int { return FirstPagePort + i }
+
+// PageStoragePath is the SQLite file of the page instance called name.
+func PageStoragePath(name string) string { return "/data/" + name + ".db" }
+
+type pageInstance struct {
+	instance statusbox.Instance
+	hostname string
+}
+
+// pageInstances renders every page into its Public instance. Names, ports and
+// hostnames are checked with the rest of the instances by the EC2 backend.
+func pageInstances(pages []Page) ([]pageInstance, error) {
+	out := make([]pageInstance, 0, len(pages))
+
+	for _, p := range pages {
+		cfg, err := statusbox.RenderPublicPage(statusbox.PublicPage{
+			Title:       p.Title,
+			Groups:      p.Groups,
+			StoragePath: PageStoragePath(p.Name),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("status: render page %s (%s): %w", p.Name, p.Hostname, err)
+		}
+
+		out = append(out, pageInstance{
+			instance: statusbox.Instance{Name: p.Name, Port: p.Port, Public: true, Config: cfg},
+			hostname: p.Hostname,
+		})
+	}
+
+	return out, nil
 }
 
 // deployEC2 provisions the box: no secret value in the render, only the names
@@ -230,8 +307,11 @@ func deployEC2(c *pulumi.Context, logger *slog.Logger, in Inputs, instances []st
 		args.AlertURLParameters[DeadmanTelegramChatIDKey] = in.EC2.TelegramChatIDParameter
 	}
 
-	if in.PublicHostname != "" {
+	if in.PublicHostname != "" || len(in.Pages) > 0 {
 		args.TunnelTokenParameter = in.EC2.TunnelTokenParameter
+	}
+
+	if in.PublicHostname != "" {
 		args.EnvParameters = map[string]string{OIDCClientSecretEnvKey: in.EC2.OIDCClientSecretParameter}
 	}
 

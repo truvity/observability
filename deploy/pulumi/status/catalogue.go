@@ -252,3 +252,37 @@ func OpsCatalogue(in CatalogueInputs) statusbox.Catalogue { //nolint:misspell //
 		StoragePath:   opsStoragePath,
 	}
 }
+
+// Service is one service a public page shows: the Component (CompanyHost.Component,
+// a project name) whose hosts it groups, and the name customers know it by.
+type Service struct {
+	Component   string
+	DisplayName string
+}
+
+// PublicGroups narrows a company's hosts (HostsByCompany's list) to one
+// environment and the listed services: one group per service, in the order
+// given, holding that service's hosts whose Env is env, in the list's order.
+// A service with no host in env is left out, so a caller can list a service
+// that only some environments carry. Every other host (another environment,
+// a component not listed) is left out: the page shows what customers call,
+// not everything the company owns.
+func PublicGroups(hosts []statusbox.CompanyHost, env string, services []Service) []statusbox.PublicGroup {
+	var out []statusbox.PublicGroup
+
+	for _, svc := range services {
+		var picked []statusbox.CompanyHost
+
+		for _, h := range hosts {
+			if h.Env == env && h.Component == svc.Component {
+				picked = append(picked, h)
+			}
+		}
+
+		if len(picked) > 0 {
+			out = append(out, statusbox.PublicGroup{DisplayName: svc.DisplayName, Hosts: picked})
+		}
+	}
+
+	return out
+}

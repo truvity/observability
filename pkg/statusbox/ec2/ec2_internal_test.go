@@ -554,3 +554,30 @@ func TestFetchConfigs(t *testing.T) {
 		})
 	}
 }
+
+// Public narrow pages are more Public instances: each listens on loopback at
+// its own port behind the one tunnel, and none opens the security group.
+func TestSeveralPublicPagesShareTheTunnel(t *testing.T) {
+	a := validArgs()
+	for _, p := range []struct {
+		name string
+		port int
+	}{{"acme-prod", 8083}, {"acme-stage", 8084}} {
+		a.Instances = append(a.Instances, statusbox.Instance{
+			Name: p.name, Port: p.port, Public: true,
+			Config: strings.Replace(configOps, "/data/ops.db", "/data/"+p.name+".db", 1),
+		})
+		a.Hostnames[p.name] = "status-" + p.name + ".example.test"
+	}
+
+	require.NoError(t, a.validate())
+	require.Equal(t, []int{8081}, a.privatePorts(), "only the break-glass page is reachable from the peered network")
+
+	got, err := a.bootstrap(namesFor("status"), fakeChecksums())
+	require.NoError(t, err)
+	require.Contains(t, got, "SB_INSTANCES=('ops:8082:true:ops.db' 'ops-breakglass:8081:false:ops.db' "+
+		"'acme-prod:8083:true:acme-prod.db' 'acme-stage:8084:true:acme-stage.db')")
+
+	a.Instances[3].Port = 8083
+	require.ErrorContains(t, a.validate(), "Port 8083 is also used by instance \"acme-prod\"")
+}

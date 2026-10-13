@@ -387,6 +387,14 @@ type (
 		Security  *gatusSecurity  `yaml:"security,omitempty"`
 		Endpoints []gatusEndpoint `yaml:"endpoints,omitempty"`
 		Alerting  *gatusAlerting  `yaml:"alerting,omitempty"`
+		// UI is set only by RenderPublicPage (a page title); the combined
+		// page keeps Gatus's defaults, so its render is unchanged.
+		UI *gatusUI `yaml:"ui,omitempty"`
+	}
+
+	gatusUI struct {
+		Title  string `yaml:"title,omitempty"`
+		Header string `yaml:"header,omitempty"`
 	}
 
 	gatusSecurity struct {
