@@ -355,7 +355,7 @@ func TestPrunedFixturesAreCaught(t *testing.T) {
 // that verifies but carries no `vm_access` claim falls through to it and is
 // answered instead of refused. Absence is the only setting that means no.
 func TestNoUnauthorizedUser(t *testing.T) {
-	goldens, err := filepath.Glob("golden/observability-stack/*.yaml")
+	goldens, err := filepath.Glob("golden/observability-proxy/*.yaml")
 	require.NoError(t, err)
 	require.NotEmpty(t, goldens)
 
@@ -379,5 +379,5 @@ func TestNoUnauthorizedUser(t *testing.T) {
 			}
 		}
 	}
-	assert.Positive(t, seen, "no VMAuth found in any observability-stack golden")
+	assert.Positive(t, seen, "no VMAuth found in any observability-proxy golden")
 }

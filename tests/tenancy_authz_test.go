@@ -32,9 +32,9 @@ import (
 // hack/tenancy-authz-proof.sh shows the behaviour on real vmauth and Envoy.
 
 const (
-	authzGolden        = "golden/observability-stack/tenancy-authz.yaml"
-	authzGoldenRetired = "golden/observability-stack/tenancy-authz-retired.yaml"
-	authzGoldenSecret  = "golden/observability-stack/tenancy-authz-existing-secret.yaml"
+	authzGolden        = "golden/observability-proxy/tenancy-authz.yaml"
+	authzGoldenRetired = "golden/observability-proxy/tenancy-authz-retired.yaml"
+	authzGoldenSecret  = "golden/observability-proxy/tenancy-authz-existing-secret.yaml"
 	authzName          = "observability-stack-tenancy-authz"
 	authzIssuer        = "http://observability-stack-tenancy-authz.default.svc:8080"
 )
@@ -69,7 +69,7 @@ func authzConfigOf(t *testing.T, golden string) authzConfig {
 }
 
 func TestTenancyAuthzIsAbsentUnlessEnabled(t *testing.T) {
-	goldens, err := filepath.Glob(filepath.Join("golden", "observability-stack", "*.yaml"))
+	goldens, err := filepath.Glob(filepath.Join("golden", "observability-proxy", "*.yaml"))
 	require.NoError(t, err)
 	var seen int
 	for _, g := range goldens {

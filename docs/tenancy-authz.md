@@ -1,6 +1,6 @@
 # tenancy-authz: a person's groups, unioned into the filters vmauth enforces
 
-`tenancy.authz` (opt-in, in `charts/observability-stack`) renders
+`tenancy.authz` (opt-in, in `charts/observability-proxy`) renders
 `cmd/tenancy-authz`, an Envoy **external authorisation** service that sits in
 front of vmauth on the route people read through. It exists for one
 reason: vmauth cannot turn a *list of groups* into a *union of filters*.
@@ -13,7 +13,7 @@ reason: vmauth cannot turn a *list of groups* into a *union of filters*.
   provider's tokens carry **groups**; putting store query syntax into the
   sign-in service was tried and rejected.
 
-So the grant is computed here, from the same `tenancy.principals` (or `tenancy.identities`) the
+So the grant is computed here, from the same `tenancy.identities` the
 VMUsers render from, and handed to vmauth in a token vmauth trusts for that
 purpose and no other.
 
@@ -161,7 +161,7 @@ tenancy:
     networkPolicy:
       gatewayFrom:                        # the Envoy proxy pods
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: envoy-gateway-system}}
-  identities: [...]                       # who may read what, see below (or the deprecated `principals`)
+  identities: [...]                       # who may read what, see below
 ```
 
 - **Apply order.** The `SecurityPolicy` fails closed, so applied before the
@@ -201,8 +201,9 @@ tenancy:
 `tenancy.identities` is the shape the service's configuration already has,
 written directly: a list of entries `{name, groups, reach}`, plus two optional
 parts for a workload's reader (`audience`, `workload`). It expresses every
-principal `tenancy.principals` can, people and workloads alike, so the old key
-is fully replaceable and will be removed in the next breaking release.
+principal the former `tenancy.principals` key could, people and workloads alike;
+that key was removed in the release that took the Door plane out of
+`observability-stack`, and `identities` is the only list.
 
 `name` is the principal (and names its VMUser), `groups` are the token groups
 (a token holding ANY of them selects the entry), and `reach` is exactly one of:
@@ -232,8 +233,8 @@ tenancy:
           - {cluster: cluster-a, namespaces: [example-app]}
 ```
 
-An identity renders the same objects the principal it maps to would. The
-mapping is total and lossless, in both directions:
+An identity renders the same objects the principal it replaced did. The
+mapping from the removed key is total and lossless, in both directions:
 
 | `tenancy.principals[]` | `tenancy.identities[]` |
 |---|---|
@@ -260,8 +261,7 @@ alone with no trace store is refused at render time); `metricsQueryOnly` or
 `vmalertAPI` with `routes` that exclude `metrics`; `vmalertAPI` without
 `tenancy.allowUnfilteredAlertReads` or with `vmalert.enabled` false. A cluster
 entry sets exactly one of `namespaces` and `allNamespaces: true`. The render
-also refuses a name or a group written both under `identities` and under
-`principals` (or twice in one), an empty `groups`, a missing `name` with more
+also refuses a name or a group written twice in `identities`, an empty `groups`, a missing `name` with more
 than one group, a reach with both `wholeStore` and `clusters` or with neither,
 and a `wholeStore` without `storeClusters`.
 
@@ -279,7 +279,7 @@ answers traces only to a person holding `allNamespaces` on every cluster the
 trace store serves (see "Traces"), which is `wholeStore`, or `reach.clusters`
 with `allNamespaces: true` on every one of them. An entry whose reach leaves
 any trace cluster namespace-scoped is refused traces (403, `forbidden_traces`).
-docs/adoption.md says how to switch from `principals`.
+docs/adoption.md says how to switch from the removed `principals`.
 
 ## Retiring the group readers
 

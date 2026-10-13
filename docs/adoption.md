@@ -451,12 +451,12 @@ are below.
 
 ### Switching `tenancy.principals` to `tenancy.identities` (named, not versioned)
 
-**Nothing moves on the bump.** `tenancy.identities` extends a key that already
-exists, beside `tenancy.principals`, in both `observability-stack` and
-`observability-proxy`: every existing render is byte-identical. An identity now
-expresses **every** principal, a workload's reader included, so `principals` is
-**fully replaceable** and will be removed in the next breaking release; that
-release will say so in CHANGELOG.md. Until then the two keys may be set
+**Do this before the release that removes `tenancy.principals`** (the next
+section). `tenancy.identities` has expressed **every** principal since v0.85.0,
+a workload's reader included, with a byte-identical render, and the release
+after v0.86.0 removes `principals` from `observability-stack` (together with
+the Door plane) and from `observability-proxy`: a values file that still has
+the key is refused by the schema. Until that release the two keys may be set
 together, provided no principal name and no group is written under both (the
 render refuses it).
 
@@ -481,11 +481,14 @@ render refuses it).
    `wholeStore`), delete them from `principals`, and keep the order: a list
    is rendered principals first, then identities, and VMUsers follow it.
 3. Render again (`> after.yaml`) and `diff before.yaml after.yaml`: the diff
-   must be empty. The repository holds the proof: for every principal shape in
-   its cases (`group` and `groups` + `name`, `audience`, `routes`,
-   `metricsQueryOnly`, `vmalertAPI`, `namespaces`, `allNamespaces` on all or on
-   some clusters) the `<case>-as-identities` case renders byte for byte what
-   the principal case does (tests/identities_test.go).
+   must be empty. The repository held the proof while both keys existed: for
+   every principal shape in its cases (`group` and `groups` + `name`,
+   `audience`, `routes`, `metricsQueryOnly`, `vmalertAPI`, `namespaces`,
+   `allNamespaces` on all or on some clusters) the identity case rendered byte
+   for byte what the principal case did, and the proxy cases of the release
+   that removed `principals` are those identity cases under the principal
+   cases' names, with their goldens unchanged (tests/identities_test.go keeps
+   a case for every identity shape).
 
 A single-`group` principal keeps its tenancy-authz entry as `group:` only if
 you leave the identity's `name` out; writing `name: g` beside `groups: [g]`
@@ -556,7 +559,71 @@ For a matching Job only `kube_job_created`, `kube_job_owner` and
 (`KubeJobFailed`, `KubePodNotReady` ...) and the pod views then show nothing
 for those Jobs, which is the point.
 
+### Removing the Door plane from observability-stack, and `tenancy.principals` (breaking; lands in the release after v0.86.0)
+
+This is a named entry, not a versioned one: the release is cut by CI after
+this change merges, and it is the first one after v0.86.0 (CHANGELOG.md has
+the two `**Breaking**` bullets under that version's heading). It asks three
+things of an operator, **in this order**.
+
+**What changes.** `observability-stack` renders no `VMAuth`, no `VMUser`, no
+`tenancy-authz` object and not the proxy's NetworkPolicy, whatever its values
+say; `charts/observability-proxy` renders all of them. The stack's schema
+refuses `door`, every `vmauth` key but `enabled`, every `tenancy` key but
+`clusterLabel`, and `networkPolicy.proxyFrom` (those keys are the proxy
+chart's). `tenancy.principals` is gone from both charts: `tenancy.identities`
+replaced it. The three store NetworkPolicies, the vmalert and karma ones, the
+stores, the alerting plane and the backups stay in the stack.
+
+1. **Before upgrading anything: move every `tenancy.principals` entry to
+   `tenancy.identities`.** The procedure, with the field-by-field table and the
+   empty-diff check, is
+   [Switching `tenancy.principals` to `tenancy.identities`](#switching-tenancyprincipals-to-tenancyidentities-named-not-versioned);
+   it is done on the version you run today (v0.85.0 or later express every
+   principal), so the upgrade itself carries no values change for it. Do it in
+   whichever chart holds the entries: the stack's values, the proxy Application's
+   values, or both.
+2. **Install `observability-proxy` and hand the Door over FIRST**, on the
+   version you run today: [Handing the Door plane to observability-proxy
+   (0.81.0)](#handing-the-door-plane-to-observability-proxy-0810) has the four
+   steps (bump nothing, hand over with prune off in one change, verify the
+   tracking ids moved, restore prune). **Do not skip this.** The stack at the
+   new version renders no Door object, so a stack upgraded while it is still
+   the one that renders the Door (`door.source: stack`, or the key left at its
+   default) would have its next sync, with `prune: true`, DELETE the `VMAuth`,
+   every `VMUser`, `tenancy-authz` and the proxy's NetworkPolicy, and every read
+   and every cross-cluster write is refused until the proxy chart recreates
+   them. The new schema does refuse a leftover `door.source`, which is a loud
+   stop; deleting that key to get past the refusal, without the proxy chart
+   installed, is the silent way to the same outage.
+3. **Then remove the keys that are gone from the stack's values:**
+   `door.source`, and `tenancy.principals` (already moved to `identities` in
+   step 1; for the stack Application the identities and every other Door key
+   live in the proxy Application's values now). The stack's values keep only
+   `vmauth.enabled` (whether a proxy fronts the stores) and
+   `tenancy.clusterLabel`; delete the rest of `vmauth.*` and `tenancy.*` and
+   `networkPolicy.proxyFrom` from the stack's values, since the schema refuses
+   them. Bump the pin of both Applications to the new version in one change.
+   An install that already runs the proxy chart with `door.source: chart` and
+   `identities` only has one thing to do: delete `door.source` (and the Door's
+   keys from the stack's values, if the copy was left there).
+
+**Check.** Render the stack before and after (`helm template … > before.yaml`
+on the old pin with `door.source: chart`, `> after.yaml` on the new pin): the
+diff is empty. Render the proxy chart the same way: empty too (its templates
+did not change). `kubectl diff --server-side` against the cluster shows no
+Door object going away.
+
+**Rolling back** needs the same order reversed: pin the stack to the old
+version with `door.source: chart` and prune off before anything else.
+
 ### Handing the Door plane to observability-proxy (0.81.0)
+
+> The handover is mandatory since the release that removes the Door plane
+> from `observability-stack` (the next section): the stack no longer has
+> `door.source`, and renders no Door object whatever its values say. This
+> section is the procedure for doing it, and it is written for the releases
+> in which `door.source` still exists (0.81.0 up to v0.86.0).
 
 **Nothing moves on the bump.** `observability-stack`'s new `door.source`
 defaults to `stack` and the new chart `observability-proxy` is not installed

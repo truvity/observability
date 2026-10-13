@@ -213,9 +213,10 @@ own, and writes to both halves ([high-availability.md](high-availability.md#the-
 For an estate with one install, one company and one edge provider — the
 smallest shape that exercises everything. Every value below is invented.
 
-**The stack** (`observability-stack`): the issuer and audience, the
-principals and their grants (or the same list through `pkg/tenancy`),
-the retention per store, the backup destination, the Secret names — and
+**The proxy** (`observability-proxy`): the issuer and audience, and the
+identities with the reach each has (or the same list through `pkg/tenancy`).
+
+**The stack** (`observability-stack`): the retention per store, the backup destination, the Secret names — and
 the `notifications:` block: a Slack bot token Secret name, the external
 URL, and the route list.
 

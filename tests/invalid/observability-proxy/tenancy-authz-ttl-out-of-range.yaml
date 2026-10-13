@@ -1,0 +1,31 @@
+# expect: is outside 30s..1h
+# A TTL that makes every query pay for a signature, or removal from a group take a day.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  vmAccessReader:
+    enabled: true
+  authz:
+    enabled: true
+    securityPolicy:
+      targetRefs:
+      - kind: HTTPRoute
+        name: observability-read
+    networkPolicy:
+      gatewayFrom:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: envoy
+    tokenTTL: 2h
+  identities:
+  - groups:
+    - example:example-app:deployer
+    reach:
+      clusters:
+      - cluster: cluster-a
+        namespaces:
+        - example-app
+victoria-traces-single:
+  enabled: false

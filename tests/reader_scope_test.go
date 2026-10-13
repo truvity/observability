@@ -6,7 +6,7 @@
 // three read routes — and, on metrics, which paths — a principal's
 // VMUser carries at all.
 //
-// tests/cases/observability-stack/tenancy-reader-scope holds both
+// tests/cases/observability-proxy/tenancy-reader-scope holds both
 // principals the golden render below is generated from: one that sets
 // neither field (a full reader, `tenancy.audience`) and one that sets
 // both (a metrics-only machine reader with its own, deliberately
@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const readerScopeGolden = "golden/observability-stack/tenancy-reader-scope.yaml"
+const readerScopeGolden = "golden/observability-proxy/tenancy-reader-scope.yaml"
 
 // TestOwnAudienceOverridesOnlyItsOwnPrincipal is the first half of the
 // feature: one principal pins its own client id, and every principal
@@ -37,12 +37,12 @@ func TestOwnAudienceOverridesOnlyItsOwnPrincipal(t *testing.T) {
 	}
 
 	viewer, ok := byName["example:k8s:viewer"]
-	require.True(t, ok, "the full reader from tests/cases/observability-stack/tenancy-reader-scope is missing from the golden render")
+	require.True(t, ok, "the full reader from tests/cases/observability-proxy/tenancy-reader-scope is missing from the golden render")
 	assert.Equal(t, `^(example-observability-client)$`, viewer.Spec.JWT.MatchClaims["aud"],
 		"a principal that sets no `audience` of its own must keep `tenancy.audience` — a second principal setting one must not change what this one is pinned to")
 
 	gate, ok := byName["example:example-app:metrics-gate"]
-	require.True(t, ok, "the metrics-only reader from tests/cases/observability-stack/tenancy-reader-scope is missing from the golden render")
+	require.True(t, ok, "the metrics-only reader from tests/cases/observability-proxy/tenancy-reader-scope is missing from the golden render")
 	assert.Equal(t, `^(metrics-gate\.example\|other\(prod\))$`, gate.Spec.JWT.MatchClaims["aud"],
 		"this principal set its own `audience`; the rendered claim should carry it, escaped and anchored exactly as `tenancy.audience` itself is")
 }
@@ -129,7 +129,7 @@ func TestFullReaderIsUnaffectedByANeighboursRestriction(t *testing.T) {
 	require.NotNil(t, viewer, "the full reader is missing from the golden render")
 
 	// metrics + logs; this case turns the trace store off, the same way
-	// tests/cases/observability-stack/tenancy does, so traces is not
+	// tests/cases/observability-proxy/tenancy does, so traces is not
 	// among them here regardless of `routes`.
 	require.Len(t, viewer.Spec.TargetRefs, 2,
 		"a principal with no `routes` restricts nothing: it should still carry every route this install's stores support")
@@ -138,7 +138,7 @@ func TestFullReaderIsUnaffectedByANeighboursRestriction(t *testing.T) {
 }
 
 // TestPreExistingTenancyCaseIsUnchanged pins the shape
-// tests/cases/observability-stack/tenancy has always rendered — no
+// tests/cases/observability-proxy/tenancy has always rendered — no
 // principal in it sets `audience` or `routes` — against v0.6.2's own
 // output. Checked directly against the v0.6.2 tag while preparing this
 // release (`git worktree add --detach v0.6.2`, rendered, diffed
@@ -146,7 +146,7 @@ func TestFullReaderIsUnaffectedByANeighboursRestriction(t *testing.T) {
 // a later change to this template cannot silently narrow or repin a
 // principal that asked for neither.
 func TestPreExistingTenancyCaseIsUnchanged(t *testing.T) {
-	for _, g := range []string{"golden/observability-stack/tenancy.yaml", "golden/observability-stack/tenancy-traces.yaml"} {
+	for _, g := range []string{"golden/observability-proxy/tenancy.yaml", "golden/observability-proxy/tenancy-traces.yaml"} {
 		t.Run(g, func(t *testing.T) {
 			for _, u := range readVMUsers(t, g) {
 				assert.Equalf(t, `^(example-observability-client)$`, u.Spec.JWT.MatchClaims["aud"],

@@ -108,7 +108,7 @@ func (r vmTargetRef) urlPrefix() string {
 
 func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 	// The principals from the repository's README, and from
-	// tests/cases/observability-stack/tenancy/values.yaml. The two are
+	// tests/cases/observability-proxy/tenancy/values.yaml. The two are
 	// the same list on purpose. No key is set: the chart's defaults and
 	// the library's must be the same names, and this is where that is
 	// proved.
@@ -130,7 +130,7 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 	want, err := cfg.RenderVMAuth(goldenIssuer)
 	require.NoError(t, err)
 
-	got := readVMUsers(t, "golden/observability-stack/tenancy.yaml")
+	got := readVMUsers(t, "golden/observability-proxy/tenancy.yaml")
 	require.Len(t, got, len(want.Users),
 		"the chart renders one VMUser per principal; a count that differs is a principal the proxy will not admit")
 
@@ -192,7 +192,7 @@ func TestChartAndLibraryRenderTheSameTenancy(t *testing.T) {
 
 // TestChartAndLibraryAgreeOnAPrincipalWithSeveralGroups is the same
 // comparison for a principal selected by a LIST of groups: the chart
-// (tests/cases/observability-stack/tenancy-multi-group) and the library
+// (tests/cases/observability-proxy/tenancy-multi-group) and the library
 // must render the same matchClaims alternation, the same name and the same
 // filters, and the alternation must match each listed group and nothing
 // else.
@@ -217,7 +217,7 @@ func TestChartAndLibraryAgreeOnAPrincipalWithSeveralGroups(t *testing.T) {
 	want, err := cfg.RenderVMAuth(goldenIssuer)
 	require.NoError(t, err)
 
-	got := readVMUsers(t, "golden/observability-stack/tenancy-multi-group.yaml")
+	got := readVMUsers(t, "golden/observability-proxy/tenancy-multi-group.yaml")
 	require.Len(t, got, len(want.Users))
 	byName := map[string]vmUser{}
 	for _, u := range got {
@@ -259,7 +259,7 @@ func TestChartAndLibraryAgreeOnAPrincipalWithSeveralGroups(t *testing.T) {
 // anything. It takes a second namespace, or this assertion, to tell them
 // apart.
 func TestEveryRenderedReadRouteCarriesItsFilter(t *testing.T) {
-	for _, user := range readVMUsers(t, "golden/observability-stack/tenancy.yaml") {
+	for _, user := range readVMUsers(t, "golden/observability-proxy/tenancy.yaml") {
 		require.NotEmpty(t, user.Spec.TargetRefs)
 		for i, ref := range user.Spec.TargetRefs {
 			assert.True(t, carriesAFilter(ref),
@@ -274,13 +274,13 @@ func TestEveryRenderedReadRouteCarriesItsFilter(t *testing.T) {
 // that the exception is a file somebody has to change rather than a
 // case this test quietly tolerates.
 //
-// tests/cases/observability-stack/tenancy-traces sets
+// tests/cases/observability-proxy/tenancy-traces sets
 // `allowUnfilteredTraceReads`, which is the only way the trace route
 // renders at all — see
 // tests/invalid/observability-stack/traces-without-unfiltered-optin.yaml
 // for the refusal when it is not set.
 func TestOnlyTheTraceRouteIsUnfiltered(t *testing.T) {
-	for _, user := range readVMUsers(t, "golden/observability-stack/tenancy-traces.yaml") {
+	for _, user := range readVMUsers(t, "golden/observability-proxy/tenancy-traces.yaml") {
 		require.Len(t, user.Spec.TargetRefs, 3, "metrics, logs and traces")
 
 		var unfiltered []string
@@ -322,7 +322,7 @@ func TestChartUsesTheLibrarysFilterArguments(t *testing.T) {
 	require.Contains(t, want, "extra_filters[]", "the library no longer pins the array spelling vmselect ORs in")
 
 	seen := map[string]string{}
-	for _, user := range readVMUsers(t, "golden/observability-stack/tenancy.yaml") {
+	for _, user := range readVMUsers(t, "golden/observability-proxy/tenancy.yaml") {
 		for _, ref := range user.Spec.TargetRefs {
 			for _, a := range ref.QueryArgs {
 				require.Len(t, a.Values, 1,

@@ -7,8 +7,8 @@ global:
   cluster:
     dnsDomain: cluster.example.
 
-# The single-replica install, written out: one of each store, one proxy,
-# two vmalerts, Alertmanager with the heartbeat leaving the cluster, the
+# The single-replica install, written out: one of each store, two
+# vmalerts, Alertmanager with the heartbeat leaving the cluster, the
 # network policies and the backups.
 #
 # This is the shape docs/adoption.md walks through, and the one this
@@ -16,35 +16,6 @@ global:
 # here replicates across a zone, so redundancy is two of these with the
 # writers sending to both.
 ha: false
-
-tenancy:
-  issuerUrl: https://issuer.example
-  audience: example-observability-client
-  claimName: groups
-  # The trace store is on by default, and this proxy cannot scope trace
-  # reads: vmauth applies a grant by substituting it into the route, and
-  # VictoriaTraces' Jaeger and Tempo select APIs accept no query
-  # argument to substitute it into. So every principal below reads every
-  # namespace's spans on every cluster, and the chart refuses to render until that is
-  # written down. docs/safety.md has the mechanism; the alternative is
-  # `victoria-traces-single.enabled: false`.
-  allowUnfilteredTraceReads: true
-  principals:
-    - group: example:k8s:viewer
-      grants:
-        - cluster: example-cluster
-          allNamespaces: true
-  writers:
-    - name: metrics-agent
-      tokenSecret:
-        name: example-writer-token
-        key: token
-      destinations: [metrics]
-    - name: log-agent
-      tokenSecret:
-        name: example-writer-token
-        key: token
-      destinations: [logs]
 
 vmalert:
   externalUrl: https://alerts.example.com

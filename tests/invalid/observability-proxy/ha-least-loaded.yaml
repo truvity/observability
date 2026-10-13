@@ -1,0 +1,23 @@
+# expect: `least_loaded` sends half
+# A read must go to this release's store and fall over only on failure.
+stackReleaseName: observability-stack
+ha:
+  enabled: true
+  peer:
+    metrics: http://peer-metrics.example.svc:8428
+    logs: http://peer-logs.example.svc:9428
+    traces: http://peer-traces.example.svc:10428
+vmauth:
+  replicaCount: 2
+  loadBalancingPolicy: least_loaded
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  identities:
+  - groups:
+    - example:k8s:viewer
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true

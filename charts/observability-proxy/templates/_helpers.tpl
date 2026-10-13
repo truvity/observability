@@ -1,10 +1,12 @@
 {{/*
 Names.
 
-This chart renders objects that observability-stack renders today, under the
-SAME kind, name and namespace, so that an Argo CD Application switch adopts
-them in place. Everything below therefore reproduces the stack's naming from
-the stack's own inputs rather than from this release:
+This chart renders the Door plane of an observability-stack install, under
+the names the stack's Door objects always had (the stack rendered them itself
+until the release that removed them from it, docs/adoption.md), so a switch
+from one chart to the other adopts them in place. Everything below therefore
+reproduces the stack's naming from the stack's own inputs rather than from
+this release:
 
   - `stackReleaseName` (default: this release's name) stands for the stack's
     Helm release name. The stack derives every name from it
@@ -14,8 +16,7 @@ the stack's own inputs rather than from this release:
   - the chart name used in names and in `app.kubernetes.io/name` is the
     stack's, `observability-stack`.
 
-tests/proxy_chart_test.go renders both charts for every stack case and holds
-the objects byte-identical, which is what keeps these copies honest.
+The goldens under tests/golden/observability-proxy hold the resulting names.
 */}}
 {{- define "observability-proxy.release" -}}
 {{- .Values.stackReleaseName | default .Release.Name -}}
@@ -351,7 +352,7 @@ tests/agreement_test.go fails if they differ.
 {{- end -}}
 
 {{- /*
-The subset of `readPaths.metrics` a `tenancy.principals[].metricsQueryOnly`
+The subset of `readPaths.metrics` a `tenancy.identities[].workload.metricsQueryOnly`
 reader gets: the two query endpoints and nothing else this store's own
 full reader list also carries — no series, no labels, no label values,
 no tsdb status, no vmui, and (gated the same way as the full list)
@@ -386,7 +387,7 @@ be scoped by a filter.
 {{- end -}}
 
 {{/*
-The two routes a `tenancy.principals[].vmalertAPI` principal gets, written
+The two routes a `tenancy.identities[].workload.vmalertAPI` identity gets, written
 the way a stock VictoriaMetrics MCP server in single-node mode asks for
 them: `<entrypoint>/vmalert/api/v1/{alerts,rules}` with the entrypoint on
 the store's `/prometheus` path. vmauth forwards the request path as
@@ -741,7 +742,7 @@ The audiences that mark a token as a person's: the explicit list, else
 
 {{/*
 The principals tenancy-authz unions, as `{principals: [...]}`: the SAME
-`tenancy.principals` the VMUsers render from, in the shape pkg/tenancy.Config
+`tenancy.identities` the VMUsers render from, in the shape pkg/tenancy.Config
 reads — and rendered the way templates/vmusers.yaml renders a principal's
 grants (one per cluster, the last of a repeated cluster winning, sorted by
 cluster, namespaces sorted), so what the service grants and what a VMUser
@@ -757,7 +758,7 @@ happens to hold that group read what the workload reads.
 {{- $t := .Values.tenancy -}}
 {{- $person := include "observability-proxy.authz.personAudiences" . | fromYaml -}}
 {{- $out := list -}}
-{{- range $p := (include "observability-proxy.tenancy.principals" $ | fromYaml).principals -}}
+{{- range $p := (include "observability-proxy.tenancy.resolved" $ | fromYaml).principals -}}
 {{- $aud := $p.audience | default $t.audience -}}
 {{- if has $aud $person.audiences -}}
 {{- $byCluster := dict -}}
@@ -831,10 +832,11 @@ The whole configuration file of tenancy-authz.
 {{- end -}}
 
 {{/*
-`tenancy.identities` (a generic list of "groups -> reach") and the older
-`tenancy.principals`, as ONE list of principals: `{principals: [...]}`, in the
-shape of `tenancy.principals` (so every consumer of that list renders an
-identity exactly as it renders the principal written out by hand).
+`tenancy.identities` (a list of "groups -> reach"), resolved into the list of
+principals every template renders from: `{principals: [...]}`. "Principal" is
+the internal shape (the shape pkg/tenancy.Config reads and the VMUser
+templates consume); `tenancy.principals` is no longer a value, so the
+identities are the only source.
 
 An identity `{name, groups, reach, audience, workload}` becomes the principal
 `{name, groups, grants, audience, routes, metricsQueryOnly, vmalertAPI}` (the last
@@ -843,13 +845,10 @@ four only when set; docs/tenancy-authz.md has the table). Reach
 cluster of `tenancy.storeClusters`. Its refusals run first, here, so that no
 template ever works on an identity the validator has not read.
 */}}
-{{- define "observability-proxy.tenancy.principals" -}}
+{{- define "observability-proxy.tenancy.resolved" -}}
 {{- include "observability-proxy.validate.identities" . -}}
 {{- $t := .Values.tenancy -}}
 {{- $out := list -}}
-{{- range $p := ($t.principals | default list) -}}
-{{- $out = append $out $p -}}
-{{- end -}}
 {{- range $id := ($t.identities | default list) -}}
 {{- $reach := $id.reach | default dict -}}
 {{- $grants := list -}}
@@ -867,7 +866,7 @@ template ever works on an identity the validator has not read.
 {{- end -}}
 {{- end -}}
 {{- $entry := dict "grants" $grants -}}
-{{- /* No `name` is the single-`group` principal (validated: one group). */ -}}
+{{- /* No `name`: the sole group names the entry (validated: one group). */ -}}
 {{- if $id.name -}}
 {{- $_ := set $entry "name" $id.name -}}
 {{- $_ := set $entry "groups" $id.groups -}}

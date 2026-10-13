@@ -9,9 +9,8 @@ global:
 # (0.9.0): `mode: operator-only` now turns vmauth, vmalert, alertmanager
 # and metricsSelfScrape off ITSELF — their own `enabled` defaults to
 # `null`, which `mode` resolves — so this case leaves all four unset
-# rather than writing `enabled: false` four times. `backup.enabled`,
-# `selfAlerts.enabled` and `tenancy.principals`/`writers`/`alertReaders`
-# were always off/empty by default, on either side of 0.9.0, so they
+# rather than writing `enabled: false` four times. `backup.enabled`
+# and `selfAlerts.enabled` were always off by default, on either side of 0.9.0, so they
 # were never part of the boilerplate to begin with.
 #
 # What is STILL written explicitly, and stays that way: the three

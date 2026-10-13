@@ -30,7 +30,7 @@ type vmalertUserDoc struct {
 
 func TestVmalertAPIIsOptInAndExact(t *testing.T) {
 	var seen int
-	for _, raw := range splitDocs(t, filepath.Join("golden", "observability-stack", "tenancy-vmalert-api.yaml")) {
+	for _, raw := range splitDocs(t, filepath.Join("golden", "observability-proxy", "tenancy-vmalert-api.yaml")) {
 		var d vmalertUserDoc
 		if err := yaml.Unmarshal(raw, &d); err != nil || d.Kind != "VMUser" {
 			continue

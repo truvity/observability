@@ -10,8 +10,7 @@ global:
 # so this golden is the whole profile in one render. Each is off by
 # default; `single` is the same install with every default kept.
 #
-# No proxy: nobody's reads need scoping, so there is no vmauth, no
-# principal, and Grafana reads the stores directly with the store
+# No proxy: nobody's reads need scoping, so there is no vmauth, and Grafana reads the stores directly with the store
 # credential (the stores keep `-httpAuth.*` — that part is not a switch).
 vmauth:
   enabled: false

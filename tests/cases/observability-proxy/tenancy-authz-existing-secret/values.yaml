@@ -1,7 +1,9 @@
-# The Door half of the stack case of the same name (tests/cases/observability-stack/tenancy-authz-existing-secret):
-# its values kept to the keys charts/observability-proxy declares, with
-# `stackReleaseName` set to the stack's release name, so the render carries the
-# names the stack's does.
+# A Door case for charts/observability-proxy. It began as the Door half of the
+# stack case of the same name, from the release in which the stack stopped
+# rendering the Door: the stack's values kept to the keys this chart declares,
+# with `stackReleaseName` set to the stack's release name, so the render
+# carries the names the stack's Door objects always had. Every principal is an
+# entry of `tenancy.identities`.
 stackReleaseName: observability-stack
 tenancy:
   issuerUrl: https://issuer.example
@@ -30,12 +32,14 @@ tenancy:
       - podSelector:
           matchLabels:
             app.kubernetes.io/name: envoy
-  principals:
-  - group: example:example-app:deployer
-    grants:
-    - cluster: cluster-a
-      namespaces:
-      - example-app
+  identities:
+  - groups:
+    - example:example-app:deployer
+    reach:
+      clusters:
+      - cluster: cluster-a
+        namespaces:
+        - example-app
 victoria-metrics-k8s-stack:
   enabled: false
 victoria-logs-single:

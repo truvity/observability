@@ -1,10 +1,6 @@
 # expect: (or a `catchAll` or `drop`)
 # Evaluate-only notifies nobody; a catch-all beside it looks wired up and
 # is never reached.
-# No proxy: no principals to admit, so none of the tenancy refusals
-# apply and none can preempt this fixture's own.
-vmauth:
-  enabled: false
 
 alertmanager:
   enabled: false

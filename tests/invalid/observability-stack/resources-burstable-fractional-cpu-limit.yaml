@@ -4,10 +4,6 @@
 # A fractional request is fine; this is the one CPU value that is not.
 resources:
   policy: burstable
-# No proxy: no principals to admit, so none of the tenancy refusals
-# apply and none can preempt this fixture's own.
-vmauth:
-  enabled: false
 
 vmalert:
   resources:
