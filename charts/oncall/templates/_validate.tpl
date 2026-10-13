@@ -45,6 +45,11 @@ bot, a route to a host the links do not name.
 {{- fail (printf "oncall: `httpRoute.hostnames` must include %q, the host of `goalert.publicURL`: the route would not serve the URL every page links to." $u.hostname) -}}
 {{- end -}}
 {{- end -}}
+{{- with .Values.rules.alertmanagerDeliveryFailing -}}
+{{- if and .enabled (not .receiverName) -}}
+{{- fail "oncall: `rules.alertmanagerDeliveryFailing.receiverName` is required while the rule is enabled: the Alertmanager webhook receiver that posts to GoAlert." -}}
+{{- end -}}
+{{- end -}}
 {{- if .Values.networkPolicy.enabled -}}
 {{- if not .Values.networkPolicy.goalertFrom -}}
 {{- fail "oncall: `networkPolicy.goalertFrom` is empty: under the default-deny nothing could reach GoAlert, neither people through the gateway nor Alertmanager." -}}
