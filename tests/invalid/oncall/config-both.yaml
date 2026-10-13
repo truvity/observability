@@ -1,0 +1,18 @@
+# expect: are both set
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: k
+  database:
+    host: h
+    passwordSecret:
+      name: p
+  config:
+    values: {General: {ApplicationName: x}}
+    existingSecret: {name: c}
+relay:
+  secret:
+    name: r
+networkPolicy:
+  goalertFrom: [{namespaceSelector: {}}]
+  databasePeers: [{podSelector: {}}]

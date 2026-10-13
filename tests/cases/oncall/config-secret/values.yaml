@@ -1,0 +1,27 @@
+# The whole GoAlert configuration from a Secret key: migrate and
+# set-config read it, nothing of it is in the render.
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: oncall-goalert-key
+  database:
+    host: oncall-pg-rw.oncall.svc
+    passwordSecret:
+      name: oncall-pg-app
+  config:
+    existingSecret:
+      name: oncall-goalert-config
+
+relay:
+  secret:
+    name: oncall-telegram-relay
+
+networkPolicy:
+  goalertFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gateway
+  databasePeers:
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: oncall-pg

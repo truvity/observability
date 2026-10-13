@@ -262,6 +262,10 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: oncall
         app.kubernetes.io/component: goalert
+      annotations:
+        # set-config runs at pod start only: a change to the configuration
+        # in values must roll the pods to be applied.
+        oncall/config-checksum: 2bfe228d3e502b3249e7f3598c88311a4ec640fca155a89d2963ba3003f76b94
     spec:
       serviceAccountName: oncall-goalert
       automountServiceAccountToken: false
@@ -331,12 +335,15 @@ spec:
                   key: "data-encryption-key"
             - name: GOALERT_JSON
               value: "true"
-            # set-config reads --data from GOALERT_DATA.
-            - name: GOALERT_DATA
+            - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: "oncall-goalert-config"
-                  key: "config.json"
+                  name: "oncall-client"
+                  key: "client-secret"
+            # set-config reads --data from GOALERT_DATA. `$(NAME)` in it is
+            # expanded by Kubernetes from the variables above.
+            - name: GOALERT_DATA
+              value: "{\"General\":{\"ApplicationName\":\"On call\"},\"OIDC\":{\"ClientID\":\"oncall\",\"ClientSecret\":\"$(OIDC_CLIENT_SECRET)\",\"Enable\":true,\"IssuerURL\":\"https://issuer.example\",\"NewUsers\":true},\"Webhook\":{\"AllowedURLs\":[\"http://oncall-telegram-relay.oncall.svc:8080/v1/notify/\"],\"Enable\":true}}"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

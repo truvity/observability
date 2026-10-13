@@ -2,6 +2,7 @@
 {{- $full := include "oncall.goalertName" . -}}
 {{- $g := .Values.goalert -}}
 {{- $ca := or $g.database.ca.configMap $g.database.ca.secret -}}
+{{- $declarative := or $g.config.values $g.config.existingSecret.name -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -49,12 +50,18 @@ spec:
       labels:
         {{- include "oncall.labels" . | nindent 8 }}
         app.kubernetes.io/component: goalert
+      {{- if $g.config.values }}
+      annotations:
+        # set-config runs at pod start only: a change to the configuration
+        # in values must roll the pods to be applied.
+        oncall/config-checksum: {{ toJson $g.config.values | sha256sum }}
+      {{- end }}
     spec:
       serviceAccountName: {{ $full }}
       automountServiceAccountToken: false
       securityContext:
         {{- include "oncall.restrictedPod" . | nindent 8 }}
-      {{- if $g.config.existingSecret.name }}
+      {{- if $declarative }}
       # Declarative configuration: migrate first (set-config needs the
       # schema), then replace GoAlert's stored configuration with the
       # Secret's JSON. Every rollout re-applies it, so an edit made on the
@@ -82,12 +89,26 @@ spec:
           command: ["/usr/bin/goalert", "set-config"]
           env:
             {{- include "oncall.goalertEnv" . | nindent 12 }}
+            {{- if $g.config.values }}
+            {{- range $g.config.secretEnv }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secretKeyRef.name | quote }}
+                  key: {{ .secretKeyRef.key | quote }}
+            {{- end }}
+            # set-config reads --data from GOALERT_DATA. `$(NAME)` in it is
+            # expanded by Kubernetes from the variables above.
+            - name: GOALERT_DATA
+              value: {{ toJson $g.config.values | quote }}
+            {{- else }}
             # set-config reads --data from GOALERT_DATA.
             - name: GOALERT_DATA
               valueFrom:
                 secretKeyRef:
                   name: {{ $g.config.existingSecret.name | quote }}
                   key: {{ $g.config.existingSecret.key | quote }}
+            {{- end }}
           securityContext:
             {{- include "oncall.restrictedContainer" . | nindent 12 }}
           resources:

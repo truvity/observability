@@ -28,6 +28,12 @@ bot, a route to a host the links do not name.
 {{- if and (or $g.database.ca.configMap $g.database.ca.secret) (not (has $g.database.sslMode (list "verify-ca" "verify-full"))) -}}
 {{- fail (printf "oncall: `goalert.database.ca` is set but `sslMode` is %q, which never reads it; use verify-ca or verify-full." $g.database.sslMode) -}}
 {{- end -}}
+{{- if and $g.config.values $g.config.existingSecret.name -}}
+{{- fail "oncall: `goalert.config.values` and `goalert.config.existingSecret` are both set: set-config replaces the whole configuration, so only one can be it." -}}
+{{- end -}}
+{{- if and $g.config.secretEnv (not $g.config.values) -}}
+{{- fail "oncall: `goalert.config.secretEnv` is set without `goalert.config.values`: nothing references it." -}}
+{{- end -}}
 {{- if and .Values.relay.enabled (not .Values.relay.secret.name) -}}
 {{- fail "oncall: `relay.secret.name` is required while the relay is enabled: it holds the bot token, the shared secret and the recipients." -}}
 {{- end -}}

@@ -58,31 +58,36 @@ database, edited on the admin "Config" page.
 - `GOALERT_PUBLIC_URL` is `goalert.publicURL`: every link in a page, the
   OIDC callback (`<publicURL>/api/v2/identity/providers/oidc/callback`) and
   the integration URLs GoAlert shows.
-- **Declarative configuration** (`goalert.config.existingSecret`, off by
-  default): a Secret key holding the whole configuration as JSON, the
-  shape `goalert get-config` prints. Set, every pod start runs `goalert
-  migrate` and `goalert set-config` as init containers, so git overwrites
-  the admin page on every rollout. A Secret, because the configuration
-  carries the OIDC client secret. A minimal one for OIDC sign-in and the
-  relay:
+- **Declarative configuration** (off by default): every pod start runs
+  `goalert migrate` and `goalert set-config` as init containers, so git
+  overwrites the admin page on every rollout (set-config replaces the
+  whole configuration). Either `goalert.config.values`, the configuration
+  as values in the JSON shape `goalert get-config` prints, with each secret
+  written `$(NAME)` and named in `goalert.config.secretEnv` (Kubernetes
+  expands it from the Secret when the init container starts, so the value
+  never reaches the manifest; a change to `values` rolls the pods), or
+  `goalert.config.existingSecret`, the whole JSON in a Secret key. One of
+  the two. OIDC sign-in and the relay:
 
-  ```json
-  {
-    "General": {"ApplicationName": "On call"},
-    "Auth": {"DisableBasic": true},
-    "OIDC": {
-      "Enable": true,
-      "NewUsers": true,
-      "OverrideName": "Sign in",
-      "IssuerURL": "https://issuer.example",
-      "ClientID": "oncall",
-      "ClientSecret": "<from the issuer>"
-    },
-    "Webhook": {
-      "Enable": true,
-      "AllowedURLs": ["http://oncall-telegram-relay.oncall.svc:8080/v1/notify/"]
-    }
-  }
+  ```yaml
+  goalert:
+    config:
+      values:
+        General: {ApplicationName: On call}
+        Auth: {DisableBasic: true}
+        OIDC:
+          Enable: true
+          NewUsers: true
+          OverrideName: Sign in
+          IssuerURL: https://issuer.example
+          ClientID: oncall
+          ClientSecret: $(OIDC_CLIENT_SECRET)
+        Webhook:
+          Enable: true
+          AllowedURLs: ["http://oncall-telegram-relay.oncall.svc:8080/v1/notify/"]
+      secretEnv:
+        - name: OIDC_CLIENT_SECRET
+          secretKeyRef: {name: oncall-client, key: client-secret}
   ```
 
   GoAlert's OIDC has no group filter: restrict who may sign in at the
@@ -180,6 +185,7 @@ alert. Route it to Slack, not to GoAlert.
 | `goalert.dataEncryptionKeySecret.name` empty | GoAlert would store its keys unencrypted |
 | `goalert.database.host` or `passwordSecret.name` empty | a GoAlert with no database |
 | `goalert.database.ca` with both `configMap` and `secret`, or with an `sslMode` that never reads it | one CA, and only where it is used |
+| `goalert.config.values` beside `goalert.config.existingSecret`; `secretEnv` without `values`; a `secretEnv` name that is a `GOALERT_` flag or `PGPASSWORD` (schema) | set-config replaces the whole configuration, so one source; a reference nothing uses; a variable that would override the chart's own |
 | `relay.secret.name` empty while the relay is enabled | a relay with no bot |
 | `relay.port` equal to `relay.metricsPort`; `service.port` equal to `service.metricsPort` | `/metrics` reachable through the served port |
 | `httpRoute.enabled` with no `parentRefs`, or `hostnames` without the host of `publicURL` | a route attached to nothing, or not serving the URL every page links to |
