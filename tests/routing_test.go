@@ -62,7 +62,7 @@ func probe(path string) string {
 
 // TestNoRouteSwallowsAnother is the check the empty trace store needed.
 func TestNoRouteSwallowsAnother(t *testing.T) {
-	goldens, err := filepath.Glob("golden/observability-stack/*.yaml")
+	goldens, err := filepath.Glob("golden/observability-proxy/*.yaml")
 	require.NoError(t, err)
 	require.NotEmpty(t, goldens)
 
@@ -120,6 +120,6 @@ func TestNoRouteSwallowsAnother(t *testing.T) {
 		}
 	}
 
-	assert.Positive(t, seen, "no multi-store VMUser found in any observability-stack golden; "+
+	assert.Positive(t, seen, "no multi-store VMUser found in any observability-proxy golden; "+
 		"this check went blind rather than passing")
 }

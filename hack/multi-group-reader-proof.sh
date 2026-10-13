@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hack/multi-group-reader-proof.sh — REAL proof, against the pinned vmauth,
-# VictoriaMetrics and VictoriaLogs binaries, that a `tenancy.principals[]`
+# VictoriaMetrics and VictoriaLogs binaries, that a `tenancy.identities[]`
 # entry with several `groups` and one grant per cluster lets a token read
 # EVERY cluster in the store, and that the shape it replaces did not.
 #
@@ -18,7 +18,7 @@
 #                             cluster-a, cluster-b, cluster-c AND cluster-z;
 #                             cluster-z is in no principal's grants.
 #   vmauth                    configured FROM THE RENDERED CHART
-#                             (tests/cases/observability-stack/tenancy-multi-group,
+#                             (tests/cases/observability-proxy/tenancy-multi-group,
 #                             through `helm template`), the VMUser translated
 #                             into vmauth's own file format field for field.
 #   control                   the same chart, the old shape: one single-group
@@ -57,23 +57,24 @@ vm_tgz=("$root"/charts/observability-stack/charts/victoria-metrics-k8s-stack-*.t
 vm_tag="$(tar -xzOf "${vm_tgz[0]}" victoria-metrics-k8s-stack/Chart.yaml | awk '/^appVersion:/ { print $2 }')"
 vl_tgz=("$root"/charts/observability-stack/charts/victoria-logs-single-*.tgz)
 vl_tag="$(tar -xzOf "${vl_tgz[0]}" victoria-logs-single/Chart.yaml | awk '/^appVersion:/ { print $2 }')"
-vmauth_tag="$(awk '/^vmauth:/{m=1} m && /^ *tag: /{print $2; exit}' "$root/charts/observability-stack/values.yaml")"
+vmauth_tag="$(awk '/^vmauth:/{m=1} m && /^ *tag: /{print $2; exit}' "$root/charts/observability-proxy/values.yaml")"
 echo "vmauth $vmauth_tag, victoria-metrics $vm_tag, victoria-logs $vl_tag (the chart's pins)"
 
-case_values="$root/tests/cases/observability-stack/tenancy-multi-group/values.yaml"
-helm template x "$root/charts/observability-stack" -f "$case_values" > "$work/chart.yaml"
+case_values="$root/tests/cases/observability-proxy/tenancy-multi-group/values.yaml"
+helm template x "$root/charts/observability-proxy" -f "$case_values" > "$work/chart.yaml"
 
-# The control: the same case with the principal split into one per cluster.
+# The control: the same case with the identity split into one per cluster.
 python3 - "$case_values" "$work/control-values.yaml" <<'PY'
 import sys, yaml
 v = yaml.safe_load(open(sys.argv[1]))
-old = v["tenancy"]["principals"][0]
-v["tenancy"]["principals"] = [
-    {"group": g, "grants": [gr]} for g, gr in zip(old["groups"], old["grants"])
+old = v["tenancy"]["identities"][0]
+v["tenancy"]["identities"] = [
+    {"groups": [g], "reach": {"clusters": [c]}}
+    for g, c in zip(old["groups"], old["reach"]["clusters"])
 ]
 yaml.safe_dump(v, open(sys.argv[2], "w"))
 PY
-helm template x "$root/charts/observability-stack" -f "$work/control-values.yaml" > "$work/control.yaml"
+helm template x "$root/charts/observability-proxy" -f "$work/control-values.yaml" > "$work/control.yaml"
 
 # Translate the rendered VMUsers into vmauth's own file, as the operator
 # does. Only the backend addresses and the issuer are swapped for the

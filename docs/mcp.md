@@ -262,20 +262,22 @@ keeps the table honest: every allowlisted tool's path must match a route in
 the rendered `tenancy-mcp-reader` case, and the dropped ones must not;
 `hack/mcp-paths-proof.sh` observes the same paths from the real binaries.
 
-**What the stack needs for the connector's principal.** The exchanged token
-selects a machine principal in the store's `observability-stack`:
+**What the proxy needs for the connector's identity.** The exchanged token
+selects a machine identity in the store's `observability-proxy`:
 
 ```yaml
 tenancy:
   allowUnfilteredAlertReads: true      # vmalertAPI is unfiltered
   allowUnfilteredTraceReads: true      # the trace API cannot be scoped
-  principals:
-    - group: <the connector's workload group>
+  identities:
+    - groups: [<the connector's workload group>]
       audience: <the connector's outbound.audience>
-      # routes unset: metrics, logs and traces
-      vmalertAPI: true
-      grants:
-        - {cluster: <each cluster the store holds>, allNamespaces: true}
+      workload:
+        # routes unset: metrics, logs and traces
+        vmalertAPI: true
+      reach:
+        clusters:
+          - {cluster: <each cluster the store holds>, allNamespaces: true}
 ```
 
 `vmalertAPI` (added in 0.16.0) gives the metrics vmalert's alerts and rules at

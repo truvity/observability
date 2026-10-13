@@ -1,0 +1,5 @@
+# expect: additional properties 'door' not allowed
+# The `door.source` switch is gone: the stack never renders the Door plane.
+# A values file that still carries it fails instead of being silently ignored.
+door:
+  source: chart

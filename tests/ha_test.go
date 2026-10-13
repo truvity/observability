@@ -65,7 +65,7 @@ func TestReplicaRendersTheStoresAndNothingElse(t *testing.T) {
 func TestHAPrimaryReadsBothStoresPrimaryFirst(t *testing.T) {
 	var readers int
 
-	for _, d := range haDocs(t, "golden/observability-stack/ha.yaml") {
+	for _, d := range haDocs(t, "golden/observability-proxy/ha.yaml") {
 		if d.Kind != "VMUser" {
 			continue
 		}

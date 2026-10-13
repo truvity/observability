@@ -119,11 +119,12 @@ bump: this records a fact the chart already kept.
 The `VMAuth`, every `VMUser`, the `tenancy-authz` objects (with its
 SecurityPolicy and NetworkPolicy) and the proxy's NetworkPolicy keep their
 kind, name and namespace whichever chart renders them: `observability-stack`
-(the default) or `observability-proxy` (restructure step 2,
-`door.source: chart`). A component never depends on which chart owns them;
-moving the owner is an Application switch that adopts the objects in place
-(docs/adoption.md, "Handing the Door plane to observability-proxy"). No version bump: this records a fact the
-chart already kept.
+(until the release that removed the Door plane from it) or
+`observability-proxy` (restructure step 2; its only renderer since).
+A component never depends on which chart owns them; moving the owner was an
+Application switch that adopts the objects in place (docs/adoption.md,
+"Handing the Door plane to observability-proxy"). No version bump: this
+records a fact the chart already kept.
 
 ### Identity kinds (stable)
 

@@ -1,7 +1,9 @@
-# The Door half of the stack case of the same name (tests/cases/observability-stack/ha):
-# its values kept to the keys charts/observability-proxy declares, with
-# `stackReleaseName` set to the stack's release name, so the render carries the
-# names the stack's does.
+# A Door case for charts/observability-proxy. It began as the Door half of the
+# stack case of the same name, from the release in which the stack stopped
+# rendering the Door: the stack's values kept to the keys this chart declares,
+# with `stackReleaseName` set to the stack's release name, so the render
+# carries the names the stack's Door objects always had. Every principal is an
+# entry of `tenancy.identities`.
 stackReleaseName: observability-stack
 ha:
   enabled: true
@@ -16,12 +18,6 @@ tenancy:
   audience: example-observability-client
   allowUnfilteredTraceReads: true
   allowUnfilteredAlertReads: true
-  principals:
-  - group: example:k8s:viewer
-    grants:
-    - cluster: example-cluster
-      allNamespaces: true
-    vmalertAPI: true
   writers:
   - name: metrics-agent
     tokenSecret:
@@ -36,6 +32,15 @@ tenancy:
     tokenSecret:
       name: example-alerts-token
       key: token
+  identities:
+  - groups:
+    - example:k8s:viewer
+    workload:
+      vmalertAPI: true
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true
 victoria-metrics-k8s-stack:
   vmsingle:
     spec:

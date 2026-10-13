@@ -1,0 +1,88 @@
+# A Door case for charts/observability-proxy. It began as the Door half of the
+# stack case of the same name, from the release in which the stack stopped
+# rendering the Door: the stack's values kept to the keys this chart declares,
+# with `stackReleaseName: observability-stack
+nameOverride: stack
+ha: true
+interval: 15s
+vmauth:
+  image:
+    repository: victoriametrics/vmauth
+    tag: v1.153.0
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: '2'
+      memory: 1Gi
+    limits:
+      cpu: '2'
+      memory: 1Gi
+  extraArgs:
+    logInvalidAuthTokens: 'true'
+    maxConcurrentRequests: '500'
+  loadBalancingPolicy: first_available
+  retryStatusCodes:
+  - 500
+  - 502
+  - 503
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-client.example@example-project
+  claimName: entitlements
+  allowUnfilteredMetricMetadata: true
+  clusterLabel: cell
+  namespaceLabel: ns
+  logsClusterField: k8s.cell
+  logsNamespaceField: kubernetes.namespace_name
+  writers:
+  - name: otel-collector
+    tokenSecret:
+      name: example-writer-token
+      key: token
+    destinations:
+    - metrics
+    - logs
+    - traces
+  allowUnfilteredAlertReads: true
+  alertReaders:
+  - name: statusbox
+    tokenSecret:
+      name: example-alerts-read-token
+      key: token
+  identities:
+  - groups:
+    - example.k8s.viewers
+    reach:
+      clusters:
+      - cluster: other-cluster
+        namespaces:
+        - example-app
+        - other-app
+      - cluster: example-cluster
+        allNamespaces: true
+storeCredentials:
+  secretName: example-store-credentials
+  usernameKey: user
+  passwordKey: pass
+vmalert: {}
+alertmanager: {}
+networkPolicy:
+  enabled: true
+  proxyFrom:
+  - namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: example-console
+victoria-metrics-k8s-stack:
+  global:
+    clusterLabel: cell
+  vmsingle:
+    enabled: false
+  defaultDashboards:
+    enabled: true
+    dashboards:
+      grafana-overview:
+        enabled: true
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false

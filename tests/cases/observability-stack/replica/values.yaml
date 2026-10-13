@@ -33,11 +33,6 @@ selfAlerts:
   storeMemory:
     enabled: true
 
-tenancy:
-  principals: []
-  writers: []
-  alertReaders: []
-
 # The stores' half of the pair (docs/high-availability.md): the shared pod
 # label, the REQUIRED zone spread over it and, on the two vendored scrape
 # objects, this release's replica label. These are subchart values, which

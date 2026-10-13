@@ -1,0 +1,36 @@
+# A Door case for charts/observability-proxy. It began as the Door half of the
+# stack case of the same name, from the release in which the stack stopped
+# rendering the Door: the stack's values kept to the keys this chart declares,
+# with `stackReleaseName: observability-stack
+ha: false
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  allowUnfilteredTraceReads: true
+  writers:
+  - name: metrics-agent
+    tokenSecret:
+      name: example-writer-token
+      key: token
+    destinations:
+    - metrics
+  - name: log-agent
+    tokenSecret:
+      name: example-writer-token
+      key: token
+    destinations:
+    - logs
+  identities:
+  - groups:
+    - example:k8s:viewer
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true
+vmalert: {}
+alertmanager: {}
+victoria-traces-single:
+  server:
+    extraArgs:
+      servicegraph.enableTask: 'true'

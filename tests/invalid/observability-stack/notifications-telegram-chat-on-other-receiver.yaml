@@ -1,14 +1,5 @@
 # expect: sets `chatId` or `messageThreadId` but its receiver is "slack"
 # A Telegram chat id on a tier that goes to Slack: read by nothing.
-tenancy:
-  issuerUrl: https://issuer.example
-  audience: example-observability-client
-  allowUnfilteredTraceReads: true
-  principals:
-    - group: example:k8s:viewer
-      grants:
-        - cluster: example-cluster
-          allNamespaces: true
 
 notifications:
   externalUrl: https://grafana.example

@@ -1,0 +1,15 @@
+# expect: One stream filter would carry one dimension twice and the other not at all
+# The same collision on the log path: one stream filter would carry one
+# dimension twice and the other not at all.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  logsClusterField: kubernetes.pod_namespace
+  identities:
+  - groups:
+    - example:k8s:viewer
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true

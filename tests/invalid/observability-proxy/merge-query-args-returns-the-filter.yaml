@@ -1,0 +1,28 @@
+# expect: vmselect treats each `extra_filters` as an ALTERNATIVE and ORs them
+# The flag that hands a principal's own filter back to them.
+#
+# vmauth drops a client query argument that clashes with one the route
+# already set, and that drop is the only thing stopping a reader sending
+# its own `extra_filters` beside the enforced one.
+# `-mergeQueryArgs` exempts an argument from the rule entirely.
+#
+# On the metrics path that is a full bypass rather than a narrowing:
+# vmselect treats each `extra_filters` as an ALTERNATIVE and ORs them, so
+# a caller adding an empty one reads every cluster and namespace — while the claim, the
+# route and the rendered filter all stay exactly right.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  allowUnfilteredTraceReads: true
+  identities:
+  - groups:
+    - example:k8s:viewer
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true
+vmauth:
+  extraArgs:
+    logInvalidAuthTokens: 'true'
+    mergeQueryArgs: extra_filters

@@ -14,7 +14,7 @@
 # a python file server publishing a discovery document and a JWKS for a key
 # generated here): vmsingle + victoria-logs holding series and log lines for
 # cluster-a, cluster-b, cluster-c and cluster-z, and vmauth configured FROM
-# THE RENDERED CHART (tests/cases/observability-stack/tenancy-vm-access, through
+# THE RENDERED CHART (tests/cases/observability-proxy/tenancy-vm-access, through
 # `helm template`), the VMUsers translated into vmauth's own file format
 # field for field (principals first, as the chart renders them).
 #
@@ -40,11 +40,11 @@ vm_tgz=("$root"/charts/observability-stack/charts/victoria-metrics-k8s-stack-*.t
 vm_tag="$(tar -xzOf "${vm_tgz[0]}" victoria-metrics-k8s-stack/Chart.yaml | awk '/^appVersion:/ { print $2 }')"
 vl_tgz=("$root"/charts/observability-stack/charts/victoria-logs-single-*.tgz)
 vl_tag="$(tar -xzOf "${vl_tgz[0]}" victoria-logs-single/Chart.yaml | awk '/^appVersion:/ { print $2 }')"
-vmauth_tag="$(awk '/^vmauth:/{m=1} m && /^ *tag: /{print $2; exit}' "$root/charts/observability-stack/values.yaml")"
+vmauth_tag="$(awk '/^vmauth:/{m=1} m && /^ *tag: /{print $2; exit}' "$root/charts/observability-proxy/values.yaml")"
 echo "vmauth $vmauth_tag, victoria-metrics $vm_tag, victoria-logs $vl_tag (the chart's pins)"
 
-case_values="$root/tests/cases/observability-stack/tenancy-vm-access/values.yaml"
-helm template x "$root/charts/observability-stack" -f "$case_values" > "$work/chart.yaml"
+case_values="$root/tests/cases/observability-proxy/tenancy-vm-access/values.yaml"
+helm template x "$root/charts/observability-proxy" -f "$case_values" > "$work/chart.yaml"
 
 python3 - "$work" <<'PY'
 import sys, yaml

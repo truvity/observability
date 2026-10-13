@@ -48,7 +48,7 @@ type vmUserDoc struct {
 func vmUsersOf(t *testing.T, golden string) []vmUserDoc {
 	t.Helper()
 	var out []vmUserDoc
-	for _, raw := range splitDocs(t, filepath.Join("golden", "observability-stack", golden+".yaml")) {
+	for _, raw := range splitDocs(t, filepath.Join("golden", "observability-proxy", golden+".yaml")) {
 		var d vmUserDoc
 		if err := yaml.Unmarshal(raw, &d); err != nil || d.Kind != "VMUser" || len(d.Spec.JWT.MatchClaims) == 0 {
 			continue
@@ -59,7 +59,7 @@ func vmUsersOf(t *testing.T, golden string) []vmUserDoc {
 }
 
 func TestVMAccessReaderIsAbsentUnlessEnabled(t *testing.T) {
-	goldens, err := filepath.Glob(filepath.Join("golden", "observability-stack", "*.yaml"))
+	goldens, err := filepath.Glob(filepath.Join("golden", "observability-proxy", "*.yaml"))
 	require.NoError(t, err)
 	var seen int
 	for _, g := range goldens {

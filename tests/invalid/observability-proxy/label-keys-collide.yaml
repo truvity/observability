@@ -1,0 +1,18 @@
+# expect: a metrics filter with one name for both dimensions selects on one of them and ignores the other
+# One name for both dimensions is one dimension. A metrics filter with
+# `k8s_namespace_name` for the cluster AND the namespace selects on one
+# of them and ignores the other, so every grant is wider or narrower than
+# written — and the render, the proxy and every single-namespace query
+# look right.
+stackReleaseName: observability-stack
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  clusterLabel: k8s_namespace_name
+  identities:
+  - groups:
+    - example:k8s:viewer
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true

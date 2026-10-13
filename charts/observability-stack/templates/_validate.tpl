@@ -25,7 +25,6 @@ vmalert and karma, or the pair splits and pages twice.
 */ -}}
 {{- define "observability-stack.validate" -}}
 {{- include "observability-stack.validate.alerting" . -}}
-{{- include "observability-stack.validate.door" . -}}
 {{- include "observability-stack.validate.mode" . -}}
 {{- include "observability-stack.validate.ha" . -}}
 {{- include "observability-stack.validate.retention" . -}}
@@ -47,13 +46,7 @@ vmalert and karma, or the pair splits and pages twice.
 {{- include "observability-stack.validate.remoteEvaluators" . -}}
 {{- include "observability-stack.validate.notifications" . -}}
 {{- include "observability-stack.validate.karma" . -}}
-{{- include "observability-stack.validate.tenancy" . -}}
-{{- include "observability-stack.validate.tenancyAuthz" . -}}
-{{- include "observability-stack.validate.writers" . -}}
-{{- include "observability-stack.validate.alertReaders" . -}}
-{{- include "observability-stack.validate.readers" . -}}
 {{- include "observability-stack.validate.grafana" . -}}
-{{- include "observability-stack.validate.routeOverlap" . -}}
 {{- include "observability-stack.validate.k8sStackClusterLabel" . -}}
 {{- include "observability-stack.validate.streamAggr" . -}}
 {{- end -}}
@@ -62,14 +55,13 @@ vmalert and karma, or the pair splits and pages twice.
 `mode: operator-only` — a CONTRACT, not an override.
 
 Setting it does not turn anything else off: every component the mode
-does not run — vmauth, both vmalerts, Alertmanager, Grafana, backups,
-the self-alerts, the metrics self-scrape, all three stores, and
-`tenancy.principals`/`writers`/`readers`/`alertReaders` — must ALSO be turned off
-(or left empty) explicitly, or this refuses. The alternative — the mode
+does not run — the proxy (`vmauth.enabled`), both vmalerts, Alertmanager, Grafana, backups,
+the self-alerts, the metrics self-scrape and all three stores — must ALSO be
+turned off explicitly, or this refuses. The alternative — the mode
 silently forcing each of those off — is the shape this chart refuses
 everywhere else a value could be computed instead of checked (see
 docs/doctrine.md's note on mirrors): a caller who read `vmauth.enabled:
-true` in their own values file and got no vmauth would be debugging a
+true` in their own values file and got no proxy would be debugging a
 proxy that was never going to exist, with nothing in this file saying so.
 */}}
 {{- define "observability-stack.validate.mode" -}}
@@ -110,7 +102,7 @@ a fetched VMRule, no Grafana for a fetched dashboard.
 {{- fail "observability-stack: `mode` is \"operator-only\" but `victoria-traces-single.enabled` is true. Operator-only ships no trace store either — set it to `false`, or drop `mode` back to \"full\"." -}}
 {{- end -}}
 {{- if .Values.vmauth.enabled -}}
-{{- fail "observability-stack: `mode` is \"operator-only\" but `vmauth.enabled` is true. There is no store here for the proxy to authorise reads or writes against — set `vmauth.enabled: false`, or drop `mode` back to \"full\"." -}}
+{{- fail "observability-stack: `mode` is \"operator-only\" but `vmauth.enabled` is true. There is no store here for a proxy to authorise reads or writes against (the proxy itself is charts/observability-proxy) — set `vmauth.enabled: false`, or drop `mode` back to \"full\"." -}}
 {{- end -}}
 {{- if .Values.vmalert.enabled -}}
 {{- fail "observability-stack: `mode` is \"operator-only\" but `vmalert.enabled` is true. There is no store here for either vmalert to evaluate rules against — set `vmalert.enabled: false`, or drop `mode` back to \"full\"." -}}
@@ -132,18 +124,6 @@ a fetched VMRule, no Grafana for a fetched dashboard.
 {{- end -}}
 {{- if .Values.metricsSelfScrape.enabled -}}
 {{- fail "observability-stack: `mode` is \"operator-only\" but `metricsSelfScrape.enabled` is true. There is no metrics store here for it to scrape into — set `metricsSelfScrape.enabled: false`, or drop `mode` back to \"full\"." -}}
-{{- end -}}
-{{- if or .Values.tenancy.principals .Values.tenancy.identities -}}
-{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.principals` is set (or `tenancy.identities`). With `vmauth.enabled` refused above, no VMUser this chart renders would ever exist for a reader's grant to reach — configured and unreachable is the exact trap this chart refuses everywhere else. Clear `tenancy.principals`, or drop `mode` back to \"full\"." -}}
-{{- end -}}
-{{- if .Values.tenancy.writers -}}
-{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.writers` is set. There is no proxy here for a writer's bearer token to authenticate against. Clear `tenancy.writers`, or drop `mode` back to \"full\"." -}}
-{{- end -}}
-{{- if .Values.tenancy.readers -}}
-{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.readers` is set. There is no proxy here for a reader's bearer token to authenticate against. Clear `tenancy.readers`, or drop `mode` back to \"full\"." -}}
-{{- end -}}
-{{- if .Values.tenancy.alertReaders -}}
-{{- fail "observability-stack: `mode` is \"operator-only\" but `tenancy.alertReaders` is set. There is no vmalert here for it to read. Clear `tenancy.alertReaders`, or drop `mode` back to \"full\"." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -191,18 +171,6 @@ every setting that says otherwise instead of quietly ignoring it.
 {{- if .Values.selfAlerts.enabled -}}
 {{- fail "observability-stack: `mode` is \"replica\" but `selfAlerts.enabled` is true. Every rule it holds watches a component this mode does not run, or is the primary's own. `selfAlerts.storeMemory.enabled` is the one rule a replica can carry, and it has its own switch." -}}
 {{- end -}}
-{{- if or .Values.tenancy.principals .Values.tenancy.identities -}}
-{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.principals` is set (or `tenancy.identities`). There is no proxy here for a reader's grant to reach; grants live on the primary. Clear it." -}}
-{{- end -}}
-{{- if .Values.tenancy.writers -}}
-{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.writers` is set. There is no proxy here for a writer's token to authenticate against. Clear it." -}}
-{{- end -}}
-{{- if .Values.tenancy.readers -}}
-{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.readers` is set. There is no proxy here for a reader's token to authenticate against. Clear it." -}}
-{{- end -}}
-{{- if .Values.tenancy.alertReaders -}}
-{{- fail "observability-stack: `mode` is \"replica\" but `tenancy.alertReaders` is set. There is no vmalert here for it to read. Clear it." -}}
-{{- end -}}
 {{- end -}}
 
 {{/*
@@ -242,12 +210,6 @@ and refuses instead (the rule for every mirror here).
 {{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
 {{- if not $eff.vmauth -}}
 {{- fail "observability-stack: `ha.enabled` is true on the primary but the proxy is off. The pair is read through `vmauth` (`first_available` over both stores); with it off nothing fails over and the second store is never read." -}}
-{{- end -}}
-{{- if ne .Values.vmauth.loadBalancingPolicy "first_available" -}}
-{{- fail (printf "observability-stack: `ha.enabled` is true but `vmauth.loadBalancingPolicy` is %q. A read must go to this release's store and fall over to the peer only when it fails: `least_loaded` sends half of every dashboard to a store that may be empty or still catching up. Set `first_available`." (toString .Values.vmauth.loadBalancingPolicy)) -}}
-{{- end -}}
-{{- if lt (int .Values.vmauth.replicaCount) 2 -}}
-{{- fail (printf "observability-stack: `ha.enabled` is true but `vmauth.replicaCount` is %d. The proxy is what both stores are read through; one pod takes every read and every cross-cluster write with its zone. Set it to 2 or more." (int .Values.vmauth.replicaCount)) -}}
 {{- end -}}
 {{- if and ($vmks.enabled) ($vmks.vmsingle).enabled (not $peer.metrics) -}}
 {{- fail "observability-stack: `ha.enabled` is true but `ha.peer.metrics` is empty. The proxy needs the other release's metrics store (`http://<service>.<namespace>.svc:8428`) to fall over to, and the second vmalert needs it to evaluate against." -}}
@@ -457,7 +419,6 @@ where the reason above does not reach:
 */}}
 {{- define "observability-stack.validate.resources" -}}
 {{- $sites := list
-    (dict "key" "vmauth.resources" "value" .Values.vmauth.resources)
     (dict "key" "vmalert.resources" "value" .Values.vmalert.resources)
     (dict "key" "alertmanager.resources" "value" .Values.alertmanager.resources)
     (dict "key" "victoria-metrics-k8s-stack.vmsingle.spec.resources" "value" ((((index .Values "victoria-metrics-k8s-stack").vmsingle).spec).resources))
@@ -470,9 +431,6 @@ where the reason above does not reach:
 {{- if .Values.karma.enabled -}}
 {{- $sites = append $sites (dict "key" "karma.resources" "value" .Values.karma.resources) -}}
 {{- end -}}
-{{- if .Values.tenancy.authz.enabled -}}
-{{- $sites = append $sites (dict "key" "tenancy.authz.resources" "value" .Values.tenancy.authz.resources) -}}
-{{- end -}}
 {{- $policy := (.Values.resources).policy | default "burstable" -}}
 {{- range $site := $sites -}}
 {{- $r := $site.value | default dict -}}
@@ -481,20 +439,20 @@ where the reason above does not reach:
 {{- $limits := $r.limits | default dict -}}
 {{- /*
 A `null` that SURVIVED to here. Helm deletes a null from this chart's own
-values, so for vmauth, the vmalerts, Alertmanager and the backup jobs a
+values, so for the vmalerts, Alertmanager and the backup jobs a
 `limits: {cpu: null}` simply removes the default. For a key under a
 vendored subchart (the operator, the stores, Grafana) Helm passes the
 null through instead, and the rendered object carries `cpu: null` —
 which the API server reads as a CPU limit of 0 and refuses (measured with
 `just apply`: "must be less than or equal to cpu limit of 0"; VMSingle's
 CRD refuses the null outright). Refused here, where the fix can be named.
-The exception is this chart's own vmauth, vmalert and Alertmanager: their
+The exception is this chart's own vmalert and Alertmanager: their
 templates drop a null (`observability-stack.resources`), so a values file
 written when those carried a default CPU limit keeps meaning "no limit".
 */ -}}
 {{- range $side, $m := dict "requests" $requests "limits" $limits -}}
 {{- range $res, $q := $m -}}
-{{- if and (kindIs "invalid" $q) (not (has $site.key (list "vmauth.resources" "vmalert.resources" "alertmanager.resources" "karma.resources" "tenancy.authz.resources"))) -}}
+{{- if and (kindIs "invalid" $q) (not (has $site.key (list "vmalert.resources" "alertmanager.resources" "karma.resources"))) -}}
 {{- fail (printf "observability-stack: %s.%s.%s is null. Helm deletes a null from this chart's own values, but passes it through unchanged to a vendored subchart's, and the API server then reads it as a quantity of 0 and refuses the object. A default on this component cannot be removed through values: under `resources.policy: burstable`, give it a whole number of cores well above the request instead (the node's core count leaves it effectively unthrottled)." $site.key $side (toString $res)) -}}
 {{- end -}}
 {{- end -}}
@@ -536,17 +494,10 @@ pulled by accident RUNS — it refuses only the Enterprise features — so
 nothing reports that the estate is now in breach of the vendor's terms.
 A tag is the only thing a chart can see, so a tag containing `enterprise`
 is refused, and no `-license` or `-licenseFile` flag is ever rendered.
-
-The vmauth version floor lives here too. `default_vm_access_claim` needs
-v1.147.0, and v1.147.0 through v1.151.x matched `match_claims` values
-UNANCHORED (GHSA-f99m-22fh-qw96), so a claim value of `admin` also
-matched `not-admin-really` — an authorisation bypass in the exact
-mechanism this chart selects users with.
 */}}
 {{- define "observability-stack.validate.licence" -}}
 {{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
 {{- $tags := list
-    (dict "key" "vmauth.image.tag" "value" .Values.vmauth.image.tag)
     (dict "key" "backup.metrics.image.tag" "value" .Values.backup.metrics.image.tag)
     (dict "key" "backup.image.tag" "value" .Values.backup.image.tag)
     (dict "key" "victoria-metrics-k8s-stack.vmsingle.spec.image.tag" "value" ((($vmks.vmsingle).spec).image).tag)
@@ -574,16 +525,12 @@ mechanism this chart selects users with.
 {{- fail (printf "observability-stack: %s carries a licence key. A licence key is only useful to an Enterprise binary, and this chart renders none: it wraps the community edition, which is Apache 2.0 and free for any number of tenants or clusters. Remove it, or install the vendor's own chart directly." $site.key) -}}
 {{- end -}}
 {{- end -}}
-{{- range $where, $args := dict "vmauth.extraArgs" .Values.vmauth.extraArgs "victoria-metrics-k8s-stack.vmsingle.spec.extraArgs" ((($vmks.vmsingle).spec).extraArgs | default dict) "victoria-logs-single.server.extraArgs" ((((index .Values "victoria-logs-single").server).extraArgs) | default dict) "victoria-traces-single.server.extraArgs" ((((index .Values "victoria-traces-single").server).extraArgs) | default dict) -}}
+{{- range $where, $args := dict "victoria-metrics-k8s-stack.vmsingle.spec.extraArgs" ((($vmks.vmsingle).spec).extraArgs | default dict) "victoria-logs-single.server.extraArgs" ((((index .Values "victoria-logs-single").server).extraArgs) | default dict) "victoria-traces-single.server.extraArgs" ((((index .Values "victoria-traces-single").server).extraArgs) | default dict) -}}
 {{- range $flag, $_ := ($args | default dict) -}}
 {{- if or (eq $flag "license") (eq $flag "licenseFile") (hasPrefix "license." $flag) -}}
 {{- fail (printf "observability-stack: %s sets `%s`. A licence flag is an Enterprise flag, and this chart never renders one: the community binaries ignore it at best and refuse to start at worst, and an install that needs it is an install this chart is the wrong shape for." $where $flag) -}}
 {{- end -}}
 {{- end -}}
-{{- end -}}
-{{- $tag := trimPrefix "v" (toString .Values.vmauth.image.tag) -}}
-{{- if not (semverCompare ">=1.152.0" $tag) -}}
-{{- fail (printf "observability-stack: vmauth.image.tag is %q. The floor for this design is v1.152.0: `default_vm_access_claim` arrived in v1.147.0, and every build from v1.138.0, where claim matching was introduced, to v1.151.x matched `match_claims` values unanchored (GHSA-f99m-22fh-qw96), so `admin` also matched `not-admin-really` — an authorisation bypass in the mechanism that selects which user a token is. Pin v1.152.0 or later." (toString .Values.vmauth.image.tag)) -}}
 {{- end -}}
 {{- end -}}
 
@@ -1356,454 +1303,15 @@ per-tier override — as `(where channel workspace workspaceNames)`.
 {{- end -}}
 {{- end -}}
 
-{{- define "observability-stack.validate.tenancy" -}}
-{{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
-{{- $fieldShape := "^[a-zA-Z0-9_][a-zA-Z0-9_./-]*$" -}}
-{{- $audienceShape := "^\\S+$" -}}
-{{- $t := .Values.tenancy -}}
-{{- if and (or $t.principals $t.identities) (not $t.issuerUrl) -}}
-{{- fail "observability-stack: `tenancy.principals` or `tenancy.identities` is set but `tenancy.issuerUrl` is empty. vmauth verifies a token against the issuer's OIDC discovery document; with no issuer there is nothing to verify a signature against, and a proxy that trusts an unverified token is worse than no proxy at all." -}}
-{{- end -}}
-{{- /* The vm_access reader (opt-in). */ -}}
-{{- if $t.vmAccessReader.enabled -}}
-{{- /* With `tenancy.authz` on, the issuer and the audience are the service's: see validate.tenancyAuthz. */ -}}
-{{- if and (not $t.authz.enabled) (not $t.issuerUrl) -}}
-{{- fail "observability-stack: `tenancy.vmAccessReader.enabled` is set but `tenancy.issuerUrl` is empty. vmauth verifies a token against the issuer's OIDC discovery document; with no issuer there is nothing to verify a signature against." -}}
-{{- end -}}
-{{- $vrAud := $t.vmAccessReader.audience | default $t.audience -}}
-{{- if and (not $t.authz.enabled) (not $vrAud) -}}
-{{- fail "observability-stack: `tenancy.vmAccessReader.enabled` is set but neither `tenancy.vmAccessReader.audience` nor `tenancy.audience` is. vmauth never inspects `aud` on its own, so the reader would admit ANY unexpired token of the issuer that carries a `vm_access` claim, whatever client it was minted for; the pin in `matchClaims` is the only place the check can be made." -}}
-{{- end -}}
-{{- if and (not $t.authz.enabled) (not (regexMatch $audienceShape (toString $vrAud))) -}}
-{{- fail (printf "observability-stack: the vm_access reader's audience %q is not an identifier (%s): it carries whitespace or a newline." (toString $vrAud) $audienceShape) -}}
-{{- end -}}
-{{- $vrRoutes := $t.vmAccessReader.routes | default (list "metrics" "logs" "traces") -}}
-{{- if not (or (has "metrics" $vrRoutes) (has "logs" $vrRoutes) (and (has "traces" $vrRoutes) (include "observability-stack.tracesEnabled" .))) -}}
-{{- fail (printf "observability-stack: `tenancy.vmAccessReader.routes` (%s) renders no route at all (`traces` renders only when a trace store is enabled). Leave the reader off instead." (join ", " $vrRoutes)) -}}
-{{- end -}}
-{{- end -}}
-{{- /*
-The audience, which is the other half of "whose token is this".
+ -}}
 
-The issuer above says the token was signed by the right issuer. Nothing
-in vmauth says it was minted for THIS PROXY: it validates a token's
-expiry and, under OIDC discovery, its issuer, and stops. There is no
-audience option, and `aud` is never inspected. The only place the check
-can be made is `matchClaims`, which is where the pin goes.
-*/}}
-{{- if and (or $t.principals $t.identities) (not $t.audience) -}}
-{{- fail "observability-stack: `tenancy.principals` or `tenancy.identities` is set but `tenancy.audience` is empty. vmauth validates a token's EXPIRY and, under OIDC discovery, its ISSUER, and nothing else: it has no audience option and never inspects `aud` on its own. So each reader below would be selected by its group alone, and ANY unexpired token that issuer minted would be admitted whatever client it was minted for — a token the same person holds for another application of the same issuer reads their namespaces here, and nothing reports it, because the token verifies and the filters apply. Set it to the client id this proxy's tokens are minted under; it is pinned into every reader's `matchClaims` as `aud`, which is the only place vmauth can be made to check it." -}}
-{{- end -}}
-{{- if and $t.audience (not (regexMatch $audienceShape (toString $t.audience))) -}}
-{{- fail (printf "observability-stack: `tenancy.audience` is %q, which is not an identifier (%s): it carries whitespace or a newline. A client id may otherwise be anything the issuer assigned — a dot, an `@`, a colon — and is ESCAPED where it is rendered rather than refused here, because the issuer chooses it and this chart does not. What this shape refuses is a value that arrived from the wrong place: a file read with its trailing newline, a heredoc, or two ids in one string." (toString $t.audience) $audienceShape) -}}
-{{- end -}}
-{{- if eq (toString $t.claimName) "aud" -}}
-{{- fail "observability-stack: `tenancy.claimName` is `aud`, which is the claim `tenancy.audience` is pinned under. Both are entries in one `matchClaims` map, so one would overwrite the other — and whichever survived would decide either which principal a token is or which client it was minted for, never both. Name the groups claim something else." -}}
-{{- end -}}
-{{- /*
-The keys.
+ -}}
 
-Each is a value with a default, and the defaults are what
-charts/observability-emitters stamps. A key is interpolated into a filter
-expression exactly as a name is, so a log field carrying stream-filter
-syntax is refused for the same reason a namespace name is; the metrics
-keys are held to the Prometheus label shape by the schema. And the two
-keys of one signal must differ: one name for both dimensions is a filter
-that selects on one of them and ignores the other.
-*/}}
-{{- range $key, $field := dict "logsClusterField" $t.logsClusterField "logsNamespaceField" $t.logsNamespaceField -}}
-{{- if not (regexMatch $fieldShape (toString $field)) -}}
-{{- fail (printf "observability-stack: `tenancy.%s` is %q, which is not a log field name (%s). A log field name may carry dots, and nothing that is stream-filter syntax: a quote, a brace, a comma, an equals sign, a `|`, a colon or a space would end the filter early or open a second alternative beside it, and the grant would be wider than the one somebody wrote. Such a name is refused, never escaped. Leave it at the default, which is the field charts/observability-emitters writes." $key (toString $field) $fieldShape) -}}
-{{- end -}}
-{{- end -}}
-{{- if eq (toString $t.clusterLabel) (toString $t.namespaceLabel) -}}
-{{- fail (printf "observability-stack: `tenancy.clusterLabel` and `tenancy.namespaceLabel` are both %q. The two are the scoping key; a metrics filter with one name for both dimensions selects on one of them and ignores the other, so every grant would be wider or narrower than written." (toString $t.clusterLabel)) -}}
-{{- end -}}
-{{- if eq (toString $t.logsClusterField) (toString $t.logsNamespaceField) -}}
-{{- fail (printf "observability-stack: `tenancy.logsClusterField` and `tenancy.logsNamespaceField` are both %q. One stream filter would carry one dimension twice and the other not at all." (toString $t.logsClusterField)) -}}
-{{- end -}}
-{{- include "observability-stack.validate.identities" . -}}
-{{- $groups := dict -}}
-{{- range $i, $p := $t.principals -}}
-{{- if and $p.group (or $p.groups $p.name) -}}
-{{- fail (printf "observability-stack: tenancy.principals[%d] sets `group` beside `groups` or `name`. One principal is selected either by one group or by a list of them; guessing which was meant is how a token gets the wrong reach." $i) -}}
-{{- end -}}
-{{- if and (not $p.group) (not $p.groups) -}}
-{{- fail (printf "observability-stack: tenancy.principals[%d] has neither `group` nor `groups`. The group is what the token's claim is matched against; without it the entry selects nobody." $i) -}}
-{{- end -}}
-{{- if and $p.groups (not $p.name) -}}
-{{- fail (printf "observability-stack: tenancy.principals[%d] sets `groups` without a `name`. There is no single group to name the VMUser after, and two such entries would collide." $i) -}}
-{{- end -}}
-{{- $principalName := $p.name | default $p.group | default "" -}}
-{{- range $g := ($p.groups | default (list $p.group)) -}}
-{{- if not $g -}}
-{{- fail (printf "observability-stack: principal %q lists an empty group. It would match nothing, or with a careless rewrite everything." $principalName) -}}
-{{- end -}}
-{{- if hasKey $groups $g -}}
-{{- fail (printf "observability-stack: group %q appears twice in `tenancy.principals`. The second entry would be unreachable, so a grant somebody wrote would silently not apply." $g) -}}
-{{- end -}}
-{{- $_ := set $groups $g true -}}
-{{- end -}}
-{{- if not $p.grants -}}
-{{- fail (printf "observability-stack: principal %q has no grants. A principal that may read nothing is written by leaving it out, not by granting it nothing." $principalName) -}}
-{{- end -}}
-{{- $clusters := dict -}}
-{{- range $g := $p.grants -}}
-{{- if not (regexMatch $shape (toString $g.cluster)) -}}
-{{- fail (printf "observability-stack: principal %q has cluster %q, which is not a plain name (%s). The cluster is half of the scoping key, and names are interpolated into a filter expression, so one carrying `|`, `)` or `.*` would widen the grant rather than look odd. Such a name is refused, never escaped." $principalName (toString $g.cluster) $shape) -}}
-{{- end -}}
-{{- if hasKey $clusters $g.cluster -}}
-{{- fail (printf "observability-stack: principal %q is granted cluster %q twice. Merge them, or one grant is silently ignored." $principalName $g.cluster) -}}
-{{- end -}}
-{{- $_ := set $clusters $g.cluster true -}}
-{{- if and $g.allNamespaces $g.namespaces -}}
-{{- fail (printf "observability-stack: principal %q grants cluster %q with both `allNamespaces` and a `namespaces` list. One of them is wrong, and guessing which is how a grant quietly widens." $principalName $g.cluster) -}}
-{{- end -}}
-{{- if and (not $g.allNamespaces) (not $g.namespaces) -}}
-{{- fail (printf "observability-stack: principal %q grants cluster %q with neither `namespaces` nor `allNamespaces`. An empty list is refused rather than read as \"everything\": a project that expands to no namespaces is the likeliest way a grant widens by accident. A grant is namespaces on a cluster; a project is the derivation that produces the list, and it lives with whoever writes this file." $principalName $g.cluster) -}}
-{{- end -}}
-{{- range $ns := ($g.namespaces | default list) -}}
-{{- if not (regexMatch $shape (toString $ns)) -}}
-{{- fail (printf "observability-stack: principal %q grants namespace %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $principalName (toString $ns) $shape) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- /*
-This principal's OWN audience, and its OWN route restriction — both
-optional, both checked here rather than left to the schema, because
-what can go wrong with either is a value the schema cannot see is
-wrong: an audience that is present but says nothing, or a restriction
-that, combined with what else this principal set or what this install
-has enabled, renders no route at all.
-*/}}
-{{- include "observability-stack.validate.principalRoutes" (dict "p" $p "name" $principalName "kind" "principal" "root" $) -}}
-{{- end -}}
-{{- /*
-The trace route cannot be scoped, so it is not rendered until somebody
-says that is acceptable.
+ -}}
 
-vmauth applies a principal's grant by substituting it into the route it
-forwards on. VictoriaTraces' Jaeger and Tempo select APIs accept no
-query argument to substitute it into — their handlers take a tenant id
-from headers, `hidden_fields_filters` (which hides fields, not rows) and
-`allow_partial_response`, and nothing else — so a reader given those
-paths reads every namespace's spans on every cluster, whatever
-`defaultVMAccessClaim` says beside it.
+ -}}
 
-Rendering it anyway, because it looks like the metrics and logs routes,
-is exactly the failure this chart was fixed to remove. So it is a
-refusal with a value whose name says what accepting it means.
-
-Gated on whether a principal actually WANTS the trace route rather than
-on `principals` being non-empty: a principal whose own `routes` excludes
-`traces` (see above) never gets this targetRef, so an install with
-traces enabled for other reasons and every principal scoped to metrics
-or logs alone has nothing here to accept unscoped. Every principal's
-default is unchanged — all three routes — so an install that sets no
-`routes` anywhere is refused exactly as before.
-*/}}
-{{- $anyPrincipalWantsTraces := false -}}
-{{- range $p := (include "observability-stack.tenancy.principals" $ | fromYaml).principals -}}
-{{- if has "traces" ($p.routes | default (list "metrics" "logs" "traces")) -}}
-{{- $anyPrincipalWantsTraces = true -}}
-{{- end -}}
-{{- end -}}
-{{- if and $t.vmAccessReader.enabled (has "traces" ($t.vmAccessReader.routes | default (list "metrics" "logs" "traces"))) -}}
-{{- $anyPrincipalWantsTraces = true -}}
-{{- end -}}
-{{- if and $anyPrincipalWantsTraces (include "observability-stack.tracesEnabled" .) -}}
-{{- if not $t.allowUnfilteredTraceReads -}}
-{{- fail "observability-stack: a trace store is enabled and `tenancy.principals` or `tenancy.identities` is set, but `tenancy.allowUnfilteredTraceReads` is not. The proxy enforces a grant by substituting the principal's filter into the route it forwards on, and VictoriaTraces' Jaeger and Tempo select APIs accept NO query argument to substitute it into: their handlers take a tenant id from headers, `hidden_fields_filters` (which hides fields from a result, not rows) and `allow_partial_response`, and nothing else. There is no way through this proxy to give one principal a narrower view of traces than another, so the trace read route would be an unscoped route sitting beside two scoped ones and looking identical to them. Either turn the trace store off, or set `tenancy.allowUnfilteredTraceReads: true` and record that every principal who can reach the proxy reads every namespace's spans on every cluster. Metrics and logs are unaffected either way." -}}
-{{- end -}}
-{{- end -}}
-{{- /*
-And the enforcement the other two routes DO carry, asserted here rather
-than assumed.
-
-A `targetRef` whose `query_args` lost its placeholder renders cleanly,
-installs, answers every query and scopes none of them — the claim is
-still computed, still correct, still in the manifest, and still
-discarded. This is the one refusal in this file that guards against an
-edit to this chart rather than against a value somebody wrote.
-*/}}
-{{- range $signal := (list "metrics" "logs") -}}
-{{- $placeholder := include (printf "observability-stack.filterPlaceholder.%s" $signal) $ -}}
-{{- $args := fromYamlArray (include (printf "observability-stack.readQueryArgs.%s" $signal) $) -}}
-{{- range $arg := (fromYamlArray (include (printf "observability-stack.filterArgs.%s" $signal) $)) -}}
-{{- $found := false -}}
-{{- range $a := $args -}}
-{{- if and (eq $a.name $arg) (has $placeholder $a.values) -}}
-{{- $found = true -}}
-{{- end -}}
-{{- end -}}
-{{- if not $found -}}
-{{- fail (printf "observability-stack: the %s read route does not carry %s=%s. A metrics route must pin BOTH `extra_filters` and `extra_filters[]`: vmselect ORs the array spelling in and vmauth drops a client argument only when the route sets the same name. vmauth applies a `vm_access` claim ONLY by substituting a placeholder into the route, so without it every principal's query reaches the store unfiltered while `defaultVMAccessClaim` beside it still states the grant. Nothing downstream reports that: the render succeeds, the install succeeds, and a query for one namespace returns exactly what it would have returned if the filter had been applied." $signal $arg $placeholder) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- /*
-And the one flag that would hand the filter back to the caller.
-
-vmauth forwards a client's query argument only when it does NOT clash
-with one the route already set — that clash is what stops a reader
-sending its own `extra_filters` alongside the enforced one.
-`-mergeQueryArgs` names the arguments exempted from that rule, and the
-exemption is total: the client's value is added rather than dropped.
-
-On the log path an extra `extra_stream_filters` is AND-ed, so it could
-only narrow. On the metrics path vmselect treats each `extra_filters`
-as an ALTERNATIVE and ORs them, so a caller adding `{}` reads
-everything — the whole grant, undone by one query argument, with the
-claim and the route both still correct.
-
-The flag's own default is empty and this chart sets no route argument
-that anyone would legitimately want merged, so naming one of these here
-is refused rather than trusted.
-*/}}
-{{- range $arg, $value := ($.Values.vmauth.extraArgs | default dict) -}}
-{{- if eq (toString $arg) "mergeQueryArgs" -}}
-{{- range $merged := (splitList "," (toString $value)) -}}
-{{- if has (trim $merged) (list "extra_filters" "extra_filters[]" "extra_stream_filters") -}}
-{{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q, which is the argument this chart enforces a principal's grant with. vmauth drops a client query argument that CLASHES with one the route already set, and that drop is the only thing stopping a reader from sending its own filter; `mergeQueryArgs` exempts an argument from it entirely. vmselect treats each `extra_filters` as an ALTERNATIVE and ORs them, so a caller adding an empty one reads every cluster and namespace — with the claim, the route and the filter all still exactly right. Remove it, or stop enforcing tenancy here." (trim $merged)) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- $paths := concat
-    (fromYamlArray (include "observability-stack.readPaths.metrics" .))
-    (fromYamlArray (include "observability-stack.readPaths.logs" .))
-    (fromYamlArray (include "observability-stack.readPaths.traces" .))
-    (fromYamlArray (include "observability-stack.readPaths.alerts" .))
-    (fromYamlArray (include "observability-stack.writePaths.metrics" .))
-    (fromYamlArray (include "observability-stack.writePaths.logs" .))
-    (fromYamlArray (include "observability-stack.writePaths.traces" .))
--}}
-{{- range $path := $paths -}}
-{{- if regexMatch "^/(\\.\\*|\\*)?$" $path -}}
-{{- fail (printf "observability-stack: %q is not a route, it is every route — including the write endpoints and `/internal/*`. Name the paths." $path) -}}
-{{- end -}}
-{{- range $denied := $.Values.vmauth.deniedPaths -}}
-{{- if regexMatch $denied $path -}}
-{{- fail (printf "observability-stack: the route %q matches the denied path %q. `/internal/*` carries the partition and snapshot APIs, and those endpoints have their own query-string auth keys which OVERRIDE `-httpAuth.*` — so a route to them through this proxy is a route around the stores' own authentication." $path $denied) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-Writer cluster pins.
-
-A writer authenticates with a bearer token, not a person's identity, and
-until `cluster` existed nothing stopped it from claiming to be a cluster
-it is not: the collector's own config says `k8s_cluster_name=whatever`,
-and vmauth forwarded it unchecked. `cluster`, when a writer sets it,
-closes that — see values.yaml's own comment on `tenancy.writers` for the
-per-signal mechanism and how each was confirmed to override rather than
-duplicate.
-
-`cluster` stays OPTIONAL, unlike `destinations`: the unscoped, local
-writer — the shape charts/observability-emitters has always used, one
-collector writing to the store beside it — needs no pin at all, and
-leaving it unset is how that writer keeps rendering exactly as it did
-before this value existed. It is a REMOTE writer, one whose collector
-runs on a different cluster than this install, that leaving it unset
-would be the silent failure this exists to close.
-*/}}
-{{- define "observability-stack.validate.writers" -}}
-{{- $t := .Values.tenancy -}}
-{{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
-{{- $names := dict -}}
-{{- $clusters := dict -}}
-{{- range $w := $t.writers -}}
-{{- if hasKey $names $w.name -}}
-{{- fail (printf "observability-stack: writer %q appears twice in `tenancy.writers`. The second `VMUser` this chart renders would collide with the first's object name, and the operator drops all but one from vmauth's config with no error outside `status.currentSyncError` — a writer that silently stops being able to write." $w.name) -}}
-{{- end -}}
-{{- $_ := set $names $w.name true -}}
-{{- if hasKey $w "cluster" -}}
-{{- if not (regexMatch $shape (toString $w.cluster)) -}}
-{{- fail (printf "observability-stack: writer %q sets `cluster` to %q, which is not a plain name (%s). It is forced onto every series, log record and span this writer sends — interpolated into the query argument the same way a reader's grant is — so a value carrying `|` or `.*` would not pin the writer to one cluster, it would widen what it can claim to be." $w.name (toString $w.cluster) $shape) -}}
-{{- end -}}
-{{- if and $t.ownCluster (eq (toString $w.cluster) (toString $t.ownCluster)) -}}
-{{- fail (printf "observability-stack: writer %q sets `cluster: %s`, which is this install's own cluster (`tenancy.ownCluster`). Pinning a writer to the install's own cluster is the UNSCOPED writer's job — one with no `cluster` at all, writing to the store beside it exactly as charts/observability-emitters has always done. Leave `cluster` unset for a local writer, or name the remote cluster this writer actually runs on." $w.name (toString $w.cluster)) -}}
-{{- end -}}
-{{- if hasKey $clusters $w.cluster -}}
-{{- fail (printf "observability-stack: writers %q and %q both set `cluster: %s`. Two bearer tokens pinned to the same cluster identity is almost always a `name` that was meant to be different and was not; if two collectors genuinely write for the same cluster, this chart has no objection to it happening under two names — it only refuses the name collision above from going unnoticed as a cluster collision instead." (index $clusters $w.cluster) $w.name (toString $w.cluster)) -}}
-{{- end -}}
-{{- $_ := set $clusters $w.cluster $w.name -}}
-{{- end -}}
-{{- end -}}
-{{- /*
-The one flag that would hand a writer's own claimed cluster back to it,
-the write-side counterpart of the `mergeQueryArgs` refusal in
-`validate.tenancy`. vmauth drops a client query argument that clashes
-with one the route already set, and that drop is the only reason a
-writer cannot simply send its own `extra_label`/`extra_fields` and claim
-to be any cluster it likes; `mergeQueryArgs` exempts an argument from
-that rule entirely, and BOTH stores keep the LAST value for a duplicate
-name — the writer's own, sent after this chart's forced one, would win.
-*/ -}}
-{{- range $arg, $value := ($.Values.vmauth.extraArgs | default dict) -}}
-{{- if eq (toString $arg) "mergeQueryArgs" -}}
-{{- range $merged := (splitList "," (toString $value)) -}}
-{{- if has (trim $merged) (list "extra_label" "extra_label[]" "extra_fields" "extra_fields[]") -}}
-{{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q. That is the argument a writer's `cluster` pin is enforced with: vmauth drops a client query argument that clashes with one the route already set, and that drop is the only reason a writer cannot simply send its own %s and claim to be any cluster it likes. `mergeQueryArgs` exempts it from that rule entirely, and both VictoriaLogs/VictoriaTraces' `extra_fields` and VictoriaMetrics' `extra_label` keep the LAST value for a duplicate name — the writer's own, sent after this chart's, would win. Remove it, or stop pinning writers by cluster." (trim $merged) (trim $merged)) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-`tenancy.alertReaders`: the same "nothing scopes this route" refusal
-`allowUnfilteredTraceReads` already exists for, one route earlier.
-
-vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster
-concept at all — there is no filter to substitute into it the way a
-principal's grant substitutes into the metrics and logs routes. A
-reader given this route reads every active alert this install's METRICS
-vmalert is evaluating, cluster-wide, whatever else is configured beside
-it. Rendering it anyway, because it looks like an ordinary read route,
-is the same failure the trace refusal exists to prevent.
-*/}}
-{{- define "observability-stack.validate.alertReaders" -}}
-{{- $observabilityStackEffective := include "observability-stack.effectiveEnabled" . | fromYaml -}}
-{{- $t := .Values.tenancy -}}
-{{- if and $t.alertReaders (not $t.allowUnfilteredAlertReads) -}}
-{{- fail "observability-stack: `tenancy.alertReaders` is set but `tenancy.allowUnfilteredAlertReads` is not. vmalert's own `/api/v1/alerts` has no per-namespace or per-cluster concept to filter on, so a reader given this route reads every active alert this install's metrics vmalert is evaluating, cluster-wide. Set `tenancy.allowUnfilteredAlertReads: true` and record that every reader below sees every alert, or remove `tenancy.alertReaders`." -}}
-{{- end -}}
-{{- if and $t.alertReaders (not $observabilityStackEffective.vmalert) -}}
-{{- fail "observability-stack: `tenancy.alertReaders` is set but `vmalert.enabled` is false. There is no vmalert for this route to read." -}}
-{{- end -}}
-{{- range $r := $t.alertReaders -}}
-{{- if and $r.alertmanager (not $observabilityStackEffective.alertmanager) -}}
-{{- fail (printf "observability-stack: `tenancy.alertReaders` entry %q sets `alertmanager: true` but `alertmanager.enabled` is false. There is no Alertmanager for this route to read." $r.name) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-`tenancy.readers`: a static bearer token that may QUERY the metrics store,
-scoped by a grant (docs/notifications.md, "Evaluating another store's
-rules"). The shapes (a plain name, a Secret name AND key, at least one
-grant) are the schema's; what it cannot see is checked here, with the
-grant checks the principals get — a grant that is empty, or names both
-spellings, or names a cluster twice, is a reader that reads more or less
-than somebody meant.
-*/}}
-{{- define "observability-stack.validate.readers" -}}
-{{- $t := .Values.tenancy -}}
-{{- if $t.readers -}}
-{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
-{{- if not $eff.vmauth -}}
-{{- fail "observability-stack: `tenancy.readers` is set but this install renders no vmauth (`mode` is not \"full\", or `vmauth.enabled` is false). A reader's bearer token authenticates against the proxy; with none, the reader is configured and unreachable. Set it on the install that runs the proxy, or empty the list." -}}
-{{- end -}}
-{{- $fullname := include "observability-stack.fullname" . -}}
-{{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
-{{- $names := dict -}}
-{{- range $r := $t.readers -}}
-{{- if not (regexMatch $shape (toString $r.name)) -}}
-{{- fail (printf "observability-stack: `tenancy.readers` entry %q is not a DNS label (lower-case alphanumerics and hyphens, starting and ending with an alphanumeric)." (toString $r.name)) -}}
-{{- end -}}
-{{- if hasKey $names $r.name -}}
-{{- fail (printf "observability-stack: reader %q appears twice in `tenancy.readers`. The second `VMUser` this chart renders would collide with the first's object name, and the operator drops all but one from vmauth's config with no error outside `status.currentSyncError` — a reader that silently stops being able to read." $r.name) -}}
-{{- end -}}
-{{- $_ := set $names $r.name true -}}
-{{- if gt (len (printf "%s-reader-%s" $fullname $r.name)) 63 -}}
-{{- fail (printf "observability-stack: reader %q makes the VMUser name %q longer than 63 characters, and a truncated name can collide with another reader's. Shorten it." $r.name (printf "%s-reader-%s" $fullname $r.name)) -}}
-{{- end -}}
-{{- range $p := (include "observability-stack.tenancy.principals" $ | fromYaml).principals -}}
-{{- $pn := $p.name | default $p.group | default "" -}}
-{{- $slug := regexReplaceAll "[^a-z0-9]+" (lower $pn) "-" | trimAll "-" | trunc 40 | trimSuffix "-" -}}
-{{- if eq $slug (printf "reader-%s" $r.name) -}}
-{{- fail (printf "observability-stack: reader %q and principal %q would render the same VMUser object name. Rename one of them." $r.name $pn) -}}
-{{- end -}}
-{{- end -}}
-{{- if not $r.grants -}}
-{{- fail (printf "observability-stack: reader %q has no grants. A reader with no grant would read nothing, or with a careless rewrite everything; a reader that may read everything on a cluster says so with `allNamespaces: true`." $r.name) -}}
-{{- end -}}
-{{- $clusters := dict -}}
-{{- range $g := $r.grants -}}
-{{- if not (regexMatch $shape (toString $g.cluster)) -}}
-{{- fail (printf "observability-stack: reader %q has cluster %q, which is not a plain name (%s). Names are interpolated into a filter expression, so one carrying `|`, `)` or `.*` would widen the grant." $r.name (toString $g.cluster) $shape) -}}
-{{- end -}}
-{{- if hasKey $clusters $g.cluster -}}
-{{- fail (printf "observability-stack: reader %q is granted cluster %q twice. Merge them, or one grant is silently ignored." $r.name $g.cluster) -}}
-{{- end -}}
-{{- $_ := set $clusters $g.cluster true -}}
-{{- if and $g.allNamespaces $g.namespaces -}}
-{{- fail (printf "observability-stack: reader %q grants cluster %q with both `allNamespaces` and a `namespaces` list. One of them is wrong, and guessing which is how a grant quietly widens." $r.name $g.cluster) -}}
-{{- end -}}
-{{- if and (not $g.allNamespaces) (not $g.namespaces) -}}
-{{- fail (printf "observability-stack: reader %q grants cluster %q with neither `namespaces` nor `allNamespaces`. An empty grant is refused rather than read as \"everything\": say `allNamespaces: true` if that is meant." $r.name $g.cluster) -}}
-{{- end -}}
-{{- range $ns := ($g.namespaces | default list) -}}
-{{- if not (regexMatch $shape (toString $ns)) -}}
-{{- fail (printf "observability-stack: reader %q grants namespace %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $r.name (toString $ns) $shape) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- /* The grant is enforced by a query argument the route sets; a client one that is merged instead of dropped would win. */ -}}
-{{- range $arg, $value := ($.Values.vmauth.extraArgs | default dict) -}}
-{{- if eq (toString $arg) "mergeQueryArgs" -}}
-{{- range $merged := (splitList "," (toString $value)) -}}
-{{- if has (trim $merged) (list "extra_filters" "extra_filters[]") -}}
-{{- fail (printf "observability-stack: `vmauth.extraArgs.mergeQueryArgs` names %q while `tenancy.readers` is set. A reader's grant is enforced as that query argument on its route, and vmauth drops a client's clashing one only when it is NOT merged: with it merged the caller's own filter is sent beside the grant's, and a caller who may send its own filter may send a wider one. Remove it." (trim $merged)) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-No store's route may SWALLOW another store's.
-
-vmauth matches `src_paths` in declaration order and stops at the first
-hit, and both the writer and the reader declare their three stores in one
-`url_map`: metrics, then logs, then traces. So a path belonging to an
-earlier store that also matches a later store's path silently takes that
-store's traffic, and the sender is told nothing useful — the wrong store
-answers, with its own opinion of a request it was never meant to see.
-
-That is not hypothetical. `/insert/.*` on the log store matched
-`/insert/opentelemetry/v1/traces`, so every span went to the log store
-and came back 400, and the trace store sat empty for as long as it took
-somebody to send a span and then go and ASK the store whether it had
-arrived. A 200 from the collector says nothing; the store is the only
-witness.
-
-This walks the declared order and refuses any earlier path that matches
-a later one. A path's regular expression is probed with a concrete
-string, because `regexMatch` compares a pattern against text and two
-patterns cannot be compared directly.
-*/}}
-{{- define "observability-stack.validate.routeOverlap" -}}
-{{- $groups := list
-    (dict "kind" "read" "signal" "metrics" "paths" (fromYamlArray (include "observability-stack.readPaths.metrics" .)))
-    (dict "kind" "read" "signal" "logs" "paths" (fromYamlArray (include "observability-stack.readPaths.logs" .)))
-    (dict "kind" "read" "signal" "traces" "paths" (fromYamlArray (include "observability-stack.readPaths.traces" .)))
-    (dict "kind" "write" "signal" "metrics" "paths" (fromYamlArray (include "observability-stack.writePaths.metrics" .)))
-    (dict "kind" "write" "signal" "logs" "paths" (fromYamlArray (include "observability-stack.writePaths.logs" .)))
-    (dict "kind" "write" "signal" "traces" "paths" (fromYamlArray (include "observability-stack.writePaths.traces" .)))
--}}
-{{- range $i, $earlier := $groups -}}
-{{- range $j, $later := $groups -}}
-{{- if and (lt $i $j) (eq $earlier.kind $later.kind) -}}
-{{- range $pattern := $earlier.paths -}}
-{{- range $path := $later.paths -}}
-{{- /* A concrete stand-in for whatever the later path's own wildcards
-     would accept, so one pattern can be tested against the other. */ -}}
-{{- $probe := $path | replace ".*" "x" | replace ".+" "x" | replace "[^/]+" "x" -}}
-{{- if regexMatch (printf "^%s$" $pattern) $probe -}}
-{{- fail (printf "observability-stack: the %s route %q on the %s store is declared before the %s store's %q and MATCHES it, so the %s store would answer every request meant for the %s store and the %s store would be unreachable. Narrow the first path; the store's own endpoint list is the right source for it." $earlier.kind $pattern $earlier.signal $later.signal $path $earlier.signal $later.signal $later.signal) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
+ -}}
 
 {{/*
 Grafana.
@@ -2233,131 +1741,9 @@ first; this is the same check for a render that bypasses the schema).
 {{- end -}}
 {{- end -}}
 
-{{/*
-`door.source: chart` hands the Door plane (the vmauth proxy, its VMUsers,
-tenancy-authz with its SecurityPolicy, and the proxy's NetworkPolicy) to
-charts/observability-proxy (docs/adoption.md, 0.81.0). Only a `mode: full`
-install renders the Door, so a leftover `chart` elsewhere is a mistake that
-would read as a decision. The key's value is also the only thing that stops
-this chart rendering the objects the other chart owns, so a misspelling must
-not fall through to `stack` (the schema's enum refuses it first; this is the
-same check for a render that bypasses the schema).
-*/}}
-{{- define "observability-stack.validate.door" -}}
-{{- $src := (.Values.door).source | default "stack" -}}
-{{- if not (has $src (list "stack" "chart")) -}}
-{{- fail (printf "observability-stack: `door.source` is %q; it must be \"stack\" (this chart renders the Door plane) or \"chart\" (charts/observability-proxy does)." $src) -}}
-{{- end -}}
-{{- if and (eq $src "chart") (ne (.Values.mode | default "full") "full") -}}
-{{- fail (printf "observability-stack: `door.source` is \"chart\" with `mode: %s`. Only a `mode: full` install renders the proxy, its VMUsers and tenancy-authz, so there is nothing to hand over here. Remove `door.source` (or set it to \"stack\"), and install charts/observability-proxy only beside a full install." (.Values.mode | default "full")) -}}
-{{- end -}}
-{{- end -}}
+ -}}
 
-{{/*
-`tenancy.authz`: the Envoy external authorisation service in front of vmauth.
-
-Every refusal here is a way the arrangement renders, installs and then does
-not do what it says — and most of them fail in the unsafe direction or
-silently: a reader that trusts a service that is not there (everyone is
-refused), a gateway that cannot reach the service (everyone is refused, or
-with a fail-open policy, nobody is checked), a principal whose narrower
-routes the single minted claim would widen.
-*/}}
-{{- define "observability-stack.validate.tenancyAuthz" -}}
-{{- $t := .Values.tenancy -}}
-{{- $a := $t.authz -}}
-{{- if and $a.retireGroupReaders (not $a.enabled) -}}
-{{- fail "observability-stack: `tenancy.authz.retireGroupReaders` is set but `tenancy.authz.enabled` is not. The person readers would be dropped and nothing would grant people access in their place. Turn `tenancy.authz` on, or leave `retireGroupReaders` off." -}}
-{{- end -}}
-{{- if $a.enabled -}}
-{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
-{{- if not $eff.vmauth -}}
-{{- fail "observability-stack: `tenancy.authz.enabled` is set but this install renders no vmauth (`mode` is not \"full\", or `vmauth.enabled` is false). The service exists to feed vmauth's vm_access reader; with no proxy it would be configured and unreachable." -}}
-{{- end -}}
-{{- if not $t.vmAccessReader.enabled -}}
-{{- fail "observability-stack: `tenancy.authz.enabled` is set but `tenancy.vmAccessReader.enabled` is not. The service answers with a token whose `vm_access` claim is the person's grant, and the vm_access reader is the only VMUser that applies one; without it vmauth would find no user for the minted token and refuse every person." -}}
-{{- end -}}
-{{- $upstream := $a.upstreamIssuer | default $t.issuerUrl -}}
-{{- if not $upstream -}}
-{{- fail "observability-stack: `tenancy.authz.enabled` is set but neither `tenancy.authz.upstreamIssuer` nor `tenancy.issuerUrl` is. There is no identity provider to verify a person's token against, and a service that trusts an unverified token grants whatever its claims say." -}}
-{{- end -}}
-{{- if not (regexMatch "^https?://[^/?#@\\s]+$" (toString $upstream)) -}}
-{{- fail (printf "observability-stack: the upstream issuer %q is not a bare http(s) URL (no path, query or credentials). The service compares it to a token's `iss` as a string and fetches `/.well-known/openid-configuration` from it." (toString $upstream)) -}}
-{{- end -}}
-{{- $person := (include "observability-stack.authz.personAudiences" . | fromYaml).audiences -}}
-{{- if not $person -}}
-{{- fail "observability-stack: `tenancy.authz.enabled` is set but there is no person audience: `tenancy.authz.personAudiences` is empty and so is `tenancy.audience`. No token would be exchanged and every person would be refused." -}}
-{{- end -}}
-{{- range $aud := $person -}}
-{{- if not (regexMatch "^\\S+$" (toString $aud)) -}}
-{{- fail (printf "observability-stack: `tenancy.authz.personAudiences` has %q, which is not an identifier (blank, or carrying whitespace)." (toString $aud)) -}}
-{{- end -}}
-{{- end -}}
-{{- if not (regexMatch "^\\S+$" (toString $a.mintedAudience)) -}}
-{{- fail (printf "observability-stack: `tenancy.authz.mintedAudience` is %q, which is not an identifier (blank, or carrying whitespace). The vm_access reader pins it in `aud`." (toString $a.mintedAudience)) -}}
-{{- end -}}
-{{- if has $a.mintedAudience $person -}}
-{{- fail (printf "observability-stack: `tenancy.authz.mintedAudience` %q is also a person audience. A minted token would be taken for a person's if it ever came back, and the vm_access reader could not tell the two apart by audience." (toString $a.mintedAudience)) -}}
-{{- end -}}
-{{- if and $t.vmAccessReader.audience (ne (toString $t.vmAccessReader.audience) (toString $a.mintedAudience)) -}}
-{{- fail (printf "observability-stack: `tenancy.vmAccessReader.audience` is %q but `tenancy.authz` is on, so the reader pins `tenancy.authz.mintedAudience` (%q). Two audiences for one reader is a setting that silently does not apply; clear `vmAccessReader.audience`." (toString $t.vmAccessReader.audience) (toString $a.mintedAudience)) -}}
-{{- end -}}
-{{- if not (regexMatch "^[0-9]+(s|m|h)$" (toString $a.tokenTTL)) -}}
-{{- fail (printf "observability-stack: `tenancy.authz.tokenTTL` is %q: write whole seconds, minutes or hours (30s, 5m, 1h)." (toString $a.tokenTTL)) -}}
-{{- end -}}
-{{- $ttl := include "observability-stack.durationSeconds" $a.tokenTTL | int -}}
-{{- if or (lt $ttl 30) (gt $ttl 3600) -}}
-{{- fail (printf "observability-stack: `tenancy.authz.tokenTTL` %q is outside 30s..1h. Shorter and every query pays for a signature; longer and a person's removal from a group is honoured that much later." (toString $a.tokenTTL)) -}}
-{{- end -}}
-{{- /*
-The people's principals: the ones the service will union. A principal that
-narrows its routes cannot be honoured: the service mints ONE claim per
-person and the vm_access reader gives every claim the same routes, so the
-narrowing would be silently dropped and the person would read more than the
-principal says. Refused, not guessed.
-*/ -}}
-{{- $mine := (include "observability-stack.authz.principals" . | fromYaml).principals -}}
-{{- if not $mine -}}
-{{- fail "observability-stack: `tenancy.authz.enabled` is set but no entry of `tenancy.principals` is a person's principal (its audience, its own or `tenancy.audience`, is not in the person audiences). The service would have nothing to grant and would refuse everyone." -}}
-{{- end -}}
-{{- range $p := (include "observability-stack.tenancy.principals" $ | fromYaml).principals -}}
-{{- $aud := $p.audience | default $t.audience -}}
-{{- if has $aud $person -}}
-{{- $label := $p.name | default $p.group -}}
-{{- if or $p.routes $p.metricsQueryOnly $p.vmalertAPI -}}
-{{- fail (printf "observability-stack: principal %q is a person's principal but sets `routes`, `metricsQueryOnly` or `vmalertAPI` (an identity writes them under `workload`). With `tenancy.authz` on, the service mints one claim per person and the vm_access reader gives every claim the same routes, so the narrowing would be dropped and the person would read more than this principal says. Give a narrower population its own audience (and keep it out of `personAudiences`), or leave the narrowing off." $label) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- if $a.retireGroupReaders -}}
-{{- if not $a.securityPolicy.enabled -}}
-{{- fail "observability-stack: `tenancy.authz.retireGroupReaders` is set but `tenancy.authz.securityPolicy.enabled` is not. This chart cannot see a SecurityPolicy you render yourself, so it cannot know that the route people read through is behind tenancy-authz; retiring the person readers on a route without the service would lock every person out. Let the chart render the policy (`securityPolicy.enabled: true`, `targetRefs` naming the route), or leave `retireGroupReaders` off." -}}
-{{- end -}}
-{{- end -}}
-{{- if eq $a.signingKey.source "existingSecret" -}}
-{{- if not $a.signingKey.existingSecret -}}
-{{- fail "observability-stack: `tenancy.authz.signingKey.source` is existingSecret but `tenancy.authz.signingKey.existingSecret` is empty. Name the Secret holding the key as the file `privateKey`, or use `source: eso`." -}}
-{{- end -}}
-{{- else if $a.signingKey.existingSecret -}}
-{{- fail "observability-stack: `tenancy.authz.signingKey.existingSecret` is set but `tenancy.authz.signingKey.source` is eso, so the Secret would be ignored and a generated one used. Set `source: existingSecret`." -}}
-{{- end -}}
-{{- if $a.securityPolicy.enabled -}}
-{{- if not $a.securityPolicy.targetRefs -}}
-{{- fail "observability-stack: `tenancy.authz.securityPolicy.enabled` is set but `tenancy.authz.securityPolicy.targetRefs` is empty. The SecurityPolicy attaches the service to the HTTPRoute(s) people read through, and this chart does not render the route, so it cannot guess which. Name them, or set `securityPolicy.enabled: false` and render the policy yourself (extAuth.http to the Service this chart renders, path `/check`, headersToBackend `authorization`, failOpen false)." -}}
-{{- end -}}
-{{- range $i, $ref := $a.securityPolicy.targetRefs -}}
-{{- if not $ref.name -}}
-{{- fail (printf "observability-stack: `tenancy.authz.securityPolicy.targetRefs[%d]` has no name." $i) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- if .Values.networkPolicy.enabled -}}
-{{- if not $a.networkPolicy.gatewayFrom -}}
-{{- fail "observability-stack: `tenancy.authz.enabled` and `networkPolicy.enabled` are set but `tenancy.authz.networkPolicy.gatewayFrom` is empty. The service's NetworkPolicy denies everything it does not name, and Envoy's pods are not in this release; the service fails closed, so a policy that hides it from the gateway is an outage for every person. Name the Envoy proxy pods (NetworkPolicyPeer objects)." -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
+ -}}
 
 {{/*
 Stream aggregation on the metrics store
@@ -2430,142 +1816,6 @@ than the sender wrote and nothing says so. Refused:
 {{- end -}}
 {{- end -}}
 
-{{/*
-The checks one reader's OWN audience and OWN route restriction share, whichever
-key wrote it: a `tenancy.principals` entry (`audience`, `routes`, `metricsQueryOnly`,
-`vmalertAPI`) or a `tenancy.identities` entry (`audience`, `workload.routes`,
-`workload.metricsQueryOnly`, `workload.vmalertAPI`, handed in under the principal's names).
-Takes `{p, name, kind, root}`.
-*/}}
-{{- define "observability-stack.validate.principalRoutes" -}}
-{{- $p := .p -}}
-{{- $name := .name -}}
-{{- $kind := .kind -}}
-{{- $root := .root -}}
-{{- $audienceShape := "^\\S+$" -}}
-{{- if and (hasKey $p "audience") (not (regexMatch $audienceShape (toString $p.audience))) -}}
-{{- fail (printf "observability-stack: %s %q sets `audience` to %q, which is not an identifier (%s). Like `tenancy.audience`, a client id may otherwise carry a dot, a `|` or an `@` — the issuer assigns it, this chart does not — and is escaped and anchored where it is rendered, so it pins itself and nothing else. What is refused is a value no issuer mints: empty, or carrying whitespace or a newline, which is how a value that arrived from the wrong place looks. Leave `audience` out entirely to fall back to `tenancy.audience`, rather than setting it to nothing." $kind $name (toString $p.audience) $audienceShape) -}}
-{{- end -}}
-{{- $routes := $p.routes | default (list "metrics" "logs" "traces") -}}
-{{- $rendersTraces := and (has "traces" $routes) (include "observability-stack.tracesEnabled" $root) -}}
-{{- if not (or (has "metrics" $routes) (has "logs" $routes) $rendersTraces) -}}
-{{- fail (printf "observability-stack: %s %q's `routes` (%s) renders no route at all. Metrics and logs render whenever named; `traces` renders only when a trace store is enabled (independent of `tenancy.allowUnfilteredTraceReads`, checked next). A principal that may read nothing is written by leaving it out of `tenancy.principals` entirely, not by restricting it to nothing." $kind $name (join ", " $routes)) -}}
-{{- end -}}
-{{- if $p.vmalertAPI -}}
-{{- if not (has "metrics" $routes) -}}
-{{- fail (printf "observability-stack: %s %q sets `vmalertAPI: true` but its `routes` (%s) does not include `metrics`. The alerts and rules routes belong to a metrics reader: they are vmalert's view of the same store, and a principal with no metrics route has no business reading what its rules say." $kind $name (join ", " $routes)) -}}
-{{- end -}}
-{{- if not $root.Values.tenancy.allowUnfilteredAlertReads -}}
-{{- fail (printf "observability-stack: %s %q sets `vmalertAPI: true` but `tenancy.allowUnfilteredAlertReads` is not. vmalert's alerts and rules have no per-namespace or per-cluster concept to filter on, so this principal's own grant would NOT scope them: it would read every alert and every rule's expression and labels this install's metrics vmalert holds, cluster-wide. Set `tenancy.allowUnfilteredAlertReads: true` and record that, or remove `vmalertAPI`." $kind $name) -}}
-{{- end -}}
-{{- if not (include "observability-stack.effectiveEnabled" $root | fromYaml).vmalert -}}
-{{- fail (printf "observability-stack: %s %q sets `vmalertAPI: true` but `vmalert.enabled` is false. There is no vmalert for these routes to read." $kind $name) -}}
-{{- end -}}
-{{- end -}}
-{{- if and $p.metricsQueryOnly (not (has "metrics" $routes)) -}}
-{{- fail (printf "observability-stack: %s %q sets `metricsQueryOnly: true` but its `routes` (%s) does not include `metrics`. metricsQueryOnly narrows the metrics route to its two query paths; with no metrics route requested there is nothing for it to narrow, and the flag would mean nothing." $kind $name (join ", " $routes)) -}}
-{{- end -}}
-{{- end -}}
+ -}}
 
-{{/*
-`tenancy.identities`: each entry is `{name, groups, reach}` (and optionally `audience`
-and `workload`), and the reach is either `wholeStore: true` or
-`clusters: [{cluster, namespaces | allNamespaces}]`. Refused: a
-name or a group in both `identities` and `principals` (or twice in either),
-an empty `groups`, a reach that is both or neither, and the shapes of every
-cluster and namespace (names are interpolated into filters, as for a grant).
-*/}}
-{{- define "observability-stack.validate.identities" -}}
-{{- $shape := "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" -}}
-{{- $t := .Values.tenancy -}}
-{{- $names := dict -}}
-{{- $groups := dict -}}
-{{- range $p := ($t.principals | default list) -}}
-{{- $_ := set $names ($p.name | default $p.group | default "") "principals" -}}
-{{- range $g := ($p.groups | default (list $p.group)) -}}
-{{- $_ := set $groups (toString $g) "principals" -}}
-{{- end -}}
-{{- end -}}
-{{- range $i, $id := ($t.identities | default list) -}}
-{{- $label := printf "tenancy.identities[%d]" $i -}}
-{{- /* No `name` is the single-`group` principal: the sole group names the entry. */ -}}
-{{- $sole := "" -}}
-{{- if eq (len ($id.groups | default list)) 1 -}}
-{{- $sole = toString (first $id.groups) -}}
-{{- end -}}
-{{- $name := $id.name | default $sole -}}
-{{- if not $name -}}
-{{- fail (printf "observability-stack: %s has no `name`, and not exactly one group to name it after. The name is the principal's, and the object a VMUser is named after; it may be left out only when `groups` has a single entry." $label) -}}
-{{- end -}}
-{{- $label = printf "tenancy.identities[%d] (%q)" $i $name -}}
-{{- if hasKey $names $name -}}
-{{- fail (printf "observability-stack: the name %q is in `tenancy.identities` and also in `tenancy.%s`. One principal name, one place: the second would render a VMUser of the same name and one of them would silently not apply." $name (get $names $name)) -}}
-{{- end -}}
-{{- $_ := set $names $name "identities" -}}
-{{- if not $id.groups -}}
-{{- fail (printf "observability-stack: %s has an empty `groups`. The groups are what a token's claim is matched against; an entry with none selects nobody." $label) -}}
-{{- end -}}
-{{- range $g := $id.groups -}}
-{{- if not $g -}}
-{{- fail (printf "observability-stack: %s lists an empty group. It would match nothing, or with a careless rewrite everything." $label) -}}
-{{- end -}}
-{{- if hasKey $groups (toString $g) -}}
-{{- fail (printf "observability-stack: group %q is in %s and also in `tenancy.%s`. The second entry would be unreachable, so a grant somebody wrote would silently not apply. Move the group to one of the two keys." (toString $g) $label (get $groups (toString $g))) -}}
-{{- end -}}
-{{- $_ := set $groups (toString $g) "identities" -}}
-{{- end -}}
-{{- $reach := $id.reach | default dict -}}
-{{- if and $reach.wholeStore $reach.clusters -}}
-{{- fail (printf "observability-stack: %s sets both `reach.wholeStore` and `reach.clusters`. One of them is wrong, and guessing which is how a grant quietly widens." $label) -}}
-{{- end -}}
-{{- if and (not $reach.wholeStore) (not $reach.clusters) -}}
-{{- fail (printf "observability-stack: %s has neither `reach.wholeStore: true` nor `reach.clusters`. An empty reach is refused rather than read as \"everything\" or \"nothing\"; leave the identity out to grant nothing." $label) -}}
-{{- end -}}
-{{- if $reach.wholeStore -}}
-{{- if not $t.storeClusters -}}
-{{- fail (printf "observability-stack: %s has `reach.wholeStore: true` but `tenancy.storeClusters` is empty. Whole-store reach is read access on every cluster the store holds, and the proxy filters by cluster name, so it needs that list to write the grants. List every cluster whose telemetry the store holds." $label) -}}
-{{- end -}}
-{{- end -}}
-{{- $seen := dict -}}
-{{- range $c := ($reach.clusters | default list) -}}
-{{- if not (regexMatch $shape (toString $c.cluster)) -}}
-{{- fail (printf "observability-stack: %s has cluster %q, which is not a plain name (%s). Names are interpolated into a filter expression, where `|`, `)` or `.*` widens the grant. Refused, never escaped." $label (toString $c.cluster) $shape) -}}
-{{- end -}}
-{{- if hasKey $seen $c.cluster -}}
-{{- fail (printf "observability-stack: %s names cluster %q twice. Merge them, or one is silently ignored." $label $c.cluster) -}}
-{{- end -}}
-{{- $_ := set $seen $c.cluster true -}}
-{{- if and $c.allNamespaces $c.namespaces -}}
-{{- fail (printf "observability-stack: %s has cluster %q with both `allNamespaces` and a `namespaces` list. One of them is wrong, and guessing which is how a grant quietly widens." $label $c.cluster) -}}
-{{- end -}}
-{{- if and (not $c.allNamespaces) (not $c.namespaces) -}}
-{{- fail (printf "observability-stack: %s has cluster %q with neither `namespaces` nor `allNamespaces: true`. An empty list is refused rather than read as \"everything\": whole-cluster reach is written `allNamespaces: true`, and `reach.wholeStore: true` covers every cluster of `tenancy.storeClusters`." $label $c.cluster) -}}
-{{- end -}}
-{{- range $ns := ($c.namespaces | default list) -}}
-{{- if not (regexMatch $shape (toString $ns)) -}}
-{{- fail (printf "observability-stack: %s has namespace %q, which is not a plain name (%s). It would be interpolated into a filter expression, where `|` or `.*` widens the grant." $label (toString $ns) $shape) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- $w := $id.workload | default dict -}}
-{{- $wp := dict -}}
-{{- if hasKey $id "audience" -}}
-{{- $_ := set $wp "audience" $id.audience -}}
-{{- end -}}
-{{- if $w.routes -}}
-{{- $_ := set $wp "routes" $w.routes -}}
-{{- end -}}
-{{- if $w.metricsQueryOnly -}}
-{{- $_ := set $wp "metricsQueryOnly" true -}}
-{{- end -}}
-{{- if $w.vmalertAPI -}}
-{{- $_ := set $wp "vmalertAPI" true -}}
-{{- end -}}
-{{- include "observability-stack.validate.principalRoutes" (dict "p" $wp "name" $name "kind" "identity" "root" $) -}}
-{{- end -}}
-{{- range $c := ($t.storeClusters | default list) -}}
-{{- if not (regexMatch $shape (toString $c)) -}}
-{{- fail (printf "observability-stack: `tenancy.storeClusters` has %q, which is not a plain name (%s)." (toString $c) $shape) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
+ -}}

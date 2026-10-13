@@ -1,10 +1,6 @@
 # expect: notifications.catchAll.receiver is "pager", which is neither
 # A catch-all naming a receiver that does not exist is a route to nowhere
 # for every alert no tier claimed.
-# No proxy: no principals to admit, so none of the tenancy refusals
-# apply and none can preempt this fixture's own.
-vmauth:
-  enabled: false
 
 # The minimum receiver that keeps the "no receiver configured" refusal
 # (Alertmanager is on by default) from preempting this fixture's own.

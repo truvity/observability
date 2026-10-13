@@ -21,7 +21,7 @@ import (
 // the proxy's outbound listener plus the prefix in `upstreams.*.entrypointPath`
 // (`/prometheus` for metrics; nothing for logs and traces, which add their own
 // `/select/...`). hack/mcp-paths-proof.sh observes the same paths from the
-// running binaries. The routes are the ones tests/golden/observability-stack/
+// running binaries. The routes are the ones tests/golden/observability-proxy/
 // tenancy-mcp-reader.yaml renders for a principal with all three routes and
 // `vmalertAPI`.
 var mcpToolPaths = map[string]map[string]string{
@@ -83,7 +83,7 @@ func readerRoutes(t *testing.T) []*regexp.Regexp {
 	t.Helper()
 	var out []*regexp.Regexp
 	var found bool
-	for _, raw := range splitDocs(t, filepath.Join("golden", "observability-stack", "tenancy-mcp-reader.yaml")) {
+	for _, raw := range splitDocs(t, filepath.Join("golden", "observability-proxy", "tenancy-mcp-reader.yaml")) {
 		var d vmalertUserDoc
 		if err := yaml.Unmarshal(raw, &d); err != nil || d.Kind != "VMUser" || d.Spec.Name != "example:mcp:reader" {
 			continue
