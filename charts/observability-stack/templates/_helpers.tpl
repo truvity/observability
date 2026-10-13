@@ -1106,9 +1106,10 @@ The whole configuration file of tenancy-authz.
 shape of `tenancy.principals` (so every consumer of that list renders an
 identity exactly as it renders the principal written out by hand).
 
-An identity `{name, groups, reach}` becomes the principal
-`{name, groups, grants}`. Reach `clusters: [{cluster, namespaces}]` is the
-grants one for one; reach `wholeStore: true` is `allNamespaces` on each
+An identity `{name, groups, reach, audience, workload}` becomes the principal
+`{name, groups, grants, audience, routes, metricsQueryOnly, vmalertAPI}` (the last
+four only when set; docs/tenancy-authz.md has the table). Reach
+`clusters: [{cluster, namespaces | allNamespaces}]` is the grants one for one; reach `wholeStore: true` is `allNamespaces` on each
 cluster of `tenancy.storeClusters`. Its refusals run first, here, so that no
 template ever works on an identity the validator has not read.
 */}}
@@ -1128,10 +1129,35 @@ template ever works on an identity the validator has not read.
 {{- end -}}
 {{- else -}}
 {{- range $c := ($reach.clusters | default list) -}}
+{{- if $c.allNamespaces -}}
+{{- $grants = append $grants (dict "cluster" $c.cluster "allNamespaces" true) -}}
+{{- else -}}
 {{- $grants = append $grants (dict "cluster" $c.cluster "namespaces" ($c.namespaces | default list)) -}}
 {{- end -}}
 {{- end -}}
-{{- $out = append $out (dict "name" $id.name "groups" $id.groups "grants" $grants) -}}
+{{- end -}}
+{{- $entry := dict "grants" $grants -}}
+{{- /* No `name` is the single-`group` principal (validated: one group). */ -}}
+{{- if $id.name -}}
+{{- $_ := set $entry "name" $id.name -}}
+{{- $_ := set $entry "groups" $id.groups -}}
+{{- else -}}
+{{- $_ := set $entry "group" (first $id.groups) -}}
+{{- end -}}
+{{- if hasKey $id "audience" -}}
+{{- $_ := set $entry "audience" $id.audience -}}
+{{- end -}}
+{{- $w := $id.workload | default dict -}}
+{{- if $w.routes -}}
+{{- $_ := set $entry "routes" $w.routes -}}
+{{- end -}}
+{{- if $w.metricsQueryOnly -}}
+{{- $_ := set $entry "metricsQueryOnly" true -}}
+{{- end -}}
+{{- if $w.vmalertAPI -}}
+{{- $_ := set $entry "vmalertAPI" true -}}
+{{- end -}}
+{{- $out = append $out $entry -}}
 {{- end -}}
 {{- toYaml (dict "principals" $out) -}}
 {{- end -}}

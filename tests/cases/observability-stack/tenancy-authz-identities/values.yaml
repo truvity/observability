@@ -10,9 +10,9 @@ global:
 # SAME tenancy: the person entries below are the tenancy-authz case's people,
 # written once as `principals` (name + groups + grants) and once as
 # `identities` (name + groups + reach), and tests/identities_test.go holds
-# that the two renders are byte for byte the same. The workload principal on
-# its own audience stays a principal in both: an identity has no audience or
-# routes, and a workload reader is not what identities are for.
+# that the two renders are byte for byte the same. The workload reader on its
+# own audience is an identity here (`audience`, `workload`) and a principal in
+# the other case.
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client
@@ -31,18 +31,17 @@ tenancy:
             matchLabels: {kubernetes.io/metadata.name: example-gateway}
           podSelector:
             matchLabels: {app.kubernetes.io/name: envoy}
-  principals:
-    # A workload's own audience: not a person's, so not the service's.
-    - group: cluster-a:example-app:reader
-      audience: reader
-      routes: [metrics]
-      metricsQueryOnly: true
-      grants:
-        - cluster: cluster-a
-          namespaces: [example-app]
   # `wholeStore` is allNamespaces on every cluster listed here.
   storeClusters: [cluster-a, cluster-b]
   identities:
+    # A workload's reader, on its own audience: not a person's, so not the service's.
+    - groups: [cluster-a:example-app:reader]
+      audience: reader
+      workload: {routes: [metrics], metricsQueryOnly: true}
+      reach:
+        clusters:
+          - cluster: cluster-a
+            namespaces: [example-app]
     - name: k8s:viewer
       groups:
         - cluster-a:k8s:viewer

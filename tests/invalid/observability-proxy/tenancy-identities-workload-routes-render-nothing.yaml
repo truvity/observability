@@ -1,0 +1,22 @@
+# expect: renders no route at all
+# A workload restricted to traces alone with no trace store renders a reader with no route.
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  identities:
+    - name: example-app
+      groups: [example:example-app]
+      workload: {routes: [traces]}
+      reach:
+        clusters:
+          - cluster: cluster-a
+            namespaces: [example-app]
+
+
+victoria-metrics-k8s-stack:
+  enabled: false
+victoria-logs-single:
+  enabled: false
+victoria-traces-single:
+  enabled: false
