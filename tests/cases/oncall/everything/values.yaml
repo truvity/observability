@@ -74,3 +74,6 @@ rules:
   deliveryFailing:
     severity: critical
     window: 30m
+  alertmanagerDeliveryFailing:
+    enabled: true
+    receiverName: goalert

@@ -35,7 +35,7 @@ flowchart LR
 | `<release>-telegram-relay` ServiceAccount, Service, Deployment | `relay.enabled`; the same posture; `/readyz` is ready only while the Secret's three files read and parse |
 | NetworkPolicies | `networkPolicy.enabled`: a default-deny for both workloads, then exactly the allows below |
 | HTTPRoute | `httpRoute.enabled`: GoAlert's UI, API and integrations at `goalert.publicURL` |
-| PodMonitors, VMRule | `selfMonitor`; `rules.deliveryFailing` |
+| PodMonitors, VMRule | `selfMonitor`; `rules.deliveryFailing`, `rules.alertmanagerDeliveryFailing` |
 
 The chart renders **no database and no secret value**. PostgreSQL is a
 cluster the estate runs; every credential is the name of a Secret the
@@ -166,8 +166,11 @@ notifications:
 ```
 
 Slack keeps everything; GoAlert pages for what the bridge matches.
-`alertmanager_notifications_failed_total{integration="webhook"}` counts a
-GoAlert that cannot be reached.
+`rules.alertmanagerDeliveryFailing` (off by default; `receiverName` is the
+webhook's name, `goalert` above) renders `GoAlertIngestFailing` on
+`alertmanager_notifications_failed_total{integration="webhook",receiver_name=...}`:
+a GoAlert Alertmanager cannot reach pages nobody while Slack still shows the
+alert. Route it to Slack, not to GoAlert.
 
 ## Refusals
 
@@ -180,6 +183,7 @@ GoAlert that cannot be reached.
 | `relay.secret.name` empty while the relay is enabled | a relay with no bot |
 | `relay.port` equal to `relay.metricsPort`; `service.port` equal to `service.metricsPort` | `/metrics` reachable through the served port |
 | `httpRoute.enabled` with no `parentRefs`, or `hostnames` without the host of `publicURL` | a route attached to nothing, or not serving the URL every page links to |
+| `rules.alertmanagerDeliveryFailing.enabled` with no `receiverName` | a rule watching no receiver |
 | `networkPolicy.enabled` with an empty `goalertFrom` or `databasePeers` | under the default-deny, a GoAlert nobody reaches, or that reaches no database |
 | an unknown key, or `sslMode` outside `disable`/`require`/`verify-ca`/`verify-full` (schema) | a typo in a paging path is a page that never arrives |
 

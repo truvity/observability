@@ -211,3 +211,14 @@ rules:
     # say): a failing page path cannot page about itself.
     severity: warning
     window: 15m
+  # -- The other half of the path: Alertmanager failing to POST to GoAlert
+  # (GoAlert down, a revoked integration key, a NetworkPolicy). Reads
+  # Alertmanager's own `alertmanager_notifications_failed_total` for the
+  # webhook receiver named `receiverName` (its `notifications.webhook`
+  # name), so it needs Alertmanager scraped into the store this rule is
+  # evaluated against. Off by default; `receiverName` is required when on.
+  alertmanagerDeliveryFailing:
+    enabled: false
+    receiverName: ""
+    severity: warning
+    window: 15m

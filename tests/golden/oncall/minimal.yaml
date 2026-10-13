@@ -460,13 +460,12 @@ spec:
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
 metadata:
-  name: oncall-telegram-relay
+  name: oncall
   labels:
     app.kubernetes.io/name: oncall
     app.kubernetes.io/instance: oncall
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: oncall
-    app.kubernetes.io/component: telegram-relay
     observability.truvity.io/evaluator: metrics
     observability.truvity.io/rule-type: alert
 spec:

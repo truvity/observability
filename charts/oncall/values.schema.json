@@ -377,6 +377,25 @@
               "$ref": "#/definitions/duration"
             }
           }
+        },
+        "alertmanagerDeliveryFailing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "receiverName": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "window": {
+              "$ref": "#/definitions/duration"
+            }
+          }
         }
       }
     }
