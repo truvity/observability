@@ -186,6 +186,21 @@ func (m *mocks) input(typ, name, key string) string {
 func deployWith(t *testing.T, public bool) *mocks {
 	t.Helper()
 
+	return deployWithInputs(t, func(in *Inputs) {
+		if public {
+			in.PublicHostname = "status.example.com"
+			in.OIDC = OIDC{IssuerURL: "https://issuer.example.com", ClientID: "status"}
+			in.EC2.OIDCClientSecretParameter = "/acme/status/oidc-client-secret"
+			in.EC2.TunnelTokenParameter = "/acme/status/tunnel-token"
+		}
+	})
+}
+
+// deployWithInputs runs Deploy on the mocks with the base Inputs changed by
+// mutate.
+func deployWithInputs(t *testing.T, mutate func(*Inputs)) *mocks {
+	t.Helper()
+
 	previous := statusbox.FetchChecksums
 	statusbox.FetchChecksums = func(string) (string, error) {
 		sum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -212,12 +227,7 @@ func deployWith(t *testing.T, public bool) *mocks {
 				DeadmanSlackTokenParameter: "/acme/status/deadman-token",
 			},
 		}
-		if public {
-			in.PublicHostname = "status.example.com"
-			in.OIDC = OIDC{IssuerURL: "https://issuer.example.com", ClientID: "status"}
-			in.EC2.OIDCClientSecretParameter = "/acme/status/oidc-client-secret"
-			in.EC2.TunnelTokenParameter = "/acme/status/tunnel-token"
-		}
+		mutate(&in)
 
 		return Deploy(c, slog.New(slog.DiscardHandler), in)
 	}, pulumi.WithMocks("proj", "stack", m)))

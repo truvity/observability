@@ -66,11 +66,12 @@ gatus-ops    ONE page, PRIVATE, reachable only from the allowed networks: every 
 ```
 
 No public page unless the estate adds one: a public, per-company status
-page — `gatus-<company>`, on that company's own domain — is a SEPARATE
-instance (`Instance.Public`, one `cloudflared` ingress rule per `Public`
-instance), added once that hostname is delegated; see "a new company page"
-in the table below. Taking that step does not change the private page: it
-keeps every company's own component and every piece of cluster
+page — on that company's own domain, one per environment its customers use
+— is a SEPARATE instance (`Instance.Public`, one `cloudflared` ingress rule
+per `Public` instance), rendered by `RenderPublicPage` (see "A public,
+narrow page" below) and added once that hostname's zone is on the edge; see
+"a new company page" in the table below. Taking that step does not change
+the private page: it keeps every company's own component and every piece of cluster
 infrastructure, in one page, for whoever is watching from inside the
 estate's own network.
 
@@ -207,6 +208,62 @@ writes its own small mapping from that format to `Catalogue` and calls
 one with `Security` set, and a private/breakglass twin with `Security:
 nil`, sharing every other field so the two pages can never show two
 different answers about the SAME estate).
+
+### A public, narrow page: `RenderPublicPage`
+
+A page a company's CUSTOMERS read, with no sign-in, is not the combined page
+with fewer rows: it is a different render, so that nothing internal can reach
+it by accident. `RenderPublicPage` takes only the customer-facing hostnames,
+grouped by the service name customers know them by:
+
+```go
+type PublicPage struct {
+    Title       string        // ui.title and ui.header; "" keeps Gatus's defaults
+    Groups      []PublicGroup // one group per service, in render order
+    StoragePath string        // its own SQLite file
+}
+
+type PublicGroup struct {
+    DisplayName string        // the group label
+    Hosts       []CompanyHost // probed like a company's hosts; named by the full hostname
+}
+
+func RenderPublicPage(p PublicPage) (string, error)
+```
+
+Every host is probed every minute, exactly as on the combined page (its
+`StatusPath` and `ExpectStatus`, or the lenient `[STATUS] < 500` without one,
+plus the certificate-expiry condition), and each endpoint is named after the
+hostname a customer calls. What the render NEVER carries: a `security:` block,
+an `alerting:` block or alert refs (a page customers read pages nobody; the
+combined page already alerts on the same hosts), a bearer header, and any
+alerts-read, deadman, platform or internal check. That last one is about
+more than the page's rows: Gatus's own API returns each result's hostname and
+errors, so an alerts-read endpoint on a public page would publish the private
+alerts host even if its row were hidden. A customer-facing alert signal per
+environment is therefore not on the public page; it stays on the combined
+page (`<code>-customer-facing`).
+
+It refuses a page with no host (Gatus does not boot on one), a group with no
+display name or no host, a wildcard, a host with a scheme, port or path, a
+host listed twice, a `StatusPath` that does not start with `/`, and an empty
+`StoragePath`.
+
+`Spec` (the estate's declaration, checked when its configuration loads)
+carries the pages too: an entity's `Pages` are `{Hostname, Environment}`,
+one per environment, each a hostname of its own (never `PublicHostname`, the
+combined page's). `TunnelHosts` may name a page's hostname, and an entity
+with pages needs no `Hostname` of its own. A backend names a page's instance
+`PageInstanceName(code, environment)`, `<code>-<environment>`.
+
+`deploy/pulumi/status` wires them: `Inputs.Pages` lists `{Name, Hostname,
+Port, Title, Groups}`; each becomes one more Public instance (its SQLite file
+`/data/<Name>.db`, `PageStoragePath`), next to `ops` and `ops-breakglass`,
+which do not change. `PublicGroups(hosts, env, services)` narrows a company's
+hosts (`HostsByCompany`) to one environment and the listed services, in the
+services' order. Ports start at `FirstPagePort` (8083, `PagePort(i)`); the
+caller points each page's tunnel ingress rule at its port, on the box's
+loopback. Pages need `EC2.TunnelTokenParameter`, and not the OIDC secret.
 
 ### Trusting a private root
 
@@ -368,7 +425,7 @@ read at boot through the instance role (IMDSv2 required).
 | external probes | ordinary Gatus `endpoints:`: HTTP status, body conditions, `[CERTIFICATE_EXPIRATION]`, DNS, from outside the estate's accounts |
 | the second vantage and the watcher's watcher | the edge provider's health checks: multi-region against the same hostnames, and one against the box's own `/health` |
 | a new hostname | a line in the estate's catalogue; the estate's renderer emits a probe and a component; the box is replaced |
-| a new company page | later, once a `status.<company domain>` hostname is delegated: a new Public `Instance`, its own tunnel ingress rule — the mechanism above already carries it |
+| a new company page | once a `status.<company domain>` zone is on the edge: one `Inputs.Pages` entry per environment (a Public `Instance` rendered by `RenderPublicPage`), its own tunnel ingress rule and record |
 
 ### internal → status, pulled
 
@@ -443,9 +500,13 @@ door); Gatus replicas with a shared database (coordinates nothing).
 - `RenderGatus`'s own golden and fixture coverage, structural, no
   network needed (`pkg/statusbox/gatus_internal_test.go`); and, in
   Docker against the real release image, `hack/gatus-boot-proof.sh` —
-  a representative multi-company `Catalogue` actually boots on
+  a representative multi-company `Catalogue` and a public page
+  (`RenderPublicPage`) each actually boot on
   `twinproduction/gatus:v5.37.0`, `/health` answers, and every rendered
-  endpoint is live in Gatus's own API.
+  endpoint is live in Gatus's own API;
+- `RenderPublicPage`'s golden (`pkg/statusbox/testdata/public-page.golden.yaml`)
+  and the test that a public page carries no security, alerting, bearer or
+  alerts-read endpoint.
 
 In a consumer: the private page answers only from the allowed networks
 (and, once a company page exists, its public page renders behind the

@@ -1,0 +1,28 @@
+storage:
+    type: sqlite
+    path: /data/example-prod.db
+endpoints:
+    - name: api.example.com
+      group: API
+      url: https://api.example.com
+      interval: 1m
+      conditions:
+        - '[STATUS] < 500'
+        - '[CERTIFICATE_EXPIRATION] > 240h'
+    - name: did.example.com
+      group: API
+      url: https://did.example.com
+      interval: 1m
+      conditions:
+        - '[STATUS] < 500'
+        - '[CERTIFICATE_EXPIRATION] > 240h'
+    - name: id.example.com
+      group: Sign-in
+      url: https://id.example.com/realms/customer/.well-known/openid-configuration
+      interval: 1m
+      conditions:
+        - '[STATUS] == 200'
+        - '[CERTIFICATE_EXPIRATION] > 240h'
+ui:
+    title: Example status
+    header: Example status
