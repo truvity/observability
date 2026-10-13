@@ -43,15 +43,6 @@ var doorKinds = map[string]bool{
 // its stores and alerters, so those are told apart by name below.)
 var stackDoorKinds = map[string]bool{"VMAuth": true, "VMUser": true, "SecurityPolicy": true}
 
-func loadChartSchema(t *testing.T, chart string) schemaDoc {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "charts", chart, "values.schema.json"))
-	require.NoError(t, err)
-	var s schemaDoc
-	require.NoError(t, json.Unmarshal(b, &s))
-	return s
-}
-
 // The stack renders no Door object. Held over every golden the stack has, and
 // over a real render of every case (presets merged), so a case added later
 // is covered without anyone remembering to regenerate a golden first.
