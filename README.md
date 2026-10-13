@@ -16,6 +16,7 @@ everything still looks green.
 | `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. Refuses a name that could widen a grant rather than escaping it. | released |
 | `notifications:` in `observability-stack` | The one router: receiver kinds and how their secret is mounted, the routing shape by cluster × namespace × severity, the message template, and the refusals that retire the `blackhole` default. The stack's own self-alerts are a separate release. | released |
 | `charts/alert-ingress` + `cmd/alert-ingress` | Events born outside the cluster — a threat finding, a root sign-in, a key use, a budget — into the same router: signed notifications from an allow-listed topic, mapped by values, never dropped. | released |
+| `charts/oncall` + `cmd/telegram-relay` | On call: GoAlert (schedules, escalation, acknowledgement, its alert log as the incident record) fed by Alertmanager, and a relay that turns GoAlert's webhook contact method into a Telegram message to the person paged. No database and no secret value in the chart. See [docs/oncall.md](docs/oncall.md). | unreleased |
 | `pkg/statusbox`, `pkg/statusbox/ec2` (Go, Pulumi) | The watcher outside every cluster: several Gatus instances on one immutable EC2 box behind a tunnel and a private network — the deadman, outside-in probes, public status pages per company, and the bridge from an internal alert to a status component. | released |
 | `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | released |
 | `charts/observability-grafana` | One Grafana as the read UI over several stores: a datasource set per store, OIDC sign-in, a database of its own, dashboards from git only. See [docs/grafana.md](docs/grafana.md). | released |
@@ -230,6 +231,7 @@ charts take as Secret names, delivered through External Secrets.
   the consuming estate owns, and why the shape is what it is.
 - [docs/notifications.md](docs/notifications.md),
   [docs/alert-ingress.md](docs/alert-ingress.md),
+  [docs/oncall.md](docs/oncall.md),
   [docs/statusbox.md](docs/statusbox.md),
   [docs/dashboards.md](docs/dashboards.md),
   [docs/grafana.md](docs/grafana.md),

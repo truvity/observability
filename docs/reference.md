@@ -2,9 +2,9 @@
 
 Every value, its default, and what it does, for the charts and the Go
 package whose surface is not already a table on their own design page.
-`charts/alert-ingress`, `charts/observability-grafana` and
+`charts/alert-ingress`, `charts/oncall`, `charts/observability-grafana` and
 `charts/observability-mcp` are documented on [alert-ingress.md](alert-ingress.md),
-[grafana.md](grafana.md) and [mcp.md](mcp.md); every chart's `values.yaml`
+[oncall.md](oncall.md), [grafana.md](grafana.md) and [mcp.md](mcp.md); every chart's `values.yaml`
 carries the same comments, and its `values.schema.json` refuses an
 unknown key.
 
@@ -2024,6 +2024,7 @@ produces no diff.
 | `observability-stack` | `oci://ghcr.io/truvity/charts/observability-stack` |
 | `platform-alerts` | `oci://ghcr.io/truvity/charts/platform-alerts` |
 | `alert-ingress` | `oci://ghcr.io/truvity/charts/alert-ingress`; the image `ghcr.io/truvity/observability/alert-ingress:<version>` |
+| `oncall` | `oci://ghcr.io/truvity/charts/oncall`; the image `ghcr.io/truvity/observability/telegram-relay:<version>` (GoAlert is the upstream image) |
 | `observability-dashboards` | `oci://ghcr.io/truvity/charts/observability-dashboards` |
 | `observability-grafana` | `oci://ghcr.io/truvity/charts/observability-grafana` |
 | `observability-mcp` | `oci://ghcr.io/truvity/charts/observability-mcp`; the image `ghcr.io/truvity/observability/mcp-aggregator:<version>` |

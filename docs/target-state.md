@@ -53,6 +53,7 @@ Every piece is released; the state column says where its design page is.
 | `pkg/tenancy` | one input, two shapes: the proxy's users or the issuer's claim | [reference.md](reference.md#pkgtenancy) |
 | `notifications:` in the stack chart | the one router: receivers, routing shape, template, refusals; the store self-alerts; evaluating another store's rules (`vmalert.remoteEvaluators`) | [notifications.md](notifications.md) |
 | `charts/alert-ingress` + `cmd/alert-ingress` | events born outside the cluster, into the same router | [alert-ingress.md](alert-ingress.md) |
+| `charts/oncall` + `cmd/telegram-relay` | who is paged: GoAlert fed by Alertmanager, Telegram through a webhook relay | [oncall.md](oncall.md) |
 | `pkg/statusbox` + `pkg/statusbox/ec2` | the watcher outside: deadman, external probes, status pages | [statusbox.md](statusbox.md) |
 | `charts/observability-dashboards` | the generic dashboards, and the lint every dashboard passes | [dashboards.md](dashboards.md) |
 | `charts/observability-grafana` | one Grafana over several installs | [grafana.md](grafana.md) |

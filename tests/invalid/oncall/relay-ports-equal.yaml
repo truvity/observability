@@ -1,0 +1,16 @@
+# expect: `relay.port` and `relay.metricsPort` must differ
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: k
+  database:
+    host: h
+    passwordSecret:
+      name: p
+relay:
+  secret:
+    name: r
+  port: 9090
+networkPolicy:
+  goalertFrom: [{namespaceSelector: {}}]
+  databasePeers: [{podSelector: {}}]

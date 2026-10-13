@@ -1,0 +1,16 @@
+# expect: `httpRoute.parentRefs` is empty
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: k
+  database:
+    host: h
+    passwordSecret:
+      name: p
+relay:
+  secret:
+    name: r
+networkPolicy:
+  goalertFrom: [{namespaceSelector: {}}]
+  databasePeers: [{podSelector: {}}]
+httpRoute: {enabled: true, hostnames: [oncall.example]}

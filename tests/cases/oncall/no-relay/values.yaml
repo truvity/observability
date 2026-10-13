@@ -1,0 +1,19 @@
+# GoAlert alone (other contact methods only), no NetworkPolicies, no
+# self-monitoring: no relay objects, no relay rule, no egress to it.
+goalert:
+  publicURL: https://oncall.example
+  dataEncryptionKeySecret:
+    name: oncall-goalert-key
+  database:
+    host: oncall-pg-rw.oncall.svc
+    sslMode: require
+    passwordSecret:
+      name: oncall-pg-app
+
+relay:
+  enabled: false
+
+networkPolicy:
+  enabled: false
+
+selfMonitor: false
