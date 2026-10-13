@@ -176,7 +176,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "nodeMemoryPressure", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "upstream"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "nodeMemoryPressure", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "arcRunners", "upstream"],
       "properties": {
         "backups": {
           "type": "object",
@@ -489,6 +489,55 @@
             "namespaceSelector": { "type": "string" },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "arcRunners": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "stuck": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "detections": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "window": { "$ref": "#/definitions/duration" },
+                "threshold": { "type": "number", "minimum": 0 },
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "jobsWaiting": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "startup": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "window": { "$ref": "#/definitions/duration" },
+                "thresholdSeconds": { "type": "number", "minimum": 0 },
+                "minJobs": { "type": "number", "minimum": 0 },
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
             "keepClusterLabel": { "type": "boolean" }
           }
         },

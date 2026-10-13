@@ -1,0 +1,115 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: platform-alerts.arc-runners
+      interval: 1m
+      rules:
+        # A runner that has been reporting itself stuck for too long.
+        #
+        # `runner_watchdog_stuck` is 1 while an IDLE runner (no job) shows an
+        # upstream ARC #4307 signature past the watchdog's own grace. The
+        # runner's readiness probe fails then, and the janitor deletes the
+        # runner within about two minutes, so a runner stuck for `stuck.for`
+        # means the janitor is not doing its job. One series per runner pod;
+        # a deleted pod's series ends and the alert resolves.
+        - alert: ARCRunnerStuck
+          expr: >-
+            max by (k8s_cluster_name, namespace, pod) (runner_watchdog_stuck) == 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ARC runner {{ $labels.namespace }}/{{ $labels.pod }} has been stuck for 5m"
+            description: >-
+              The runner watchdog reports runner pod {{ $labels.pod }}
+              stuck (an idle runner that cannot take a job, upstream ARC
+              #4307). The janitor should have deleted it within about two
+              minutes, so it is not working: check the janitor CronJob in
+              {{ $labels.namespace }} (suspended, failing, or lacking
+              the right to delete the EphemeralRunner), then delete the
+              EphemeralRunner by hand.
+            runbook_url: "https://runbooks.example.com/ARCRunnerStuck"
+        # How often the stuck state is reached at all.
+        #
+        # Each detection is a runner the janitor then deletes, so this is
+        # not an outage: it is how often upstream ARC #4307 bites. The sum
+        # is per namespace because the runner pods are short-lived.
+        - alert: ARCRunnerStuckDetectionsHigh
+          expr: >-
+            sum by (k8s_cluster_name, namespace) (increase(runner_watchdog_stuck_detections_total[1h])) > 10
+          for: 5m
+          labels:
+            severity: info
+          annotations:
+            summary: "More than 10 stuck ARC runners in 1h in {{ $labels.namespace }}"
+            description: >-
+              The runner watchdogs in {{ $labels.namespace }} detected
+              {{ $value | humanize }} stuck runners within the last
+              1h. The janitor cleans each of them up;
+              the count is for the frequency of upstream ARC #4307 (cancelled
+              or interrupted jobs leaving a runner that cannot take work).
+            runbook_url: "https://runbooks.example.com/ARCRunnerStuckDetectionsHigh"
+        # Jobs GitHub has assigned to a scale set that no runner has taken.
+        #
+        # `gha_assigned_jobs` counts the jobs assigned to the scale set and
+        # `gha_running_jobs` those running or about to run, both from the
+        # listener's statistics poll, so the difference is the jobs waiting
+        # for a runner. A runner starting from zero shows up here for a
+        # minute or two; `jobsWaiting.for` covers that. Both gauges come
+        # from the same listener pod, so the subtraction matches on `pod`
+        # and `name` (two organizations can reuse a scale set name).
+        - alert: ARCJobsWaiting
+          expr: >-
+            max by (k8s_cluster_name, pod, name) (gha_assigned_jobs)
+            - max by (k8s_cluster_name, pod, name) (gha_running_jobs)
+            > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $value }} job(s) wait for a runner of scale set {{ $labels.name }} for 5m"
+            description: >-
+              Scale set {{ $labels.name }} (listener
+              {{ $labels.pod }}) has had assigned jobs without a runner
+              for 5m. Runners are not starting (no node
+              capacity, the pool at its maximum, a registration or image-pull
+              failure) or are stuck (see ARCRunnerStuck). Read the scale
+              set's EphemeralRunners and the pending runner pods.
+            runbook_url: "https://runbooks.example.com/ARCJobsWaiting"
+        # The time from a job's assignment to a runner taking it, slow.
+        #
+        # `gha_job_startup_duration_seconds` is observed when a job STARTS,
+        # so a job still waiting is not in it yet (that is ARCJobsWaiting);
+        # this is the trend of the jobs that did get a runner. The
+        # histogram has no scale set label, so it is told apart by the
+        # listener `pod`. The second line keeps a quiet scale set from
+        # alerting on a few jobs.
+        - alert: ARCJobStartupSlow
+          expr: >-
+            histogram_quantile(0.95, sum by (k8s_cluster_name, pod, le) (increase(gha_job_startup_duration_seconds_bucket[30m])))
+            > 300
+            and
+            sum by (k8s_cluster_name, pod) (increase(gha_job_startup_duration_seconds_count[30m])) >= 3
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Jobs of ARC listener {{ $labels.pod }} wait {{ $value | humanizeDuration }} for a runner at the 95th percentile"
+            description: >-
+              Over the last 30m, the 95th percentile of
+              the time between a job being assigned to the scale set and a
+              runner starting it was above 300s
+              for 10m. Runners are slow to start: node
+              provisioning, image pulls, or the pool running at its maximum.
+            runbook_url: "https://runbooks.example.com/ARCJobStartupSlow"

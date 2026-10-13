@@ -750,6 +750,80 @@ groups:
     severity: critical
     keepClusterLabel: false
 
+  # GitHub Actions Runner Controller (ARC) runner fleet.
+  #
+  # Off by default: it reads series that exist only where ARC runs AND is
+  # scraped. Two sources, both
+  # exported by the runner fleet and not by this chart:
+  #
+  # 1. The `runner-watchdog` wrapper in each runner container (ci-plane's
+  #    arc-runners chart, `runner.watchdog`), on a container port named
+  #    `watchdog`:
+  #      runner_watchdog_stuck{}                    gauge 0/1, 1 while the
+  #                                                 runner idles on a stuck
+  #                                                 signature (ARC #4307)
+  #      runner_watchdog_stuck_detections_total{}   counter
+  # 2. The scale-set LISTENER (ARC gha-runner-scale-set-controller 0.14.2
+  #    and 0.15.0 export the same names; on when the controller chart's
+  #    `metrics:` is set), on a container port named `metrics`:
+  #      gha_assigned_jobs{name,namespace,...}      gauge, jobs GitHub has
+  #                                                 assigned to the scale set
+  #      gha_running_jobs{name,namespace,...}       gauge, of those, jobs
+  #                                                 running or about to
+  #      gha_job_startup_duration_seconds           histogram, seconds from
+  #        {_bucket,_count,_sum}{job_name,...}      assignment to a runner
+  #                                                 taking the job (no scale
+  #                                                 set label: the listener
+  #                                                 pod tells them apart)
+  # A series' own `namespace` label (the scale set's) collides with the
+  # scrape's and survives as `exported_namespace` under `honor_labels:
+  # false`, which this chart's emitters force; the rules key on `pod` and
+  # `name`, which do not collide.
+  arcRunners:
+    enabled: false
+    stuck:
+      # -- How long a runner must report `runner_watchdog_stuck` 1. The
+      # janitor deletes a stuck idle runner within about two minutes, so a
+      # runner still stuck after this means the janitor is not working.
+      for: 5m
+      # -- Severity of `ARCRunnerStuck`.
+      severity: warning
+    detections:
+      # -- `false` drops `ARCRunnerStuckDetectionsHigh`.
+      enabled: true
+      # -- Window over which stuck detections are summed per namespace.
+      window: 1h
+      # -- More detections than this within the window alert. The alert
+      # exists to see how often upstream #4307 happens, not to page.
+      threshold: 10
+      for: 5m
+      severity: info
+    jobsWaiting:
+      # -- `false` drops `ARCJobsWaiting`.
+      enabled: true
+      # -- How long a scale set may hold assigned jobs that no runner has
+      # taken. Covers a node and a runner starting from zero.
+      for: 5m
+      severity: warning
+    startup:
+      # -- `false` drops `ARCJobStartupSlow`.
+      enabled: true
+      # -- Window of the histogram.
+      window: 30m
+      # -- The 95th percentile of the assignment-to-start time above this
+      # many seconds alerts. 300 is a bucket boundary of the listener's
+      # default histogram, which keeps the percentile exact at the line.
+      thresholdSeconds: 300
+      # -- Jobs that must have started within the window for the
+      # percentile to count, so one slow job on a quiet scale set is not
+      # a trend.
+      minJobs: 3
+      for: 10m
+      severity: warning
+    # -- Keep the series' own `clusterLabel` on the alerts (see
+    # `pendingPods.keepClusterLabel`).
+    keepClusterLabel: false
+
   # -- THE VENDORED UPSTREAM RULE PACK (restructure step 4). OFF by default; see
   # upstream/PIN.yaml for the pinned sources and docs/reference.md for the keys.
   #
