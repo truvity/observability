@@ -29,3 +29,5 @@ dependencies:
   - name: alloy
     version: 1.13.0
     repository: https://grafana.github.io/helm-charts
+    # Off with `receivers.enabled: false` (a rules-only release).
+    condition: receivers.enabled

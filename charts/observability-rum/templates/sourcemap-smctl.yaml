@@ -1,6 +1,6 @@
 {{- $c := .Values.global.observabilityRum -}}
 {{- $m := $c.sourcemaps.smctl -}}
-{{- if $m.enabled }}
+{{- if and .Values.receivers.enabled $m.enabled }}
 {{- /*
 `smctl serve`: one small Deployment that serves any app's source map from an
 OCI registry to Alloy over HTTP inside the cluster. Why a Deployment of its

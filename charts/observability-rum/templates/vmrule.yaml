@@ -31,6 +31,8 @@ treats an empty one as unset, so the rules behave identically.
 */ -}}
 {{- $full := include "observability-rum.fullname" . -}}
 {{- $scope := "telemetry.source:faro" -}}
+{{- /* rules.clusterFilter: one cluster's data only (validated in _validate.tpl). */ -}}
+{{- with $r.clusterFilter }}{{ $scope = printf "k8s.cluster.name:=%s %s" (. | quote) $scope }}{{ end -}}
 {{- $ni := $r.newIssue -}}
 {{- $rg := $r.regressed -}}
 {{- $er := $r.errorRate -}}

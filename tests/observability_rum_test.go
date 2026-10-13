@@ -20,6 +20,8 @@ import (
 // wildcard origin, enable the receiver's own source-map download, or hand
 // a per-error value to a stream fails here first.
 
+const rulesOnlyGolden = "rules-only.yaml"
+
 func rumConfigs(t *testing.T) map[string]string {
 	t.Helper()
 	goldens, err := filepath.Glob("golden/observability-rum/*.yaml")
@@ -27,6 +29,9 @@ func rumConfigs(t *testing.T) map[string]string {
 	require.NotEmpty(t, goldens, "no observability-rum goldens; this test would pass vacuously")
 	out := map[string]string{}
 	for _, g := range goldens {
+		if filepath.Base(g) == rulesOnlyGolden {
+			continue // a rules-only release renders no receivers (see TestRumRulesOnly...)
+		}
 		docs := renderedDocs(t, g)
 		cm := findDoc(t, docs, "ConfigMap", func(d map[string]any) bool {
 			data, _ := d["data"].(map[string]any)
@@ -115,6 +120,9 @@ func TestRumIdentityComesFromTheReceiverNotThePayload(t *testing.T) {
 func TestRumRoleReadsOnlyTheNamedSecrets(t *testing.T) {
 	goldens, _ := filepath.Glob("golden/observability-rum/*.yaml")
 	for _, g := range goldens {
+		if filepath.Base(g) == rulesOnlyGolden {
+			continue
+		}
 		docs := renderedDocs(t, g)
 		role := findDoc(t, docs, "Role", nil)
 		rules := role["rules"].([]any)
@@ -174,4 +182,22 @@ func TestRumDashboardsFollowTheirNamespaceValue(t *testing.T) {
 	assert.NotContains(t, text, "__LOGS_DATASOURCE_UID__")
 	assert.NotContains(t, text, "__TRACES_DATASOURCE_UID__")
 	assert.Contains(t, text, "traces-main")
+}
+
+// `receivers.enabled: false` renders the VMRule and nothing else, and
+// `rules.clusterFilter` puts the cluster in the filter of EVERY query: a rule
+// that missed it would alert on another cluster's data in a shared store.
+func TestRumRulesOnlyRendersTheVMRuleScopedToOneCluster(t *testing.T) {
+	docs := renderedDocs(t, "golden/observability-rum/"+rulesOnlyGolden)
+	require.Len(t, docs, 1, "a rules-only release renders exactly one object")
+	require.Equal(t, "VMRule", docs[0]["kind"])
+	n := 0
+	for _, grp := range dig(docs[0], "spec", "groups").([]any) {
+		for _, r := range grp.(map[string]any)["rules"].([]any) {
+			expr := r.(map[string]any)["expr"].(string)
+			assert.Regexp(t, `^_time:[0-9]+[mhdw] k8s\.cluster\.name:="stage" telemetry\.source:faro`, expr)
+			n++
+		}
+	}
+	assert.GreaterOrEqual(t, n, 5, "issue, regressed, error-rate and web-vitals rules all rendered")
 }

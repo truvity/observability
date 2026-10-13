@@ -1,0 +1,130 @@
+---
+# Source: observability-rum/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: observability-rum
+  namespace: rum
+  labels:
+    app.kubernetes.io/name: observability-rum
+    app.kubernetes.io/instance: observability-rum
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: logs
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: observability-rum.issues
+      type: vlogs
+      interval: 1m
+      rules:
+        # A fingerprint seen inside `window` and never before it within
+        # `history`. It resolves by itself once the fingerprint has history
+        # older than `window`, so it stays up about one window.
+        - alert: FrontendNewIssue
+          record: ""
+          expr: >-
+            _time:90d k8s.cluster.name:="stage" telemetry.source:faro kind:exception error.fingerprint:*
+            | stats by (k8s.cluster.name, app, error.fingerprint)
+              count() if (_time:15m) as recent,
+              count() if (_time:90d offset 15m) as earlier
+            | filter recent:>0 earlier:0
+            | sort by (recent desc) limit 10
+            | rename k8s.cluster.name as cluster, error.fingerprint as fingerprint | stats by (cluster, app, fingerprint) max(recent) as hits
+          for: 0m
+          labels:
+            severity: warning
+            owner: web
+          annotations:
+            summary: "New frontend issue in {{ $labels.app }} ({{ $labels.fingerprint }})"
+            description: >-
+              A browser error with fingerprint {{ $labels.fingerprint }} appeared
+              in {{ $labels.app }} on {{ $labels.cluster }} ({{ $value }} events in the
+              last 15m) and has no sighting in the previous 90d.
+              Open the "Frontend Issues" dashboard and filter on the fingerprint for
+              the message, the stack, the release and a link to the trace. At most
+              10 fingerprints can fire per evaluation, highest volume first.
+        # A fingerprint seen inside `window`, silent for `quietFor` before
+        # that, and seen at least once earlier within `history`: a fix that
+        # did not hold, or a bug that came back with a release.
+        - alert: FrontendIssueRegressed
+          record: ""
+          expr: >-
+            _time:90d k8s.cluster.name:="stage" telemetry.source:faro kind:exception error.fingerprint:*
+            | stats by (k8s.cluster.name, app, error.fingerprint)
+              count() if (_time:15m) as recent,
+              count() if (_time:7d offset 15m) as quiet,
+              count() if (_time:90d offset 7d) as older
+            | filter recent:>0 quiet:0 older:>0
+            | sort by (recent desc) limit 10
+            | rename k8s.cluster.name as cluster, error.fingerprint as fingerprint | stats by (cluster, app, fingerprint) max(recent) as hits
+          for: 0m
+          labels:
+            severity: warning
+            owner: web
+          annotations:
+            summary: "Frontend issue regressed in {{ $labels.app }} ({{ $labels.fingerprint }})"
+            description: >-
+              Fingerprint {{ $labels.fingerprint }} is back in {{ $labels.app }} on
+              {{ $labels.cluster }} ({{ $value }} events in the last 15m) after
+              at least 7d without one. At most 10
+              fingerprints can fire per evaluation, highest volume first.
+    - name: observability-rum.error-rate
+      type: vlogs
+      interval: 1m
+      rules:
+        # Exceptions per session over `window`. Sessions are counted over
+        # every kind of event, so an error storm in a few sessions and a
+        # broken page that every session hits both show; below
+        # `minSessions` the ratio is noise and the alert is silent.
+        - alert: FrontendErrorRateHigh
+          record: ""
+          expr: >-
+            _time:10m k8s.cluster.name:="stage" telemetry.source:faro
+            | stats by (k8s.cluster.name, app)
+              count() if (kind:exception) as exceptions,
+              count_uniq(session_id) as sessions
+            | filter sessions:>=20
+            | math exceptions / sessions as per_session
+            | filter per_session:>0.5
+            | rename k8s.cluster.name as cluster
+            | stats by (cluster, app) max(per_session) as per_session
+          for: 10m
+          labels:
+            severity: warning
+            basis: per-session
+            owner: web
+          annotations:
+            summary: "High frontend error rate in {{ $labels.app }}"
+            description: >-
+              {{ $labels.app }} on {{ $labels.cluster }} averages {{ $value | printf "%.2f" }}
+              exceptions per session over 10m (threshold
+              0.5, with at least 20 sessions).
+    # p75 of the web vitals, recorded to the metrics store by the logs
+    # vmalert (verified: a `type: vlogs` group takes `record:` rules and
+    # writes through the alerter's remoteWrite). The `_time` filter is
+    # explicit: vmalert adds none, and the rule would see nothing else.
+    - name: observability-rum.web-vitals
+      type: vlogs
+      interval: 1m
+      rules:
+        - record: frontend:web_vitals_lcp_p75
+          alert: ""
+          expr: >-
+            _time:5m k8s.cluster.name:="stage" telemetry.source:faro kind:measurement type:web-vitals value_lcp:*
+            | stats by (k8s.cluster.name, app) quantile(0.75, value_lcp) as lcp
+            | rename k8s.cluster.name as k8s_cluster_name
+            | stats by (k8s_cluster_name, app) max(lcp) as lcp
+        - record: frontend:web_vitals_inp_p75
+          alert: ""
+          expr: >-
+            _time:5m k8s.cluster.name:="stage" telemetry.source:faro kind:measurement type:web-vitals value_inp:*
+            | stats by (k8s.cluster.name, app) quantile(0.75, value_inp) as inp
+            | rename k8s.cluster.name as k8s_cluster_name
+            | stats by (k8s_cluster_name, app) max(inp) as inp
+        - record: frontend:web_vitals_cls_p75
+          alert: ""
+          expr: >-
+            _time:5m k8s.cluster.name:="stage" telemetry.source:faro kind:measurement type:web-vitals value_cls:*
+            | stats by (k8s.cluster.name, app) quantile(0.75, value_cls) as cls
+            | rename k8s.cluster.name as k8s_cluster_name
+            | stats by (k8s_cluster_name, app) max(cls) as cls

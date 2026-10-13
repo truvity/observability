@@ -5,6 +5,7 @@ port of that name. There is no public host and no Ingress here; how the
 traffic arrives is the estate's gateway (docs/frontend.md). The subchart's
 own Service stays, for :12345 (metrics, readiness).
 */ -}}
+{{- if .Values.receivers.enabled }}
 {{- $full := include "observability-rum.fullname" . -}}
 {{- $apps := include "observability-rum.apps" . | fromYamlArray }}
 apiVersion: v1
@@ -25,3 +26,5 @@ spec:
       targetPort: {{ $a.port }}
       protocol: TCP
     {{- end }}
+
+{{- end }}

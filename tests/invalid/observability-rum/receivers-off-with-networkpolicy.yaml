@@ -1,0 +1,9 @@
+# expect: `networkPolicy.enabled` with `receivers.enabled: false`
+receivers:
+  enabled: false
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - podSelector: {}
+dashboards:
+  enabled: false
