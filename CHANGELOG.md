@@ -6,6 +6,8 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
+## v0.83.0
+
 - **Added** `platform-alerts`: the group `arcRunners` (default **off**, so **no default change**: every existing golden is byte-identical) for a GitHub Actions Runner Controller fleet. `ARCRunnerStuck` (warning, `max by (cluster, namespace, pod) (runner_watchdog_stuck) == 1` for 5m): the runner watchdog reports an idle runner stuck, which the janitor should have deleted within about two minutes, so firing means the janitor is broken. `ARCRunnerStuckDetectionsHigh` (info, more than 10 `runner_watchdog_stuck_detections_total` increases per namespace within 1h): how often upstream ARC #4307 bites. `ARCJobsWaiting` (warning, `gha_assigned_jobs - gha_running_jobs > 0` per listener pod for 5m): jobs assigned to a scale set that no runner has taken. `ARCJobStartupSlow` (warning, p95 of `gha_job_startup_duration_seconds` above 300s over 30m for 10m, at least 3 jobs): the trend of jobs that did get a runner. The listener metrics are exported by ARC 0.14.2 and 0.15.0 alike (the names were read from `cmd/ghalistener/metrics/metrics.go` at both tags) once the controller chart's `metrics:` is set; the series need a scrape of the watchdog port `watchdog` and the listener port `metrics`, which this chart does not render. New golden `arc-runners`.
 
 ## v0.82.3
