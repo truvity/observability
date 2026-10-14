@@ -55,7 +55,7 @@ func reserved(key string) bool {
 }
 
 // cut shortens s to at most n bytes on a rune boundary, and reports whether
-// it did. The result is valid UTF-8 (protobuf strings must be).
+// it did. The result is valid UTF8 (protobuf strings must be).
 func cut(s string, n int) (string, bool) {
 	short := len(s) > n
 	if short {

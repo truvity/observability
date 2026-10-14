@@ -118,7 +118,7 @@ logs text (a JSON line printed to stdout) or uses Lambda's JSON log format:
 | Key | Becomes |
 |---|---|
 | `trace_id` (32 hex) and `span_id` (16 hex) | the record's trace id and span id. Not all zero, else ignored. `trace_flags` (2 hex), when present, is the record's flags. |
-| `level`, else `severity`, `Level` | the severity: `trace`/`debug`, `info`, `warn`/`warning`, `error`, `fatal`/`critical`/`panic` in any case; slog's offset forms (`ERROR+2`, `DEBUG-4`) by the word before the offset; pino's numbers 10 and 20 (debug), 30, 40, 50, 60. Anything else stays an attribute and the severity is INFO. |
+| `level`, else `severity`, `Level` | the severity: `trace`/`debug`, `info`, `warn`/`warning`, `error`, `fatal`/`critical`/`panic` in any case; slog's offset forms (`ERROR+2`, a minus offset on DEBUG) by the word before the offset; pino's numbers 10 and 20 (debug), 30, 40, 50, 60. Anything else stays an attribute and the severity is INFO. |
 | `msg`, else `message`, `Message` | the body (a value that is not a string leaves the whole line as the body) |
 | `time`, else `timestamp`, `ts` (RFC 3339) | the record's timestamp, when it is after 1970 and between 7 days before and 5 minutes after the moment the extension received the line. Otherwise the event's time stays and the text is the attribute `log.time`. |
 | `requestId` | the attribute `log.attr.requestId`. The `requestId` and `faas.invocation_id` of a function record come from the invocation in flight (`platform.start`), never from the line, and only when the line names no request or that one. |
@@ -126,7 +126,7 @@ logs text (a JSON line printed to stdout) or uses Lambda's JSON log format:
 
 A key in a namespace the extension owns (`event.name`, `service.`, `cloud.`, `faas.`, `k8s.`, `host.`, `telemetry.`, `otel.`, `log.`) is kept as `log.attr.<key>`, so a line cannot impersonate the platform or the function's resource.
 
-**Size limits.** A line longer than 64 KiB is not parsed: its first 64 KiB is the body and the record has `log.truncated=true`, as has any text line cut to that size. Invalid UTF-8 is replaced by U+FFFD (a protobuf string must be valid UTF-8, or the whole export would be refused). The export queue is bounded by records and by bytes (`OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_BYTES`, 4 MiB by default, an estimate of the records' size): beyond either, the oldest are dropped and the next export starts with the WARN record that counts them.
+**Size limits.** A line longer than 64 KiB is not parsed: its first 64 KiB is the body and the record has `log.truncated=true`, as has any text line cut to that size. Invalid UTF8 is replaced by U+FFFD (a protobuf string must be valid UTF8, or the whole export would be refused). The export queue is bounded by records and by bytes (`OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_BYTES`, 4 MiB by default, an estimate of the records' size): beyond either, the oldest are dropped and the next export starts with the WARN record that counts them.
 
 With no `msg`/`message` the whole line is the body. A line that is not a JSON object is forwarded as its text. **X-Ray is the fallback for the trace
 context:** a function log line with no valid `trace_id` takes the X-Ray trace of
