@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.92.0
 
 - **Changed** `pkg/statusbox/ec2`: `NewEC2` builds the group, launch template, warm pool, lifecycle hook, role, instance profile, policy attachment, security group and S3 objects through `pkg/appliance` of `github.com/truvity/aws-structure` (v0.24.0) instead of by hand. **No change to what is deployed:** the user-data goes through `bootstrap.Verbatim` byte for byte, the role policy is this module's own document (`IAM.Policy`), and every logical name, type, parent, dependency and input is the one it was, so a preview shows no resource change. New goldens `pkg/statusbox/ec2/testdata/resourceset-*.golden.json` (four boxes that between them turn on every option; recorded from the hand-built module before the change) fail if any resource moves. The Go API is source-compatible: `Box` now embeds `*appliance.Appliance`, so `Group`, `LaunchTemplate`, `Role`, `InstanceProfile` and `SecurityGroup` are still fields of it and it is still the component resource; `ConfigObjects` and `UserData` stay. One refusal moved earlier: a `PermissionsBoundary` that is not a policy ARN is now refused by the library (IAM refused it at apply time anyway). `go.mod` gains `aws-structure` and, through it, a patch bump of `aws-sdk-go-v2` and `smithy-go`.
 
