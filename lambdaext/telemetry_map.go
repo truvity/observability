@@ -83,7 +83,10 @@ func Resource(getenv func(string) string) []Attr {
 // an unparsable record); the caller drops those.
 func MapEvent(ev TelemetryEvent, now time.Time) (rec *LogRecord, ok bool) {
 	ts := now
-	if t, err := time.Parse(time.RFC3339Nano, ev.Time); err == nil {
+	// The platform's time is believed when it is after 1970 and not later than
+	// the observed time plus maxLineAhead; else the observed time stands. A
+	// time far outside would wrap in the nanosecond conversion.
+	if t, err := time.Parse(time.RFC3339Nano, ev.Time); err == nil && t.Unix() > 0 && !t.After(now.Add(maxLineAhead)) {
 		ts = t
 	}
 	rec = &LogRecord{
