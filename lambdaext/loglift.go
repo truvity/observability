@@ -248,7 +248,7 @@ func hexField(v any, n int, nonZero bool) ([]byte, bool) {
 }
 
 // severityOf maps a level word to a severity. slog's offset forms (ERROR+2,
-// DEBUG-4) are recognised by the word before the offset.
+// DEBUG minus 4) are recognised by the word before the offset.
 func severityOf(level string) (int32, bool) {
 	word := strings.ToUpper(strings.TrimSpace(level))
 	if i := strings.IndexAny(word, "+-"); i > 0 {
