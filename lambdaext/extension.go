@@ -241,7 +241,7 @@ func startTelemetry(ctx context.Context, client *Client, opt Options, cfg Config
 	}
 	tele := &Telemetry{
 		Upstream: cfg.Endpoint, Tokens: tokens, Resource: Resource(opt.Getenv),
-		Logf: opt.Logf, QueueItems: tc.QueueItems,
+		Logf: opt.Logf, QueueItems: tc.QueueItems, QueueBytes: tc.QueueBytes,
 	}
 	ln, err := net.Listen("tcp", tc.bindAddr())
 	if err != nil {

@@ -118,18 +118,23 @@ logs text (a JSON line printed to stdout) or uses Lambda's JSON log format:
 | Key | Becomes |
 |---|---|
 | `trace_id` (32 hex) and `span_id` (16 hex) | the record's trace id and span id. Not all zero, else ignored. `trace_flags` (2 hex), when present, is the record's flags. |
-| `level` | the severity (`trace`/`debug`, `info`, `warn`/`warning`, `error`, `fatal`/`critical`/`panic`, any case). A value that is not one of these stays an attribute. |
-| `msg`, else `message` | the body |
-| `time`, else `timestamp` (RFC 3339) | the record's timestamp (else the event's time) |
-| `requestId` | `requestId` and `faas.invocation_id` |
-| any other key | an attribute: strings, integers and floats as such, booleans as `"true"`/`"false"`, objects and arrays as JSON text, `null` dropped; at most 64 per line |
+| `level`, else `severity`, `Level` | the severity: `trace`/`debug`, `info`, `warn`/`warning`, `error`, `fatal`/`critical`/`panic` in any case; slog's offset forms (`ERROR+2`, `DEBUG-4`) by the word before the offset; pino's numbers 10 and 20 (debug), 30, 40, 50, 60. Anything else stays an attribute and the severity is INFO. |
+| `msg`, else `message`, `Message` | the body (a value that is not a string leaves the whole line as the body) |
+| `time`, else `timestamp`, `ts` (RFC 3339) | the record's timestamp, when it is after 1970 and between 7 days before and 5 minutes after the moment the extension received the line. Otherwise the event's time stays and the text is the attribute `log.time`. |
+| `requestId` | the attribute `log.attr.requestId`. The `requestId` and `faas.invocation_id` of a function record come from the invocation in flight (`platform.start`), never from the line, and only when the line names no request or that one. |
+| any other key | an attribute, **in line order**: strings, integers and floats as such (a number beyond float64 as its digits), booleans as `"true"`/`"false"`, objects and arrays as JSON text, `null` dropped. At most 64 per line; when the cap bites `log.attrs_truncated=true`. A key is cut at 128 bytes, a value at 4 KiB (a cut value ends in `...[truncated]`). A repeated key keeps its last value. |
 
-With no `msg`/`message` the whole line is the body. A line that is not a JSON
-object is forwarded as its text. **X-Ray is the fallback for the trace
+A key in a namespace the extension owns (`event.name`, `service.`, `cloud.`, `faas.`, `k8s.`, `host.`, `telemetry.`, `otel.`, `log.`) is kept as `log.attr.<key>`, so a line cannot impersonate the platform or the function's resource.
+
+**Size limits.** A line longer than 64 KiB is not parsed: its first 64 KiB is the body and the record has `log.truncated=true`, as has any text line cut to that size. Invalid UTF-8 is replaced by U+FFFD (a protobuf string must be valid UTF-8, or the whole export would be refused). The export queue is bounded by records and by bytes (`OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_BYTES`, 4 MiB by default, an estimate of the records' size): beyond either, the oldest are dropped and the next export starts with the WARN record that counts them.
+
+With no `msg`/`message` the whole line is the body. A line that is not a JSON object is forwarded as its text. **X-Ray is the fallback for the trace
 context:** a function log line with no valid `trace_id` takes the X-Ray trace of
 the invocation the platform last announced (`platform.start`), unless the line
 names a different `requestId`; after `platform.runtimeDone` a line takes none.
 A `trace_id` in the line always wins.
+
+**What a line is trusted for.** The function writes its own log lines, so the extension takes `trace_id`, `span_id`, the severity and (inside the window above) the timestamp as the line says: a function can link its logs to an unrelated trace, or label an error as INFO. That is the same authority the function already has over its own SDK's telemetry. Nothing a line says can set the resource, `event.name` or the invocation id.
 
 The queue is bounded in memory (`OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_ITEMS`,
 5000 records, a few MB at most). If exports cannot keep up, the **oldest**
@@ -175,7 +180,7 @@ names works unchanged: `SLUIS_*` (the same name with that prefix, except
 `ACCESS_ROSTER_*`. The newest name wins; a blank value falls through to the next.
 For each old name it uses, the extension logs one deprecation line at start
 that names the variable and never its value. Set the `OTLP_LAMBDA_*` names and
-drop the old ones. A layer version older than the generic names reads only the
+drop the old ones. Prefer them in a deploy, too, because the `SLUIS_*` fallback is shared with the sluis function's own environment: a `SLUIS_LISTEN` or `SLUIS_*_LOGS` that sluis itself later reads would also reconfigure the extension in that function. A layer version older than the generic names reads only the
 old ones, so set both while a function may still run one.
 
 | Variable | Default | Meaning |
@@ -195,6 +200,7 @@ old ones, so set both while a function may still run one.
 | `OTLP_LAMBDA_TELEMETRY_BUFFER_MAX_BYTES` | `262144` | The platform's batch size in bytes (262144 to 1048576). |
 | `OTLP_LAMBDA_TELEMETRY_BUFFER_TIMEOUT_MS` | `1000` | The platform's longest wait before delivering a batch (25 to 30000). |
 | `OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_ITEMS` | `5000` | Records held in the extension waiting for an export (100 to 1000000); beyond it the oldest are dropped and counted. |
+| `OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_BYTES` | `4194304` | The same queue bounded by the records' estimated size (262144 to 1073741824); beyond it the oldest are dropped and counted. |
 | `OTLP_LAMBDA_TOKEN_FILE` | unset | If set, each access token is also written here (mode 0600, replaced atomically; the directory is created 0700). For a function that runs its own collector with a bearer-token-from-file extension. Off by default. Use a path under `/tmp`. |
 
 STS needs a **regional** endpoint (the global one does not support the

@@ -25,6 +25,7 @@ const (
 	EnvBufferMaxBytes   = "OTLP_LAMBDA_TELEMETRY_BUFFER_MAX_BYTES"
 	EnvBufferTimeoutMs  = "OTLP_LAMBDA_TELEMETRY_BUFFER_TIMEOUT_MS"
 	EnvBufferQueueItems = "OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_ITEMS"
+	EnvBufferQueueBytes = "OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_BYTES"
 
 	telemetryAPIPath    = "/2022-07-01/telemetry"
 	telemetrySchema     = "2022-12-13"
@@ -34,6 +35,8 @@ const (
 	maxTelemetryBody = 4 << 20
 	// exportBatch is the most records one OTLP export carries.
 	exportBatch = 500
+	// defaultQueueBytes is the default byte budget of the export queue.
+	defaultQueueBytes = 4 << 20
 )
 
 // TelemetryConfig is the Telemetry API part of the settings.
@@ -49,6 +52,9 @@ type TelemetryConfig struct {
 	// QueueItems bounds the records held here waiting for an export; beyond
 	// it the oldest are dropped and counted.
 	QueueItems int
+	// QueueBytes bounds the same queue by the (estimated) size of its records,
+	// the bound that holds when the lines are long.
+	QueueBytes int
 	// Deprecated is the old (SLUIS_, ACCESS_ROSTER_) names that were read because their
 	// OTLP_LAMBDA_ name was not set. Names only, never values.
 	Deprecated []string
@@ -88,7 +94,7 @@ func (c TelemetryConfig) types() []string {
 func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 	c := TelemetryConfig{
 		Platform: true, Function: true, Listen: defaultTelemetryAdr,
-		MaxItems: 1000, MaxBytes: 262144, TimeoutMs: 1000, QueueItems: 5000,
+		MaxItems: 1000, MaxBytes: 262144, TimeoutMs: 1000, QueueItems: 5000, QueueBytes: defaultQueueBytes,
 	}
 	var problems []error
 	env := newEnvReader(getenv)
@@ -122,6 +128,7 @@ func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 	number(EnvBufferMaxBytes, &c.MaxBytes, 262144, 1048576)
 	number(EnvBufferTimeoutMs, &c.TimeoutMs, 25, 30000)
 	number(EnvBufferQueueItems, &c.QueueItems, 100, 1000000)
+	number(EnvBufferQueueBytes, &c.QueueBytes, 262144, 1<<30)
 	c.Deprecated = env.deprecated()
 	return c, errors.Join(problems...)
 }
@@ -165,12 +172,15 @@ type Telemetry struct {
 	Now func() time.Time
 	// QueueItems bounds the queue; zero is 5000.
 	QueueItems int
+	// QueueBytes bounds it by estimated record size; zero is 4 MiB.
+	QueueBytes int
 	// TokenTimeout bounds waiting for a token; zero is 5 seconds.
 	TokenTimeout time.Duration
 
 	mu      sync.Mutex
 	inv     invocationTrace
 	queue   []*LogRecord
+	bytes   int
 	dropped int
 	failing bool
 	sem     chan struct{}
@@ -197,16 +207,42 @@ func (t *Telemetry) init() {
 	}
 }
 
-// Enqueue adds records, dropping the oldest beyond QueueItems.
+// recordSize estimates what a record holds in memory, for the byte budget.
+func recordSize(r *LogRecord) int {
+	n := 96 + len(r.Body) + len(r.TraceID) + len(r.SpanID)
+	for _, a := range r.Attrs {
+		n += 32 + len(a.Key) + len(a.Str)
+	}
+	return n
+}
+
+// Enqueue adds records, dropping the oldest beyond QueueItems records or
+// QueueBytes bytes. Every drop is counted and reported by the next export.
 func (t *Telemetry) Enqueue(recs []*LogRecord) {
 	limit := t.QueueItems
 	if limit <= 0 {
 		limit = 5000
 	}
+	budget := t.QueueBytes
+	if budget <= 0 {
+		budget = defaultQueueBytes
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.queue = append(t.queue, recs...)
-	if over := len(t.queue) - limit; over > 0 {
+	for _, r := range recs {
+		t.bytes += recordSize(r)
+	}
+	over := max(len(t.queue)-limit, 0)
+	freed := 0
+	for i := 0; i < len(t.queue) && (i < over || t.bytes-freed > budget); i++ {
+		freed += recordSize(t.queue[i])
+		over = max(over, i+1)
+	}
+	if over > 0 {
+		for _, r := range t.queue[:over] {
+			t.bytes -= recordSize(r)
+		}
 		t.dropped += over
 		t.queue = append([]*LogRecord(nil), t.queue[over:]...)
 	}
@@ -298,6 +334,9 @@ func (t *Telemetry) take() ([]*LogRecord, int) {
 	n := min(len(t.queue), exportBatch)
 	batch := append([]*LogRecord(nil), t.queue[:n]...)
 	t.queue = t.queue[n:]
+	for _, r := range batch {
+		t.bytes -= recordSize(r)
+	}
 	dropped := t.dropped
 	t.dropped = 0
 	return batch, dropped

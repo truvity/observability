@@ -247,28 +247,41 @@ func traceContext(p *platformRecord) (traceID, spanID []byte, flags uint32) {
 
 // mapPlain maps a function or extension log line. The record is a string, or
 // an object for a function configured to log JSON. A line that is a JSON
-// object, whichever way it arrived, is lifted (see liftJSON); any other line
-// is the body as text.
+// object, whichever way it arrived, is lifted (see liftJSON); any other line,
+// and any line over maxLineBytes, is the body as text, cut to that size.
 func mapPlain(rec *LogRecord, raw json.RawMessage) {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		s = strings.TrimRight(s, "\n")
-		if obj, ok := decodeObject([]byte(strings.TrimSpace(s))); ok {
+		if obj, ok := decodeObject([]byte(s)); ok {
 			liftJSON(rec, obj)
 			if rec.Body == "" {
-				rec.Body = s
+				setText(rec, s)
 			}
 			return
 		}
-		rec.Body = s
+		setText(rec, s)
 		return
 	}
 	if obj, ok := decodeObject(raw); ok {
 		liftJSON(rec, obj)
 		if rec.Body == "" {
-			rec.Body = string(raw)
+			setText(rec, string(raw))
 		}
 		return
 	}
-	rec.Body = string(raw)
+	if len(raw) > maxLineBytes {
+		raw = raw[:maxLineBytes]
+		rec.Attrs = append(rec.Attrs, strAttr("log.truncated", "true"))
+	}
+	setText(rec, string(raw))
+}
+
+// setText makes s the body, cut to maxLineBytes and marked when it was.
+func setText(rec *LogRecord, s string) {
+	body, short := cut(s, maxLineBytes)
+	rec.Body = body
+	if short {
+		rec.Attrs = append(rec.Attrs, strAttr("log.truncated", "true"))
+	}
 }
