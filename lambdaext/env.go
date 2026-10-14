@@ -17,7 +17,7 @@ const (
 
 // legacySuffix maps a setting's suffix to its suffix under the earlier
 // prefixes, for the one setting whose name changed beyond the prefix.
-var legacySuffix = map[string]string{"ENDPOINT": "OTLP_ENDPOINT"}
+var legacySuffix = []struct{ now, was string }{{"ENDPOINT", "OTLP_ENDPOINT"}}
 
 // envReader reads the extension's settings by their OTLP_LAMBDA_ names and
 // falls back, in order, to the SLUIS_ and the ACCESS_ROSTER_ spellings. The
@@ -33,8 +33,11 @@ func newEnvReader(getenv func(string) string) *envReader { return &envReader{get
 // first.
 func oldNames(name string) []string {
 	suffix := strings.TrimPrefix(name, envPrefix)
-	if s, ok := legacySuffix[suffix]; ok {
-		suffix = s
+	for _, m := range legacySuffix {
+		if m.now == suffix {
+			suffix = m.was
+			break
+		}
 	}
 	return []string{sluisEnvPrefix + suffix, legacyEnvPrefix + suffix}
 }
@@ -42,9 +45,10 @@ func oldNames(name string) []string {
 // currentName is the OTLP_LAMBDA_ name an old spelling was replaced by.
 func currentName(old string) string {
 	suffix := strings.TrimPrefix(strings.TrimPrefix(old, sluisEnvPrefix), legacyEnvPrefix)
-	for now, was := range legacySuffix {
-		if was == suffix {
-			suffix = now
+	for _, m := range legacySuffix {
+		if m.was == suffix {
+			suffix = m.now
+			break
 		}
 	}
 	return envPrefix + suffix
