@@ -10,18 +10,6 @@ const (
 	iamVersion = "2012-10-17"
 )
 
-// assumeRolePolicy lets EC2 assume the instance role.
-func assumeRolePolicy() string {
-	return mustJSON(map[string]any{
-		"Version": iamVersion,
-		"Statement": []map[string]any{{
-			"Effect":    "Allow",
-			"Principal": map[string]any{"Service": "ec2.amazonaws.com"},
-			"Action":    "sts:AssumeRole",
-		}},
-	})
-}
-
 // instancePolicy is the whole of what the instance may do, scoped to exactly
 // the parameters it reads, the replica prefix of the bucket, the one Auto
 // Scaling group it belongs to and, if one is given, the one KMS key. There is

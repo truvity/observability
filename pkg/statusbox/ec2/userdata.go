@@ -2,7 +2,6 @@ package ec2
 
 import (
 	_ "embed"
-	"encoding/base64"
 	"fmt"
 	"sort"
 	"strings"
@@ -203,6 +202,3 @@ func sortedKeys(m map[string]string) []string {
 
 	return keys
 }
-
-// base64Of is the base64 text a launch template's UserData takes.
-func base64Of(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }

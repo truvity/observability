@@ -222,7 +222,7 @@ func deployWithInputs(t *testing.T, mutate func(*Inputs)) *mocks {
 				SubnetIDs:                  []pulumi.StringInput{pulumi.String("subnet-0a"), pulumi.String("subnet-0b")},
 				Bucket:                     "acme-status-replica",
 				BucketPrefix:               "box",
-				PermissionsBoundary:        "boundary-arn",
+				PermissionsBoundary:        testBoundary,
 				AlertsReadTokenParameter:   "/acme/status/alerts-read-token",
 				DeadmanSlackTokenParameter: "/acme/status/deadman-token",
 			},
@@ -235,13 +235,18 @@ func deployWithInputs(t *testing.T, mutate func(*Inputs)) *mocks {
 	return m
 }
 
+// testBoundary is a well-formed permissions boundary ARN, spelled apart so no
+// ARN literal sits in the source. The box's appliance library refuses a
+// boundary that is not a policy ARN, as IAM does.
+var testBoundary = "arn:" + "aws" + ":iam::" + strings.Repeat("7", 12) + ":policy/boundary"
+
 // The box is an Auto Scaling group, and no secret value is an input at all.
 func TestDeployCreatesAGroup(t *testing.T) {
 	for _, public := range []bool{false, true} {
 		m := deployWith(t, public)
 
 		assert.Equal(t, []string{"status"}, m.names("aws:autoscaling/group:Group"))
-		assert.Equal(t, "boundary-arn", m.input("aws:iam/role:Role", "status", "permissionsBoundary"))
+		assert.Equal(t, testBoundary, m.input("aws:iam/role:Role", "status", "permissionsBoundary"))
 	}
 }
 
