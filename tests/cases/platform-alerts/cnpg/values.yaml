@@ -1,0 +1,12 @@
+# The cnpg group alone, at its own defaults (15m, warning; deadman 30m).
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  cnpg:
+    enabled: true

@@ -378,6 +378,33 @@ groups:
     # `pendingPods.keepClusterLabel`).
     keepClusterLabel: false
 
+  # CloudNativePG Clusters that are not Ready.
+  #
+  # The incident class: after an automatic failover a Cluster object can sit
+  # at Ready=False with phase "Switchover in progress" for hours while every
+  # instance is up and serving, so nothing the per-instance exporter
+  # (`cnpg_collector_*`) reports changes and nothing alerts. This reads the
+  # Cluster object's own Ready condition instead. Every Cluster in every
+  # namespace, no namespace filter.
+  #
+  # Off by default. Reads
+  #   cnpg_cluster_status_condition{namespace, cluster, phase, type, reason}
+  # from kube-state-metrics' `customResourceState`, produced by
+  # charts/observability-emitters' `kubeStateMetrics.customResources.cnpg`.
+  cnpg:
+    enabled: false
+    # -- How long a Cluster's Ready condition must stay not-True before
+    # firing. A normal failover or rolling update is well inside it.
+    for: 15m
+    severity: warning
+    # -- How long the series can be absent before `CNPGMetricsAbsent` fires.
+    # Longer than `for`.
+    absentFor: 30m
+    absentSeverity: warning
+    # -- Keep the series' own `clusterLabel` on the alert (see
+    # `pendingPods.keepClusterLabel`).
+    keepClusterLabel: false
+
   # Node memory pressure (PSI).
   #
   # The incident class: a node whose pods' memory requests sit far below

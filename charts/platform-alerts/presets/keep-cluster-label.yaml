@@ -16,6 +16,8 @@ groups:
     keepClusterLabel: true
   nodeClaims:
     keepClusterLabel: true
+  cnpg:
+    keepClusterLabel: true
   eso:
     keepClusterLabel: true
   ack:
