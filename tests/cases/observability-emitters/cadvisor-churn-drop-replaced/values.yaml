@@ -27,7 +27,7 @@ metrics:
   scrape:
     cadvisorDrop:
       metricNames:
-        - container_spec_memory_reservation_limit_bytes
+        - container_network_tcp_usage_total
       keepBucketMetrics:
         - my_own_component_latency_seconds_bucket
 

@@ -300,7 +300,7 @@ func TestCadvisorChurnDropExtended(t *testing.T) {
 		// than replaced it.
 		"container_tasks_state",
 		// The consumer's own addition.
-		"container_spec_memory_reservation_limit_bytes",
+		"container_network_tcp_usage_total",
 	} {
 		_, keep := applyCadvisorRelabel(cfgs, base(dropped))
 		assert.Falsef(t, keep, "%s: should be dropped", dropped)
@@ -329,12 +329,15 @@ func TestCadvisorChurnDropReplaced(t *testing.T) {
 	}
 
 	// None of the shipped defaults survive the replacement.
-	for _, name := range []string{"container_tasks_state", "container_memory_failures_total", "container_blkio_device_usage_total"} {
+	for _, name := range []string{"container_tasks_state", "container_blkio_device_usage_total"} {
 		_, keep := applyCadvisorRelabel(cfgs, base(name))
 		assert.Truef(t, keep, "%s: the default list was replaced, so this name is no longer dropped", name)
 	}
+	// `metricPatterns` is its own key: replacing the names leaves the families.
+	_, patKeep := applyCadvisorRelabel(cfgs, base("container_memory_failures_total"))
+	assert.False(t, patKeep, "container_memory_failures_total is still dropped, now by the container_memory_.* family")
 	// The consumer's own replacement name is.
-	_, keep := applyCadvisorRelabel(cfgs, base("container_spec_memory_reservation_limit_bytes"))
+	_, keep := applyCadvisorRelabel(cfgs, base("container_network_tcp_usage_total"))
 	assert.False(t, keep, "the consumer's own replacement metricNames entry should be dropped")
 
 	// The shipped bucket exception no longer applies…

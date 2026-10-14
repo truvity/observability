@@ -157,11 +157,11 @@ func TestCadvisorEphemeralNamespaceAllowlist(t *testing.T) {
 	}
 	// Other namespaces, including names that merely contain the pattern, are untouched.
 	for _, ns := range []string{"team-a", "kube-system", "my-ci-tools", "arc-systems", "xci-1"} {
-		_, keep := applyCadvisorRelabel(cfgs, series("container_fs_reads_total", ns))
+		_, keep := applyCadvisorRelabel(cfgs, series("container_fs_usage_bytes", ns))
 		assert.Truef(t, keep, "%s is not an ephemeral namespace: nothing dropped", ns)
 	}
 	// Node-level series carry no namespace and are untouched.
-	_, keep := applyCadvisorRelabel(cfgs, map[string]string{"__name__": "container_fs_reads_total", "id": "/"})
+	_, keep := applyCadvisorRelabel(cfgs, map[string]string{"__name__": "container_fs_usage_bytes", "id": "/"})
 	assert.True(t, keep)
 }
 
@@ -276,7 +276,7 @@ func TestCINodePoolFurtherDrops(t *testing.T) {
 	}
 	cad := scrapeJobMetricRelabelConfigs(t, g, "cadvisor")
 	for _, name := range []string{
-		"container_fs_reads_total", "container_fs_usage_bytes",
+		"container_fs_inodes_total", "container_fs_usage_bytes",
 		"container_network_receive_packets_total", "container_network_transmit_errors_total",
 	} {
 		_, keep := run(cad, "buildkit", name)
@@ -294,7 +294,7 @@ func TestCINodePoolFurtherDrops(t *testing.T) {
 	}
 	// Without ciNodePools the cadvisor job carries no such rule.
 	plain := scrapeJobMetricRelabelConfigs(t, "golden/observability-emitters/minimal.yaml", "cadvisor")
-	_, keep := run(plain, "ci-runners", "container_fs_reads_total")
+	_, keep := run(plain, "ci-runners", "container_fs_usage_bytes")
 	assert.True(t, keep)
 }
 

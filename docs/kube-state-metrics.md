@@ -110,6 +110,13 @@ cardinality trap `metrics.scrape.nodeLabels` documents elsewhere in this
 chart for the kubelet and cAdvisor scrapes — measured there as a store
 silently IGNORING every series past its own per-series label limit.
 
+One named label is worth asking for when a pool of short-lived nodes is
+collapsed (`metrics.scrape.collapse`, docs/reference.md): the node's pool, so a
+query can join per-node series to it. It is off by default; set
+`kube-state-metrics.metricLabelsAllowlist: ["nodes=[karpenter.sh/nodepool]"]`
+and `kube_node_labels` gains `label_karpenter_sh_nodepool` (one series per
+node).
+
 ## Reviewed for churn (0.9.1), unchanged
 
 `charts/observability-emitters`' 0.9.1 added a default series drop to

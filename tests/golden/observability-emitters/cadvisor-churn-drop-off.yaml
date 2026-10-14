@@ -615,6 +615,13 @@ spec:
       app.kubernetes.io/name: victoria-logs-collector
   podMetricsEndpoints:
     - port: http
+      metricRelabelings: 
+        - action: drop
+          regex: flag;false
+          separator: ;
+          sourceLabels:
+          - __name__
+          - is_set
 
 ---
 # Source: observability-emitters/templates/gateway.yaml
@@ -676,6 +683,20 @@ spec:
     regex: ^(kube_pod_tolerations)$
     sourceLabels:
     - __name__
+  - action: replace
+    regex: ^(kube_replicaset_owner)$
+    replacement: "yes"
+    sourceLabels:
+    - __name__
+    targetLabel: __ksm_keep_pattern__
+  - action: drop
+    regex: ^(?:kube_replicaset_.*);$
+    separator: ;
+    sourceLabels:
+    - __name__
+    - __ksm_keep_pattern__
+  - action: labeldrop
+    regex: __ksm_keep_pattern__
   - action: replace
     regex: ^(kube_pod_status_unschedulable|kube_pod_container_status_last_terminated_reason|kube_pod_container_status_restarts_total)$
     replacement: "yes"

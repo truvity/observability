@@ -348,6 +348,55 @@
                 "type": "string"
               }
             },
+            "collapse": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Opt-in collapse of the identity of short-lived pods and nodes by stream aggregation; see values.yaml.",
+              "properties": {
+                "namespaces": {
+                  "type": "array",
+                  "description": "Regexes (the chart anchors them) over the namespaces whose pods are short-lived.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "nodeSelectorLabel": {
+                  "type": "string",
+                  "description": "The node label key that names the pool, for example karpenter.sh/nodepool."
+                },
+                "nodeValues": {
+                  "type": "array",
+                  "description": "The pools whose nodes are short-lived.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "interval": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(s|m|h)$"
+                },
+                "podDropLabels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "nodeDropLabels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "maxNamePattern": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
             "kubeletDrop": {
               "type": "object",
               "additionalProperties": false,
@@ -451,6 +500,36 @@
                     "minLength": 1
                   }
                 },
+                "metricPatterns": {
+                  "type": "array",
+                  "description": "Regex alternatives matched against the whole metric name (the chart anchors them); dropped outright.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraMetricPatterns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "patternKeepMetrics": {
+                  "type": "array",
+                  "description": "Exact names metricPatterns must not drop.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraPatternKeepMetrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
                 "ephemeralJobs": {
                   "type": "object",
                   "additionalProperties": false,
@@ -491,6 +570,36 @@
                   }
                 },
                 "extraMetricNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "metricPatterns": {
+                  "type": "array",
+                  "description": "Regex alternatives matched against the whole metric name (the chart anchors them); dropped outright.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraMetricPatterns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "patternKeepMetrics": {
+                  "type": "array",
+                  "description": "Exact names metricPatterns must not drop.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "extraPatternKeepMetrics": {
                   "type": "array",
                   "items": {
                     "type": "string",
