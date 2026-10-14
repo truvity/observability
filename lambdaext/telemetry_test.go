@@ -142,7 +142,7 @@ func TestMapEvent(t *testing.T) {
 		{"function string", fxFunction, lambdaext.SeverityInfo,
 			"hello from the function", map[string]any{"event.name": "function"}},
 		{"function json", fxFunctionJSON, lambdaext.SeverityError,
-			"boom", map[string]any{"requestId": "r9"}},
+			"boom", map[string]any{"log.attr.requestId": "r9"}},
 		{"extension", fxExtension, lambdaext.SeverityInfo,
 			"an extension line", map[string]any{"event.name": "extension"}},
 	}
