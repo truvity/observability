@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -128,7 +129,7 @@ func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 	number(EnvBufferMaxBytes, &c.MaxBytes, 262144, 1048576)
 	number(EnvBufferTimeoutMs, &c.TimeoutMs, 25, 30000)
 	number(EnvBufferQueueItems, &c.QueueItems, 100, 1000000)
-	number(EnvBufferQueueBytes, &c.QueueBytes, 262144, 1<<30)
+	number(EnvBufferQueueBytes, &c.QueueBytes, 1<<20, 1<<30)
 	c.Deprecated = env.deprecated()
 	return c, errors.Join(problems...)
 }
@@ -371,13 +372,13 @@ func (t *Telemetry) send(ctx context.Context, recs []*LogRecord) error {
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.Upstream+"/v1/logs", bytes.NewReader(payload))
 		if err != nil {
-			return err
+			return redactErr(err)
 		}
 		req.Header.Set("Content-Type", "application/x-protobuf")
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := client.Do(req)
 		if err != nil {
-			return err
+			return redactErr(err)
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 		_ = resp.Body.Close()
@@ -391,4 +392,20 @@ func (t *Telemetry) send(ctx context.Context, recs []*LogRecord) error {
 		}
 	}
 	return errors.New("upstream refused the token")
+}
+
+// redactErr keeps a *url.Error from printing the upstream URL: Go hides only
+// the password, and the user name and the query could still reach the log
+// (which is itself forwarded as a function log). It prints the operation,
+// scheme://host and the cause.
+func redactErr(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	where := "upstream"
+	if u, perr := url.Parse(ue.URL); perr == nil && u.Host != "" {
+		where = u.Scheme + "://" + u.Host
+	}
+	return fmt.Errorf("%s %s: %w", ue.Op, where, ue.Err)
 }

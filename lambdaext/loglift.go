@@ -62,7 +62,9 @@ func cut(s string, n int) (string, bool) {
 		for n > 0 && !utf8.RuneStart(s[n]) {
 			n--
 		}
-		s = s[:n]
+		// Clone: the cut must not keep the whole line's backing array alive
+		// (the line can be megabytes, the queue budgets only the cut).
+		s = strings.Clone(s[:n])
 	}
 	return strings.ToValidUTF8(s, "\uFFFD"), short
 }

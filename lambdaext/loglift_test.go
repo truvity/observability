@@ -474,3 +474,48 @@ func TestQueueBytesSetting(t *testing.T) {
 		t.Fatalf("a budget below the batch size must be refused: %v", err)
 	}
 }
+
+func TestFunctionLogExactly64KiB(t *testing.T) {
+	const limit = 64 << 10
+	pad := func(prefix, suffix string, total int) string {
+		return prefix + strings.Repeat("a", total-len(prefix)-len(suffix)) + suffix
+	}
+	atLimit := pad(`{"msg":"`, `"}`, limit)
+	if rec := mapOne(t, fnLine(t, atLimit)); attrs(rec)["log.truncated"] != nil || len(rec.Body) != limit-len(`{"msg":""}`) {
+		t.Errorf("a line of exactly 64 KiB is parsed: body %d, attrs %v", len(rec.Body), attrs(rec)["log.truncated"])
+	}
+	over := pad(`{"msg":"`, `"}`, limit+1)
+	if rec := mapOne(t, fnLine(t, over)); attrs(rec)["log.truncated"] != "true" || len(rec.Body) != limit {
+		t.Errorf("one byte over is cut: body %d", len(rec.Body))
+	}
+	text := strings.Repeat("t", limit)
+	if rec := mapOne(t, fnLine(t, text)); attrs(rec)["log.truncated"] != nil || len(rec.Body) != limit {
+		t.Errorf("a text line of exactly 64 KiB is whole: body %d", len(rec.Body))
+	}
+}
+
+func TestFunctionLogLiteralRenamedKeyDoesNotCollide(t *testing.T) {
+	rec := mapOne(t, fnLine(t, `{"msg":"m","log.attr.x":"literal","log.x":"renamed","x":"plain"}`))
+	seen := map[string]int{}
+	for _, a := range rec.Attrs {
+		seen[a.Key]++
+	}
+	got := attrs(rec)
+	if got["log.attr.log.attr.x"] != "literal" || got["log.attr.log.x"] != "renamed" || got["x"] != "plain" {
+		t.Errorf("attrs %v", got)
+	}
+	for k, n := range seen {
+		if n != 1 {
+			t.Errorf("%s appears %d times", k, n)
+		}
+	}
+}
+
+func TestMapEventPlatformTimeIsRangeChecked(t *testing.T) {
+	for _, stamp := range []string{"0001-01-01T00:00:00Z", "1960-01-01T00:00:00Z", "9999-12-31T23:59:59Z", fixedNow.Add(time.Hour).Format(time.RFC3339)} {
+		rec := mapOne(t, `{"time":"`+stamp+`","type":"platform.report","record":{"requestId":"r"}}`)
+		if rec.TimeUnixNano != uint64(fixedNow.UnixNano()) {
+			t.Errorf("%s: time %d, want the observed time", stamp, rec.TimeUnixNano)
+		}
+	}
+}

@@ -200,7 +200,7 @@ old ones, so set both while a function may still run one.
 | `OTLP_LAMBDA_TELEMETRY_BUFFER_MAX_BYTES` | `262144` | The platform's batch size in bytes (262144 to 1048576). |
 | `OTLP_LAMBDA_TELEMETRY_BUFFER_TIMEOUT_MS` | `1000` | The platform's longest wait before delivering a batch (25 to 30000). |
 | `OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_ITEMS` | `5000` | Records held in the extension waiting for an export (100 to 1000000); beyond it the oldest are dropped and counted. |
-| `OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_BYTES` | `4194304` | The same queue bounded by the records' estimated size (262144 to 1073741824); beyond it the oldest are dropped and counted. |
+| `OTLP_LAMBDA_TELEMETRY_BUFFER_QUEUE_BYTES` | `4194304` | The same queue bounded by the records' estimated size (1048576 to 1073741824, above the size of a few maximal records); beyond it the oldest are dropped and counted. |
 | `OTLP_LAMBDA_TOKEN_FILE` | unset | If set, each access token is also written here (mode 0600, replaced atomically; the directory is created 0700). For a function that runs its own collector with a bearer-token-from-file extension. Off by default. Use a path under `/tmp`. |
 
 STS needs a **regional** endpoint (the global one does not support the

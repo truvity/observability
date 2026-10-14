@@ -1,10 +1,14 @@
 package lambdaext
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func envMap(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
@@ -114,5 +118,41 @@ func TestCurrentNameIsTheInverseOfOldNames(t *testing.T) {
 				t.Errorf("currentName(%s) = %s, want %s", old, got, name)
 			}
 		}
+	}
+}
+
+func TestCutDoesNotPinTheWholeLine(t *testing.T) {
+	line := strings.Repeat("x", 4<<20)
+	body, short := cut(line, maxLineBytes)
+	if !short || len(body) != maxLineBytes {
+		t.Fatalf("cut: %d bytes, short %v", len(body), short)
+	}
+	if unsafe.StringData(body) == unsafe.StringData(line) {
+		t.Fatal("the cut body shares the original's backing array")
+	}
+	rec := &LogRecord{}
+	setText(rec, line)
+	if unsafe.StringData(rec.Body) == unsafe.StringData(line) {
+		t.Fatal("setText keeps the whole line alive")
+	}
+}
+
+func TestRedactErrKeepsNoUserOrQuery(t *testing.T) {
+	srv := httptest.NewServer(nil)
+	addr := srv.Listener.Addr().String()
+	srv.Close() // nothing listens: Do fails with a *url.Error
+	req, _ := http.NewRequest(http.MethodPost, "http://alice:pw@"+addr+"/v1/logs?token=s3cret", nil)
+	_, err := http.DefaultClient.Do(req)
+	if err == nil {
+		t.Fatal("expected a failure")
+	}
+	got := redactErr(err).Error()
+	for _, leak := range []string{"alice", "s3cret", "pw@", "token"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("%q leaks %q", got, leak)
+		}
+	}
+	if !strings.Contains(got, addr) || errors.Unwrap(redactErr(err)) == nil {
+		t.Errorf("%q lost the host or the cause", got)
 	}
 }
