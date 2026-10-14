@@ -1,0 +1,294 @@
+{
+  "boxUserData": "sha256:15d5616224ef3f3b8fadc88c313c0ac49e05be73e0406bc315acc79147878fe1",
+  "lookups": [
+    "aws:index/getCallerIdentity:getCallerIdentity {}",
+    "aws:index/getRegion:getRegion {}",
+    "aws:ssm/getParameter:getParameter {\"name\":\"/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64\"}"
+  ],
+  "resources": [
+    {
+      "dependencies": [
+        "statusbox:ec2:Box$aws:ec2/launchTemplate:LaunchTemplate::status",
+        "statusbox:ec2:Box$aws:s3/bucketObjectv2:BucketObjectv2::status-config-ops",
+        "statusbox:ec2:Box$aws:s3/bucketObjectv2:BucketObjectv2::status-setup-script"
+      ],
+      "inputs": {
+        "desiredCapacity": 1,
+        "healthCheckGracePeriod": 300,
+        "healthCheckType": "EC2",
+        "initialLifecycleHooks": [
+          {
+            "defaultResult": "ABANDON",
+            "heartbeatTimeout": 900,
+            "lifecycleTransition": "autoscaling:EC2_INSTANCE_LAUNCHING",
+            "name": "statusbox-status-launch"
+          }
+        ],
+        "instanceRefresh": {
+          "preferences": {
+            "instanceWarmup": "300",
+            "minHealthyPercentage": 0
+          },
+          "strategy": "Rolling",
+          "triggers": [
+            "launch_template"
+          ]
+        },
+        "launchTemplate": {
+          "id": "status_id",
+          "version": "3"
+        },
+        "maxSize": 1,
+        "minSize": 1,
+        "name": "statusbox-status",
+        "tags": [
+          {
+            "key": "Name",
+            "propagateAtLaunch": true,
+            "value": "statusbox-status"
+          },
+          {
+            "key": "ManagedBy",
+            "propagateAtLaunch": true,
+            "value": "pulumi"
+          }
+        ],
+        "vpcZoneIdentifiers": [
+          "subnet-0a",
+          "subnet-0b"
+        ],
+        "warmPool": {
+          "maxGroupPreparedCapacity": 2,
+          "minSize": 1,
+          "poolState": "Stopped"
+        }
+      },
+      "name": "status",
+      "parent": "statusbox:ec2:Box::status",
+      "timeouts": {
+        "create": "",
+        "delete": "",
+        "update": ""
+      },
+      "type": "aws:autoscaling/group:Group"
+    },
+    {
+      "dependencies": [
+        "statusbox:ec2:Box$aws:ec2/securityGroup:SecurityGroup::status",
+        "statusbox:ec2:Box$aws:iam/instanceProfile:InstanceProfile::status",
+        "statusbox:ec2:Box$aws:s3/bucketObjectv2:BucketObjectv2::status-config-ops",
+        "statusbox:ec2:Box$aws:s3/bucketObjectv2:BucketObjectv2::status-setup-script"
+      ],
+      "inputs": {
+        "blockDeviceMappings": [
+          {
+            "deviceName": "/dev/xvda",
+            "ebs": {
+              "deleteOnTermination": "true",
+              "encrypted": "true",
+              "volumeSize": 30,
+              "volumeType": "gp3"
+            }
+          }
+        ],
+        "iamInstanceProfile": {
+          "arn": ""
+        },
+        "imageId": "ami-0example",
+        "instanceType": "m6i.large",
+        "metadataOptions": {
+          "httpEndpoint": "enabled",
+          "httpPutResponseHopLimit": 1,
+          "httpTokens": "required"
+        },
+        "name": "statusbox-status",
+        "networkInterfaces": [
+          {
+            "associatePublicIpAddress": "true",
+            "deviceIndex": 0,
+            "securityGroups": [
+              "status_id"
+            ]
+          }
+        ],
+        "tagSpecifications": [
+          {
+            "resourceType": "instance",
+            "tags": {
+              "Estate": "acme",
+              "ManagedBy": "pulumi",
+              "Name": "statusbox-status"
+            }
+          },
+          {
+            "resourceType": "volume",
+            "tags": {
+              "Estate": "acme",
+              "ManagedBy": "pulumi",
+              "Name": "statusbox-status"
+            }
+          }
+        ],
+        "tags": {
+          "Estate": "acme",
+          "ManagedBy": "pulumi",
+          "Name": "statusbox-status"
+        },
+        "updateDefaultVersion": true,
+        "userData": "sha256:66a2c1a55776e8fb3257f5c48f7b3c3a35d6833754d90cca7977468acb7a60ab"
+      },
+      "name": "status",
+      "parent": "statusbox:ec2:Box::status",
+      "timeouts": {
+        "create": "",
+        "delete": "",
+        "update": ""
+      },
+      "type": "aws:ec2/launchTemplate:LaunchTemplate"
+    },
+    {
+      "inputs": {
+        "description": "statusbox: no inbound except the private page from the listed networks",
+        "egress": [
+          {
+            "cidrBlocks": [
+              "0.0.0.0/0"
+            ],
+            "fromPort": 0,
+            "protocol": "-1",
+            "toPort": 0
+          }
+        ],
+        "ingress": [
+          {
+            "cidrBlocks": [
+              "10.20.0.0/16"
+            ],
+            "description": "the private status page, from the peered network",
+            "fromPort": 8081,
+            "protocol": "tcp",
+            "toPort": 8081
+          }
+        ],
+        "namePrefix": "statusbox-status-",
+        "tags": {
+          "Estate": "acme",
+          "ManagedBy": "pulumi",
+          "Name": "statusbox-status"
+        },
+        "vpcId": "vpc-0example"
+      },
+      "name": "status",
+      "parent": "statusbox:ec2:Box::status",
+      "timeouts": {
+        "create": "",
+        "delete": "30m",
+        "update": ""
+      },
+      "type": "aws:ec2/securityGroup:SecurityGroup"
+    },
+    {
+      "dependencies": [
+        "statusbox:ec2:Box$aws:iam/role:Role::status"
+      ],
+      "inputs": {
+        "name": "statusbox-status",
+        "role": "statusbox-status",
+        "tags": {
+          "Estate": "acme",
+          "ManagedBy": "pulumi",
+          "Name": "statusbox-status"
+        }
+      },
+      "name": "status",
+      "parent": "statusbox:ec2:Box::status",
+      "timeouts": {
+        "create": "",
+        "delete": "",
+        "update": ""
+      },
+      "type": "aws:iam/instanceProfile:InstanceProfile"
+    },
+    {
+      "inputs": {
+        "assumeRolePolicy": "{\n  \"Statement\": [\n    {\n      \"Action\": \"sts:AssumeRole\",\n      \"Effect\": \"Allow\",\n      \"Principal\": {\n        \"Service\": \"ec2.amazonaws.com\"\n      }\n    }\n  ],\n  \"Version\": \"2012-10-17\"\n}",
+        "inlinePolicies": [
+          {
+            "name": "statusbox",
+            "policy": "{\n  \"Statement\": [\n    {\n      \"Action\": [\n        \"ssm:GetParameter\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/alerts-read-token\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/tunnel-token\"\n      ],\n      \"Sid\": \"ReadOwnParameters\"\n    },\n    {\n      \"Action\": [\n        \"s3:GetObject\",\n        \"s3:PutObject\",\n        \"s3:DeleteObject\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica/box/*\"\n      ],\n      \"Sid\": \"ReplicaObjects\"\n    },\n    {\n      \"Action\": [\n        \"s3:ListBucket\"\n      ],\n      \"Condition\": {\n        \"StringLike\": {\n          \"s3:prefix\": [\n            \"box/*\"\n          ]\n        }\n      },\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ],\n      \"Sid\": \"ReplicaList\"\n    },\n    {\n      \"Action\": [\n        \"s3:GetBucketLocation\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ],\n      \"Sid\": \"ReplicaRegion\"\n    },\n    {\n      \"Action\": [\n        \"autoscaling:CompleteLifecycleAction\",\n        \"autoscaling:SetInstanceHealth\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:autoscaling:eu-west-1:@ACCOUNT@:autoScalingGroup:*:autoScalingGroupName/statusbox-status\"\n      ],\n      \"Sid\": \"OwnGroup\"\n    }\n  ],\n  \"Version\": \"2012-10-17\"\n}"
+          }
+        ],
+        "name": "statusbox-status",
+        "permissionsBoundary": "arn:@PARTITION@:iam::@ACCOUNT@:policy/boundary",
+        "tags": {
+          "Estate": "acme",
+          "ManagedBy": "pulumi",
+          "Name": "statusbox-status"
+        }
+      },
+      "name": "status",
+      "parent": "statusbox:ec2:Box::status",
+      "timeouts": {
+        "create": "",
+        "delete": "",
+        "update": ""
+      },
+      "type": "aws:iam/role:Role"
+    },
+    {
+      "inputs": {
+        "bucket": "acme-status-replica",
+        "content": "sha256:2bde766b5437eee4896c653433d96563410d7b5153a887e4b3208e09d6937cf4",
+        "contentType": "text/plain",
+        "key": "box/config/2bde766b5437eee4896c653433d96563410d7b5153a887e4b3208e09d6937cf4.yaml",
+        "serverSideEncryption": "AES256",
+        "tags": {
+          "Estate": "acme",
+          "ManagedBy": "pulumi",
+          "Name": "status-ops"
+        }
+      },
+      "name": "status-config-ops",
+      "parent": "statusbox:ec2:Box::status",
+      "timeouts": {
+        "create": "",
+        "delete": "",
+        "update": ""
+      },
+      "type": "aws:s3/bucketObjectv2:BucketObjectv2"
+    },
+    {
+      "inputs": {
+        "bucket": "acme-status-replica",
+        "content": "sha256:50227bb0ac6f26a70973fd7ca25a565278cf77e26685c491e7c483e9a504535d",
+        "contentType": "text/plain",
+        "key": "box/config/50227bb0ac6f26a70973fd7ca25a565278cf77e26685c491e7c483e9a504535d.sh",
+        "serverSideEncryption": "AES256",
+        "tags": {
+          "Estate": "acme",
+          "ManagedBy": "pulumi",
+          "Name": "status-setup-script"
+        }
+      },
+      "name": "status-setup-script",
+      "parent": "statusbox:ec2:Box::status",
+      "timeouts": {
+        "create": "",
+        "delete": "",
+        "update": ""
+      },
+      "type": "aws:s3/bucketObjectv2:BucketObjectv2"
+    },
+    {
+      "inputs": {},
+      "name": "status",
+      "parent": "pulumi:pulumi:Stack::statusbox-ec2-test-test",
+      "timeouts": {
+        "create": "",
+        "delete": "",
+        "update": ""
+      },
+      "type": "statusbox:ec2:Box"
+    }
+  ]
+}
