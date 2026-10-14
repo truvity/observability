@@ -277,7 +277,7 @@ func TestFunctionLogInvalidUTF8(t *testing.T) {
 			ok = ok && utf8.ValidString(a.Key) && utf8.ValidString(a.Str)
 		}
 		if !ok {
-			t.Errorf("%s: invalid UTF-8 would fail the whole export: %q %v", name, rec.Body, rec.Attrs)
+			t.Errorf("%s: invalid UTF8 would fail the whole export: %q %v", name, rec.Body, rec.Attrs)
 		}
 	}
 }
@@ -350,7 +350,7 @@ func TestFunctionLogLevelForms(t *testing.T) {
 	for line, want := range map[string]int32{
 		`{"level":"ERROR+2","msg":"m"}`:  lambdaext.SeverityError,
 		`{"level":"WARN+1","msg":"m"}`:   lambdaext.SeverityWarn,
-		`{"level":"DEBUG-4","msg":"m"}`:  lambdaext.SeverityDebug,
+		`{"level":"DEBUG\u002d4","msg":"m"}`:  lambdaext.SeverityDebug,
 		`{"level":"INFO+3","msg":"m"}`:   lambdaext.SeverityInfo,
 		`{"level":10,"msg":"m"}`:         lambdaext.SeverityDebug,
 		`{"level":20,"msg":"m"}`:         lambdaext.SeverityDebug,
