@@ -384,8 +384,63 @@ metrics:
         - container_tasks_state
         - container_memory_failures_total
         - container_blkio_device_usage_total
+        # Unread container series, checked against every dashboard, alert
+        # and recording rule of this repository (the k8s-stack `k8s.rules`
+        # recordings included): nothing selects them. Each pod or node
+        # replacement mints a fresh set of every one.
+        - container_processes
+        - container_sockets
+        - container_file_descriptors
+        - container_cpu_user_seconds_total
+        - container_cpu_system_seconds_total
+        - container_last_seen
+        - container_health_state
+        - container_start_time_seconds
+        - container_ulimits_soft
       # -- Added to `metricNames` above rather than replacing it.
       extraMetricNames: []
+      # -- Metric-name FAMILIES dropped outright: regular-expression
+      # alternatives, each matched against the WHOLE `__name__` (the chart
+      # anchors them; write them WITHOUT `^`/`$`), joined with `|`. This is
+      # the regex counterpart of the exact-name `metricNames`, for the
+      # families cadvisor emits many names of.
+      #   container_memory_.*      all but `patternKeepMetrics` below
+      #   container_spec_.*        the container spec gauges
+      #   container_pressure_.*    PSI
+      #   container_threads.*      thread counts and the thread limit
+      #   container_cpu_load.*     the load-average gauges
+      #   container_fs_reads.*, container_fs_writes.*   filesystem I/O counters
+      # Nothing here reads any of them. The network packet, error and dropped
+      # counters are NOT in the list: the Kubernetes views network panels
+      # read them. Replaced wholesale if set; widen with
+      # `extraMetricPatterns`. Off with `[]`.
+      metricPatterns:
+        - container_memory_.*
+        - container_spec_.*
+        - container_pressure_.*
+        - container_threads.*
+        - container_cpu_load.*
+        - container_fs_reads.*
+        - container_fs_writes.*
+      # -- Added to `metricPatterns` above rather than replacing it.
+      extraMetricPatterns: []
+      # -- Exact names that `metricPatterns` must NOT drop. RE2 has no
+      # negative lookahead, so "this family except these" is a scratch
+      # label, like the bucket exception below.
+      #   container_memory_working_set_bytes  usage dashboards, memory alerts,
+      #                                       the k8s.rules recordings
+      #   container_memory_rss, container_memory_cache, container_memory_swap
+      #                                       the k8s.rules recordings
+      #   container_memory_usage_bytes        the pod views dashboard
+      # Replaced wholesale if set; widen with `extraPatternKeepMetrics`.
+      patternKeepMetrics:
+        - container_memory_working_set_bytes
+        - container_memory_rss
+        - container_memory_cache
+        - container_memory_swap
+        - container_memory_usage_bytes
+      # -- Added to `patternKeepMetrics` above rather than replacing it.
+      extraPatternKeepMetrics: []
       # -- Every cadvisor `_bucket` histogram series is dropped as
       # well, EXCEPT the names listed here.
       keepBucketMetrics:
@@ -487,6 +542,25 @@ metrics:
         - kube_pod_tolerations
       # -- Added to `metricNames` above rather than replacing it.
       extraMetricNames: []
+      # -- Metric-name families dropped in EVERY namespace: regular
+      # expressions matched against the whole `__name__` (write them WITHOUT
+      # `^`/`$`). Today `kube_replicaset_.*`: one series family per
+      # ReplicaSet, and every rollout mints a new ReplicaSet, so a
+      # deployment-heavy cluster files new series with every deploy. Only
+      # `kube_replicaset_owner` is read (the `k8s.rules` pod-owner
+      # recordings), so it is kept through `patternKeepMetrics`. Replaced
+      # wholesale if set; widen with `extraMetricPatterns`. `[]` stores them
+      # all again.
+      metricPatterns:
+        - kube_replicaset_.*
+      # -- Added to `metricPatterns` above rather than replacing it.
+      extraMetricPatterns: []
+      # -- Exact names that `metricPatterns` must not drop. Replaced
+      # wholesale if set; widen with `extraPatternKeepMetrics`.
+      patternKeepMetrics:
+        - kube_replicaset_owner
+      # -- Added to `patternKeepMetrics` above rather than replacing it.
+      extraPatternKeepMetrics: []
       # -- OPT-IN (off by default, no change to the render): the series of
       # SHORT-LIVED Jobs, for example a CronJob that runs every few
       # minutes. Each run is a new Job and a new pod, and kube-state-metrics
@@ -501,7 +575,16 @@ metrics:
       #     `<pattern>` or `<pattern>-*` (a CronJob's Jobs are named
       #     `<cronjob>-<timestamp>`) only `keepMetrics` are stored.
       # `keepMetrics` are the three the BackupJobFailed alert reads
-      # (`kube_job_created`, `kube_job_owner`, `kube_job_status_failed`). A
+      # (`kube_job_created`, `kube_job_owner`, `kube_job_status_failed`).
+      # That alert (charts/platform-alerts, `groups.backup`) reads them for
+      # the Jobs of a CronJob in its `namespaceSelector`; it is the ONLY
+      # rule or dashboard that reads any `kube_job_*` series. For Jobs that
+      # are not backups (a janitor CronJob), set `keepMetrics: []`: no
+      # `kube_job_*` series is stored for a matched Job at all, and the
+      # alert has nothing to say about it (it would otherwise alert on a
+      # failed janitor run as a failed backup). `CronJobNotSucceeding`
+      # reads `kube_cronjob_*`, not `kube_job_*`, and is unaffected. Keep
+      # the three for any matched CronJob a `backup` alert must watch. A
       # pattern names the Jobs or CronJobs. Example:
       #   namePattern: "nightly-backup|queue-janitor"
       # What stops existing for the matched Jobs and pods: every other
@@ -516,6 +599,86 @@ metrics:
           - kube_job_created
           - kube_job_owner
           - kube_job_status_failed
+    # -- OPT-IN, off by default (every list empty renders exactly what it
+    # rendered before): collapse the IDENTITY of series from short-lived
+    # workloads and nodes into one series per group, by vmagent STREAM
+    # AGGREGATION. A CI runner pod (and the node it runs on) is born, reports
+    # for minutes and is gone; every one files a fresh set of cAdvisor and
+    # `kube_pod_*` series under its own `pod`, `uid`, `container_id` ... that
+    # nobody reads again. Collapsing keeps the totals (a namespace's CPU, a
+    # pool's kubelet counters) and gives up the per-pod and per-node detail.
+    #
+    # Mechanism: the agent's `streamAggrConfig` (`keepInput: false`: the
+    # series a rule matches are replaced by its output, every other series
+    # is written as it arrives; `dropInput` is NOT used, it would drop the
+    # unmatched ones too). Rules use `without:`, never `by:`, so every
+    # label not named here (cluster, environment, `k8s_namespace_name`, the
+    # owner labels, `job`, `le` ...) is kept and two tenants can never be
+    # merged. Per series the output is chosen by name: names ending
+    # `_total`, `_count`, `_sum` or `_bucket` are counters -> `total`
+    # (sums each input's increases and treats a vanished or reset input as
+    # its own restart, not a drop of the sum: what pod churn needs); names
+    # matching `maxNamePattern` (timestamps) -> `max`; every other name (a
+    # gauge) -> `sum_samples` over one deduplicated sample per input series
+    # per `interval`, i.e. the SUM across the group. Names are kept.
+    # Resolution becomes `interval`: a `rate()` over these series needs a
+    # range of at least two intervals. Needs a single metrics agent
+    # (`metrics.replicaCount: 1`): two replicas would each keep their own
+    # running `total`, and their outputs interleave in the store.
+    collapse:
+      # -- Namespaces (regular expressions, matched whole; write them
+      # WITHOUT `^`/`$`) whose pods are short-lived, for example
+      # `arc-runners-.*`. For series of `container_*` (cAdvisor) and
+      # `kube_pod_*` (kube-state-metrics) in them, the labels in
+      # `podDropLabels` are removed and the series of all pods merge into
+      # one per (namespace, container, metric, ...remaining labels).
+      # Series of other namespaces, and of other metric names (an
+      # application's own metrics included), are not touched. Empty: off.
+      namespaces: []
+      # -- The label KEY of the node that names its pool (the node's label,
+      # for example `karpenter.sh/nodepool`), and `nodeValues` the pools
+      # whose nodes are short-lived (for example a CI pool). Both or
+      # neither. On the kubelet and cAdvisor scrapes a node of such a pool
+      # is stamped with `nodepool="<value>"` (a node outside the pools gets
+      # no label), and their NODE-LEVEL series (those with no `pod` label:
+      # the kubelet's own metrics and cAdvisor's node cgroups, not `up`
+      # and `scrape_*`) lose `node` and `instance` and merge into one per
+      # (pool, metric, ...remaining labels). Pod-level cAdvisor series on
+      # such a node keep their node; collapse them by namespace above.
+      # node-exporter series are not covered: they arrive from a pod
+      # endpoint that knows the node's name, not its labels.
+      nodeSelectorLabel: ""
+      nodeValues: []
+      # -- Aggregation window. 1m is two scrapes of the default 30s
+      # interval, so a window is never empty.
+      interval: 1m
+      # -- Labels removed from pod-level series (`namespaces`). The pod's
+      # identity (`pod`, `uid`, `container_id`, `id`, `name`, `image`,
+      # `pod_ip`, `ip`, `host_ip`, the owner and creator names) and the
+      # scrape target's (`node`, `instance`). Replaced wholesale if set.
+      podDropLabels:
+        - pod
+        - uid
+        - container_id
+        - id
+        - name
+        - image
+        - pod_ip
+        - ip
+        - host_ip
+        - owner_name
+        - created_by_name
+        - node
+        - instance
+      # -- Labels removed from node-level series (`nodeValues`).
+      nodeDropLabels:
+        - node
+        - instance
+      # -- Gauges whose name matches this regular expression (matched
+      # whole) are aggregated by `max` rather than summed: summing
+      # timestamps (`kube_pod_start_time`, `kube_pod_created`) is
+      # meaningless.
+      maxNamePattern: ".*_(time|created|timestamp|exitcode)|process_start_time_seconds"
     # -- A default DROP for the KUBELET scrape's own series that no
     # dashboard or rule here reads and that cost the most. Today one:
     # `kubernetes_feature_enabled`, the kubelet's feature-gate gauge, one
@@ -1307,6 +1470,18 @@ victoria-logs-collector:
       memory: 192Mi
   podMonitor:
     enabled: true
+    # -- Metric relabeling of the log agent's own scrape. The agent exports
+    # its command line as the `flag` metric, one series per flag and per
+    # pod: more than a hundred series each, never read except by the
+    # "Non-default flags" panel of the vlagent dashboard, which selects
+    # `is_set="true"`. The flags left at their defaults (`is_set="false"`)
+    # are dropped. The agent's pods are replaced with every node, so this
+    # is churn too. Replace with `[]` to store them.
+    metricRelabelings:
+      - action: drop
+        sourceLabels: [__name__, is_set]
+        separator: ";"
+        regex: "flag;false"
     # -- FALSE, and refused true. `true` renders a VMPodScrape instead of a
     # PodMonitor. Every scrape object on the cluster is a Prometheus
     # Operator kind so that the agent reading them can be replaced without
@@ -1418,6 +1593,18 @@ kube-state-metrics:
   # kubelet and cAdvisor scrapes — measured there as a store silently
   # IGNORING every series past `-maxLabelsPerTimeseries`. Ask for a label
   # by name once a dashboard or a rule needs it.
+  #
+  # OPT-IN node label, default off: `nodes=[karpenter.sh/nodepool]` puts the
+  # node's pool on `kube_node_labels` as `label_karpenter_sh_nodepool`, so a
+  # query can join per-node series to the pool they belong to (for example
+  # `... * on(node) group_left(label_karpenter_sh_nodepool) kube_node_labels`),
+  # which the pool-level views of `metrics.scrape.collapse` need once the node
+  # identity is gone. One series per node, one extra label. Any key you name
+  # is a label of every node, so name only the ones you query:
+  #
+  #   kube-state-metrics:
+  #     metricLabelsAllowlist:
+  #       - nodes=[karpenter.sh/nodepool]
   metricLabelsAllowlist: []
   metricAnnotationsAllowList: []
   resources:

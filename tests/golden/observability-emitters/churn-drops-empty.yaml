@@ -615,6 +615,13 @@ spec:
       app.kubernetes.io/name: victoria-logs-collector
   podMetricsEndpoints:
     - port: http
+      metricRelabelings: 
+        - action: drop
+          regex: flag;false
+          separator: ;
+          sourceLabels:
+          - __name__
+          - is_set
 
 ---
 # Source: observability-emitters/templates/gateway.yaml
@@ -734,7 +741,7 @@ spec:
           target_label: k8s_namespace_name
         - action: drop
           source_labels: [__name__]
-          regex: ^(container_tasks_state|container_memory_failures_total|container_blkio_device_usage_total)$
+          regex: ^(container_tasks_state|container_memory_failures_total|container_blkio_device_usage_total|container_processes|container_sockets|container_file_descriptors|container_cpu_user_seconds_total|container_cpu_system_seconds_total|container_last_seen|container_health_state|container_start_time_seconds|container_ulimits_soft)$
         - action: replace
           source_labels: [__name__]
           regex: ^(go_sched_latencies_seconds_bucket)$

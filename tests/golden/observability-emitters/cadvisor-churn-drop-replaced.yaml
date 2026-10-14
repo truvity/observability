@@ -615,6 +615,13 @@ spec:
       app.kubernetes.io/name: victoria-logs-collector
   podMetricsEndpoints:
     - port: http
+      metricRelabelings: 
+        - action: drop
+          regex: flag;false
+          separator: ;
+          sourceLabels:
+          - __name__
+          - is_set
 
 ---
 # Source: observability-emitters/templates/gateway.yaml
@@ -676,6 +683,20 @@ spec:
     regex: ^(kube_pod_tolerations)$
     sourceLabels:
     - __name__
+  - action: replace
+    regex: ^(kube_replicaset_owner)$
+    replacement: "yes"
+    sourceLabels:
+    - __name__
+    targetLabel: __ksm_keep_pattern__
+  - action: drop
+    regex: ^(?:kube_replicaset_.*);$
+    separator: ;
+    sourceLabels:
+    - __name__
+    - __ksm_keep_pattern__
+  - action: labeldrop
+    regex: __ksm_keep_pattern__
   - action: replace
     regex: ^(kube_pod_status_unschedulable|kube_pod_container_status_last_terminated_reason|kube_pod_container_status_restarts_total)$
     replacement: "yes"
@@ -752,7 +773,18 @@ spec:
           target_label: k8s_namespace_name
         - action: drop
           source_labels: [__name__]
-          regex: ^(container_spec_memory_reservation_limit_bytes)$
+          regex: ^(container_network_tcp_usage_total)$
+        - action: replace
+          source_labels: [__name__]
+          regex: ^(container_memory_working_set_bytes|container_memory_rss|container_memory_cache|container_memory_swap|container_memory_usage_bytes)$
+          target_label: __cadvisor_keep_pattern__
+          replacement: "yes"
+        - action: drop
+          source_labels: [__name__, __cadvisor_keep_pattern__]
+          separator: ";"
+          regex: ^(?:container_memory_.*|container_spec_.*|container_pressure_.*|container_threads.*|container_cpu_load.*|container_fs_reads.*|container_fs_writes.*);$
+        - action: labeldrop
+          regex: __cadvisor_keep_pattern__
         - action: replace
           source_labels: [__name__]
           regex: ^(my_own_component_latency_seconds_bucket)$

@@ -24,8 +24,10 @@ metrics:
       bucketMetrics: []
     cadvisorDrop:
       ephemeralNamespaces: ""
+      metricPatterns: []
     kubeStateMetricsDrop:
       ephemeralNamespaces: ""
+      metricPatterns: []
 
 otlp:
   destinations:

@@ -27,6 +27,7 @@ instead.
 {{- include "observability-emitters.validate.logs" . -}}
 {{- include "observability-emitters.validate.kubeStateMetrics" . -}}
 {{- include "observability-emitters.validate.ephemeralJobs" . -}}
+{{- include "observability-emitters.validate.collapse" . -}}
 {{- include "observability-emitters.validate.nodeExporter" . -}}
 {{- include "observability-emitters.validate.otlp" . -}}
 {{- include "observability-emitters.validate.cloudwatchLogs" . -}}
@@ -543,6 +544,46 @@ Both are refused.
 {{- $_ := mustRegexMatch $ej.namePattern "" -}}
 {{- else if $ej.namePattern -}}
 {{- fail (printf "observability-emitters: `metrics.scrape.kubeStateMetricsDrop.ephemeralJobs.namePattern` is %q but `enabled` is false, so nothing is dropped. Set `enabled: true`, or clear the pattern." $ej.namePattern) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`metrics.scrape.collapse`: the namespaces are regular expressions the chart
+anchors itself; the node pool needs both its label key and its values;
+and a stream aggregation keeps a running `total` per agent, so more than one
+metrics agent (each with its own baseline, writing the same series) is refused,
+as is a `metrics.spec.streamAggrConfig` the merge would put over the chart's.
+*/}}
+{{- define "observability-emitters.validate.collapse" -}}
+{{- $c := .Values.metrics.scrape.collapse -}}
+{{- range $ns := $c.namespaces -}}
+{{- if or (hasPrefix "^" $ns) (hasSuffix "$" $ns) -}}
+{{- fail (printf "observability-emitters: `metrics.scrape.collapse.namespaces` holds %q. The chart anchors each pattern itself; write it WITHOUT `^` or `$`." $ns) -}}
+{{- end -}}
+{{- $_ := mustRegexMatch $ns "" -}}
+{{- end -}}
+{{- if and $c.nodeSelectorLabel (not $c.nodeValues) -}}
+{{- fail "observability-emitters: `metrics.scrape.collapse.nodeSelectorLabel` is set but `nodeValues` is empty, so no node pool is collapsed. Name the pools in `nodeValues`, or clear the label." -}}
+{{- end -}}
+{{- if and $c.nodeValues (not $c.nodeSelectorLabel) -}}
+{{- fail "observability-emitters: `metrics.scrape.collapse.nodeValues` is set but `nodeSelectorLabel` is empty, so there is no node label to read the pool from. Set `nodeSelectorLabel` (for example the label your node provisioner puts the pool in), or clear the values." -}}
+{{- end -}}
+{{- if or $c.namespaces $c.nodeValues -}}
+{{- if gt (int .Values.metrics.replicaCount) 1 -}}
+{{- fail "observability-emitters: `metrics.scrape.collapse` is on with `metrics.replicaCount` above 1. Stream aggregation keeps a running total per agent; two agents would write the same series with different baselines and the store would interleave them. Use one metrics agent, or turn the collapse off." -}}
+{{- end -}}
+{{- if not (regexMatch "^[0-9]+(s|m|h)$" (toString $c.interval)) -}}
+{{- fail (printf "observability-emitters: `metrics.scrape.collapse.interval` is %q; write a duration such as `1m`." (toString $c.interval)) -}}
+{{- end -}}
+{{- if and $c.namespaces (not $c.podDropLabels) -}}
+{{- fail "observability-emitters: `metrics.scrape.collapse.podDropLabels` is empty, so the pod series of `namespaces` would be aggregated under their own identity and nothing would merge. Name the labels to drop, or clear `namespaces`." -}}
+{{- end -}}
+{{- if and $c.nodeValues (not $c.nodeDropLabels) -}}
+{{- fail "observability-emitters: `metrics.scrape.collapse.nodeDropLabels` is empty, so the node series would be aggregated under their own identity and nothing would merge. Name the labels to drop, or clear `nodeValues`." -}}
+{{- end -}}
+{{- if hasKey (.Values.metrics.spec | default dict) "streamAggrConfig" -}}
+{{- fail "observability-emitters: `metrics.scrape.collapse` is on and `metrics.spec.streamAggrConfig` is set. The merge would replace the chart's rules with yours (or yours with theirs); write the rules in one place." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

@@ -356,6 +356,17 @@ the scratch label.
 {{- if $names -}}
 {{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__]\n  regex: ^(%s)$" (join "|" $names)) -}}
 {{- end -}}
+{{- $pats := concat ($kd.metricPatterns | default list) ($kd.extraMetricPatterns | default list) -}}
+{{- if $pats -}}
+{{- $pkeep := concat ($kd.patternKeepMetrics | default list) ($kd.extraPatternKeepMetrics | default list) -}}
+{{- if $pkeep -}}
+{{- $steps = append $steps (printf "- action: replace\n  sourceLabels: [__name__]\n  regex: ^(%s)$\n  targetLabel: __ksm_keep_pattern__\n  replacement: \"yes\"" (join "|" $pkeep)) -}}
+{{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__, __ksm_keep_pattern__]\n  separator: \";\"\n  regex: ^(?:%s);$" (join "|" $pats)) -}}
+{{- $steps = append $steps "- action: labeldrop\n  regex: __ksm_keep_pattern__" -}}
+{{- else -}}
+{{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__]\n  regex: ^(?:%s)$" (join "|" $pats)) -}}
+{{- end -}}
+{{- end -}}
 {{- if $kd.ephemeralNamespaces -}}
 {{- $keep := concat ($kd.ephemeralKeepMetrics | default list) ($kd.extraEphemeralKeepMetrics | default list) -}}
 {{- if $keep -}}
@@ -367,7 +378,9 @@ the scratch label.
 {{- if $kd.ephemeralJobs.enabled -}}
 {{- $pat := $kd.ephemeralJobs.namePattern -}}
 {{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__, exported_pod]\n  separator: \";\"\n  regex: ^kube_pod_.*;(?:%s)-.*$" $pat) -}}
+{{- if $kd.ephemeralJobs.keepMetrics -}}
 {{- $steps = append $steps (printf "- action: replace\n  sourceLabels: [__name__]\n  regex: ^(%s)$\n  targetLabel: __ksm_keep_job__\n  replacement: \"yes\"" (join "|" $kd.ephemeralJobs.keepMetrics)) -}}
+{{- end -}}
 {{- $steps = append $steps (printf "- action: drop\n  sourceLabels: [__name__, job_name, __ksm_keep_job__]\n  separator: \";\"\n  regex: ^kube_job_.*;(?:%s)(?:-.*)?;$" $pat) -}}
 {{- $steps = append $steps "- action: labeldrop\n  regex: __ksm_keep_job__" -}}
 {{- end -}}
@@ -436,6 +449,9 @@ OTLP gateway below, this chart writes no volume for it.
 -}}
 {{- with (include "observability-emitters.scrapeConfig.kubeStateMetricsDropRelabelConfigs" $root) -}}
 {{- $_ := set $base "globalScrapeMetricRelabelConfigs" (concat (fromYamlArray .) $base.globalScrapeMetricRelabelConfigs) -}}
+{{- end -}}
+{{- with (include "observability-emitters.collapse.streamAggrConfig" $root) -}}
+{{- $_ := set $base "streamAggrConfig" (fromYaml .) -}}
 {{- end -}}
 {{- if $root.Values.tenancy.owners -}}
 {{- $_ := set $base "inlineRelabelConfig" (fromYamlArray (include "observability-emitters.owners.metricRelabelConfigs" $root)) -}}
@@ -553,6 +569,17 @@ override is valid: an empty step 1 drops nothing by name, and an empty
 {{- $steps := list -}}
 {{- if $names -}}
 {{- $steps = append $steps (printf "- action: drop\n  source_labels: [__name__]\n  regex: ^(%s)$" (join "|" $names)) -}}
+{{- end -}}
+{{- $pats := concat ($cd.metricPatterns | default list) ($cd.extraMetricPatterns | default list) -}}
+{{- if $pats -}}
+{{- $pkeep := concat ($cd.patternKeepMetrics | default list) ($cd.extraPatternKeepMetrics | default list) -}}
+{{- if $pkeep -}}
+{{- $steps = append $steps (printf "- action: replace\n  source_labels: [__name__]\n  regex: ^(%s)$\n  target_label: __cadvisor_keep_pattern__\n  replacement: \"yes\"" (join "|" $pkeep)) -}}
+{{- $steps = append $steps (printf "- action: drop\n  source_labels: [__name__, __cadvisor_keep_pattern__]\n  separator: \";\"\n  regex: ^(?:%s);$" (join "|" $pats)) -}}
+{{- $steps = append $steps "- action: labeldrop\n  regex: __cadvisor_keep_pattern__" -}}
+{{- else -}}
+{{- $steps = append $steps (printf "- action: drop\n  source_labels: [__name__]\n  regex: ^(?:%s)$" (join "|" $pats)) -}}
+{{- end -}}
 {{- end -}}
 {{- if $keep -}}
 {{- $steps = append $steps (printf "- action: replace\n  source_labels: [__name__]\n  regex: ^(%s)$\n  target_label: __cadvisor_keep_bucket__\n  replacement: \"yes\"" (join "|" $keep)) -}}
@@ -675,6 +702,70 @@ job has its own (`cadvisorDrop`).
 {{- end -}}
 {{- end -}}
 
+{{/*
+`metrics.scrape.collapse` (opt-in; see values.yaml): the node-pool stamp on the
+kubelet and cAdvisor targets, and the stream aggregation that merges the
+identity of short-lived pods and nodes.
+*/}}
+{{- define "observability-emitters.collapse.nodeLabelKey" -}}
+{{- regexReplaceAll "[^a-zA-Z0-9_]" .Values.metrics.scrape.collapse.nodeSelectorLabel "_" -}}
+{{- end -}}
+
+{{- /*
+On a node of a collapsing pool (and only there) the target gets a stored
+`nodepool` label. A node outside the pools gets none: the regex does not match,
+so the replace does nothing and the label is absent, not empty.
+*/ -}}
+{{- define "observability-emitters.collapse.nodepoolRelabelConfig" -}}
+{{- $c := .Values.metrics.scrape.collapse -}}
+{{- if and $c.nodeSelectorLabel $c.nodeValues -}}
+{{- $vals := list -}}
+{{- range $c.nodeValues -}}{{- $vals = append $vals (regexQuoteMeta .) -}}{{- end -}}
+- source_labels: [__meta_kubernetes_node_label_{{ include "observability-emitters.collapse.nodeLabelKey" $ }}]
+  regex: ({{ join "|" $vals }})
+  target_label: nodepool
+{{- end -}}
+{{- end -}}
+
+{{- /*
+The rules come in threes per scope, picked by metric NAME and mutually
+exclusive (a series is aggregated by every rule it matches, so an overlap would
+store it twice): counters (`_total`, `_count`, `_sum`, `_bucket`) -> `total`;
+names matching `maxNamePattern` -> `max`; everything else (gauges) ->
+`sum_samples` over one sample per input series per window (`dedup_interval`
+equal to `interval`). `without:` keeps every other label, the scoping key
+included, so no rule can merge two tenants.
+*/ -}}
+{{- define "observability-emitters.collapse.rules" -}}
+{{- $c := .c -}}
+{{- $counter := ".*_(total|count|sum|bucket)" -}}
+{{- $max := $c.maxNamePattern -}}
+{{- $sel := printf "%s,__name__=~%q%s" .scope .names (.exclude | default "") -}}
+{{- $common := dict "interval" $c.interval "dedup_interval" $c.interval "without" .without "keep_metric_names" true "staleness_interval" "1h" -}}
+{{- $r1 := merge (dict "match" (printf "{%s,__name__=~%q}" $sel $counter) "outputs" (list "total")) $common -}}
+{{- $r2 := merge (dict "match" (printf "{%s,__name__=~%q,__name__!~%q}" $sel $max $counter) "outputs" (list "max")) $common -}}
+{{- $r3 := merge (dict "match" (printf "{%s,__name__!~%q}" $sel (printf "(%s)|(%s)" $counter $max)) "outputs" (list "sum_samples")) $common -}}
+{{- toYaml (list $r1 $r2 $r3) -}}
+{{- end -}}
+
+{{- define "observability-emitters.collapse.streamAggrConfig" -}}
+{{- $c := .Values.metrics.scrape.collapse -}}
+{{- $rules := list -}}
+{{- if $c.namespaces -}}
+{{- $scope := printf "namespace=~%q" (join "|" $c.namespaces) -}}
+{{- $rules = concat $rules (include "observability-emitters.collapse.rules" (dict "c" $c "scope" $scope "names" "(container_|kube_pod_).*" "without" $c.podDropLabels) | fromYamlArray) -}}
+{{- end -}}
+{{- if and $c.nodeSelectorLabel $c.nodeValues -}}
+{{- $vals := list -}}
+{{- range $c.nodeValues -}}{{- $vals = append $vals (regexQuoteMeta .) -}}{{- end -}}
+{{- $scope := printf "nodepool=~%q,pod=\"\"" (join "|" $vals) -}}
+{{- $rules = concat $rules (include "observability-emitters.collapse.rules" (dict "c" $c "scope" $scope "names" ".+" "exclude" ",__name__!~\"up|scrape_.*\"" "without" $c.nodeDropLabels) | fromYamlArray) -}}
+{{- end -}}
+{{- if $rules -}}
+{{- toYaml (dict "keepInput" false "rules" $rules) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "observability-emitters.scrapeConfig.kubelet" -}}
 - job_name: kubelet
   scheme: https
@@ -692,6 +783,9 @@ job has its own (`cadvisorDrop`).
 {{- if and .Values.metrics.scrape.kubeletDrop.enabled .Values.metrics.scrape.kubeletDrop.ciNodePools }}
     - source_labels: [__meta_kubernetes_node_label_karpenter_sh_nodepool]
       target_label: kubelet_ci_nodepool_tmp
+{{- end }}
+{{- with (include "observability-emitters.collapse.nodepoolRelabelConfig" .) }}
+{{ . | indent 4 }}
 {{- end }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}
@@ -721,6 +815,9 @@ job has its own (`cadvisorDrop`).
 {{- if and .Values.metrics.scrape.kubeletDrop.enabled .Values.metrics.scrape.kubeletDrop.ciNodePools .Values.metrics.scrape.kubeletDrop.ciNodePoolCadvisorMetrics }}
     - source_labels: [__meta_kubernetes_node_label_karpenter_sh_nodepool]
       target_label: kubelet_ci_nodepool_tmp
+{{- end }}
+{{- with (include "observability-emitters.collapse.nodepoolRelabelConfig" .) }}
+{{ . | indent 4 }}
 {{- end }}
   metric_relabel_configs:
 {{ include "observability-emitters.tenancy.nodeMetricRelabelConfigs" . | indent 4 }}

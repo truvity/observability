@@ -559,6 +559,84 @@ For a matching Job only `kube_job_created`, `kube_job_owner` and
 (`KubeJobFailed`, `KubePodNotReady` ...) and the pod views then show nothing
 for those Jobs, which is the point.
 
+### Unread container and replicaset series; collapsing short-lived workloads (named, not versioned)
+
+`observability-emitters` stops writing more series that nothing reads. This is
+a **default change**: data simply stops being written; nothing already stored
+is removed, and the series already in the store age out with its retention.
+
+What disappears by default, on the next sync:
+
+- cAdvisor: `container_memory_*` except `container_memory_working_set_bytes`,
+  `container_memory_rss`, `container_memory_cache`, `container_memory_swap` and
+  `container_memory_usage_bytes`; `container_spec_*`; `container_pressure_*`;
+  `container_threads*`; `container_processes`; `container_sockets`;
+  `container_file_descriptors`; `container_cpu_user_seconds_total`;
+  `container_cpu_system_seconds_total`; `container_cpu_load*`;
+  `container_last_seen`; `container_health_state`;
+  `container_start_time_seconds`; `container_ulimits_soft`;
+  `container_fs_reads*`; `container_fs_writes*`.
+- kube-state-metrics: `kube_replicaset_*` except `kube_replicaset_owner`.
+- The log agent's `flag` series where `is_set="false"` (the vlagent dashboard
+  reads `is_set="true"`).
+
+Kept on purpose: the network packet, error and dropped counters of cAdvisor
+(the Kubernetes views panels), every memory metric a recording or dashboard
+reads (above), and `kube_replicaset_owner` (the pod-owner recordings).
+
+To keep any of it, set the list that holds it. `metrics.scrape.cadvisorDrop.metricPatterns`
+and `metrics.scrape.kubeStateMetricsDrop.metricPatterns` hold the families, and
+`metricNames` the exact names; a list you set replaces the default, `extra...`
+keys add to it, and `[]` stores the family again. For a single member, add it to
+`extraPatternKeepMetrics`:
+
+```yaml
+metrics:
+  scrape:
+    cadvisorDrop:
+      extraPatternKeepMetrics: [container_memory_max_usage_bytes]
+    kubeStateMetricsDrop:
+      metricPatterns: []        # keep every kube_replicaset_* series
+victoria-logs-collector:
+  podMonitor:
+    metricRelabelings: []       # keep the flag series
+```
+
+Your own scrape objects are yours: an Argo CD `ServiceMonitor`, for example,
+is not rendered by a chart here. To drop its unread series, add to its
+`metricRelabelings`: `drop` on `__name__` matching
+`grpc_server_msg_.*|grpc_server_started_total|argocd_oci_request_duration_seconds_bucket`.
+
+Two opt-ins, both off by default:
+
+- `metrics.scrape.kubeStateMetricsDrop.ephemeralJobs.keepMetrics: []` stores no
+  `kube_job_*` series for the matched Jobs. Use it for CronJobs that are not
+  backups; `BackupJobFailed` then has nothing to say about them, and
+  `CronJobNotSucceeding` still does.
+- `metrics.scrape.collapse` merges the pod identity of the namespaces you name
+  (and the node identity of the pools you name) into one series per
+  namespace/container (or per pool), by vmagent stream aggregation:
+
+  ```yaml
+  metrics:
+    scrape:
+      collapse:
+        namespaces: ["arc-runners-.*"]
+        nodeSelectorLabel: karpenter.sh/nodepool
+        nodeValues: ["ci"]
+  kube-state-metrics:
+    metricLabelsAllowlist:
+      - nodes=[karpenter.sh/nodepool]   # kube_node_labels{label_karpenter_sh_nodepool}
+  ```
+
+  You keep the namespace and pool totals; you lose per-pod and per-node detail
+  for exactly those namespaces and pools, so alerts and dashboards keyed on one
+  pod see a sum. The new `nodepool` label appears on the kubelet and cAdvisor
+  series of those pools. Requires one metrics agent (`metrics.replicaCount: 1`).
+  The kube-state-metrics node label is separate and optional: it lets you join
+  other node series to a pool. docs/reference.md, "Collapsing short-lived pods
+  and nodes", has the rules and the caveats.
+
 ### 0.87.0 → 0.88.0
 
 **Removing the Door plane from observability-stack, and `tenancy.principals` (breaking).**
