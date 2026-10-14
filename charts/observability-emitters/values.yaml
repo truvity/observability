@@ -706,6 +706,21 @@ kubeStateMetrics:
     # `kargo` above (ConfigMap + ClusterRole of this chart's own).
     nodeClaims:
       enabled: false
+    # -- CloudNativePG Clusters (`clusters.postgresql.cnpg.io`,
+    # `postgresql.cnpg.io/v1`) as one metric,
+    # `cnpg_cluster_status_condition{namespace,cluster,phase,type,reason}` (a
+    # Gauge over `status.conditions[]`: 1 when the condition is True, 0 when
+    # False or Unknown; `phase` is the Cluster's `status.phase` on every
+    # series), `metricNamePrefix: ""` — the shape `charts/platform-alerts`'
+    # `groups.cnpg` reads. The instance exporter (`cnpg_collector_*`) is per
+    # Postgres pod and cannot say that the Cluster object is not Ready (for
+    # example stuck in "Switchover in progress" with every instance up), so
+    # this reads the object itself. One series per condition per Cluster.
+    # Off by default; turning it on grants ONLY get/list/watch on
+    # `clusters.postgresql.cnpg.io`. Same mechanism as `kargo` above
+    # (ConfigMap + ClusterRole of this chart's own).
+    cnpg:
+      enabled: false
 
 ###############################################################################
 # node-exporter: the node's own hardware and kernel metrics, as upstream's

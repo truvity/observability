@@ -589,6 +589,17 @@
                   "type": "boolean"
                 }
               }
+            },
+            "cnpg": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "description": "Off by default. `cnpg_cluster_status_condition{namespace,cluster,phase,type,reason}`, the shape `charts/platform-alerts`' `groups.cnpg` reads: CloudNativePG Cluster conditions (`postgresql.cnpg.io/v1`). Grants only get/list/watch on `clusters.postgresql.cnpg.io`.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
             }
           }
         }

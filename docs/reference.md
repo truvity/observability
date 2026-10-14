@@ -264,6 +264,53 @@ Initialized), which `groups.pendingPods` cannot.
 Alerts: `NodeClaimNotReady` (one per claim and condition type),
 `NodeClaimMetricsAbsent`.
 
+### `groups.cnpg`
+
+Off by default. Alerts when a CloudNativePG `Cluster` object is not Ready.
+Reads `cnpg_cluster_status_condition`, which `observability-emitters`'
+`kubeStateMetrics.customResources.cnpg` produces from each Cluster's
+`status.conditions` and `status.phase` (turn that on first). It sees every
+Cluster in every namespace. The instance exporter (`cnpg_collector_*`) is
+per Postgres pod and cannot see this state: a Cluster can sit at
+`Ready=False` with phase "Switchover in progress" after an automatic failover
+while every instance is up.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `for` | duration | `15m` | How long `Ready` must stay not-True. A failover or rolling update settles well inside it. |
+| `severity` | enum | `warning` | Severity of `CNPGClusterNotReady`. |
+| `absentFor` | duration | `30m` | How long the series can be absent before `CNPGMetricsAbsent`. |
+| `absentSeverity` | enum | `warning` | Severity of `CNPGMetricsAbsent`. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
+
+Alerts: `CNPGClusterNotReady` (one per Cluster and phase; a change of phase
+text restarts the `for` clock), `CNPGMetricsAbsent`.
+
+#### Runbook: `CNPGClusterNotReady`
+
+What it means: the Cluster object's `Ready` condition has been False or
+Unknown for `for`. The `phase` label says where the operator is stuck. The
+pods can all be Running and serving while this holds, so check the database
+too, but do not take its health for granted from the pods.
+
+First commands:
+
+```sh
+kubectl -n <namespace> get cluster.postgresql.cnpg.io <cluster>
+kubectl -n <namespace> get cluster.postgresql.cnpg.io <cluster> -o jsonpath='{.status.phase}{"\n"}{.status.phaseReason}{"\n"}'
+kubectl -n <namespace> get cluster.postgresql.cnpg.io <cluster> -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}'
+kubectl -n <namespace> get pods -l cnpg.io/cluster=<cluster> -L role
+kubectl -n <cnpg-operator-namespace> logs deploy/<cnpg-operator> | grep <cluster>
+```
+
+The case that motivated the rule: after an automatic failover (the timeline
+moved from 4 to 5) a production Cluster stayed at `Ready=False`, phase
+"Switchover in progress", for about ten hours with all three instances
+healthy, and no alert fired. The operator's log for the Cluster and its
+`status.phaseReason` are where the cause shows. Do not delete or restart the
+primary to clear it before they have been read.
+
 ### `groups.nodeMemoryPressure`
 
 Off by default. Reads node-exporter's `node_pressure_memory_waiting_seconds_total`
@@ -1768,6 +1815,7 @@ with underscores, which is how they match the agent's labels.
 | `kubeStateMetrics.enabled` | bool | `false` | Renders upstream's `kube-state-metrics` chart. **Off by default** — see docs/kube-state-metrics.md. |
 | `kubeStateMetrics.customResources.kargo.enabled` | bool | `false` (0.9.0) | `kargo_stage_condition` / `kargo_promotion_phase`, the shape `charts/platform-alerts`' `groups.kargo` reads (see docs/reference.md's own section on it) — without hand-writing kube-state-metrics' `customResourceState.config` and `rbac.extraRules`. Grants only `get`/`list`/`watch` on `stages.kargo.akuity.io` / `promotions.kargo.akuity.io`. Whenever `kubeStateMetrics.enabled` is true (this preset on or off), this chart pins `kube-state-metrics.customResourceState.enabled: true` / `.create: false` and renders the ConfigMap itself (empty when no preset is on) — **refused together with a consumer-authored `kube-state-metrics.customResourceState.config`**, which would otherwise never be read. |
 | `kubeStateMetrics.customResources.nodeClaims.enabled` | bool | `false` | `nodeclaim_status_condition{nodeclaim,nodepool,type,reason}`, the shape `platform-alerts`' `groups.nodeClaims` reads: Karpenter NodeClaim conditions, 1 when True. Grants only `get`/`list`/`watch` on `nodeclaims.karpenter.sh`. Composes with the `kargo` preset; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
+| `kubeStateMetrics.customResources.cnpg.enabled` | bool | `false` | `cnpg_cluster_status_condition{namespace,cluster,phase,type,reason}`, the shape `platform-alerts`' `groups.cnpg` reads: CloudNativePG Cluster conditions (`clusters.postgresql.cnpg.io`), 1 when True, with `status.phase` as a label. Grants only `get`/`list`/`watch` on `clusters.postgresql.cnpg.io`. Composes with the other presets; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
 
 ### `kube-state-metrics` — the upstream chart
 

@@ -1,0 +1,61 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: platform-alerts.cnpg
+      interval: 1m
+      rules:
+        # A CloudNativePG Cluster whose Ready condition is not True for `for`.
+        #
+        # `cnpg_cluster_status_condition` is a gauge kube-state-metrics'
+        # customResourceState exports from each Cluster's
+        # `.status.conditions`: 1 while the condition is True, 0 while it is
+        # False or Unknown, and `phase` is the Cluster's `.status.phase`.
+        # The per-instance exporter (`cnpg_collector_*`) cannot see this: a
+        # Cluster can sit at Ready=False in "Switchover in progress" with
+        # every instance up.
+        - alert: CNPGClusterNotReady
+          expr: >-
+            max by (k8s_cluster_name, namespace, cluster, phase) (
+              cnpg_cluster_status_condition{type="Ready"} == 0
+            )
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CloudNativePG Cluster {{ $labels.namespace }}/{{ $labels.cluster }} has not been Ready for 15m (phase: {{ $labels.phase }})"
+            description: >-
+              The Cluster object's Ready condition has been False or Unknown
+              for 15m, in phase "{{ $labels.phase }}"{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}.
+              The instances can all be up and serving while this holds, so the
+              database may look healthy. First look:
+              `kubectl -n {{ $labels.namespace }} get cluster.postgresql.cnpg.io {{ $labels.cluster }} -o yaml`
+              (status.phase, status.phaseReason, status.conditions), then the
+              CloudNativePG operator's logs for this Cluster.
+        # The deadman for the rule above: the series not being exported at
+        # all (the preset never applied, or the scrape is dark) reads as
+        # healthy to a rule that compares its values.
+        - alert: CNPGMetricsAbsent
+          expr: >-
+            (group by (k8s_cluster_name) (max_over_time(cnpg_cluster_status_condition{type="Ready", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (cnpg_cluster_status_condition{type="Ready", k8s_cluster_name!=""})) or (absent(cnpg_cluster_status_condition{type="Ready"}) unless on() group(max_over_time(cnpg_cluster_status_condition{type="Ready"}[1d])))
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "kube-state-metrics has not exported CloudNativePG Cluster conditions for 30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              cnpg_cluster_status_condition{type="Ready"} has not been seen in
+              30m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so CNPGClusterNotReady cannot fire even if
+              a Cluster is stuck. Check that
+              `kubeStateMetrics.customResources.cnpg` is on in
+              observability-emitters and that the scrape is up.

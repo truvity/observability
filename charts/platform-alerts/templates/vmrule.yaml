@@ -592,6 +592,59 @@ spec:
               that can have no NodeClaims at all this alert is expected.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NodeClaimMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
+    {{- if .Values.groups.cnpg.enabled }}
+    {{- $g := .Values.groups.cnpg }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    - name: platform-alerts.cnpg
+      interval: {{ .Values.interval }}
+      rules:
+        # A CloudNativePG Cluster whose Ready condition is not True for `for`.
+        #
+        # `cnpg_cluster_status_condition` is a gauge kube-state-metrics'
+        # customResourceState exports from each Cluster's
+        # `.status.conditions`: 1 while the condition is True, 0 while it is
+        # False or Unknown, and `phase` is the Cluster's `.status.phase`.
+        # The per-instance exporter (`cnpg_collector_*`) cannot see this: a
+        # Cluster can sit at Ready=False in "Switchover in progress" with
+        # every instance up.
+        - alert: CNPGClusterNotReady
+          expr: >-
+            max by ({{ $b }}namespace, cluster, phase) (
+              cnpg_cluster_status_condition{type="Ready"} == 0
+            )
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "CloudNativePG Cluster {{`{{ $labels.namespace }}`}}/{{`{{ $labels.cluster }}`}} has not been Ready for {{ $g.for }} (phase: {{`{{ $labels.phase }}`}})"
+            description: >-
+              The Cluster object's Ready condition has been False or Unknown
+              for {{ $g.for }}, in phase "{{`{{ $labels.phase }}`}}"{{ include "platform-alerts.onCluster" $ }}.
+              The instances can all be up and serving while this holds, so the
+              database may look healthy. First look:
+              `kubectl -n {{`{{ $labels.namespace }}`}} get cluster.postgresql.cnpg.io {{`{{ $labels.cluster }}`}} -o yaml`
+              (status.phase, status.phaseReason, status.conditions), then the
+              CloudNativePG operator's logs for this Cluster.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "CNPGClusterNotReady")) }}{{ . | nindent 12 }}{{- end }}
+        # The deadman for the rule above: the series not being exported at
+        # all (the preset never applied, or the scrape is dark) reads as
+        # healthy to a rule that compares its values.
+        - alert: CNPGMetricsAbsent
+          expr: >-
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" `cnpg_cluster_status_condition{type="Ready"}`) }}
+          for: {{ $g.absentFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity "omit" $.Values.clusterLabel) | nindent 12 }}
+          annotations:
+            summary: "kube-state-metrics has not exported CloudNativePG Cluster conditions for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
+            description: >-
+              cnpg_cluster_status_condition{type="Ready"} has not been seen in
+              {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}, so CNPGClusterNotReady cannot fire even if
+              a Cluster is stuck. Check that
+              `kubeStateMetrics.customResources.cnpg` is on in
+              observability-emitters and that the scrape is up.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "CNPGMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
     {{- if .Values.groups.nodeMemoryPressure.enabled }}
     {{- $g := .Values.groups.nodeMemoryPressure }}
     {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}

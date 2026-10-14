@@ -146,6 +146,8 @@ guard NATSMetricsAbsent --set groups.nats.enabled=true -- \
   'up{@C@job="nats/nats"} 1 @T@'
 guard NodeClaimMetricsAbsent --set groups.nodeClaims.enabled=true -- \
   'nodeclaim_status_condition{@C@type="Launched",nodeclaim="n"} 1 @T@'
+guard CNPGMetricsAbsent --set groups.cnpg.enabled=true -- \
+  'cnpg_cluster_status_condition{@C@type="Ready",namespace="n",cluster="c"} 1 @T@'
 guard KargoControllerAbsent --set groups.kargo.enabled=true --set groups.kargo.controllerAbsent.enabled=true -- \
   'up{@C@job="kargo-controller-metrics"} 1 @T@'
 # two series, two absent clauses: both fire when neither ever existed

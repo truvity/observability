@@ -48,6 +48,15 @@ claim, a NodeClaim being one per provisioned node). NodeClaims are
 cluster-scoped, so there is no namespace label; `nodepool` is read from the
 `karpenter.sh/nodepool` label Karpenter sets on every claim.
 
+`cnpg_cluster_status_condition` (the `cnpg` preset): the same Gauge shape
+over a CloudNativePG Cluster's status.conditions (Ready, ContinuousArchiving,
+...), plus `phase`, read from status.phase (free text such as "Cluster in
+healthy state" or "Switchover in progress"), as a label of every series. A
+phase is a label and not a StateSet because CloudNativePG's phases are an open
+set of strings, not an enum. A phase change replaces the series, which is
+what a "Ready=False in phase X for 15m" rule wants. One series per condition
+per Cluster object: a handful per database, no unbounded name label.
+
 `metricNamePrefix: ""` on all of them, explicit: unset, kube-state-metrics'
 own default prefixes every name with `kube_customresource_`; the empty
 string is what yields the plain names `charts/platform-alerts`'
@@ -66,7 +75,7 @@ data:
     kind: CustomResourceStateMetrics
     spec:
       resources:
-{{- if or (($customResources.kargo).enabled) (($customResources.nodeClaims).enabled) }}
+{{- if or (($customResources.kargo).enabled) (($customResources.nodeClaims).enabled) (($customResources.cnpg).enabled) }}
 {{- if ($customResources.kargo).enabled }}
         - groupVersionKind:
             group: kargo.akuity.io
@@ -129,6 +138,32 @@ data:
                 Karpenter NodeClaim status condition, from
                 status.conditions: 1 if the condition's own status is True,
                 0 if False or Unknown.
+              each:
+                type: Gauge
+                gauge:
+                  path: [status, conditions]
+                  labelsFromPath:
+                    type: ["type"]
+                    reason: ["reason"]
+                  valueFrom: ["status"]
+{{- end }}
+{{- if ($customResources.cnpg).enabled }}
+        - groupVersionKind:
+            group: postgresql.cnpg.io
+            version: v1
+            kind: Cluster
+          metricNamePrefix: ""
+          labelsFromPath:
+            namespace: [metadata, namespace]
+            cluster: [metadata, name]
+            phase: [status, phase]
+          metrics:
+            - name: cnpg_cluster_status_condition
+              help: >-
+                CloudNativePG Cluster status condition, from
+                status.conditions: 1 if the condition's own status is True,
+                0 if False or Unknown. Every series carries the Cluster's
+                current status.phase.
               each:
                 type: Gauge
                 gauge:
