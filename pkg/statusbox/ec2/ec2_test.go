@@ -326,10 +326,13 @@ func TestRefusesABadComponentName(t *testing.T) {
 // none otherwise.
 func TestRoleCarriesThePermissionsBoundaryWhenSet(t *testing.T) {
 	a := validArgs()
-	a.PermissionsBoundary = "boundary-arn"
+	// The appliance library refuses a boundary that is not a policy ARN, as
+	// IAM does.
+	boundary := "arn:" + part + ":iam::" + account + ":policy/boundary"
+	a.PermissionsBoundary = boundary
 
 	role := run(t, a).only(t, "aws:iam/role:Role").Mappable()
-	require.Equal(t, "boundary-arn", role["permissionsBoundary"])
+	require.Equal(t, boundary, role["permissionsBoundary"])
 }
 
 func TestRoleHasNoPermissionsBoundaryByDefault(t *testing.T) {
