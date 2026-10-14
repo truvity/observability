@@ -168,7 +168,8 @@ func TestCollapseRulesPickOneOutputPerSeries(t *testing.T) {
 		{"scrape_samples_scraped on a pool node", mk("scrape_samples_scraped", "nodepool", "ci-pool", "node", "n1")},
 		{"a node of another pool", mk("kubelet_running_pods", "nodepool", "durable", "node", "n9")},
 		{"a node of no pool (no nodepool label)", mk("kubelet_running_pods", "node", "n9", "instance", "n9:10250")},
-		{"a pod-level series of another namespace on a pool node", mk("container_memory_working_set_bytes", "nodepool", "ci-pool", "namespace", "kube-system", "pod", "proxy-x", "container", "proxy", "node", "n1")},
+		{"a pod-level series of another namespace on a pool node", mk("container_memory_working_set_bytes",
+			"nodepool", "ci-pool", "namespace", "kube-system", "pod", "proxy-x", "container", "proxy", "node", "n1")},
 	} {
 		assert.Emptyf(t, matching(rules, tc.series), "%s must not be aggregated: %v", tc.why, tc.series)
 	}
@@ -207,7 +208,8 @@ func TestCollapseMergesPodsAndNeverTenants(t *testing.T) {
 func TestCollapseNodeLevelOnePerPool(t *testing.T) {
 	rules, _ := streamAggrRules(t, "golden/observability-emitters/collapse.yaml")
 	n := func(node, id string) map[string]string {
-		return mk("container_cpu_usage_seconds_total", "nodepool", "ci-pool", "node", node, "instance", node+":10250", "id", id, "job", "kubelet", "k8s_cluster_name", "c1")
+		return mk("container_cpu_usage_seconds_total", "nodepool", "ci-pool", "node", node, "instance", node+":10250",
+			"id", id, "job", "kubelet", "k8s_cluster_name", "c1")
 	}
 	got := matching(rules, n("n1", "/"))
 	require.Len(t, got, 1)
