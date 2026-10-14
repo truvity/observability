@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -92,7 +93,7 @@ func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 	var problems []error
 	env := newEnvReader(getenv)
 	flag := func(name string, dst *bool) {
-		if raw := env.lookup(name); raw != "" {
+		if raw := strings.TrimSpace(env.lookup(name)); raw != "" {
 			v, err := strconv.ParseBool(raw)
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s must be true or false, got %q", name, raw))
@@ -102,7 +103,7 @@ func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 		}
 	}
 	number := func(name string, dst *int, lo, hi int) {
-		if raw := env.lookup(name); raw != "" {
+		if raw := strings.TrimSpace(env.lookup(name)); raw != "" {
 			n, err := strconv.Atoi(raw)
 			if err != nil || n < lo || n > hi {
 				problems = append(problems, fmt.Errorf("%s must be %d..%d, got %q", name, lo, hi, raw))
@@ -114,7 +115,7 @@ func LoadTelemetryConfig(getenv func(string) string) (TelemetryConfig, error) {
 	flag(EnvPlatformLogs, &c.Platform)
 	flag(EnvFunctionLogs, &c.Function)
 	flag(EnvExtensionLogs, &c.Extension)
-	if v := env.lookup(EnvTelemetryListen); v != "" {
+	if v := strings.TrimSpace(env.lookup(EnvTelemetryListen)); v != "" {
 		c.Listen = v
 	}
 	number(EnvBufferMaxItems, &c.MaxItems, 1000, 10000)

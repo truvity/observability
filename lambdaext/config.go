@@ -109,7 +109,7 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 func checkUpstream(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return fmt.Errorf("%s is not a URL: %q", EnvOTLPEndpoint, raw)
+		return fmt.Errorf("%s is not a URL", EnvOTLPEndpoint)
 	}
 	switch u.Scheme {
 	case "https":
@@ -119,7 +119,9 @@ func checkUpstream(raw string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s must be https, got %q", EnvOTLPEndpoint, raw)
+	// Only scheme and host are printed: a URL may carry credentials, and the
+	// error is logged (and forwarded as a function log).
+	return fmt.Errorf("%s must be https, got %s://%s", EnvOTLPEndpoint, u.Scheme, u.Host)
 }
 
 // refreshMargin is how long before expiry a token is replaced: a third of

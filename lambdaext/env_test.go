@@ -83,3 +83,36 @@ func TestWarnDeprecatedNamesNoValues(t *testing.T) {
 		t.Fatalf("warnings: %q", lines)
 	}
 }
+
+func TestTelemetryConfigTrimsValues(t *testing.T) {
+	tc, err := LoadTelemetryConfig(envMap(map[string]string{
+		"OTLP_LAMBDA_FUNCTION_LOGS": " false ", "OTLP_LAMBDA_TELEMETRY_BUFFER_TIMEOUT_MS": " 250\n",
+		"OTLP_LAMBDA_TELEMETRY_LISTEN": " 127.0.0.1:4243 ",
+	}))
+	if err != nil || tc.Function || tc.TimeoutMs != 250 || tc.Listen != "127.0.0.1:4243" {
+		t.Fatalf("got %+v, %v", tc, err)
+	}
+}
+
+func TestUpstreamErrorsPrintNoCredentials(t *testing.T) {
+	for _, raw := range []string{"http://user:pa55word@otlp.example/path?token=s3cret", "ftp://user:pa55word@otlp.example"} {
+		err := checkUpstream(raw)
+		if err == nil || strings.Contains(err.Error(), "pa55word") || strings.Contains(err.Error(), "s3cret") ||
+			!strings.Contains(err.Error(), "otlp.example") {
+			t.Errorf("%s: %v", raw, err)
+		}
+	}
+	if err := checkUpstream("://pa55word"); err == nil || strings.Contains(err.Error(), "pa55word") {
+		t.Errorf("unparsable: %v", err)
+	}
+}
+
+func TestCurrentNameIsTheInverseOfOldNames(t *testing.T) {
+	for _, name := range []string{EnvIssuer, EnvOTLPEndpoint, EnvOTLPAudience, EnvFunctionLogs} {
+		for _, old := range oldNames(name) {
+			if got := currentName(old); got != name {
+				t.Errorf("currentName(%s) = %s, want %s", old, got, name)
+			}
+		}
+	}
+}
