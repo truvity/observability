@@ -348,20 +348,20 @@ func TestFunctionLogTraceIDWithoutSpanID(t *testing.T) {
 
 func TestFunctionLogLevelForms(t *testing.T) {
 	for line, want := range map[string]int32{
-		`{"level":"ERROR+2","msg":"m"}`:  lambdaext.SeverityError,
-		`{"level":"WARN+1","msg":"m"}`:   lambdaext.SeverityWarn,
-		`{"level":"DEBUG\u002d4","msg":"m"}`:  lambdaext.SeverityDebug,
-		`{"level":"INFO+3","msg":"m"}`:   lambdaext.SeverityInfo,
-		`{"level":10,"msg":"m"}`:         lambdaext.SeverityDebug,
-		`{"level":20,"msg":"m"}`:         lambdaext.SeverityDebug,
-		`{"level":30,"msg":"m"}`:         lambdaext.SeverityInfo,
-		`{"level":40,"msg":"m"}`:         lambdaext.SeverityWarn,
-		`{"level":50,"msg":"m"}`:         lambdaext.SeverityError,
-		`{"level":60,"msg":"m"}`:         lambdaext.SeverityFatal,
-		`{"severity":"error","msg":"m"}`: lambdaext.SeverityError,
-		`{"Level":"WARNING","msg":"m"}`:  lambdaext.SeverityWarn,
-		`{"level":"verbose","msg":"m"}`:  lambdaext.SeverityInfo,
-		`{"level":"ERROR-x","msg":"m"}`:  lambdaext.SeverityInfo,
+		`{"level":"ERROR+2","msg":"m"}`:      lambdaext.SeverityError,
+		`{"level":"WARN+1","msg":"m"}`:       lambdaext.SeverityWarn,
+		`{"level":"DEBUG\u002d4","msg":"m"}`: lambdaext.SeverityDebug,
+		`{"level":"INFO+3","msg":"m"}`:       lambdaext.SeverityInfo,
+		`{"level":10,"msg":"m"}`:             lambdaext.SeverityDebug,
+		`{"level":20,"msg":"m"}`:             lambdaext.SeverityDebug,
+		`{"level":30,"msg":"m"}`:             lambdaext.SeverityInfo,
+		`{"level":40,"msg":"m"}`:             lambdaext.SeverityWarn,
+		`{"level":50,"msg":"m"}`:             lambdaext.SeverityError,
+		`{"level":60,"msg":"m"}`:             lambdaext.SeverityFatal,
+		`{"severity":"error","msg":"m"}`:     lambdaext.SeverityError,
+		`{"Level":"WARNING","msg":"m"}`:      lambdaext.SeverityWarn,
+		`{"level":"verbose","msg":"m"}`:      lambdaext.SeverityInfo,
+		`{"level":"ERROR-x","msg":"m"}`:      lambdaext.SeverityInfo,
 	} {
 		if got := mapOne(t, fnLine(t, line)).Severity; got != want {
 			t.Errorf("%s: severity %d, want %d", line, got, want)
