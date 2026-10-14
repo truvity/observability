@@ -28,7 +28,7 @@ metrics:
   scrape:
     cadvisorDrop:
       extraMetricNames:
-        - container_spec_memory_reservation_limit_bytes
+        - container_network_tcp_usage_total
       extraKeepBucketMetrics:
         - container_fs_io_time_weighted_seconds_total_bucket
 
