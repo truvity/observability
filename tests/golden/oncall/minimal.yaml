@@ -479,6 +479,8 @@ spec:
         # nowhere but here. Summed over the replicas (and the payload
         # types), keeping the cluster and the result.
         - alert: TelegramRelayDeliveryFailing
+          # written out on purpose: the VMRule CRD defaults it (see observability-rum vmrule.yaml)
+          record: ""
           expr: >-
             sum without (pod, instance, type) (
               increase(telegram_relay_notifications_total{result=~"telegram_error|unknown_recipient|config_error"}[15m])

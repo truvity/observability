@@ -30,7 +30,13 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      # group, kind and weight are the Gateway API defaults, written out: the
+      # API server stores them on admission and ArgoCD diffs the manifest
+      # against the stored object, so omitting them is OutOfSync forever.
       backendRefs:
-        - name: {{ include "oncall.goalertName" . }}
+        - group: ""
+          kind: Service
+          name: {{ include "oncall.goalertName" . }}
           port: {{ .Values.service.port }}
+          weight: 1
 {{- end }}
