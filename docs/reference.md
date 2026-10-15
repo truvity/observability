@@ -261,7 +261,7 @@ Initialized), which `groups.pendingPods` cannot.
 | `absentSeverity` | enum | `warning` | Severity of `NodeClaimMetricsAbsent`. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 
-Alerts: `NodeClaimNotReady` (one per claim and condition type),
+Alerts: `NodeClaimNotReady` (one per claim; claims being terminated by Karpenter are left out),
 `NodeClaimMetricsAbsent`.
 
 ### `groups.cnpg`

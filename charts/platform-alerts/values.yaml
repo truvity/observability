@@ -918,7 +918,15 @@ groups:
     "kubernetes-system-scheduler": {enabled: false, exclude: [], override: {}}
     "node-network": {enabled: true, exclude: [], override: {}}
     "node.rules": {enabled: true, exclude: [], override: {}}
-    "vm-health": {enabled: true, exclude: [], override: {}}
+    # -- `ProcessNearFDLimits` is guarded with `process_max_fds > 0`: a
+    # half-registered scrape target reports `process_max_fds` 0 (no limit
+    # read), and upstream's `max - open < 100` then reads negative and pages.
+    "vm-health":
+      enabled: true
+      exclude: []
+      override:
+        ProcessNearFDLimits:
+          expr: ((process_max_fds - process_open_fds) < 100) and (process_max_fds > 0)
     # -- The stack has always replaced this one expression (see the stack's
     # comment: `count:up0` is empty by design). Keep it, or the alert fires
     # on a healthy estate.

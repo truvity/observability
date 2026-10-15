@@ -4,6 +4,11 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change (`platform-alerts`, `groups.nodeClaims`; render and alert identity):** `NodeClaimNotReady` no longer fires for healthy claims that Karpenter is consolidating, draining or terminating (their conditions drop to 0 while `Drained`, `InstanceTerminating`, `VolumesDetached` or `DisruptionReason` series appear), no longer fires on the stale zero series of an earlier reason (`NodeNotFound`, `AwaitingReconciliation`) beside a True condition, and fires **once per claim** instead of once per condition type: the `type` label is gone from the alert (the summary no longer names a type). A claim that never launches, registers or initializes still fires after `for`. Routes or silences that match `type` on this alert must drop it. Goldens that change: `platform-alerts` `node-claims`, `node-claims-shared-store`, `owner-label`, `presets-explicit`, `presets-preset`.
+- **Behaviour change (`platform-alerts`, `groups.upstream`, default):** the vendored `vm-health` rule `ProcessNearFDLimits` is guarded with `and (process_max_fds > 0)` through the group's `override` (the vendored file and pin are untouched): a half-registered scrape target reports `process_max_fds` 0 and the unguarded `max - open < 100` paged on it. To restore upstream's expression set `groups.upstream."vm-health".override: {}`. Goldens that change: `upstream-pack`, `upstream-presets-explicit`, `upstream-presets-preset`.
+
 ## v0.94.0
 
 - **Behaviour change (chart `oncall`, render only; no opt-out needed):** the HTTPRoute backend ref writes the Gateway API defaults (`group: ""`, `kind: Service`, `weight: 1`) and the two alerts write `record: ""` (the VMRule CRD default), as `observability-rum` and `observability-mcp` already do. The API server stores these defaults on admission, so a manifest that omits them stays OutOfSync in Argo CD forever; nothing changes in behaviour.
