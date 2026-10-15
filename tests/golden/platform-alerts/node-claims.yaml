@@ -26,19 +26,39 @@ spec:
         # Karpenter has written the condition, which is when it starts to
         # count as not-True. Ready is left out on purpose: it is the
         # conjunction of these three, so it would only repeat them.
+        #
+        # `nodeclaim_status_condition` has one series per (type, reason), and
+        # the series of an earlier reason (NodeNotFound,
+        # AwaitingReconciliation, ...) keep reading 0 beside the current one.
+        # So a condition is not True only when NO reason series of that type
+        # reads 1: the inner `max` per type. `min` over the three types then
+        # gives ONE alert per claim, not one per type.
+        #
+        # A claim that Karpenter is terminating (consolidation, drift,
+        # emptiness: it gains Drained, InstanceTerminating, VolumesDetached or
+        # DisruptionReason series) sees its conditions drop to 0 on purpose;
+        # it is left out. A claim that never registers has none of those
+        # until Karpenter's 15m registration TTL deletes it, so it still fires.
         - alert: NodeClaimNotReady
           expr: >-
-            max by (k8s_cluster_name, nodeclaim, nodepool, type) (
-              nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} == 0
+            (
+              min by (k8s_cluster_name, nodeclaim, nodepool) (
+                max by (k8s_cluster_name, nodeclaim, nodepool, type) (
+                  nodeclaim_status_condition{type=~"Launched|Registered|Initialized"}
+                )
+              ) == 0
             )
+            unless on (k8s_cluster_name, nodeclaim)
+            nodeclaim_status_condition{type=~"Drained|InstanceTerminating|VolumesDetached|DisruptionReason"}
           for: 10m
           labels:
             severity: warning
           annotations:
-            summary: "NodeClaim {{ $labels.nodeclaim }} ({{ $labels.nodepool }}) has not reached {{ $labels.type }} for 10m"
+            summary: "NodeClaim {{ $labels.nodeclaim }} ({{ $labels.nodepool }}) is not Launched, Registered and Initialized after 10m"
             description: >-
-              Karpenter created this NodeClaim but its {{ $labels.type }}
-              condition has not become True in 10m. Launched means the
+              Karpenter created this NodeClaim but one of its Launched, Registered
+              or Initialized conditions has not become True in 10m. A
+              claim being terminated on purpose is not counted. Launched means the
               instance was created, Registered that it joined the cluster as a
               node, Initialized that it is ready for pods. Karpenter deletes a
               claim that has not registered after 15 minutes and tries again, so

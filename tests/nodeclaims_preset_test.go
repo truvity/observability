@@ -89,8 +89,11 @@ func TestNodeClaimsPresetRendersConfigAndNarrowGrant(t *testing.T) {
 }
 
 func TestNodeClaimAlertsRenderTheirExpressions(t *testing.T) {
-	const notReady = `max by (k8s_cluster_name, nodeclaim, nodepool, type) (` +
-		` nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} == 0 )`
+	const notReady = `( min by (k8s_cluster_name, nodeclaim, nodepool) (` +
+		` max by (k8s_cluster_name, nodeclaim, nodepool, type) (` +
+		` nodeclaim_status_condition{type=~"Launched|Registered|Initialized"} ) ) == 0 )` +
+		` unless on (k8s_cluster_name, nodeclaim)` +
+		` nodeclaim_status_condition{type=~"Drained|InstanceTerminating|VolumesDetached|DisruptionReason"}`
 	want := map[string]struct{ expr, hold string }{
 		"NodeClaimNotReady":      {notReady, "10m"},
 		"NodeClaimMetricsAbsent": {absentGuard(`nodeclaim_status_condition{type="Launched"}`, ""), "30m"},
@@ -114,4 +117,24 @@ func TestNodeClaimAlertsRenderTheirExpressions(t *testing.T) {
 		}
 	}
 	assert.Len(t, got, len(want))
+}
+
+func TestProcessNearFDLimitsIgnoresAZeroLimit(t *testing.T) {
+	const want = `((process_max_fds - process_open_fds) < 100) and (process_max_fds > 0)`
+	var found bool
+	for _, doc := range splitDocs(t, "golden/platform-alerts/upstream-pack.yaml") {
+		var rule vmRuleDoc
+		if yaml.Unmarshal(doc, &rule) != nil || rule.Kind != "VMRule" {
+			continue
+		}
+		for _, g := range rule.Spec.Groups {
+			for _, r := range g.Rules {
+				if r.Alert == "ProcessNearFDLimits" {
+					found = true
+					assert.Equal(t, want, strings.Join(strings.Fields(r.Expr), " "))
+				}
+			}
+		}
+	}
+	assert.True(t, found, "ProcessNearFDLimits is not in the golden")
 }
