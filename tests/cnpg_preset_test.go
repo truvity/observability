@@ -82,12 +82,20 @@ func TestCNPGPresetRendersConfigAndNarrowGrant(t *testing.T) {
 	assert.Equal(t, []string{"metadata", "namespace"}, r.Labels["namespace"])
 	assert.Equal(t, []string{"metadata", "name"}, r.Labels["cluster"])
 	assert.Equal(t, []string{"status", "phase"}, r.Labels["phase"])
-	require.Len(t, r.Metrics, 1)
+	require.Len(t, r.Metrics, 3)
 	assert.Equal(t, "cnpg_cluster_status_condition", r.Metrics[0].Name)
 	assert.Equal(t, "Gauge", r.Metrics[0].Each.Type)
 	assert.Equal(t, []string{"status", "conditions"}, r.Metrics[0].Each.Gauge.Path)
 	assert.Equal(t, []string{"type"}, r.Metrics[0].Each.Gauge.Labels["type"])
 	assert.Equal(t, []string{"status"}, r.Metrics[0].Each.Gauge.ValueFrom)
+
+	// The two scalar gauges the stuck-phase rule compares.
+	assert.Equal(t, "cnpg_cluster_instances", r.Metrics[1].Name)
+	assert.Equal(t, "Gauge", r.Metrics[1].Each.Type)
+	assert.Equal(t, []string{"spec", "instances"}, r.Metrics[1].Each.Gauge.Path)
+	assert.Equal(t, "cnpg_cluster_ready_instances", r.Metrics[2].Name)
+	assert.Equal(t, "Gauge", r.Metrics[2].Each.Type)
+	assert.Equal(t, []string{"status", "readyInstances"}, r.Metrics[2].Each.Gauge.Path)
 
 	require.Len(t, rules, 1, "the grant is one rule")
 	assert.Equal(t, []string{"postgresql.cnpg.io"}, rules[0].APIGroups)
@@ -144,4 +152,36 @@ func TestCNPGClusterNotReadyHold(t *testing.T) {
 
 	justShort := vmalertHoldWindow(untilThen(60, 14), hold, step)
 	requireNeverFires(t, justShort, "Ready back before the hold elapsed must not alert")
+}
+
+// CNPGClusterPhaseStuck: the phase is not healthy while ready instances equal
+// the desired ones (the lost-config-reload signature), held 10m. Read back
+// from the golden, then its hold: a phase stuck for hours fires once, ten
+// minutes in; a switchover that settles inside the hold never does.
+func TestCNPGClusterPhaseStuck(t *testing.T) {
+	const stuck = `count by (k8s_cluster_name, namespace, cluster) (` +
+		` cnpg_cluster_status_condition{type="Ready", phase!="Cluster in healthy state"} )` +
+		` and on (k8s_cluster_name, namespace, cluster) (` +
+		` max by (k8s_cluster_name, namespace, cluster) (cnpg_cluster_ready_instances)` +
+		` == max by (k8s_cluster_name, namespace, cluster) (cnpg_cluster_instances) )` +
+		` and on (k8s_cluster_name, namespace, cluster) (` +
+		` max by (k8s_cluster_name, namespace, cluster) (cnpg_cluster_instances) > 0 )`
+	got := cnpgRules(t, "golden/platform-alerts/cnpg-shared-store.yaml")
+	require.Contains(t, got, "CNPGClusterPhaseStuck")
+	assert.Equal(t, stuck, got["CNPGClusterPhaseStuck"].expr)
+	assert.Equal(t, "10m", got["CNPGClusterPhaseStuck"].hold)
+
+	d := cnpgRules(t, "golden/platform-alerts/cnpg.yaml")
+	require.Contains(t, d, "CNPGClusterPhaseStuck")
+	assert.Equal(t, "10m", d["CNPGClusterPhaseStuck"].hold)
+
+	hold, err := time.ParseDuration(d["CNPGClusterPhaseStuck"].hold)
+	require.NoError(t, err)
+	const step = time.Minute
+
+	requireFiresAfter(t, vmalertHoldWindow(allTrue(600), hold, step), int(hold/step))
+	requireNeverFires(t, vmalertHoldWindow(untilThen(60, 5), hold, step),
+		"a switchover that settled within five minutes must not alert")
+	requireNeverFires(t, vmalertHoldWindow(untilThen(60, 9), hold, step),
+		"a phase back to healthy before the hold elapsed must not alert")
 }

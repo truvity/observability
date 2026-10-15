@@ -54,7 +54,11 @@ over a CloudNativePG Cluster's status.conditions (Ready, ContinuousArchiving,
 healthy state" or "Switchover in progress"), as a label of every series. A
 phase is a label and not a StateSet because CloudNativePG's phases are an open
 set of strings, not an enum. A phase change replaces the series, which is
-what a "Ready=False in phase X for 15m" rule wants. One series per condition
+what a "Ready=False in phase X for 15m" rule wants.
+`cnpg_cluster_instances` (spec.instances) and `cnpg_cluster_ready_instances`
+(status.readyInstances) come with it, same labels: a Cluster whose phase is
+not healthy while the two are equal is the stuck-reconcile signature
+`CNPGClusterPhaseStuck` reads, a degraded one has fewer ready than desired. One series per condition
 per Cluster object: a handful per database, no unbounded name label.
 
 `metricNamePrefix: ""` on all of them, explicit: unset, kube-state-metrics'
@@ -172,6 +176,24 @@ data:
                     type: ["type"]
                     reason: ["reason"]
                   valueFrom: ["status"]
+            - name: cnpg_cluster_instances
+              help: >-
+                CloudNativePG Cluster desired instances, from spec.instances.
+                Every series carries the Cluster's current status.phase.
+              each:
+                type: Gauge
+                gauge:
+                  path: [spec, instances]
+            - name: cnpg_cluster_ready_instances
+              help: >-
+                CloudNativePG Cluster instances the operator counts as ready,
+                from status.readyInstances (absent while the field is unset,
+                that is 0 ready in the status). Every series carries the
+                Cluster's current status.phase.
+              each:
+                type: Gauge
+                gauge:
+                  path: [status, readyInstances]
 {{- end }}
 {{- else }}
         []

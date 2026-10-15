@@ -42,7 +42,41 @@ spec:
               `kubectl -n {{ $labels.namespace }} get cluster.postgresql.cnpg.io {{ $labels.cluster }} -o yaml`
               (status.phase, status.phaseReason, status.conditions), then the
               CloudNativePG operator's logs for this Cluster.
-        # The deadman for the rule above: the series not being exported at
+        # The upstream CloudNativePG bug where a primary change leaves the
+        # operator's config reload lost: `status.phase` stays at "Switchover
+        # in progress" or "Waiting for the instances to become active"
+        # indefinitely while every instance is ready. A phase that is not
+        # healthy with ready instances equal to the desired ones is that
+        # signature; a genuinely degraded Cluster has fewer ready and is
+        # CNPGClusterNotReady's. The phase is dropped from the match, so the
+        # `for` clock does not restart when the stuck phase changes its text.
+        - alert: CNPGClusterPhaseStuck
+          expr: >-
+            count by (k8s_cluster_name, namespace, cluster) (
+              cnpg_cluster_status_condition{type="Ready", phase!="Cluster in healthy state"}
+            )
+            and on (k8s_cluster_name, namespace, cluster) (
+              max by (k8s_cluster_name, namespace, cluster) (cnpg_cluster_ready_instances)
+              == max by (k8s_cluster_name, namespace, cluster) (cnpg_cluster_instances)
+            )
+            and on (k8s_cluster_name, namespace, cluster) (
+              max by (k8s_cluster_name, namespace, cluster) (cnpg_cluster_instances) > 0
+            )
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CloudNativePG Cluster {{ $labels.namespace }}/{{ $labels.cluster }} phase is stuck for 10m with every instance ready"
+            description: >-
+              The Cluster's status.phase has not been "Cluster in healthy
+              state" for 10m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }} although its ready
+              instances equal the desired ones: the operator lost a config
+              reload after a primary change (upstream cloudnative-pg #11627).
+              Run `SELECT pg_reload_conf()` on every instance of the Cluster;
+              restarting the operator or the pods does not help. Check the pod
+              roles first (`kubectl -n {{ $labels.namespace }} get pods -l cnpg.io/cluster={{ $labels.cluster }} -L role`).
+              A stuck Cluster also blocks the Argo CD sync that owns it.
+        # The deadman for the rules above: the series not being exported at
         # all (the preset never applied, or the scrape is dark) reads as
         # healthy to a rule that compares its values.
         - alert: CNPGMetricsAbsent

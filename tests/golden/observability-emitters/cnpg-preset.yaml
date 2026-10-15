@@ -299,6 +299,24 @@ data:
                     type: ["type"]
                     reason: ["reason"]
                   valueFrom: ["status"]
+            - name: cnpg_cluster_instances
+              help: >-
+                CloudNativePG Cluster desired instances, from spec.instances.
+                Every series carries the Cluster's current status.phase.
+              each:
+                type: Gauge
+                gauge:
+                  path: [spec, instances]
+            - name: cnpg_cluster_ready_instances
+              help: >-
+                CloudNativePG Cluster instances the operator counts as ready,
+                from status.readyInstances (absent while the field is unset,
+                that is 0 ready in the status). Every series carries the
+                Cluster's current status.phase.
+              each:
+                type: Gauge
+                gauge:
+                  path: [status, readyInstances]
 
 ---
 # Source: observability-emitters/charts/kube-state-metrics/templates/role.yaml

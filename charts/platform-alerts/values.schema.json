@@ -313,6 +313,8 @@
             "enabled": { "type": "boolean" },
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" },
+            "phaseStuckFor": { "$ref": "#/definitions/duration" },
+            "phaseStuckSeverity": { "$ref": "#/definitions/severity" },
             "absentFor": { "$ref": "#/definitions/duration" },
             "absentSeverity": { "$ref": "#/definitions/severity" },
             "keepClusterLabel": { "type": "boolean" }
