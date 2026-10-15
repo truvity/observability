@@ -6,7 +6,7 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
-- **Fix (chart `oncall`):** the HTTPRoute backend ref writes the Gateway API defaults (`group: ""`, `kind: Service`, `weight: 1`) and the two alerts write `record: ""` (the VMRule CRD default), as `observability-rum` and `observability-mcp` already do. The API server stores these defaults on admission, so a manifest that omits them stays OutOfSync in Argo CD forever; nothing changes in behaviour.
+- **Behaviour change (chart `oncall`, render only; no opt-out needed):** the HTTPRoute backend ref writes the Gateway API defaults (`group: ""`, `kind: Service`, `weight: 1`) and the two alerts write `record: ""` (the VMRule CRD default), as `observability-rum` and `observability-mcp` already do. The API server stores these defaults on admission, so a manifest that omits them stays OutOfSync in Argo CD forever; nothing changes in behaviour.
 
 ## v0.93.0
 
