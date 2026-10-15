@@ -280,12 +280,40 @@ while every instance is up.
 | `enabled` | bool | `false` | Renders the group. |
 | `for` | duration | `15m` | How long `Ready` must stay not-True. A failover or rolling update settles well inside it. |
 | `severity` | enum | `warning` | Severity of `CNPGClusterNotReady`. |
+| `phaseStuckFor` | duration | `10m` | How long the phase must stay not "Cluster in healthy state" with every instance ready before `CNPGClusterPhaseStuck`. |
+| `phaseStuckSeverity` | enum | `warning` | Severity of `CNPGClusterPhaseStuck`. |
 | `absentFor` | duration | `30m` | How long the series can be absent before `CNPGMetricsAbsent`. |
 | `absentSeverity` | enum | `warning` | Severity of `CNPGMetricsAbsent`. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 
 Alerts: `CNPGClusterNotReady` (one per Cluster and phase; a change of phase
-text restarts the `for` clock), `CNPGMetricsAbsent`.
+text restarts the `for` clock), `CNPGClusterPhaseStuck` (one per Cluster;
+needs the emitters' `cnpg_cluster_instances` and `cnpg_cluster_ready_instances`,
+produced by the same preset), `CNPGMetricsAbsent`.
+
+#### Runbook: `CNPGClusterPhaseStuck`
+
+What it means: the Cluster's `status.phase` has not been "Cluster in healthy
+state" for `phaseStuckFor` (default 10m) while the ready instances equal the
+desired ones. That is the signature of upstream cloudnative-pg issue #11627:
+after a primary change (a switchover or failover, for example after a node
+rotation) a config reload is lost and the phase stays at "Switchover in
+progress" or "Waiting for the instances to become active" indefinitely, with
+every instance healthy. A genuinely degraded Cluster has fewer ready than
+desired instances and is `CNPGClusterNotReady`'s. A stuck Cluster also blocks
+the GitOps sync (for example Argo CD) of the application that owns it.
+
+Check the pod roles first, then reload the configuration on every instance:
+
+```sh
+kubectl -n <namespace> get pods -l cnpg.io/cluster=<cluster> -L role
+kubectl -n <namespace> exec <cluster>-<n> -c postgres -- psql -U postgres -Atc "select pg_reload_conf()"
+```
+
+Run the second command for each instance (`<cluster>-1`, `<cluster>-2`, ...).
+The phase returns to "Cluster in healthy state" within a minute or so. The
+operator restarts do not help, and neither does deleting pods: the reload is
+the fix.
 
 #### Runbook: `CNPGClusterNotReady`
 
@@ -1956,7 +1984,7 @@ with underscores, which is how they match the agent's labels.
 | `kubeStateMetrics.enabled` | bool | `false` | Renders upstream's `kube-state-metrics` chart. **Off by default** — see docs/kube-state-metrics.md. |
 | `kubeStateMetrics.customResources.kargo.enabled` | bool | `false` (0.9.0) | `kargo_stage_condition` / `kargo_promotion_phase`, the shape `charts/platform-alerts`' `groups.kargo` reads (see docs/reference.md's own section on it) — without hand-writing kube-state-metrics' `customResourceState.config` and `rbac.extraRules`. Grants only `get`/`list`/`watch` on `stages.kargo.akuity.io` / `promotions.kargo.akuity.io`. Whenever `kubeStateMetrics.enabled` is true (this preset on or off), this chart pins `kube-state-metrics.customResourceState.enabled: true` / `.create: false` and renders the ConfigMap itself (empty when no preset is on) — **refused together with a consumer-authored `kube-state-metrics.customResourceState.config`**, which would otherwise never be read. |
 | `kubeStateMetrics.customResources.nodeClaims.enabled` | bool | `false` | `nodeclaim_status_condition{nodeclaim,nodepool,type,reason}`, the shape `platform-alerts`' `groups.nodeClaims` reads: Karpenter NodeClaim conditions, 1 when True. Grants only `get`/`list`/`watch` on `nodeclaims.karpenter.sh`. Composes with the `kargo` preset; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
-| `kubeStateMetrics.customResources.cnpg.enabled` | bool | `false` | `cnpg_cluster_status_condition{namespace,cluster,phase,type,reason}`, the shape `platform-alerts`' `groups.cnpg` reads: CloudNativePG Cluster conditions (`clusters.postgresql.cnpg.io`), 1 when True, with `status.phase` as a label. Grants only `get`/`list`/`watch` on `clusters.postgresql.cnpg.io`. Composes with the other presets; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
+| `kubeStateMetrics.customResources.cnpg.enabled` | bool | `false` | `cnpg_cluster_status_condition{namespace,cluster,phase,type,reason}`, the shape `platform-alerts`' `groups.cnpg` reads: CloudNativePG Cluster conditions (`clusters.postgresql.cnpg.io`), 1 when True, with `status.phase` as a label. Also `cnpg_cluster_instances` (`spec.instances`) and `cnpg_cluster_ready_instances` (`status.readyInstances`), same labels. Grants only `get`/`list`/`watch` on `clusters.postgresql.cnpg.io`. Composes with the other presets; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
 
 ### `kube-state-metrics` — the upstream chart
 

@@ -397,6 +397,13 @@ groups:
     # firing. A normal failover or rolling update is well inside it.
     for: 15m
     severity: warning
+    # -- How long a Cluster's phase must stay not-healthy while its ready
+    # instances equal the desired ones before `CNPGClusterPhaseStuck` fires
+    # (the lost-config-reload bug of upstream cloudnative-pg #11627). Reads
+    # `cnpg_cluster_instances` and `cnpg_cluster_ready_instances`, which
+    # the same `customResources.cnpg` preset produces.
+    phaseStuckFor: 10m
+    phaseStuckSeverity: warning
     # -- How long the series can be absent before `CNPGMetricsAbsent` fires.
     # Longer than `for`.
     absentFor: 30m
