@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Breaking (charts `observability-stack`, `observability-proxy`, `observability-alerting`; values):** the boolean spelling of `ha` is gone. The schemas accept `null` (the default) or the object only; `ha: true` and `ha: false` are refused (`at '/ha': got boolean, want object`). `ha: false` was the single install and `ha: true` only asked for two `zones` and turned nothing on, so neither form changes a render when rewritten: replace `ha: false` with `ha: {enabled: false}` (or drop the key), and `ha: true` with `ha: {enabled: false}` too, or with `ha: {enabled: true, ...}` if you meant the pair (docs/high-availability.md). The normalised helper no longer carries `legacy`, and the zone check runs only for `ha.enabled: true`. Goldens: none change (the cases now write the object; the renders are byte-identical). New refusals `ha-boolean` for each chart; `ha-without-zones` is that fixture now (`ha-one-zone` covers the object form).
+
 ## v0.95.1
 
 - **Behaviour change (charts `observability-stack` and `observability-alerting`, default; render only):** `alertmanager.resources.requests.cpu` defaults to `50m` (was `1`). The old request was never measured; an Alertmanager pair used under 0.01 CPU at p99 over a week, and each replica reserved a whole core. The memory request and limit (256Mi) are unchanged. To keep the old request set `alertmanager.resources.requests.cpu: "1"`. Goldens that change: every `observability-stack` case that renders the VMAlertmanager and `observability-alerting` ones.

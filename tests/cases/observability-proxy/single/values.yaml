@@ -2,7 +2,8 @@
 # stack case of the same name, from the release in which the stack stopped
 # rendering the Door: the stack's values kept to the keys this chart declares,
 # with `stackReleaseName: observability-stack
-ha: false
+ha:
+  enabled: false
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client
