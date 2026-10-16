@@ -136,7 +136,7 @@ every setting that says otherwise instead of quietly ignoring it.
 {{- define "observability-stack.validate.replica" -}}
 {{- $vmks := index .Values "victoria-metrics-k8s-stack" -}}
 {{- if not (include "observability-stack.ha" . | fromYaml).enabled -}}
-{{- fail "observability-stack: `mode` is \"replica\" but `ha.enabled` is not true. A replica is the second half of a pair and exists only beside a primary release (`mode: full` with `ha: {enabled: true, peer: ...}`); on its own it is a store with no proxy, no alerting and no backup. Set `ha: {enabled: true}` and `zones`, or run `mode: full`. (The boolean `ha: true` is the legacy switch and does not turn the pair on.)" -}}
+{{- fail "observability-stack: `mode` is \"replica\" but `ha.enabled` is not true. A replica is the second half of a pair and exists only beside a primary release (`mode: full` with `ha: {enabled: true, peer: ...}`); on its own it is a store with no proxy, no alerting and no backup. Set `ha: {enabled: true}` and `zones`, or run `mode: full`." -}}
 {{- end -}}
 {{- if not $vmks.enabled -}}
 {{- fail "observability-stack: `mode` is \"replica\" but `victoria-metrics-k8s-stack.enabled` is false. The metrics store is a VMSingle that subchart renders; leave it on." -}}
@@ -193,9 +193,9 @@ and refuses instead (the rule for every mirror here).
 {{- define "observability-stack.validate.ha" -}}
 {{- $mode := .Values.mode | default "full" -}}
 {{- $haCfg := include "observability-stack.ha" . | fromYaml -}}
-{{- if or $haCfg.enabled $haCfg.legacy -}}
+{{- if $haCfg.enabled -}}
 {{- if lt (len .Values.zones) 2 -}}
-{{- fail (printf "observability-stack: `ha` is enabled with %d zone(s). No store here replicates across a zone: high availability means two independent installs and writers that send to both, so it needs at least two entries in `zones`. Set `ha: false` for a single-zone install — it is the supported shape, not a lesser one." (len .Values.zones)) -}}
+{{- fail (printf "observability-stack: `ha` is enabled with %d zone(s). No store here replicates across a zone: high availability means two independent installs and writers that send to both, so it needs at least two entries in `zones`. Leave `ha` unset (or `ha.enabled: false`) for a single-zone install — it is the supported shape, not a lesser one." (len .Values.zones)) -}}
 {{- end -}}
 {{- end -}}
 {{- if $haCfg.enabled -}}
@@ -245,7 +245,7 @@ and refuses instead (the rule for every mirror here).
 {{- end -}}
 {{- else -}}
 {{- if or $haCfg.peer.metrics $haCfg.peer.logs $haCfg.peer.traces -}}
-{{- fail "observability-stack: `ha.peer` is set but `ha.enabled` is not true. Nothing would read it; set `ha: true` (with `zones`), or clear `ha.peer`." -}}
+{{- fail "observability-stack: `ha.peer` is set but `ha.enabled` is not true. Nothing would read it; set `ha.enabled: true` (with `zones`), or clear `ha.peer`." -}}
 {{- end -}}
 {{- if .Values.selfAlerts.divergence.enabled -}}
 {{- fail "observability-stack: `selfAlerts.divergence.enabled` is true but `ha.enabled` is not. The rule compares the two stores of a pair; a single install has one." -}}

@@ -306,13 +306,10 @@
       "description": "\"replica\": the second half of a high-availability pair \u2014 the three stores and nothing else; a CONTRACT like operator-only (docs/high-availability.md). \"full\" (the default): this install runs its own stores, proxy and alerting. \"operator-only\": this install runs NOTHING but the vendored VictoriaMetrics operator and its own CRD prerequisites (never this chart's CRDs \u2014 see charts/observability-crds) \u2014 no stores, no vmauth, no vmalert, no Grafana, no backups. It exists for a cluster that holds no store of its own but still runs charts/observability-emitters, whose VMAgent custom resource needs an operator to reconcile it; one chart, so the operator version stays identical on every cluster that runs either mode. \"operator-only\" is a CONTRACT, not an override: every component this mode does not run must ALSO be turned off explicitly (vmauth, vmalert, alertmanager, grafana, backup, selfAlerts, metricsSelfScrape, and the three stores) \u2014 the render refuses rather than silently disabling one for you, the same way every other combination in this chart is checked. See docs/target-state.md."
     },
     "ha": {
-      "description": "Zone-redundant mode (docs/high-availability.md). Unset (null) or `false`: the single install. `true`: the legacy boolean, accepted and refused with fewer than two zones, nothing else. An object with `enabled: true`: this release is one half of a pair.",
+      "description": "Zone-redundant mode (docs/high-availability.md). Unset (null), or an object with `enabled: false`: the single install. An object with `enabled: true`: this release is one half of a pair. The boolean spelling is no longer accepted.",
       "oneOf": [
         {
           "type": "null"
-        },
-        {
-          "type": "boolean"
         },
         {
           "type": "object",

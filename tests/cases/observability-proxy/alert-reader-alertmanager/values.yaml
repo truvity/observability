@@ -5,7 +5,8 @@
 # carries the names the stack's Door objects always had. Every principal is an
 # entry of `tenancy.identities`.
 stackReleaseName: observability-stack
-ha: false
+ha:
+  enabled: false
 tenancy:
   issuerUrl: https://issuer.example
   audience: example-observability-client

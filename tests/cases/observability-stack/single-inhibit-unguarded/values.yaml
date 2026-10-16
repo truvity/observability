@@ -15,7 +15,8 @@ global:
 # release supports. `ha` is false, which is not a lesser mode: no store
 # here replicates across a zone, so redundancy is two of these with the
 # writers sending to both.
-ha: false
+ha:
+  enabled: false
 
 vmalert:
   externalUrl: https://alerts.example.com
