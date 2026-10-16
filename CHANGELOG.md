@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.95.1
 
 - **Behaviour change (charts `observability-stack` and `observability-alerting`, default; render only):** `alertmanager.resources.requests.cpu` defaults to `50m` (was `1`). The old request was never measured; an Alertmanager pair used under 0.01 CPU at p99 over a week, and each replica reserved a whole core. The memory request and limit (256Mi) are unchanged. To keep the old request set `alertmanager.resources.requests.cpu: "1"`. Goldens that change: every `observability-stack` case that renders the VMAlertmanager and `observability-alerting` ones.
 
