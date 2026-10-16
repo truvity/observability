@@ -416,8 +416,7 @@ func mintMetricsBackupRole(ctx *pulumi.Context, logger *slog.Logger, provider *a
 
 	// The default trust policy admits exactly one ServiceAccount of one
 	// namespace on one cluster through EKS Pod Identity. The children keep
-	// their top-level names (the role's own name, "-policy" and "-pia")
-	// through an alias.
+	// the names they always had (the role's own name, "-policy" and "-pia").
 	role, err := podidentity.New(ctx, b.RoleName, &podidentity.Args{
 		Provider:            provider,
 		ClusterName:         pulumi.String(b.ClusterName),
@@ -429,7 +428,6 @@ func mintMetricsBackupRole(ctx *pulumi.Context, logger *slog.Logger, provider *a
 		AccountID:           b.AccountID,
 		ClusterARN:          b.ClusterARN,
 		InlinePolicy:        &podidentity.InlinePolicy{Name: "observability-metrics-backup", Document: pulumi.String(policy)},
-		LegacyTopLevel:      true,
 		Names: func(c podidentity.Child) string {
 			switch c.Kind {
 			case podidentity.KindRolePolicy:
