@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change (charts `observability-stack` and `observability-alerting`, default; render only):** `alertmanager.resources.requests.cpu` defaults to `50m` (was `1`). The old request was never measured; an Alertmanager pair used under 0.01 CPU at p99 over a week, and each replica reserved a whole core. The memory request and limit (256Mi) are unchanged. To keep the old request set `alertmanager.resources.requests.cpu: "1"`. Goldens that change: every `observability-stack` case that renders the VMAlertmanager and `observability-alerting` ones.
+
 ## v0.95.0
 
 - **Behaviour change (`platform-alerts`, `groups.nodeClaims`; render and alert identity):** `NodeClaimNotReady` no longer fires for healthy claims that Karpenter is consolidating, draining or terminating (their conditions drop to 0 while `Drained`, `InstanceTerminating`, `VolumesDetached` or `DisruptionReason` series appear), no longer fires on the stale zero series of an earlier reason (`NodeNotFound`, `AwaitingReconciliation`) beside a True condition, and fires **once per claim** instead of once per condition type: the `type` label is gone from the alert (the summary no longer names a type). A claim that never launches, registers or initializes still fires after `for`. Routes or silences that match `type` on this alert must drop it. Goldens that change: `platform-alerts` `node-claims`, `node-claims-shared-store`, `owner-label`, `presets-explicit`, `presets-preset`.
