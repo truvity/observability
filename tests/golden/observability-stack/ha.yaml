@@ -2570,7 +2570,7 @@ spec:
     limits:
       memory: 256Mi
     requests:
-      cpu: "1"
+      cpu: 50m
       memory: 256Mi
   selectAllByDefault: false
   disableSelfServiceScrape: true

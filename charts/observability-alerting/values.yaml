@@ -222,7 +222,7 @@ alertmanager:
     tokenKey: ""
   resources:
     requests:
-      cpu: "1"
+      cpu: 50m
       memory: 256Mi
     limits:
       memory: 256Mi
