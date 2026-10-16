@@ -600,7 +600,7 @@ the schema already refuses one.
 {{/*
 The pair (docs/high-availability.md).
 
-`ha` is the switch. The PRIMARY is `mode: full` with `ha: true`: it owns the
+`ha` is the switch. The PRIMARY is `mode: full` with `ha.enabled: true`: it owns the
 proxy, the vmalerts and everything else, and knows the other release's
 stores by address (`pair.peer`). A REPLICA is `mode: replica`: the three
 stores and nothing else. `observability-proxy.ha.primary` is "true" on the
@@ -611,24 +611,20 @@ first and empty on every other install, so a template can gate on it.
 {{- end -}}
 
 {{/*
-`ha`, normalised. The key has two spellings (values.yaml, `ha`): the
-boolean this chart shipped first, which still only asks for two zones, and
-the object, which is the pair. Returned as YAML with every field present:
-`enabled` (the pair is on: only the object with `enabled: true`),
-`legacy` (the boolean was true), `name`, `replica`, `peer.{metrics,logs,
-traces}`. Parse with `fromYaml`.
+`ha`, normalised: null or the object (values.yaml, `ha`). Returned as YAML
+with every field present: `enabled` (the pair is on: only the object with
+`enabled: true`), `name`, `replica`, `peer.{metrics,logs,traces}`. Parse
+with `fromYaml`.
 */}}
 {{- define "observability-proxy.ha" -}}
 {{- $ha := .Values.ha -}}
-{{- $out := dict "enabled" false "legacy" false "name" "observability" "replica" "" "peer" (dict "metrics" "" "logs" "" "traces" "") -}}
+{{- $out := dict "enabled" false "name" "observability" "replica" "" "peer" (dict "metrics" "" "logs" "" "traces" "") -}}
 {{- if kindIs "map" $ha -}}
 {{- $_ := set $out "enabled" ($ha.enabled | default false) -}}
 {{- $_ := set $out "name" ($ha.name | default "observability") -}}
 {{- $_ := set $out "replica" ($ha.replica | default "") -}}
 {{- $peer := $ha.peer | default dict -}}
 {{- $_ := set $out "peer" (dict "metrics" ($peer.metrics | default "") "logs" ($peer.logs | default "") "traces" ($peer.traces | default "")) -}}
-{{- else -}}
-{{- $_ := set $out "legacy" (eq (toString $ha) "true") -}}
 {{- end -}}
 {{- toYaml $out -}}
 {{- end -}}

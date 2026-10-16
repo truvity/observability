@@ -1,0 +1,8 @@
+# expect: at '/ha': got boolean, want object
+# The boolean spelling of `ha` is gone: `true` only ever asked for two
+# zones and turned nothing on, which read as high availability and was not.
+# The schema refuses it; the object (`ha: {enabled: ...}`) is the one form.
+ha: true
+zones:
+  - example-1a
+  - example-1b

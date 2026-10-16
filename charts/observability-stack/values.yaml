@@ -100,14 +100,12 @@ mode: full
 # `ha.enabled: true`) that runs the three stores and nothing else. See
 # docs/high-availability.md.
 #
-# One key, three spellings:
+# One key, two shapes (the boolean `ha: true` / `ha: false` is no longer
+# accepted):
 #
-#   ha: null | false   the single install (null is the default): renders exactly what
-#                      it always did.
-#   ha: true           the BOOLEAN is the switch this chart shipped before
-#                      the behaviour existed, and it keeps meaning what it
-#                      meant: accepted, refused with fewer than two zones,
-#                      and nothing else. It does NOT turn the pair on.
+#   ha: null | {enabled: false}
+#                      the single install (null is the default): renders
+#                      exactly what it always did.
 #   ha: {enabled: true, ...}
 #                      the pair. The object takes:
 #
@@ -148,15 +146,14 @@ mode: full
 # PodDisruptionBudget; one vmalert per store replica evaluates identical
 # rules against its own store; a PodDisruptionBudget per store pair; and the
 # pair is refused unless the stores' own values carry the required zone
-# spread. Both forms refuse fewer than two zones, because a "highly
+# spread. It refuses fewer than two zones, because a "highly
 # available" install with one zone is the single-zone install with a label
 # that stops anyone looking.
 ha: null
 
 # -- The zones this install spans. Names only — they are labels, not
 # addresses, and they are matched against whatever the estate's nodes
-# carry. Required, with at least two entries, when `ha` is true or an
-# object with `enabled: true`.
+# carry. Required, with at least two entries, when `ha.enabled` is true.
 zones: []
 
 # -- The one interval.

@@ -7,9 +7,8 @@ global:
 
 # The PRIMARY half of a high-availability pair: today's install, plus the
 # other release's stores. The peer is a second release of this chart with
-# `mode: replica` (the `replica` case); `ha` as an OBJECT is what turns the
-# pair on, the boolean `ha: true` of the `everything` case is the legacy
-# switch and renders what it always did.
+# `mode: replica` (the `replica` case); `ha.enabled: true` is what turns the
+# pair on.
 ha:
   enabled: true
   peer:

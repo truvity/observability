@@ -10,7 +10,8 @@ global:
 # Every value set away from its default, so a change to any one of them
 # shows up in the golden diff.
 nameOverride: stack
-ha: true
+ha:
+  enabled: false
 zones:
   - example-1a
   - example-1b

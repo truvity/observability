@@ -1,0 +1,3 @@
+# expect: at '/ha': got boolean, want object
+# The mirror of the stack's `ha` takes the object form only, like the stack.
+ha: false
