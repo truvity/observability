@@ -194,7 +194,7 @@ global:
       image:
         registry: docker.io
         repository: curlimages/curl
-        tag: "8.22.0"
+        tag: "8.23.0"
 
 grafana:
   # State lives in the external database; what remains on disk is the
