@@ -27,7 +27,7 @@ sources:
 # observability-rum` and a read of the golden diff.
 dependencies:
   - name: alloy
-    version: 1.13.0
+    version: 1.13.1
     repository: https://grafana.github.io/helm-charts
     # Off with `receivers.enabled: false` (a rules-only release).
     condition: receivers.enabled
