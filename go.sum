@@ -98,8 +98,8 @@ github.com/clipperhouse/displaywidth v0.11.0 h1:lBc6kY44VFw+TDx4I8opi/EtL9m20WSE
 github.com/clipperhouse/displaywidth v0.11.0/go.mod h1:bkrFNkf81G8HyVqmKGxsPufD3JhNl3dSqnGhOoSD/o0=
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
-github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
-github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
+github.com/cloudflare/circl v1.6.4 h1:pOXuDTCEYyzydgUpQ0CQz3LsinKjiSk6nNP5Lt5K64U=
+github.com/cloudflare/circl v1.6.4/go.mod h1:YxarevkLlbaHuWsxG6vmYNWBEsSp4pnp7j+4VljMavY=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMFLdQ=
 github.com/danieljoos/wincred v1.2.3/go.mod h1:6qqX0WNrS4RzPZ1tnroDzq9kY3fu1KwE7MRLQK4X0bs=
@@ -312,8 +312,8 @@ github.com/texttheater/golang-levenshtein v1.0.1 h1:+cRNoVrfiwufQPhoMzB6N0Yf/Mqa
 github.com/texttheater/golang-levenshtein v1.0.1/go.mod h1:PYAKrbF5sAiq9wd+H82hs7gNaen0CplQ9uvm6+enD/8=
 github.com/truvity/aws-structure v0.24.0 h1:kBCaJXumZ2Wau7VOF6eUsmFzEt6REKwwAP3Fjngcteg=
 github.com/truvity/aws-structure v0.24.0/go.mod h1:zuIf35yyhoz/hZkmMT9GBdOFgGLT6k6FODqsz6+vzTE=
-github.com/truvity/k8s v0.17.0 h1:axvQlF4pG4bbP+bGZ+jRQpSiYyI6/9cDBrX/7jq84po=
-github.com/truvity/k8s v0.17.0/go.mod h1:FdahPUNdAx5Dah8hs7HcOUQ806c+HsEBxWkJ6Jl6De8=
+github.com/truvity/k8s v0.29.0 h1:4dLmEKThwmcUHO45dqtdRxhwq5HQaUBt4ikAKZxed98=
+github.com/truvity/k8s v0.29.0/go.mod h1:mVfBlfY6VjJQJQ40dLwrHTdBwInolRZxblUMbyFa8LQ=
 github.com/truvity/tailscale v1.24.2 h1:cnf3msFxWOD1PHswGPtpqKk2MplrrTsH3bsuqw76ao8=
 github.com/truvity/tailscale v1.24.2/go.mod h1:wd2PmPH+7HoQ/8RECVJHpqJqKOR5L3JE7JclbkQukpo=
 github.com/uber/jaeger-client-go v2.30.0+incompatible h1:D6wyKGCecFaSRUpo8lCVbaOOb6ThwMmTEbhRwtKR97o=
