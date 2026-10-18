@@ -16,7 +16,7 @@
 #
 # A store's pod has these containers, all on loopback except the proxy:
 #
-#   proxy        truvity/access-roster's resource-proxy, the pod's only
+#   proxy        truvity/sluis's resource-proxy, the pod's only
 #                MCP port. INBOUND it validates the caller's access token
 #                (signature against the issuer's JWKS, `iss`, `aud` equal
 #                to the connector's resource URL), serves the protected
@@ -53,7 +53,7 @@ logsClusterField: k8s.cluster.name
 # -- The resource-proxy sidecar, shared by every connector.
 proxy:
   image:
-    repository: ghcr.io/truvity/access-roster/resource-proxy
+    repository: ghcr.io/truvity/sluis/resource-proxy
     # -- NO default: the image is built by a different repository's release,
     # so a default here would be a version this chart's own tag cannot know
     # is right. Required (refused empty) while anything is enabled.
