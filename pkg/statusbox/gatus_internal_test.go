@@ -426,7 +426,7 @@ func TestRenderGatusPublicGolden(t *testing.T) {
 
 	want, err := os.ReadFile(path)
 	require.NoError(t, err, "run 'go test ./pkg/statusbox -run TestRenderGatusPublicGolden -update' and review the diff")
-	require.Equal(t, string(want), got, "the public Gatus render moved: run 'go test ./pkg/statusbox -run TestRenderGatusPublicGolden -update' and review the diff")
+	require.Equal(t, string(want), got, "the public Gatus render moved: run the -update command above and review the diff")
 }
 
 func TestAlertsReadURLEscapesTheMatcher(t *testing.T) {
