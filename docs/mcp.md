@@ -47,7 +47,7 @@ flowchart LR
   client["MCP client"] --> proxy["resource-proxy :8080"] --> mg["mcp-grafana 127.0.0.1:8081<br/>search + dashboard tools, --disable-write"] --> outb["proxy, outbound side"] --> grafana["Grafana<br/>[auth.jwt], a fixed Viewer"]
 ```
 
-- **proxy** is `resource-proxy` from truvity/access-roster, the pod's only
+- **proxy** is `resource-proxy` from truvity/sluis, the pod's only
   MCP port. Inbound it validates the caller's access token (signature
   against the issuer's JWKS, `iss`, and `aud` equal to the connector's
   `resourceURL`), serves the RFC 9728 protected-resource metadata, and

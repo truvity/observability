@@ -438,7 +438,7 @@ spec:
         # pod's for the proxy container: the stock servers listen on
         # loopback, which the kubelet cannot reach.
         - name: proxy
-          image: "ghcr.io/truvity/access-roster/resource-proxy:v0.0.1"
+          image: "ghcr.io/truvity/sluis/resource-proxy:v0.0.1"
           imagePullPolicy: IfNotPresent
           env:
             - name: LISTEN
@@ -585,7 +585,7 @@ spec:
         # pod's for the proxy container: the stock servers listen on
         # loopback, which the kubelet cannot reach.
         - name: proxy
-          image: "ghcr.io/truvity/access-roster/resource-proxy:v0.0.1"
+          image: "ghcr.io/truvity/sluis/resource-proxy:v0.0.1"
           imagePullPolicy: IfNotPresent
           env:
             - name: LISTEN
