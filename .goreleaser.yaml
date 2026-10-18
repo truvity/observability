@@ -18,8 +18,9 @@ before:
   hooks:
     - yarn --cwd apps/portal install --immutable
     - yarn --cwd apps/portal build
-    # The Gatus binaries the EC2 status box installs, built from the upstream
-    # tag pkg/statusbox/ec2 pins as GatusVersion: build/gatus/gatus_<tag>_linux_<arch>, attached below.
+    # The Gatus binaries the EC2 status box installs, built from the truvity/gatus
+    # fork at the commit SHA pkg/statusbox/ec2 pins as GatusRepo/GatusRef (temporary):
+    # build/gatus/gatus_<GatusVersion>_linux_<arch>, attached below.
     - hack/build-gatus.sh
 
 builds:
@@ -233,7 +234,7 @@ release:
     | portal image | `ghcr.io/truvity/observability/portal:{{ .Version }}` |
     | observability-portal chart | `oci://ghcr.io/truvity/charts/observability-portal:{{ .Version }}` (`image.tag` defaults to it) |
     | Lambda extension layer | `otlp-lambda-layer_{{ .Version }}_linux_{{ "{amd64,arm64}" }}.zip`, verified by `checksums.txt` ([docs/integrations/aws-lambda.md](https://github.com/truvity/observability/blob/master/docs/integrations/aws-lambda.md)) |
-    | Gatus binaries (EC2 status box) | `gatus_<tag>_linux_{amd64,arm64}`, built from the upstream tag `pkg/statusbox/ec2` pins and verified by `checksums.txt` ([docs/statusbox.md](https://github.com/truvity/observability/blob/master/docs/statusbox.md)) |
+    | Gatus binaries (EC2 status box) | `gatus_<tag>_linux_{amd64,arm64}`, built from the pinned commit of the truvity/gatus PKCE fork (`pkg/statusbox/ec2` pins) and verified by `checksums.txt` ([docs/statusbox.md](https://github.com/truvity/observability/blob/master/docs/statusbox.md)) |
     | Go | `go get github.com/truvity/observability@{{ .Tag }}` |
   # The Gatus binaries (hack/build-gatus.sh) are attached the same way and for
   # the same reason: pkg/statusbox/ec2 reads their sha256 from checksums.txt at

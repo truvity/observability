@@ -581,3 +581,11 @@ func TestSeveralPublicPagesShareTheTunnel(t *testing.T) {
 	a.Instances[3].Port = 8083
 	require.ErrorContains(t, a.validate(), "Port 8083 is also used by instance \"acme-prod\"")
 }
+
+// The Gatus build is pinned to a fork commit, never a moving ref: the script
+// refuses a ref that is not a full SHA, so the pin must be one.
+func TestGatusPinIsAFullCommitSHA(t *testing.T) {
+	require.Regexp(t, `^[0-9a-f]{40}$`, GatusRef)
+	require.Equal(t, "https://github.com/truvity/gatus", GatusRepo)
+	require.Contains(t, GatusVersion, "-pkce", "the fork's version says so")
+}

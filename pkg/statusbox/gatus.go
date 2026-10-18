@@ -273,6 +273,11 @@ type (
 	// will be allowed") — so simply never writing the key is both the
 	// correct and the honest way to admit any live user who completes
 	// the OIDC flow, and this type has no field to set one with.
+	//
+	// The block always carries `pkce: true` (RFC 7636, S256): the status box
+	// runs the truvity/gatus fork that reads it, so the authorize
+	// redirect carries code_challenge and the exchange the verifier. Stock
+	// Gatus ignores the key and signs in without PKCE.
 	OIDCSecurity struct {
 		// IssuerURL is the OIDC issuer this instance signs in against.
 		IssuerURL string
@@ -407,6 +412,9 @@ type (
 		ClientID     string   `yaml:"client-id"`
 		ClientSecret string   `yaml:"client-secret"`
 		Scopes       []string `yaml:"scopes"`
+		// PKCE is the opt-in security.oidc.pkce of the truvity/gatus fork
+		// (see ec2.GatusRepo). Upstream Gatus does not read the key.
+		PKCE bool `yaml:"pkce,omitempty"`
 	}
 
 	gatusStorage struct {
@@ -663,6 +671,10 @@ func RenderGatus(c Catalogue) (string, error) {
 				ClientID:     c.Security.ClientID,
 				ClientSecret: oidcClientSecretVar,
 				Scopes:       []string{"openid"},
+				// Always on for a Public instance: the status box runs the
+				// fork that implements it (S256 challenge on the authorize
+				// redirect, verifier on the exchange).
+				PKCE: true,
 			},
 		}
 	}

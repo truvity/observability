@@ -5,12 +5,25 @@ import "fmt"
 // The pinned third-party binaries. Each has a version and a sha256 per
 // architecture, copied from the upstream release; bumping one is an edit here
 // (and a new release of this repository), reviewed like any other. Gatus is not
-// here: it is built in this repository's release from the tag below and its
+// here: it is built in this repository's release from the fork commit below and its
 // checksum is read from the release's checksums.txt at deploy time.
 const (
-	// GatusVersion is the upstream Gatus tag the release builds its binaries
-	// from (hack/build-gatus.sh reads it from here).
-	GatusVersion = "v5.37.0"
+	// GatusVersion names the Gatus build: the upstream tag it is based on,
+	// with "-pkce" while it is the truvity fork. It is the version in the
+	// attached asset name (gatus_<GatusVersion>_linux_<arch>) and the Gatus
+	// version the box runs. hack/build-gatus.sh reads it from here.
+	GatusVersion = "v5.37.0-pkce"
+
+	// GatusRepo and GatusRef are what hack/build-gatus.sh builds: the fork's
+	// repository and a PINNED commit SHA (never a branch). The script refuses
+	// to build when the checked-out commit is not GatusRef.
+	//
+	// Temporary fork, D698/D716: return to upstream (github.com/TwiN/gatus at
+	// a release tag, GatusVersion without "-pkce") when it releases PKCE.
+	// Fork branch pkce-v5.37.0: upstream v5.37.0 + the opt-in
+	// security.oidc.pkce patch (5098ce92) + the fork's image workflow.
+	GatusRepo = "https://github.com/truvity/gatus"
+	GatusRef  = "8d60fe3cd6af7aef4f3a3e7a38dd2134c3cad4de"
 
 	// LitestreamVersion is the Litestream release (without the leading v).
 	LitestreamVersion = "0.5.17"

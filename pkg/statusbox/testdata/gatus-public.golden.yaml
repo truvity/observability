@@ -1,0 +1,39 @@
+# statusbox: no alert providers configured (Catalogue.Providers is empty) — nobody is notified if the deadman or a company's own signal goes red.
+storage:
+    type: sqlite
+    path: /data/ops.db
+security:
+    oidc:
+        issuer-url: https://access.example.xyz
+        redirect-url: https://status.example.xyz/authorization-code/callback
+        client-id: status
+        client-secret: ${OIDC_CLIENT_SECRET}
+        scopes:
+            - openid
+        pkce: true
+endpoints:
+    - name: example.xyz
+      group: platform
+      url: https://example.xyz
+      interval: 2m
+      conditions:
+        - '[STATUS] == 200'
+        - '[CERTIFICATE_EXPIRATION] > 240h'
+    - name: acme-customer-facing
+      group: Acme Corp
+      url: https://alerts.kernel.example.private/api/v1/alerts?match%5B%5D=%7Bcustomer_facing%3D%22true%22%2Ccompany%3D%22acme%22%7D
+      headers:
+        Authorization: Bearer ${ALERT_URL_TOK}
+      interval: 1m
+      conditions:
+        - '[STATUS] == 200'
+        - len([BODY].data.alerts) == 0
+    - name: deadman
+      group: platform
+      url: https://alerts.kernel.example.private/api/v1/alerts?match%5B%5D=%7Balertname%3D%22Watchdog%22%7D
+      headers:
+        Authorization: Bearer ${ALERT_URL_TOK}
+      interval: 1m
+      conditions:
+        - '[STATUS] == 200'
+        - len([BODY].data.alerts) > 0
