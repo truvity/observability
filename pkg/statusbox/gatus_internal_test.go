@@ -6,6 +6,8 @@ package statusbox
 // is `package statusbox` rather than `package statusbox_test`.
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -400,6 +402,31 @@ func TestOIDCSecurity(t *testing.T) {
 	assert.Equal(t, oidcClientSecretVar, parsed.Security.OIDC.ClientSecret)
 	assert.NotContains(t, parsed.Security.OIDC.ClientSecret, "test-", "the client secret must never be a literal value")
 	assert.Equal(t, []string{"openid"}, parsed.Security.OIDC.Scopes)
+	assert.True(t, parsed.Security.OIDC.PKCE, "the status box runs the PKCE fork: pkce: true")
+	assert.Contains(t, out, "pkce: true")
+
+	private := c
+	private.Security = nil
+	breakglass, err := RenderGatus(private)
+	require.NoError(t, err)
+	assert.NotContains(t, breakglass, "pkce", "the breakglass instance has no OIDC block")
+}
+
+// The public instance's whole render, byte for byte: pins the security.oidc
+// block (including pkce: true) next to the endpoints it guards.
+func TestRenderGatusPublicGolden(t *testing.T) {
+	got, err := RenderGatus(testPublicCatalogue())
+	require.NoError(t, err)
+
+	path := filepath.Join("testdata", "gatus-public.golden.yaml")
+	if *updateGolden {
+		require.NoError(t, os.MkdirAll("testdata", 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(got), 0o644))
+	}
+
+	want, err := os.ReadFile(path)
+	require.NoError(t, err, "run 'go test ./pkg/statusbox -run TestRenderGatusPublicGolden -update' and review the diff")
+	require.Equal(t, string(want), got, "the public Gatus render moved: run 'go test ./pkg/statusbox -run TestRenderGatusPublicGolden -update' and review the diff")
 }
 
 func TestAlertsReadURLEscapesTheMatcher(t *testing.T) {

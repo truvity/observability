@@ -1,5 +1,5 @@
 {
-  "boxUserData": "sha256:15d5616224ef3f3b8fadc88c313c0ac49e05be73e0406bc315acc79147878fe1",
+  "boxUserData": "sha256:26076423b7b7e8d8e3f669ab0f2c4c1870505e7c82cd7de17b1fe99541567a10",
   "lookups": [
     "aws:index/getCallerIdentity:getCallerIdentity {}",
     "aws:index/getRegion:getRegion {}",
@@ -132,7 +132,7 @@
           "Name": "statusbox-status"
         },
         "updateDefaultVersion": true,
-        "userData": "sha256:66a2c1a55776e8fb3257f5c48f7b3c3a35d6833754d90cca7977468acb7a60ab"
+        "userData": "sha256:dd59c8a5f04896dfaf4ffd7d9babf1a4f8278c798a6b3762ccf267d21d97c0f7"
       },
       "name": "status",
       "parent": "statusbox:ec2:Box::status",

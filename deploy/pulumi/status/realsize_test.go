@@ -105,7 +105,7 @@ func TestEstateSizedCatalogueFitsTheUserDataBudget(t *testing.T) {
 	statusbox.FetchChecksums = func(string) (string, error) {
 		sum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-		return sum + "  gatus_v5.37.0_linux_arm64\n" + sum + "  gatus_v5.37.0_linux_amd64\n", nil
+		return sum + "  gatus_v5.37.0-pkce_linux_arm64\n" + sum + "  gatus_v5.37.0-pkce_linux_amd64\n", nil
 	}
 
 	t.Cleanup(func() { statusbox.FetchChecksums = previous })
