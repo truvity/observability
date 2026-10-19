@@ -449,6 +449,40 @@ below is the work, in the order it has to happen. Every entry since
 CHANGELOG.md with its opt-out; the ones that need a step beyond a bump
 are below.
 
+### 0.95.1 → 0.96.0
+
+**`ha` takes the object form only (breaking).**
+
+CHANGELOG.md has the `**Breaking` bullet under `## v0.96.0`. The upgrade asks
+one thing of an operator, **before the bump**; the other two changes in the
+release ask nothing but a look.
+
+1. **Before bumping the pin of `observability-stack`, `observability-proxy` or
+   `observability-alerting`: find every `ha` in their values** (the values of
+   each Application, and any layer that feeds them) **and rewrite a boolean.**
+   The schemas now accept `null` (the default, or the key dropped) or the
+   object, and refuse `ha: true` and `ha: false` (`at '/ha': got boolean, want
+   object`). `ha: false` was the single install and `ha: true` only asked for
+   two `zones` and turned nothing on, so both become `ha: {enabled: false}`
+   (or drop the key); write `ha: {enabled: true, ...}` only if you meant the
+   pair ([high-availability.md](high-availability.md)). A values file that
+   already writes the object needs nothing.
+2. **Bump the pins** (chart `0.96.0`). A rewritten values file renders
+   byte-identically to the old boolean one.
+
+**Check.** Render each of the three charts before (old pin, old values) and
+after (new pin, rewritten values): the diff is empty. A leftover boolean stops
+the render at the schema, loudly; nothing is silently different.
+
+**Look, no action.** `observability-mcp` defaults `proxy.image.repository` to
+`ghcr.io/truvity/sluis/resource-proxy`; an installation that sets the key (a
+mirror, say) is unaffected, one that relied on the default moves with it. A
+status box rebuilt on this release runs the PKCE Gatus build, and its launch
+template gets a new version, so the Auto Scaling group does its rolling
+instance refresh on the next apply ([statusbox.md](statusbox.md)).
+
+**Rolling back** is the pin only: the old charts accept the object form too.
+
 ### Switching `tenancy.principals` to `tenancy.identities` (named, not versioned)
 
 **Do this before the release that removes `tenancy.principals`** (the next
