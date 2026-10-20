@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.97.0
 
 - **Behaviour change** (opt-in group and preset only, **no change unless `groups.cnpg.enabled` or `kubeStateMetrics.customResources.cnpg.enabled` is on**): `platform-alerts` `groups.cnpg` gains three rules, each with a `runbook_url` into the CloudNativePG runbooks (`groups.cnpg.runbookUrl`, default `https://github.com/truvity/cnpg/blob/master/docs/runbooks.md`, plus `#<alert, lower-case>`; empty falls back to `runbookBaseUrl`):
   - `CNPGBackupFailed` (`backupFailedFor` `10m`, `backupFailedSeverity` `warning`): a cluster's newest `Backup` in phase `failed` or `walArchivingFailing` is newer than its newest `completed` one, or none has completed. An old failure followed by a success does not fire. Warning: the age of the newest good backup stays truvity/cnpg `cnpg-platform`'s `CnpgBackupTooOld`.
