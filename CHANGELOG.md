@@ -6,7 +6,7 @@ must be done first, and whether a default moved. Newest first, one
 
 ## Unreleased
 
-- **Added** `platform-alerts` `groups.cnpg` gains three restore-drill rules for the exporter of truvity/cnpg's `cnpg-restore-drill` chart (`cnpg_restore_drill_*`), linked into the CloudNativePG runbooks like the backup rules. Opt-in group, and a cluster without a drill has no series: **no change unless `groups.cnpg.enabled`**, and the three existing cnpg goldens are the only renders that move.
+- **Behaviour change** (opt-in group only) `platform-alerts` `groups.cnpg` gains three restore-drill rules for the exporter of truvity/cnpg's `cnpg-restore-drill` chart (`cnpg_restore_drill_*`), linked into the CloudNativePG runbooks like the backup rules. Opt-in group, and a cluster without a drill has no series: **no change unless `groups.cnpg.enabled`**, and the three existing cnpg goldens are the only renders that move.
   - `CNPGRestoreDrillFailed` (`restoreDrillFailedFor` `10m`, `restoreDrillFailedSeverity` `warning`): `cnpg_restore_drill_last_result == 0`.
   - `CNPGRestoreDrillOverdue` (`restoreDrillOverdueSeconds` `3024000`, `restoreDrillOverdueFor` `1h`, severity `warning`): no successful drill in 35 days on a cluster that has run at least once (also when none ever succeeded).
   - `CNPGRestoreDrillNeverRun` (`restoreDrillNeverRunSeconds` `3024000`, `restoreDrillNeverRunFor` `1h`, severity `warning`): the exporter has listed the cluster for 35 days (`lifetime()`, so a fresh install does not fire; the lookback of 36 days must fit the store's retention) and no drill recorded a result. Run the first drill by hand after installing the drill chart.
