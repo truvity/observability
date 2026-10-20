@@ -317,6 +317,27 @@ data:
                 type: Gauge
                 gauge:
                   path: [status, readyInstances]
+        - groupVersionKind:
+            group: postgresql.cnpg.io
+            version: v1
+            kind: Backup
+          metricNamePrefix: ""
+          labelsFromPath:
+            namespace: [metadata, namespace]
+            cluster: [spec, cluster, name]
+            phase: [status, phase]
+          metrics:
+            - name: cnpg_backup_created_timestamp_seconds
+              help: >-
+                CloudNativePG Backup creation time (metadata.creationTimestamp,
+                Unix seconds), per (namespace, cluster, phase). No Backup name
+                label: the Backups of a cluster share series per phase and the
+                store keeps the largest value, so the value is the creation
+                time of the NEWEST Backup of that cluster in that phase.
+              each:
+                type: Gauge
+                gauge:
+                  path: [metadata, creationTimestamp]
 
 ---
 # Source: observability-emitters/charts/kube-state-metrics/templates/role.yaml
@@ -449,7 +470,7 @@ metadata:
     app.kubernetes.io/part-of: observability-emitters
 rules:
   - apiGroups: ["postgresql.cnpg.io"]
-    resources: ["clusters"]
+    resources: ["clusters", "backups"]
     verbs: ["get", "list", "watch"]
 
 ---

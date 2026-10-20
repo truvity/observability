@@ -317,6 +317,14 @@
             "phaseStuckSeverity": { "$ref": "#/definitions/severity" },
             "absentFor": { "$ref": "#/definitions/duration" },
             "absentSeverity": { "$ref": "#/definitions/severity" },
+            "backupFailedFor": { "$ref": "#/definitions/duration" },
+            "backupFailedSeverity": { "$ref": "#/definitions/severity" },
+            "backupStuckSeconds": { "type": "integer", "minimum": 600 },
+            "backupStuckFor": { "$ref": "#/definitions/duration" },
+            "backupStuckSeverity": { "$ref": "#/definitions/severity" },
+            "disruptedNodeFor": { "$ref": "#/definitions/duration" },
+            "disruptedNodeSeverity": { "$ref": "#/definitions/severity" },
+            "runbookUrl": { "type": "string" },
             "keepClusterLabel": { "type": "boolean" }
           }
         },

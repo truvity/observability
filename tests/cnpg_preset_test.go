@@ -72,7 +72,7 @@ func TestCNPGPresetRendersConfigAndNarrowGrant(t *testing.T) {
 		} `yaml:"spec"`
 	}
 	require.NoError(t, yaml.Unmarshal([]byte(cfg), &c))
-	require.Len(t, c.Spec.Resources, 1, "only the cnpg preset is on")
+	require.Len(t, c.Spec.Resources, 2, "only the cnpg preset is on: Cluster and Backup")
 	r := c.Spec.Resources[0]
 	assert.Equal(t, "postgresql.cnpg.io", r.GVK.Group)
 	assert.Equal(t, "v1", r.GVK.Version)
@@ -97,9 +97,28 @@ func TestCNPGPresetRendersConfigAndNarrowGrant(t *testing.T) {
 	assert.Equal(t, "Gauge", r.Metrics[2].Each.Type)
 	assert.Equal(t, []string{"status", "readyInstances"}, r.Metrics[2].Each.Gauge.Path)
 
+	// The Backups: one Gauge, the creation time, labelled by cluster and
+	// phase and deliberately NOT by Backup name (Backups accumulate).
+	bk := c.Spec.Resources[1]
+	assert.Equal(t, "postgresql.cnpg.io", bk.GVK.Group)
+	assert.Equal(t, "v1", bk.GVK.Version)
+	assert.Equal(t, "Backup", bk.GVK.Kind)
+	require.NotNil(t, bk.MetricNamePrefix)
+	assert.Equal(t, "", *bk.MetricNamePrefix)
+	assert.Equal(t, map[string][]string{
+		"namespace": {"metadata", "namespace"},
+		"cluster":   {"spec", "cluster", "name"},
+		"phase":     {"status", "phase"},
+	}, bk.Labels, "no name label: one series per (namespace, cluster, phase)")
+	require.Len(t, bk.Metrics, 1)
+	assert.Equal(t, "cnpg_backup_created_timestamp_seconds", bk.Metrics[0].Name)
+	assert.Equal(t, "Gauge", bk.Metrics[0].Each.Type)
+	assert.Equal(t, []string{"metadata", "creationTimestamp"}, bk.Metrics[0].Each.Gauge.Path)
+	assert.Empty(t, bk.Metrics[0].Each.Gauge.Labels)
+
 	require.Len(t, rules, 1, "the grant is one rule")
 	assert.Equal(t, []string{"postgresql.cnpg.io"}, rules[0].APIGroups)
-	assert.Equal(t, []string{"clusters"}, rules[0].Resources)
+	assert.Equal(t, []string{"clusters", "backups"}, rules[0].Resources)
 	assert.Equal(t, []string{"get", "list", "watch"}, rules[0].Verbs)
 }
 
@@ -184,4 +203,78 @@ func TestCNPGClusterPhaseStuck(t *testing.T) {
 		"a switchover that settled within five minutes must not alert")
 	requireNeverFires(t, vmalertHoldWindow(untilThen(60, 9), hold, step),
 		"a phase back to healthy before the hold elapsed must not alert")
+}
+
+// The three rules that read Backups and node taints, read back from the
+// shared-store golden: the exact MetricsQL, the hold and the runbook anchor
+// in the CloudNativePG runbooks. hack/ has no proof for them; the joins were
+// evaluated against victoria-metrics v1.152.0 with -dedup.minScrapeInterval
+// (duplicate Backup series of one cluster and phase keep the largest value)
+// when they were written.
+func TestCNPGBackupAndDisruptionRules(t *testing.T) {
+	const failed = `( max by (k8s_cluster_name, namespace, cluster) (cnpg_backup_created_timestamp_seconds{phase=~"failed|walArchivingFailing"})` +
+		` > on (k8s_cluster_name, namespace, cluster)` +
+		` max by (k8s_cluster_name, namespace, cluster) (cnpg_backup_created_timestamp_seconds{phase="completed"}) )` +
+		` or` +
+		` ( max by (k8s_cluster_name, namespace, cluster) (cnpg_backup_created_timestamp_seconds{phase=~"failed|walArchivingFailing"})` +
+		` unless on (k8s_cluster_name, namespace, cluster)` +
+		` cnpg_backup_created_timestamp_seconds{phase="completed"} )`
+	const stuck = `time() - max by (k8s_cluster_name, namespace, cluster) (` +
+		` cnpg_backup_created_timestamp_seconds{phase=~"|pending|started|running|finalizing"} ) > 7200`
+	const disrupted = `label_replace( ( max by (k8s_cluster_name, namespace, created_by_name, pod, node) (` +
+		` kube_pod_info{created_by_kind="Cluster", node!=""} )` +
+		` * on (k8s_cluster_name, node) group_left()` +
+		` max by (k8s_cluster_name, node) (kube_node_spec_taint{key="karpenter.sh/disrupted"}) )` +
+		` and on (k8s_cluster_name, namespace, created_by_name)` +
+		` label_replace( max by (k8s_cluster_name, namespace, cluster) (cnpg_cluster_instances),` +
+		` "created_by_name", "$1", "cluster", "(.+)" ), "cluster", "$1", "created_by_name", "(.+)" )`
+
+	got := cnpgRules(t, "golden/platform-alerts/cnpg-shared-store.yaml")
+	for name, want := range map[string]struct{ expr, hold string }{
+		"CNPGBackupFailed":            {failed, "10m"},
+		"CNPGBackupStuck":             {stuck, "5m"},
+		"CNPGInstanceOnDisruptedNode": {disrupted, "30m"},
+	} {
+		require.Contains(t, got, name)
+		assert.Equal(t, want.expr, got[name].expr, name)
+		assert.Equal(t, want.hold, got[name].hold, name)
+	}
+
+	// Each links to its section of the public CloudNativePG runbooks.
+	links := map[string]string{}
+	for _, doc := range splitDocs(t, "golden/platform-alerts/cnpg.yaml") {
+		var rule vmRuleDoc
+		if yaml.Unmarshal(doc, &rule) != nil || rule.Kind != "VMRule" {
+			continue
+		}
+		var raw struct {
+			Spec struct {
+				Groups []struct {
+					Rules []struct {
+						Alert       string            `yaml:"alert"`
+						Annotations map[string]string `yaml:"annotations"`
+					} `yaml:"rules"`
+				} `yaml:"groups"`
+			} `yaml:"spec"`
+		}
+		require.NoError(t, yaml.Unmarshal(doc, &raw))
+		for _, g := range raw.Spec.Groups {
+			for _, r := range g.Rules {
+				links[r.Alert] = r.Annotations["runbook_url"]
+			}
+		}
+	}
+	for _, a := range []string{"CNPGBackupFailed", "CNPGBackupStuck", "CNPGInstanceOnDisruptedNode"} {
+		assert.Equal(t, "https://github.com/truvity/cnpg/blob/master/docs/runbooks.md#"+strings.ToLower(a), links[a], a)
+	}
+
+	// The node rule's hold: a node drained within half an hour (the
+	// instance moved, or Karpenter gave up) never fires; one stuck for hours
+	// fires once, thirty minutes in.
+	hold, err := time.ParseDuration(got["CNPGInstanceOnDisruptedNode"].hold)
+	require.NoError(t, err)
+	const step = time.Minute
+	requireFiresAfter(t, vmalertHoldWindow(allTrue(300), hold, step), int(hold/step))
+	requireNeverFires(t, vmalertHoldWindow(untilThen(120, 25), hold, step),
+		"an instance moved off within 25 minutes must not alert")
 }

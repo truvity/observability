@@ -879,9 +879,14 @@ kubeStateMetrics:
     # Postgres pod and cannot say that the Cluster object is not Ready (for
     # example stuck in "Switchover in progress" with every instance up), so
     # this reads the object itself. One series per condition per Cluster.
+    # It also exports CloudNativePG Backups (`backups.postgresql.cnpg.io`) as
+    # `cnpg_backup_created_timestamp_seconds{namespace,cluster,phase}`, the
+    # creation time of the cluster's newest Backup in each phase (no Backup
+    # name label: Backups accumulate, one per scheduled run), which
+    # `groups.cnpg`' `CNPGBackupFailed` and `CNPGBackupStuck` read.
     # Off by default; turning it on grants ONLY get/list/watch on
-    # `clusters.postgresql.cnpg.io`. Same mechanism as `kargo` above
-    # (ConfigMap + ClusterRole of this chart's own).
+    # `clusters.postgresql.cnpg.io` and `backups.postgresql.cnpg.io`. Same
+    # mechanism as `kargo` above (ConfigMap + ClusterRole of this chart's own).
     cnpg:
       enabled: false
 

@@ -61,6 +61,21 @@ not healthy while the two are equal is the stuck-reconcile signature
 `CNPGClusterPhaseStuck` reads, a degraded one has fewer ready than desired. One series per condition
 per Cluster object: a handful per database, no unbounded name label.
 
+`cnpg_backup_created_timestamp_seconds` (the same `cnpg` preset): a
+CloudNativePG Backup's metadata.creationTimestamp (kube-state-metrics'
+`toFloat64` reads an RFC 3339 string as Unix seconds), labelled `namespace`,
+`cluster` (spec.cluster.name) and `phase` (status.phase: pending, started,
+running, finalizing, completed, failed, walArchivingFailing; absent before the
+operator first sets it). NO Backup name label, for the Kargo Promotion
+reason above: a ScheduledBackup creates one Backup a run and nothing deletes
+them, so a name label would grow without bound. The Backups of one cluster in
+one phase therefore emit the same label set, and the store keeps the LARGEST
+value per sample time: the series reads the creation time of the cluster's
+newest Backup in that phase. That is exactly what `CNPGBackupFailed` (the
+newest failed Backup is newer than the newest completed one) and
+`CNPGBackupStuck` (the newest unfinished Backup is older than the threshold)
+compare. At most seven series per cluster.
+
 `metricNamePrefix: ""` on all of them, explicit: unset, kube-state-metrics'
 own default prefixes every name with `kube_customresource_`; the empty
 string is what yields the plain names `charts/platform-alerts`'
@@ -194,6 +209,27 @@ data:
                 type: Gauge
                 gauge:
                   path: [status, readyInstances]
+        - groupVersionKind:
+            group: postgresql.cnpg.io
+            version: v1
+            kind: Backup
+          metricNamePrefix: ""
+          labelsFromPath:
+            namespace: [metadata, namespace]
+            cluster: [spec, cluster, name]
+            phase: [status, phase]
+          metrics:
+            - name: cnpg_backup_created_timestamp_seconds
+              help: >-
+                CloudNativePG Backup creation time (metadata.creationTimestamp,
+                Unix seconds), per (namespace, cluster, phase). No Backup name
+                label: the Backups of a cluster share series per phase and the
+                store keeps the largest value, so the value is the creation
+                time of the NEWEST Backup of that cluster in that phase.
+              each:
+                type: Gauge
+                gauge:
+                  path: [metadata, creationTimestamp]
 {{- end }}
 {{- else }}
         []
