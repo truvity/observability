@@ -4,6 +4,13 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `platform-alerts` `groups.cnpg` gains three restore-drill rules for the exporter of truvity/cnpg's `cnpg-restore-drill` chart (`cnpg_restore_drill_*`), linked into the CloudNativePG runbooks like the backup rules. Opt-in group, and a cluster without a drill has no series: **no change unless `groups.cnpg.enabled`**, and the three existing cnpg goldens are the only renders that move.
+  - `CNPGRestoreDrillFailed` (`restoreDrillFailedFor` `10m`, `restoreDrillFailedSeverity` `warning`): `cnpg_restore_drill_last_result == 0`.
+  - `CNPGRestoreDrillOverdue` (`restoreDrillOverdueSeconds` `3024000`, `restoreDrillOverdueFor` `1h`, severity `warning`): no successful drill in 35 days on a cluster that has run at least once (also when none ever succeeded).
+  - `CNPGRestoreDrillNeverRun` (`restoreDrillNeverRunSeconds` `3024000`, `restoreDrillNeverRunFor` `1h`, severity `warning`): the exporter has listed the cluster for 35 days (`lifetime()`, so a fresh install does not fire; the lookback of 36 days must fit the store's retention) and no drill recorded a result. Run the first drill by hand after installing the drill chart.
+
 ## v0.97.0
 
 - **Behaviour change** (opt-in group and preset only, **no change unless `groups.cnpg.enabled` or `kubeStateMetrics.customResources.cnpg.enabled` is on**): `platform-alerts` `groups.cnpg` gains three rules, each with a `runbook_url` into the CloudNativePG runbooks (`groups.cnpg.runbookUrl`, default `https://github.com/truvity/cnpg/blob/master/docs/runbooks.md`, plus `#<alert, lower-case>`; empty falls back to `runbookBaseUrl`):
