@@ -292,7 +292,15 @@ while every instance is up.
 | `backupStuckSeverity` | enum | `warning` | Severity of `CNPGBackupStuck`. |
 | `disruptedNodeFor` | duration | `30m` | How long a CloudNativePG instance pod must sit on a node tainted `karpenter.sh/disrupted` before `CNPGInstanceOnDisruptedNode`. |
 | `disruptedNodeSeverity` | enum | `warning` | Severity of `CNPGInstanceOnDisruptedNode`. |
-| `runbookUrl` | string | `https://github.com/truvity/cnpg/blob/master/docs/runbooks.md` | The runbook link of the three rules above: this URL plus `#<alert name, lower-case>`. Empty falls back to `runbookBaseUrl`. |
+| `restoreDrillFailedFor` | duration | `10m` | Hold of `CNPGRestoreDrillFailed` (`cnpg_restore_drill_last_result == 0`). |
+| `restoreDrillFailedSeverity` | enum | `warning` | Severity of `CNPGRestoreDrillFailed`. Warning: the running database is fine; what is lost is the proof that its archive restores. |
+| `restoreDrillOverdueSeconds` | int | `3024000` | Seconds without a successful drill (35 days) before `CNPGRestoreDrillOverdue`, for a cluster that has run a drill at least once. At least 86400. |
+| `restoreDrillOverdueFor` | duration | `1h` | Hold of `CNPGRestoreDrillOverdue`. |
+| `restoreDrillOverdueSeverity` | enum | `warning` | Severity of `CNPGRestoreDrillOverdue`. |
+| `restoreDrillNeverRunSeconds` | int | `3024000` | Seconds (a whole number of days, 35 by default) a cluster must be listed by the drill exporter (`cnpg_restore_drill_configured`) with no result before `CNPGRestoreDrillNeverRun`. The rule looks back this plus one day, which must fit the store's retention. |
+| `restoreDrillNeverRunFor` | duration | `1h` | Hold of `CNPGRestoreDrillNeverRun`. |
+| `restoreDrillNeverRunSeverity` | enum | `warning` | Severity of `CNPGRestoreDrillNeverRun`. |
+| `runbookUrl` | string | `https://github.com/truvity/cnpg/blob/master/docs/runbooks.md` | The runbook link of the backup and restore-drill rules: this URL plus `#<alert name, lower-case>`. Empty falls back to `runbookBaseUrl`. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 
 Alerts: `CNPGClusterNotReady` (one per Cluster and phase; a change of phase
@@ -311,6 +319,22 @@ produced by the same preset), `CNPGMetricsAbsent`, and:
   taint (`kube_node_spec_taint`) for `disruptedNodeFor`: the drain is held by
   the instance's PodDisruptionBudget until the node pool's termination grace
   period evicts it by force.
+
+- `CNPGRestoreDrillFailed` (one per drilled Cluster): the last monthly restore
+  drill failed (`cnpg_restore_drill_last_result == 0`).
+- `CNPGRestoreDrillOverdue` (one per drilled Cluster): no drill has succeeded
+  for `restoreDrillOverdueSeconds` (also when none ever has), for a cluster
+  that has recorded at least one run.
+- `CNPGRestoreDrillNeverRun` (one per listed Cluster): the drill exporter has
+  listed the cluster for `restoreDrillNeverRunSeconds` and no drill has
+  recorded a result.
+
+The three restore-drill rules read the exporter of truvity/cnpg's
+`cnpg-restore-drill` chart (`cnpg_restore_drill_*{namespace, cluster}`, the
+source Cluster's labels); a cluster without a drill has no series and fires
+nothing. Run the first drill by hand right after installing the chart: the
+scheduled one can be up to a month away, and `CNPGRestoreDrillNeverRun` only
+fires after `restoreDrillNeverRunSeconds`.
 
 The two Backup rules read `cnpg_backup_created_timestamp_seconds{namespace,
 cluster, phase}`, which the same emitters preset produces from

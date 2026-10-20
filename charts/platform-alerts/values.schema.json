@@ -324,6 +324,14 @@
             "backupStuckSeverity": { "$ref": "#/definitions/severity" },
             "disruptedNodeFor": { "$ref": "#/definitions/duration" },
             "disruptedNodeSeverity": { "$ref": "#/definitions/severity" },
+            "restoreDrillFailedFor": { "$ref": "#/definitions/duration" },
+            "restoreDrillFailedSeverity": { "$ref": "#/definitions/severity" },
+            "restoreDrillOverdueSeconds": { "type": "integer", "minimum": 86400 },
+            "restoreDrillOverdueFor": { "$ref": "#/definitions/duration" },
+            "restoreDrillOverdueSeverity": { "$ref": "#/definitions/severity" },
+            "restoreDrillNeverRunSeconds": { "type": "integer", "minimum": 86400, "multipleOf": 86400 },
+            "restoreDrillNeverRunFor": { "$ref": "#/definitions/duration" },
+            "restoreDrillNeverRunSeverity": { "$ref": "#/definitions/severity" },
             "runbookUrl": { "type": "string" },
             "keepClusterLabel": { "type": "boolean" }
           }

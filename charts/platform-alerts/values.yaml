@@ -432,7 +432,32 @@ groups:
     # grace period force-evicts it.
     disruptedNodeFor: 30m
     disruptedNodeSeverity: warning
-    # -- The runbook link of the three rules above: this URL plus
+    # -- The restore-drill rules read the exporter of truvity/cnpg's
+    # `cnpg-restore-drill` chart (`cnpg_restore_drill_*`, labelled with the
+    # source Cluster's `namespace` and `cluster`). A cluster without a drill
+    # has no series and fires nothing.
+    # `CNPGRestoreDrillFailed`: the last drill failed
+    # (`cnpg_restore_drill_last_result == 0`). Warning, not critical: the
+    # running database is fine; what is lost is the proof that its archive
+    # restores. The value persists until the next run, so `for` only rides
+    # out a scrape blip.
+    restoreDrillFailedFor: 10m
+    restoreDrillFailedSeverity: warning
+    # -- `CNPGRestoreDrillOverdue`: no successful drill for this many seconds
+    # (35 days: a monthly drill plus slack) on a cluster that has run at
+    # least once. Also fires when none ever succeeded.
+    restoreDrillOverdueSeconds: 3024000
+    restoreDrillOverdueFor: 1h
+    restoreDrillOverdueSeverity: warning
+    # -- `CNPGRestoreDrillNeverRun`: the exporter lists the cluster
+    # (`cnpg_restore_drill_configured`) for this many seconds (35 days; a
+    # whole number of days) and no drill has ever recorded a result. The
+    # window `lifetime()` looks over is this plus one day and must fit the
+    # store's retention. Run the first drill by hand right after install.
+    restoreDrillNeverRunSeconds: 3024000
+    restoreDrillNeverRunFor: 1h
+    restoreDrillNeverRunSeverity: warning
+    # -- The runbook link of the CNPG backup and restore-drill rules: this URL plus
     # `#<alert name, lower-case>`. Empty falls back to `runbookBaseUrl`.
     runbookUrl: https://github.com/truvity/cnpg/blob/master/docs/runbooks.md
     # -- Keep the series' own `clusterLabel` on the alert (see

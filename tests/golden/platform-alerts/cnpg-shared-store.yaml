@@ -192,3 +192,100 @@ spec:
               primary, switch over first
               (`kubectl cnpg promote {{ $labels.cluster }} <replica> -n {{ $labels.namespace }}`).
             runbook_url: "https://github.com/truvity/cnpg/blob/master/docs/runbooks.md#cnpginstanceondisruptednode"
+        # The restore drill (truvity/cnpg's `cnpg-restore-drill` chart, one
+        # monthly CronJob per source cluster) recorded a failed run. The
+        # series are the drill exporter's, labelled with the SOURCE cluster's
+        # `namespace` and `cluster`. `cnpg_restore_drill_last_result` is a
+        # persistent gauge (1 passed, 0 failed) that keeps its value until
+        # the next run, so the alert holds for a month unless a manual drill
+        # passes; `for` only rides out a scrape blip. A cluster with no
+        # drill deployed has no series, so nothing fires and nothing needs a
+        # deadman here (a broken exporter is a failed scrape, which target
+        # alerting covers).
+        - alert: CNPGRestoreDrillFailed
+          expr: cnpg_restore_drill_last_result == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The last restore drill of CloudNativePG Cluster {{ $labels.namespace }}/{{ $labels.cluster }} failed"
+            description: >-
+              The monthly restore drill of the Cluster{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}
+              failed, so its backup archive is not proven restorable until a
+              drill passes. The running database is not affected. First look
+              (in the drill's namespace, the one the cnpg-restore-drill chart
+              is installed in): `kubectl -n <drill-namespace> get configmap
+              {{ $labels.cluster }}-restore-result -o jsonpath='{.data.last_failure}'`
+              names the step that failed; then the logs of the last Job
+              (`kubectl -n <drill-namespace> get cronjob,job` for
+              `{{ $labels.cluster }}-restore`, then `kubectl logs job/<job>`).
+            runbook_url: "https://github.com/truvity/cnpg/blob/master/docs/runbooks.md#cnpgrestoredrillfailed"
+        # No restore drill of the cluster has succeeded within
+        # restoreDrillOverdueSeconds (35 days: a monthly drill plus a few days
+        # of slack). A cluster whose drill has never run (no
+        # `last_run_timestamp_seconds` series yet) is left to
+        # CNPGRestoreDrillNeverRun; a drill that ran and never succeeded has
+        # `last_success_timestamp_seconds` 0 and fires here at once, next to
+        # CNPGRestoreDrillFailed.
+        - alert: CNPGRestoreDrillOverdue
+          expr: >-
+            (
+              time() - cnpg_restore_drill_last_success_timestamp_seconds
+              > 3024000
+            )
+            and on (k8s_cluster_name, namespace, cluster)
+            cnpg_restore_drill_last_run_timestamp_seconds
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No restore drill of CloudNativePG Cluster {{ $labels.namespace }}/{{ $labels.cluster }} has succeeded in 35 days"
+            description: >-
+              The Cluster's last successful restore drill{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }} is
+              {{ $value | humanizeDuration }} old (a drill that never
+              succeeded counts from the epoch). Either drills do not run or
+              they fail. First look (in the drill's namespace):
+              `kubectl -n <drill-namespace> get cronjob {{ $labels.cluster }}-restore`
+              (SUSPEND? LAST SCHEDULE?), its Jobs (an image pull or
+              scheduling failure leaves no result), and the
+              `{{ $labels.cluster }}-restore-result` ConfigMap. If drills run and fail,
+              CNPGRestoreDrillFailed is firing too; start there. Then run
+              one by hand
+              (`kubectl -n <drill-namespace> create job --from=cronjob/{{ $labels.cluster }}-restore {{ $labels.cluster }}-restore-manual`).
+            runbook_url: "https://github.com/truvity/cnpg/blob/master/docs/runbooks.md#cnpgrestoredrilloverdue"
+        # A source the exporter is configured with that has no drill result
+        # at all after restoreDrillNeverRunSeconds. The monthly schedule runs
+        # between day 1 and 28, so the first run comes within about 31 days
+        # of install; the default leaves four more. `lifetime()`
+        # (MetricsQL) is how long the `configured` series has existed in the
+        # window, so a freshly installed drill does not fire; the window must
+        # fit the store's retention. Run the first drill by hand right after
+        # install to get a result at once. The runbook is
+        # CNPGRestoreDrillOverdue's (the same first checks: is the CronJob
+        # running); truvity/cnpg has no section of its own for this rule.
+        - alert: CNPGRestoreDrillNeverRun
+          expr: >-
+            (
+              cnpg_restore_drill_configured
+              unless on (k8s_cluster_name, namespace, cluster)
+              cnpg_restore_drill_last_run_timestamp_seconds
+            )
+            and on (k8s_cluster_name, namespace, cluster)
+            (
+              lifetime(cnpg_restore_drill_configured[36d])
+              > 3024000
+            )
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "CloudNativePG Cluster {{ $labels.namespace }}/{{ $labels.cluster }} has a restore drill configured that has never run"
+            description: >-
+              The restore drill exporter{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }} has listed this
+              Cluster for 35 days and no drill has recorded a
+              result: its backups have never been proven restorable. First
+              look (in the drill's namespace):
+              `kubectl -n <drill-namespace> get cronjob {{ $labels.cluster }}-restore`
+              (suspended? never scheduled?) and its Jobs; run one by hand
+              (`kubectl -n <drill-namespace> create job --from=cronjob/{{ $labels.cluster }}-restore {{ $labels.cluster }}-restore-manual`).
+            runbook_url: "https://github.com/truvity/cnpg/blob/master/docs/runbooks.md#cnpgrestoredrilloverdue"

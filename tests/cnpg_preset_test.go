@@ -278,3 +278,71 @@ func TestCNPGBackupAndDisruptionRules(t *testing.T) {
 	requireNeverFires(t, vmalertHoldWindow(untilThen(120, 25), hold, step),
 		"an instance moved off within 25 minutes must not alert")
 }
+
+// The restore-drill rules, read back from the shared-store golden: the exact
+// MetricsQL, the holds and the runbook anchors (the two sections truvity/cnpg
+// has; NeverRun links to the Overdue one), then the behaviour: a failed drill
+// fires once its hold elapses and stays firing (the gauge persists until the
+// next run); a passing one never does; a success older than 35 days is
+// overdue (the 35-day threshold is in the asserted expression).
+func TestCNPGRestoreDrillRules(t *testing.T) {
+	const failed = `cnpg_restore_drill_last_result == 0`
+	const overdue = `( time() - cnpg_restore_drill_last_success_timestamp_seconds > 3024000 )` +
+		` and on (k8s_cluster_name, namespace, cluster) cnpg_restore_drill_last_run_timestamp_seconds`
+	const neverRun = `( cnpg_restore_drill_configured unless on (k8s_cluster_name, namespace, cluster)` +
+		` cnpg_restore_drill_last_run_timestamp_seconds )` +
+		` and on (k8s_cluster_name, namespace, cluster)` +
+		` ( lifetime(cnpg_restore_drill_configured[36d]) > 3024000 )`
+	got := cnpgRules(t, "golden/platform-alerts/cnpg-shared-store.yaml")
+	for name, want := range map[string]struct{ expr, hold string }{
+		"CNPGRestoreDrillFailed":   {failed, "10m"},
+		"CNPGRestoreDrillOverdue":  {overdue, "1h"},
+		"CNPGRestoreDrillNeverRun": {neverRun, "1h"},
+	} {
+		require.Contains(t, got, name)
+		assert.Equal(t, want.expr, got[name].expr, name)
+		assert.Equal(t, want.hold, got[name].hold, name)
+	}
+
+	links := map[string]string{}
+	sev := map[string]string{}
+	for _, doc := range splitDocs(t, "golden/platform-alerts/cnpg.yaml") {
+		var raw struct {
+			Spec struct {
+				Groups []struct {
+					Rules []struct {
+						Alert       string            `yaml:"alert"`
+						Labels      map[string]string `yaml:"labels"`
+						Annotations map[string]string `yaml:"annotations"`
+					} `yaml:"rules"`
+				} `yaml:"groups"`
+			} `yaml:"spec"`
+		}
+		if yaml.Unmarshal(doc, &raw) != nil {
+			continue
+		}
+		for _, g := range raw.Spec.Groups {
+			for _, r := range g.Rules {
+				links[r.Alert] = r.Annotations["runbook_url"]
+				sev[r.Alert] = r.Labels["severity"]
+			}
+		}
+	}
+	const base = "https://github.com/truvity/cnpg/blob/master/docs/runbooks.md#"
+	assert.Equal(t, base+"cnpgrestoredrillfailed", links["CNPGRestoreDrillFailed"])
+	assert.Equal(t, base+"cnpgrestoredrilloverdue", links["CNPGRestoreDrillOverdue"])
+	assert.Equal(t, base+"cnpgrestoredrilloverdue", links["CNPGRestoreDrillNeverRun"])
+	for _, a := range []string{"CNPGRestoreDrillFailed", "CNPGRestoreDrillOverdue", "CNPGRestoreDrillNeverRun"} {
+		assert.Equal(t, "warning", sev[a], a)
+	}
+
+	const step = time.Minute
+	hold, err := time.ParseDuration(got["CNPGRestoreDrillFailed"].hold)
+	require.NoError(t, err)
+	// last_result 0 for a month: fires after the hold, once.
+	requireFiresAfter(t, vmalertHoldWindow(allTrue(600), hold, step), int(hold/step))
+	// last_result 1: the expression is never true.
+	requireNeverFires(t, vmalertHoldWindow(make([]bool, 600), hold, step), "a passing drill must not alert")
+	// A scrape blip shorter than the hold.
+	requireNeverFires(t, vmalertHoldWindow(untilThen(60, 5), hold, step), "a blip must not alert")
+}
