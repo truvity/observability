@@ -408,6 +408,33 @@ groups:
     # Longer than `for`.
     absentFor: 30m
     absentSeverity: warning
+    # -- `CNPGBackupFailed`: the cluster's newest failed Backup (phase
+    # `failed` or `walArchivingFailing`) is newer than its newest completed
+    # one, or it has none completed. Reads
+    # `cnpg_backup_created_timestamp_seconds`, from the same
+    # `customResources.cnpg` preset (observability-emitters). Warning: the
+    # age of the newest good backup is cnpg-platform's `CnpgBackupTooOld`'s.
+    backupFailedFor: 10m
+    backupFailedSeverity: warning
+    # -- `CNPGBackupStuck`: the cluster's newest unfinished Backup (phase
+    # empty, `pending`, `started`, `running` or `finalizing`) was created
+    # more than `backupStuckSeconds` ago. A base backup of these databases
+    # takes minutes.
+    backupStuckSeconds: 7200
+    backupStuckFor: 5m
+    backupStuckSeverity: warning
+    # -- `CNPGInstanceOnDisruptedNode`: a CloudNativePG instance pod
+    # (`kube_pod_info{created_by_kind="Cluster"}` of a Cluster the preset
+    # sees) runs on a node tainted `karpenter.sh/disrupted`
+    # (`kube_node_spec_taint`, kube-state-metrics' `nodes` collector) for this
+    # long: the node is being drained and the instance's
+    # PodDisruptionBudget holds it, until the node pool's termination
+    # grace period force-evicts it.
+    disruptedNodeFor: 30m
+    disruptedNodeSeverity: warning
+    # -- The runbook link of the three rules above: this URL plus
+    # `#<alert name, lower-case>`. Empty falls back to `runbookBaseUrl`.
+    runbookUrl: https://github.com/truvity/cnpg/blob/master/docs/runbooks.md
     # -- Keep the series' own `clusterLabel` on the alert (see
     # `pendingPods.keepClusterLabel`).
     keepClusterLabel: false

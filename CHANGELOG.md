@@ -4,6 +4,15 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Behaviour change** (opt-in group and preset only, **no change unless `groups.cnpg.enabled` or `kubeStateMetrics.customResources.cnpg.enabled` is on**): `platform-alerts` `groups.cnpg` gains three rules, each with a `runbook_url` into the CloudNativePG runbooks (`groups.cnpg.runbookUrl`, default `https://github.com/truvity/cnpg/blob/master/docs/runbooks.md`, plus `#<alert, lower-case>`; empty falls back to `runbookBaseUrl`):
+  - `CNPGBackupFailed` (`backupFailedFor` `10m`, `backupFailedSeverity` `warning`): a cluster's newest `Backup` in phase `failed` or `walArchivingFailing` is newer than its newest `completed` one, or none has completed. An old failure followed by a success does not fire. Warning: the age of the newest good backup stays truvity/cnpg `cnpg-platform`'s `CnpgBackupTooOld`.
+  - `CNPGBackupStuck` (`backupStuckSeconds` `7200`, `backupStuckFor` `5m`, `backupStuckSeverity` `warning`): a cluster's newest unfinished `Backup` (no phase, `pending`, `started`, `running`, `finalizing`) was created more than two hours ago.
+  - `CNPGInstanceOnDisruptedNode` (`disruptedNodeFor` `30m`, `disruptedNodeSeverity` `warning`): a CloudNativePG instance pod (`kube_pod_info{created_by_kind="Cluster"}` joined to `cnpg_cluster_instances`) on a node tainted `karpenter.sh/disrupted` (`kube_node_spec_taint`): the drain waits on the instance's PodDisruptionBudget until the node pool's termination grace period evicts it by force.
+  The goldens that change are the three cnpg ones (`observability-emitters/cnpg-preset`, `platform-alerts/cnpg`, `platform-alerts/cnpg-shared-store`); no other render moves.
+- **Added** `observability-emitters` `kubeStateMetrics.customResources.cnpg` also exports CloudNativePG Backups as `cnpg_backup_created_timestamp_seconds{namespace,cluster,phase}` (`metadata.creationTimestamp`; no Backup name label, because Backups accumulate one per scheduled run: the Backups of one cluster in one phase share a series and the store keeps the largest value, so it reads the newest one's creation time), and its ClusterRole grants `get`/`list`/`watch` on `backups.postgresql.cnpg.io` beside `clusters`. **Roll `observability-emitters` to this release before relying on `CNPGBackupFailed` and `CNPGBackupStuck`**: without the series they never fire.
+
 ## v0.96.1
 
 - Dependency updates.

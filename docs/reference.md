@@ -266,8 +266,9 @@ Alerts: `NodeClaimNotReady` (one per claim; claims being terminated by Karpenter
 
 ### `groups.cnpg`
 
-Off by default. Alerts when a CloudNativePG `Cluster` object is not Ready.
-Reads `cnpg_cluster_status_condition`, which `observability-emitters`'
+Off by default. Alerts when a CloudNativePG `Cluster` object is not Ready,
+when its backups fail or hang, and when an instance sits on a node being
+drained. Reads `cnpg_cluster_status_condition`, which `observability-emitters`'
 `kubeStateMetrics.customResources.cnpg` produces from each Cluster's
 `status.conditions` and `status.phase` (turn that on first). It sees every
 Cluster in every namespace. The instance exporter (`cnpg_collector_*`) is
@@ -284,12 +285,45 @@ while every instance is up.
 | `phaseStuckSeverity` | enum | `warning` | Severity of `CNPGClusterPhaseStuck`. |
 | `absentFor` | duration | `30m` | How long the series can be absent before `CNPGMetricsAbsent`. |
 | `absentSeverity` | enum | `warning` | Severity of `CNPGMetricsAbsent`. |
+| `backupFailedFor` | duration | `10m` | How long the cluster's newest failed `Backup` must be newer than its newest completed one (or it has none completed) before `CNPGBackupFailed`. |
+| `backupFailedSeverity` | enum | `warning` | Severity of `CNPGBackupFailed`. The age of the newest good backup is `cnpg-platform`'s `CnpgBackupTooOld` (truvity/cnpg). |
+| `backupStuckSeconds` | int | `7200` | Age (from creation) past which the cluster's newest unfinished `Backup` (no phase, `pending`, `started`, `running`, `finalizing`) fires `CNPGBackupStuck`. At least 600. |
+| `backupStuckFor` | duration | `5m` | Hold of `CNPGBackupStuck`. |
+| `backupStuckSeverity` | enum | `warning` | Severity of `CNPGBackupStuck`. |
+| `disruptedNodeFor` | duration | `30m` | How long a CloudNativePG instance pod must sit on a node tainted `karpenter.sh/disrupted` before `CNPGInstanceOnDisruptedNode`. |
+| `disruptedNodeSeverity` | enum | `warning` | Severity of `CNPGInstanceOnDisruptedNode`. |
+| `runbookUrl` | string | `https://github.com/truvity/cnpg/blob/master/docs/runbooks.md` | The runbook link of the three rules above: this URL plus `#<alert name, lower-case>`. Empty falls back to `runbookBaseUrl`. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 
 Alerts: `CNPGClusterNotReady` (one per Cluster and phase; a change of phase
 text restarts the `for` clock), `CNPGClusterPhaseStuck` (one per Cluster;
 needs the emitters' `cnpg_cluster_instances` and `cnpg_cluster_ready_instances`,
-produced by the same preset), `CNPGMetricsAbsent`.
+produced by the same preset), `CNPGMetricsAbsent`, and:
+
+- `CNPGBackupFailed` (one per Cluster): the newest `Backup` in phase `failed`
+  or `walArchivingFailing` is newer than the newest `completed` one, or none
+  has completed. An old failure followed by a success does not fire.
+- `CNPGBackupStuck` (one per Cluster): the newest unfinished `Backup` was
+  created more than `backupStuckSeconds` ago.
+- `CNPGInstanceOnDisruptedNode` (one per instance pod): an instance pod
+  (`kube_pod_info{created_by_kind="Cluster"}`, of a Cluster
+  `cnpg_cluster_instances` knows) on a node with the `karpenter.sh/disrupted`
+  taint (`kube_node_spec_taint`) for `disruptedNodeFor`: the drain is held by
+  the instance's PodDisruptionBudget until the node pool's termination grace
+  period evicts it by force.
+
+The two Backup rules read `cnpg_backup_created_timestamp_seconds{namespace,
+cluster, phase}`, which the same emitters preset produces from
+`backups.postgresql.cnpg.io` (roll `observability-emitters` first: without the
+series the rules never fire). It has no Backup name label, because Backups
+accumulate (one per scheduled run); the Backups of one cluster in one phase
+share a series and the store keeps the largest value (`-dedup.minScrapeInterval`),
+so it reads the creation time of the newest one. The node rule needs
+kube-state-metrics' `pods` and `nodes` collectors (on by default). Their
+runbooks are in the CloudNativePG repository's `docs/runbooks.md`, one section
+per alert, which also covers the two exporter-based rules that live with the
+rest of the per-instance rules in truvity/cnpg's `cnpg-platform` chart
+(`CnpgManualSwitchoverRequired`, `CnpgInstanceFenced`).
 
 #### Runbook: `CNPGClusterPhaseStuck`
 
@@ -1989,7 +2023,7 @@ with underscores, which is how they match the agent's labels.
 | `kubeStateMetrics.enabled` | bool | `false` | Renders upstream's `kube-state-metrics` chart. **Off by default** — see docs/kube-state-metrics.md. |
 | `kubeStateMetrics.customResources.kargo.enabled` | bool | `false` (0.9.0) | `kargo_stage_condition` / `kargo_promotion_phase`, the shape `charts/platform-alerts`' `groups.kargo` reads (see docs/reference.md's own section on it) — without hand-writing kube-state-metrics' `customResourceState.config` and `rbac.extraRules`. Grants only `get`/`list`/`watch` on `stages.kargo.akuity.io` / `promotions.kargo.akuity.io`. Whenever `kubeStateMetrics.enabled` is true (this preset on or off), this chart pins `kube-state-metrics.customResourceState.enabled: true` / `.create: false` and renders the ConfigMap itself (empty when no preset is on) — **refused together with a consumer-authored `kube-state-metrics.customResourceState.config`**, which would otherwise never be read. |
 | `kubeStateMetrics.customResources.nodeClaims.enabled` | bool | `false` | `nodeclaim_status_condition{nodeclaim,nodepool,type,reason}`, the shape `platform-alerts`' `groups.nodeClaims` reads: Karpenter NodeClaim conditions, 1 when True. Grants only `get`/`list`/`watch` on `nodeclaims.karpenter.sh`. Composes with the `kargo` preset; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
-| `kubeStateMetrics.customResources.cnpg.enabled` | bool | `false` | `cnpg_cluster_status_condition{namespace,cluster,phase,type,reason}`, the shape `platform-alerts`' `groups.cnpg` reads: CloudNativePG Cluster conditions (`clusters.postgresql.cnpg.io`), 1 when True, with `status.phase` as a label. Also `cnpg_cluster_instances` (`spec.instances`) and `cnpg_cluster_ready_instances` (`status.readyInstances`), same labels. Grants only `get`/`list`/`watch` on `clusters.postgresql.cnpg.io`. Composes with the other presets; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
+| `kubeStateMetrics.customResources.cnpg.enabled` | bool | `false` | `cnpg_cluster_status_condition{namespace,cluster,phase,type,reason}`, the shape `platform-alerts`' `groups.cnpg` reads: CloudNativePG Cluster conditions (`clusters.postgresql.cnpg.io`), 1 when True, with `status.phase` as a label. Also `cnpg_cluster_instances` (`spec.instances`) and `cnpg_cluster_ready_instances` (`status.readyInstances`), same labels. Also `cnpg_backup_created_timestamp_seconds{namespace,cluster,phase}` from `backups.postgresql.cnpg.io` (`metadata.creationTimestamp`; no Backup name label, so the value is the creation time of the cluster's newest Backup in that phase), which `groups.cnpg`' `CNPGBackupFailed` and `CNPGBackupStuck` read. Grants only `get`/`list`/`watch` on `clusters.postgresql.cnpg.io` and `backups.postgresql.cnpg.io`. Composes with the other presets; same ConfigMap mechanism, same refusal of a hand-written `customResourceState.config`. |
 
 ### `kube-state-metrics` — the upstream chart
 

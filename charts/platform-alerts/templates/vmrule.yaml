@@ -699,6 +699,105 @@ spec:
               `kubeStateMetrics.customResources.cnpg` is on in
               observability-emitters and that the scrape is up.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "CNPGMetricsAbsent")) }}{{ . | nindent 12 }}{{- end }}
+        # A cluster's newest failed Backup is newer than its newest completed
+        # one, or it has none completed: the last backup attempt failed and
+        # nothing has succeeded since. `cnpg_backup_created_timestamp_seconds`
+        # is kube-state-metrics' (the `customResources.cnpg` preset): per
+        # (namespace, cluster, phase) the creation time of the NEWEST Backup in
+        # that phase, with no Backup name label (Backups accumulate, one per
+        # scheduled run). An old failure followed by a success does not fire.
+        - alert: CNPGBackupFailed
+          expr: >-
+            (
+              max by ({{ $b }}namespace, cluster) (cnpg_backup_created_timestamp_seconds{phase=~"failed|walArchivingFailing"})
+              > on ({{ $c }}namespace, cluster)
+              max by ({{ $c }}namespace, cluster) (cnpg_backup_created_timestamp_seconds{phase="completed"})
+            )
+            or
+            (
+              max by ({{ $b }}namespace, cluster) (cnpg_backup_created_timestamp_seconds{phase=~"failed|walArchivingFailing"})
+              unless on ({{ $c }}namespace, cluster)
+              cnpg_backup_created_timestamp_seconds{phase="completed"}
+            )
+          for: {{ $g.backupFailedFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.backupFailedSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "The last backup of CloudNativePG Cluster {{`{{ $labels.namespace }}`}}/{{`{{ $labels.cluster }}`}} failed"
+            description: >-
+              The newest Backup of the Cluster{{ include "platform-alerts.onCluster" $ }} is in phase
+              failed (or walArchivingFailing) and no Backup has completed
+              since. Point-in-time recovery still reaches back to the last
+              good base backup as long as WAL archiving works, but that
+              window only ages from here. First look:
+              `kubectl -n {{`{{ $labels.namespace }}`}} get backups.postgresql.cnpg.io --sort-by=.metadata.creationTimestamp`
+              (status.error of the newest one), then the plugin-barman-cloud
+              sidecar's log on the instance that ran it.
+            {{- with (include "platform-alerts.runbookAnchor" (dict "root" $ "url" $g.runbookUrl "alert" "CNPGBackupFailed")) }}{{ . | nindent 12 }}{{- end }}
+        # A cluster's newest unfinished Backup (no phase yet, pending,
+        # started, running, finalizing) was created more than
+        # backupStuckSeconds ago: a backup that hangs blocks the ones after
+        # it, so the newest one ageing past the threshold means none has
+        # finished for that long.
+        - alert: CNPGBackupStuck
+          expr: >-
+            time() - max by ({{ $b }}namespace, cluster) (
+              cnpg_backup_created_timestamp_seconds{phase=~"|pending|started|running|finalizing"}
+            ) > {{ int $g.backupStuckSeconds }}
+          for: {{ $g.backupStuckFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.backupStuckSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "A backup of CloudNativePG Cluster {{`{{ $labels.namespace }}`}}/{{`{{ $labels.cluster }}`}} has not finished in {{ div (int $g.backupStuckSeconds) 60 }} minutes"
+            description: >-
+              The Cluster's newest Backup{{ include "platform-alerts.onCluster" $ }} was created
+              {{`{{ $value | humanizeDuration }}`}} ago and is still pending,
+              started, running or finalizing (or has no phase: the operator
+              never picked it up). First look:
+              `kubectl -n {{`{{ $labels.namespace }}`}} get backups.postgresql.cnpg.io --sort-by=.metadata.creationTimestamp`
+              and the Cluster's status; a Backup whose Cluster no longer
+              exists stays unfinished for good and should be deleted.
+            {{- with (include "platform-alerts.runbookAnchor" (dict "root" $ "url" $g.runbookUrl "alert" "CNPGBackupStuck")) }}{{ . | nindent 12 }}{{- end }}
+        # A CloudNativePG instance pod on a node Karpenter is draining
+        # (taint karpenter.sh/disrupted). The instance's PodDisruptionBudget
+        # (and, on a prod cluster, karpenter.sh/do-not-disrupt) keeps it
+        # there; the node is stuck half-drained until the node pool's
+        # termination grace period evicts the pod by force, a primary
+        # included. Instance pods are owned by their Cluster
+        # (kube_pod_info created_by_kind="Cluster"); the join with
+        # cnpg_cluster_instances keeps another operator's "Cluster" kind out.
+        - alert: CNPGInstanceOnDisruptedNode
+          expr: >-
+            label_replace(
+              (
+                max by ({{ $b }}namespace, created_by_name, pod, node) (
+                  kube_pod_info{created_by_kind="Cluster", node!=""}
+                )
+                * on ({{ $c }}node) group_left()
+                max by ({{ $c }}node) (kube_node_spec_taint{key="karpenter.sh/disrupted"})
+              )
+              and on ({{ $c }}namespace, created_by_name)
+              label_replace(
+                max by ({{ $c }}namespace, cluster) (cnpg_cluster_instances),
+                "created_by_name", "$1", "cluster", "(.+)"
+              ),
+              "cluster", "$1", "created_by_name", "(.+)"
+            )
+          for: {{ $g.disruptedNodeFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.disruptedNodeSeverity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "CloudNativePG instance {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}} is on node {{`{{ $labels.node }}`}}, which is being disrupted"
+            description: >-
+              The node{{ include "platform-alerts.onCluster" $ }} has carried the
+              karpenter.sh/disrupted taint for {{ $g.disruptedNodeFor }} and still
+              runs this database instance: the drain waits on the Cluster's
+              PodDisruptionBudget. Move the instance on your terms before the
+              node pool's termination grace period evicts it: for a replica,
+              delete the pod (the operator recreates it elsewhere); for the
+              primary, switch over first
+              (`kubectl cnpg promote {{`{{ $labels.cluster }}`}} <replica> -n {{`{{ $labels.namespace }}`}}`).
+            {{- with (include "platform-alerts.runbookAnchor" (dict "root" $ "url" $g.runbookUrl "alert" "CNPGInstanceOnDisruptedNode")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
     {{- if .Values.groups.nodeMemoryPressure.enabled }}
     {{- $g := .Values.groups.nodeMemoryPressure }}

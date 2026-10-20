@@ -48,6 +48,21 @@ runbook_url: {{ printf "%s/%s" (trimSuffix "/" .root.Values.runbookBaseUrl) .ale
 {{- end -}}
 
 {{/*
+The runbook link of a rule whose runbook is a section of one document (the
+CloudNativePG runbooks, groups.cnpg.runbookUrl): <url>#<alert, lower-case>,
+the anchor a Markdown heading of the alert's name gets. Called with (dict
+"root" $ "url" <the document's URL> "alert" <name>); an empty url falls back
+to platform-alerts.runbook.
+*/}}
+{{- define "platform-alerts.runbookAnchor" -}}
+{{- if .url -}}
+runbook_url: {{ printf "%s#%s" .url (lower .alert) | quote }}
+{{- else -}}
+{{- include "platform-alerts.runbook" (dict "root" .root "alert" .alert) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 A deadman for a series that must exist, per cluster.
 
 A bare `absent(sel)` is true only when NO series matches, and a metrics
