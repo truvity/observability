@@ -508,7 +508,12 @@ left in the group is a recording, else `alert`.
 
 Defaults that are not plain upstream: `vmalert` overrides
 `RecordingRulesNoData` with the expression the stack has always used (it
-ignores `count:up0`, empty by design while every target is up). The stack's
+ignores `count:up0`, empty by design while every target is up), and `vm-health`
+overrides `ProcessNearFDLimits` with `and (process_max_fds > 0)` added: a
+half-registered scrape target reports `process_max_fds` 0, which made upstream's
+`max - open < 100` read negative and page. The vendored file is untouched; to
+restore upstream's expression set `groups.upstream."vm-health".override: {}`.
+The stack's
 sync job mirrors its own `alertmanager.enabled` / `vmalert.enabled` into the
 `alertmanager` and `vmalert` rule sources; the pack cannot see them, so an
 install whose stack runs no Alertmanager sets
