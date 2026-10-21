@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.101.0
 
 - **Added** `observability-proxy` `vmauth.topologySpread.whenUnsatisfiable` (default `ScheduleAnyway`, the render does not move): `DoNotSchedule` makes the zone spread of two or more proxy replicas hard. A soft spread never makes a node autoscaler add a node in a zone where the proxy has none, so three replicas could share two zones; hard, the Pending pod gets a node in its zone, one pod per zone, and on a zone loss that zone's pod waits while the others serve.
 - **Behaviour change** `platform-alerts` `CNPGInstanceOnDisruptedNode` (rendered comment only): the rule's comment describes the native drain path (the operator moves a primary off a node tainted `karpenter.sh/disrupted`, the instance budgets let replicas go one at a time); `karpenter.sh/do-not-disrupt` is named as the case that strands a pod. Comment only: the goldens change, the rule does not.
