@@ -2,7 +2,7 @@ module github.com/truvity/observability
 
 go 1.27.0
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/VictoriaMetrics/metricsql v0.87.5
