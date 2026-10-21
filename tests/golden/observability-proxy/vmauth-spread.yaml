@@ -54,6 +54,8 @@ spec:
         matchLabels:
           app.kubernetes.io/name: vmauth
           app.kubernetes.io/instance: observability-proxy-observability-stack
+      matchLabelKeys:
+        - pod-template-hash
   podDisruptionBudget:
     maxUnavailable: 1
   serviceSpec:

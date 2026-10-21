@@ -49,6 +49,14 @@ spec:
         matchLabels:
           app.kubernetes.io/name: vmauth
           app.kubernetes.io/instance: {{ include "observability-proxy.fullname" . }}
+      {{- /*
+      Count only the pods of the CURRENT ReplicaSet: during a rolling update
+      the old pods still match the labels above, so new pods were placed
+      against zones the old ones were about to leave, and the rollout ended
+      with two replicas in one zone and none in another.
+      */}}
+      matchLabelKeys:
+        - pod-template-hash
   podDisruptionBudget:
     maxUnavailable: 1
   {{- end }}
