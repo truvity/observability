@@ -109,6 +109,14 @@ serviceAccount:
 # allows egress to it and, within the limit vanilla Kubernetes
 # NetworkPolicy can express, to nowhere else in the cluster — see
 # `networkPolicy` below.
+#
+# Point `url` at the HEADLESS Service of the Alertmanager (the vm-operator's
+# default VMAlertmanager Service is headless), not at a load-balanced one.
+# Alertmanager replicas share silences and the notification log but not
+# alerts, so every alert must reach every replica: alert-ingress resolves the
+# host at each delivery (cached 30s) and POSTs to every address. A host with
+# one address (or an IP) gets one POST. The alert counts as delivered when at
+# least one replica accepted it; see `alert_ingress_alertmanager_post_failures_total`.
 alertmanager:
   url: ""
 

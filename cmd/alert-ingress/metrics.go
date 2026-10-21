@@ -41,6 +41,12 @@ type Metrics struct {
 	// for a rejection made before a topic was even read).
 	Messages *prometheus.CounterVec
 
+	// AlertmanagerPostFailures counts each POST to one Alertmanager replica
+	// that failed, including those where another replica accepted the
+	// alert (the message then counts as delivered). No labels: a replica's
+	// address would be unbounded cardinality.
+	AlertmanagerPostFailures prometheus.Counter
+
 	// The queue input's own series, all alert_ingress_sqs_*.
 	SQSReceived      prometheus.Counter
 	SQSProcessed     prometheus.Counter
@@ -72,6 +78,11 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 	for _, r := range rejectReasons {
 		m.Rejected.WithLabelValues(r)
 	}
+
+	m.AlertmanagerPostFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "alert_ingress_alertmanager_post_failures_total",
+		Help: "POSTs of an alert to one Alertmanager replica that failed, whether or not another replica accepted it.",
+	})
 
 	m.SQSReceived = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "alert_ingress_sqs_received_total",
@@ -114,7 +125,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.SQSRejected.WithLabelValues(r)
 	}
 
-	reg.MustRegister(m.Messages, m.Rejected, m.SQSReceived, m.SQSProcessed, m.SQSDeleted, m.SQSConfirmed, m.SQSFailed,
+	reg.MustRegister(m.Messages, m.Rejected, m.AlertmanagerPostFailures, m.SQSReceived, m.SQSProcessed, m.SQSDeleted, m.SQSConfirmed, m.SQSFailed,
 		m.SQSRejected, m.SQSReceiveErrors, m.SQSDeleteErrors, m.SQSOldestAge)
 
 	return m

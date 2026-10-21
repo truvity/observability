@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -40,7 +42,9 @@ func main() {
 		Verifier: NewVerifier(nil),
 		Alertmanager: &AlertmanagerClient{
 			URL:        cfg.Alertmanager.URL,
-			HTTPClient: &http.Client{Timeout: 10 * time.Second},
+			HTTPClient: alertmanagerHTTPClient(cfg.Alertmanager.URL),
+			Failures:   metrics.AlertmanagerPostFailures,
+			Logger:     logger,
 		},
 		Metrics: metrics,
 		Logger:  logger,
@@ -142,4 +146,19 @@ func newHandlers(srv http.Handler, registry *prometheus.Registry, separate bool)
 	mux.Handle("/metrics", ops)
 
 	return mux, nil
+}
+
+// alertmanagerHTTPClient is the client for Alertmanager. Replicas are
+// addressed by IP, so for https the certificate is verified against the
+// configured host name rather than the address.
+func alertmanagerHTTPClient(rawURL string) *http.Client {
+	c := &http.Client{Timeout: 10 * time.Second}
+
+	if u, err := url.Parse(rawURL); err == nil && u.Scheme == "https" {
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		t.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: u.Hostname()}
+		c.Transport = t
+	}
+
+	return c
 }
