@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.98.0
 
 - **Behaviour change** (opt-in group only) `platform-alerts` `groups.cnpg` gains three restore-drill rules for the exporter of truvity/cnpg's `cnpg-restore-drill` chart (`cnpg_restore_drill_*`), linked into the CloudNativePG runbooks like the backup rules. Opt-in group, and a cluster without a drill has no series: **no change unless `groups.cnpg.enabled`**, and the three existing cnpg goldens are the only renders that move.
   - `CNPGRestoreDrillFailed` (`restoreDrillFailedFor` `10m`, `restoreDrillFailedSeverity` `warning`): `cnpg_restore_drill_last_result == 0`.
