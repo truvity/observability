@@ -969,6 +969,57 @@ groups:
     # `pendingPods.keepClusterLabel`).
     keepClusterLabel: false
 
+  # netpol-stuck-pod-repair (truvity/k8s, cmd/ and charts/netpol-stuck-pod-repair):
+  # a TEMPORARY WORKAROUND for the EKS network policy agent race
+  # https://github.com/aws/aws-network-policy-agent/issues/676 (fix
+  # https://github.com/aws/aws-network-policy-agent/pull/705, unreleased),
+  # which leaves a pod Running with an empty eBPF egress map until the pod is
+  # deleted. The controller deletes such pods within strict limits, or, in
+  # report mode, only says it would. Remove this group with the controller,
+  # when the node image ships an agent release containing #705.
+  #
+  # Off by default. Reads the controller's /metrics:
+  #   netpol_repair_actions_total{namespace, owner_kind, owner, reason, mode}
+  #       pods deleted (mode="act") or that would have been (mode="report")
+  #   netpol_repair_candidates{namespace, owner_kind, owner, reason}
+  #       pods meeting the rules at the last examination, before the limits
+  #   netpol_repair_halted   1 when the self-stop latched
+  # The series' own `namespace` (the stranded pod's) collides with the
+  # scrape's and survives as `exported_namespace` under `honor_labels:
+  # false`, which this chart's emitters force; `namespaceLabel` names the
+  # label the rules read it from.
+  netpolRepair:
+    enabled: false
+    # -- The label that carries the stranded pod's namespace:
+    # `exported_namespace` under this chart's emitters, `namespace` where the
+    # scrape honours the series' labels.
+    namespaceLabel: exported_namespace
+    repaired:
+      # -- `NetpolStuckPodRepaired` fires for any act-mode deletion within
+      # this window, so each repair is seen (and its evidence read: the
+      # Event on the owner, the controller's log line).
+      window: 10m
+      severity: warning
+    halted:
+      # -- `NetpolStuckPodRepairHalted`: the controller stopped deleting by
+      # itself (more repairs in its window than its limit). Critical: the
+      # workaround is off until someone looks and restarts it.
+      for: 1m
+      severity: critical
+    candidate:
+      # -- `NetpolStuckPodCandidate`: an owner's pods have met the selection
+      # rules continuously this long. In report mode this is the signal a
+      # repair would have happened; in act mode a candidate is deleted within
+      # a minute, so a persisting one is held by a limit.
+      for: 15m
+      severity: warning
+    # -- The runbook of every rule in the group, as is (no anchor added).
+    # Empty falls back to `runbookBaseUrl`/<alert>.
+    runbookUrl: ""
+    # -- Keep the series' own `clusterLabel` on the alerts (see
+    # `pendingPods.keepClusterLabel`).
+    keepClusterLabel: false
+
   # -- THE VENDORED UPSTREAM RULE PACK (restructure step 4). OFF by default; see
   # upstream/PIN.yaml for the pinned sources and docs/reference.md for the keys.
   #

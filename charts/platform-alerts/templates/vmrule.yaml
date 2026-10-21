@@ -2037,6 +2037,122 @@ spec:
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "ARCJobStartupSlow")) }}{{ . | nindent 12 }}{{- end }}
         {{- end }}
     {{- end }}
+    {{- if .Values.groups.netpolRepair.enabled }}
+    {{- $g := .Values.groups.netpolRepair }}
+    {{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+    {{- $n := $g.namespaceLabel }}
+    {{- $issue := "https://github.com/aws/aws-network-policy-agent/issues/676" }}
+    {{- $fix := "https://github.com/aws/aws-network-policy-agent/pull/705" }}
+    - name: platform-alerts.netpol-repair
+      interval: {{ .Values.interval }}
+      rules:
+        # netpol-stuck-pod-repair (truvity/k8s) is a TEMPORARY WORKAROUND for
+        # the EKS network policy agent race aws/aws-network-policy-agent#676
+        # (fix #705): a pod Running with an empty eBPF egress map, every
+        # egress connection timing out, until it is deleted. These rules go
+        # with it, when the node image ships an agent release with #705.
+        #
+        # Any act-mode deletion in the window. The second half catches the
+        # first repair of an owner: its counter series is new, and a series
+        # born inside the window has no earlier sample for `increase` to
+        # count from.
+        - alert: NetpolStuckPodRepaired
+          expr: >-
+            sum by ({{ $b }}{{ $n }}, owner_kind, owner, reason) (
+              increase(netpol_repair_actions_total{mode="act"}[{{ $g.repaired.window }}])
+            ) > 0
+            or
+            sum by ({{ $b }}{{ $n }}, owner_kind, owner, reason) (
+              netpol_repair_actions_total{mode="act"}
+              unless netpol_repair_actions_total{mode="act"} offset {{ $g.repaired.window }}
+            )
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.repaired.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "netpol-stuck-pod-repair deleted a pod of {{`{{ $labels.owner_kind }}`}} {{ printf "{{ $labels.%s }}" $n }}/{{`{{ $labels.owner }}`}} ({{`{{ $labels.reason }}`}})"
+            description: >-
+              The TEMPORARY workaround for the EKS network policy agent race
+              ({{ $issue }}, fix {{ $fix }} not yet in the node image) deleted
+              a pod of {{`{{ $labels.owner_kind }}`}} {{ printf "{{ $labels.%s }}" $n }}/{{`{{ $labels.owner }}`}}
+              within the last {{ $g.repaired.window }}{{ include "platform-alerts.onCluster" $ }}: it
+              {{`{{ if eq $labels.reason "restarts" }}restarted repeatedly{{ else }}stayed NotReady{{ end }}`}}
+              in a namespace with a NetworkPolicy. Check that the replacement
+              is Ready. The evidence is the Warning Event NetpolStuckPodRepaired
+              on the owner (`kubectl -n {{ printf "{{ $labels.%s }}" $n }} get events --field-selector reason=NetpolStuckPodRepaired`)
+              and the controller's "REPAIRED" log line (node, node age, last
+              termination messages, PolicyEndpoints, timeout evidence); add it
+              to the upstream issue. Repeated repairs of one owner with no
+              timeout evidence point at the application, not at the race.
+            upstream_issue: {{ $issue | quote }}
+            upstream_fix: {{ $fix | quote }}
+            {{- if $g.runbookUrl }}
+            runbook_url: {{ $g.runbookUrl | quote }}
+            {{- else }}
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NetpolStuckPodRepaired")) }}{{ . | nindent 12 }}{{- end }}
+            {{- end }}
+        # The controller's self-stop latched: more repairs in its window than
+        # its limit. It reports but no longer deletes until its pod restarts,
+        # so the workaround is off. A burst that size is not the race.
+        - alert: NetpolStuckPodRepairHalted
+          expr: >-
+            max by ({{ $b }}namespace, pod) (netpol_repair_halted) == 1
+          for: {{ $g.halted.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.halted.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "netpol-stuck-pod-repair stopped itself{{ include "platform-alerts.onCluster" $ }}: the network policy race workaround is OFF"
+            description: >-
+              The TEMPORARY workaround for the EKS network policy agent race
+              ({{ $issue }}, fix {{ $fix }}) deleted more pods within its
+              window than its limit allows and stopped deleting{{ include "platform-alerts.onCluster" $ }}
+              (pod {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}}). It
+              keeps reporting candidates. A burst that size is not the race:
+              look for a broken rollout, a node or a network fault (the
+              controller's "HALTING" log line, `netpol_repair_actions_total`,
+              the NetpolStuckPodRepaired Events). Once understood, restart it
+              (`kubectl -n {{`{{ $labels.namespace }}`}} delete pod {{`{{ $labels.pod }}`}}`)
+              to resume.
+            upstream_issue: {{ $issue | quote }}
+            upstream_fix: {{ $fix | quote }}
+            {{- if $g.runbookUrl }}
+            runbook_url: {{ $g.runbookUrl | quote }}
+            {{- else }}
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NetpolStuckPodRepairHalted")) }}{{ . | nindent 12 }}{{- end }}
+            {{- end }}
+        # An owner whose pods have met the selection rules for `for`. In
+        # report mode this is the signal: the repair act mode would have
+        # done. In act mode a candidate is deleted within a minute, so one
+        # that persists is held by the cooldown or the self-stop. `reason`
+        # is left out of the match so a pod that moves from restarting to
+        # NotReady does not restart the clock.
+        - alert: NetpolStuckPodCandidate
+          expr: >-
+            max by ({{ $b }}{{ $n }}, owner_kind, owner) (netpol_repair_candidates) > 0
+          for: {{ $g.candidate.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.candidate.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "{{`{{ $labels.owner_kind }}`}} {{ printf "{{ $labels.%s }}" $n }}/{{`{{ $labels.owner }}`}} has had a pod the network policy race may have stranded for {{ $g.candidate.for }}"
+            description: >-
+              A pod of {{`{{ $labels.owner_kind }}`}} {{ printf "{{ $labels.%s }}" $n }}/{{`{{ $labels.owner }}`}}
+              has restarted repeatedly or stayed NotReady in a namespace with a
+              NetworkPolicy for {{ $g.candidate.for }}{{ include "platform-alerts.onCluster" $ }}, and
+              netpol-stuck-pod-repair (the TEMPORARY workaround for {{ $issue }},
+              fix {{ $fix }}) has not deleted it: it runs in report mode, or a
+              limit holds it (owner cooldown, self-stop). Read its "WOULD
+              repair" log line and the NetpolStuckPodCandidate Event on the
+              owner. If the pod's log shows `i/o timeout` on every egress
+              while its PolicyEndpoints are correct, it is the race: delete
+              the pod (capture an EKS NodeDiagnostic for its node first).
+              Otherwise the application itself is failing.
+            upstream_issue: {{ $issue | quote }}
+            upstream_fix: {{ $fix | quote }}
+            {{- if $g.runbookUrl }}
+            runbook_url: {{ $g.runbookUrl | quote }}
+            {{- else }}
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "NetpolStuckPodCandidate")) }}{{ . | nindent 12 }}{{- end }}
+            {{- end }}
+    {{- end }}
 {{- end }}
 {{- if or .Values.groups.podSecurity.enabled .Values.groups.podSecurityAudit.enabled }}
 ---

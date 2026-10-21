@@ -176,7 +176,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "cnpg", "nodeMemoryPressure", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "arcRunners", "upstream"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "cnpg", "nodeMemoryPressure", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "arcRunners", "netpolRepair", "upstream"],
       "properties": {
         "backups": {
           "type": "object",
@@ -589,6 +589,41 @@
                 "severity": { "$ref": "#/definitions/severity" }
               }
             },
+            "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "netpolRepair": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespaceLabel": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+            "repaired": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "window": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "halted": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "candidate": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "runbookUrl": { "type": "string", "pattern": "^(|https?://\\S+)$" },
             "keepClusterLabel": { "type": "boolean" }
           }
         },
