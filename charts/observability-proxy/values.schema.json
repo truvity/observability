@@ -288,6 +288,17 @@
           "type": "integer",
           "minimum": 1
         },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "trafficDistribution": {
+              "type": "string",
+              "enum": ["", "PreferClose", "PreferSameZone", "PreferSameNode"],
+              "description": "spec.trafficDistribution of the proxy's Service. Empty leaves it unset."
+            }
+          }
+        },
         "resources": {
           "$ref": "#/definitions/resources"
         },
