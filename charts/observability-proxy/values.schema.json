@@ -288,6 +288,17 @@
           "type": "integer",
           "minimum": 1
         },
+        "topologySpread": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "whenUnsatisfiable": {
+              "type": "string",
+              "enum": ["ScheduleAnyway", "DoNotSchedule"],
+              "description": "whenUnsatisfiable of the proxy's zone spread (two or more replicas)."
+            }
+          }
+        },
         "service": {
           "type": "object",
           "additionalProperties": false,

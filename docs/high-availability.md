@@ -80,7 +80,10 @@ flowchart LR
 - **A proxy that is not a single pod.** `vmauth.replicaCount` must be at
   least 2 (refused otherwise). From two replicas, `ha` or not, the proxy is
   spread over zones softly and has a PodDisruptionBudget
-  (`maxUnavailable: 1`); one replica gets neither.
+  (`maxUnavailable: 1`); one replica gets neither. A soft spread never makes
+  a node autoscaler add a node in a zone the proxy has none in;
+  `vmauth.topologySpread.whenUnsatisfiable: DoNotSchedule` makes it one pod
+  per zone.
 - **A vmalert per store replica.** Four alerters instead of two: the metrics
   and logs vmalerts, each with a `-peer` twin that reads the peer's store.
   Identical rule selector, `evaluationInterval`, `externalLabels` and

@@ -191,3 +191,20 @@ func TestVMAuthTrafficDistributionPatchesTheDefaultService(t *testing.T) {
 		"spec":         map[string]any{"trafficDistribution": "PreferClose"},
 	}, spec["serviceSpec"])
 }
+
+// TestVMAuthSpreadCanBeHard pins `vmauth.topologySpread.whenUnsatisfiable`:
+// DoNotSchedule reaches the zone spread, and the schema refuses anything else
+// than the two Kubernetes values.
+func TestVMAuthSpreadCanBeHard(t *testing.T) {
+	spec := vmauthSpec(t, "--set", "vmauth.replicaCount=3",
+		"--set", "vmauth.topologySpread.whenUnsatisfiable=DoNotSchedule")
+
+	spread, _ := spec["topologySpreadConstraints"].([]any)
+	require.Len(t, spread, 1)
+	c, _ := spread[0].(map[string]any)
+	assert.Equal(t, "DoNotSchedule", c["whenUnsatisfiable"])
+
+	_, _, err := helmTemplate(t, "x", "observability-proxy", "obs",
+		"--set", "vmauth.replicaCount=3", "--set", "vmauth.topologySpread.whenUnsatisfiable=Sometimes")
+	require.Error(t, err)
+}

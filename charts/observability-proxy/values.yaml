@@ -82,6 +82,16 @@ vmauth:
   # cross-cluster write down with its node or zone: set 3 on a cluster with
   # three zones.
   replicaCount: 1
+  topologySpread:
+    # -- How the zone spread of two or more replicas treats a zone it cannot
+    # fill: `ScheduleAnyway` (the default) places the pod in another zone, so
+    # a zone loss leaves every pod schedulable, but it also never makes a node
+    # autoscaler (Karpenter, Cluster Autoscaler) add a node in a zone where
+    # the proxy has none, so the pods can end up in fewer zones than there
+    # are replicas. `DoNotSchedule` holds a pod Pending until its zone has a
+    # node, which an autoscaler then provides: one pod per zone, and on a
+    # zone loss that zone's pod waits while the others serve.
+    whenUnsatisfiable: ScheduleAnyway
   service:
     # -- `spec.trafficDistribution` of the proxy's Service: empty (the
     # default) leaves it unset; `PreferClose` (Kubernetes 1.33+ also calls it
