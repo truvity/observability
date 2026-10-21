@@ -1,0 +1,16 @@
+AWS Budget Notification October 20, 2026
+AWS Account ACCOUNT_ID
+
+Dear AWS Customer,
+
+You requested that we alert you when the ACTUAL Cost associated with your monthly-total budget is greater than $800.00 for the current month. The ACTUAL Cost associated with this budget is $843.17. You can find additional details below and by accessing the AWS Budgets dashboard [1].
+
+Budget Name: monthly-total
+Budget Type: Cost
+Budgeted Amount: $1,000.00
+Alert Type: ACTUAL
+Alert Threshold: > $800.00
+ACTUAL Amount: $843.17
+
+[1] https://console.aws.amazon.com/billing/home#/budgets
+

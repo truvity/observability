@@ -45,7 +45,13 @@ func (kv amKV) SortedPairs() []amPair {
 	for k := range kv {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	// Alertmanager's KV.SortedPairs: sorted, with alertname first.
+	sort.Slice(keys, func(i, j int) bool {
+		if (keys[i] == "alertname") != (keys[j] == "alertname") {
+			return keys[i] == "alertname"
+		}
+		return keys[i] < keys[j]
+	})
 	out := make([]amPair, 0, len(keys))
 	for _, k := range keys {
 		out = append(out, amPair{k, kv[k]})
@@ -97,7 +103,10 @@ var amFuncs = template.FuncMap{
 		}
 		return res, nil
 	},
-	"toUpper": strings.ToUpper,
+	"toUpper":   strings.ToUpper,
+	"trimSpace": strings.TrimSpace,
+	// Alertmanager's `match` is regexp.MatchString.
+	"match": regexp.MatchString,
 }
 
 // karma's types, as written in ui/src/Stores/SilenceFormStore.ts (v0.133).
@@ -135,7 +144,9 @@ func karmaSlackTexts(t *testing.T, golden string) []string {
 
 func executeSlackText(t *testing.T, text string, data amData) string {
 	t.Helper()
-	tpl, err := template.New("slack").Funcs(amFuncs).Parse(text)
+	// Alertmanager parses every template with missingkey=zero
+	// (template/template.go), so an absent annotation is "".
+	tpl, err := template.New("slack").Option("missingkey=zero").Funcs(amFuncs).Parse(text)
 	require.NoError(t, err)
 	var buf bytes.Buffer
 	require.NoError(t, tpl.Execute(&buf, data))
@@ -153,6 +164,15 @@ type slackLinkSet struct {
 	GroupURLs map[string]string
 	// Grafana are the per-alert Grafana URLs, one per alert, decoded.
 	Grafana []string
+	// Alert are the names of every alert's own links (`link_name`, Runbook).
+	Alert []string
+}
+
+// isGroupLine is the one line of group links: it starts with Silence or
+// View, never with an alert's own link.
+func isGroupLine(l string) bool {
+	m := mrkdwnLink.FindStringSubmatch(l)
+	return strings.HasPrefix(l, "<") && m != nil && (m[2] == "Silence" || m[2] == "View")
 }
 
 // slackLinks reads the named mrkdwn links out of an executed Slack text and
@@ -167,17 +187,19 @@ func slackLinks(t *testing.T, out string) slackLinkSet {
 			assert.NotContains(t, m[1], "<", l)
 			assert.NotRegexp(t, `&(?:[^a]|a[^m]|am[^p]|amp[^;])`, m[1], "a raw & inside a link: %s", l)
 			u := html.UnescapeString(m[1])
-			switch {
-			case m[2] == "Grafana":
+			switch m[2] {
+			case "Grafana":
 				set.Grafana = append(set.Grafana, u)
-			case strings.HasPrefix(l, "<"):
+			case "Silence", "View":
 				set.Group = append(set.Group, m[2])
 				set.GroupURLs[m[2]] = u
 			default:
-				t.Fatalf("unexpected link %q in %q", m[2], l)
+				// An alert's own links: its `link` (named `link_name`) and
+				// its runbook, on the line under its description.
+				set.Alert = append(set.Alert, m[2])
 			}
 		}
-		if strings.HasPrefix(l, "<") {
+		if isGroupLine(l) {
 			groupLines++
 			assert.Equal(t, strings.Join(set.Group, " · "), mrkdwnLinksJoined(l), "links are separated by ' · ' and nothing else is on the line")
 		}
@@ -238,7 +260,11 @@ func TestKarmaSilenceLinkOpensKarmasFormPrefilled(t *testing.T) {
 			})
 			set := slackLinks(t, out)
 			assert.Equal(t, []string{"Silence", "View"}, set.Group)
-			assert.Len(t, set.Grafana, 1)
+			if labels["k8s_cluster_name"] != "" {
+				assert.Len(t, set.Grafana, 1)
+			} else {
+				assert.Empty(t, set.Grafana, "no cluster, no Grafana link")
+			}
 			link := set.GroupURLs["Silence"]
 			require.NotEmpty(t, link, out)
 			require.True(t, strings.HasPrefix(link, "https://karma.example.com/?m="), link)

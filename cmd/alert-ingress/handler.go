@@ -176,14 +176,16 @@ func (s *Server) Handle(env Envelope, confirm bool) result {
 	// 3. Match against the mapping rules, in order; the first hit wins.
 	for _, m := range s.Config.Mappings {
 		if matchesMapping(m, body) {
-			return s.post(m, body, env.Message, env.TopicArn)
+			return s.post(m, body, env)
 		}
 	}
 
 	// 4. Unmapped is still an alert. A message no rule matches becomes
 	// CloudEventUnmapped rather than being dropped: a drop is the
 	// failure mode this whole repository exists to close.
-	labels, annotations := unmappedAlert(s.Config.Unmapped, env.Message)
+	labels, annotations := unmappedAlert(s.Config.Unmapped, unmappedInput{
+		Topic: env.TopicArn, Subject: env.Subject, Message: env.Message,
+	})
 
 	return s.deliver(env.TopicArn, "unmapped", "unmapped", labels, annotations, false, 0)
 }
@@ -195,7 +197,7 @@ func (s *Server) Handle(env Envelope, confirm bool) result {
 // far better for an on-call person to see "unmapped" and go fix the
 // template than for the message to vanish while everything reports
 // healthy.
-func (s *Server) post(m Mapping, body map[string]any, rawMessage, topic string) result {
+func (s *Server) post(m Mapping, body map[string]any, env Envelope) result {
 	mappingName, outcome := m.Name, "mapped"
 
 	labels, annotations, err := renderAlert(m.Alert, body)
@@ -209,12 +211,15 @@ func (s *Server) post(m Mapping, body map[string]any, rawMessage, topic string) 
 		s.Logger.Error("rendering mapping template; falling back to CloudEventUnmapped rather than dropping the message",
 			"mapping", mappingName, "error", err)
 
-		labels, annotations = unmappedAlert(s.Config.Unmapped, rawMessage)
+		labels, annotations = unmappedAlert(s.Config.Unmapped, unmappedInput{
+			Topic: env.TopicArn, Subject: env.Subject, Message: env.Message,
+			Mapping: m.Name, Cause: err.Error(),
+		})
 		mappingName, outcome = "unmapped", "unmapped"
 		resolved, m.ResolveAfter = false, 0
 	}
 
-	return s.deliver(topic, mappingName, outcome, labels, annotations, resolved, time.Duration(m.ResolveAfter))
+	return s.deliver(env.TopicArn, mappingName, outcome, labels, annotations, resolved, time.Duration(m.ResolveAfter))
 }
 
 // deliver POSTs one alert to Alertmanager and reports the outcome. A firing

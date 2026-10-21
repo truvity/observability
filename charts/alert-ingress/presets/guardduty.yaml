@@ -13,6 +13,15 @@
 # Both stamp `source: guardduty` (route on it; `notifications.routeLabels` in
 # observability-stack lists it), plus the account and the region. Distinct
 # findings stay distinct alerts through `finding_type` and `finding_id`.
+#
+# The annotations follow the notification convention (docs/notifications.md,
+# "Annotations"): `summary` is the finding's title; `description` is the
+# finding's own description, its severity and type, the resource it is about
+# (`guarddutyResource`), and the account, region, count and first/last seen;
+# `link` opens the finding in the GuardDuty console of its region (sign in to
+# the account that can see it: the administrator or the member account).
+# Optional fields are read with `get`, so a finding without them still
+# renders rather than becoming CloudEventUnmapped.
 # List the file BEFORE your own values; nothing reads it unless it is listed.
 presetMappings:
   guardduty:
@@ -27,9 +36,17 @@ presetMappings:
           region: '{{ .region }}'
         annotations:
           summary: '{{ .detail.title }}'
-          api: '{{ .detail.service.action.awsApiCallAction.api }}'
-          remote_ip: '{{ .detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4 }}'
-          count: '{{ .detail.service.count }}'
+          description: |-
+            {{ get . "detail.description" }}
+            {{ with get . "detail.service.action.awsApiCallAction.api" }}API call {{ . }}{{ with get $ "detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4" }} from {{ . }}{{ end }}{{ with get $ "detail.service.action.awsApiCallAction.remoteIpDetails.country.countryName" }} ({{ . }}){{ end }}
+            {{ end }}Severity {{ .detail.severity }} ({{ if atLeast .detail.severity 9 }}critical{{ else if atLeast .detail.severity 7 }}high{{ else if atLeast .detail.severity 4 }}medium{{ else }}low{{ end }}) · {{ .detail.type }}
+            {{ with guarddutyResource .detail.resource }}Resource: {{ . }}
+            {{ end }}Account {{ .account }} · {{ .region }}{{ with get . "detail.service.count" }} · count {{ . }}{{ end }}{{ with get . "detail.service.eventFirstSeen" }} · first seen {{ . }}{{ end }}{{ with get . "detail.service.eventLastSeen" }} · last seen {{ . }}{{ end }}
+          link: 'https://{{ .region }}.console.aws.amazon.com/guardduty/home?region={{ .region }}#/findings?macros=current&fId={{ .detail.id }}'
+          link_name: GuardDuty finding
+          api: '{{ get . "detail.service.action.awsApiCallAction.api" }}'
+          remote_ip: '{{ get . "detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4" }}'
+          count: '{{ get . "detail.service.count" }}'
     - name: guardduty
       match: {"detail-type": "GuardDuty Finding"}
       alert:
@@ -43,3 +60,10 @@ presetMappings:
           finding_id: '{{ .detail.id }}'
         annotations:
           summary: '{{ .detail.title }}'
+          description: |-
+            {{ get . "detail.description" }}
+            Severity {{ .detail.severity }} ({{ if atLeast .detail.severity 9 }}critical{{ else if atLeast .detail.severity 7 }}high{{ else if atLeast .detail.severity 4 }}medium{{ else }}low{{ end }}) · {{ .detail.type }}
+            {{ with guarddutyResource .detail.resource }}Resource: {{ . }}
+            {{ end }}Account {{ .account }} · {{ .region }}{{ with get . "detail.service.count" }} · count {{ . }}{{ end }}{{ with get . "detail.service.eventFirstSeen" }} · first seen {{ . }}{{ end }}{{ with get . "detail.service.eventLastSeen" }} · last seen {{ . }}{{ end }}
+          link: 'https://{{ .region }}.console.aws.amazon.com/guardduty/home?region={{ .region }}#/findings?macros=current&fId={{ .detail.id }}'
+          link_name: GuardDuty finding

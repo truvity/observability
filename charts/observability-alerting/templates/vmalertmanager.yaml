@@ -396,12 +396,7 @@ spec:
             title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }} on {{ "{{" }} or .CommonLabels.k8s_cluster_name .CommonLabels.source {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}/{{ "{{" }} .CommonLabels.k8s_namespace_name {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
             title_link: '{{ if eq $console "karma" }}{{ $n.consoleUrl }}/?q={{ `{{ range $i, $p := .CommonLabels.SortedPairs }}{{ if $i }}&q={{ end }}{{ urlquery $p.Name }}%3D{{ urlquery $p.Value }}{{ end }}` }}{{ else }}{{ $externalUrl }}/?var-cluster={{ "{{" }} .CommonLabels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .CommonLabels.k8s_namespace_name {{ "}}" }}&var-namespace={{ "{{" }} .CommonLabels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ end }}'
             text: |-
-              {{ $mentionPrefix }}{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }} · <{{ $externalUrl }}/?var-cluster={{ "{{" }} .Labels.k8s_cluster_name | urlquery {{ "}}" }}{{ "{{" }} if .Labels.k8s_namespace_name {{ "}}" }}&amp;var-namespace={{ "{{" }} .Labels.k8s_namespace_name | urlquery {{ "}}" }}{{ "{{" }} end {{ "}}" }}|Grafana>
-              {{- if $n.runbookBaseUrl }}
-              {{ "{{" }} if .Annotations.runbook {{ "}}" }}Runbook: {{ $n.runbookBaseUrl }}{{ "{{" }} .Annotations.runbook {{ "}}" }}
-              {{ "{{" }} end {{ "}}" }}
-              {{- end }}
-              {{ "{{" }} end {{ "}}" }}
+              {{ $mentionPrefix }}{{ include "observability-alerting.notifications.slackAlerts" (dict "externalUrl" $externalUrl "runbookBaseUrl" $n.runbookBaseUrl) | nindent 14 | trim }}
               {{- /*
               Named mrkdwn links, `<url|Name>`, in place of raw URLs (a
               karma `?m=` value is long base64). Grafana is per alert

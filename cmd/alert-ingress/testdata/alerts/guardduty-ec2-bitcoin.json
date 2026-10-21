@@ -1,0 +1,17 @@
+{
+  "labels": {
+    "account": "ACCOUNT_ID",
+    "alertname": "CloudSecurityFinding",
+    "finding_id": "7e3b5d1f9a2c4e6b8d0f1a3c5e7b9d21",
+    "finding_type": "CryptoCurrency:EC2/BitcoinTool.B!DNS",
+    "region": "eu-west-1",
+    "severity": "critical",
+    "source": "guardduty"
+  },
+  "annotations": {
+    "description": "EC2 instance i-0abc1234def567890 is querying a domain name pool.example-miner.test that is associated with Bitcoin-related activity. This could indicate that the instance is compromised.\nSeverity 8 (high) · CryptoCurrency:EC2/BitcoinTool.B!DNS\nResource: Instance i-0abc1234def567890 (m5.large)\nAccount ACCOUNT_ID · eu-west-1 · count 17 · first seen 2026-10-20T09:02:44.000Z · last seen 2026-10-20T09:27:10.000Z",
+    "link": "https://eu-west-1.console.aws.amazon.com/guardduty/home?region=eu-west-1#/findings?macros=current\u0026fId=7e3b5d1f9a2c4e6b8d0f1a3c5e7b9d21",
+    "link_name": "GuardDuty finding",
+    "summary": "EC2 instance i-0abc1234def567890 is querying a domain name that is associated with Bitcoin-related activity."
+  }
+}

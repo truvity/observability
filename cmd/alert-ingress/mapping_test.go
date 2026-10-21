@@ -156,7 +156,7 @@ func TestAlarmStateChangeIsUnmapped(t *testing.T) {
 	assert.Falsef(t, ok, "an alarm state change must match none of the three example mappings — "+
 		"if it does, this test and the design page's own examples have drifted apart")
 
-	labels, annotations := unmappedAlert(Unmapped{}, message)
+	labels, annotations := unmappedAlert(Unmapped{}, unmappedInput{Message: message})
 	assert.Equal(t, "CloudEventUnmapped", labels["alertname"])
 	assert.Equal(t, "warning", labels["severity"])
 	assert.Contains(t, annotations["body"], "CloudWatch Alarm State Change",
@@ -173,7 +173,7 @@ func TestAlarmStateChangeIsUnmapped(t *testing.T) {
 func TestUnmappedAlertNeverTemplatesTheBody(t *testing.T) {
 	hostile := `this is not json and it contains {{ .anything }} and {{ define "x" }}`
 
-	labels, annotations := unmappedAlert(Unmapped{}, hostile)
+	labels, annotations := unmappedAlert(Unmapped{}, unmappedInput{Message: hostile})
 	assert.Equal(t, "CloudEventUnmapped", labels["alertname"])
 	assert.True(t, strings.Contains(annotations["body"], "{{ .anything }}"),
 		"the template-looking text must survive UNCHANGED, proving it was never executed")
@@ -199,11 +199,11 @@ func TestUnmappedAlertCarriesStaticLabelsAndSeverity(t *testing.T) {
 	labels, _ := unmappedAlert(Unmapped{
 		Severity: "info",
 		Labels:   map[string]string{"team": "platform", "severity": "x", "alertname": "y"},
-	}, "m")
+	}, unmappedInput{Message: "m"})
 
 	assert.Equal(t, map[string]string{"team": "platform", "alertname": "CloudEventUnmapped", "severity": "info"}, labels)
 
-	labels, _ = unmappedAlert(Unmapped{}, "m")
+	labels, _ = unmappedAlert(Unmapped{}, unmappedInput{Message: "m"})
 	assert.Equal(t, map[string]string{"alertname": "CloudEventUnmapped", "severity": "warning"}, labels,
 		"the zero value must be the old behaviour")
 }
@@ -252,7 +252,7 @@ func TestMappingMaySetSourceWithoutAClusterLabel(t *testing.T) {
 	assert.Equal(t, "cloud-security", labels[contracts.ClusterLabel], "an existing mapping keeps working")
 	assert.Equal(t, "guardduty", labels[contracts.SourceLabel])
 
-	labels, _ = unmappedAlert(Unmapped{Labels: map[string]string{contracts.SourceLabel: "unmapped"}}, "x")
+	labels, _ = unmappedAlert(Unmapped{Labels: map[string]string{contracts.SourceLabel: "unmapped"}}, unmappedInput{Message: "x"})
 	assert.Equal(t, "unmapped", labels[contracts.SourceLabel])
 	assert.NotContains(t, labels, contracts.ClusterLabel)
 }

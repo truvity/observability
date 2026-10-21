@@ -1,0 +1,16 @@
+{
+  "labels": {
+    "account_id": "ACCOUNT_ID",
+    "alertname": "CloudCostAnomaly",
+    "monitor_name": "Amazon Elastic Compute Cloud - Compute",
+    "severity": "warning",
+    "source": "cost-anomaly"
+  },
+  "annotations": {
+    "description": "Impact: $1001.25 (334% over expected), 2026-10-17 – 2026-10-19\nRoot cause: Amazon Elastic Compute Cloud - Compute · workloads (ACCOUNT_ID) · eu-central-1 · EUC1-BoxUsage:r6g.2xlarge · $812.40\nRoot cause: Amazon Elastic Compute Cloud - Compute · workloads (ACCOUNT_ID) · eu-central-1 · EUC1-EBS:VolumeUsage.gp3 · $120.30\nRoot cause: Amazon Elastic Compute Cloud - Compute · workloads (ACCOUNT_ID) · eu-west-1 · EU-NatGateway-Bytes · $40.10\n",
+    "impact": "1001.25",
+    "link": "https://console.aws.amazon.com/cost-management/home#/anomaly-detection/monitors/abcdef12-1234-4ea0-84cc-918a97d736ef/anomalies/12345678-abcd-ef12-3456-987654321a12",
+    "link_name": "Anomaly",
+    "summary": "AWS Cost Management: Cost anomaly detected on 2026-10-19"
+  }
+}

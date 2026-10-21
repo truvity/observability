@@ -437,10 +437,11 @@ notifications:
   # -- How long the silence the `console: karma` link prefills lasts, in
   # minutes. The person can change it in the form.
   silenceMinutes: 60
-  # -- Prefixed to a firing alert's `runbook` annotation to build the
-  # runbook link. Left empty, the message carries no runbook line at all
-  # — never a link to a base URL with nothing after it, which reads as a
-  # broken link rather than an absent one.
+  # -- Prefixed to an alert's `runbook` annotation to build the runbook
+  # link when the annotation is a path. A `runbook` that is already an
+  # http(s) URL is linked as it is. Left empty, a path-only runbook gets no
+  # link at all — never a link to a base URL with nothing after it, which
+  # reads as a broken link rather than an absent one.
   runbookBaseUrl: ""
   groupWait: 30s
   groupInterval: 5m

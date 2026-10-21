@@ -1,0 +1,20 @@
+{
+  "labels": {
+    "account": "ACCOUNT_ID",
+    "alertname": "audit-writer-errors",
+    "k8s_cluster_name": "cloud-security",
+    "region": "eu-central-1",
+    "severity": "critical",
+    "source": "cloudwatch"
+  },
+  "annotations": {
+    "description": "Threshold Crossed: 1 out of the last 1 datapoints [3.0 (04/10/26 09:51:00)] was greater than or equal to the threshold (1.0) (minimum 1 datapoint for OK -\u003e ALARM transition).\nThe audit writer Lambda is failing.",
+    "link": "https://eu-central-1.console.aws.amazon.com/cloudwatch/home?region=eu-central-1#alarmsV2:alarm/audit-writer-errors",
+    "link_name": "Alarm",
+    "metric": "AWS/Lambda/Errors",
+    "previous_state": "OK",
+    "reason": "Threshold Crossed: 1 out of the last 1 datapoints [3.0 (04/10/26 09:51:00)] was greater than or equal to the threshold (1.0) (minimum 1 datapoint for OK -\u003e ALARM transition).",
+    "state": "ALARM",
+    "summary": "audit-writer-errors is ALARM"
+  }
+}

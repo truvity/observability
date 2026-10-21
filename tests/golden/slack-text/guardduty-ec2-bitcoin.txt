@@ -1,0 +1,8 @@
+*EC2 instance i-0abc1234def567890 is querying a domain name that is associated with Bitcoin-related activity.*
+EC2 instance i-0abc1234def567890 is querying a domain name pool.example-miner.test that is associated with Bitcoin-related activity. This could indicate that the instance is compromised.
+Severity 8 (high) · CryptoCurrency:EC2/BitcoinTool.B!DNS
+Resource: Instance i-0abc1234def567890 (m5.large)
+Account ACCOUNT_ID · eu-west-1 · count 17 · first seen 2026-10-20T09:02:44.000Z · last seen 2026-10-20T09:27:10.000Z
+<https://eu-west-1.console.aws.amazon.com/guardduty/home?region=eu-west-1#/findings?macros=current&amp;fId=7e3b5d1f9a2c4e6b8d0f1a3c5e7b9d21|GuardDuty finding>
+
+<https://alertmanager.example/#/silences/new?filter=%7Balertname%3D%22CloudSecurityFinding%22%2Caccount%3D%22ACCOUNT_ID%22%2Cfinding_id%3D%227e3b5d1f9a2c4e6b8d0f1a3c5e7b9d21%22%2Cfinding_type%3D%22CryptoCurrency%3AEC2%2FBitcoinTool.B%21DNS%22%2Cregion%3D%22eu-west-1%22%2Cseverity%3D%22critical%22%2Csource%3D%22guardduty%22%7D|Silence>

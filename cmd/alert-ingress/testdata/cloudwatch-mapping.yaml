@@ -18,8 +18,14 @@ mappings:
         region: '{{ reFind "^arn:[a-z-]+:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
       annotations:
         summary: '{{ .AlarmName }} is {{ .NewStateValue }}'
+        # The state reason, then the alarm's own description without a
+        # trailing `severity=` token (that one is for the severity above).
+        description: |-
+          {{ .NewStateReason }}{{ with .AlarmDescription }}{{ with reFind "(?s)^\\s*(.*?)\\s*(?:severity=(?:critical|warning|info))?\\s*$" . }}
+          {{ . }}{{ end }}{{ end }}
+        link: '{{ with reFind "^arn:[a-z-]+:cloudwatch:([a-z0-9-]+):" .AlarmArn }}https://{{ . }}.console.aws.amazon.com/cloudwatch/home?region={{ . }}#alarmsV2:alarm/{{ urlquery $.AlarmName }}{{ end }}'
+        link_name: Alarm
         reason: '{{ .NewStateReason }}'
         state: '{{ .NewStateValue }}'
         previous_state: '{{ .OldStateValue }}'
-        description: '{{ with .AlarmDescription }}{{ . }}{{ end }}'
         metric: '{{ with .Trigger }}{{ .Namespace }}/{{ .MetricName }}{{ end }}'

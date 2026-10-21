@@ -1,0 +1,6 @@
+*audit-writer-errors is ALARM* · <https://grafana.example/?var-cluster=cloud-security|Grafana>
+Threshold Crossed: 1 out of the last 1 datapoints [3.0 (04/10/26 09:51:00)] was greater than or equal to the threshold (1.0) (minimum 1 datapoint for OK -&gt; ALARM transition).
+The audit writer Lambda is failing.
+<https://eu-central-1.console.aws.amazon.com/cloudwatch/home?region=eu-central-1#alarmsV2:alarm/audit-writer-errors|Alarm>
+
+<https://alertmanager.example/#/silences/new?filter=%7Balertname%3D%22audit-writer-errors%22%2Caccount%3D%22ACCOUNT_ID%22%2Ck8s_cluster_name%3D%22cloud-security%22%2Cregion%3D%22eu-central-1%22%2Cseverity%3D%22critical%22%2Csource%3D%22cloudwatch%22%7D|Silence>
