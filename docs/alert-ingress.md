@@ -45,6 +45,9 @@ It knows nothing about the estate.
 alertmanager:
   url: http://vmalertmanager-observability-stack.observability.svc:9093
 
+# Use the headless Service, so every Alertmanager replica gets each alert
+# (see "HA Alertmanager" below).
+
 # The NetworkPolicy is on by default and names Alertmanager's pods as the
 # one in-cluster egress; it is refused empty while the policy is on.
 networkPolicy:
@@ -365,6 +368,25 @@ visible again after the visibility timeout, and is retried; after the queue's
 redrive policy's `maxReceiveCount` receives, SQS moves it to the dead-letter
 queue. That policy, the queue and the subscriptions belong to whoever owns the
 queue; alert-ingress only consumes.
+
+**HA Alertmanager.** Alertmanager replicas in a gossip cluster share silences
+and the notification log, but not alerts: a client must POST each alert to every
+replica, as vmalert and Prometheus do. Through a load-balanced Service an alert
+lands on one random replica, and if that replica restarts before the alert
+resolves, the alert is gone and nothing notices. So alert-ingress resolves the
+host of `alertmanager.url` at each delivery (the answer is cached for 30s) and
+POSTs to every address it returns, concurrently, with the same scheme, port and
+path and the configured host in the `Host` header (https verifies the
+certificate against the configured name). Point `alertmanager.url` at the
+headless Service (the vm-operator's VMAlertmanager Service is headless). A host
+with a single address, or an IP, gets one POST as before. The message counts as
+delivered (answered 2xx, or deleted from the queue) when AT LEAST ONE replica
+answered 2xx, so a replica that is down for hours does not push every message to
+the dead-letter queue. Each failed replica POST is logged (warn) and counted in
+`alert_ingress_alertmanager_post_failures_total` (no labels); alert on its rate,
+since the replica that missed an alert will not know it. If every replica
+fails, the answer is a 5xx (HTTP) or the message is left on the queue, so the
+provider retries.
 
 A rejected message is counted (`alert_ingress_sqs_rejected_total{reason}` and
 `alert_ingress_rejected_total{reason}`) and logged by message id and reason only,
