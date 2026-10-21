@@ -1,0 +1,23 @@
+# Failed Kubernetes authentication and authorization on a log store that
+# holds several clusters, evaluated by the vmalert of one of them: only the
+# LogsQL auth group is on, so no metrics VMRule renders, and each event
+# keeps its own cluster. The ignore lists and thresholds are the ones an
+# estate with ephemeral CI namespaces would set.
+commonLabels:
+  k8s_cluster_name: kernel
+  team: platform
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  authFailures:
+    enabled: true
+    keepClusterLabel: true
+    authentication:
+      threshold: 20
+    ignoreNamespaces: "^ci-"

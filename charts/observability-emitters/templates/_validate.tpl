@@ -998,6 +998,14 @@ stream-field list files every resource attribute as a stream field.
 {{- if not $c.streamPrefixes -}}
 {{- fail "observability-emitters: `cloudwatchLogs.streamPrefixes` is empty, so the receiver would read EVERY stream of the log group: for an EKS control plane that is the API server, authenticator, controller manager and scheduler logs as well as the audit log, several times the volume, and not what `match` was written for. Name the stream prefix (`kube-apiserver-audit-`)." -}}
 {{- end -}}
+{{- range $i, $m := $c.matchers -}}
+{{- if not (or $m.streamPrefix $m.anyOf $m.json) -}}
+{{- fail (printf "observability-emitters: `cloudwatchLogs.matchers[%d]` has none of `streamPrefix`, `anyOf`, `json`, so it would match every event of every stream read. Name what it keeps." $i) -}}
+{{- end -}}
+{{- if and $m.streamPrefix (not (has $m.streamPrefix $c.streamPrefixes)) -}}
+{{- fail (printf "observability-emitters: `cloudwatchLogs.matchers[%d].streamPrefix` is %q, which is not in `cloudwatchLogs.streamPrefixes` (%s). The receiver reads only the streams listed there, so the matcher would never see an event. Add the prefix to `streamPrefixes`, or fix the matcher." $i $m.streamPrefix (join ", " $c.streamPrefixes)) -}}
+{{- end -}}
+{{- end -}}
 {{- $dest := include "observability-emitters.effectiveOtlpDestinations" (dict "root" . "signal" "logs") | fromYamlArray -}}
 {{- if not $dest -}}
 {{- fail "observability-emitters: `cloudwatchLogs.enabled` is true but there is no log destination (`otlp.destinations.logs` or `remote`). The pipeline would have no exporter, and everything it read would be discarded." -}}

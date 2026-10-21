@@ -1174,15 +1174,21 @@ otlp:
 # gateway's (`otlp.destinations.logs`, or `remote`). Off by default: nothing
 # renders and no existing render moves.
 #
-# Built for ONE source today, an EKS control plane's API-server AUDIT log
-# (EKS offers no other way out of CloudWatch), narrowed to the events that
-# carry one phrase: the Pod Security `audit` mode's own annotation
-# `pod-security.kubernetes.io/audit-violations`, which is how a namespace
-# that is still `warn`/`audit` learns what `enforce` would reject. The
-# receiver cannot filter on the server side, so every audit event is READ
-# and all but the matching ones are dropped here, before anything is
-# queued or written; the store holds only the violations. Set `match` to
-# widen it.
+# Built for an EKS control plane's log group (EKS offers no other way out
+# of CloudWatch). Two stream families are understood, and an event is kept
+# only when it matches `match` or one of `matchers` (below):
+#   - the API-server AUDIT log (`kube-apiserver-audit-*`), narrowed by
+#     default to the events that carry one phrase, the Pod Security
+#     `audit` mode's own annotation `pod-security.kubernetes.io/audit-violations`
+#     (how a namespace that is still `warn`/`audit` learns what `enforce`
+#     would reject), and, with a matcher, to the requests the API server
+#     answered 401 or 403;
+#   - the AUTHENTICATOR log (`authenticator-*`), the aws-iam-authenticator's
+#     one line per token review, narrowed with a matcher to the lines that
+#     are not `level=info`: the failed logins.
+# The receiver cannot filter on the server side, so every event of the
+# streams is READ and all but the matching ones are dropped here, before
+# anything is queued or written; the store holds only what matched.
 #
 # A StatefulSet of exactly ONE replica, never the gateway: the receiver has
 # no leader election, so a second replica reads and writes everything
@@ -1209,14 +1215,37 @@ cloudwatchLogs:
   # `/aws/eks/<cluster>/cluster`.
   logGroup: ""
   # -- Only streams whose name starts with one of these are read. The EKS
-  # control-plane group holds one stream family per log type; this picks
-  # the audit one.
+  # control-plane group holds one stream family per log type: add
+  # `authenticator-` to read the authenticator log as well (the cluster
+  # must send it: `authenticator` among its control-plane log types). A
+  # stream read but matched by nothing is dropped whole.
   streamPrefixes:
     - kube-apiserver-audit-
-  # -- Keep only events whose text contains this phrase (matched literally).
-  # Empty keeps every event: an EKS audit log is large, and the store is
-  # not sized for it.
+  # -- Keep every event, of any stream, whose text contains this phrase
+  # (matched literally). Alone it is the whole filter: empty and with no
+  # `matchers`, every event is kept (an EKS audit log is large, and the
+  # store is not sized for it). With `matchers` it is one more way in: an
+  # event is kept when it matches this OR any matcher, so set it to "" to
+  # keep only what the matchers say.
   match: pod-security.kubernetes.io/audit-violations
+  # -- More ways in, each a list entry; an event is kept when it satisfies
+  # any ONE entry, and an entry is satisfied when ALL of its keys hold:
+  #   streamPrefix  the event's stream name starts with it (one of
+  #                 `streamPrefixes`)
+  #   anyOf         the event's text contains at least one of these literals
+  #   json          the event is a JSON object whose value at `path` (dotted,
+  #                 e.g. `responseStatus.code`) is one of the integers in
+  #                 `anyOf`
+  # At least one key per entry. Example, the failed authentications of an
+  # EKS cluster:
+  #   matchers:
+  #     - streamPrefix: authenticator-
+  #       anyOf: [" level=warning ", "msg=\"access denied\""]
+  #     - streamPrefix: kube-apiserver-audit-
+  #       json: {path: responseStatus.code, anyOf: [401, 403]}
+  # A `json` entry costs a JSON parse of the events that pass a cheap text
+  # test on the number, not of every event.
+  matchers: []
   # -- The namespace the data is filed under: `k8s.namespace.name` and
   # `kubernetes.pod_namespace`, the scoping key. Static. Grant readers this
   # value.

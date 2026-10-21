@@ -176,7 +176,7 @@
     "groups": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "cnpg", "nodeMemoryPressure", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "arcRunners", "netpolRepair", "upstream"],
+      "required": ["backups", "writePath", "volumes", "storeLimits", "kargo", "pendingPods", "nodeClaims", "cnpg", "nodeMemoryPressure", "probes", "nats", "argocd", "eso", "ack", "podSecurity", "podSecurityAudit", "authFailures", "envoyRoutes", "certificates", "restarts", "workloadAbsent", "arcRunners", "netpolRepair", "upstream"],
       "properties": {
         "backups": {
           "type": "object",
@@ -693,6 +693,35 @@
             "for": { "$ref": "#/definitions/duration" },
             "severity": { "$ref": "#/definitions/severity" },
             "keepClusterLabel": { "type": "boolean" }
+          }
+        },
+        "authFailures": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "window": { "$ref": "#/definitions/duration" },
+            "for": { "$ref": "#/definitions/duration" },
+            "keepClusterLabel": { "type": "boolean" },
+            "authentication": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "threshold": { "type": "integer", "minimum": 0 },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "authorization": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "threshold": { "type": "integer", "minimum": 0 },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "ignoreUsers": { "type": "string" },
+            "ignoreNamespaces": { "type": "string" }
           }
         },
         "ack": {
