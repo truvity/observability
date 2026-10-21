@@ -129,3 +129,64 @@ func TestPodSecurityAuditAlertFiltersOnTheFieldNotThePhrase(t *testing.T) {
 
 	assert.Equal(t, 1, seen)
 }
+
+// The auth-failures group: two LogsQL alerts per cluster that count failures
+// in a window and fire only above a threshold (`| filter ... :>N`), on the
+// FIELDS the reader lifts (`eks.log.type`, `audit.code`, `authn.*`), with
+// the control plane's own users and the ignored namespaces left out.
+func TestAuthFailuresAlertsCountFieldsAboveAThreshold(t *testing.T) {
+	exprs := map[string]string{}
+
+	for _, doc := range splitDocs(t, "golden/platform-alerts/auth-failures-shared-store.yaml") {
+		var rule struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Labels map[string]string `yaml:"labels"`
+			} `yaml:"metadata"`
+			Spec struct {
+				Groups []struct {
+					Type  string `yaml:"type"`
+					Rules []struct {
+						Alert  string            `yaml:"alert"`
+						Expr   string            `yaml:"expr"`
+						For    string            `yaml:"for"`
+						Labels map[string]string `yaml:"labels"`
+					} `yaml:"rules"`
+				} `yaml:"groups"`
+			} `yaml:"spec"`
+		}
+		if yaml.Unmarshal(doc, &rule) != nil || rule.Kind != "VMRule" {
+			continue
+		}
+
+		// Only the LogsQL VMRule: no metrics one renders for this group.
+		assert.Equal(t, "logs", rule.Metadata.Labels["observability.truvity.io/evaluator"])
+
+		for _, g := range rule.Spec.Groups {
+			assert.Equal(t, "vlogs", g.Type)
+
+			for _, r := range g.Rules {
+				exprs[r.Alert] = strings.Join(strings.Fields(r.Expr), " ")
+
+				assert.Equal(t, "0s", r.For)
+				assert.Equal(t, "warning", r.Labels["severity"])
+				// keepClusterLabel: the event's own cluster survives.
+				assert.NotContains(t, r.Labels, "k8s_cluster_name")
+			}
+		}
+	}
+
+	require.Len(t, exprs, 2)
+
+	assert.Equal(t,
+		`_time:10m ((eks.log.type:=authenticator (authn.level:=warning OR authn.msg:="access denied"))`+
+			` OR (eks.log.type:=audit audit.code:=401 -audit.user:~"^(eks:|system:node:|system:kube-)" -audit.namespace:~"^ci-"))`+
+			` | rename k8s.cluster.name as k8s_cluster_name`+
+			` | stats by (k8s_cluster_name) count() as failures | filter failures:>20`,
+		exprs["KubernetesAuthenticationFailures"])
+	assert.Equal(t,
+		`_time:10m eks.log.type:=audit audit.code:=403 -audit.user:~"^(eks:|system:node:|system:kube-)" -audit.namespace:~"^ci-"`+
+			` | rename k8s.cluster.name as k8s_cluster_name`+
+			` | stats by (k8s_cluster_name) count() as denials | filter denials:>100`,
+		exprs["KubernetesAuthorizationDenials"])
+}

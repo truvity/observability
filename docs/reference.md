@@ -273,6 +273,35 @@ into the same `<release>-platform-alerts-logs` VMRule as `groups.podSecurity`.
 | `severity` | string | `warning` | Severity label. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 
+### `groups.authFailures`
+
+Off by default. Two LogsQL alerts over the EKS control-plane logs in the log
+store (`observability-emitters` `cloudwatchLogs` with the `matchers` shown
+there), rendered into the same `<release>-platform-alerts-logs` VMRule as
+`groups.podSecurity`. Each counts failures per cluster in `window` and fires
+when the count is more than its threshold:
+
+- `KubernetesAuthenticationFailures`: callers that could not prove who they
+  are. The authenticator's `access denied` lines (`eks.log.type:=authenticator`,
+  `authn.level:=warning` or `authn.msg:="access denied"`) plus API requests
+  answered 401 (`eks.log.type:=audit`, `audit.code:=401`).
+- `KubernetesAuthorizationDenials`: identified callers refused, API requests
+  answered 403, after the ignore lists.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | bool | `false` | Render the group. |
+| `window` | duration | `10m` | Look-back, and the period the thresholds count over. |
+| `for` | duration | `0s` | Hold time. |
+| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
+| `authentication.threshold` / `.severity` | int / string | `10` / `warning` | Fire above this many failures. |
+| `authorization.threshold` / `.severity` | int / string | `100` / `warning` | Fire above this many denials. A cluster has a chronic floor of 403s (a controller missing an RBAC rule repeats forever), so this is a rate, not a presence test. |
+| `ignoreUsers` | regexp | `^(eks:\|system:node:\|system:kube-)` | Events whose `audit.user` matches are not counted: EKS's own controllers (its availability-zone poller is refused once a minute), kubelets, the scheduler and controller manager. Empty counts all. |
+| `ignoreNamespaces` | regexp | empty | Events whose `audit.namespace` matches are not counted, for ephemeral CI namespaces whose controllers outlive their token. |
+
+The authenticator's lines carry no namespace and no username, so the ignore
+lists narrow only the audit events.
+
 ### `groups.nodeClaims`
 
 Off by default. For a cluster whose nodes Karpenter provisions (including
@@ -1433,17 +1462,34 @@ bind the ServiceAccount to a role that may `logs:FilterLogEvents`,
 |---|---|---|
 | `enabled` | `false` | Render the reader. |
 | `region`, `logGroup` | required | Region and the whole name of the log group (`/aws/eks/<cluster>/cluster`). |
-| `streamPrefixes` | `[kube-apiserver-audit-]` | Streams read; refused empty. |
-| `match` | `pod-security.kubernetes.io/audit-violations` | Literal phrase an event must contain; empty keeps everything. |
+| `streamPrefixes` | `[kube-apiserver-audit-]` | Streams read; refused empty. Add `authenticator-` for the authenticator log (the cluster must send that control-plane log type). |
+| `match` | `pod-security.kubernetes.io/audit-violations` | Literal phrase that keeps an event of any stream; empty with no `matchers` keeps everything. |
+| `matchers` | `[]` | More ways in beside `match`: an event is kept when it satisfies any one entry, and an entry is the AND of its keys `streamPrefix` (a member of `streamPrefixes`), `anyOf` (literals, one must be in the text) and `json` (`path` dotted, `anyOf` integers: the value at the path is one of them). At least one key per entry. Set `match: ""` to keep only what the matchers say. |
 | `namespace` | `kube-audit` | The namespace every record is filed under (the scoping key), never the event's own, which is the field `audit.namespace`. Refused: `default`, `kube-system`. |
 | `serviceName` | `kube-apiserver-audit` | `service.name`. |
 | `pollInterval`, `initialLookback`, `maxEventsPerRequest` | `1m`, `10m`, `1000` | Receiver settings; the lookback is the first start only. |
 | `serviceAccount.name` / `.annotations` | `<fullname>-cloudwatch` / `{}` | Name it explicitly when an IAM binding must match byte for byte. |
 | `image`, `resources`, `podSecurityContext`, `containerSecurityContext`, `nodeSelector`, `tolerations`, `queue`, `podMonitor` | as the gateway | Same shapes as `otlp.*`. |
 
-Fields written on each record: `audit.namespace`, `audit.resource`,
-`audit.verb`, `audit.user`, `audit.id`, `audit.violations`; the body is the
-whole audit event.
+Fields written on each record: `eks.log.type` (`audit` or `authenticator`).
+Audit events: `audit.namespace`, `audit.resource`, `audit.verb`, `audit.user`,
+`audit.id`, `audit.violations`, `audit.code` (the HTTP status the API server
+answered), `audit.reason`, `audit.source_ip`, `audit.user_agent`; the body is
+the whole audit event. Authenticator lines (`key=value`): `authn.level`,
+`authn.msg`, `authn.error`, `authn.arn`, `authn.username`, `authn.client`.
+
+The failed authentications of an EKS cluster (the shape `groups.authFailures`
+reads):
+
+```yaml
+cloudwatchLogs:
+  streamPrefixes: [kube-apiserver-audit-, authenticator-]
+  matchers:
+    - streamPrefix: authenticator-
+      anyOf: [" level=warning ", "msg=\"access denied\""]
+    - streamPrefix: kube-apiserver-audit-
+      json: {path: responseStatus.code, anyOf: [401, 403]}
+```
 
 ## `charts/observability-alerting`
 

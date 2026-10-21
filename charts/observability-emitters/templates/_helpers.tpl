@@ -1376,12 +1376,58 @@ app.kubernetes.io/part-of: observability-emitters
 {{- end -}}
 
 {{/*
+The OTTL conditions that say an event is KEPT (`cloudwatchLogs.match` and
+`cloudwatchLogs.matchers`), one string per way in, as a YAML list. Empty
+when nothing narrows the stream.
+
+A matcher is the AND of its keys: the stream name (the receiver's resource
+attribute `cloudwatch.log.stream`), a literal in the text, a JSON field. The
+JSON test is a cheap text test on the number first and the parse second:
+`and` stops at the first false, so only the events that look like a match
+are parsed.
+*/}}
+{{- define "observability-emitters.cloudwatch.keepConditions" -}}
+{{- $c := .Values.cloudwatchLogs -}}
+{{- $keep := list -}}
+{{- if $c.match -}}
+{{- $keep = append $keep (printf "IsMatch(body.string, %q)" (regexQuoteMeta $c.match)) -}}
+{{- end -}}
+{{- range $m := $c.matchers -}}
+{{- $parts := list -}}
+{{- if $m.streamPrefix -}}
+{{- $parts = append $parts (printf "IsMatch(resource.attributes[\"cloudwatch.log.stream\"], %q)" (printf "^%s" (regexQuoteMeta $m.streamPrefix))) -}}
+{{- end -}}
+{{- if $m.anyOf -}}
+{{- $alts := list -}}
+{{- range $m.anyOf -}}{{- $alts = append $alts (regexQuoteMeta .) -}}{{- end -}}
+{{- $parts = append $parts (printf "IsMatch(body.string, %q)" (join "|" $alts)) -}}
+{{- end -}}
+{{- if $m.json -}}
+{{- $keys := splitList "." $m.json.path -}}
+{{- $get := "ParseJSON(body.string)" -}}
+{{- range $keys -}}{{- $get = printf "%s[%q]" $get . -}}{{- end -}}
+{{- $nums := list -}}
+{{- $tests := list -}}
+{{- range $m.json.anyOf -}}
+{{- $nums = append $nums (printf "%d" (int64 .)) -}}
+{{- $tests = append $tests (printf "%s == %d" $get (int64 .)) -}}
+{{- end -}}
+{{- $text := printf "\"%s\":(?:%s)[,}]" (regexQuoteMeta (last $keys)) (join "|" $nums) -}}
+{{- $parts = append $parts (printf "(IsMatch(body.string, %q) and (%s))" $text (join " or " $tests)) -}}
+{{- end -}}
+{{- $keep = append $keep (printf "(%s)" (join " and " $parts)) -}}
+{{- end -}}
+{{- toYaml $keep -}}
+{{- end -}}
+
+{{/*
 The CloudWatch reader's collector configuration.
 
 ONE pipeline: the `awscloudwatch` receiver, a filter that keeps only the
-events carrying `cloudwatchLogs.match`, a transform that lifts the few
-fields an alert needs out of the audit JSON, the tenancy stamp, and the
-same OTLP log exporters the gateway has.
+events carrying `cloudwatchLogs.match` or satisfying one of
+`cloudwatchLogs.matchers`, two transforms that lift the few fields an alert
+needs (out of the audit JSON, and out of the authenticator's key=value
+line), the tenancy stamp, and the same OTLP log exporters the gateway has.
 
 The receiver reads EVERY event of the matching streams (it has no
 server-side filter), so the filter is the first processor: nothing it
@@ -1397,6 +1443,7 @@ and tier from this values file, and a STATIC namespace
 {{- $t := .Values.tenancy -}}
 {{- $c := .Values.cloudwatchLogs -}}
 {{- $effLogsDestinations := include "observability-emitters.effectiveOtlpDestinations" (dict "root" $root "signal" "logs") | fromYamlArray -}}
+{{- $keep := include "observability-emitters.cloudwatch.keepConditions" . | fromYamlArray -}}
 extensions:
   file_storage:
     directory: /var/lib/otelcol/queue
@@ -1427,31 +1474,62 @@ receivers:
               {{- end }}
 
 processors:
-{{- if $c.match }}
-  # Keep only the events whose text contains the phrase; the phrase is
-  # matched literally.
+{{- if $keep }}
+  # Keep an event when it contains `match` (a literal) or satisfies a
+  # matcher; drop the rest. The OTTL condition says what to DROP, so the
+  # keep conditions are negated as one.
   filter/match:
     error_mode: ignore
     logs:
       log_record:
-        - {{ printf "not IsMatch(body.string, %q)" (regexQuoteMeta $c.match) | toJson }}
+        - {{ ternary (printf "not %s" (first $keep)) (printf "not (%s)" (join " or " $keep)) (eq (len $keep) 1) | toJson }}
 {{- end }}
-  # The audit event is one JSON object in the body. Four fields are lifted
+  # The audit event is one JSON object in the body. A few fields are lifted
   # so an alert can group and a person can search without parsing; the body
   # stays whole. A field the event lacks (a cluster-scoped object has no
-  # namespace) is skipped, not an error.
+  # namespace) is skipped, not an error. Audit streams only: the
+  # authenticator's lines are not JSON.
   transform/audit:
     error_mode: ignore
     log_statements:
       - context: log
+        conditions:
+          - 'IsMatch(resource.attributes["cloudwatch.log.stream"], "^kube-apiserver-audit-")'
         statements:
+          - set(attributes["eks.log.type"], "audit")
           - set(cache["e"], ParseJSON(body.string))
           - set(attributes["audit.namespace"], cache["e"]["objectRef"]["namespace"])
           - set(attributes["audit.resource"], cache["e"]["objectRef"]["resource"])
           - set(attributes["audit.verb"], cache["e"]["verb"])
           - set(attributes["audit.user"], cache["e"]["user"]["username"])
           - set(attributes["audit.id"], cache["e"]["auditID"])
-          - set(attributes["audit.violations"], cache["e"]["annotations"]["pod-security.kubernetes.io/audit-violations"])
+          - set(attributes["audit.violations"], cache["e"]["annotations"]["pod-security.kubernetes.io/audit-violations"]) where cache["e"]["annotations"]["pod-security.kubernetes.io/audit-violations"] != nil
+          # The HTTP status the API server answered (an integer, so a
+          # query compares it as 401 or 403), the reason it gave, and who
+          # asked from where.
+          - set(attributes["audit.code"], Int(cache["e"]["responseStatus"]["code"])) where cache["e"]["responseStatus"]["code"] != nil
+          - set(attributes["audit.reason"], cache["e"]["responseStatus"]["reason"])
+          - set(attributes["audit.source_ip"], cache["e"]["sourceIPs"][0])
+          - set(attributes["audit.user_agent"], cache["e"]["userAgent"])
+  # The authenticator log is one `key=value` line per token review
+  # (`level=info msg="access granted" ...`; a refusal is
+  # `level=warning msg="access denied" error="..."`). The few keys an alert
+  # and a person need are lifted; the body stays whole.
+  transform/authenticator:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        conditions:
+          - 'IsMatch(resource.attributes["cloudwatch.log.stream"], "^authenticator-")'
+        statements:
+          - set(attributes["eks.log.type"], "authenticator")
+          - merge_maps(cache, ParseKeyValue(body.string), "upsert")
+          - set(attributes["authn.level"], cache["level"]) where cache["level"] != nil
+          - set(attributes["authn.msg"], cache["msg"]) where cache["msg"] != nil
+          - set(attributes["authn.error"], cache["error"]) where cache["error"] != nil
+          - set(attributes["authn.arn"], cache["arn"]) where cache["arn"] != nil
+          - set(attributes["authn.username"], cache["username"]) where cache["username"] != nil
+          - set(attributes["authn.client"], cache["client"]) where cache["client"] != nil
   transform/tenancy:
     error_mode: ignore
     log_statements:
@@ -1498,6 +1576,6 @@ service:
   pipelines:
     logs:
       receivers: [awscloudwatch]
-      processors: [{{ if $c.match }}filter/match, {{ end }}transform/audit, transform/tenancy, batch]
+      processors: [{{ if $keep }}filter/match, {{ end }}transform/audit, transform/authenticator, transform/tenancy, batch]
       exporters: [{{ range $i, $d := $effLogsDestinations }}{{ if $i }}, {{ end }}otlp_http/logs-{{ $d.name }}{{ end }}]
 {{- end -}}

@@ -54,13 +54,13 @@ on it would add nothing but a way to fail.
 {{- if .Values.ownerLabel -}}{{- $b = printf "%s%s, " $c .Values.ownerLabel -}}{{- end -}}
 {{- /*
 The metrics VMRule renders when at least one group other than `podSecurity`
-is on. `podSecurity` and `podSecurityAudit` are LogsQL and have an object of their own below: one
+is on. `podSecurity`, `podSecurityAudit` and `authFailures` are LogsQL and have an object of their own below: one
 VMRule cannot serve both alerters, because the metrics vmalert takes every
 rule NOT marked `observability.truvity.io/evaluator: logs` and the logs one only
 those that are.
 */ -}}
 {{- /* `upstream` is the vendored pack: its own objects, templates/upstream.yaml. */ -}}
-{{- $metricsGroups := without $enabled "podSecurity" "podSecurityAudit" "upstream" -}}
+{{- $metricsGroups := without $enabled "podSecurity" "podSecurityAudit" "authFailures" "upstream" -}}
 {{- if $metricsGroups }}
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
@@ -2157,7 +2157,7 @@ spec:
             {{- end }}
     {{- end }}
 {{- end }}
-{{- if or .Values.groups.podSecurity.enabled .Values.groups.podSecurityAudit.enabled }}
+{{- if or .Values.groups.podSecurity.enabled .Values.groups.podSecurityAudit.enabled .Values.groups.authFailures.enabled }}
 ---
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMRule
@@ -2283,5 +2283,86 @@ spec:
               capabilities drop ALL, seccompProfile RuntimeDefault). Clears by
               itself {{ $g.window }} after the last violation.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "PodSecurityAuditViolations")) }}{{ . | nindent 12 }}{{- end }}
+{{- end }}
+{{- if .Values.groups.authFailures.enabled }}
+{{- $g := .Values.groups.authFailures }}
+{{- $omit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
+{{- $by := list }}
+{{- if .Values.clusterLabel }}{{- $by = append $by .Values.clusterLabel }}{{- end }}
+{{- $rename := "" }}
+{{- if .Values.clusterLabel }}{{- $rename = printf "| rename k8s.cluster.name as %s" .Values.clusterLabel }}{{- end }}
+{{- $skip := "" }}
+{{- if $g.ignoreUsers }}{{- $skip = printf "%s -audit.user:~%q" $skip $g.ignoreUsers }}{{- end }}
+{{- if $g.ignoreNamespaces }}{{- $skip = printf "%s -audit.namespace:~%q" $skip $g.ignoreNamespaces }}{{- end }}
+    - name: platform-alerts.auth-failures
+      type: vlogs
+      interval: {{ .Values.interval }}
+      rules:
+        # Callers that could not prove who they are.
+        #
+        # Evidence is the EKS control-plane log, which EKS offers no way out
+        # of CloudWatch for: `observability-emitters` `cloudwatchLogs` reads
+        # the `authenticator-` and `kube-apiserver-audit-` streams, keeps the
+        # authenticator's refusals and the audit events answered 401 or 403,
+        # and lifts `eks.log.type`, `authn.level`, `authn.msg` and
+        # `audit.code`. Filtering on those FIELDS (never on a phrase) means a
+        # log line that merely mentions them is not counted.
+        #
+        # The authenticator's `access denied` is an AWS token it could not
+        # map or read; a 401 in the audit log is a bearer token or client
+        # certificate the API server rejected. The authenticator's lines
+        # carry no namespace or username, so the ignore lists narrow only
+        # the 401s.
+        - alert: KubernetesAuthenticationFailures
+          expr: >-
+            _time:{{ $g.window }}
+            ((eks.log.type:=authenticator (authn.level:=warning OR authn.msg:="access denied"))
+            OR (eks.log.type:=audit audit.code:=401{{ $skip }}))
+            {{ $rename }}
+            | stats {{ if $by }}by ({{ join ", " $by }}) {{ end }}count() as failures
+            | filter failures:>{{ $g.authentication.threshold }}
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.authentication.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Kubernetes authentication failures"
+            description: >-
+              More than {{ $g.authentication.threshold }} requests to the API server failed to
+              authenticate in the last {{ $g.window }} ({{`{{ $value }}`}}): AWS tokens the
+              authenticator refused (`authn.msg:="access denied"`, the reason in
+              `authn.error`) and API requests answered 401 (`audit.code:=401`; the
+              caller in `audit.user_agent` and `audit.source_ip`). A mistyped
+              command is one failure; this is a script, a controller whose
+              credential expired, or someone probing the endpoint. Search the log
+              store for `eks.log.type:=authenticator authn.level:=warning` and
+              `eks.log.type:=audit audit.code:=401`, grouped by `audit.source_ip`.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KubernetesAuthenticationFailures")) }}{{ . | nindent 12 }}{{- end }}
+        # Identified callers the API server refused.
+        #
+        # Never zero on a real cluster, so the threshold is a rate far above
+        # the chronic floor and the control plane's own refusals are not
+        # counted (`ignoreUsers`).
+        - alert: KubernetesAuthorizationDenials
+          expr: >-
+            _time:{{ $g.window }}
+            eks.log.type:=audit audit.code:=403{{ $skip }}
+            {{ $rename }}
+            | stats {{ if $by }}by ({{ join ", " $by }}) {{ end }}count() as denials
+            | filter denials:>{{ $g.authorization.threshold }}
+          for: {{ $g.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.authorization.severity "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Kubernetes authorization denials"
+            description: >-
+              More than {{ $g.authorization.threshold }} API requests were refused (403) in the
+              last {{ $g.window }} ({{`{{ $value }}`}}), not counting the control plane's own
+              users. An RBAC rule a controller needs is missing, a role was
+              removed, or a credential is being used for what it may not do.
+              Search the log store for `eks.log.type:=audit audit.code:=403`
+              and group by `audit.user`, `audit.verb`, `audit.resource`,
+              `audit.namespace`: one user repeating one call is a missing
+              rule; many users or resources is a probe.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KubernetesAuthorizationDenials")) }}{{ . | nindent 12 }}{{- end }}
 {{- end }}
 {{- end }}

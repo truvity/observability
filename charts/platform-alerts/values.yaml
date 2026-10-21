@@ -802,6 +802,67 @@ groups:
     # -- Keep each event's own cluster label (see `podSecurity`).
     keepClusterLabel: false
 
+  # Failed Kubernetes authentication and authorization, from the API
+  # server's audit log and the authenticator log.
+  #
+  # Off by default. LogsQL, like `podSecurityAudit`, and rendered into the
+  # same `<release>-platform-alerts-logs` VMRule (a logs vmalert evaluates
+  # it). It needs the events in the log store: `observability-emitters`
+  # `cloudwatchLogs` reading the `authenticator-` stream and keeping the
+  # audit events answered 401 or 403 (its `matchers`; the example in its
+  # values.yaml is exactly this), which also lifts `eks.log.type`,
+  # `audit.code`, `audit.user`, `audit.namespace`, `authn.level`,
+  # `authn.msg`. The cluster must send the `audit` and `authenticator`
+  # control-plane log types.
+  #
+  # Two warnings per cluster, each firing when the count of failures in
+  # `window` is MORE than its threshold, so a single mistyped command never
+  # pages and a scan or a leaked credential does:
+  #   KubernetesAuthenticationFailures  a caller that could not prove who it
+  #     is: the authenticator's `access denied` lines (an unmappable or
+  #     malformed AWS token) and API requests answered 401.
+  #   KubernetesAuthorizationDenials  an identified caller refused: API
+  #     requests answered 403, minus the noise below.
+  authFailures:
+    enabled: false
+    # -- Look-back, and the period the thresholds count over.
+    window: 10m
+    # -- 0s: the count is already a window wide.
+    for: 0s
+    # -- Keep each event's own cluster label (see `podSecurity`). Set it on
+    # a log store that holds several clusters.
+    keepClusterLabel: false
+    authentication:
+      # -- Fire when MORE than this many failures fall in `window`. A quiet
+      # cluster has none; leave headroom for a store that holds CI
+      # namespaces torn down under live controllers (each such controller
+      # gets a few 401s before it stops).
+      threshold: 10
+      severity: warning
+    authorization:
+      # -- Fire when MORE than this many 403s (after the ignore lists) fall
+      # in `window`. Authorization denials are never zero on a real
+      # cluster (a controller missing one RBAC rule repeats forever), so
+      # this is a rate far above the chronic floor, not a presence test.
+      threshold: 100
+      severity: warning
+    # -- A regular expression (unanchored, RE2) over the requesting
+    # username; events whose username matches are not counted by EITHER
+    # alert. The default is the control plane's own and the nodes':
+    # `eks:*` (EKS's managed controllers and its availability-zone poller,
+    # which is refused once a minute by design), `system:node:*` (a kubelet
+    # asking for objects its Node authorizer does not allow, constantly on
+    # a cluster with churning nodes) and `system:kube-*` (the scheduler and
+    # controller manager at a control-plane restart). Empty counts every
+    # username.
+    ignoreUsers: "^(eks:|system:node:|system:kube-)"
+    # -- A regular expression over the namespace the request was about
+    # (`audit.namespace`); matching events are not counted. For a cluster
+    # that runs ephemeral CI namespaces, whose controllers keep calling
+    # the API after their namespace and its token are gone. Empty counts
+    # every namespace.
+    ignoreNamespaces: ""
+
   # Per-route Envoy 5xx ratio and p99 latency.
   #
   # Off by default: it reads the Envoy Gateway data plane's own metrics. Names
