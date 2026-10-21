@@ -74,12 +74,23 @@ vmauth:
     # The operator's own default image tag is older than both, so this is
     # set explicitly rather than left to it.
     tag: v1.152.0
-  # -- One proxy pod, unless `ha.enabled`: then at least two, which the render
-  # enforces, spread over zones softly and covered by a
-  # PodDisruptionBudget (`maxUnavailable: 1`). The proxy is stateless; a
-  # single pod would take every read and every cross-cluster write with its
-  # zone and defeat the pair behind it.
+  # -- One proxy pod by default. At two or more (`ha.enabled` requires it,
+  # and the render refuses fewer) the pods are spread over zones softly
+  # (`ScheduleAnyway`, so a zone loss leaves them schedulable) and covered
+  # by a PodDisruptionBudget (`maxUnavailable: 1`), with or without `ha`.
+  # The proxy is stateless, and a single pod takes every read and every
+  # cross-cluster write down with its node or zone: set 3 on a cluster with
+  # three zones.
   replicaCount: 1
+  service:
+    # -- `spec.trafficDistribution` of the proxy's Service: empty (the
+    # default) leaves it unset; `PreferClose` (Kubernetes 1.33+ also calls it
+    # `PreferSameZone`) makes the EndpointSlice controller add zone hints, so
+    # a client that honours them (Envoy Gateway does, for a backendRef
+    # Service) sends to the replica in its own zone first. Written through
+    # the VMAuth's `serviceSpec` with `useAsDefault: true`: the operator
+    # patches its default Service rather than creating a second one.
+    trafficDistribution: ""
   # -- CPU request from measurement, no CPU limit, memory request == limit.
   # See `resources.policy` and `resources` on each store below.
   resources:

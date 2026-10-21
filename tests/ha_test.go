@@ -127,3 +127,67 @@ func TestHAAlertersAreTwins(t *testing.T) {
 		assert.NotContains(t, a.Spec, "externalLabels", "a replica label here would make Alertmanager page twice")
 	}
 }
+
+// vmauthSpec renders the proxy chart with the given extra args and returns the
+// VMAuth's spec.
+func vmauthSpec(t *testing.T, args ...string) map[string]any {
+	t.Helper()
+
+	out, stderr, err := helmTemplate(t, "x", "observability-proxy", "obs",
+		append([]string{"-f", "cases/observability-proxy/single/values.yaml"}, args...)...)
+	require.NoErrorf(t, err, "%s", stderr)
+
+	for _, raw := range strings.Split(out, "\n---\n") {
+		var d haDoc
+		require.NoError(t, yaml.Unmarshal([]byte(raw), &d))
+
+		if d.Kind == "VMAuth" {
+			return d.Spec
+		}
+	}
+
+	require.Fail(t, "no VMAuth rendered")
+
+	return nil
+}
+
+// TestVMAuthSpreadAndBudgetFollowTheReplicaCount pins the condition: one
+// replica renders neither the zone spread nor the PodDisruptionBudget, two or
+// more render both, with `ha` or without.
+func TestVMAuthSpreadAndBudgetFollowTheReplicaCount(t *testing.T) {
+	one := vmauthSpec(t)
+	assert.NotContains(t, one, "topologySpreadConstraints")
+	assert.NotContains(t, one, "podDisruptionBudget")
+
+	for _, n := range []string{"2", "3"} {
+		spec := vmauthSpec(t, "--set", "vmauth.replicaCount="+n)
+
+		spread, _ := spec["topologySpreadConstraints"].([]any)
+		require.Lenf(t, spread, 1, "replicaCount %s", n)
+		c, _ := spread[0].(map[string]any)
+		assert.Equal(t, "topology.kubernetes.io/zone", c["topologyKey"])
+		assert.Equal(t, "ScheduleAnyway", c["whenUnsatisfiable"], "soft: a zone loss must stay schedulable")
+		assert.Equal(t, map[string]any{"maxUnavailable": 1}, spec["podDisruptionBudget"])
+	}
+}
+
+// TestVMAuthHARefusesFewerThanTwoReplicas keeps ha's own refusal.
+func TestVMAuthHARefusesFewerThanTwoReplicas(t *testing.T) {
+	_, stderr, err := helmTemplate(t, "x", "observability-proxy", "obs",
+		"-f", "cases/observability-proxy/ha/values.yaml", "--set", "vmauth.replicaCount=1")
+	require.Error(t, err)
+	assert.Contains(t, stderr, "`vmauth.replicaCount` is 1")
+}
+
+// TestVMAuthTrafficDistributionPatchesTheDefaultService pins that the value is
+// carried through serviceSpec with useAsDefault (patch, not a second Service),
+// and that it renders nothing when empty.
+func TestVMAuthTrafficDistributionPatchesTheDefaultService(t *testing.T) {
+	assert.NotContains(t, vmauthSpec(t), "serviceSpec")
+
+	spec := vmauthSpec(t, "--set", "vmauth.service.trafficDistribution=PreferClose")
+	assert.Equal(t, map[string]any{
+		"useAsDefault": true,
+		"spec":         map[string]any{"trafficDistribution": "PreferClose"},
+	}, spec["serviceSpec"])
+}

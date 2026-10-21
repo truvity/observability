@@ -23,15 +23,18 @@ spec:
     repository: {{ .Values.vmauth.image.repository }}
     tag: {{ .Values.vmauth.image.tag }}
   replicaCount: {{ .Values.vmauth.replicaCount }}
-  {{- if include "observability-proxy.ha.primary" . }}
+  {{- if or (include "observability-proxy.ha.primary" .) (ge (int .Values.vmauth.replicaCount) 2) }}
   {{- /*
-  `ha`: the proxy is the one component both halves of the pair are read
-  through, so it is the one that must not share a fate with either. Two or
-  more replicas (`vmauth.replicaCount`, refused below two), spread over
-  zones SOFTLY -- the proxy is stateless and a zone loss must leave a pod
-  schedulable in the surviving zone, which a hard constraint with
-  `maxSkew: 1` would refuse -- and a PodDisruptionBudget so a node drain
-  takes one at a time.
+  Two or more replicas (`vmauth.replicaCount`; `ha` refuses fewer than
+  two): the proxy is the one component every reader and every
+  cross-cluster writer goes through, so it must not share a fate with a
+  node or a zone. Spread over zones SOFTLY -- the proxy is stateless and a
+  zone loss must leave a pod schedulable in the surviving zone, which a
+  hard constraint with `maxSkew: 1` would refuse -- and a
+  PodDisruptionBudget so a node drain takes one at a time. Rendered
+  whenever there are two or more replicas, `ha` or not; one replica gets
+  neither (a budget of `maxUnavailable: 1` on a single pod would not
+  protect it, and a spread has nothing to spread).
   */}}
   topologySpreadConstraints:
     - maxSkew: 1
@@ -43,6 +46,17 @@ spec:
           app.kubernetes.io/instance: {{ include "observability-proxy.fullname" . }}
   podDisruptionBudget:
     maxUnavailable: 1
+  {{- end }}
+  {{- with .Values.vmauth.service.trafficDistribution }}
+  {{- /*
+  `useAsDefault: true` makes the operator patch ITS OWN default Service
+  with this spec instead of creating a second, additional one, so the
+  address everything already uses stays the same and gains the field.
+  */}}
+  serviceSpec:
+    useAsDefault: true
+    spec:
+      trafficDistribution: {{ . }}
   {{- end }}
   securityContext:
     {{- include "observability-proxy.restrictedSecurityContext" . | nindent 4 }}

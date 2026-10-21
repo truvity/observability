@@ -1,0 +1,40 @@
+# A Door case for charts/observability-proxy: three proxy replicas without ha.
+# The zone spread and the PodDisruptionBudget follow the replica count, and the
+# Service carries trafficDistribution.
+vmauth:
+  replicaCount: 3
+  service:
+    trafficDistribution: PreferClose
+ha:
+  enabled: false
+tenancy:
+  issuerUrl: https://issuer.example
+  audience: example-observability-client
+  claimName: groups
+  allowUnfilteredTraceReads: true
+  writers:
+  - name: metrics-agent
+    tokenSecret:
+      name: example-writer-token
+      key: token
+    destinations:
+    - metrics
+  - name: log-agent
+    tokenSecret:
+      name: example-writer-token
+      key: token
+    destinations:
+    - logs
+  identities:
+  - groups:
+    - example:k8s:viewer
+    reach:
+      clusters:
+      - cluster: example-cluster
+        allNamespaces: true
+vmalert: {}
+alertmanager: {}
+victoria-traces-single:
+  server:
+    extraArgs:
+      servicegraph.enableTask: 'true'
