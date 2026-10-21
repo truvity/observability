@@ -77,8 +77,13 @@ mappings:
         region: '{{ .region }}'            # de-duplicates on the whole label set
         finding_type: '{{ .detail.type }}'
         finding_id: '{{ .detail.id }}'
+      # The notification convention (docs/notifications.md, "Annotations"):
+      # a one-line summary, a plain description, a link to the source.
       annotations:
         summary: '{{ .detail.title }}'
+        description: '{{ get . "detail.description" }}'
+        link: 'https://{{ .region }}.console.aws.amazon.com/guardduty/home?region={{ .region }}#/findings?macros=current&fId={{ .detail.id }}'
+        link_name: GuardDuty finding
         runbook: cloud-security-finding
   - name: root-login
     match: {"detail-type": "AWS Console Sign In via CloudTrail", "detail.userIdentity.type": "Root"}
@@ -95,7 +100,11 @@ mappings:
         topic: '{{ ._sns.TopicArn }}'
         subject: '{{ ._sns.Subject }}'
         budget_name: '{{ reFind "Budget Name: (\\S+)" ._sns.Message }}'
-      annotations: {summary: '{{ ._sns.Subject }}', text: '{{ ._sns.Message }}'}
+      annotations:
+        summary: '{{ ._sns.Subject }}'
+        description: '{{ ._sns.Message }}'   # the whole AWS text; the notification trims and caps it
+        link: 'https://us-east-1.console.aws.amazon.com/billing/home#/budgets{{ with reFind "Budget Name: (\\S+)" ._sns.Message }}/details?name={{ urlquery . }}{{ end }}'
+        link_name: Budget
   - name: cost-anomaly
     match: {"_sns.TopicArn": "<the cost anomaly topic ARN>", "anomalyId": "*"}
     alert:
@@ -108,8 +117,11 @@ mappings:
         account_id: '{{ .accountId }}'
       annotations:
         summary: '{{ ._sns.Subject }}'
-        impact: '{{ .impact.totalImpact }}'
-        details: '{{ .anomalyDetailsLink }}'
+        # Impact and the first three root causes; the full text is in
+        # cmd/alert-ingress/testdata/cost-mappings.yaml.
+        description: 'Impact: {{ with .impact }}${{ printf "%.2f" (num .totalImpact) }}{{ end }}'
+        link: '{{ with .anomalyDetailsLink }}{{ . }}{{ end }}'
+        link_name: Anomaly
 
 # Optional: make CloudEventUnmapped routable. Static strings added to every
 # such alert (never templates); `severity` empty means warning.
@@ -171,10 +183,27 @@ the labels make two findings two alerts, where a fixed label set would
 collapse them into one that Alertmanager de-duplicates. Template helpers
 beyond Go's builtins: `atLeast VALUE THRESHOLD` (numeric `>=`; int, float
 or numeric string; an absent value is false, a non-numeric one fails the
-render and the message becomes `CloudEventUnmapped`), `num VALUE`, and
+render and the message becomes `CloudEventUnmapped`), `num VALUE`,
 `reFind PATTERN TEXT` (the first capture group of the first RE2 match, the
 whole match if the pattern has no group, and `""` when nothing matches, so a
-reworded publisher degrades one label instead of failing the render).
+reworded publisher degrades one label instead of failing the render),
+`get . "a.b.c"` (the value at a dotted path, or `""` when any step is absent
+or null: an optional field in a description reads as nothing instead of
+`<no value>`, and `{{ with get . "..." }}` skips it), and
+`guarddutyResource .detail.resource` (one line naming a GuardDuty finding's
+resource type and the identifier a responder looks up first: an instance id,
+an access key and its user, the buckets, an EKS cluster and workload, an ECS
+cluster, a container and image, a database and user, a function; `""` when
+the finding has no resource).
+
+Annotations follow the notification convention (docs/notifications.md,
+"Annotations"): `summary` one line, `description` the plain explanation,
+`link` (+ `link_name`) where the source shows it, optionally `runbook`. The
+Slack message prints exactly those, so an annotation outside them reaches
+the console and other receivers but not the Slack text. `get` and
+`guarddutyResource` need the release that added them; a mapping that must
+also run on an older one sticks to `reFind`, `num` and the builtins, as the
+Budgets, Cost Anomaly and CloudWatch mappings here do.
 
 ## AWS Budgets and Cost Anomaly Detection
 
@@ -256,10 +285,16 @@ mappings:
           region: '{{ reFind "^arn:[a-z-]+:cloudwatch:([a-z0-9-]+):" .AlarmArn }}'
         annotations:
           summary: '{{ .AlarmName }} is {{ .NewStateValue }}'
+          # The state reason, then the alarm's own description without a
+          # trailing `severity=` token (that one is for the severity above).
+          description: |-
+            {{ .NewStateReason }}{{ with .AlarmDescription }}{{ with reFind "(?s)^\\s*(.*?)\\s*(?:severity=(?:critical|warning|info))?\\s*$" . }}
+            {{ . }}{{ end }}{{ end }}
+          link: '{{ with reFind "^arn:[a-z-]+:cloudwatch:([a-z0-9-]+):" .AlarmArn }}https://{{ . }}.console.aws.amazon.com/cloudwatch/home?region={{ . }}#alarmsV2:alarm/{{ urlquery $.AlarmName }}{{ end }}'
+          link_name: Alarm
           reason: '{{ .NewStateReason }}'
           state: '{{ .NewStateValue }}'
           previous_state: '{{ .OldStateValue }}'
-          description: '{{ with .AlarmDescription }}{{ . }}{{ end }}'
           metric: '{{ with .Trigger }}{{ .Namespace }}/{{ .MetricName }}{{ end }}'
 ```
 
@@ -502,8 +537,13 @@ refused while `input.mode` is `http`: `rules.sqsReceiveFailing`
    outbound request the service makes.
 3. **Match** the body against the mapping rules; render the alert.
 4. **Unmapped is still an alert.** A message no rule matches becomes
-   `CloudEventUnmapped`, `severity: warning`, with the body in an
-   annotation. It carries no label beyond `alertname` and `severity`
+   `CloudEventUnmapped`, `severity: warning`. Its `summary` is the message's
+   Subject, or names the topic when there is none; its `description` says no
+   mapping matched and carries the first 1000 bytes of the body (JSON
+   indented); `body` keeps up to 4000 bytes and `topic` the topic. A message
+   whose mapping matched but failed to render is the same alert, with the
+   mapping's name and the error leading the summary and description. None
+   of it goes through a template. It carries no label beyond `alertname` and `severity`
    unless `unmapped.labels` adds some (see below), so the routing tree
    can route it. Never a drop: a drop is the failure mode this repository
    exists to close.

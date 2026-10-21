@@ -1,0 +1,42 @@
+# The Budgets and Cost Anomaly Detection mappings docs/alert-ingress.md
+# ("AWS Budgets and Cost Anomaly Detection") shows, kept as a file so the
+# test and the page cannot drift apart. ARN_PREFIX and ACCOUNT_ID are filled
+# in by the test (this repository refuses a literal ARN or account id).
+#
+# Only `reFind`, `num` and text/template's own builtins are used, so the same
+# text works on every alert-ingress version that has `reFind`.
+mappings:
+  - name: budget
+    match: {"_sns.TopicArn": "ARN_PREFIX:sns:us-east-1:ACCOUNT_ID:cost-budgets"}
+    matchRegex: {"_sns.Message": "Budget Name: "}   # plain text, not JSON
+    alert:
+      alertname: CloudBudgetThreshold
+      severity: warning
+      labels:
+        source: budgets
+        topic: '{{ ._sns.TopicArn }}'
+        subject: '{{ ._sns.Subject }}'
+        budget_name: '{{ reFind "Budget Name: (\\S+)" ._sns.Message }}'
+      annotations:
+        summary: '{{ ._sns.Subject }}'
+        description: '{{ ._sns.Message }}'
+        link: 'https://us-east-1.console.aws.amazon.com/billing/home#/budgets{{ with reFind "Budget Name: (\\S+)" ._sns.Message }}/details?name={{ urlquery . }}{{ end }}'
+        link_name: Budget
+  - name: cost-anomaly
+    match: {"_sns.TopicArn": "ARN_PREFIX:sns:us-east-1:ACCOUNT_ID:cost-anomalies", "anomalyId": "*"}
+    alert:
+      alertname: CloudCostAnomaly
+      severity: warning
+      labels:
+        source: cost-anomaly
+        monitor_name: '{{ .dimensionalValue }}'
+        account_id: '{{ .accountId }}'
+      annotations:
+        summary: '{{ with ._sns.Subject }}{{ . }}{{ else }}AWS cost anomaly: {{ .dimensionalValue }}{{ end }}'
+        description: |-
+          Impact: {{ with .impact }}{{ with .totalImpact }}${{ printf "%.2f" (num .) }}{{ end }}{{ with .totalImpactPercentage }} ({{ printf "%.0f" (num .) }}% over expected){{ end }}{{ end }}{{ with .anomalyStartDate }}, {{ reFind "^[0-9-]+" . }}{{ end }}{{ with .anomalyEndDate }} – {{ reFind "^[0-9-]+" . }}{{ end }}
+          {{ range $i, $c := .rootCauses }}{{ if lt $i 3 }}Root cause: {{ with $c.service }}{{ . }}{{ end }}{{ with $c.linkedAccountName }} · {{ . }}{{ end }}{{ with $c.linkedAccount }} ({{ . }}){{ end }}{{ with $c.region }} · {{ . }}{{ end }}{{ with $c.usageType }} · {{ . }}{{ end }}{{ with $c.impactContribution }} · ${{ printf "%.2f" (num .) }}{{ end }}
+          {{ end }}{{ end }}
+        link: '{{ with .anomalyDetailsLink }}{{ . }}{{ end }}'
+        link_name: Anomaly
+        impact: '{{ with .impact }}{{ with .totalImpact }}{{ . }}{{ end }}{{ end }}'

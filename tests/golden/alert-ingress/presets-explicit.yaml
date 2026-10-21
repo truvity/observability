@@ -73,9 +73,18 @@ data:
       - alert:
           alertname: RootCredentialUsage
           annotations:
-            api: '{{ .detail.service.action.awsApiCallAction.api }}'
-            count: '{{ .detail.service.count }}'
-            remote_ip: '{{ .detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4
+            api: '{{ get . "detail.service.action.awsApiCallAction.api" }}'
+            count: '{{ get . "detail.service.count" }}'
+            description: |-
+              {{ get . "detail.description" }}
+              {{ with get . "detail.service.action.awsApiCallAction.api" }}API call {{ . }}{{ with get $ "detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4" }} from {{ . }}{{ end }}{{ with get $ "detail.service.action.awsApiCallAction.remoteIpDetails.country.countryName" }} ({{ . }}){{ end }}
+              {{ end }}Severity {{ .detail.severity }} ({{ if atLeast .detail.severity 9 }}critical{{ else if atLeast .detail.severity 7 }}high{{ else if atLeast .detail.severity 4 }}medium{{ else }}low{{ end }}) · {{ .detail.type }}
+              {{ with guarddutyResource .detail.resource }}Resource: {{ . }}
+              {{ end }}Account {{ .account }} · {{ .region }}{{ with get . "detail.service.count" }} · count {{ . }}{{ end }}{{ with get . "detail.service.eventFirstSeen" }} · first seen {{ . }}{{ end }}{{ with get . "detail.service.eventLastSeen" }} · last seen {{ . }}{{ end }}
+            link: https://{{ .region }}.console.aws.amazon.com/guardduty/home?region={{
+              .region }}#/findings?macros=current&fId={{ .detail.id }}
+            link_name: GuardDuty finding
+            remote_ip: '{{ get . "detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4"
               }}'
             summary: '{{ .detail.title }}'
           labels:
@@ -90,6 +99,14 @@ data:
       - alert:
           alertname: CloudSecurityFinding
           annotations:
+            description: |-
+              {{ get . "detail.description" }}
+              Severity {{ .detail.severity }} ({{ if atLeast .detail.severity 9 }}critical{{ else if atLeast .detail.severity 7 }}high{{ else if atLeast .detail.severity 4 }}medium{{ else }}low{{ end }}) · {{ .detail.type }}
+              {{ with guarddutyResource .detail.resource }}Resource: {{ . }}
+              {{ end }}Account {{ .account }} · {{ .region }}{{ with get . "detail.service.count" }} · count {{ . }}{{ end }}{{ with get . "detail.service.eventFirstSeen" }} · first seen {{ . }}{{ end }}{{ with get . "detail.service.eventLastSeen" }} · last seen {{ . }}{{ end }}
+            link: https://{{ .region }}.console.aws.amazon.com/guardduty/home?region={{
+              .region }}#/findings?macros=current&fId={{ .detail.id }}
+            link_name: GuardDuty finding
             summary: '{{ .detail.title }}'
           labels:
             account: '{{ .account }}'
@@ -164,7 +181,7 @@ spec:
         # ConfigMap edit lands on disk and the running process keeps the
         # configuration it read at startup — a values change that
         # applied, synced, and did nothing.
-        alert-ingress/config-checksum: 70dfe6d679235c920205041f1edc283cf43de78b43e879f8328053f213f928c0
+        alert-ingress/config-checksum: 39b90fbeedf2caf69b6d82193f3198adad4920849f0d6e5b43e5adcd54eda661
     spec:
       serviceAccountName: alert-ingress
       automountServiceAccountToken: false

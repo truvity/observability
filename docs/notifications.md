@@ -100,11 +100,11 @@ The chart renders from this an Alertmanager configuration with:
   nothing and is routed only by `deadman` (below);
 - one Slack receiver per distinct (workspace, channel), posting with the
   workspace's bot token ("Slack", below);
-- the Slack template: the cluster and the namespace in the title, the
-  alert's `summary`, a link to the runbook from `runbookBaseUrl` +
-  `runbook` annotation, a link to Grafana built from `externalUrl` and
-  the alert's labels, and the silence link (only when
-  `alertmanagerUrl` is set, below);
+- the Slack template: the cluster and the namespace in the title, then per
+  alert its `summary`, `description`, `link` and runbook (the annotation
+  convention, "Annotations" below), a link to Grafana built from
+  `externalUrl` and the alert's labels when the alert has a cluster, and
+  the silence link (only when `alertmanagerUrl` is set, below);
 - the `Watchdog` route to the deadman receiver, when one is configured
   (`deadman.urlSecret`), with `repeat_interval` equal to the heartbeat
   interval the far end expects.
@@ -176,11 +176,77 @@ applies its cluster checks only to a VMRule that names the cluster
 label). The Slack title and the Telegram message name the cluster, or,
 for an alert with no `k8s_cluster_name`, its `source` (`FIRING
 GuardDutyFinding on aws-guardduty`); an alert with a cluster reads as it
-always did. The Grafana links still carry `var-cluster`, which is empty
-for a sourced alert. While `groupBy` is left at its default and
+always did. The Slack text leaves the per-alert Grafana link out for an
+alert with no `k8s_cluster_name` (it would open an empty cluster); what such
+an alert has instead is its own `link` ("Annotations", below). The Slack
+`title_link` and the Telegram Grafana line still carry `var-cluster`, which
+is empty for a sourced alert. While `groupBy` is left at its default and
 `routeLabels` lists `source`, `source` is added to the grouping, so two
 sources do not share one notification; an explicit `groupBy` is used as
 written.
+
+## Annotations
+
+Every alert, from a rule or from `alert-ingress`, carries the same
+annotations, and every message is built from them:
+
+| Annotation | What it is |
+|---|---|
+| `summary` | one line: what is wrong, readable without the rest |
+| `description` | the plain explanation, as many lines as it needs: what happened, on what, where, since when |
+| `link` | the one page that shows the thing itself (a console finding, a budget, a dashboard); only an `http(s)` URL becomes a link |
+| `link_name` | the link's name in the message; `Open` when unset |
+| `runbook` | optional: an `http(s)` URL, or a path joined to `runbookBaseUrl` |
+
+The Slack text prints, for each alert:
+
+```
+*<summary>* · <Grafana>             Grafana only for an alert with k8s_cluster_name
+<description>                       trimmed; cut at 1500 characters with "…"
+<link|link_name> · <runbook|Runbook>
+```
+
+then the group line (Silence, View). The first 5 alerts of a notification
+get all of that, the next 15 their summary only (`• <summary>`), and a last
+line counts the rest (`… 57 alerts in this notification; the first 20 are
+listed.`), so a large group stays one message of at most about 12,000
+characters, inside Slack's 40,000. An alert without a `summary` is named by
+its `alertname`. Every annotation is written with Slack's escaping
+("Named links in Slack", below), so an annotation cannot open a link or
+ping a channel. Other annotations (a CloudWatch alarm's `state`, a
+finding's `api`) stay on the alert for the console and for any other
+receiver, but are not in the Slack text: what a person must read goes in
+`description`.
+
+The text is the named template `<chart>.notifications.slackAlerts` in the
+chart's `_helpers.tpl`, so another receiver can reuse it. The Telegram
+message keeps its own HTML template; a receiver that reads the alert
+itself (an on-call tool behind a webhook) reads the same annotations.
+
+The shipped text was rendered with Alertmanager's own `amtool template
+render` for the alert-ingress samples below, and matches the goldens under
+`tests/golden/slack-text/` byte for byte. Two of them:
+
+```
+*API ListBuckets was invoked using root credentials.*
+API ListBuckets was invoked using root credentials from IP address 198.51.100.7.
+API call ListBuckets from 198.51.100.7 (Netherlands)
+Severity 2 (low) · Policy:IAMUser/RootCredentialUsage
+Resource: AccessKey ASIAEXAMPLEROOTKEY01 user Root (Root)
+Account <account> · eu-central-1 · count 3 · first seen 2026-10-20T08:01:12.000Z · last seen 2026-10-20T08:09:47.000Z
+<https://eu-central-1.console.aws.amazon.com/guardduty/home?region=eu-central-1#/findings?macros=current&amp;fId=...|GuardDuty finding>
+```
+
+```
+*AWS Cost Management: Cost anomaly detected on 2026-10-19*
+Impact: $1001.25 (334% over expected), 2026-10-17 – 2026-10-19
+Root cause: Amazon Elastic Compute Cloud - Compute · workloads (<account>) · eu-central-1 · EUC1-BoxUsage:r6g.2xlarge · $812.40
+...
+<https://console.aws.amazon.com/cost-management/home#/anomaly-detection/...|Anomaly>
+```
+
+How each alert-ingress source fills the convention is in
+docs/alert-ingress.md.
 
 ## Slack
 
@@ -396,12 +462,16 @@ notifications:
 ### Named links in Slack
 
 Slack links are named mrkdwn links instead of raw URLs. Grafana is about
-one alert, so it ends that alert's summary line; Silence and View are about
+one alert, so it ends that alert's summary line; the alert's own `link` and
+runbook are on the line under its description; Silence and View are about
 the alert group, so they are ONE line after the alerts, separated by ` · `:
 
 ```
-disk almost full · <https://grafana.example/?var-cluster=...|Grafana>
-disk almost full · <https://grafana.example/?var-cluster=...|Grafana>
+*disk almost full* · <https://grafana.example/?var-cluster=...|Grafana>
+/var on node-1 is 91% full and growing 2%/h.
+<https://runbooks.example/disk|Runbook>
+
+*disk almost full* · <https://grafana.example/?var-cluster=...|Grafana>
 
 <https://alertmanager.example/#/silences/new?filter=...|Silence>
 ```
@@ -418,7 +488,10 @@ Escaping follows Slack's "Escaping text" rules
 them back, so the `&` between query parameters inside a link is written
 `&amp;` (the `title_link` field is a plain URL, not mrkdwn, and keeps `&`).
 A raw `|` or `>` would end the link early, so every label-derived part of
-a URL goes through `urlquery`, which escapes both; the Alertmanager
+a URL goes through `urlquery`, which escapes both, and an annotation's
+`link` or runbook URL has `<`, `>` and `|` percent-escaped; text from an
+annotation (`summary`, `description`, `link_name`) has `&`, `<` and `>`
+escaped; the Alertmanager
 silence filter turns `urlquery`'s `+` back into `%20`. The chart does not
 set `mrkdwn_in`, so Alertmanager's default (`fallback`, `pretext`,
 `text`) applies and `text` is rendered as mrkdwn.

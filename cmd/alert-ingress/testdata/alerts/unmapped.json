@@ -1,0 +1,13 @@
+{
+  "labels": {
+    "alertname": "CloudEventUnmapped",
+    "severity": "warning",
+    "source": "unmapped"
+  },
+  "annotations": {
+    "body": "{\"version\":\"0\",\"id\":\"9a8b7c6d-5e4f-3a2b-1c0d-ef9876543210\",\"detail-type\":\"Config Configuration Item Change\",\"source\":\"aws.config\",\"account\":\"ACCOUNT_ID\",\"time\":\"2026-10-20T09:30:00Z\",\"region\":\"eu-central-1\",\"resources\":[\"ARN_PREFIX:s3:::example-bucket\"],\"detail\":{\"configurationItemDiff\":{\"changedProperties\":{\"Configuration.PublicAccessBlockConfiguration.BlockPublicAcls\":{\"previousValue\":true,\"updatedValue\":false,\"changeType\":\"UPDATE\"}},\"changeType\":\"UPDATE\"},\"configurationItem\":{\"resourceType\":\"AWS::S3::Bucket\",\"resourceId\":\"example-bucket\",\"awsRegion\":\"eu-central-1\",\"configurationItemStatus\":\"OK\"},\"notificationCreationTime\":\"2026-10-20T09:29:58.123Z\",\"messageType\":\"ConfigurationItemChangeNotification\"}}\n",
+    "description": "No mapping rule matched this notification from topic security-alerts.\n\n{\n  \"version\": \"0\",\n  \"id\": \"9a8b7c6d-5e4f-3a2b-1c0d-ef9876543210\",\n  \"detail-type\": \"Config Configuration Item Change\",\n  \"source\": \"aws.config\",\n  \"account\": \"ACCOUNT_ID\",\n  \"time\": \"2026-10-20T09:30:00Z\",\n  \"region\": \"eu-central-1\",\n  \"resources\": [\n    \"ARN_PREFIX:s3:::example-bucket\"\n  ],\n  \"detail\": {\n    \"configurationItemDiff\": {\n      \"changedProperties\": {\n        \"Configuration.PublicAccessBlockConfiguration.BlockPublicAcls\": {\n          \"previousValue\": true,\n          \"updatedValue\": false,\n          \"changeType\": \"UPDATE\"\n        }\n      },\n      \"changeType\": \"UPDATE\"\n    },\n    \"configurationItem\": {\n      \"resourceType\": \"AWS::S3::Bucket\",\n      \"resourceId\": \"example-bucket\",\n      \"awsRegion\": \"eu-central-1\",\n      \"configurationItemStatus\": \"OK\"\n    },\n    \"notificationCreationTime\": \"2026-10-20T09:29:58.123Z\",\n    \"messageType\": \"ConfigurationItemChangeNotification\"\n  }\n}",
+    "summary": "Unmapped cloud notification from topic security-alerts",
+    "topic": "ARN_PREFIX:sns:eu-central-1:ACCOUNT_ID:security-alerts"
+  }
+}

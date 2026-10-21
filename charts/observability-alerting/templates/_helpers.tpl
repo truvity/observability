@@ -499,3 +499,53 @@ https://docs.victoriametrics.com/victoriametrics/vmalert/#high-availability
 - url: {{ $notifier | quote }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The per-alert body of a notification, as Alertmanager template text
+(docs/notifications.md, "Annotations"). Takes a dict: `externalUrl` (the
+Grafana base; empty means no Grafana link) and `runbookBaseUrl`.
+
+For each alert, in order:
+
+  *summary*  · <Grafana>      bold; the alertname when there is no summary;
+                              Grafana ONLY when the alert has
+                              k8s_cluster_name (an alert born outside a
+                              cluster, alert-ingress, has none, and a link
+                              with an empty cluster opens nothing)
+  description                 trimmed, cut at 1500 characters with "…"
+  <link|link_name> · <Runbook>
+                              `link` only when it is an http(s) URL, named
+                              `link_name` or "Open"; the runbook when the
+                              annotation is an http(s) URL, or is a path and
+                              `runbookBaseUrl` is set
+
+The first 5 alerts get all of that, the next 15 their summary only, and a
+last line counts the rest: a group of hundreds stays one readable message,
+well inside Slack's 40,000-character limit (at most about 12,000 here).
+
+Text from an alert is written with Slack's escaping (`&`, `<`, `>` as
+`&amp;`, `&lt;`, `&gt;`), so an annotation cannot open a link or a mention;
+inside a link URL, `<`, `>` and `|` are percent-escaped and `&` is `&amp;`.
+Alertmanager's own functions only (`match`, `reReplaceAll`, `trimSpace`)
+and text/template's builtins: a 1500-character cut is `.{1000}.{500}`
+because RE2 refuses a repeat count above 1000.
+
+It is a named template so a receiver other than Slack can reuse the same
+convention later; the Telegram message is HTML and keeps its own.
+*/}}
+{{- define "observability-alerting.notifications.slackAlerts" -}}
+{{- $esc := `| reReplaceAll "&" "&amp;" | reReplaceAll "<" "&lt;" | reReplaceAll ">" "&gt;"` -}}
+{{- $urlEsc := `| reReplaceAll "&" "&amp;" | reReplaceAll "<" "%3C" | reReplaceAll ">" "%3E" | reReplaceAll "\\|" "%7C"` -}}
+{{- $summary := printf `{{ or $a.Annotations.summary $a.Labels.alertname %s }}` $esc -}}
+{{ `{{ range $i, $a := .Alerts }}{{ if lt $i 5 }}{{ if $i }}` }}
+{{ `{{ end }}*` }}{{ $summary }}*
+{{- if .externalUrl }}{{ `{{ if $a.Labels.k8s_cluster_name }} · <` }}{{ .externalUrl }}{{ `/?var-cluster={{ $a.Labels.k8s_cluster_name | urlquery }}{{ if $a.Labels.k8s_namespace_name }}&amp;var-namespace={{ $a.Labels.k8s_namespace_name | urlquery }}{{ end }}|Grafana>{{ end }}` }}{{ end }}
+{{ `{{ with trimSpace $a.Annotations.description }}{{ $d := . }}{{ if match "(?s)^.{1000}.{501}" $d }}{{ $d = printf "%s…" (reReplaceAll "(?s)^(.{1000}.{500}).*$" "$1" $d) }}{{ end }}{{ $d ` }}{{ $esc }}{{ ` }}` }}
+{{ `{{ end }}{{ $l := "" }}{{ if match "^https?://" $a.Annotations.link }}{{ $l = printf "<%s|%s>" ($a.Annotations.link ` }}{{ $urlEsc }}{{ `) (or $a.Annotations.link_name "Open" ` }}{{ $esc }}{{ `) }}{{ end }}{{ $r := "" }}{{ if match "^https?://" $a.Annotations.runbook }}{{ $r = $a.Annotations.runbook }}` }}
+{{- if .runbookBaseUrl }}{{ `{{ else if $a.Annotations.runbook }}{{ $r = print ` }}{{ .runbookBaseUrl | quote }}{{ ` $a.Annotations.runbook }}` }}{{ end }}
+{{- `{{ end }}{{ if $r }}{{ $r = printf "<%s|Runbook>" ($r ` }}{{ $urlEsc }}{{ `) }}{{ if $l }}{{ $l = print $l " · " $r }}{{ else }}{{ $l = $r }}{{ end }}{{ end }}{{ if $l }}{{ $l }}` }}
+{{ `{{ end }}{{ else if lt $i 20 }}{{ if eq $i 5 }}` }}
+{{ `{{ end }}• ` }}{{ $summary }}
+{{ `{{ end }}{{ end }}{{ if gt (len .Alerts) 20 }}… {{ len .Alerts }} alerts in this notification; the first 20 are listed.` }}
+{{ `{{ end }}` }}
+{{- end -}}

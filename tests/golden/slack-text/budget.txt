@@ -1,0 +1,19 @@
+*AWS Budgets: monthly-total has exceeded your alert threshold*
+AWS Budget Notification October 20, 2026
+AWS Account ACCOUNT_ID
+
+Dear AWS Customer,
+
+You requested that we alert you when the ACTUAL Cost associated with your monthly-total budget is greater than $800.00 for the current month. The ACTUAL Cost associated with this budget is $843.17. You can find additional details below and by accessing the AWS Budgets dashboard [1].
+
+Budget Name: monthly-total
+Budget Type: Cost
+Budgeted Amount: $1,000.00
+Alert Type: ACTUAL
+Alert Threshold: &gt; $800.00
+ACTUAL Amount: $843.17
+
+[1] https://console.aws.amazon.com/billing/home#/budgets
+<https://us-east-1.console.aws.amazon.com/billing/home#/budgets/details?name=monthly-total|Budget>
+
+<https://alertmanager.example/#/silences/new?filter=%7Balertname%3D%22CloudBudgetThreshold%22%2Cbudget_name%3D%22monthly-total%22%2Cseverity%3D%22warning%22%2Csource%3D%22budgets%22%2Csubject%3D%22AWS%20Budgets%3A%20monthly-total%20has%20exceeded%20your%20alert%20threshold%22%2Ctopic%3D%22ARN_PREFIX%3Asns%3Aus-east-1%3AACCOUNT_ID%3Acost-budgets%22%7D|Silence>

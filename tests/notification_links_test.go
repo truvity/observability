@@ -123,7 +123,8 @@ func TestTitleAndGrafanaLinkSurviveAnEmptyNamespace(t *testing.T) {
 				assert.Contains(t, title, wantTitle, "%s/%s", g, r.Name)
 				assert.NotContains(t, title, "}}/{{ .CommonLabels.k8s_namespace_name }}'", "%s/%s: unguarded namespace", g, r.Name)
 				text := c["text"].(string)
-				assert.Contains(t, text, "{{ if .Labels.k8s_namespace_name }}&amp;var-namespace={{ .Labels.k8s_namespace_name | urlquery }}{{ end }}", "%s/%s", g, r.Name)
+				assert.Contains(t, text,
+					"{{ if $a.Labels.k8s_namespace_name }}&amp;var-namespace={{ $a.Labels.k8s_namespace_name | urlquery }}{{ end }}", "%s/%s", g, r.Name)
 				if tl := c["title_link"].(string); !strings.HasPrefix(tl, "https://karma.") {
 					assert.Contains(t, tl,
 						"{{ if .CommonLabels.k8s_namespace_name }}&var-namespace={{ .CommonLabels.k8s_namespace_name | urlquery }}{{ end }}",
@@ -241,7 +242,7 @@ func TestSlackLinksAreNamedAndGroupLinksAppearOnce(t *testing.T) {
 			assert.NotContains(t, out, "Grafana: ", tc.golden)
 			assert.NotContains(t, out, "Silence: ", tc.golden)
 			assert.Contains(t, out, "?var-cluster=c1&amp;var-namespace=ns|Grafana>", "& is written &amp; inside the link")
-			assert.Contains(t, out, "s1 · <https://grafana.example/", "Grafana is on the alert's own line")
+			assert.Contains(t, out, "*s1* · <https://grafana.example/", "Grafana is on the alert's own summary line")
 
 			tl, ok := c["title_link"].(string)
 			require.True(t, ok, "%s: title_link is set", tc.golden)

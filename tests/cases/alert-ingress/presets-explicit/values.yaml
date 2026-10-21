@@ -26,9 +26,17 @@ mappings:
         region: '{{ .region }}'
       annotations:
         summary: '{{ .detail.title }}'
-        api: '{{ .detail.service.action.awsApiCallAction.api }}'
-        remote_ip: '{{ .detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4 }}'
-        count: '{{ .detail.service.count }}'
+        description: |-
+          {{ get . "detail.description" }}
+          {{ with get . "detail.service.action.awsApiCallAction.api" }}API call {{ . }}{{ with get $ "detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4" }} from {{ . }}{{ end }}{{ with get $ "detail.service.action.awsApiCallAction.remoteIpDetails.country.countryName" }} ({{ . }}){{ end }}
+          {{ end }}Severity {{ .detail.severity }} ({{ if atLeast .detail.severity 9 }}critical{{ else if atLeast .detail.severity 7 }}high{{ else if atLeast .detail.severity 4 }}medium{{ else }}low{{ end }}) · {{ .detail.type }}
+          {{ with guarddutyResource .detail.resource }}Resource: {{ . }}
+          {{ end }}Account {{ .account }} · {{ .region }}{{ with get . "detail.service.count" }} · count {{ . }}{{ end }}{{ with get . "detail.service.eventFirstSeen" }} · first seen {{ . }}{{ end }}{{ with get . "detail.service.eventLastSeen" }} · last seen {{ . }}{{ end }}
+        link: 'https://{{ .region }}.console.aws.amazon.com/guardduty/home?region={{ .region }}#/findings?macros=current&fId={{ .detail.id }}'
+        link_name: GuardDuty finding
+        api: '{{ get . "detail.service.action.awsApiCallAction.api" }}'
+        remote_ip: '{{ get . "detail.service.action.awsApiCallAction.remoteIpDetails.ipAddressV4" }}'
+        count: '{{ get . "detail.service.count" }}'
   - name: guardduty
     match: {"detail-type": "GuardDuty Finding"}
     alert:
@@ -42,6 +50,13 @@ mappings:
         finding_id: '{{ .detail.id }}'
       annotations:
         summary: '{{ .detail.title }}'
+        description: |-
+          {{ get . "detail.description" }}
+          Severity {{ .detail.severity }} ({{ if atLeast .detail.severity 9 }}critical{{ else if atLeast .detail.severity 7 }}high{{ else if atLeast .detail.severity 4 }}medium{{ else }}low{{ end }}) · {{ .detail.type }}
+          {{ with guarddutyResource .detail.resource }}Resource: {{ . }}
+          {{ end }}Account {{ .account }} · {{ .region }}{{ with get . "detail.service.count" }} · count {{ . }}{{ end }}{{ with get . "detail.service.eventFirstSeen" }} · first seen {{ . }}{{ end }}{{ with get . "detail.service.eventLastSeen" }} · last seen {{ . }}{{ end }}
+        link: 'https://{{ .region }}.console.aws.amazon.com/guardduty/home?region={{ .region }}#/findings?macros=current&fId={{ .detail.id }}'
+        link_name: GuardDuty finding
   - name: budget
     match: {"_sns.TopicArn": "arn:<partition>:sns:us-east-1:<account>:cost-budgets"}
     alert:

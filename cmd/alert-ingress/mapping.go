@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"unicode/utf8"
 )
 
 // unmappedBodyLimit caps how much of a message's raw body a
@@ -25,9 +26,128 @@ const unmappedBodyLimit = 4000
 // field is an error rather than "no". `atLeast` is the numeric threshold
 // the severity field needs without any of those traps.
 var templateFuncs = template.FuncMap{
-	"num":     toNumber,
-	"atLeast": atLeast,
-	"reFind":  reFind,
+	"num":               toNumber,
+	"atLeast":           atLeast,
+	"reFind":            reFind,
+	"get":               getPath,
+	"guarddutyResource": guarddutyResource,
+}
+
+// getPath (the template function `get`) returns the value at a
+// dot-separated path under root, or "" when any step of the path is absent
+// or null: `{{ get . "detail.service.count" }}`. The template's own
+// `.a.b.c` prints "<no value>" for a missing field, which is noise in a
+// human-readable annotation, and is an ERROR when a step is present but not
+// an object, which sends the whole message down the CloudEventUnmapped
+// path. An optional field (a finding's count, an API call's caller address)
+// must degrade to an empty string instead, which `with` then skips. A
+// present value is returned as it is, so a number stays a number for `num`
+// and `atLeast`.
+func getPath(root any, path string) any {
+	m, ok := root.(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	v, ok := lookup(m, path)
+	if !ok || v == nil {
+		return ""
+	}
+
+	return v
+}
+
+// guarddutyResource is a one-line description of the resource a GuardDuty
+// finding is about, read from the finding's `detail.resource`:
+// `{{ guarddutyResource .detail.resource }}`. It names the resource type
+// and the identifier a responder looks up first (an instance id, an access
+// key and its user, a bucket, a cluster and workload, a database, a
+// function); a type it does not know is named by its type alone, and an
+// absent resource is "". It never fails: it feeds a description, and a
+// description must not be what turns a finding into CloudEventUnmapped.
+func guarddutyResource(resource any) string {
+	r, ok := resource.(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	str := func(path string) string {
+		v, ok := lookup(r, path)
+		if !ok || v == nil {
+			return ""
+		}
+
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+
+	typ := str("resourceType")
+	var parts []string
+
+	add := func(format string, values ...string) {
+		for _, v := range values {
+			if v == "" {
+				return
+			}
+		}
+
+		args := make([]any, len(values))
+		for i, v := range values {
+			args[i] = v
+		}
+
+		parts = append(parts, fmt.Sprintf(format, args...))
+	}
+
+	switch typ {
+	case "AccessKey":
+		add("%s", str("accessKeyDetails.accessKeyId"))
+		add("user %s", str("accessKeyDetails.userName"))
+		add("(%s)", str("accessKeyDetails.userType"))
+	case "Instance":
+		add("%s", str("instanceDetails.instanceId"))
+		add("(%s)", str("instanceDetails.instanceType"))
+	case "S3Bucket":
+		if buckets, ok := r["s3BucketDetails"].([]any); ok {
+			var names []string
+
+			for _, b := range buckets {
+				if bm, ok := b.(map[string]any); ok {
+					if n, ok := bm["name"].(string); ok && n != "" {
+						names = append(names, n)
+					}
+				}
+			}
+
+			add("%s", strings.Join(names, ", "))
+		}
+	case "EKSCluster":
+		add("%s", str("eksClusterDetails.name"))
+		add("workload %s/%s", str("kubernetesDetails.kubernetesWorkloadDetails.namespace"),
+			str("kubernetesDetails.kubernetesWorkloadDetails.name"))
+		add("user %s", str("kubernetesDetails.kubernetesUserDetails.username"))
+	case "ECSCluster":
+		add("%s", str("ecsClusterDetails.name"))
+	case "Container":
+		add("%s", str("containerDetails.name"))
+		add("image %s", str("containerDetails.image"))
+	case "RDSDBInstance":
+		add("%s", str("rdsDbInstanceDetails.dbInstanceIdentifier"))
+		add("user %s", str("rdsDbUserDetails.user"))
+	case "RDSLimitlessDB":
+		add("%s", str("rdsLimitlessDbDetails.dbShardGroupIdentifier"))
+	case "Lambda":
+		add("%s", str("lambdaDetails.functionName"))
+	}
+
+	if len(parts) == 0 {
+		return typ
+	}
+
+	if typ == "" {
+		return strings.Join(parts, " ")
+	}
+
+	return typ + " " + strings.Join(parts, " ")
 }
 
 // reFind returns the first capture group of the first match of the RE2
@@ -186,6 +306,19 @@ func renderResolved(spec AlertSpec, body map[string]any) (bool, error) {
 	return strings.EqualFold(strings.TrimSpace(out), "true"), nil
 }
 
+// unmappedInput is what the unmapped path knows about a message: only the
+// signed envelope's own fields and, when a mapping's template failed, which
+// mapping and why.
+type unmappedInput struct {
+	Topic   string
+	Subject string
+	Message string
+	// Mapping and Cause are set when a mapping matched but its template
+	// failed to render; empty when no mapping matched at all.
+	Mapping string
+	Cause   string
+}
+
 // unmappedAlert builds CloudEventUnmapped directly, with NO template
 // step. The unmapped path exists precisely because this message's shape
 // is unknown, so its body is untrusted text — running it through
@@ -194,9 +327,15 @@ func renderResolved(spec AlertSpec, body map[string]any) (bool, error) {
 // the one path that is supposed to be unbreakable: the fallback for
 // everything else already failed.
 //
+// The annotations follow the notification convention (docs/notifications.md,
+// "Annotations"): `summary` is the message's own Subject, or names the topic
+// when there is none; `description` is the start of the body (indented when
+// it is JSON) so the notification itself shows what arrived; `body` keeps
+// the longer raw copy for the console.
+//
 // cfg adds static labels and may change the severity; alertname and
 // severity are written last so a label can never shadow them.
-func unmappedAlert(cfg Unmapped, message string) (labels, annotations map[string]string) {
+func unmappedAlert(cfg Unmapped, in unmappedInput) (labels, annotations map[string]string) {
 	severity := cfg.Severity
 	if severity == "" {
 		severity = "warning"
@@ -209,20 +348,77 @@ func unmappedAlert(cfg Unmapped, message string) (labels, annotations map[string
 
 	labels["alertname"] = "CloudEventUnmapped"
 	labels["severity"] = severity
+
+	summary := strings.TrimSpace(in.Subject)
+	if summary == "" {
+		summary = "Unmapped cloud notification from topic " + topicName(in.Topic)
+	}
+
+	description := truncate(prettyBody(in.Message), unmappedDescriptionLimit)
+	if in.Mapping != "" {
+		description = fmt.Sprintf("Mapping %q matched but failed to render: %s\n\n%s", in.Mapping, truncate(in.Cause, 300), description)
+		summary = "Mapping " + in.Mapping + " failed to render: " + summary
+	} else {
+		description = "No mapping rule matched this notification from topic " + topicName(in.Topic) + ".\n\n" + description
+	}
+
 	annotations = map[string]string{
-		"summary": "a cloud notification matched no mapping rule",
-		"body":    truncate(message, unmappedBodyLimit),
+		"summary":     summary,
+		"description": description,
+		"body":        truncate(in.Message, unmappedBodyLimit),
+	}
+
+	if in.Topic != "" {
+		annotations["topic"] = in.Topic
 	}
 
 	return labels, annotations
 }
 
+// unmappedDescriptionLimit caps the part of an unmapped body that goes into
+// `description`, the annotation a notification prints. `body` keeps the
+// longer copy (unmappedBodyLimit).
+const unmappedDescriptionLimit = 1000
+
+// topicName is the last segment of a topic ARN (`...:security-alerts` →
+// `security-alerts`), or the whole string when it has no `:`.
+func topicName(topic string) string {
+	if topic == "" {
+		return "(unknown)"
+	}
+
+	if i := strings.LastIndex(topic, ":"); i >= 0 && i < len(topic)-1 {
+		return topic[i+1:]
+	}
+
+	return topic
+}
+
+// prettyBody indents a JSON body for a human; any other text is returned
+// trimmed and otherwise as it is. Only json.Indent touches it: no template,
+// no decoding into values that could be executed.
+func prettyBody(message string) string {
+	trimmed := strings.TrimSpace(message)
+
+	var buf bytes.Buffer
+	if json.Valid([]byte(trimmed)) && json.Indent(&buf, []byte(trimmed), "", "  ") == nil {
+		return buf.String()
+	}
+
+	return trimmed
+}
+
 // truncate returns s unchanged if it is at most n bytes, or its first n
-// bytes with a marker appended.
+// bytes (backed off to the start of a character) with a marker appended.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
 
-	return s[:n] + "... (truncated)"
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+
+	return s[:cut] + "... (truncated)"
 }
