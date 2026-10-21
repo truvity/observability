@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.101.1
 
 - **Behaviour change** `observability-proxy`: the zone spread of two or more proxy replicas adds `matchLabelKeys: [pod-template-hash]`, so it counts only the pods of the current ReplicaSet. During a rolling update the old pods matched too, and new pods were placed against zones the old ones were about to leave: a three-replica rollout could end two-and-one with a zone empty, even with `whenUnsatisfiable: DoNotSchedule`. Goldens: `observability-proxy/vmauth-spread`, `observability-proxy/everything`, `observability-proxy/ha`.
 
