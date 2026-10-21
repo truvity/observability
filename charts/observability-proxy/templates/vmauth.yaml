@@ -28,10 +28,15 @@ spec:
   Two or more replicas (`vmauth.replicaCount`; `ha` refuses fewer than
   two): the proxy is the one component every reader and every
   cross-cluster writer goes through, so it must not share a fate with a
-  node or a zone. Spread over zones SOFTLY -- the proxy is stateless and a
-  zone loss must leave a pod schedulable in the surviving zone, which a
-  hard constraint with `maxSkew: 1` would refuse -- and a
-  PodDisruptionBudget so a node drain takes one at a time. Rendered
+  node or a zone. Spread over zones SOFTLY by default -- the proxy is
+  stateless and a zone loss must leave a pod schedulable in the surviving
+  zone, which a hard constraint with `maxSkew: 1` would refuse -- and a
+  PodDisruptionBudget so a node drain takes one at a time. A soft spread
+  never makes a node autoscaler add a node in an empty zone, so where the
+  proxy's nodes do not already span every zone,
+  `vmauth.topologySpread.whenUnsatisfiable: DoNotSchedule` makes it one
+  pod per zone (a zone loss then leaves that zone's pod Pending while the
+  others serve). Rendered
   whenever there are two or more replicas, `ha` or not; one replica gets
   neither (a budget of `maxUnavailable: 1` on a single pod would not
   protect it, and a spread has nothing to spread).
@@ -39,7 +44,7 @@ spec:
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: topology.kubernetes.io/zone
-      whenUnsatisfiable: ScheduleAnyway
+      whenUnsatisfiable: {{ .Values.vmauth.topologySpread.whenUnsatisfiable }}
       labelSelector:
         matchLabels:
           app.kubernetes.io/name: vmauth
