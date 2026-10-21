@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.100.1
 
 - **Fixed** (`alert-ingress` binary) every alert is now delivered to every Alertmanager replica. Replicas share silences and the notification log but not alerts, so one POST through a Service left the alert on a single replica, and it vanished if that replica restarted before the alert resolved. The host of `alertmanager.url` is resolved at each delivery (cached 30s) and the alert is POSTed concurrently to every address; a single-address URL or an IP behaves as before. Point `alertmanager.url` at the headless Service (the vm-operator's VMAlertmanager Service is headless; no new value). A message is delivered when at least one replica answered 2xx; each failed replica POST is logged and counted in the new `alert_ingress_alertmanager_post_failures_total`; only when every replica fails is the 5xx / not-deleted behaviour kept. No render changes. Roll the chart and its image together.
 - **Added** `observability-proxy` `vmauth.service.trafficDistribution` (default empty, nothing rendered): `spec.trafficDistribution` of the proxy's Service (`PreferClose`, `PreferSameZone` or `PreferSameNode`), written through the `VMAuth` `serviceSpec` with `useAsDefault: true`, so the operator patches its default Service and creates no second one. A client that honours the zone hints (Envoy Gateway does for a backendRef Service) then prefers the replica in its own zone.
