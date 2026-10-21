@@ -175,7 +175,9 @@ derivation — into this package too:
 // alerts-read path answers).
 type Catalogue struct {
     PlatformHosts []string          // infrastructure hosts, the "platform" group
-    HostProbes    map[string]Probe  // optional per-host probe {Path, ExpectStatus}; absent = GET / expecting 200
+    HostProbes    map[string]Probe  // optional per-host probe {Path, ExpectStatus, Method}; absent = GET / expecting 200; a 3xx is checked without following it
+    HostLabels    map[string]map[string]string // optional per-host Gatus extra-labels: labels of that host's gatus_results_* series
+    Metrics       bool              // Gatus's /metrics (unauthenticated): set it on the private instance only
     Companies     []Company         // one group per company, in render order
     AlertsRead    AlertsRead        // the one pull path — see "internal → status, pulled"
     Providers     DeadmanProviders  // optional Slack/PagerDuty AlertURLs keys (company signals)
@@ -191,6 +193,7 @@ type Company struct {
 
 type CompanyHost struct {
     Host, Env, StatusPath string // StatusPath "" = the lenient fallback condition
+    ExpectStatus          int    // with StatusPath: the status it must answer (0 = 200; a 3xx is not followed)
     Component             string // caller-side label, carried but never rendered
 }
 
@@ -473,6 +476,57 @@ carries). What `match[]` cannot narrow by is an alert's `state`
 own LABELS only — so a `for:` rule that is merely PENDING also counts
 as present here. That is the conservative direction for a status page to
 be wrong in, and it is written down rather than glossed over.
+
+### status → alerting, scraped: the box's own results as metrics
+
+The box's probes are the one view of a public hostname from where its
+customers stand: DNS, TLS, the edge provider, the tunnel, the gateway and
+the application, in that order. A failure anywhere before the gateway is
+invisible from inside the cluster (the pods are healthy; nobody can reach
+them). The page shows it red; until it is in the alerting pipeline nobody
+is told.
+
+Gatus exports what it sees as Prometheus series when its configuration
+says `metrics: true`: `gatus_results_endpoint_success` (1 or 0, the
+endpoint's last check), `gatus_results_total{success}`,
+`gatus_results_code_total{code}`, `gatus_results_duration_seconds` and
+`gatus_results_certificate_expiration_seconds`, each labelled with the
+endpoint's `key`, `group`, `name` and `type`, plus every name in any
+endpoint's `extra-labels` (empty on an endpoint that does not set it).
+
+The wiring, from the box to a rule:
+
+1. **The labels are data, set by the estate.** `Catalogue.HostLabels`
+   (`deploy/pulumi/status`: `HostGroup.Labels`, collected by
+   `HostLabels()`) puts labels on a host's probe: which environment the
+   host belongs to, how loudly its failure should page, its hostname.
+   Names are Prometheus label names, never one Gatus writes itself (the
+   Prometheus client panics at registration, so Gatus would not boot);
+   `RenderGatus` refuses both, and a key that names no probed host.
+2. **Only the private instance serves them.** Gatus registers `/metrics`
+   OUTSIDE its security block: on the public, OIDC-protected instance it
+   would answer anyone through the tunnel. `Inputs.Metrics` therefore
+   turns it on for the private breakglass instance alone
+   (`OpsCatalogue`), on `EC2.PrivatePort`, reachable from
+   `EC2.PrivateIngressCIDRs` only. A scraper's source address after any
+   source NAT (a Kubernetes node's, for a pod leaving its VPC) must be in
+   that list.
+3. **An agent inside the estate scrapes it.** charts/observability-emitters
+   `metrics.scrape.static` renders a `VMStaticScrape` of the box's private
+   name, stamped with the scraping cluster's identity like any probe. The
+   cluster on the series is the SCRAPER's; the environment of the probed
+   host is the estate's own label from step 1.
+4. **A rule pages on it.** charts/platform-alerts `groups.publicEndpoints`
+   (`PublicEndpointDown`) fires when an endpoint's share of passing checks
+   stays below a threshold, takes the alert's cluster and severity from the
+   series' labels, and has a deadman (`PublicEndpointDownProbesAbsent`) for
+   the day the series stop arriving. An endpoint labelled with no severity
+   never pages: label only what should.
+
+Pulled rather than pushed for the same reason as the alerts-read path: the
+box holds no write credential and depends on nothing in the estate to do
+its own job, and a box that stops answering is `up == 0` on a scrape that
+was already there, not a silence.
 
 ## What the estate accepts, and what it does not
 

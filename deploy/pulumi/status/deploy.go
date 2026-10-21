@@ -55,9 +55,18 @@ type (
 
 		// PlatformHosts, ByCompany, Entities, AlertsReadHost and DeadmanChannel
 		// are the page (see CatalogueInputs).
-		PlatformHosts  []string
-		HostProbes     map[string]statusbox.Probe
-		ByCompany      map[string][]statusbox.CompanyHost
+		PlatformHosts []string
+		HostProbes    map[string]statusbox.Probe
+		ByCompany     map[string][]statusbox.CompanyHost
+		// HostLabels label each probed host's series (see CatalogueInputs);
+		// nil labels nothing.
+		HostLabels map[string]map[string]string
+		// Metrics serves Gatus's Prometheus endpoint (GET /metrics,
+		// gatus_results_*) on the PRIVATE instance (ops-breakglass), on
+		// EC2.PrivatePort, for a scraper among EC2.PrivateIngressCIDRs. The
+		// public instances never serve it: Gatus answers /metrics without
+		// sign-in. False (the default) changes nothing.
+		Metrics        bool
 		Entities       []Entity
 		AlertsReadHost string
 		DeadmanChannel string
@@ -104,7 +113,8 @@ type (
 		VPCID     pulumi.StringInput
 		SubnetIDs []pulumi.StringInput
 		// PrivateIngressCIDRs may reach the private page (PrivatePort), for
-		// instance a peered VPC.
+		// instance a peered VPC. With Metrics on, a scraper's source address
+		// (after any SNAT) must be among them to read /metrics.
 		PrivateIngressCIDRs []string
 
 		// PrivatePort is the TCP port the private page listens on, and the one
@@ -175,7 +185,8 @@ func (in Inputs) privatePort() int {
 
 func (in Inputs) catalogue(public bool) CatalogueInputs {
 	return CatalogueInputs{
-		PlatformHosts: in.PlatformHosts, HostProbes: in.HostProbes, ByCompany: in.ByCompany, Entities: in.Entities,
+		PlatformHosts: in.PlatformHosts, HostProbes: in.HostProbes, HostLabels: in.HostLabels, Metrics: in.Metrics,
+		ByCompany: in.ByCompany, Entities: in.Entities,
 		AlertsReadHost: in.AlertsReadHost, DeadmanChannel: in.DeadmanChannel,
 		Public: public, PublicHostname: in.PublicHostname, OIDC: in.OIDC,
 		Telegram: in.telegramEnabled(),

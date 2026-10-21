@@ -280,6 +280,26 @@
             }
           }
         },
+        "publicEndpoints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "alertName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+            "metric": { "type": "string", "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*$" },
+            "job": { "type": "string" },
+            "clusterFrom": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+            "severityFrom": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+            "hostFrom": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+            "window": { "$ref": "#/definitions/duration" },
+            "maxSuccessRatio": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "for": { "$ref": "#/definitions/duration" },
+            "absentFor": { "$ref": "#/definitions/duration" },
+            "absentSeverity": { "$ref": "#/definitions/severity" },
+            "runbookUrl": { "type": "string" }
+          }
+        },
         "pendingPods": {
           "type": "object",
           "additionalProperties": false,

@@ -1,0 +1,21 @@
+# Public endpoints probed from outside, on a store that holds several
+# clusters: the rules run on `central`, which also scrapes the watcher, and
+# each alert routes as the environment its endpoint belongs to
+# (`endpoint_cluster`), with the severity the endpoint is labelled with.
+commonLabels:
+  k8s_cluster_name: central
+  team: platform
+ownerLabel: owner
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  publicEndpoints:
+    enabled: true
+    job: status-box
+    runbookUrl: https://example.com/runbooks/public-endpoints.md

@@ -207,6 +207,36 @@ Alerts: `max by (probe) (probe_success{probe=~"<probe>"}) == 0` and, with
 
 The deadman `<alertName>Absent` is per cluster and probe: a probe that reported within `absentLookback` and no longer does fires with that cluster's label and the probe's name; no probe at all fires through the whole-store `absent()`.
 
+### `groups.publicEndpoints`
+
+Off by default. Reads the status box's own results
+(`gatus_results_endpoint_success`, docs/statusbox.md, "status → alerting,
+scraped"): every public hostname probed from outside the estate. Which
+endpoints page, as which environment and how loudly, is data on the
+series (the estate's per-host labels), never a hostname here.
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `false` | Renders the group. |
+| `alertName` | string | `PublicEndpointDown` | Name of the alert; the deadman is `<alertName>ProbesAbsent`. |
+| `metric` | string | `gatus_results_endpoint_success` | The gauge read (1 or 0, the last check). |
+| `job` | string | `""` | Restrict to one scrape job (the `metrics.scrape.static` entry). Empty: every job. |
+| `clusterFrom` | label | `endpoint_cluster` | Series label copied into `clusterLabel`: the environment of the probed host, so the alert routes as that environment's and not as the scraper's. |
+| `severityFrom` | label | `endpoint_severity` | Series label copied into `severity`. An endpoint without it (or without `clusterFrom`) never alerts. |
+| `hostFrom` | label | `endpoint_host` | Series label naming the host in the alert's text (Gatus's `name` when empty). |
+| `window` | duration | `5m` | Window of the share of passing checks. |
+| `maxSuccessRatio` | number | `0.5` | Fires below this share. |
+| `for` | duration | `5m` | How long the share must stay below it. |
+| `absentFor` | duration | `15m` | The deadman: no labelled series at all for this long, per scraping cluster. |
+| `absentSeverity` | enum | `warning` | Severity of the deadman. |
+| `runbookUrl` | string | `""` | `runbook_url` is this plus `#<alert, lower-case>`; empty falls back to `runbookBaseUrl`. |
+
+Alert: `label_replace(label_replace(avg by (<cluster>, name, group, <clusterFrom>, <severityFrom>, <hostFrom>[, <ownerLabel>]) (avg_over_time(<metric>{<clusterFrom>!="", <severityFrom>!=""[, job]}[<window>])) < <maxSuccessRatio>, "severity", "$1", "<severityFrom>", "(.+)"), "<cluster>", "$1", "<clusterFrom>", "(.+)")`.
+Neither `severity` nor the cluster label is a static label of this rule
+(`commonLabels`' other labels are). With the defaults an endpoint failing
+every check fires about 8 minutes after it started; a single failed check
+never does.
+
 ### `groups.podSecurity`
 
 Off by default. One LogsQL alert, `PodSecurityAdmissionRejected`, over the
@@ -1741,6 +1771,7 @@ use or not.
 | `metrics.queue.storageClassName` | string | `""` | Empty renders no class and takes the cluster's default. |
 | `metrics.scrape.kubelet` / `.cadvisor` | bool | `true` | The node's two endpoints, as inline scrape configs. Everything else arrives as a `PodMonitor` or `ServiceMonitor` authored by whoever owns the thing being watched. |
 | `metrics.scrape.nodeLabels[]` | list of label names | `[]` | Node labels copied onto every kubelet and cadvisor series, by name; the node's own `node` label is always present. Opt-in rather than a `labelmap` of every node label because those belong to the cloud provider: on a managed cluster there are around forty, which puts every node series past the store's `-maxLabelsPerTimeseries` — where it is IGNORED and the write still answers 200. |
+| `metrics.scrape.static[]` (`name`, `targets`, `path`, `scheme`, `interval`) | list | `[]` | Prometheus endpoints outside the cluster, scraped by the agent itself: each renders a `VMStaticScrape` (`job="<name>"`) of `targets` (`host:port`) at `path` (default `/metrics`) over `scheme` (`http`, default, or `https`) on `interval` (default: the agent's), stamped with this cluster's identity and this release's namespace by its own relabeling (the cluster that scraped, not the target's). No credential. **Refused:** a duplicate `name`. The status box's results (`gatus_results_*`) are the reason it exists; pair it with `platform-alerts` `groups.publicEndpoints`. |
 | `metrics.scrape.probes[]` (`name`, `url`, `module`, `interval`) | list | `[]` | HTTP probes: each renders a `VMProbe` that has the metrics agent ask the blackbox exporter to probe `url` (no user info, query or fragment) with `module` (a key of `blackboxExporter.modules`, default `http_2xx`) on `interval` (default: the agent's). The series are the exporter's `probe_success`, `probe_http_status_code`, `probe_duration_seconds` and `probe_ssl_earliest_cert_expiry`, stamped with this cluster's identity, `probe="<name>"`, `job="http-probe"`. **Behaviour change:** replaces the direct scrape and its `up{job="http-probe"}`. **Refused:** probes without `blackboxExporter.enabled`, an unknown `module`, a duplicate `name`. Pair it with `platform-alerts` `groups.probes`. |
 | `metrics.scrape.cadvisorAsKubeletJob` | bool | `true` (0.13.0) | Stores the cadvisor series as `job="kubelet"` with `metrics_path="/metrics/cadvisor"`, the kube-prometheus convention the k8s-stack's default `k8s.rules.*` recording rules and the mixin dashboards select on. The vmagent scrape keeps the name `cadvisor`; a relabel step sets the stored `job`. `false` keeps `job="cadvisor"` (the 0.12.x series identity), under which those rules match nothing. |
 | `metrics.scrape.cadvisorDrop.enabled` | bool | `true` (0.9.1) | A default DROP on the **cadvisor job only** — never kubelet's. Off restores every cadvisor series exactly as upstream emits it. See below. |

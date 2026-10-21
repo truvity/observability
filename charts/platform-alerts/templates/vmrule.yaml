@@ -502,6 +502,87 @@ spec:
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" $g.certExpiry.alertName)) }}{{ . | nindent 12 }}{{- end }}
         {{- end }}
     {{- end }}
+    {{- if .Values.groups.publicEndpoints.enabled }}
+    {{- $g := .Values.groups.publicEndpoints }}
+    {{- $cl := .Values.clusterLabel }}
+    {{- $sel := printf `%s!="", %s!=""` $g.clusterFrom $g.severityFrom }}
+    {{- if $g.job }}{{- $sel = printf `%s, job=%q` $sel $g.job }}{{- end }}
+    {{- /* The scraper's cluster label stays in the `by` (two scrapers are two
+           alerts, never a merged mean) and is then overwritten. */}}
+    {{- $by := list "name" "group" $g.clusterFrom $g.severityFrom }}
+    {{- if $cl }}{{- $by = prepend $by $cl }}{{- end }}
+    {{- if $g.hostFrom }}{{- $by = append $by $g.hostFrom }}{{- end }}
+    {{- if .Values.ownerLabel }}{{- $by = append $by .Values.ownerLabel }}{{- end }}
+    {{- /* The alert's cluster and severity come from the series: the static labels leave both out. */}}
+    {{- $static := deepCopy .Values.commonLabels }}
+    {{- if $cl }}{{- $_ := unset $static $cl }}{{- end }}
+    {{- $_ := unset $static "severity" }}
+    {{- $host := "{{ $labels.name }}" }}
+    {{- if $g.hostFrom }}{{- $host = printf "{{ with $labels.%s }}{{ . }}{{ else }}{{ $labels.name }}{{ end }}" $g.hostFrom }}{{- end }}
+    - name: platform-alerts.public-endpoints
+      interval: {{ .Values.interval }}
+      rules:
+        # A public endpoint the outside watcher sees failing.
+        #
+        # `{{ $g.metric }}` is 1 or 0: the endpoint's last check. Its mean
+        # over `window` is the share of checks that passed; below
+        # `maxSuccessRatio` for `for` is an outage, one failed check is
+        # not. `avg by` keeps Gatus's own `name` and `group` and the
+        # estate's labels; the SCRAPING cluster's identity is then
+        # overwritten by the label_replace from `{{ $g.clusterFrom }}`, the
+        # environment the host belongs to, so the alert routes as that
+        # environment's. `severity` is likewise the series' own
+        # `{{ $g.severityFrom }}`: an endpoint without both labels never
+        # matches.
+        - alert: {{ $g.alertName }}
+          expr: >-
+            {{- $avg := printf "avg by (%s) (avg_over_time(%s{%s}[%s])) < %v" (join ", " $by) $g.metric $sel $g.window $g.maxSuccessRatio }}
+            {{- $avg = printf `label_replace(%s, "severity", "$1", %q, "(.+)")` $avg $g.severityFrom }}
+            {{- if $cl }}{{- $avg = printf `label_replace(%s, %q, "$1", %q, "(.+)")` $avg $cl $g.clusterFrom }}{{- end }}
+            {{ $avg }}
+          for: {{ $g.for }}
+          {{- with $static }}
+          labels:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          annotations:
+            summary: "{{ $host }} is failing from outside{{ if $cl }} ({{ printf "{{ $labels.%s }}" $cl }}){{ end }}"
+            description: >-
+              The status box, which probes every public hostname from outside the
+              estate the way a customer reaches it (DNS, TLS, CDN, tunnel,
+              gateway, application), saw only {{`{{ $value | humanizePercentage }}`}}
+              of its checks of {{ $host }} ({{`{{ $labels.group }}`}} /
+              {{`{{ $labels.name }}`}}) pass over the last {{ $g.window }}, for
+              {{ $g.for }}. Customers see the same failure. First checks: the
+              endpoint's recent results and failing condition on the status
+              page; the host from outside (curl -sv https://<host>/); the CDN
+              and tunnel in front of the environment; the gateway's pods; then
+              the application's own pods and alerts.
+            {{- with (include "platform-alerts.runbookAnchor" (dict "root" $ "url" $g.runbookUrl "alert" $g.alertName)) }}{{ . | nindent 12 }}{{- end }}
+        # The deadman for the rule above: no labelled series at all, so it
+        # cannot fire. The box is down or unreachable from the scraper, its
+        # metrics are off, or no endpoint is labelled any more. Per
+        # SCRAPING cluster (the series' own `clusterLabel` is the
+        # scraper's), so it routes as the cluster that lost the signal.
+        - alert: {{ $g.alertName }}ProbesAbsent
+          expr: >-
+            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf "%s{%s}" $g.metric $sel)) }}
+          for: {{ $g.absentFor }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.absentSeverity "omit" $cl) | nindent 12 }}
+          annotations:
+            summary: "No labelled {{ $g.metric }} series for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
+            description: >-
+              {{ $g.metric }}{{ printf "{%s}" $sel }} has not been seen in
+              {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}, so
+              {{ $g.alertName }} cannot fire even if a public endpoint is down.
+              Check that the status box is up (its own deadman and the probe of
+              its public health page), that the agent's scrape of it is up
+              (up{job=...} of charts/observability-emitters
+              `metrics.scrape.static`), and that the box still serves its
+              metrics with the endpoint labels.
+            {{- with (include "platform-alerts.runbookAnchor" (dict "root" $ "url" $g.runbookUrl "alert" (printf "%sProbesAbsent" $g.alertName))) }}{{ . | nindent 12 }}{{- end }}
+    {{- end }}
     {{- if .Values.groups.pendingPods.enabled }}
     {{- $g := .Values.groups.pendingPods }}
     {{- $pns := default $ns $g.namespaceSelector }}

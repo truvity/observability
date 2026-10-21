@@ -749,3 +749,122 @@ func TestProbeConditionsHonoursCompanyHostExpectStatus(t *testing.T) {
 	assert.Equal(t, []string{statusCondition, certExpiryCondition},
 		probeConditions(CompanyHost{Host: "h", StatusPath: "/p"}))
 }
+
+func TestRenderGatusHostLabelsBecomeExtraLabels(t *testing.T) {
+	c := testCatalogue()
+	c.PlatformHosts = []string{"docs.example.xyz", "plain.example.xyz"}
+	c.Companies = []Company{{
+		Code: "acme", DisplayName: "Acme Corp",
+		Hosts: []CompanyHost{{Host: "api.prod.example.xyz", Env: "prod", StatusPath: "/ready"}},
+	}}
+	c.HostLabels = map[string]map[string]string{
+		"docs.example.xyz":     {"endpoint_cluster": "prod", "endpoint_severity": "critical"},
+		"api.prod.example.xyz": {"endpoint_cluster": "prod"},
+	}
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	cfg := parseRendered(t, out)
+	byName := map[string]map[string]any{}
+	for _, e := range cfg["endpoints"].([]any) {
+		m := e.(map[string]any)
+		byName[m["name"].(string)] = m
+	}
+
+	assert.Equal(t, map[string]any{"endpoint_cluster": "prod", "endpoint_severity": "critical"}, byName["docs.example.xyz"]["extra-labels"])
+	assert.Equal(t, map[string]any{"endpoint_cluster": "prod"}, byName["api · prod"]["extra-labels"])
+	assert.NotContains(t, byName["plain.example.xyz"], "extra-labels")
+	assert.NotContains(t, byName["deadman"], "extra-labels")
+
+	// No labels renders exactly as before.
+	c.HostLabels = nil
+	base, err := RenderGatus(c)
+	require.NoError(t, err)
+	assert.NotContains(t, base, "extra-labels")
+}
+
+func TestRenderGatusHostLabelRefusals(t *testing.T) {
+	for name, labels := range map[string]map[string]map[string]string{
+		"names no probed host":   {"other.example.xyz": {"env": "prod"}},
+		"not a Prometheus label": {"example.xyz": {"env-name": "prod"}},
+		"no leading __":          {"example.xyz": {"__env": "prod"}},
+		"a label Gatus writes":   {"example.xyz": {"name": "prod"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := testCatalogue()
+			c.HostLabels = labels
+
+			_, err := RenderGatus(c)
+			require.ErrorContains(t, err, name)
+		})
+	}
+}
+
+func TestRenderGatusMetricsSwitch(t *testing.T) {
+	c := testCatalogue()
+
+	off, err := RenderGatus(c)
+	require.NoError(t, err)
+	assert.NotContains(t, off, "metrics:")
+
+	c.Metrics = true
+	on, err := RenderGatus(c)
+	require.NoError(t, err)
+	assert.Equal(t, true, parseRendered(t, on)["metrics"])
+}
+
+func TestRenderGatusRedirectExpectationDoesNotFollow(t *testing.T) {
+	c := testCatalogue()
+	c.PlatformHosts = []string{"gated.example.xyz", "ingest.example.xyz", "spec.example.xyz"}
+	c.HostProbes = map[string]Probe{
+		"gated.example.xyz":  {ExpectStatus: 302},
+		"ingest.example.xyz": {Path: "/", ExpectStatus: 404},
+		"spec.example.xyz":   {Path: "/spec.yaml", Method: "HEAD"},
+	}
+	c.Companies = []Company{{
+		Code: "acme", DisplayName: "Acme Corp",
+		Hosts: []CompanyHost{{Host: "app.prod.example.xyz", Env: "prod", StatusPath: "/", ExpectStatus: 302}},
+	}}
+
+	out, err := RenderGatus(c)
+	require.NoError(t, err)
+
+	byName := map[string]map[string]any{}
+	for _, e := range parseRendered(t, out)["endpoints"].([]any) {
+		m := e.(map[string]any)
+		byName[m["name"].(string)] = m
+	}
+
+	redirect := map[string]any{"ignore-redirect": true}
+	assert.Equal(t, redirect, byName["gated.example.xyz"]["client"])
+	assert.Equal(t, redirect, byName["app · prod"]["client"])
+	assert.NotContains(t, byName["ingest.example.xyz"], "client")
+	assert.Equal(t, "HEAD", byName["spec.example.xyz"]["method"])
+	assert.NotContains(t, byName["ingest.example.xyz"], "method")
+
+	c.HostProbes = map[string]Probe{"gated.example.xyz": {Method: "get"}}
+	_, err = RenderGatus(c)
+	require.ErrorContains(t, err, "not an upper-case HTTP method")
+}
+
+func TestRenderPublicPageRedirectExpectationDoesNotFollow(t *testing.T) {
+	out, err := RenderPublicPage(PublicPage{
+		Groups: []PublicGroup{{DisplayName: "App", Hosts: []CompanyHost{
+			{Host: "app.example.com", StatusPath: "/", ExpectStatus: 302},
+			{Host: "api.example.com"},
+		}}},
+		StoragePath: "/data/p.db",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(out, "ignore-redirect: true"))
+}
+
+func parseRendered(t *testing.T, out string) map[string]any {
+	t.Helper()
+
+	var cfg map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(out), &cfg))
+
+	return cfg
+}

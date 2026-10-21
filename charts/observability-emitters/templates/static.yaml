@@ -1,0 +1,39 @@
+{{- range $s := (.Values.metrics.scrape.static | default list) }}
+{{- if $.Values.metrics.enabled }}
+{{- /*
+One Prometheus endpoint outside the cluster, scraped by the metrics agent
+itself: a VMStaticScrape whose job is the entry's name.
+
+The cluster's identity is stamped HERE, as the endpoint's own relabeling,
+for the same reason as a probe's (probes.yaml): a static target has no
+namespace in service discovery, so the default scrape class's namespace
+rule sets nothing. The operator puts the scrape class's rules FIRST and
+these after them, so these win. The cluster is the one that scraped:
+whatever the target reports about other environments it must say in labels
+of its own.
+*/}}
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMStaticScrape
+metadata:
+  name: {{ printf "%s-%s" (include "observability-emitters.fullname" $) $s.name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "observability-emitters.labels" $ | nindent 4 }}
+spec:
+  jobName: {{ $s.name | quote }}
+  targetEndpoints:
+    - targets:
+        {{- range $s.targets }}
+        - {{ . | quote }}
+        {{- end }}
+      path: {{ default "/metrics" $s.path | quote }}
+      scheme: {{ default "http" $s.scheme | quote }}
+      {{- with $s.interval }}
+      interval: {{ . }}
+      {{- end }}
+      relabelConfigs:
+        {{- include "observability-emitters.tenancy.clusterScopedRelabelConfigs" $ | nindent 8 }}
+        - target_label: k8s_namespace_name
+          replacement: {{ $.Release.Namespace | quote }}
+{{- end }}
+{{- end }}

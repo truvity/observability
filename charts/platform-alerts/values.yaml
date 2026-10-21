@@ -297,6 +297,65 @@ groups:
       for: 1h
       severity: warning
 
+  # Public endpoints, as a customer reaches them, probed from OUTSIDE the
+  # estate.
+  #
+  # The incident: a product's public API answered its CDN's 502 for about
+  # four hours while every in-cluster signal stayed green (the pods were
+  # healthy; the path in front of them was not), and only the product's own
+  # synthetic prober noticed. A watcher outside every cluster (the status
+  # box, docs/statusbox.md) already probes each public hostname through the
+  # same DNS, TLS, CDN, tunnel and gateway a customer goes through; this
+  # group pages on what it sees.
+  #
+  # Off by default. Reads Gatus's per-endpoint gauge
+  # `gatus_results_endpoint_success` (1 or 0, the endpoint's last check),
+  # which exists only where the box serves its metrics (statusbox
+  # `Catalogue.Metrics`) and an agent scrapes them (charts/observability-
+  # emitters `metrics.scrape.static`). The series carry Gatus's own `name`
+  # and `group` and the labels the estate put on each probed host
+  # (statusbox `HostLabels`): which endpoints page, in which environment and
+  # how loudly is DATA on the series, never a hostname in this chart.
+  #
+  #   <clusterFrom>   the environment the probed host belongs to, copied
+  #                   into `clusterLabel`: the alert routes as that
+  #                   environment's, not as the scraping cluster's.
+  #   <severityFrom>  the alert's `severity` (critical, warning, ...).
+  #   <hostFrom>      the hostname, for the alert's text (optional).
+  #
+  # An endpoint whose series lacks `clusterFrom` or `severityFrom` never
+  # alerts: label only what should page.
+  publicEndpoints:
+    enabled: false
+    alertName: PublicEndpointDown
+    # -- The gauge read. Gatus's own name; change it only for a fork that
+    # renamed it.
+    metric: gatus_results_endpoint_success
+    # -- Restrict to one scrape `job` (the `metrics.scrape.static` entry's
+    # name). Empty reads every job.
+    job: ""
+    clusterFrom: endpoint_cluster
+    severityFrom: endpoint_severity
+    hostFrom: endpoint_host
+    # -- The alert reads the share of successful checks over `window`
+    # (each sample is the endpoint's last check, so a 1m check on a 1m
+    # scrape is one sample per check) and fires when it stays below
+    # `maxSuccessRatio` for `for`. With 0.5 and 5m a single failed check
+    # never fires; an endpoint failing every check fires about 8 minutes
+    # after it started.
+    window: 5m
+    maxSuccessRatio: 0.5
+    for: 5m
+    # -- `<alertName>ProbesAbsent`: no labelled series at all for this long
+    # (the box is down or unreachable, its metrics are off, or nothing is
+    # labelled), so `<alertName>` cannot fire. Per scraping cluster.
+    absentFor: 15m
+    absentSeverity: warning
+    # -- The runbook: `runbook_url` is this URL plus `#<alert, lower-case>`
+    # (a Markdown heading named after the alert). Empty falls back to
+    # `runbookBaseUrl`.
+    runbookUrl: ""
+
   # Pods the scheduler cannot place.
   #
   # The incident class: on a cluster whose nodes are provisioned on demand
