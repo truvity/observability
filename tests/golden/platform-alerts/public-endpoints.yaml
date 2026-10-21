@@ -1,0 +1,73 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: platform-alerts.public-endpoints
+      interval: 1m
+      rules:
+        # A public endpoint the outside watcher sees failing.
+        #
+        # `gatus_results_endpoint_success` is 1 or 0: the endpoint's last check. Its mean
+        # over `window` is the share of checks that passed; below
+        # `maxSuccessRatio` for `for` is an outage, one failed check is
+        # not. `avg by` keeps Gatus's own `name` and `group` and the
+        # estate's labels; the SCRAPING cluster's identity is then
+        # overwritten by the label_replace from `endpoint_cluster`, the
+        # environment the host belongs to, so the alert routes as that
+        # environment's. `severity` is likewise the series' own
+        # `endpoint_severity`: an endpoint without both labels never
+        # matches.
+        - alert: PublicEndpointDown
+          expr: >-
+            label_replace(label_replace(avg by (k8s_cluster_name, name, group, endpoint_cluster, endpoint_severity, endpoint_host, owner) (avg_over_time(gatus_results_endpoint_success{endpoint_cluster!="", endpoint_severity!="", job="status-box"}[5m])) < 0.5, "severity", "$1", "endpoint_severity", "(.+)"), "k8s_cluster_name", "$1", "endpoint_cluster", "(.+)")
+          for: 5m
+          labels:
+            team: platform
+          annotations:
+            summary: "{{ with $labels.endpoint_host }}{{ . }}{{ else }}{{ $labels.name }}{{ end }} is failing from outside ({{ $labels.k8s_cluster_name }})"
+            description: >-
+              The status box, which probes every public hostname from outside the
+              estate the way a customer reaches it (DNS, TLS, CDN, tunnel,
+              gateway, application), saw only {{ $value | humanizePercentage }}
+              of its checks of {{ with $labels.endpoint_host }}{{ . }}{{ else }}{{ $labels.name }}{{ end }} ({{ $labels.group }} /
+              {{ $labels.name }}) pass over the last 5m, for
+              5m. Customers see the same failure. First checks: the
+              endpoint's recent results and failing condition on the status
+              page; the host from outside (curl -sv https://<host>/); the CDN
+              and tunnel in front of the environment; the gateway's pods; then
+              the application's own pods and alerts.
+            runbook_url: "https://example.com/runbooks/public-endpoints.md#publicendpointdown"
+        # The deadman for the rule above: no labelled series at all, so it
+        # cannot fire. The box is down or unreachable from the scraper, its
+        # metrics are off, or no endpoint is labelled any more. Per
+        # SCRAPING cluster (the series' own `clusterLabel` is the
+        # scraper's), so it routes as the cluster that lost the signal.
+        - alert: PublicEndpointDownProbesAbsent
+          expr: >-
+            (group by (k8s_cluster_name) (max_over_time(gatus_results_endpoint_success{endpoint_cluster!="", endpoint_severity!="", job="status-box", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name) (gatus_results_endpoint_success{endpoint_cluster!="", endpoint_severity!="", job="status-box", k8s_cluster_name!=""})) or (absent(gatus_results_endpoint_success{endpoint_cluster!="", endpoint_severity!="", job="status-box"}) unless on() group(max_over_time(gatus_results_endpoint_success{endpoint_cluster!="", endpoint_severity!="", job="status-box"}[1d])))
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "No labelled gatus_results_endpoint_success series for 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              gatus_results_endpoint_success{endpoint_cluster!="", endpoint_severity!="", job="status-box"} has not been seen in
+              15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so
+              PublicEndpointDown cannot fire even if a public endpoint is down.
+              Check that the status box is up (its own deadman and the probe of
+              its public health page), that the agent's scrape of it is up
+              (up{job=...} of charts/observability-emitters
+              `metrics.scrape.static`), and that the box still serves its
+              metrics with the endpoint labels.
+            runbook_url: "https://example.com/runbooks/public-endpoints.md#publicendpointdownprobesabsent"

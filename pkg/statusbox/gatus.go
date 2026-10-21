@@ -37,10 +37,12 @@
 package statusbox
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -130,6 +132,29 @@ type (
 		// that is POST-only or path-only by design and so never answers
 		// 200 at "/". An entry for a host not in PlatformHosts is ignored.
 		HostProbes map[string]Probe
+
+		// HostLabels optionally attaches labels to a host's probe, keyed
+		// by the exact hostname: a PlatformHosts entry or a company host.
+		// They are rendered as the endpoint's Gatus `extra-labels`, which
+		// Gatus adds to every `gatus_results_*` series of that endpoint
+		// when Metrics is on (an endpoint without a label gets it empty:
+		// Gatus registers the union of every endpoint's label names). This
+		// is how an estate tells an alert rule which environment a probed
+		// host belongs to and how loudly its failure should page, without
+		// the rule knowing any hostname. Names must be Prometheus label
+		// names and may not be one Gatus writes itself (gatusOwnLabels):
+		// Gatus registers them with the Prometheus client, which panics at
+		// boot on a bad one. A key that names no probed host is refused
+		// (a typo would otherwise label nothing). Nil renders nothing.
+		HostLabels map[string]map[string]string
+
+		// Metrics turns on Gatus's own Prometheus endpoint (top-level
+		// `metrics: true`: GET /metrics on the instance's listener, with
+		// the gatus_results_* series). Gatus serves /metrics OUTSIDE its
+		// security block, unauthenticated even on an instance with
+		// Security set, so only an instance whose listener is private
+		// (the breakglass twin) should set it. False renders nothing.
+		Metrics bool
 
 		// Companies is every company this page shows a group for, in
 		// the order their groups should render. A company with no hosts
@@ -234,7 +259,9 @@ type (
 		// see probeConditions.
 		StatusPath string
 		// ExpectStatus is the status StatusPath must answer, 0 for the
-		// default 200. It only applies when StatusPath is set.
+		// default 200. It only applies when StatusPath is set. A 3xx is
+		// checked as the host's own answer, without following the
+		// redirect (see Probe).
 		ExpectStatus int
 	}
 
@@ -243,9 +270,17 @@ type (
 	// bare host ("/") and 200. A non-200 expectation is for a host whose
 	// healthy answer to an unauthenticated GET is itself an error status,
 	// e.g. a 404 that still proves DNS, TLS and the route.
+	//
+	// A 3xx ExpectStatus is checked as the host's OWN answer: the probe
+	// does not follow redirects then (Gatus `client.ignore-redirect`), so
+	// a host whose unauthenticated answer is a redirect to a sign-in page
+	// is proven up by that redirect, not by the sign-in page behind it.
+	// Method is the HTTP method, "" for GET; HEAD suits a large document
+	// whose presence is all the probe needs.
 	Probe struct {
 		Path         string
 		ExpectStatus int
+		Method       string
 	}
 
 	// AlertsRead is the one pull path every alerts-read endpoint reads
@@ -388,6 +423,8 @@ type (
 
 type (
 	gatusConfig struct {
+		// Metrics is Gatus's top-level `metrics` switch (Catalogue.Metrics).
+		Metrics   bool            `yaml:"metrics,omitempty"`
 		Storage   gatusStorage    `yaml:"storage"`
 		Security  *gatusSecurity  `yaml:"security,omitempty"`
 		Endpoints []gatusEndpoint `yaml:"endpoints,omitempty"`
@@ -426,6 +463,8 @@ type (
 		Name  string `yaml:"name"`
 		Group string `yaml:"group,omitempty"`
 		URL   string `yaml:"url"`
+		// Method is written only for a probe that declared one (Probe.Method).
+		Method string `yaml:"method,omitempty"`
 		// Headers carries the alerts-read bearer (Authorization: Bearer
 		// ${ALERT_URL_<KEY>}) — the ONLY endpoints that set it. An
 		// ordinary hostname probe needs no header at all.
@@ -433,6 +472,15 @@ type (
 		Interval   string            `yaml:"interval"`
 		Conditions []string          `yaml:"conditions"`
 		Alerts     []gatusAlertRef   `yaml:"alerts,omitempty"`
+		// Client is written only for a probe that expects a redirect
+		// (ignore-redirect); every other endpoint keeps Gatus's defaults.
+		Client *gatusClient `yaml:"client,omitempty"`
+		// ExtraLabels are Catalogue.HostLabels for this endpoint's host.
+		ExtraLabels map[string]string `yaml:"extra-labels,omitempty"`
+	}
+
+	gatusClient struct {
+		IgnoreRedirect bool `yaml:"ignore-redirect,omitempty"`
 	}
 
 	gatusAlertRef struct {
@@ -513,6 +561,10 @@ func RenderGatus(c Catalogue) (string, error) {
 			"a Gatus Config with no endpoints at all refuses to boot")
 	}
 
+	if err := c.validateHostOptions(); err != nil {
+		return "", err
+	}
+
 	authHeader := map[string]string{"Authorization": "Bearer " + alertVar(c.AlertsRead.TokenEnvKey)}
 
 	var alerts []gatusAlertRef
@@ -574,11 +626,14 @@ func RenderGatus(c Catalogue) (string, error) {
 		probe := c.HostProbes[host]
 
 		endpoints = append(endpoints, gatusEndpoint{
-			Name:       host,
-			Group:      "platform",
-			URL:        "https://" + host + probe.Path,
-			Interval:   opsProbeInterval,
-			Conditions: []string{expectStatusCondition(probe.ExpectStatus), certExpiryCondition},
+			Name:        host,
+			Group:       "platform",
+			URL:         "https://" + host + probe.Path,
+			Method:      probe.Method,
+			Interval:    opsProbeInterval,
+			Conditions:  []string{expectStatusCondition(probe.ExpectStatus), certExpiryCondition},
+			Client:      redirectClient(probe.ExpectStatus),
+			ExtraLabels: c.HostLabels[host],
 		})
 	}
 
@@ -587,11 +642,13 @@ func RenderGatus(c Catalogue) (string, error) {
 
 		for i, host := range company.Hosts {
 			endpoints = append(endpoints, gatusEndpoint{
-				Name:       names[i],
-				Group:      company.DisplayName,
-				URL:        probeURL(host),
-				Interval:   companyProbeInterval,
-				Conditions: probeConditions(host),
+				Name:        names[i],
+				Group:       company.DisplayName,
+				URL:         probeURL(host),
+				Interval:    companyProbeInterval,
+				Conditions:  probeConditions(host),
+				Client:      hostClient(host),
+				ExtraLabels: c.HostLabels[host.Host],
 			})
 		}
 
@@ -680,6 +737,7 @@ func RenderGatus(c Catalogue) (string, error) {
 	}
 
 	cfg := gatusConfig{
+		Metrics:   c.Metrics,
 		Storage:   gatusStorage{Type: "sqlite", Path: c.StoragePath},
 		Security:  security,
 		Endpoints: endpoints,
@@ -781,6 +839,91 @@ func expectStatusCondition(status int) string {
 	}
 
 	return fmt.Sprintf("[STATUS] == %d", status)
+}
+
+// redirectClient is the client block of a probe expecting status: Gatus's
+// `ignore-redirect` for a 3xx expectation (the host's own redirect is the
+// answer checked, not whatever page it points at), nil otherwise, which
+// keeps Gatus's defaults and renders nothing.
+func redirectClient(status int) *gatusClient {
+	if status >= 300 && status < 400 {
+		return &gatusClient{IgnoreRedirect: true}
+	}
+
+	return nil
+}
+
+// hostClient is redirectClient for a company host: its ExpectStatus only
+// applies with a StatusPath (see probeConditions).
+func hostClient(host CompanyHost) *gatusClient {
+	if host.StatusPath == "" {
+		return nil
+	}
+
+	return redirectClient(host.ExpectStatus)
+}
+
+// gatusOwnLabels are the label names Gatus itself writes on its
+// gatus_results_* series. An extra label of the same name would make the
+// Prometheus client panic at registration, so Gatus would not boot.
+var gatusOwnLabels = map[string]bool{"key": true, "group": true, "name": true, "type": true, "success": true, "code": true}
+
+// labelNameRE is a Prometheus label name.
+var labelNameRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// methodRE is an HTTP method token as Gatus passes it on: upper-case letters.
+var methodRE = regexp.MustCompile(`^[A-Z]+$`)
+
+// validateHostOptions refuses HostLabels and HostProbes that Gatus would
+// refuse or panic on at boot, and HostLabels keys that name no probed host.
+func (c Catalogue) validateHostOptions() error {
+	var errs []error
+
+	hosts := make(map[string]bool, len(c.PlatformHosts))
+	for _, h := range c.PlatformHosts {
+		hosts[h] = true
+	}
+
+	for _, company := range c.Companies {
+		for _, h := range company.Hosts {
+			hosts[h.Host] = true
+		}
+	}
+
+	for _, host := range sortedKeys(c.HostLabels) {
+		if !hosts[host] {
+			errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostLabels[%q] names no probed host (PlatformHosts or a company's Hosts): it would label nothing", host))
+		}
+
+		for _, name := range sortedKeys(c.HostLabels[host]) {
+			switch {
+			case !labelNameRE.MatchString(name) || strings.HasPrefix(name, "__"):
+				errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostLabels[%q]: %q is not a Prometheus label name (%s, no leading __): Gatus would not boot", host, name, labelNameRE))
+			case gatusOwnLabels[name]:
+				errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostLabels[%q]: %q is a label Gatus writes itself: Gatus would not boot", host, name))
+			}
+		}
+	}
+
+	for _, host := range sortedKeys(c.HostProbes) {
+		if m := c.HostProbes[host].Method; m != "" && !methodRE.MatchString(m) {
+			errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostProbes[%q].Method %q is not an upper-case HTTP method", host, m))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// sortedKeys returns m's keys in order, so every refusal lists the same way.
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+
+	sort.Strings(out)
+
+	return out
 }
 
 // ensureAlerting returns a, or a fresh *gatusAlerting if a is nil — the

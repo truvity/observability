@@ -324,6 +324,28 @@ metrics:
     # the URL by the agent (`up{job="http-probe"}`); there is no such
     # series any more. Alert on `probe_success`.
     probes: []
+    # -- Prometheus endpoints OUTSIDE the cluster that the agent scrapes
+    # directly: each entry is a `VMStaticScrape` (`job="<name>"`) of the
+    # listed `host:port` targets, its series stamped with this cluster's
+    # identity (cluster and tier) and this release's namespace by the
+    # scrape's own relabeling, exactly like a probe above: the cluster is
+    # the one that SCRAPED, never the target's, so a target that reports
+    # about other environments says so in labels of its own. Use it for a
+    # watcher that lives outside every cluster on purpose, such as the
+    # status box (docs/statusbox.md, "Metrics"), reached over a private
+    # network: `up{job="<name>"}` is 0 while it is unreachable.
+    #
+    #   static:
+    #     - name: status-box
+    #       targets: ["status.example.private:80"]
+    #       path: /metrics        # optional, the default
+    #       scheme: http          # optional: http (default) or https
+    #       interval: 1m          # optional; the agent's own interval
+    #
+    # Empty by default. No credential: a target that needs one is not this
+    # value's (write a scrape object of your own). A duplicate `name` is
+    # refused.
+    static: []
     # -- Node labels to copy onto every kubelet and cadvisor series, by
     # name. Empty is the default, and the node's own `node` label is always
     # present. Opt-in rather than a `labelmap` of every node label because

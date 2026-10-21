@@ -32,6 +32,7 @@ instead.
 {{- include "observability-emitters.validate.otlp" . -}}
 {{- include "observability-emitters.validate.cloudwatchLogs" . -}}
 {{- include "observability-emitters.validate.probes" . -}}
+{{- include "observability-emitters.validate.static" . -}}
 {{- include "observability-emitters.validate.licence" . -}}
 {{- end -}}
 
@@ -947,6 +948,16 @@ absent — an alert on `== 0` then never fires, and the endpoint is watched
 by nothing. An unknown module is the same silence one level down: the
 exporter answers 400 and no `probe_success` series is ever written.
 */}}
+{{- define "observability-emitters.validate.static" -}}
+{{- $names := dict -}}
+{{- range $s := (.Values.metrics.scrape.static | default list) -}}
+{{- if hasKey $names $s.name -}}
+{{- fail (printf "observability-emitters: `metrics.scrape.static` has two entries named %q. The name is the `job` label and the VMStaticScrape's name, so the second would replace the first. Rename one." $s.name) -}}
+{{- end -}}
+{{- $_ := set $names $s.name true -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "observability-emitters.validate.probes" -}}
 {{- $probes := (.Values.metrics.scrape.probes | default list) -}}
 {{- if $probes -}}

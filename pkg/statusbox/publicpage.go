@@ -74,6 +74,7 @@ func RenderPublicPage(p PublicPage) (string, error) {
 				URL:        probeURL(host),
 				Interval:   companyProbeInterval,
 				Conditions: probeConditions(host),
+				Client:     hostClient(host),
 			})
 		}
 	}

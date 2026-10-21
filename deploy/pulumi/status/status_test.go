@@ -295,3 +295,44 @@ func TestPrivatePortDefaultsAndCanBeOverridden(t *testing.T) {
 	assert.Equal(t, PrivatePort, Inputs{}.privatePort())
 	assert.Equal(t, 80, Inputs{EC2: EC2Inputs{PrivatePort: 80}}.privatePort())
 }
+
+func TestHostLabelsCollectsGroupLabelsPerHost(t *testing.T) {
+	assert.Nil(t, HostLabels(groups()), "no group sets Labels: nothing to label")
+
+	g := groups()
+	g[2].Labels = map[string]string{"endpoint_cluster": "dev"}
+	g[3].Labels = map[string]string{"endpoint_cluster": "prod", "endpoint_severity": "critical"}
+
+	got := HostLabels(g)
+	assert.Equal(t, map[string]map[string]string{
+		"shop.dev.example.com": {"endpoint_cluster": "dev"},
+		"shop.example.com":     {"endpoint_cluster": "prod", "endpoint_severity": "critical"},
+	}, got, "wildcards are skipped, unlabelled groups add nothing")
+
+	got["shop.example.com"]["endpoint_cluster"] = "changed"
+	assert.Equal(t, "prod", g[3].Labels["endpoint_cluster"], "each host gets its own copy")
+}
+
+// Gatus serves /metrics without sign-in, so the public instance must never
+// switch it on, whatever the inputs ask.
+func TestMetricsOnlyOnTheBreakglassInstance(t *testing.T) {
+	in := catalogueInputs(false)
+	in.Metrics = true
+	in.HostLabels = map[string]map[string]string{"shop.example.com": {"endpoint_cluster": "prod"}}
+
+	private, err := statusbox.RenderGatus(OpsCatalogue(in))
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(private, "metrics: true\n"))
+	assert.Contains(t, private, "endpoint_cluster: prod")
+
+	in.Public = true
+	public, err := statusbox.RenderGatus(OpsCatalogue(in))
+	require.NoError(t, err)
+	assert.NotContains(t, public, "metrics:")
+	assert.Contains(t, public, "endpoint_cluster: prod", "both instances probe the same, labelled endpoints")
+
+	off := catalogueInputs(false)
+	base, err := statusbox.RenderGatus(OpsCatalogue(off))
+	require.NoError(t, err)
+	assert.NotContains(t, base, "metrics:")
+}

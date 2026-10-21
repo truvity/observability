@@ -58,6 +58,10 @@ type (
 		StatusPath string
 		// ExpectStatus is the status StatusPath must answer, 0 for 200.
 		ExpectStatus int
+		// Labels are put on every host of the group's probe as Gatus
+		// extra-labels (statusbox.Catalogue.HostLabels; see HostLabels).
+		// Nil, the default, labels nothing.
+		Labels map[string]string
 	}
 
 	// Entity is one entity's page: a code and the name a viewer sees.
@@ -79,6 +83,13 @@ type (
 		// HostProbes optionally overrides the probe of a platform host,
 		// keyed by hostname. A host without an entry is probed as before.
 		HostProbes map[string]statusbox.Probe
+		// HostLabels are the extra labels of each probed host's series
+		// (statusbox.Catalogue.HostLabels), keyed by hostname; HostLabels()
+		// builds them from the host groups.
+		HostLabels map[string]map[string]string
+		// Metrics serves Gatus's /metrics. OpsCatalogue turns it on for the
+		// private instance only: Gatus serves /metrics without sign-in.
+		Metrics bool
 		// ByCompany buckets every company-owned host under its code.
 		ByCompany map[string][]statusbox.CompanyHost
 		// Entities are the entity pages, in the order they render.
@@ -190,6 +201,39 @@ func HostsByCompany(groups []HostGroup) map[string][]statusbox.CompanyHost {
 	return out
 }
 
+// HostLabels collects every group's Labels under each of its hosts,
+// wildcards excluded: the statusbox.Catalogue.HostLabels of the page. A group
+// with no Labels contributes nothing, so the result is nil when no group sets
+// any. A host in two groups takes the labels of the last one.
+func HostLabels(groups []HostGroup) map[string]map[string]string {
+	var out map[string]map[string]string
+
+	for _, g := range groups {
+		if len(g.Labels) == 0 {
+			continue
+		}
+
+		for _, host := range g.Hosts {
+			if IsWildcardHostname(host) {
+				continue
+			}
+
+			if out == nil {
+				out = map[string]map[string]string{}
+			}
+
+			labels := make(map[string]string, len(g.Labels))
+			for k, v := range g.Labels {
+				labels[k] = v
+			}
+
+			out[host] = labels
+		}
+	}
+
+	return out
+}
+
 // OpsCatalogue is the library input of one ops instance.
 //
 // The combined ops page is ONE input rendered TWICE: `ops`, Public, behind
@@ -244,12 +288,17 @@ func OpsCatalogue(in CatalogueInputs) statusbox.Catalogue { //nolint:misspell //
 	return statusbox.Catalogue{ //nolint:misspell // the library's own type name
 		PlatformHosts: in.PlatformHosts,
 		HostProbes:    in.HostProbes,
-		Companies:     companies,
-		AlertsRead:    statusbox.AlertsRead{Host: in.AlertsReadHost, TokenEnvKey: AlertsReadTokenKey},
-		Deadman:       deadman,
-		Telegram:      telegram,
-		Security:      security,
-		StoragePath:   opsStoragePath,
+		HostLabels:    in.HostLabels,
+		// Gatus serves /metrics outside its security block: only the
+		// private instance, whose listener the tunnel never reaches, may
+		// expose it.
+		Metrics:     in.Metrics && !in.Public,
+		Companies:   companies,
+		AlertsRead:  statusbox.AlertsRead{Host: in.AlertsReadHost, TokenEnvKey: AlertsReadTokenKey},
+		Deadman:     deadman,
+		Telegram:    telegram,
+		Security:    security,
+		StoragePath: opsStoragePath,
 	}
 }
 
