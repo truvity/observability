@@ -892,13 +892,15 @@ func (c Catalogue) validateHostOptions() error {
 
 	for _, host := range sortedKeys(c.HostLabels) {
 		if !hosts[host] {
-			errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostLabels[%q] names no probed host (PlatformHosts or a company's Hosts): it would label nothing", host))
+			errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostLabels[%q] names no probed host "+
+				"(PlatformHosts or a company's Hosts): it would label nothing", host))
 		}
 
 		for _, name := range sortedKeys(c.HostLabels[host]) {
 			switch {
 			case !labelNameRE.MatchString(name) || strings.HasPrefix(name, "__"):
-				errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostLabels[%q]: %q is not a Prometheus label name (%s, no leading __): Gatus would not boot", host, name, labelNameRE))
+				errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostLabels[%q]: %q is not a Prometheus label name "+
+					"(%s, no leading __): Gatus would not boot", host, name, labelNameRE))
 			case gatusOwnLabels[name]:
 				errs = append(errs, fmt.Errorf("statusbox: RenderGatus: HostLabels[%q]: %q is a label Gatus writes itself: Gatus would not boot", host, name))
 			}
