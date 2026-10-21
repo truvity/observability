@@ -840,10 +840,13 @@ spec:
               exists stays unfinished for good and should be deleted.
             {{- with (include "platform-alerts.runbookAnchor" (dict "root" $ "url" $g.runbookUrl "alert" "CNPGBackupStuck")) }}{{ . | nindent 12 }}{{- end }}
         # A CloudNativePG instance pod on a node Karpenter is draining
-        # (taint karpenter.sh/disrupted). The instance's PodDisruptionBudget
-        # (and, on a prod cluster, karpenter.sh/do-not-disrupt) keeps it
-        # there; the node is stuck half-drained until the node pool's
-        # termination grace period evicts the pod by force, a primary
+        # (taint karpenter.sh/disrupted). The operator moves a primary off
+        # such a node itself (the taint is one of its drain taints) and the
+        # instance PodDisruptionBudgets let replicas go one at a time, so a
+        # pod stays only while a budget blocks its eviction, or when it
+        # carries karpenter.sh/do-not-disrupt, which Karpenter never evicts:
+        # the node is then stuck half-drained until the node pool's
+        # termination grace period removes the pod by force, a primary
         # included. Instance pods are owned by their Cluster
         # (kube_pod_info created_by_kind="Cluster"); the join with
         # cnpg_cluster_instances keeps another operator's "Cluster" kind out.
