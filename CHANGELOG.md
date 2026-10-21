@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.99.0
 
 - **Added** `platform-alerts` `groups.publicEndpoints` (off by default): public endpoints probed from OUTSIDE the estate by the status box page through the normal routing. `PublicEndpointDown` fires when an endpoint's share of passing checks (`avg_over_time(gatus_results_endpoint_success[window])`) stays below `maxSuccessRatio` (`0.5`) for `for` (`5m`, `window` `5m`); the alert's cluster label and `severity` are copied from the series' own labels (`clusterFrom` `endpoint_cluster`, `severityFrom` `endpoint_severity`), so it routes as the environment the host belongs to, not as the scraping cluster, and an endpoint without both labels never alerts. Deadman `PublicEndpointDownProbesAbsent` (`absentFor` `15m`, `absentSeverity` `warning`), per scraping cluster. `job`, `hostFrom` and `runbookUrl` (plus `#<alert, lower-case>`) are optional. New golden `platform-alerts/public-endpoints`; no existing render changes.
 - **Added** `observability-emitters` `metrics.scrape.static` (default `[]`): a `VMStaticScrape` per entry (`name` is the `job`, `targets` are `host:port`, optional `path` `/metrics`, `scheme` `http`, `interval`) for a Prometheus endpoint outside the cluster, stamped with the scraping cluster's identity and the release's namespace like a probe. A duplicate `name` is refused. New golden `observability-emitters/static-targets`; no existing render changes.
