@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.105.0
 
 - **Added** `platform-alerts` `groups.authFailures.authentication.userAgents` (default empty, the render does not move): a regular expression over the user agent of a 401 in the audit log; only matching 401s count toward `KubernetesAuthenticationFailures`. A public API endpoint draws anonymous probes from internet scanners, and a 401 carries no username, so `ignoreUsers` cannot drop them; `kubernetes/|^kubectl` keeps client-go based clients and kubectl. The authenticator's `access denied` lines and `KubernetesAuthorizationDenials` are unaffected. New golden `platform-alerts/auth-failures-user-agents`.
 - **Removed** `platform-alerts` `groups.netpolRepair` (off by default) and its three rules `NetpolStuckPodRepaired`, `NetpolStuckPodRepairHalted` and `NetpolStuckPodCandidate`, with their values block (`namespaceLabel`, `repaired`, `halted`, `candidate`, `runbookUrl`, `keepClusterLabel`), schema entry and docs: the workaround they watched, netpol-stuck-pod-repair (truvity/k8s), is gone. The schema now refuses the key (`groups` is closed), so an install that set `groups.netpolRepair`, enabled or not, must delete it before upgrading. A default render is unchanged.
