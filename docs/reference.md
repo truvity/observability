@@ -295,6 +295,7 @@ when the count is more than its threshold:
 | `for` | duration | `0s` | Hold time. |
 | `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
 | `authentication.threshold` / `.severity` | int / string | `10` / `warning` | Fire above this many failures. |
+| `authentication.userAgents` | regexp | empty | Only 401s whose `audit.user_agent` matches are counted; empty counts all. A public API endpoint draws anonymous probes from internet scanners, and a 401 carries no username, so the ignore lists cannot drop them: `kubernetes/\|^kubectl` keeps client-go based clients and kubectl. The authenticator's `access denied` lines are counted regardless. |
 | `authorization.threshold` / `.severity` | int / string | `100` / `warning` | Fire above this many denials. A cluster has a chronic floor of 403s (a controller missing an RBAC rule repeats forever), so this is a rate, not a presence test. |
 | `ignoreUsers` | regexp | `^(eks:\|system:node:\|system:kube-)` | Events whose `audit.user` matches are not counted: EKS's own controllers (its availability-zone poller is refused once a minute), kubelets, the scheduler and controller manager. Empty counts all. |
 | `ignoreNamespaces` | regexp | empty | Events whose `audit.namespace` matches are not counted, for ephemeral CI namespaces whose controllers outlive their token. |

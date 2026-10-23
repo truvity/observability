@@ -839,6 +839,18 @@ groups:
       # gets a few 401s before it stops).
       threshold: 10
       severity: warning
+      # -- A regular expression (unanchored, RE2) over the user agent of a
+      # 401 in the audit log; only matching 401s are counted. Empty (the
+      # default) counts every 401. A cluster whose API endpoint is public
+      # gets a steady stream of anonymous probes from internet scanners
+      # (browser and bot user agents, `/containers/json`, `/index.php`),
+      # all answered 401 and none of them a client of the cluster; a 401
+      # carries no username (authentication failed), so the ignore lists
+      # cannot tell them apart. `kubernetes/|^kubectl` keeps every
+      # client-go based client (their user agent ends in
+      # `kubernetes/<commit>`) and kubectl. The authenticator's `access
+      # denied` lines are counted regardless.
+      userAgents: ""
     authorization:
       # -- Fire when MORE than this many 403s (after the ignore lists) fall
       # in `window`. Authorization denials are never zero on a real

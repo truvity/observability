@@ -1,0 +1,20 @@
+# Failed Kubernetes authentication with the 401 count narrowed to Kubernetes
+# clients by user agent: a public API endpoint's internet scanners (browser
+# and bot user agents) are not counted; client-go based clients and kubectl
+# are. The authenticator's refusals are counted regardless.
+commonLabels:
+  k8s_cluster_name: kernel
+  team: platform
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  authFailures:
+    enabled: true
+    authentication:
+      userAgents: "kubernetes/|^kubectl"
