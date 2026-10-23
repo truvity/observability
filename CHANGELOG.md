@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.103.0
 
 - **Added** `observability-alerting` and `observability-stack` `notifications.ownerFill` (off by default; no existing render changes): fill `notifications.ownerLabel` on every alert vmalert sends whose rule did not keep it. `owners` maps an owner to namespace patterns (`*` = any run of characters, first match wins, a pattern under two owners is refused), `fromLabels` (default `[k8s_namespace_name, namespace]`) says where the namespace is read from, and `default` is the owner of what no owner claims, a namespace-less alert (a node) included. An owner the alert already carries is never changed. Alerts that do not pass through vmalert (alert-ingress posts to Alertmanager directly) are untouched. Rendered as `alert_relabel_configs` of vmalert's notifier configuration file: with it on, every VMAlert (metrics, logs, HA peers, remote evaluators) reads the Secret `<fullname>-vmalert-notifier` through `spec.notifierConfigRef` in place of `spec.notifiers`, the file carries the same notifier targets, and the pod template carries a checksum of it. Needs `ownerLabel`, and `owners` or `default`; refused with `notifications.mode: evaluate-only` and with credentials in `alertmanager.notifierUrl`. New keys, refused by an older chart's schema: gate their use on the pin. docs/tenancy-owner.md, "Filling the owner at the alerter". New golden `observability-stack/notifications-owner-fill` and `observability-alerting/notifications-owner-fill`.
 
