@@ -63,6 +63,62 @@ notifications:
 `owner` is not a scoping key: no grant selects on it, and `pkg/tenancy` is
 unchanged. It is routing metadata, derived from a key that is.
 
+## Filling the owner at the alerter
+
+The sections above stamp `owner` on what the emitters collect. An alert only
+keeps it if its rule does: a rule that aggregates it away (most of the
+vendored Kubernetes rules), a rule over a series with no namespace (a node),
+or a rule from a rule set that never knew the label produces an alert with no
+`owner`, and a route on `owner` never sees it. `notifications.ownerFill`
+(opt-in, `observability-stack` and `observability-alerting`) fills it once, at
+the one place every rule-born alert passes, vmalert's send to Alertmanager:
+
+```yaml
+notifications:
+  ownerLabel: owner
+  ownerFill:
+    enabled: true
+    fromLabels: [k8s_namespace_name, namespace]   # the default
+    owners:
+      acme: [checkout, "payments-*"]
+      globex: ["globex-*"]
+    default: platform
+```
+
+- Only an EMPTY `owner` is filled; one the alert carries is never changed.
+- The namespace is read from the first non-empty of `fromLabels`. The first
+  owner (in name order) one of whose patterns matches it gets the alert;
+  patterns are the same globs as `tenancy.owners` (`*` = any run of
+  characters, anchored). A pattern listed under two owners is refused.
+- An alert whose namespace nobody claims, or that has no namespace at all, gets
+  `default` (here `platform`, the owner of "the estate itself": nodes,
+  system namespaces). Left empty, those alerts stay without an owner.
+- It applies to every vmalert the chart renders: the metrics and logs
+  alerters, their HA peers and the remote evaluators.
+- Alerts that do not come from a vmalert are untouched. `alert-ingress`
+  posts straight to Alertmanager, so an alert born outside a cluster
+  (`source` set) keeps no `owner` and matches no `owner` route.
+
+How: vmalert's notifier configuration file takes `alert_relabel_configs`,
+applied to every alert just before it is sent
+(<https://docs.victoriametrics.com/victoriametrics/vmalert/#notifier-configuration-file>;
+in vmalert since the file exists, checked in v1.152.0, the version
+`victoria-metrics-k8s-stack` 0.93.0 pins). The chart renders the file as the
+Secret `<fullname>-vmalert-notifier` and points each VMAlert at it with
+`spec.notifierConfigRef`. The operator refuses that field together with
+`spec.notifiers`, so the file carries the notifier targets itself (the
+Alertmanager pair as one `static_configs` target per replica, or
+`alertmanager.notifierUrl` split into `scheme`, host and `path_prefix`; a URL
+with credentials is refused). The rules are one `replace` per
+(label, owner) with `if: '{owner="",...}'`, then one for `default`; a filled
+owner is no longer empty, so the first match wins. The pod template carries
+a checksum of the file, so a changed fill restarts vmalert (it re-reads the
+file only on a reload signal).
+
+Turning it on changes the rendered VMAlert objects (`notifierConfigRef`
+instead of `notifiers`) and adds the Secret; the alerts themselves gain only
+the label. Roll it out with the routes that use it.
+
 ## What it does not cover
 
 - Container logs collected by the log agent. That agent adds only static
@@ -70,8 +126,10 @@ unchanged. It is routing metadata, derived from a key that is.
   filter them by namespace. Logs and spans that arrive through the OTLP
   gateway do carry it.
 - Alerts whose rule does not keep the label: any rule you write that
-  aggregates must add `owner` to its `by (...)`. Rules with no namespace
-  (the store rules) carry none; put `owner` in `commonLabels` if wanted.
+  aggregates must add `owner` to its `by (...)`, or turn on
+  `notifications.ownerFill` (above) to fill it at the alerter. Rules with no
+  namespace (the store rules) carry none; put `owner` in `commonLabels`, or let
+  `ownerFill.default` give them one.
 - Recording rules and dashboards: unchanged. A new label is one more
   dimension of low cardinality (one value per owner), and a `by (...)` that
   omits it simply aggregates across owners as before.

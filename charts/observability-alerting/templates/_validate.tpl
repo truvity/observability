@@ -1,4 +1,5 @@
 {{- define "observability-alerting.validate" -}}
+{{- include "observability-alerting.validate.ownerFill" . -}}
 {{- include "observability-alerting.validate.mode" . -}}
 {{- include "observability-alerting.validate.selfAlerts" . -}}
 {{- include "observability-alerting.validate.slackWorkspaces" . -}}
@@ -655,5 +656,42 @@ rendering an empty release that reads as a decision.
 {{- define "observability-alerting.validate.mode" -}}
 {{- if ne (.Values.mode | default "full") "full" -}}
 {{- fail (printf "observability-alerting: `mode` is %q. The alerting plane (vmalerts, Alertmanager, karma, Watchdog rule, self-alerts) belongs to a `mode: full` install; the stack renders none of it in any other mode, so this chart has nothing to render. Do not install it beside this install." .Values.mode) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`notifications.ownerFill`: what the schema cannot say. Turned on it needs the
+label it fills (`notifications.ownerLabel`), something to fill with (`owners`
+or `default`), a notifier configuration file that exists (not in
+`evaluate-only`, which renders no notifier), and no pattern listed under two
+owners (the second would never be reached, and the reader would not know
+which one wins). A `notifierUrl` carrying credentials cannot be split into
+the file's fields without printing them, so it is refused.
+*/}}
+{{- define "observability-alerting.validate.ownerFill" -}}
+{{- $n := .Values.notifications | default dict -}}
+{{- $nf := $n.ownerFill | default dict -}}
+{{- if $nf.enabled -}}
+{{- if not $n.ownerLabel -}}
+{{- fail "observability-alerting: `notifications.ownerFill.enabled` is true and `notifications.ownerLabel` is empty. The fill writes the label `ownerLabel` names; with none, there is nothing to write and no route could match it. Set `notifications.ownerLabel` (usually `owner`)." -}}
+{{- end -}}
+{{- if and (not $nf.owners) (not $nf.default) -}}
+{{- fail "observability-alerting: `notifications.ownerFill.enabled` is true with no `owners` and no `default`. It would fill nothing. List the owners, set a `default`, or set `enabled: false`." -}}
+{{- end -}}
+{{- if eq ($n.mode | default "route") "evaluate-only" -}}
+{{- fail "observability-alerting: `notifications.ownerFill.enabled` is true and `notifications.mode` is `evaluate-only`. The fill is applied to the alerts vmalert sends to Alertmanager, and evaluate-only sends none (`-notifier.blackhole`, which vmalert refuses beside `-notifier.config`)." -}}
+{{- end -}}
+{{- if (urlParse (.Values.alertmanager.notifierUrl | default "http://x")).userinfo -}}
+{{- fail "observability-alerting: `notifications.ownerFill.enabled` is true and `alertmanager.notifierUrl` carries a user name or password. The notifier configuration file is a Secret key built from the URL's host and path; credentials in a URL are not carried over, and would be silently dropped. Remove them from the URL." -}}
+{{- end -}}
+{{- $seen := dict -}}
+{{- range $owner, $patterns := ($nf.owners | default dict) -}}
+{{- range $p := $patterns -}}
+{{- if hasKey $seen $p -}}
+{{- fail (printf "observability-alerting: `notifications.ownerFill.owners` lists the pattern %q under both %q and %q. First match wins, so the second owner would never be reached; give each pattern to one owner." $p (get $seen $p) $owner) -}}
+{{- end -}}
+{{- $_ := set $seen $p $owner -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}

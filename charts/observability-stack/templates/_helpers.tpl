@@ -645,3 +645,71 @@ convention later; the Telegram message is HTML and keeps its own.
 {{ `{{ end }}{{ end }}{{ if gt (len .Alerts) 20 }}… {{ len .Alerts }} alerts in this notification; the first 20 are listed.` }}
 {{ `{{ end }}` }}
 {{- end -}}
+
+{{/*
+`notifications.ownerFill` (docs/tenancy-owner.md, "Filling the owner at the
+alerter"): true when vmalert hands its notifications to Alertmanager through
+a notifier configuration file instead of `spec.notifiers`.
+*/}}
+{{- define "observability-stack.ownerFill.enabled" -}}
+{{- $n := .Values.notifications | default dict -}}
+{{- if ($n.ownerFill | default dict).enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The notifier configuration file of every vmalert (`-notifier.config`, the
+Secret `<fullname>-vmalert-notifier`, key `notifier.yaml`). It carries the
+SAME notifier targets `observability-stack.vmalert.notifiers` renders, as
+`static_configs` (the Alertmanager pair as per-pod hosts, or the one
+`alertmanager.notifierUrl` split into `scheme`, host and `path_prefix`),
+plus `alert_relabel_configs`, which vmalert applies to every alert just
+before it is sent:
+https://docs.victoriametrics.com/victoriametrics/vmalert/#notifier-configuration-file
+
+The relabeling fills the owner label ONLY when it is empty (an absent label
+is empty in a relabel `if` selector). For each of `fromLabels`, in order,
+and each owner, in name order, one rule: the label is non-empty, every
+earlier `fromLabels` label is empty, the owner label is empty, and the
+label matches one of the owner's patterns (`*` = any run of characters,
+anchored) -> owner. Because a filled owner is no longer empty, the first
+match wins. The last rule gives `default` to what is still empty: an alert
+about a namespace no owner claims, or about no namespace at all.
+*/}}
+{{- define "observability-stack.vmalert.notifierConfig" -}}
+{{- $fullname := include "observability-stack.fullname" . -}}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml -}}
+{{- $nf := (.Values.notifications | default dict).ownerFill -}}
+{{- $ownerLabel := .Values.notifications.ownerLabel -}}
+{{- $cfg := dict -}}
+{{- if and $eff.alertmanager (not .Values.alertmanager.notifierUrl) (gt (int .Values.alertmanager.replicaCount) 1) -}}
+{{- $targets := list -}}
+{{- range $i := until (int .Values.alertmanager.replicaCount) -}}
+{{- $targets = append $targets (printf "vmalertmanager-%s-%d.vmalertmanager-%s.%s.svc:9093" $fullname $i $fullname $.Release.Namespace) -}}
+{{- end -}}
+{{- $_ := set $cfg "scheme" "http" -}}
+{{- $_ := set $cfg "static_configs" (list (dict "targets" $targets)) -}}
+{{- else -}}
+{{- $u := urlParse (.Values.alertmanager.notifierUrl | default (printf "http://vmalertmanager-%s.%s.svc:9093" $fullname .Release.Namespace)) -}}
+{{- $_ := set $cfg "scheme" $u.scheme -}}
+{{- with (trimSuffix "/" $u.path) -}}{{- $_ := set $cfg "path_prefix" . -}}{{- end -}}
+{{- $_ := set $cfg "static_configs" (list (dict "targets" (list $u.host))) -}}
+{{- end -}}
+{{- $rules := list -}}
+{{- $empty := list -}}
+{{- range $label := $nf.fromLabels -}}
+{{- range $owner, $patterns := ($nf.owners | default dict) -}}
+{{- $alts := list -}}
+{{- range $p := $patterns -}}{{- $alts = append $alts (replace "\\*" ".*" (regexQuoteMeta $p)) -}}{{- end -}}
+{{- $sel := printf "%s=\"\"" $ownerLabel -}}
+{{- range $e := $empty -}}{{- $sel = printf "%s,%s=\"\"" $sel $e -}}{{- end -}}
+{{- $sel = printf "{%s,%s=~\"(%s)\"}" $sel $label (join "|" $alts) -}}
+{{- $rules = append $rules (dict "if" $sel "action" "replace" "target_label" $ownerLabel "replacement" $owner) -}}
+{{- end -}}
+{{- $empty = append $empty $label -}}
+{{- end -}}
+{{- if $nf.default -}}
+{{- $rules = append $rules (dict "if" (printf "{%s=\"\"}" $ownerLabel) "action" "replace" "target_label" $ownerLabel "replacement" $nf.default) -}}
+{{- end -}}
+{{- $_ := set $cfg "alert_relabel_configs" $rules -}}
+{{- toYaml $cfg -}}
+{{- end -}}

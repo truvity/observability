@@ -24,6 +24,7 @@ must admit 9094/TCP and 9094/UDP between the replicas, 9093/TCP from
 vmalert and karma, or the pair splits and pages twice.
 */ -}}
 {{- define "observability-stack.validate" -}}
+{{- include "observability-stack.validate.ownerFill" . -}}
 {{- include "observability-stack.validate.alerting" . -}}
 {{- include "observability-stack.validate.mode" . -}}
 {{- include "observability-stack.validate.ha" . -}}
@@ -1819,3 +1820,40 @@ than the sender wrote and nothing says so. Refused:
  -}}
 
  -}}
+
+{{/*
+`notifications.ownerFill`: what the schema cannot say. Turned on it needs the
+label it fills (`notifications.ownerLabel`), something to fill with (`owners`
+or `default`), a notifier configuration file that exists (not in
+`evaluate-only`, which renders no notifier), and no pattern listed under two
+owners (the second would never be reached, and the reader would not know
+which one wins). A `notifierUrl` carrying credentials cannot be split into
+the file's fields without printing them, so it is refused.
+*/}}
+{{- define "observability-stack.validate.ownerFill" -}}
+{{- $n := .Values.notifications | default dict -}}
+{{- $nf := $n.ownerFill | default dict -}}
+{{- if $nf.enabled -}}
+{{- if not $n.ownerLabel -}}
+{{- fail "observability-stack: `notifications.ownerFill.enabled` is true and `notifications.ownerLabel` is empty. The fill writes the label `ownerLabel` names; with none, there is nothing to write and no route could match it. Set `notifications.ownerLabel` (usually `owner`)." -}}
+{{- end -}}
+{{- if and (not $nf.owners) (not $nf.default) -}}
+{{- fail "observability-stack: `notifications.ownerFill.enabled` is true with no `owners` and no `default`. It would fill nothing. List the owners, set a `default`, or set `enabled: false`." -}}
+{{- end -}}
+{{- if eq ($n.mode | default "route") "evaluate-only" -}}
+{{- fail "observability-stack: `notifications.ownerFill.enabled` is true and `notifications.mode` is `evaluate-only`. The fill is applied to the alerts vmalert sends to Alertmanager, and evaluate-only sends none (`-notifier.blackhole`, which vmalert refuses beside `-notifier.config`)." -}}
+{{- end -}}
+{{- if (urlParse (.Values.alertmanager.notifierUrl | default "http://x")).userinfo -}}
+{{- fail "observability-stack: `notifications.ownerFill.enabled` is true and `alertmanager.notifierUrl` carries a user name or password. The notifier configuration file is a Secret key built from the URL's host and path; credentials in a URL are not carried over, and would be silently dropped. Remove them from the URL." -}}
+{{- end -}}
+{{- $seen := dict -}}
+{{- range $owner, $patterns := ($nf.owners | default dict) -}}
+{{- range $p := $patterns -}}
+{{- if hasKey $seen $p -}}
+{{- fail (printf "observability-stack: `notifications.ownerFill.owners` lists the pattern %q under both %q and %q. First match wins, so the second owner would never be reached; give each pattern to one owner." $p (get $seen $p) $owner) -}}
+{{- end -}}
+{{- $_ := set $seen $p $owner -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
