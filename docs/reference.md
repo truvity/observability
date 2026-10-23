@@ -584,33 +584,6 @@ has no result label, so AWS throttling cannot be alerted on.
 Alerts: `ACKControllerDown`, `ACKControllerAbsent`, `ACKReconcileErrors`,
 `ACKTerminalReconcileErrors`, `ACKReconcilePanics`.
 
-### `groups.netpolRepair`
-
-Off by default. The alerts of netpol-stuck-pod-repair (truvity/k8s,
-`cmd/netpol-stuck-pod-repair`), a **temporary workaround** for the EKS
-network policy agent race
-[aws/aws-network-policy-agent#676](https://github.com/aws/aws-network-policy-agent/issues/676)
-(fix [#705](https://github.com/aws/aws-network-policy-agent/pull/705)): a pod
-Running with an empty eBPF egress map until it is deleted. The controller
-deletes such pods within limits, or in report mode only says it would.
-Remove the group with the controller once the node image ships an agent
-release with #705. Every annotation links both upstream pages
-(`upstream_issue`, `upstream_fix`).
-
-| Value | Type | Default | What it does |
-|---|---|---|---|
-| `enabled` | bool | `false` | Renders the group. |
-| `namespaceLabel` | string | `exported_namespace` | The label carrying the stranded pod's namespace: its own `namespace` collides with the scrape's under the emitters' `honor_labels: false`. `namespace` where labels are honoured. |
-| `repaired.window`, `repaired.severity` | duration, enum | `10m`, `warning` | `NetpolStuckPodRepaired`: any act-mode deletion (`netpol_repair_actions_total{mode="act"}`) in the window, a first repair of an owner included. |
-| `halted.for`, `halted.severity` | duration, enum | `1m`, `critical` | `NetpolStuckPodRepairHalted`: `netpol_repair_halted == 1`, the controller stopped deleting by itself. |
-| `candidate.for`, `candidate.severity` | duration, enum | `15m`, `warning` | `NetpolStuckPodCandidate`: an owner has had a candidate pod (`netpol_repair_candidates`) this long; in report mode, the repair that would have happened. |
-| `runbookUrl` | string | none | The runbook of every rule, as is; empty falls back to `runbookBaseUrl`. |
-| `keepClusterLabel` | bool | `false` | As `groups.pendingPods.keepClusterLabel`. |
-
-Alerts: `NetpolStuckPodRepaired` (per owner and reason),
-`NetpolStuckPodRepairHalted` (per controller pod), `NetpolStuckPodCandidate`
-(per owner).
-
 ### `groups.upstream` — the vendored upstream rule pack (0.70.0)
 
 Off by default. The rule groups that `victoria-metrics-k8s-stack`'s sync Job
