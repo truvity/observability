@@ -4,6 +4,11 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Removed** `platform-alerts` `groups.netpolRepair` (off by default) and its three rules `NetpolStuckPodRepaired`, `NetpolStuckPodRepairHalted` and `NetpolStuckPodCandidate`, with their values block (`namespaceLabel`, `repaired`, `halted`, `candidate`, `runbookUrl`, `keepClusterLabel`), schema entry and docs: the workaround they watched, netpol-stuck-pod-repair (truvity/k8s), is gone. The schema now refuses the key (`groups` is closed), so an install that set `groups.netpolRepair`, enabled or not, must delete it before upgrading. A default render is unchanged.
+- **Behaviour change** none for a default render: the guard sees the removed golden `platform-alerts/netpol-repair`, the only render of the removed group, which is deleted with it. No other golden moves.
+
 ## v0.104.0
 
 - **Added** `platform-alerts` `groups.envoyRoutes.noHealthyMembers` (off by default; no existing render changes): the alert `EnvoyBackendNoHealthyMembers` (`severity` `critical`, `for` `3m`), `min by (clusterLabel, envoy_cluster_name) (envoy_cluster_membership_healthy{job, envoy_cluster_name=~selector}) == 0`, for the Envoy clusters a `selector` (a regular expression over `envoy_cluster_name`; required, no default) names. It catches a backend with no healthy endpoint that the 5xx ratio cannot see: when clients give up at connect (a TLS passthrough route to a workload that fails its readiness probe) no response is ever counted. Envoy Gateway names a TLSRoute's cluster `tlsroute/<namespace>/<route>/rule/<n>`. Enabling it without a `selector` is refused. New keys, refused by an older chart's schema: gate their use on the pin. New golden `platform-alerts/envoy-no-healthy-members`, one refused fixture.
