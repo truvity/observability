@@ -493,7 +493,17 @@
             "minRequestsPerSecond": { "type": "number", "minimum": 0 },
             "warningSeverity": { "$ref": "#/definitions/severity" },
             "criticalSeverity": { "$ref": "#/definitions/severity" },
-            "keepClusterLabel": { "type": "boolean" }
+            "keepClusterLabel": { "type": "boolean" },
+            "noHealthyMembers": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "selector": { "type": "string", "description": "A regular expression over envoy_cluster_name. Required when enabled." },
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
+            }
           }
         },
         "certificates": {

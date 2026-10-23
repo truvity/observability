@@ -1,0 +1,104 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: platform-alerts.envoy-routes
+      interval: 1m
+      rules:
+        # The share of a route's upstream responses that are 5xx.
+        #
+        # Envoy Gateway names one Envoy cluster per HTTPRoute rule
+        # (`httproute/<namespace>/<route>/rule/<n>`), so `envoy_cluster_name`
+        # IS the per-route label, and `envoy_response_code_class` is the
+        # class digit. Both thresholds read the same ratio; the traffic
+        # guard keeps a route that sees a request an hour from paging on one
+        # failed request. A route with no 5xx series has an empty numerator
+        # and stays silent, which is the healthy case.
+        - alert: EnvoyRoute5xxRatioHigh
+          expr: >-
+            sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*", envoy_response_code_class="5"}[5m]))
+            / sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) > 0.05
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} returns more than 0.05 5xx"
+            description: >-
+              More than 0.05 of the upstream responses of this route were
+              5xx over 5m, at a rate above 0.1 requests per
+              second. The name is `httproute/<namespace>/<route>/rule/<n>`: the
+              route's backend is failing or refusing connections.
+            runbook_url: "https://runbooks.example.com/EnvoyRoute5xxRatioHigh"
+        - alert: EnvoyRoute5xxRatioCritical
+          expr: >-
+            sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*", envoy_response_code_class="5"}[5m]))
+            / sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) > 0.25
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} returns more than 0.25 5xx"
+            description: >-
+              More than 0.25 of the upstream responses of this route were
+              5xx over 5m: the route is effectively down.
+            runbook_url: "https://runbooks.example.com/EnvoyRoute5xxRatioCritical"
+        # p99 of the upstream response time per route. Envoy's histogram is
+        # in milliseconds.
+        - alert: EnvoyRouteP99LatencyHigh
+          expr: >-
+            histogram_quantile(0.99, sum by (k8s_cluster_name, envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m]))) > 2000
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} p99 latency is above 2000ms"
+            description: >-
+              The 99th percentile of upstream response time for this route is above
+              2000ms over 5m.
+            runbook_url: "https://runbooks.example.com/EnvoyRouteP99LatencyHigh"
+        - alert: EnvoyRouteP99LatencyCritical
+          expr: >-
+            histogram_quantile(0.99, sum by (k8s_cluster_name, envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m]))) > 10000
+            and on (k8s_cluster_name, envoy_cluster_name) sum by (k8s_cluster_name, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"httproute/.*"}[5m])) >= 0.1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Route {{ $labels.envoy_cluster_name }} p99 latency is above 10000ms"
+            description: >-
+              The 99th percentile of upstream response time for this route is above
+              10000ms over 5m.
+            runbook_url: "https://runbooks.example.com/EnvoyRouteP99LatencyCritical"
+        # An Envoy cluster none of whose endpoints is healthy, on every proxy
+        # replica. `min` over the replicas: one replica that has lost the
+        # endpoints is a different fault. The 5xx ratio cannot see this when
+        # the clients give up at connect (TLS passthrough): no response is
+        # ever counted, so the series that pages here is the only one that
+        # moves.
+        - alert: EnvoyBackendNoHealthyMembers
+          expr: >-
+            min by (k8s_cluster_name, envoy_cluster_name) (envoy_cluster_membership_healthy{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"tlsroute/builders/builder-.*"}) == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Envoy cluster {{ $labels.envoy_cluster_name }} has no healthy member"
+            description: >-
+              Every endpoint of this Envoy cluster has been unhealthy for
+              3m: the route cannot reach its backend, and
+              clients fail at connect. Check the backend's pods (readiness,
+              restarts, node pressure) before the route.
+            runbook_url: "https://runbooks.example.com/EnvoyBackendNoHealthyMembers"
