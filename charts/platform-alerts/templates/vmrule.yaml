@@ -1726,6 +1726,8 @@ spec:
     {{- $sel := printf `job=~"%s", envoy_cluster_name=~"%s"` $g.job $g.routeSelector }}
     {{- $w := $g.window }}
     {{- $traffic := printf "sum by (%senvoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{%s}[%s]))" $b $sel $w }}
+    {{- $nhm := $g.noHealthyMembers | default dict }}
+    {{- if and $nhm.enabled (not $nhm.selector) }}{{ fail "platform-alerts: groups.envoyRoutes.noHealthyMembers.enabled needs a selector (a regular expression over envoy_cluster_name): name the routes that must always have a member" }}{{ end }}
     - name: platform-alerts.envoy-routes
       interval: {{ .Values.interval }}
       rules:
@@ -1796,6 +1798,28 @@ spec:
               The 99th percentile of upstream response time for this route is above
               {{ $g.criticalLatencyMs }}ms over {{ $w }}.
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "EnvoyRouteP99LatencyCritical")) }}{{ . | nindent 12 }}{{- end }}
+        {{- if $nhm.enabled }}
+        # An Envoy cluster none of whose endpoints is healthy, on every proxy
+        # replica. `min` over the replicas: one replica that has lost the
+        # endpoints is a different fault. The 5xx ratio cannot see this when
+        # the clients give up at connect (TLS passthrough): no response is
+        # ever counted, so the series that pages here is the only one that
+        # moves.
+        - alert: EnvoyBackendNoHealthyMembers
+          expr: >-
+            min by ({{ $b }}envoy_cluster_name) (envoy_cluster_membership_healthy{job=~"{{ $g.job }}", envoy_cluster_name=~"{{ $nhm.selector }}"}) == 0
+          for: {{ default "3m" $nhm.for }}
+          labels:
+            {{- include "platform-alerts.labels" (dict "root" $ "severity" (default "critical" $nhm.severity) "omit" $omit) | nindent 12 }}
+          annotations:
+            summary: "Envoy cluster {{`{{ $labels.envoy_cluster_name }}`}} has no healthy member"
+            description: >-
+              Every endpoint of this Envoy cluster has been unhealthy for
+              {{ default "3m" $nhm.for }}: the route cannot reach its backend, and
+              clients fail at connect. Check the backend's pods (readiness,
+              restarts, node pressure) before the route.
+            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "EnvoyBackendNoHealthyMembers")) }}{{ . | nindent 12 }}{{- end }}
+        {{- end }}
     {{- end }}
     {{- if .Values.groups.certificates.enabled }}
     {{- $g := .Values.groups.certificates }}

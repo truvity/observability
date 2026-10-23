@@ -896,6 +896,24 @@ groups:
     criticalSeverity: critical
     # -- Keep the series' own `clusterLabel` (see `pendingPods.keepClusterLabel`).
     keepClusterLabel: false
+    # -- A backend with no healthy member at all (`EnvoyBackendNoHealthyMembers`):
+    # `envoy_cluster_membership_healthy` is 0 for every proxy replica of an
+    # Envoy cluster, so the route cannot reach any endpoint. The 5xx ratio
+    # above cannot see it when clients give up before sending a request (a
+    # TLS passthrough route to a builder that fails its readiness probe: the
+    # clients time out at connect, no response is ever counted). OFF by
+    # default, because it needs the names of the clusters that must always
+    # have a member: a route to a workload that scales to zero would page.
+    # Reads the same job as above.
+    noHealthyMembers:
+      enabled: false
+      # -- A regular expression over `envoy_cluster_name`, anchored by the
+      # matcher itself. Envoy Gateway names a TLSRoute's cluster
+      # `tlsroute/<namespace>/<route>/rule/<n>` and an HTTPRoute's
+      # `httproute/...`. No default: name the routes that must have a member.
+      selector: ""
+      for: 3m
+      severity: critical
 
   # cert-manager Certificates: expiry and readiness.
   #

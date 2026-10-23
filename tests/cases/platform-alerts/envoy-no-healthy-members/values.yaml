@@ -1,0 +1,18 @@
+# envoyRoutes with the no-healthy-member alert on: a backend whose Envoy
+# cluster has no healthy endpoint, for the routes the selector names.
+namespaceSelector: "^(platform)$"
+runbookBaseUrl: https://runbooks.example.com/
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  envoyRoutes:
+    enabled: true
+    noHealthyMembers:
+      enabled: true
+      selector: "tlsroute/builders/builder-.*"

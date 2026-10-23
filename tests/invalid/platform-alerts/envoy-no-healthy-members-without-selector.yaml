@@ -1,0 +1,12 @@
+# expect: noHealthyMembers.enabled needs a selector
+# The alert is for the routes that must always have a member; with no selector
+# it would match every route, and one that scales to zero would page.
+groups:
+  writePath:
+    enabled: false
+  storeLimits:
+    enabled: false
+  envoyRoutes:
+    enabled: true
+    noHealthyMembers:
+      enabled: true
