@@ -1,0 +1,86 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts-logs
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: logs
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: platform-alerts.auth-failures
+      type: vlogs
+      interval: 1m
+      rules:
+        # Callers that could not prove who they are.
+        #
+        # Evidence is the EKS control-plane log, which EKS offers no way out
+        # of CloudWatch for: `observability-emitters` `cloudwatchLogs` reads
+        # the `authenticator-` and `kube-apiserver-audit-` streams, keeps the
+        # authenticator's refusals and the audit events answered 401 or 403,
+        # and lifts `eks.log.type`, `authn.level`, `authn.msg` and
+        # `audit.code`. Filtering on those FIELDS (never on a phrase) means a
+        # log line that merely mentions them is not counted.
+        #
+        # The authenticator's `access denied` is an AWS token it could not
+        # map or read; a 401 in the audit log is a bearer token or client
+        # certificate the API server rejected. The authenticator's lines
+        # carry no namespace or username, so the ignore lists narrow only
+        # the 401s.
+        - alert: KubernetesAuthenticationFailures
+          expr: >-
+            _time:10m
+            ((eks.log.type:=authenticator (authn.level:=warning OR authn.msg:="access denied"))
+            OR (eks.log.type:=audit audit.code:=401 audit.user_agent:~"kubernetes/|^kubectl" -audit.user:~"^(eks:|system:node:|system:kube-)"))
+            | rename k8s.cluster.name as k8s_cluster_name
+            | stats by (k8s_cluster_name) count() as failures
+            | filter failures:>10
+          for: 0s
+          labels:
+            k8s_cluster_name: kernel
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Kubernetes authentication failures"
+            description: >-
+              More than 10 requests to the API server failed to
+              authenticate in the last 10m ({{ $value }}): AWS tokens the
+              authenticator refused (`authn.msg:="access denied"`, the reason in
+              `authn.error`) and API requests answered 401 (`audit.code:=401`; the
+              caller in `audit.user_agent` and `audit.source_ip`). A mistyped
+              command is one failure; this is a script, a controller whose
+              credential expired, or someone probing the endpoint. Search the log
+              store for `eks.log.type:=authenticator authn.level:=warning` and
+              `eks.log.type:=audit audit.code:=401`, grouped by `audit.source_ip`.
+        # Identified callers the API server refused.
+        #
+        # Never zero on a real cluster, so the threshold is a rate far above
+        # the chronic floor and the control plane's own refusals are not
+        # counted (`ignoreUsers`).
+        - alert: KubernetesAuthorizationDenials
+          expr: >-
+            _time:10m
+            eks.log.type:=audit audit.code:=403 -audit.user:~"^(eks:|system:node:|system:kube-)"
+            | rename k8s.cluster.name as k8s_cluster_name
+            | stats by (k8s_cluster_name) count() as denials
+            | filter denials:>100
+          for: 0s
+          labels:
+            k8s_cluster_name: kernel
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Kubernetes authorization denials"
+            description: >-
+              More than 100 API requests were refused (403) in the
+              last 10m ({{ $value }}), not counting the control plane's own
+              users. An RBAC rule a controller needs is missing, a role was
+              removed, or a credential is being used for what it may not do.
+              Search the log store for `eks.log.type:=audit audit.code:=403`
+              and group by `audit.user`, `audit.verb`, `audit.resource`,
+              `audit.namespace`: one user repeating one call is a missing
+              rule; many users or resources is a probe.

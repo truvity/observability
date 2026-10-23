@@ -2202,6 +2202,8 @@ spec:
 {{- $skip := "" }}
 {{- if $g.ignoreUsers }}{{- $skip = printf "%s -audit.user:~%q" $skip $g.ignoreUsers }}{{- end }}
 {{- if $g.ignoreNamespaces }}{{- $skip = printf "%s -audit.namespace:~%q" $skip $g.ignoreNamespaces }}{{- end }}
+{{- $ua := "" }}
+{{- with ($g.authentication | default dict).userAgents }}{{- $ua = printf " audit.user_agent:~%q" . }}{{- end }}
     - name: platform-alerts.auth-failures
       type: vlogs
       interval: {{ .Values.interval }}
@@ -2225,7 +2227,7 @@ spec:
           expr: >-
             _time:{{ $g.window }}
             ((eks.log.type:=authenticator (authn.level:=warning OR authn.msg:="access denied"))
-            OR (eks.log.type:=audit audit.code:=401{{ $skip }}))
+            OR (eks.log.type:=audit audit.code:=401{{ $ua }}{{ $skip }}))
             {{ $rename }}
             | stats {{ if $by }}by ({{ join ", " $by }}) {{ end }}count() as failures
             | filter failures:>{{ $g.authentication.threshold }}

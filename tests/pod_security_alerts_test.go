@@ -10,6 +10,7 @@
 package tests
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -189,4 +190,18 @@ func TestAuthFailuresAlertsCountFieldsAboveAThreshold(t *testing.T) {
 			` | rename k8s.cluster.name as k8s_cluster_name`+
 			` | stats by (k8s_cluster_name) count() as denials | filter denials:>100`,
 		exprs["KubernetesAuthorizationDenials"])
+}
+
+// authentication.userAgents narrows the 401 branch to Kubernetes clients (an
+// internet scanner's probe of a public API endpoint is a 401 with a browser
+// or bot user agent and no username) and leaves the authenticator's refusals
+// and the 403 alert alone.
+func TestAuthFailuresUserAgentsNarrowOnlyThe401s(t *testing.T) {
+	raw, err := os.ReadFile("golden/platform-alerts/auth-failures-user-agents.yaml")
+	require.NoError(t, err)
+
+	flat := strings.Join(strings.Fields(string(raw)), " ")
+	assert.Contains(t, flat, `(eks.log.type:=audit audit.code:=401 audit.user_agent:~"kubernetes/|^kubectl" -audit.user:~`)
+	assert.Contains(t, flat, `(eks.log.type:=authenticator (authn.level:=warning OR authn.msg:="access denied"))`)
+	assert.NotContains(t, flat, `audit.code:=403 audit.user_agent`)
 }
