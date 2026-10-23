@@ -1,0 +1,9 @@
+# expect: lists the pattern
+# notifications.ownerFill refused: see templates/_validate.tpl `validate.ownerFill`.
+notifications:
+  ownerLabel: owner
+  ownerFill:
+    enabled: true
+    owners:
+      acme: ["shared-*"]
+      globex: ["shared-*"]

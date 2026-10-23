@@ -1,0 +1,37 @@
+# Filling the owner at the alerter: with `notifications.ownerFill` on, every
+# vmalert (metrics, logs, and a remote evaluator) reads one notifier
+# configuration file (`VMAlert.spec.notifierConfigRef`) instead of
+# `spec.notifiers`: the Alertmanager pair as static targets, plus
+# `alert_relabel_configs` that give an alert with no owner the owner of its
+# namespace, or the default.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+vmalert:
+  externalUrl: https://grafana.example
+  remoteEvaluators:
+    - name: other-store
+      datasource:
+        url: https://metrics.other-store.example
+        auth:
+          bearer: {secretName: example-other-store-read, key: token}
+
+alertmanager:
+  replicaCount: 2
+
+notifications:
+  ownerLabel: owner
+  ownerFill:
+    enabled: true
+    owners:
+      globex: ["globex-*"]
+      acme: [checkout, "payments-*"]
+    default: platform
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+  severities:
+    critical: {receiver: slack, channel: "#alerts-critical"}
+    warning: {receiver: slack, channel: "#alerts"}

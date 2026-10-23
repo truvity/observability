@@ -1,0 +1,6 @@
+# expect: `notifications.ownerFill.enabled` is true and `notifications.ownerLabel` is empty
+# notifications.ownerFill refused: see templates/_validate.tpl `validate.ownerFill`.
+notifications:
+  ownerFill:
+    enabled: true
+    default: platform

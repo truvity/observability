@@ -20,6 +20,7 @@ this mirrors what the CRD would refuse if it did not.
 */ -}}
 {{- $remoteNames := list }}
 {{- range .Values.vmalert.remoteEvaluators }}{{- $remoteNames = append $remoteNames .name }}{{- end }}
+{{- $ownerFill := include "observability-alerting.ownerFill.enabled" . }}
 {{- $evaluateOnly := eq ((.Values.notifications | default dict).mode | default "route") "evaluate-only" }}
 {{- /*
 Two vmalerts, because one process has one default rule type.
@@ -86,15 +87,25 @@ metadata:
     observability.rule-type: {{ ternary "vlogs" "prometheus" $isLogs }}
 spec:
   replicaCount: 1
+  {{- if or $ha $ownerFill }}
+  podMetadata:
+    {{- if $ownerFill }}
+    {{- /* The file is mounted from a Secret and vmalert re-reads it only on
+           a reload signal: a changed fill must restart the pod. */}}
+    annotations:
+      checksum/notifier-config: {{ include "observability-alerting.vmalert.notifierConfig" $root | sha256sum }}
+    {{- end }}
+    {{- if $ha }}
+    labels:
+      observability.vmalert: {{ $kind }}
+    {{- end }}
+  {{- end }}
   {{- if $ha }}
   {{- /*
   The two alerters of a kind share a pod label to spread on. Soft, for the
   same reason the proxy's spread is: the pair exists to survive a zone, and
   a hard constraint would leave the survivor unschedulable.
   */}}
-  podMetadata:
-    labels:
-      observability.vmalert: {{ $kind }}
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: topology.kubernetes.io/zone
@@ -175,7 +186,13 @@ spec:
     url: {{ $storeMetrics | quote }}
     basicAuth:
       {{- include "observability-alerting.targetAuth" $root | nindent 6 }}
-  {{- if not $evaluateOnly }}
+  {{- if $ownerFill }}
+  {{- /* One notifier configuration file instead of `notifiers:` (the operator
+         refuses both): the same targets, plus the owner fill. */}}
+  notifierConfigRef:
+    name: {{ printf "%s-vmalert-notifier" $fullname }}
+    key: notifier.yaml
+  {{- else if not $evaluateOnly }}
   notifiers:
     {{- include "observability-alerting.vmalert.notifiers" $root | trim | nindent 4 }}
   {{- end }}
@@ -307,8 +324,17 @@ spec:
     url: {{ $metrics | quote }}
     basicAuth:
       {{- include "observability-alerting.targetAuth" $root | nindent 6 }}
+  {{- if include "observability-alerting.ownerFill.enabled" $root }}
+  podMetadata:
+    annotations:
+      checksum/notifier-config: {{ include "observability-alerting.vmalert.notifierConfig" $root | sha256sum }}
+  notifierConfigRef:
+    name: {{ printf "%s-vmalert-notifier" $fullname }}
+    key: notifier.yaml
+  {{- else }}
   notifiers:
     {{- include "observability-alerting.vmalert.notifiers" $root | trim | nindent 4 }}
+  {{- end }}
   {{- $labels := merge (deepCopy ($ev.externalLabels | default dict)) (deepCopy ($root.Values.vmalert.externalLabels | default dict)) }}
   {{- with $labels }}
   externalLabels:

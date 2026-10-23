@@ -1,0 +1,41 @@
+# The alerting plane of tests/cases/observability-stack/notifications-owner-fill: that case's values
+# (presets merged) kept to the keys this chart declares. tests/alerting_chart_test.go
+# derives the same file for every stack case and holds the objects byte-identical.
+stackReleaseName: observability-stack
+tenancy: {}
+vmalert:
+  externalUrl: https://grafana.example
+  remoteEvaluators:
+  - name: other-store
+    datasource:
+      url: https://metrics.other-store.example
+      auth:
+        bearer:
+          secretName: example-other-store-read
+          key: token
+notifications:
+  ownerLabel: owner
+  ownerFill:
+    enabled: true
+    owners:
+      globex:
+      - globex-*
+      acme:
+      - checkout
+      - payments-*
+    default: platform
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+alertmanager:
+  replicaCount: 2

@@ -1,0 +1,22 @@
+{{- /*
+The notifier configuration file of the vmalerts when `notifications.ownerFill`
+is on: the notifier targets plus the relabeling that fills the owner label.
+A Secret because `VMAlert.spec.notifierConfigRef` is a Secret key selector;
+nothing secret is in it. See `observability-stack.vmalert.notifierConfig`.
+*/ -}}
+{{- if eq (.Values.alerting.source | default "stack") "stack" }}
+{{- $eff := include "observability-stack.effectiveEnabled" . | fromYaml }}
+{{- if and $eff.vmalert (include "observability-stack.ownerFill.enabled" .) }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "observability-stack.fullname" . }}-vmalert-notifier
+  labels:
+    {{- include "observability-stack.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  notifier.yaml: |
+    {{- include "observability-stack.vmalert.notifierConfig" . | nindent 4 }}
+{{- end }}
+{{- end }}

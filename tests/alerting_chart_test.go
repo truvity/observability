@@ -45,7 +45,7 @@ import (
 // other kind is a surprise somebody should read.
 var movedKinds = map[string]bool{
 	"VMAlert": true, "VMAlertmanager": true, "VMRule": true, "ServiceMonitor": true,
-	"ServiceAccount": true, "ConfigMap": true, "Service": true, "Deployment": true,
+	"ServiceAccount": true, "ConfigMap": true, "Secret": true, "Service": true, "Deployment": true,
 }
 
 const stackRelease = "observability-stack"

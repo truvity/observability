@@ -795,6 +795,43 @@ notifications:
   # `platform-alerts` `ownerLabel`. An alert without it falls through to
   # the tier's own destination.
   ownerLabel: ""
+  # -- OPT-IN (`enabled: false`, the default, renders what it rendered
+  # before): fill `ownerLabel` on every alert vmalert sends to Alertmanager
+  # whose rule did not keep it. Many rules aggregate the label away, and the
+  # vendored and product rule sets are not ours to edit; this is the one
+  # place every alert passes. docs/tenancy-owner.md, "Filling the owner at
+  # the alerter".
+  #
+  # Only an EMPTY `ownerLabel` is filled (an owner the alert carries is
+  # never overwritten), from the first non-empty of `fromLabels`: the first
+  # owner (in name order) one of whose patterns matches it (`*` = any run of
+  # characters, anchored; the patterns `observability-emitters`
+  # `tenancy.owners` takes) is written, and an alert whose namespace nobody
+  # claims, or that has no namespace (a node), gets `default`. Needs
+  # `ownerLabel`; vmalert then reads one notifier configuration file
+  # (`VMAlert.spec.notifierConfigRef`, a Secret this chart renders) instead
+  # of `spec.notifiers`, with the same notifier targets. Alerts that do not
+  # pass through vmalert (alert-ingress posts straight to Alertmanager) are
+  # untouched.
+  #
+  #   ownerLabel: owner
+  #   ownerFill:
+  #     enabled: true
+  #     owners:
+  #       acme: [checkout, "payments-*"]
+  #       globex: ["globex-*"]
+  #     default: platform
+  ownerFill:
+    enabled: false
+    # -- Alert labels to read the namespace from, in order of preference.
+    fromLabels:
+      - k8s_namespace_name
+      - namespace
+    # -- Owner name -> namespace patterns. First match wins.
+    owners: {}
+    # -- What an alert with no claimed namespace gets. Empty: those stay
+    # without an owner.
+    default: ""
   # -- The one inhibit rule: a `critical` silences a `warning` that has
   # the same value for every label in `equal`, so a project already paged
   # for the loud version is not also sent the quiet one.

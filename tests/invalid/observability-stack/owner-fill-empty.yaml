@@ -1,0 +1,6 @@
+# expect: with no `owners` and no `default`
+# notifications.ownerFill refused: see templates/_validate.tpl `validate.ownerFill`.
+notifications:
+  ownerLabel: owner
+  ownerFill:
+    enabled: true

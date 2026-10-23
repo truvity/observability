@@ -1,0 +1,8 @@
+# expect: is true and `notifications.mode` is `evaluate-only`
+# notifications.ownerFill refused: see templates/_validate.tpl `validate.ownerFill`.
+notifications:
+  mode: evaluate-only
+  ownerLabel: owner
+  ownerFill:
+    enabled: true
+    default: platform
