@@ -63,6 +63,12 @@ type fakeIssuer struct {
 	basicUser []string
 	expiresIn int
 	refuse    bool
+	// delay holds each answer back, unless the client gives up first;
+	// fail5xx answers that many requests 502 first.
+	delay      time.Duration
+	fail5xx    int
+	canceled   int
+	answeredAt []time.Time
 }
 
 func newFakeIssuer(t *testing.T, expiresIn int) *fakeIssuer {
@@ -74,9 +80,28 @@ func newFakeIssuer(t *testing.T, expiresIn int) *fakeIssuer {
 		f.mu.Lock()
 		f.exchanges = append(f.exchanges, r.PostForm)
 		f.basicUser = append(f.basicUser, user)
-		n, refuse := len(f.exchanges), f.refuse
+		n, refuse, delay := len(f.exchanges), f.refuse, f.delay
+		fail5xx := f.fail5xx > 0
+		if fail5xx {
+			f.fail5xx--
+		}
 		f.mu.Unlock()
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				f.mu.Lock()
+				f.canceled++
+				f.mu.Unlock()
+				return
+			}
+		}
+		defer func() { f.mu.Lock(); f.answeredAt = append(f.answeredAt, time.Now()); f.mu.Unlock() }()
 		w.Header().Set("Content-Type", "application/json")
+		if fail5xx {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
 		if refuse || r.URL.Path != "/token" {
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant", "error_description": "role is in no group"})
@@ -91,6 +116,14 @@ func newFakeIssuer(t *testing.T, expiresIn int) *fakeIssuer {
 }
 
 func (f *fakeIssuer) count() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.exchanges) }
+
+func (f *fakeIssuer) cancellations() int { f.mu.Lock(); defer f.mu.Unlock(); return f.canceled }
+
+func (f *fakeIssuer) answers() []time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]time.Time(nil), f.answeredAt...)
+}
 
 // upstreamCall is one request the fake OTLP upstream saw.
 type upstreamCall struct {

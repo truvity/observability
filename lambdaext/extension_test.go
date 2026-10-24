@@ -25,8 +25,9 @@ type fakeRuntime struct {
 	registered []string // the Lambda-Extension-Name of each registration
 	regBody    string
 	nexts      int
-	subscribe  []string // bodies of PUT /2022-07-01/telemetry
-	subStatus  int      // 0 is 200
+	nextAt     []time.Time // when each event/next arrived
+	subscribe  []string    // bodies of PUT /2022-07-01/telemetry
+	subStatus  int         // 0 is 200
 }
 
 func newFakeRuntime(t *testing.T) *fakeRuntime {
@@ -65,6 +66,7 @@ func newFakeRuntime(t *testing.T) *fakeRuntime {
 		}
 		f.mu.Lock()
 		f.nexts++
+		f.nextAt = append(f.nextAt, time.Now())
 		f.mu.Unlock()
 		select {
 		case ev := <-f.events:
@@ -86,6 +88,12 @@ func (f *fakeRuntime) state() (names []string, body string, nexts int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.registered...), f.regBody, f.nexts
+}
+
+func (f *fakeRuntime) nextTimes() []time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]time.Time(nil), f.nextAt...)
 }
 
 // subscription returns the Telemetry API subscription bodies seen so far.
@@ -207,7 +215,7 @@ func baseEnv(rt *fakeRuntime, sts *fakeSTS, issuer *fakeIssuer, up *fakeUpstream
 
 func TestExtensionEndToEnd(t *testing.T) {
 	rt, sts, up := newFakeRuntime(t), newFakeSTS(t), newFakeUpstream(t)
-	issuer := newFakeIssuer(t, 6) // refresh window opens after 4 seconds
+	issuer := newFakeIssuer(t, 6) // refresh window opens after 3 seconds (half its life)
 	addr := freeAddr(t)
 	tokenFile := filepath.Join(t.TempDir(), "sub", "token")
 	ext := startExtension(t, append(baseEnv(rt, sts, issuer, up, addr), "OTLP_LAMBDA_TOKEN_FILE="+tokenFile))
@@ -383,5 +391,62 @@ func TestShutdownDrainsAnInFlightForward(t *testing.T) {
 	}
 	if err := <-ext.exited; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExtensionFetchesNoTokenAtInitAndRefreshesBeforeNext(t *testing.T) {
+	rt, sts, up := newFakeRuntime(t), newFakeSTS(t), newFakeUpstream(t)
+	issuer := newFakeIssuer(t, 900)
+	issuer.delay = 400 * time.Millisecond // slower than the gap between events
+	ext := startExtension(t, baseEnv(rt, sts, issuer, up, freeAddr(t)))
+
+	// INIT ends (the first next) without a token request, and promptly.
+	eventually(t, "the first next", func() bool { _, _, n := rt.state(); return n >= 1 })
+	time.Sleep(300 * time.Millisecond)
+	if issuer.count() != 0 || len(sts.calls()) != 0 {
+		t.Fatalf("INIT asked for a token: %d exchanges, %d STS calls", issuer.count(), len(sts.calls()))
+	}
+
+	// INVOKE: the refresh is finished before the next event is asked for.
+	invokedAt := time.Now()
+	rt.invoke()
+	eventually(t, "the second next", func() bool { _, _, n := rt.state(); return n >= 2 })
+	answers, nexts := issuer.answers(), rt.nextTimes()
+	if len(answers) != 1 || !nexts[1].After(answers[0]) || nexts[1].Sub(invokedAt) < issuer.delay {
+		t.Fatalf("next asked at %v, the issuer answered at %v (invoke at %v)", nexts[1], answers, invokedAt)
+	}
+
+	// A fresh token: the next INVOKE asks for nothing and moves on at once.
+	invokedAt = time.Now()
+	rt.invoke()
+	eventually(t, "the third next", func() bool { _, _, n := rt.state(); return n >= 3 })
+	if issuer.count() != 1 || rt.nextTimes()[2].Sub(invokedAt) > issuer.delay {
+		t.Fatalf("a fresh token was refreshed: %d exchanges", issuer.count())
+	}
+	rt.shutdown()
+	if err := <-ext.exited; err != nil {
+		t.Fatalf("%v\n%s", err, ext.logs.String())
+	}
+}
+
+func TestExtensionBoundsTheRefreshBeforeNext(t *testing.T) {
+	rt, sts, up := newFakeRuntime(t), newFakeSTS(t), newFakeUpstream(t)
+	issuer := newFakeIssuer(t, 900)
+	issuer.delay = 20 * time.Second // never in time
+	ext := startExtension(t, append(baseEnv(rt, sts, issuer, up, freeAddr(t)), "OTLP_LAMBDA_REFRESH_WAIT_MS=300"))
+	eventually(t, "the first next", func() bool { _, _, n := rt.state(); return n >= 1 })
+
+	invokedAt := time.Now()
+	rt.invoke()
+	eventually(t, "the second next", func() bool { _, _, n := rt.state(); return n >= 2 })
+	if took := rt.nextTimes()[1].Sub(invokedAt); took > 2*time.Second {
+		t.Fatalf("the refresh held the next event for %v; the bound is 300ms", took)
+	}
+	// Given up on, not left in flight: the issuer saw the request go away.
+	eventually(t, "the exchange to be cancelled", func() bool { return issuer.cancellations() == 1 })
+	eventually(t, "a log line", func() bool { return strings.Contains(ext.logs.String(), "did not finish") })
+	rt.shutdown()
+	if err := <-ext.exited; err != nil {
+		t.Fatalf("%v\n%s", err, ext.logs.String())
 	}
 }

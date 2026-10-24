@@ -20,18 +20,24 @@ import (
 
 // Environment variable names.
 const (
-	EnvIssuer        = "OTLP_LAMBDA_ISSUER"
-	EnvAudience      = "OTLP_LAMBDA_AUDIENCE"
-	EnvOTLPAudience  = "OTLP_LAMBDA_OTLP_AUDIENCE"
-	EnvOTLPEndpoint  = "OTLP_LAMBDA_ENDPOINT"
-	EnvListen        = "OTLP_LAMBDA_LISTEN"
-	EnvSTSDuration   = "OTLP_LAMBDA_STS_DURATION_SECONDS"
-	EnvSTSAlgorithm  = "OTLP_LAMBDA_STS_ALGORITHM"
-	EnvTokenFile     = "OTLP_LAMBDA_TOKEN_FILE"
-	defaultListen    = "127.0.0.1:4318"
-	defaultAlgorithm = "ES384"
-	defaultOTLPAud   = "otlp"
-	defaultDuration  = 300
+	EnvIssuer       = "OTLP_LAMBDA_ISSUER"
+	EnvAudience     = "OTLP_LAMBDA_AUDIENCE"
+	EnvOTLPAudience = "OTLP_LAMBDA_OTLP_AUDIENCE"
+	EnvOTLPEndpoint = "OTLP_LAMBDA_ENDPOINT"
+	EnvListen       = "OTLP_LAMBDA_LISTEN"
+	EnvSTSDuration  = "OTLP_LAMBDA_STS_DURATION_SECONDS"
+	EnvSTSAlgorithm = "OTLP_LAMBDA_STS_ALGORITHM"
+	EnvTokenFile    = "OTLP_LAMBDA_TOKEN_FILE"
+	// EnvRefreshWait bounds the refresh finished on INVOKE before the next
+	// event is asked for; EnvRefreshMargin is how long before expiry a
+	// token is replaced; EnvExchangeTimeout bounds one attempt of a refresh.
+	EnvRefreshWait     = "OTLP_LAMBDA_REFRESH_WAIT_MS"
+	EnvRefreshMargin   = "OTLP_LAMBDA_REFRESH_MARGIN_SECONDS"
+	EnvExchangeTimeout = "OTLP_LAMBDA_EXCHANGE_TIMEOUT_MS"
+	defaultListen      = "127.0.0.1:4318"
+	defaultAlgorithm   = "ES384"
+	defaultOTLPAud     = "otlp"
+	defaultDuration    = 300
 )
 
 // Config is the extension's settings, all from the environment.
@@ -54,6 +60,9 @@ type Config struct {
 	Algorithm string
 	// TokenFile, when set, receives each access token (0600, atomically).
 	TokenFile string
+	// RefreshWait, RefreshMargin and ExchangeTimeout are the Source's
+	// fields of the same meaning (ExchangeTimeout is its RefreshTimeout).
+	RefreshWait, RefreshMargin, ExchangeTimeout time.Duration
 	// Deprecated is the old (SLUIS_, ACCESS_ROSTER_) names that were read because their
 	// OTLP_LAMBDA_ name was not set. Names only, never values.
 	Deprecated []string
@@ -78,6 +87,10 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		Algorithm:    get(EnvSTSAlgorithm, defaultAlgorithm),
 		TokenFile:    get(EnvTokenFile, ""),
 		Duration:     defaultDuration,
+
+		RefreshWait:     DefaultRefreshWait,
+		RefreshMargin:   DefaultRefreshMargin,
+		ExchangeTimeout: DefaultRefreshTimeout,
 	}
 	var problems []error
 	for _, required := range []struct{ name, value string }{
@@ -93,6 +106,25 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 			problems = append(problems, fmt.Errorf("%s must be 60..3600, got %q", EnvSTSDuration, raw))
 		} else {
 			c.Duration = int32(n) //nolint:gosec // bounded above
+		}
+	}
+	for _, d := range []struct {
+		name   string
+		dst    *time.Duration
+		unit   time.Duration
+		lo, hi int
+	}{
+		{EnvRefreshWait, &c.RefreshWait, time.Millisecond, 100, 60000},
+		{EnvRefreshMargin, &c.RefreshMargin, time.Second, 10, 3600},
+		{EnvExchangeTimeout, &c.ExchangeTimeout, time.Millisecond, 100, 60000},
+	} {
+		if raw := get(d.name, ""); raw != "" {
+			n, convErr := strconv.Atoi(raw)
+			if convErr != nil || n < d.lo || n > d.hi {
+				problems = append(problems, fmt.Errorf("%s must be %d..%d, got %q", d.name, d.lo, d.hi, raw))
+			} else {
+				*d.dst = time.Duration(n) * d.unit
+			}
 		}
 	}
 	if c.Endpoint != "" {
@@ -122,10 +154,4 @@ func checkUpstream(raw string) error {
 	// Only scheme and host are printed: a URL may carry credentials, and the
 	// error is logged (and forwarded as a function log).
 	return fmt.Errorf("%s must be https, got %s://%s", EnvOTLPEndpoint, u.Scheme, u.Host)
-}
-
-// refreshMargin is how long before expiry a token is replaced: a third of
-// its life, so a function that exports rarely still finds a fresh one.
-func refreshMargin(lifetime time.Duration) time.Duration {
-	return max(lifetime/3, time.Second)
 }

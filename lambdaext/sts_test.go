@@ -113,6 +113,32 @@ func TestConfig(t *testing.T) {
 		c.Algorithm != "ES384" || c.Duration != 300 || c.OTLPAudience != "otlp" || c.TokenFile != "" {
 		t.Fatalf("defaults: %+v", c)
 	}
+	if c.RefreshWait != 5*time.Second || c.RefreshMargin != 6*time.Minute || c.ExchangeTimeout != 5*time.Second {
+		t.Fatalf("token timing defaults: %+v", c)
+	}
+	env["OTLP_LAMBDA_REFRESH_WAIT_MS"] = "2500"
+	env["OTLP_LAMBDA_REFRESH_MARGIN_SECONDS"] = "420"
+	env["OTLP_LAMBDA_EXCHANGE_TIMEOUT_MS"] = "8000"
+	if c, err = lambdaext.LoadConfig(get); err != nil ||
+		c.RefreshWait != 2500*time.Millisecond || c.RefreshMargin != 7*time.Minute || c.ExchangeTimeout != 8*time.Second {
+		t.Fatalf("token timings: %+v %v", c, err)
+	}
+	env["OTLP_LAMBDA_REFRESH_WAIT_MS"] = "0"
+	env["OTLP_LAMBDA_REFRESH_MARGIN_SECONDS"] = "6m"
+	env["OTLP_LAMBDA_EXCHANGE_TIMEOUT_MS"] = "600000"
+	_, err = lambdaext.LoadConfig(get)
+	for _, want := range []string{
+		"OTLP_LAMBDA_REFRESH_WAIT_MS must be 100..60000",
+		"OTLP_LAMBDA_REFRESH_MARGIN_SECONDS must be 10..3600",
+		"OTLP_LAMBDA_EXCHANGE_TIMEOUT_MS must be 100..60000",
+	} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("want %q in %v", want, err)
+		}
+	}
+	for _, k := range []string{"OTLP_LAMBDA_REFRESH_WAIT_MS", "OTLP_LAMBDA_REFRESH_MARGIN_SECONDS", "OTLP_LAMBDA_EXCHANGE_TIMEOUT_MS"} {
+		delete(env, k)
+	}
 	env["OTLP_LAMBDA_ENDPOINT"] = "http://otlp.example"
 	env["OTLP_LAMBDA_STS_DURATION_SECONDS"] = "5"
 	delete(env, "OTLP_LAMBDA_ISSUER")
