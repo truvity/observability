@@ -1,0 +1,44 @@
+# The alerting plane of tests/cases/observability-stack/notifications-group-routes: that case's values
+# (presets merged) kept to the keys this chart declares. tests/alerting_chart_test.go
+# derives the same file for every stack case and holds the objects byte-identical.
+stackReleaseName: observability-stack
+tenancy: {}
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-acme-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts'
+      mention: here
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  routes:
+  - match:
+      k8s_cluster_name: example-cluster
+    critical:
+      channel: '#alerts-example-cluster'
+      mention: here
+    warning: '#alerts-example-cluster'
+  groupByRoutes:
+  - match:
+      alertgroup: batch
+    groupBy: [alertname, k8s_cluster_name, k8s_namespace_name, kind, target]
+  - match:
+      alertgroup: ledger
+    groupBy: ['...']
+  inhibit:
+    rules:
+    - sourceMatchers:
+      - alertname =~ "BatchApiErrors|BatchStoreErrors"
+      - k8s_cluster_name =~ ".+"
+      - k8s_namespace_name =~ ".+"
+      targetMatchers:
+      - alertname =~ "BatchRunStale"
+      equal: [k8s_cluster_name, k8s_namespace_name]

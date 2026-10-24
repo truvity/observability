@@ -41,6 +41,15 @@ into one notification. Without `source` in routeLabels, and for any
 {{- $inhibitEnabled := ternary $inhibit.enabled true (hasKey $inhibit "enabled") }}
 {{- $inhibitEqual := $inhibit.equal | default (list "k8s_cluster_name" "k8s_namespace_name") }}
 {{- $inhibitRequireLabels := ternary $inhibit.requireLabels true (hasKey $inhibit "requireLabels") }}
+{{- $inhibitRules := $inhibit.rules | default list }}
+{{- /*
+`notifications.groupByRoutes`: alerts that match an entry are grouped by its
+own labels instead of the root `group_by`. The entry is a child route AHEAD of
+the primary tree's own routes, and holds a copy of that tree, so the alerts it
+claims reach exactly the receivers they reached before and only the grouping
+differs. Empty (the default) renders no child route at all.
+*/}}
+{{- $groupByRoutes := $n.groupByRoutes | default list }}
 {{- /*
 `notifications.externalUrl` defaults to `vmalert.externalUrl`: they are
 one fact (see the refusal in _validate.tpl), and a consumer who already
@@ -336,30 +345,23 @@ spec:
           receiver: {{ $fallback }}
           continue: true
           routes:
-            {{- range $r := $routes }}
+            {{- range $g := $groupByRoutes }}
+            # notifications.groupByRoutes: this grouping for the alerts below, delivered
+            # exactly where the primary tree delivers them.
             - match:
-                {{- toYaml $r.match | nindent 16 }}
+                {{- toYaml $g.match | nindent 16 }}
               receiver: {{ $fallback }}
+              group_by:
+                {{- range $l := $g.groupBy }}
+                - {{ ternary ($l | quote) $l (eq $l "...") }}
+                {{- end }}
               routes:
-                {{- range $tier := list "critical" "warning" }}
-                {{- $override := index $r $tier }}
-                {{- if hasKey $severities $tier }}
-                - match:
-                    severity: {{ $tier }}
-                  receiver: {{ include "observability-stack.notifications.receiverFor" (list $ $severities $tier $override) }}
-                {{- end }}
+                {{- with (include "observability-stack.notifications.primaryRoutes" (list $ $routes $severities $fallback) | trim) }}
+                {{- . | nindent 16 }}
                 {{- end }}
             {{- end }}
-            {{- /*
-            The global default: every severity this chart knows, for an
-            alert that matched none of the projects above.
-            */}}
-            {{- range $tier := list "critical" "warning" }}
-            {{- if hasKey $severities $tier }}
-            - match:
-                severity: {{ $tier }}
-              receiver: {{ include "observability-stack.notifications.receiverFor" (list $ $severities $tier "") }}
-            {{- end }}
+            {{- with (include "observability-stack.notifications.primaryRoutes" (list $ $routes $severities $fallback) | trim) }}
+            {{- . | nindent 12 }}
             {{- end }}
         {{- range $a := $also }}
         - match:
@@ -524,8 +526,9 @@ spec:
     wide, silently. The guard sits on the source only: `equal` then
     requires the target to carry the same non-empty values.
     */}}
-    {{- if $inhibitEnabled }}
+    {{- if or $inhibitEnabled $inhibitRules }}
     inhibit_rules:
+      {{- if $inhibitEnabled }}
       - source_matchers:
           - severity = "critical"
           {{- if $inhibitRequireLabels }}
@@ -539,6 +542,26 @@ spec:
           {{- range $l := $inhibitEqual }}
           - {{ $l }}
           {{- end }}
+      {{- end }}
+      {{- /*
+      notifications.inhibit.rules: the estate's own rules, after the built-in one
+      and whether or not that one is enabled. Matchers are Alertmanager matcher
+      strings, rendered quoted so a regular expression survives.
+      */}}
+      {{- range $x := $inhibitRules }}
+      - source_matchers:
+          {{- range $m := $x.sourceMatchers }}
+          - {{ $m | quote }}
+          {{- end }}
+        target_matchers:
+          {{- range $m := $x.targetMatchers }}
+          - {{ $m | quote }}
+          {{- end }}
+        equal:
+          {{- range $l := $x.equal }}
+          - {{ $l }}
+          {{- end }}
+      {{- end }}
     {{- end }}
 {{- end }}
 {{- end }}

@@ -1,0 +1,41 @@
+# Per-alertgroup grouping and extra inhibit rules. Alerts of the group
+# `batch` are grouped by `kind` and `target` as well, so each target is its
+# own notification; they are still delivered where the routes deliver them
+# (the critical tier pings `@here`, a project's route keeps its channel),
+# because the child route carries a copy of the routes. Every other alert
+# keeps the root `groupBy`. One extra inhibit rule: while a real outage
+# alert fires for a cluster and namespace, the freshness alerts of that
+# pair are not notified.
+# The cluster's DNS suffix is a neutral placeholder: a golden render is a
+# tracked file in a public repository.
+global:
+  cluster:
+    dnsDomain: cluster.example.
+
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+      - name: acme
+        appTokenSecret: {name: example-acme-slack-bot, key: token}
+  severities:
+    critical: {receiver: slack, channel: "#alerts", mention: here}
+    warning: {receiver: slack, channel: "#alerts"}
+  routes:
+    - match: {k8s_cluster_name: example-cluster}
+      critical: {channel: "#alerts-example-cluster", mention: here}
+      warning: "#alerts-example-cluster"
+  groupByRoutes:
+    - match: {alertgroup: batch}
+      groupBy: [alertname, k8s_cluster_name, k8s_namespace_name, kind, target]
+    - match: {alertgroup: ledger}
+      groupBy: ["..."]
+  inhibit:
+    rules:
+      - sourceMatchers:
+          - alertname =~ "BatchApiErrors|BatchStoreErrors"
+          - k8s_cluster_name =~ ".+"
+          - k8s_namespace_name =~ ".+"
+        targetMatchers:
+          - alertname =~ "BatchRunStale"
+        equal: [k8s_cluster_name, k8s_namespace_name]

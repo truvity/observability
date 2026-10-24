@@ -136,6 +136,9 @@ token is a token in git.
 | `notifications.mode: evaluate-only` with `alertmanager.enabled` true, or a receiver, severity, route, `also` bridge, `catchAll` or `drop` configured, or `alertmanager.notifierUrl` set | a channel or an Alertmanager configured beside a mode that mutes vmalert, which looks wired up and is never reached |
 | `inhibit.equal` empty (schema) | any critical would mute every warning |
 | a `drop` entry with no key (schema) | an empty matcher matches, and drops, every alert |
+| a `groupByRoutes` entry with an empty `match` or `groupBy` (schema), or two entries with the same `match` | an empty match regroups every alert; an empty `groupBy` is Alertmanager's default, not a decision; the second of two equal matches is never reached |
+| an `inhibit.rules` entry with an empty matcher list or `equal` (schema), or an `equal` label no source matcher constrains | any source would mute every target; a label missing on both alerts is "equal" |
+| `groupByRoutes` or `inhibit.rules` with `notifications.mode: evaluate-only` | no Alertmanager is rendered, so neither is ever read |
 | `catchAll` naming a receiver that is not configured | every alert no tier claimed routed to nowhere |
 
 Each has a fixture under `tests/invalid/observability-stack/`.
@@ -683,6 +686,69 @@ notifications:
   inhibit:
     equal: [namespace]
 ```
+
+### More rules: `inhibit.rules`
+
+`notifications.inhibit.rules` adds the estate's own rules after the
+built-in one (`inhibit.enabled: false` turns only the built-in one off).
+Each entry is `{sourceMatchers, targetMatchers, equal}`; the matchers are
+Alertmanager matcher strings, so a regular expression is
+`alertname =~ "A|B"`. While a source alert fires, a target alert with
+the same value for every `equal` label is not notified. The use is a
+dependent signal: a freshness check that goes stale because the service
+it watches is down says nothing the outage alert has not said.
+
+**The hazard applies to every entry, and `requireLabels` does not reach
+them.** The chart refuses an `equal` label that no source matcher
+constrains, so write the guard the built-in rule renders:
+
+```yaml
+notifications:
+  inhibit:
+    rules:
+      - sourceMatchers:
+          - alertname =~ "ServiceDown|ServiceErrors"
+          - k8s_cluster_name =~ ".+"
+          - k8s_namespace_name =~ ".+"
+        targetMatchers:
+          - alertname =~ "ServiceHeartbeatStale"
+        equal: [k8s_cluster_name, k8s_namespace_name]
+```
+
+An inhibited alert is still firing in vmalert and in Alertmanager's list,
+and is shown by karma as suppressed; it is only not notified, and it is
+notified at the next `repeat_interval` once the source resolves.
+
+## Grouping some alerts differently
+
+`notifications.groupBy` is one list for the whole install. An alert whose
+instances differ in labels the root list does not name (a `kind` and a
+`target`, say) puts every instance in one notification, so a second
+instance joining re-sends the first, with its mention, within
+`group_interval`. `notifications.groupByRoutes` gives some alerts their
+own `group_by`:
+
+```yaml
+notifications:
+  groupByRoutes:
+    - match: {alertgroup: batch}
+      groupBy: [alertname, k8s_cluster_name, k8s_namespace_name, kind, target]
+```
+
+- `match` is exact-match on any alert label. It is not held to
+  `routeLabels`, because it usually names a label no route uses, such as
+  the `alertgroup` vmalert stamps with the rule group's name.
+- `groupBy` replaces the root list for those alerts, so write it in full
+  (`["..."]` groups by every label).
+- The entry is a child route AHEAD of the primary tree's own routes, and
+  holds a copy of those routes. An alert the entry matches therefore
+  reaches the same receivers as before, with the same `mention`, and only
+  its grouping differs; every other alert is untouched, and the `also`
+  bridge still fires for both. `tests/group_routes_test.go` walks the
+  rendered tree for a matrix of labels and holds that.
+- The first entry whose `match` fits wins; two entries with the same
+  `match` are refused. Unset or empty renders exactly the configuration
+  without the key.
 
 ## Beyond `critical` and `warning`
 

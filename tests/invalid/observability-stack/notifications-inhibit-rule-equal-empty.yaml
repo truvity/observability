@@ -1,0 +1,24 @@
+# expect: at '/notifications/inhibit/rules/0/equal'
+# A rule with no `equal` lets any source mute every target.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  inhibit:
+    rules:
+    - sourceMatchers:
+      - alertname =~ "ServiceDown"
+      targetMatchers:
+      - alertname =~ "ServiceStale"
+      equal: []

@@ -348,6 +348,52 @@ ever being written.
 {{- end -}}
 
 {{/*
+Notifications: the routes of the primary tree, as a YAML list at column 0
+(the caller indents it). One node per `notifications.routes` entry, each
+with its critical and warning children, then the global default for
+every severity this chart knows.
+
+It is a helper because `notifications.groupByRoutes` needs the SAME tree
+twice over: once nested under each entry (so an alert that entry matches
+is still delivered where it always was, only grouped differently) and
+once at the top for every other alert. One body, so the two cannot
+disagree.
+
+Called with `(list $root $routes $severities $fallback)`.
+*/}}
+{{- define "observability-alerting.notifications.primaryRoutes" -}}
+{{- $root := index . 0 -}}
+{{- $routes := index . 1 -}}
+{{- $severities := index . 2 -}}
+{{- $fallback := index . 3 -}}
+{{- range $r := $routes }}
+- match:
+    {{- toYaml $r.match | nindent 4 }}
+  receiver: {{ $fallback }}
+  routes:
+    {{- range $tier := list "critical" "warning" }}
+    {{- $override := index $r $tier }}
+    {{- if hasKey $severities $tier }}
+    - match:
+        severity: {{ $tier }}
+      receiver: {{ include "observability-alerting.notifications.receiverFor" (list $root $severities $tier $override) }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- /*
+The global default: every severity this chart knows, for an
+alert that matched none of the projects above.
+*/}}
+{{- range $tier := list "critical" "warning" }}
+{{- if hasKey $severities $tier }}
+- match:
+    severity: {{ $tier }}
+  receiver: {{ include "observability-alerting.notifications.receiverFor" (list $root $severities $tier "") }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Operator-only's self-disable, for the four components whose own
 `enabled` defaults to `null` rather than a literal `true`/`false`:
 vmauth, vmalert, alertmanager, metricsSelfScrape.
