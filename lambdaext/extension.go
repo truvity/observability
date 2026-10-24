@@ -121,9 +121,12 @@ func start(ctx context.Context, opt Options) (*Source, *http.Server, Config, err
 		return nil, nil, cfg, err
 	}
 	source := &Source{
-		Subject:  SubjectFunc(stsAPI, cfg),
-		Exchange: ExchangeFunc(cfg, nil),
-		Logf:     opt.Logf,
+		Subject:        SubjectFunc(stsAPI, cfg),
+		Exchange:       ExchangeFunc(cfg, nil),
+		Logf:           opt.Logf,
+		RefreshTimeout: cfg.ExchangeTimeout,
+		RefreshMargin:  cfg.RefreshMargin,
+		RefreshWait:    cfg.RefreshWait,
 	}
 	if cfg.TokenFile != "" {
 		source.OnToken = func(token string) {
@@ -141,9 +144,13 @@ func start(ctx context.Context, opt Options) (*Source, *http.Server, Config, err
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() { _ = srv.Serve(ln) }()
-	// Warm the token while the runtime initialises; the first export waits
-	// on the same single flight if it arrives first.
-	go source.Warm(ctx)
+	// INIT starts no token fetch and never waits for one. The first INVOKE
+	// gets the token before the extension asks for the next event (loop).
+	// The issuer runs this extension too, and its token comes from the
+	// issuer: an INIT that waited on it would make a new issuer environment
+	// wait on another, perhaps itself starting, and so on down the chain.
+	// An export that arrives during INIT still fetches on demand, in its
+	// own request.
 	return source, srv, cfg, nil
 }
 
@@ -174,10 +181,13 @@ func writeTokenFile(path, token string) error {
 }
 
 func loop(ctx context.Context, client *Client, source *Source, srv *http.Server, tele *teleServer) error {
-	for {
+	for first := true; ; first = false {
 		// The environment may freeze as soon as this extension asks for the
 		// next event, so what the platform has delivered goes out first.
-		tele.flush(ctx, flushBudget)
+		// Not at INIT: a flush needs a token, and INIT fetches none (start).
+		if !first {
+			tele.flush(ctx, flushBudget)
+		}
 		ev, err := client.Next(ctx)
 		if err != nil {
 			shutdown(srv, 0)
@@ -189,8 +199,11 @@ func loop(ctx context.Context, client *Client, source *Source, srv *http.Server,
 		}
 		switch ev.EventType {
 		case "INVOKE":
+			// The environment has just thawed. A refresh that is due is
+			// finished now, within its bound, and not left in flight across
+			// the next freeze, where its deadline would run out.
 			if source != nil {
-				go source.Warm(ctx)
+				source.Ready(ctx)
 			}
 		case "SHUTDOWN":
 			wait := time.Until(time.UnixMilli(ev.DeadlineMs)) - 200*time.Millisecond

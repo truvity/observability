@@ -18,9 +18,12 @@ const (
 	typeJWT           = "urn:ietf:params:oauth:token-type:jwt"
 )
 
-// errRefused is an exchange the issuer declined, as opposed to a transport
-// failure.
+// errRefused is an exchange the issuer declined (a 4xx), as opposed to a
+// transport failure or errIssuerFailed. A refusal is not retried.
 var errRefused = errors.New("lambdaext: the exchange was refused")
+
+// errIssuerFailed is a 5xx from the issuer or its gateway: worth one retry.
+var errIssuerFailed = errors.New("lambdaext: the exchange failed at the issuer")
 
 // exchanger trades a subject token for one audienced elsewhere (RFC 8693).
 // It is the minimal client of the access-roster issuer's token endpoint:
@@ -98,6 +101,9 @@ func (e *exchanger) Exchange(ctx context.Context, subject, subjectType, audience
 		}
 		if detail == "" {
 			detail = response.Status
+		}
+		if response.StatusCode >= http.StatusInternalServerError {
+			return exchangedToken{}, fmt.Errorf("%w: %s", errIssuerFailed, detail)
 		}
 		return exchangedToken{}, fmt.Errorf("%w: %s", errRefused, detail)
 	}

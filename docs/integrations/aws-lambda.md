@@ -53,10 +53,31 @@ sequenceDiagram
 A Lambda execution environment is **frozen between invocations**: no timer
 runs while it is frozen, so a token refreshed by a background loop can be
 expired when the environment thaws and the function exports. The extension
-therefore checks the clock on every export: a token is cached until a third
-of its life remains, and a caller that finds it inside that window waits for
-a new one (concurrent callers share one refresh). The extension also warms
-the token on each `INVOKE`, so the usual export finds a fresh one waiting.
+therefore checks the clock on every export: a token is cached until 6
+minutes of its life remain (`OTLP_LAMBDA_REFRESH_MARGIN_SECONDS`, at most
+half its life), and a caller that finds it inside that window waits for a
+new one (concurrent callers share one refresh).
+
+**No refresh is left in flight across a freeze.** The environment may
+freeze as soon as the extension asks for the next event, and a request in
+flight then is frozen with it: its deadline is wall-clock and has passed by
+the thaw. So on each `INVOKE` the extension finishes a refresh that is due
+**before** it asks for the next event, waiting at most
+`OTLP_LAMBDA_REFRESH_WAIT_MS` (5 seconds). A refresh that does not finish
+in that time is cancelled; the old token keeps being used while it is
+valid, and one line is logged per failure window. On the same `INVOKE`, a
+backoff left by a failure before the freeze is forgotten, and a refresh
+whose deadline passed while frozen is dropped and started again. Every
+attempt (the STS call and the exchange) gets its own deadline,
+`OTLP_LAMBDA_EXCHANGE_TIMEOUT_MS` (5 seconds), set when the attempt
+starts, and a failed attempt is tried once more, with a new identity token.
+An issuer's refusal (a 4xx) is not retried.
+
+**No token is fetched at INIT.** The first `INVOKE` fetches it as above.
+The issuer itself may run this extension, and its token comes from the
+issuer: an INIT that waited for a token would make a new issuer environment
+wait on another one, possibly itself starting, and so on. An export that
+arrives during INIT still gets a token on demand.
 
 Forwarding is **synchronous**. Answering the exporter early and forwarding
 later would let the environment freeze with the export still in memory.
@@ -157,8 +178,9 @@ It is **fail-open**: telemetry never blocks, slows or crashes an invocation.
   answers `503` with `Retry-After`, which OTLP exporters treat as retryable,
   and the extension logs **one line per failure window** (and one when it
   recovers). After a failure it does not call STS again for 5 seconds, so an
-  exporter's retries are not a request storm. A token that is still valid is
-  used even if its replacement failed.
+  exporter's retries are not a request storm; the next `INVOKE` tries again
+  at once. A token that is still valid is used even if its replacement
+  failed.
 - Missing or invalid configuration, or the port is taken: one log line, and
   the extension keeps answering the platform (an extension that exits is
   reported by Lambda as a crash of the invocation). Exports then find nothing
@@ -192,6 +214,9 @@ old ones, so set both while a function may still run one.
 | `OTLP_LAMBDA_LISTEN` | `127.0.0.1:4318` | The proxy's address. |
 | `OTLP_LAMBDA_STS_DURATION_SECONDS` | `300` | Lifetime asked of the STS token (60 to 3600). It is used once, for the exchange. |
 | `OTLP_LAMBDA_STS_ALGORITHM` | `ES384` | Signing algorithm asked of STS (`ES384` or `RS256`). |
+| `OTLP_LAMBDA_REFRESH_WAIT_MS` | `5000` | How long an `INVOKE` waits for a due token refresh before the extension asks for the next event (100 to 60000). The wait is extension time after the function returns, billed but not in the function's duration. |
+| `OTLP_LAMBDA_REFRESH_MARGIN_SECONDS` | `360` | How long before its expiry a token is replaced (10 to 3600). Capped at half the token's life. |
+| `OTLP_LAMBDA_EXCHANGE_TIMEOUT_MS` | `5000` | Bounds one attempt to get a token, the STS call and the exchange together (100 to 60000). A failed attempt is tried once more. |
 | `OTLP_LAMBDA_PLATFORM_LOGS` | `true` | Subscribe to Telemetry API `platform` events and forward them as OTLP logs. |
 | `OTLP_LAMBDA_FUNCTION_LOGS` | `true` | Forward `function` logs (the function's stdout/stderr), lifting JSON lines. Set `false` for a function that exports its logs through its own OTel logs SDK, or each line arrives twice; see [Platform logs](#platform-logs). |
 | `OTLP_LAMBDA_EXTENSION_LOGS` | `false` | Also forward `extension` logs (other extensions' output). |

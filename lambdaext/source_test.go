@@ -59,13 +59,13 @@ func newHarness(ttl time.Duration) *harness {
 }
 
 func TestTokenIsCachedUntilItsRefreshWindow(t *testing.T) {
-	h := newHarness(15 * time.Minute) // refresh at 10 minutes
+	h := newHarness(15 * time.Minute) // refresh at 9 minutes, 6 before expiry
 	ctx := context.Background()
 	first, err := h.src.Token(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.clk.advance(9 * time.Minute)
+	h.clk.advance(8 * time.Minute)
 	again, _ := h.src.Token(ctx)
 	if again != first || h.exchanges.Load() != 1 {
 		t.Fatalf("expected the cached token, got %q after %d exchanges", again, h.exchanges.Load())
@@ -124,12 +124,13 @@ func TestFailureIsRefusedBacksOffAndLogsOncePerWindow(t *testing.T) {
 			t.Fatal("expected an error with no token")
 		}
 	}
-	if h.exchanges.Load() != 1 {
+	// One refresh is two attempts: the in-call retry.
+	if h.exchanges.Load() != 2 {
 		t.Fatalf("retries inside the backoff must not reach the issuer, got %d", h.exchanges.Load())
 	}
 	h.clk.advance(10 * time.Second)
 	_, _ = h.src.Token(context.Background())
-	if h.exchanges.Load() != 2 || len(h.logs) != 1 {
+	if h.exchanges.Load() != 4 || len(h.logs) != 1 {
 		t.Fatalf("one retry after the backoff, one log line: %d exchanges, logs %v", h.exchanges.Load(), h.logs)
 	}
 	h.failNext.Store(false)
