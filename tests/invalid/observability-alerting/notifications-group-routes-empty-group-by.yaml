@@ -1,0 +1,22 @@
+# expect: at '/notifications/groupByRoutes/0/groupBy'
+# An entry with no labels to group by is Alertmanager's default, not a decision.
+stackReleaseName: observability-stack
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  groupByRoutes:
+  - match:
+      alertgroup: batch
+    groupBy: []

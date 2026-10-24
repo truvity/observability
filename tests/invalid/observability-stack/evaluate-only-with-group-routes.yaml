@@ -1,0 +1,11 @@
+# expect: `notifications.mode` is `evaluate-only` and `notifications.groupByRoutes`
+# Evaluate-only renders no Alertmanager, so a grouping or an inhibit rule beside
+# it is never read, and looks wired up.
+alertmanager:
+  enabled: false
+notifications:
+  mode: evaluate-only
+  groupByRoutes:
+  - match:
+      alertgroup: batch
+    groupBy: [alertname, target]

@@ -689,10 +689,35 @@
             "pattern": "^([a-zA-Z_][a-zA-Z0-9_]*|\\.\\.\\.)$"
           }
         },
+        "groupByRoutes": {
+          "type": "array",
+          "description": "Child routes that group some alerts differently from the root `groupBy`. Each entry matches alerts by exact label values (any label) and gives their `group_by` in full; it carries a copy of the routes, so receivers and mentions are the ones those alerts had. Empty renders no child route.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "match",
+              "groupBy"
+            ],
+            "properties": {
+              "match": {
+                "$ref": "#/definitions/matcherMap"
+              },
+              "groupBy": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^([a-zA-Z_][a-zA-Z0-9_]*|\\.\\.\\.)$"
+                }
+              }
+            }
+          }
+        },
         "inhibit": {
           "type": "object",
           "additionalProperties": false,
-          "description": "The one inhibit rule: a critical silences a warning whose values are equal for every label in `equal`. Alertmanager compares a label missing on both alerts as EQUAL; see docs/notifications.md, \"Inhibition\".",
+          "description": "The built-in inhibit rule: a critical silences a warning whose values are equal for every label in `equal`. Alertmanager compares a label missing on both alerts as EQUAL; see docs/notifications.md, \"Inhibition\". `rules` adds more.",
           "properties": {
             "enabled": {
               "type": "boolean"
@@ -708,6 +733,45 @@
             "requireLabels": {
               "type": "boolean",
               "description": "Default true: a source matcher `<label> =~ \".+\"` for every `equal` label, so a critical without them inhibits nothing. `false` renders the 0.10.0 rule."
+            },
+            "rules": {
+              "type": "array",
+              "description": "Further inhibit rules after the built-in one. Matchers are Alertmanager matcher strings. Each `equal` label needs a source matcher that constrains it (refused at render time otherwise): a label missing on both alerts is EQUAL.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sourceMatchers",
+                  "targetMatchers",
+                  "equal"
+                ],
+                "properties": {
+                  "sourceMatchers": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "targetMatchers": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "equal": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Never empty: a rule with no `equal` lets any source mute every target.",
+                    "items": {
+                      "$ref": "#/definitions/labelName"
+                    }
+                  }
+                }
+              }
             }
           }
         },

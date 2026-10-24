@@ -1,0 +1,24 @@
+# expect: is the same as notifications.groupByRoutes[0].match
+# Two entries with one match: the second is never reached, and looks like it works.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  groupByRoutes:
+  - match:
+      alertgroup: batch
+    groupBy: [alertname, target]
+  - match:
+      alertgroup: batch
+    groupBy: [alertname, kind]

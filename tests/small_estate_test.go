@@ -26,6 +26,7 @@ type amRoute struct {
 	Match    map[string]string `yaml:"match"`
 	Matchers []string          `yaml:"matchers"`
 	Continue bool              `yaml:"continue"`
+	GroupBy  []string          `yaml:"group_by"`
 	Routes   []amRoute         `yaml:"routes"`
 }
 
@@ -33,6 +34,7 @@ type amConfig struct {
 	Route        amRoute `yaml:"route"`
 	InhibitRules []struct {
 		SourceMatchers []string `yaml:"source_matchers"`
+		TargetMatchers []string `yaml:"target_matchers"`
 		Equal          []string `yaml:"equal"`
 	} `yaml:"inhibit_rules"`
 	Receivers []struct {

@@ -458,6 +458,26 @@ notifications:
     - alertname
     - k8s_cluster_name
     - k8s_namespace_name
+  # -- Child routes that group some alerts differently from the root
+  # `groupBy`: each entry is `{match, groupBy}`. `match` is exact-match on
+  # any alert label (not held to `routeLabels`: it often names the
+  # `alertgroup` vmalert stamps, which no route uses); `groupBy` is that
+  # entry's `group_by`, written in full, because it replaces the root list
+  # for those alerts. The entry sits ahead of `routes` and carries its own
+  # copy of them, so the alerts it claims reach the same receivers as
+  # before, with the same `mention`, and only their grouping differs; every
+  # other alert is untouched. The first entry whose match fits wins; two
+  # entries with the same `match` are refused. Empty renders exactly the
+  # config without this key.
+  #
+  #   groupByRoutes:
+  #     - match: {alertgroup: batch}
+  #       groupBy: [alertname, k8s_cluster_name, k8s_namespace_name, kind, target]
+  #
+  # Use it when one alert carries labels that tell its instances apart
+  # (here `kind` and `target`): with the root `groupBy` the second
+  # instance joins the first one's notification and re-sends it.
+  groupByRoutes: []
   # -- The ordered label names a `routes[].match` may use. The default is
   # what a route could always match on (the cluster and the namespace
   # the collectors stamp on every alert; `ownerLabel` is added to it when
@@ -556,6 +576,26 @@ notifications:
     # failed backup Job's warning on its cluster. `false` renders the
     # 0.10.0 rule byte for byte.
     requireLabels: true
+    # -- Further inhibit rules, after the built-in one above (which
+    # `enabled: false` turns off without touching these). Each entry is
+    # `{sourceMatchers, targetMatchers, equal}`: Alertmanager matcher
+    # strings, so a regular expression is `alertname =~ "A|B"`. While a
+    # source alert fires, every target alert with the same value for each
+    # `equal` label is not notified. THE HAZARD above applies to every
+    # entry, and `requireLabels` does not reach them: a label missing on
+    # both alerts is "equal", so each `equal` label needs a source matcher
+    # that says something about it (the usual `<label> =~ ".+"`), and the
+    # chart refuses one that has none.
+    #
+    #   rules:
+    #     - sourceMatchers:
+    #         - alertname =~ "ServiceDown|ServiceErrors"
+    #         - k8s_cluster_name =~ ".+"
+    #         - k8s_namespace_name =~ ".+"
+    #       targetMatchers:
+    #         - alertname =~ "ServiceHeartbeatStale"
+    #       equal: [k8s_cluster_name, k8s_namespace_name]
+    rules: []
   # -- Exact-match matchers for alerts that reach NOBODY, routed to the
   # null receiver ahead of every other route — for an alert an estate
   # has decided it will never act on (a noisy vendored rule, say),

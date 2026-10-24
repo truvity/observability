@@ -1,0 +1,25 @@
+# expect: no entry of sourceMatchers constrains it
+# An `equal` label no source matcher constrains: a label missing on both alerts is
+# equal, so the source would inhibit every target that also lacks it.
+notifications:
+  externalUrl: https://grafana.example
+  slack:
+    workspaces:
+    - name: acme
+      appTokenSecret:
+        name: example-slack-bot
+        key: token
+  severities:
+    critical:
+      receiver: slack
+      channel: '#alerts-critical'
+    warning:
+      receiver: slack
+      channel: '#alerts'
+  inhibit:
+    rules:
+    - sourceMatchers:
+      - alertname =~ "ServiceDown"
+      targetMatchers:
+      - alertname =~ "ServiceStale"
+      equal: [k8s_cluster_name]

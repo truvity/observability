@@ -222,6 +222,9 @@ trip over an unconfigured severity or receiver.
 {{- if $receiverConfigured -}}
 {{- fail "observability-alerting: `notifications.mode` is `evaluate-only` and `notifications` also configures a receiver, a severity, a route or an `also` bridge (or a `catchAll` or `drop`). Evaluate-only means nobody is notified yet: a receiver configured beside it looks wired up and is never reached, because vmalert never sends the notification it would carry. Remove the receiver configuration, or drop `notifications.mode` back to `route`." -}}
 {{- end -}}
+{{- if or (gt (len ($n.groupByRoutes | default list)) 0) (gt (len (($n.inhibit | default dict).rules | default list)) 0) -}}
+{{- fail "observability-alerting: `notifications.mode` is `evaluate-only` and `notifications.groupByRoutes` or `notifications.inhibit.rules` is set. Evaluate-only renders no Alertmanager, so neither is ever read, and both look wired up. Remove them, or drop `notifications.mode` back to `route`." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
@@ -355,6 +358,47 @@ looking exactly like a route that works.
 {{- $routeLabels := $n.routeLabels | default (list "k8s_cluster_name" "k8s_namespace_name") -}}
 {{- if not (has $k (concat $routeLabels (without (list (toString ($n.ownerLabel | default ""))) ""))) -}}
 {{- fail (printf "observability-alerting: notifications.routes[%d].match has key %q. A route may match only on a label in `notifications.routeLabels` (default: k8s_cluster_name and k8s_namespace_name, the two dimensions the collectors stamp on every alert; now: %s), plus `notifications.ownerLabel` when set. A route on anything else (tenant, env, team, …) matches nothing any rule actually carries. An alert born outside a cluster (alert-ingress) is routed on the label its mapping sets, usually `source`: add it to `notifications.routeLabels`. A route on the owning company needs `notifications.ownerLabel` set to the label the emitters stamp (`tenancy.owners` in observability-emitters)." $i (toString $k) (join ", " $routeLabels)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+`notifications.groupByRoutes`: each entry is a child route ahead of the
+primary tree's own routes, so an entry whose `match` is the same as an
+earlier one can never be reached, and looks exactly like one that works.
+The match is NOT held to `routeLabels`: it names the label of the alerts
+whose grouping changes, which is often one the routes never use (the
+`alertgroup` vmalert stamps, for one). A `groupBy` label no alert carries
+groups every one of them together, the same trap as the root `groupBy`.
+*/ -}}
+{{- $seenGroupMatches := dict -}}
+{{- range $i, $g := ($n.groupByRoutes | default list) -}}
+{{- $key := toJson $g.match -}}
+{{- if hasKey $seenGroupMatches $key -}}
+{{- fail (printf "observability-alerting: notifications.groupByRoutes[%d].match is the same as notifications.groupByRoutes[%d].match (%s). The first entry takes every alert both would match, so this one is never used: merge the two, or make the matches differ." $i (index $seenGroupMatches $key) $key) -}}
+{{- end -}}
+{{- $_ := set $seenGroupMatches $key $i -}}
+{{- end -}}
+{{- /*
+`notifications.inhibit.rules`: Alertmanager compares a label missing on
+BOTH alerts as equal, so an `equal` label that the source does not
+require to be non-empty lets a source without it inhibit every target
+without it (docs/notifications.md, "Inhibition"). The built-in rule
+carries that guard itself (`requireLabels`); an extra rule is the
+estate's own, so the chart refuses the unguarded shape instead of
+guessing a guard into a matcher it did not write. A source matcher on
+the label that is not `=~ ".+"` (an exact `=` on a value, say) also
+guards it, so the test is "the source says something about the label".
+*/ -}}
+{{- range $i, $x := (($n.inhibit | default dict).rules | default list) -}}
+{{- range $l := $x.equal -}}
+{{- $guarded := false -}}
+{{- range $m := $x.sourceMatchers -}}
+{{- if hasPrefix (printf "%s " $l) (toString $m) -}}{{- $guarded = true -}}{{- end -}}
+{{- if hasPrefix (printf "%s=" $l) (toString $m) -}}{{- $guarded = true -}}{{- end -}}
+{{- if hasPrefix (printf "%s!" $l) (toString $m) -}}{{- $guarded = true -}}{{- end -}}
+{{- end -}}
+{{- if not $guarded -}}
+{{- fail (printf "observability-alerting: notifications.inhibit.rules[%d].equal names %q but no entry of sourceMatchers constrains it. Alertmanager compares a label missing on both alerts as EQUAL, so a source without %s would inhibit every target without it, install-wide and silently. Add a source matcher such as `%s =~ \".+\"`." $i (toString $l) (toString $l) (toString $l)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
