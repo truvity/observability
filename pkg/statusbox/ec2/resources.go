@@ -49,9 +49,10 @@ type Box struct {
 	// <Bucket>/<BucketPrefix>/config/. The box fetches them at its first boot.
 	ConfigObjects []*s3.BucketObjectv2
 
-	// UserData is what the launch template carries (gzip-wrapped); it holds no
-	// secret.
-	UserData string
+	// UserData is what the launch template carries: the composed cloud-config,
+	// gzipped when it is large. It holds no secret. Its Objects (the setup
+	// script) are uploaded by the box under the replica prefix too.
+	UserData *bootstrap.Rendered
 }
 
 // privatePorts are the ports of the instances that are not Public.
@@ -70,14 +71,15 @@ func (a Args) privatePorts() []int {
 // NewEC2 creates the box. See the package comment and docs/statusbox.md.
 //
 // The user-data is applied at launch, so a change to anything it renders from
-// (a Version, a Config, a parameter name, the Litestream pin) is a new launch
-// template version, which the group's instance refresh rolls out: the one
-// instance is replaced and restores its databases from the replica.
+// (a Version, a Config, a parameter name, the Litestream pin, a module) is a new
+// launch template version, which the group's instance refresh rolls out: the
+// one instance is replaced and restores its databases from the replica.
 //
-// The resources are built by github.com/truvity/asg. The
-// user-data goes through bootstrap.Verbatim and the role's policy through
-// IAM.Policy, the options that carry an existing program over without a
-// change; every logical name, type and parent is the module's own (see
+// The resources are built by github.com/truvity/asg. The user-data is composed
+// from the box's own module and the library's (watchdog, tunnel, ssh,
+// self-registration), the role's policy is the one the library generates from
+// it plus the box's replica statements, and the Compat options keep every
+// logical name, type, parent and physical name the box had (see
 // resourceset_test.go).
 func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOption) (*Box, error) {
 	if a == nil {
@@ -88,40 +90,48 @@ func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOp
 		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): the name becomes the Auto Scaling group name and must match %s", name, nameRE)
 	}
 
-	userData, err := a.UserData(name)
+	if err := a.validate(); err != nil {
+		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): %w", name, err)
+	}
+
+	gatusSHA, err := a.gatusChecksums()
 	if err != nil {
 		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): %w", name, err)
 	}
 
-	rendered, err := bootstrap.Verbatim(userData, userDataLimit)
+	c, err := a.compose(name, gatusSHA)
 	if err != nil {
 		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): %w", name, err)
 	}
 
-	app, err := asg.New(ctx, name, a.applianceArgs(name, rendered), opts...)
+	app, err := asg.New(ctx, name, a.applianceArgs(name, c), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): %w", name, err)
 	}
 
-	// The objects are the appliance's Extra ones, after the user-data's own
-	// (there are none: the user-data is verbatim).
-	return &Box{Appliance: app, ConfigObjects: app.Objects, UserData: userData}, nil
+	// The setup script is the plan's own object, listed before the Gatus
+	// configurations, which are the appliance's Extra ones.
+	return &Box{Appliance: app, ConfigObjects: app.Objects, UserData: c.Rendered}, nil
 }
 
-// applianceArgs maps the box onto the appliance library the way step A of its
-// migration describes: the old user-data verbatim, the old policy document, and
-// the Compat options that keep every name where it was.
-func (a Args) applianceArgs(name string, userData *bootstrap.Rendered) *asg.Args {
+// applianceArgs maps the box onto the appliance library: the composed
+// user-data, the generated policy plus the replica statements, and the Compat
+// options that keep every name where it was.
+func (a Args) applianceArgs(name string, c composed) *asg.Args {
 	physical := namesFor(name)
 
-	// The objects the user-data names by digest. They are the box's own, so
-	// they are Extra: the library uploads them and the role (whose policy is
-	// the box's own document) reads them under the replica prefix.
+	// The objects the user-data names by digest. The Gatus configurations are
+	// the box's own, so they are Extra: the library uploads them and the role
+	// reads them under the replica prefix. The setup script is the plan's.
 	var (
 		extra    []bootstrap.Object
 		logical  = map[string]string{}
 		tagNames = map[string]string{}
 	)
+
+	setup := setupObject()
+	logical[setup.SHA256()] = name + "-" + setup.resourceSuffix()
+	tagNames[setup.SHA256()] = name + "-" + setup.Name
 
 	for _, o := range a.bucketObjects() {
 		sum := o.SHA256()
@@ -139,7 +149,7 @@ func (a Args) applianceArgs(name string, userData *bootstrap.Rendered) *asg.Args
 		Partition: partition,
 		Tags:      a.Tags,
 		Provider:  a.Provider,
-		UserData:  userData,
+		UserData:  c.Rendered,
 		Objects: asg.ObjectsArgs{
 			Bucket:    a.Bucket,
 			KMSKeyARN: a.KMSKeyARN,
@@ -165,17 +175,14 @@ func (a Args) applianceArgs(name string, userData *bootstrap.Rendered) *asg.Args
 		Hook:     &asg.HookArgs{HeartbeatTimeoutSeconds: hookHeartbeatSeconds},
 		WarmPool: &asg.WarmPoolArgs{MinSize: 1, MaxGroupPreparedCapacity: &maxPrepared},
 		// With one instance, a refresh replaces it before launching the next:
-		// the replica has exactly one writer at any time.
+		// the replica has exactly one writer at any time. No trigger: the API
+		// starts the refresh on every launch template version change.
 		Refresh: &asg.RefreshArgs{},
 		IAM: asg.IAMArgs{
 			PermissionsBoundary: a.PermissionsBoundary,
 			PolicyName:          "statusbox",
-			// Step A: the module's own document, not the library's generated
-			// one. Step B replaces it with a generated least-privilege policy.
-			Policy: func(pc asg.PolicyContext) (string, error) {
-				return a.instancePolicy(physical, pc.Region, pc.Account), nil
-			},
 		},
+		Contribution: c.Contribution,
 		Security: asg.SecurityArgs{
 			VPCID:         a.VPCID,
 			Description:   a.securityGroupDescription(),
@@ -211,7 +218,7 @@ func (a Args) securityGroupDescription() string {
 }
 
 // securityGroupIngress admits nothing in but PrivateIngressCIDRs to the private
-// instances' ports and, with SSH, SSH.IngressCIDRs to TCP 22. Everything is let
+// instances' ports. SSH's TCP 22 is the ssh module's own rule. Everything is let
 // out (probes, S3, SSM, the tunnel).
 func (a Args) securityGroupIngress() []asg.Rule {
 	var rules []asg.Rule
@@ -226,16 +233,6 @@ func (a Args) securityGroupIngress() []asg.Rule {
 				CIDRs:       a.PrivateIngressCIDRs,
 			})
 		}
-	}
-
-	if cidrs := a.sshCIDRs(); len(cidrs) > 0 {
-		rules = append(rules, asg.Rule{
-			Description: "SSH (opkssh), from the listed networks",
-			Protocol:    "tcp",
-			FromPort:    sshPort,
-			ToPort:      sshPort,
-			CIDRs:       cidrs,
-		})
 	}
 
 	return rules

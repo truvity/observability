@@ -2,35 +2,41 @@
 # statusbox-setup: turns an Amazon Linux 2023 instance into the watcher outside
 # (the EC2 backend; see docs/statusbox.md, "EC2 backend").
 #
-# This file is embedded in pkg/statusbox/ec2 and written to
-# /usr/local/sbin/statusbox-setup by the instance's user-data. The user-data
-# also writes /etc/statusbox/params.sh (everything this script needs to know:
-# names, ports, pinned download URLs and checksums, SSM parameter NAMES, and
-# the S3 key + sha256 of every Gatus configuration). The configurations are
-# S3 objects, not user-data (16 KiB does not hold an estate's catalogue); the
-# install phase fetches each with the instance role and refuses a digest that
-# differs. No secret is ever in either: secrets are read from SSM Parameter
-# Store through the instance role, at boot, into /run (tmpfs), and never
-# written to the root disk.
+# This file is embedded in pkg/statusbox/ec2 and travels as an S3 object,
+# written to /usr/local/sbin/statusbox-setup.sh on the instance and pinned by
+# its sha256 in the plan's object fetch. The user-data also writes
+# /etc/statusbox/params.sh (everything this script needs to know: names,
+# ports, pinned download URLs and checksums, SSM parameter NAMES, and the S3 key
+# + sha256 of every Gatus configuration). The configurations are S3 objects,
+# not user-data (16 KiB does not hold an estate's catalogue); the install phase
+# fetches each with the instance role and refuses a digest that differs. No
+# secret is ever in either: secrets are read from SSM Parameter Store through
+# the instance role, at boot, into /run (tmpfs), and never written to the
+# root disk.
 #
-# Two phases:
+# What is NOT here, because github.com/truvity/asg owns it: the launch
+# lifecycle hook, the warm-pool decision, the health timer, SSH, the DNS record
+# and the Cloudflare tunnel connector. The library runs the in-service phase of
+# this script (and the tunnel's step after it) only when the instance goes in
+# service, never in the warm pool, then runs the ready check below and
+# completes the hook.
 #
-#   install  first boot only (the user-data runs it): swap, journald cap,
-#            the pinned binaries (checksum verified), the Gatus configurations
-#            (fetched from S3, digest verified; a failure abandons the
-#            launch, so a bad configuration never serves), the unit files.
-#            Then it starts statusbox-boot.service, which runs the second
-#            phase. A warm-pool instance does all of this at its first boot
-#            too.
-#   boot     EVERY boot (statusbox-boot.service): decides from the Auto
-#            Scaling group's target lifecycle state whether this instance is
-#            going in service. A warm-pool instance (Warmed:*) only completes
-#            its lifecycle hook and stays quiet; nothing is restored and no
-#            Gatus runs. An instance going InService reads the secrets,
-#            restores each SQLite database from the Litestream replica, starts
-#            Gatus under `litestream replicate`, starts cloudflared, completes
-#            the hook and turns on the health timer (and, when a ping URL
-#            parameter is configured, the dead-man ping timer).
+# Phases:
+#
+#   install     first boot only (a plan step runs it): swap, journald cap, the
+#               pinned binaries (checksum verified), the Gatus configurations
+#               (fetched from S3, digest verified; a failure abandons the
+#               launch, so a bad configuration never serves), the unit files.
+#               A warm-pool instance does all of this at its first boot too,
+#               and starts nothing.
+#   in-service  a boot into service (the library's in-service step): reads the
+#               secrets, restores each SQLite database from the Litestream
+#               replica, starts Gatus under `litestream replicate`, waits for
+#               /health and turns the dead-man ping timer on when a ping URL
+#               parameter is configured.
+#   check       exit 0 when every Gatus is active and answers /health: the
+#               launch's ready check and the watchdog's check.
+#   ping        the dead-man ping, from its timer.
 #
 # That ordering is what keeps the replica single-writer: the replica is only
 # ever written by the one InService instance, and a warm instance never
@@ -66,13 +72,6 @@ imds_token() {
 
 imds() {
   curl -fsS -m 5 -H "X-aws-ec2-metadata-token: $(imds_token)" "http://169.254.169.254/latest/$1"
-}
-
-# target_state prints the Auto Scaling group's target lifecycle state for this
-# instance: InService, Warmed:Stopped, ... An empty answer (no such path) means
-# the instance is not in a group at all, which a cold start under test is.
-target_state() {
-  imds meta-data/autoscaling/target-lifecycle-state 2>/dev/null || true
 }
 
 complete_hook() {
@@ -122,7 +121,7 @@ EOF
 
 # fetch_verify URL DEST SHA256: download, then refuse anything whose digest is
 # not the pinned one. The digest comes from this repository's own release
-# checksums (Gatus) or is pinned in the Go package (Litestream, cloudflared).
+# checksums (Gatus) or is pinned in the Go package (Litestream).
 fetch_verify() {
   local url="$1" dest="$2" want="$3" i
   for i in 1 2 3 4 5; do
@@ -179,7 +178,6 @@ install_binaries() {
 
   local -n gatus_url="SB_GATUS_URL_$a" gatus_sha="SB_GATUS_SHA_$a"
   local -n ls_url="SB_LITESTREAM_URL_$a" ls_sha="SB_LITESTREAM_SHA_$a"
-  local -n cf_url="SB_CLOUDFLARED_URL_$a" cf_sha="SB_CLOUDFLARED_SHA_$a"
 
   if [ ! -x "$BIN/gatus" ]; then
     fetch_verify "$gatus_url" "$tmp/gatus" "$gatus_sha"
@@ -189,10 +187,6 @@ install_binaries() {
     fetch_verify "$ls_url" "$tmp/litestream.tar.gz" "$ls_sha"
     tar -xzf "$tmp/litestream.tar.gz" -C "$tmp" litestream
     install -m 0755 "$tmp/litestream" "$BIN/litestream"
-  fi
-  if [ -n "$SB_TUNNEL_PARAM" ] && [ ! -x "$BIN/cloudflared" ]; then
-    fetch_verify "$cf_url" "$tmp/cloudflared" "$cf_sha"
-    install -m 0755 "$tmp/cloudflared" "$BIN/cloudflared"
   fi
   rm -rf "$tmp"
 }
@@ -216,7 +210,7 @@ unpack_instances() {
     cp "$STAGED/$INST_NAME" "$ETC/instances/$INST_NAME/config.yaml"
     # Gatus merges every *.yaml in its config directory, later names winning:
     # the listener is the backend's to place, not the estate's Config's. A
-    # public instance listens on loopback only (cloudflared dials it there);
+    # public instance listens on loopback only (the tunnel connector dials it there);
     # the private one listens on every interface so a peer in the VPC can
     # reach it where the security group admits it.
     local address=127.0.0.1
@@ -278,7 +272,7 @@ EOF
 }
 
 # write_ping_units: the dead-man ping, only when SB_PING_PARAM is set. The URL
-# is a secret and is in neither unit: the service runs `statusbox-setup ping`,
+# is a secret and is in neither unit: the service runs `statusbox-setup.sh ping`,
 # which reads it from a root-only file under /run.
 write_ping_units() {
   [ -n "$SB_PING_PARAM" ] || return 0
@@ -288,7 +282,7 @@ Description=statusbox dead-man ping
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/statusbox-setup ping
+ExecStart=/usr/local/sbin/statusbox-setup.sh ping
 EOF
 
   cat >"$UNITS/statusbox-ping.timer" <<'EOF'
@@ -327,64 +321,9 @@ RestartSec=5
 NoNewPrivileges=yes
 PrivateTmp=yes
 
-# Deliberately no [Install]: only statusbox-boot starts a Gatus, and only after
-# the database was restored, so a start from the warm pool can never write the
-# replica.
-EOF
-
-  cat >"$UNITS/cloudflared.service" <<'EOF'
-[Unit]
-Description=statusbox cloudflared tunnel
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=statusbox
-Group=statusbox
-EnvironmentFile=/etc/statusbox/common.env
-EnvironmentFile=/run/statusbox/tunnel.env
-ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run
-Restart=always
-RestartSec=5
-NoNewPrivileges=yes
-PrivateTmp=yes
-EOF
-
-  cat >"$UNITS/statusbox-boot.service" <<'EOF'
-[Unit]
-Description=statusbox boot: restore, start, complete the lifecycle hook
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-TimeoutStartSec=900
-ExecStart=/usr/local/sbin/statusbox-setup boot
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  cat >"$UNITS/statusbox-health.service" <<'EOF'
-[Unit]
-Description=statusbox local health check
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/statusbox-setup health
-EOF
-
-  cat >"$UNITS/statusbox-health.timer" <<'EOF'
-[Unit]
-Description=statusbox local health check, every minute
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=1min
-
-[Install]
-WantedBy=timers.target
+# Deliberately no [Install]: only the in-service phase starts a Gatus, and only
+# after the database was restored, so a start from the warm pool can never write
+# the replica.
 EOF
 }
 
@@ -411,13 +350,7 @@ install_phase() {
   write_litestream_configs
   write_units
   systemctl daemon-reload
-  # statusbox-boot is enabled for every later boot; the timer is NOT: only a
-  # boot that went InService turns the health check on.
-  systemctl enable statusbox-boot.service
-  mkdir -p "$ROOT/var/lib/statusbox"
-  touch "$ROOT/var/lib/statusbox/installed"
-  log "install: done, running the boot phase"
-  systemctl start statusbox-boot.service
+  log "install: done"
 }
 
 # --------------------------------------------------------------------- boot
@@ -463,10 +396,6 @@ fetch_secrets() {
       value="$(ssm_get "$param")"
       env_line "$name" "$value" >>"$RUN/gatus.env"
     done
-    if [ -n "$SB_TUNNEL_PARAM" ]; then
-      value="$(ssm_get "$SB_TUNNEL_PARAM")"
-      env_line TUNNEL_TOKEN "$value" >"$RUN/tunnel.env"
-    fi
     if [ -n "$SB_PING_PARAM" ]; then
       value="$(ssm_get "$SB_PING_PARAM")"
       case "$value" in *$'\n'*) log "the ping URL contains a newline"; return 1 ;; esac
@@ -509,8 +438,12 @@ wait_healthy() {
   done
 }
 
-go_in_service() {
+# in_service_phase is the library's in-service step. It runs with errexit on,
+# so a failing step ends it non-zero: the library then abandons the launch, and
+# nothing is started that was not restored first.
+in_service_phase() {
   local entry
+  load_params
   AWS_REGION="$(imds meta-data/placement/region)"
   export AWS_REGION
   fetch_secrets
@@ -522,78 +455,25 @@ go_in_service() {
     instance_fields "$entry"
     systemctl start "gatus@$INST_NAME.service"
   done
-  [ -z "$SB_TUNNEL_PARAM" ] || systemctl start cloudflared.service
   wait_healthy
-  systemctl start statusbox-health.timer
   [ -z "$SB_PING_PARAM" ] || systemctl start statusbox-ping.timer
 }
 
-boot_phase() {
-  local state rc
-  load_params
-  state="$(target_state)"
-  log "boot: target lifecycle state '${state:-none}'"
-  case "$state" in
-    Warmed:*)
-      # Installed and parked: nothing restored, nothing running. The hook is
-      # completed so the instance can be stopped into the warm pool.
-      complete_hook CONTINUE
-      ;;
-    InService | "")
-      # go_in_service runs with errexit on, in a subshell that is NOT part of
-      # an `if` condition (bash ignores errexit inside one): a failing step
-      # must stop it, not be skipped.
-      set +e
-      (set -e; go_in_service)
-      rc=$?
-      set -e
-      if [ "$rc" = 0 ]; then
-        complete_hook CONTINUE
-      else
-        log "boot: failed to go in service; abandoning the launch"
-        complete_hook ABANDON
-        return 1
-      fi
-      ;;
-    *)
-      log "boot: nothing to do in state $state"
-      ;;
-  esac
-}
+# ------------------------------------------------------------------- check
 
-# ------------------------------------------------------------------- health
-
-# health_phase runs from the timer. It is a no-op until both Gatus and (when
-# there is a tunnel) cloudflared are healthy; once either has been failing for
-# SB_HEALTH_MINUTES in a row, it asks the Auto Scaling group to replace the
+# check_phase exits 0 when every Gatus is active and answers /health. It is the
+# launch's ready check and the watchdog's check: once it has been failing for
+# the watchdog's window, the Auto Scaling group is asked to replace the
 # instance, which is the only recovery a stateless box has. Restart=always
 # handles the quick failures before that.
-health_phase() {
-  local entry ok=1 since now iid region
+check_phase() {
+  local entry
   load_params
   for entry in "${SB_INSTANCES[@]}"; do
     instance_fields "$entry"
-    systemctl is-active --quiet "gatus@$INST_NAME.service" || ok=0
-    curl -fsS -m 5 -o /dev/null "http://127.0.0.1:$INST_PORT/health" || ok=0
+    systemctl is-active --quiet "gatus@$INST_NAME.service" || return 1
+    curl -fsS -m 5 -o /dev/null "http://127.0.0.1:$INST_PORT/health" || return 1
   done
-  if [ -n "$SB_TUNNEL_PARAM" ]; then
-    systemctl is-active --quiet cloudflared.service || ok=0
-  fi
-  mkdir -p "$RUN"
-  if [ "$ok" = 1 ]; then
-    rm -f "$RUN/unhealthy-since"
-    return 0
-  fi
-  now="$(date +%s)"
-  [ -f "$RUN/unhealthy-since" ] || echo "$now" >"$RUN/unhealthy-since"
-  since="$(cat "$RUN/unhealthy-since")"
-  log "health: failing since $since"
-  if [ $((now - since)) -ge $((SB_HEALTH_MINUTES * 60)) ]; then
-    iid="$(imds meta-data/instance-id)"
-    region="$(imds meta-data/placement/region)"
-    log "health: failing for over $SB_HEALTH_MINUTES minutes; marking $iid Unhealthy"
-    aws autoscaling set-instance-health --instance-id "$iid" --health-status Unhealthy --region "$region" || log "set-instance-health failed"
-  fi
 }
 
 # ------------------------------------------------------------------- ping
@@ -627,11 +507,11 @@ ping_phase() {
 main() {
   case "${1:-}" in
     install) install_phase ;;
-    boot) boot_phase ;;
-    health) health_phase ;;
+    in-service) in_service_phase ;;
+    check) check_phase ;;
     ping) ping_phase ;;
     *)
-      echo "usage: statusbox-setup install|boot|health|ping" >&2
+      echo "usage: statusbox-setup.sh install|in-service|check|ping" >&2
       return 2
       ;;
   esac

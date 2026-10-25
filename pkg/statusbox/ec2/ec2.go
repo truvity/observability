@@ -378,13 +378,11 @@ func (a Args) validateStorageAndSize() []error {
 	return errs
 }
 
-// parameterNames is every SSM parameter the role may read, sorted, unique.
+// parameterNames is every SSM parameter the box's own scripts read, sorted,
+// unique. The tunnel token and the SSH host key are the modules' own: they add
+// their parameter names to the role through their contribution.
 func (a Args) parameterNames() []string {
 	set := map[string]bool{}
-
-	if a.TunnelTokenParameter != "" {
-		set[a.TunnelTokenParameter] = true
-	}
 
 	if a.PingURLParameter != "" {
 		set[a.PingURLParameter] = true
@@ -396,10 +394,6 @@ func (a Args) parameterNames() []string {
 
 	for _, p := range a.EnvParameters {
 		set[p] = true
-	}
-
-	if a.SSH != nil && a.SSH.HostKeyParameter != "" {
-		set[a.SSH.HostKeyParameter] = true
 	}
 
 	out := make([]string, 0, len(set))

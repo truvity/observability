@@ -2,14 +2,12 @@ package ec2
 
 import (
 	"encoding/json"
-	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/truvity/observability/pkg/statusbox"
+	"github.com/truvity/asg"
 )
 
 var testDNSRole = "arn:" + partition + ":iam::" + strings.Repeat("1", 12) + ":role/dns-register"
@@ -23,42 +21,45 @@ func selfRegisterArgs() Args {
 	return a
 }
 
-func TestSelfRegisterNilLeavesTheRenderUnchanged(t *testing.T) {
-	plain, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
-	require.NotContains(t, plain, "self-register")
-	require.NotContains(t, plain, "SB_DNS_")
-	require.NotContains(t, validArgs().instancePolicy(namesFor("status"), "eu-west-1", "x"), "sts:AssumeRole")
+// fullArgs is the box with everything on: the tunnel, SSH, a fixed host key,
+// self-registration and the dead-man ping.
+func fullArgs() Args {
+	a := opksshOnlyArgs()
+	a.SelfRegister = selfRegisterArgs().SelfRegister
+	a.PingURLParameter = "/acme/status/ping-url"
+
+	return a
 }
 
-func TestSelfRegisterBootstrapCarriesTheStep(t *testing.T) {
-	got, err := selfRegisterArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+func TestSelfRegisterNilLeavesTheRenderWithout(t *testing.T) {
+	plain := cloudConfig(t, validArgs())
+	require.NotContains(t, plain, "self-register")
+	require.NotContains(t, plain, "DNS_RECORD")
+	require.NotContains(t, plain, "sts:AssumeRole")
+}
 
-	for _, want := range []string{
-		"SB_DNS_ROLE_ARN='" + testDNSRole + "'",
-		"SB_DNS_ZONE_ID='" + testZone + "'",
-		"SB_DNS_RECORD='box.example.test'",
-		"SB_DNS_TTL='60'",
-		"cat > /usr/local/sbin/statusbox-self-register <<'STATUSBOX_SELF_REGISTER'",
-		"ExecStartPost=-/usr/bin/timeout 120 /usr/local/sbin/statusbox-self-register",
-		`\"Action\":\"UPSERT\"`,
-	} {
-		require.Contains(t, got, want)
+func TestSelfRegisterIsAnInServiceStepAfterTheHook(t *testing.T) {
+	files := writtenFiles(t, selfRegisterArgs())
+
+	conf := files["/etc/asg/self-register.conf"]
+	for _, want := range []string{"DNS_ROLE_ARN='" + testDNSRole + "'", "DNS_ZONE_ID='" + testZone + "'", "DNS_RECORD='box.example.test'", "DNS_TTL=60"} {
+		require.Contains(t, conf, want)
 	}
 
-	// Written before the install phase, whose daemon-reload picks the drop-in up.
-	require.Less(t, strings.Index(got, "statusbox-boot.service.d/self-register.conf"), strings.Index(got, "exec /usr/local/sbin/statusbox-setup install"))
+	require.Contains(t, files["/usr/local/lib/asg/self-register.sh"], "UPSERT")
+	require.Contains(t, files["/etc/systemd/system/asg-self-register.service"], "After=network-online.target bootstrap-ready.service")
+	require.Contains(t, files["/usr/local/lib/asg/in-service.d/02-self-register.sh"], "systemctl start --no-block asg-self-register.service")
 
 	a := selfRegisterArgs()
 	a.SelfRegister.TTL = 120
-	got, err = a.bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
-	require.Contains(t, got, "SB_DNS_TTL='120'")
+	require.Contains(t, writtenFiles(t, a)["/etc/asg/self-register.conf"], "DNS_TTL=120")
 }
 
+// TestSelfRegisterRolePolicyHasExactlyOneAssumeRole checks the contribution
+// the library turns into a statement of the role.
 func TestSelfRegisterRolePolicyHasExactlyOneAssumeRole(t *testing.T) {
-	doc := selfRegisterArgs().instancePolicy(namesFor("status"), "eu-west-1", strings.Repeat("7", 12))
+	doc, err := asg.Document(compose(t, selfRegisterArgs()).Contribution.Statements)
+	require.NoError(t, err)
 
 	var p struct {
 		Statement []struct {
@@ -105,42 +106,15 @@ func TestSelfRegisterRefusals(t *testing.T) {
 	require.NoError(t, selfRegisterArgs().validate())
 }
 
-func TestSelfRegisterScriptParsesAndSkipsOutsideService(t *testing.T) {
-	bash, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skip("no bash")
-	}
+func TestUserDataWithEverythingIsWithinTheLimit(t *testing.T) {
+	fakeRelease(t)
 
-	require.NoError(t, exec.Command(bash, "-n", "selfregister.sh").Run())
-
-	// No params file: it must do nothing and exit 0.
-	cmd := exec.Command(bash, "selfregister.sh")
-	cmd.Env = append(os.Environ(), "STATUSBOX_PARAMS=/nonexistent")
-	require.NoError(t, cmd.Run())
-}
-
-func TestUserDataWithSelfRegisterIsWithinTheLimit(t *testing.T) {
-	previous := statusbox.FetchChecksums
-	statusbox.FetchChecksums = func(string) (string, error) {
-		return fakeSHA64 + "  gatus_" + GatusVersion + "_linux_arm64\n" + fakeSHA64 + "  gatus_" + GatusVersion + "_linux_amd64\n", nil
-	}
-
-	t.Cleanup(func() { statusbox.FetchChecksums = previous })
-
-	without, err := validArgs().UserData("status")
+	plain, err := validArgs().UserData("status")
 	require.NoError(t, err)
 
-	a := sshArgs()
-	a.SelfRegister = selfRegisterArgs().SelfRegister
-	with, err := a.UserData("status")
+	full, err := fullArgs().UserData("status")
 	require.NoError(t, err)
 
-	plain, err := selfRegisterArgs().UserData("status")
-	require.NoError(t, err)
-
-	t.Logf("user-data bytes: %d without, %d with self-register, %d with SSH and self-register (limit %d)", len(without), len(plain), len(with), userDataLimit)
-	require.Less(t, len(with), userDataLimit)
-	// The script is no longer compressed together with setup.sh (that travels
-	// as an S3 object), so its delta is its own gzip+base64.
-	require.Less(t, len(plain)-len(without), 3*1024)
+	t.Logf("user-data bytes: %d plain, %d with everything on (limit %d)", plain.Size, full.Size, userDataLimit)
+	require.Less(t, full.Size, userDataLimit)
 }

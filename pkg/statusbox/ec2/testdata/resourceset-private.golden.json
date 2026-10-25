@@ -1,5 +1,5 @@
 {
-  "boxUserData": "sha256:f53dbcbfbc4a6f42595152becbeccf73da800396c436dd6cc386491965facf0c",
+  "boxUserData": "sha256:1c2fca6f71a5339af02ed8f6a78997daabbee36da66828d11d0ba8b600ce8547",
   "lookups": [
     "aws:index/getCallerIdentity:getCallerIdentity {}",
     "aws:index/getRegion:getRegion {}",
@@ -29,10 +29,7 @@
             "instanceWarmup": "300",
             "minHealthyPercentage": 0
           },
-          "strategy": "Rolling",
-          "triggers": [
-            "launch_template"
-          ]
+          "strategy": "Rolling"
         },
         "launchTemplate": {
           "id": "status_id",
@@ -132,7 +129,7 @@
           "Name": "statusbox-status"
         },
         "updateDefaultVersion": true,
-        "userData": "sha256:071f5806c651580d86cb350c3991f594af2df2088580f051463a26337170c6ee"
+        "userData": "sha256:4b5f99f208b1cb407fb2349c70674e0c5ed24d68b7aef0186776bb5b51c0838f"
       },
       "name": "status",
       "parent": "statusbox:ec2:Box::status",
@@ -211,7 +208,7 @@
         "inlinePolicies": [
           {
             "name": "statusbox",
-            "policy": "{\n  \"Statement\": [\n    {\n      \"Action\": [\n        \"ssm:GetParameter\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/alerts-read-token\"\n      ],\n      \"Sid\": \"ReadOwnParameters\"\n    },\n    {\n      \"Action\": [\n        \"s3:GetObject\",\n        \"s3:PutObject\",\n        \"s3:DeleteObject\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica/*\"\n      ],\n      \"Sid\": \"ReplicaObjects\"\n    },\n    {\n      \"Action\": [\n        \"s3:ListBucket\"\n      ],\n      \"Condition\": {\n        \"StringLike\": {\n          \"s3:prefix\": [\n            \"*\"\n          ]\n        }\n      },\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ],\n      \"Sid\": \"ReplicaList\"\n    },\n    {\n      \"Action\": [\n        \"s3:GetBucketLocation\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ],\n      \"Sid\": \"ReplicaRegion\"\n    },\n    {\n      \"Action\": [\n        \"autoscaling:CompleteLifecycleAction\",\n        \"autoscaling:SetInstanceHealth\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:autoscaling:eu-west-1:@ACCOUNT@:autoScalingGroup:*:autoScalingGroupName/statusbox-status\"\n      ],\n      \"Sid\": \"OwnGroup\"\n    }\n  ],\n  \"Version\": \"2012-10-17\"\n}"
+            "policy": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"ReadParameters\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"ssm:GetParameter\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/alerts-read-token\"\n      ]\n    },\n    {\n      \"Sid\": \"ReadObjects\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:GetObject\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica/config/2bde766b5437eee4896c653433d96563410d7b5153a887e4b3208e09d6937cf4.yaml\",\n        \"arn:@PARTITION@:s3:::acme-status-replica/config/8213886d15dedfb5223b598592e77dfe549762d0a4db77c8a0985fcce5ce84e1.sh\"\n      ]\n    },\n    {\n      \"Sid\": \"OwnGroup\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"autoscaling:CompleteLifecycleAction\",\n        \"autoscaling:SetInstanceHealth\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:autoscaling:eu-west-1:@ACCOUNT@:autoScalingGroup:*:autoScalingGroupName/statusbox-status\"\n      ]\n    },\n    {\n      \"Sid\": \"ReplicaObjects\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:GetObject\",\n        \"s3:PutObject\",\n        \"s3:DeleteObject\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica/*\"\n      ]\n    },\n    {\n      \"Sid\": \"ReplicaList\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:ListBucket\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ],\n      \"Condition\": {\n        \"StringLike\": {\n          \"s3:prefix\": [\n            \"*\"\n          ]\n        }\n      }\n    },\n    {\n      \"Sid\": \"ReplicaRegion\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:GetBucketLocation\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ]\n    }\n  ]\n}"
           }
         ],
         "name": "statusbox-status",
@@ -253,9 +250,9 @@
     {
       "inputs": {
         "bucket": "acme-status-replica",
-        "content": "sha256:50227bb0ac6f26a70973fd7ca25a565278cf77e26685c491e7c483e9a504535d",
+        "content": "sha256:8213886d15dedfb5223b598592e77dfe549762d0a4db77c8a0985fcce5ce84e1",
         "contentType": "text/plain",
-        "key": "config/50227bb0ac6f26a70973fd7ca25a565278cf77e26685c491e7c483e9a504535d.sh",
+        "key": "config/8213886d15dedfb5223b598592e77dfe549762d0a4db77c8a0985fcce5ce84e1.sh",
         "serverSideEncryption": "AES256",
         "tags": {
           "ManagedBy": "pulumi",

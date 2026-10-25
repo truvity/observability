@@ -1,7 +1,6 @@
 package ec2
 
 import (
-	"encoding/base64"
 	"flag"
 	"os"
 	"os/exec"
@@ -13,6 +12,9 @@ import (
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
+
+	"github.com/truvity/asg"
 
 	"github.com/truvity/observability/pkg/statusbox"
 )
@@ -46,6 +48,52 @@ func validArgs() Args {
 
 func fakeChecksums() map[string]string {
 	return map[string]string{"arm64": fakeSHA64, "amd64": strings.Repeat("ab", 32)}
+}
+
+// compose renders the box the way NewEC2 does, with the Gatus checksums faked.
+func compose(t *testing.T, a Args) composed {
+	t.Helper()
+
+	c, err := a.compose("status", fakeChecksums())
+	require.NoError(t, err)
+
+	return c
+}
+
+// cloudConfig is the rendered cloud-config text of the box.
+func cloudConfig(t *testing.T, a Args) string { return compose(t, a).Rendered.CloudConfig }
+
+// writtenFiles are the files the cloud-config writes, by path.
+func writtenFiles(t *testing.T, a Args) map[string]string {
+	t.Helper()
+
+	var cfg struct {
+		WriteFiles []struct {
+			Path    string `yaml:"path"`
+			Content string `yaml:"content"`
+		} `yaml:"write_files"`
+	}
+
+	require.NoError(t, yaml.Unmarshal([]byte(cloudConfig(t, a)), &cfg))
+
+	out := map[string]string{}
+	for _, f := range cfg.WriteFiles {
+		out[f.Path] = f.Content
+	}
+
+	return out
+}
+
+// fakeRelease makes the release's checksums.txt available for the test.
+func fakeRelease(t *testing.T) {
+	t.Helper()
+
+	previous := statusbox.FetchChecksums
+	statusbox.FetchChecksums = func(string) (string, error) {
+		return fakeSHA64 + "  gatus_" + GatusVersion + "_linux_arm64\n" + fakeSHA64 + "  gatus_" + GatusVersion + "_linux_amd64\n", nil
+	}
+
+	t.Cleanup(func() { statusbox.FetchChecksums = previous })
 }
 
 func TestValidateAcceptsAValidArgs(t *testing.T) {
@@ -155,40 +203,48 @@ func TestDatabaseFile(t *testing.T) {
 func TestParameterNamesAreUniqueAndSorted(t *testing.T) {
 	a := validArgs()
 	a.EnvParameters["EXTRA"] = "/acme/status/alerts-read-token"
+	// The tunnel token and the SSH host key are the modules' parameters: they
+	// reach the role through the modules' contribution.
+	require.Equal(t, []string{"/acme/status/alerts-read-token", "/acme/status/oidc-client-secret"}, a.parameterNames())
+
+	c := compose(t, a)
 	require.Equal(t, []string{
 		"/acme/status/alerts-read-token", "/acme/status/oidc-client-secret", "/acme/status/tunnel-token",
-	}, a.parameterNames())
+	}, c.Rendered.SSMParameters)
 }
 
-// TestBootstrapGolden pins the whole rendered user-data script (before its
-// gzip wrapper): the parameters, the staged Configs and the embedded setup
-// script. A change to any of them is a reviewable diff, not a surprise.
-func TestBootstrapGolden(t *testing.T) {
-	got, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+// TestUserDataGolden pins the whole rendered cloud-config: the parameters, the
+// staged Configs' names, the watchdog, the tunnel, the library's lifecycle files
+// and the bootstrap steps. The setup script is an object, so it is not in it.
+// A change to any of them is a reviewable diff, not a surprise.
+func TestUserDataGolden(t *testing.T) {
+	for name, a := range map[string]Args{"userdata.golden.yaml": validArgs(), "userdata-full.golden.yaml": fullArgs()} {
+		// The repository is public: the account id and the ARN prefix of the
+		// fixtures are replaced by placeholders, as in the resource-set goldens.
+		got := strings.ReplaceAll(cloudConfig(t, a), strings.Repeat("1", 12), "@ACCOUNT@")
+		got = strings.ReplaceAll(got, "arn:"+partition, "arn:@PARTITION@")
+		golden := filepath.Join("testdata", name)
 
-	golden := filepath.Join("testdata", "bootstrap.golden.sh")
-	if *update {
-		require.NoError(t, os.MkdirAll("testdata", 0o755))
-		require.NoError(t, os.WriteFile(golden, []byte(got), 0o644))
+		if *update {
+			require.NoError(t, os.MkdirAll("testdata", 0o755))
+			require.NoError(t, os.WriteFile(golden, []byte(got), 0o644))
 
-		return
+			continue
+		}
+
+		want, err := os.ReadFile(golden)
+		require.NoError(t, err, "run 'go test ./pkg/statusbox/ec2 -run TestUserDataGolden -update' and review the diff")
+		require.Equal(t, string(want), got, "the rendered user-data moved: run 'go test ./pkg/statusbox/ec2 -run TestUserDataGolden -update' and review the diff")
 	}
-
-	want, err := os.ReadFile(golden)
-	require.NoError(t, err, "run 'go test ./pkg/statusbox/ec2 -run TestBootstrapGolden -update' and review the diff")
-	require.Equal(t, string(want), got, "the rendered user-data moved: run 'go test ./pkg/statusbox/ec2 -run TestBootstrapGolden -update' and review the diff")
 }
 
-func TestBootstrapWithCAsAndPublicOnly(t *testing.T) {
+func TestUserDataWithCAsAndPublicOnly(t *testing.T) {
 	a := validArgs()
 	a.Instances = a.Instances[:1]
 	a.EnvParameters = nil
-	got, err := a.bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+	got := cloudConfig(t, a)
 	require.Contains(t, got, "SB_INSTANCES=('ops:8082:true:ops.db')")
 	require.NotContains(t, got, "ops-breakglass")
-	require.NotContains(t, got, "<<'STATUSBOX_TRUSTED_CAS'")
 }
 
 // TestUserDataCarriesNoSecret is the property the design rests on. Args has no
@@ -218,8 +274,7 @@ func TestUserDataCarriesNoSecret(t *testing.T) {
 	}
 	walk(reflect.TypeOf(Args{}), "")
 
-	script, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+	script := cloudConfig(t, validArgs())
 
 	// The setup script (an S3 object, pinned by sha256 in the user-data) reads
 	// a value and writes it under /run, nowhere else, and never prints it.
@@ -230,28 +285,25 @@ func TestUserDataCarriesNoSecret(t *testing.T) {
 	require.NotContains(t, script, "tailscale up")
 
 	// Parameter names are there, as names.
-	for _, p := range validArgs().parameterNames() {
+	for _, p := range compose(t, validArgs()).Rendered.SSMParameters {
 		require.Contains(t, script, p)
 	}
 }
 
-func TestUserDataIsWrappedAndWithinTheLimit(t *testing.T) {
-	previous := statusbox.FetchChecksums
-	statusbox.FetchChecksums = func(string) (string, error) {
-		return fakeSHA64 + "  gatus_" + GatusVersion + "_linux_arm64\n" + fakeSHA64 + "  gatus_" + GatusVersion + "_linux_amd64\n", nil
-	}
-
-	t.Cleanup(func() { statusbox.FetchChecksums = previous })
+func TestUserDataIsComposedAndWithinTheLimit(t *testing.T) {
+	fakeRelease(t)
 
 	ud, err := validArgs().UserData("status")
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(ud, "#!/bin/bash\n"), "cloud-init runs user-data only when it starts with a shebang")
-	require.Less(t, len(ud), userDataLimit)
+	require.True(t, strings.HasPrefix(ud.CloudConfig, "#cloud-config\n"), "cloud-init reads user-data that starts with #cloud-config")
+	require.Less(t, ud.Size, userDataLimit)
+	require.Equal(t, ud.Size, len(ud.UserData))
 
-	m := regexp.MustCompile(`echo '([A-Za-z0-9+/=]+)'`).FindStringSubmatch(ud)
-	require.Len(t, m, 2)
-	_, err = base64.StdEncoding.DecodeString(m[1])
-	require.NoError(t, err)
+	// The setup script is the one object the plan fetches; the Gatus
+	// configurations are the box's own.
+	require.Len(t, ud.Objects, 1)
+	require.Equal(t, "box/config/"+setupObject().SHA256()+".sh", ud.Objects[0].Key)
+	require.Equal(t, setupScript, string(ud.Objects[0].Content))
 }
 
 func TestUserDataRefusesAReleaseWithoutTheGatusAsset(t *testing.T) {
@@ -265,12 +317,7 @@ func TestUserDataRefusesAReleaseWithoutTheGatusAsset(t *testing.T) {
 }
 
 func TestUserDataRefusesOverTheLimit(t *testing.T) {
-	previous := statusbox.FetchChecksums
-	statusbox.FetchChecksums = func(string) (string, error) {
-		return fakeSHA64 + "  gatus_" + GatusVersion + "_linux_arm64\n" + fakeSHA64 + "  gatus_" + GatusVersion + "_linux_amd64\n", nil
-	}
-
-	t.Cleanup(func() { statusbox.FetchChecksums = previous })
+	fakeRelease(t)
 
 	a := validArgs()
 	// Incompressible filler: random-looking, so gzip cannot shrink it. It
@@ -289,7 +336,7 @@ func TestUserDataRefusesOverTheLimit(t *testing.T) {
 	}
 
 	_, err := a.UserData("status")
-	require.ErrorContains(t, err, "over EC2's")
+	require.ErrorContains(t, err, "-byte limit")
 }
 
 func TestPinsAreWellFormed(t *testing.T) {
@@ -297,39 +344,46 @@ func TestPinsAreWellFormed(t *testing.T) {
 
 	for _, a := range architectures {
 		require.Regexp(t, sha, a.litestreamSHA256)
-		require.Regexp(t, sha, a.cloudflaredSHA256)
 		require.Contains(t, a.litestreamURL(), "v"+LitestreamVersion+"/litestream-"+LitestreamVersion+"-linux-")
-		require.Contains(t, a.cloudflaredURL(), CloudflaredVersion+"/cloudflared-linux-"+a.key)
 		require.Equal(t, "gatus_"+GatusVersion+"_linux_"+a.key, gatusAsset(a))
 		require.True(t, strings.HasPrefix(a.ssmAMI, "/aws/service/ami-amazon-linux-latest/al2023-"))
 	}
 }
 
-func TestInstancePolicyIsScoped(t *testing.T) {
+func TestInstanceStatementsAreScoped(t *testing.T) {
 	a := validArgs()
 	a.KMSKeyARN = "arn:" + partition + ":kms:eu-west-1:" + strings.Repeat("7", 12) + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"
-	doc := a.instancePolicy(namesFor("status"), "eu-west-1", strings.Repeat("7", 12))
-
-	for _, p := range a.parameterNames() {
-		require.Contains(t, doc, "parameter"+p)
-	}
+	doc, err := asg.Document(a.instanceStatements())
+	require.NoError(t, err)
 
 	require.Contains(t, doc, "arn:"+partition+":s3:::acme-status-replica/box/*")
-	require.Contains(t, doc, "box/*")
-	require.Contains(t, doc, "autoScalingGroupName/statusbox-status")
 	require.Contains(t, doc, a.KMSKeyARN)
 	require.NotContains(t, doc, `"*"`, "no wildcard resource")
-	require.NotContains(t, doc, "ssm:GetParameters", "exactly GetParameter, on the listed ARNs")
-	require.NotContains(t, doc, "parameter/*")
 
-	b := validArgs()
-	require.NotContains(t, b.instancePolicy(namesFor("status"), "eu-west-1", "x"), "kms:")
+	plain, err := asg.Document(validArgs().instanceStatements())
+	require.NoError(t, err)
+	require.NotContains(t, plain, "kms:")
+	// The parameters, the objects and the group's two actions are the
+	// library's, generated from what the plan reads.
+	require.NotContains(t, plain, "ssm:GetParameter")
+	require.NotContains(t, plain, "autoscaling")
 }
 
-func TestSetupScriptHasNoBootstrapDelimiter(t *testing.T) {
-	_, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
-	require.NotContains(t, setupScript, "\nSTATUSBOX_SETUP\n")
+// TestSetupScriptLeavesTheLifecycleToTheLibrary: the hook, the warm-pool
+// decision, the health timer and the connector are asg's, not this script's.
+func TestSetupScriptLeavesTheLifecycleToTheLibrary(t *testing.T) {
+	for _, gone := range []string{
+		"cloudflared", "CLOUDFLARED", "SB_TUNNEL_PARAM", "set-instance-health", "SB_HEALTH_MINUTES", "target-lifecycle-state",
+		"boot_phase", "health_phase", "statusbox-boot", "statusbox-health", "lifecycle-action-result CONTINUE", "SB_DNS_",
+	} {
+		require.NotContains(t, strings.ReplaceAll(setupScript, "the tunnel connector", ""), gone, "%s moved to github.com/truvity/asg", gone)
+	}
+
+	// The only hook call left abandons a launch whose configurations could not
+	// be verified.
+	require.Equal(t, 1, strings.Count(setupScript, "complete_hook ABANDON"))
+	require.Contains(t, setupScript, "in_service_phase()")
+	require.Contains(t, setupScript, "check_phase()")
 }
 
 // TestLowPortGetsTheBindCapability: a Gatus below port 1024 (the private page
@@ -374,9 +428,8 @@ func TestPingUnitsCarryNoURL(t *testing.T) {
 	require.Contains(t, setupScript, "OnUnitActiveSec=60s")
 	require.Contains(t, setupScript, `[ -n "$SB_PING_PARAM" ] || return 0`)
 
-	got, err := pingArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
-	require.Contains(t, setupScript, "ExecStart=/usr/local/sbin/statusbox-setup ping")
+	got := cloudConfig(t, pingArgs())
+	require.Contains(t, setupScript, "ExecStart=/usr/local/sbin/statusbox-setup.sh ping")
 	require.Contains(t, got, "SB_PING_PARAM='/acme/status/ping-url'")
 }
 
@@ -452,18 +505,21 @@ func scriptPath(t *testing.T, dir string) string {
 func TestConfigsTravelAsObjects(t *testing.T) {
 	a := validArgs()
 	a.TrustedCAs = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
-	got, err := a.bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+	c := compose(t, a)
+	got := c.Rendered.CloudConfig
 	require.NotContains(t, got, "endpoints:")
-	require.NotContains(t, got, "gz.b64")
-	require.NotContains(t, got, "--with-decryption", "the setup script is an object too")
+	require.NotContains(t, got, "restore_instance", "the setup script is an object too")
 
 	for _, o := range a.bucketObjects() {
 		require.Len(t, o.SHA256(), 64)
 		require.Equal(t, "box/config/"+o.SHA256()+"."+o.Ext, o.Key("box"))
 	}
 
-	require.Contains(t, got, "SB_SETUP_SHA='"+a.setupObject().SHA256()+"'")
+	// The setup script is pinned by the digest in its object fetch, under the
+	// same key it always had.
+	setup := setupObject()
+	require.Equal(t, "box/config/"+setup.SHA256()+".sh", setup.Key("box"))
+	require.Contains(t, got, "bs_fetch 'box/config/"+setup.SHA256()+".sh' '"+setup.SHA256()+"' '"+setupPath+"' 0755")
 	require.Contains(t, got, "ops:"+configObject{Content: configOps}.SHA256()+":box/config/"+configObject{Content: configOps}.SHA256()+".yaml")
 	require.Contains(t, got, "trusted-cas:", "the CA bundle is an object too")
 	require.Equal(t, "config/"+configObject{Content: "x", Ext: "yaml"}.SHA256()+".yaml", configObject{Content: "x", Ext: "yaml"}.Key(""))
@@ -473,14 +529,11 @@ func TestConfigsTravelAsObjects(t *testing.T) {
 // moves and the instance rolls, as it did when the Config was inline.
 func TestAChangedConfigChangesTheUserData(t *testing.T) {
 	a := validArgs()
-	before, err := a.bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+	before := cloudConfig(t, a)
 
 	a.Instances = append([]statusbox.Instance(nil), a.Instances...)
 	a.Instances[0].Config += "# changed\n"
-	after, err := a.bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
-	require.NotEqual(t, before, after)
+	require.NotEqual(t, before, cloudConfig(t, a))
 }
 
 func TestConfigIsAReservedInstanceName(t *testing.T) {
@@ -573,8 +626,7 @@ func TestSeveralPublicPagesShareTheTunnel(t *testing.T) {
 	require.NoError(t, a.validate())
 	require.Equal(t, []int{8081}, a.privatePorts(), "only the break-glass page is reachable from the peered network")
 
-	got, err := a.bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+	got := cloudConfig(t, a)
 	require.Contains(t, got, "SB_INSTANCES=('ops:8082:true:ops.db' 'ops-breakglass:8081:false:ops.db' "+
 		"'acme-prod:8083:true:acme-prod.db' 'acme-stage:8084:true:acme-stage.db')")
 

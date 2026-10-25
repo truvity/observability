@@ -259,8 +259,8 @@ func TestSecurityGroupWithNoPeerAdmitsNothing(t *testing.T) {
 }
 
 // TestRolePolicyIsScopedToTheInputs reads the policy the role was created
-// with: only the named parameters, the replica prefix, the group, and the key
-// when one is given.
+// with: only the named parameters (the tunnel token among them, through the
+// tunnel module), the replica prefix, the group, and the key when one is given.
 func TestRolePolicyIsScopedToTheInputs(t *testing.T) {
 	a := validArgs()
 	a.KMSKeyARN = "arn:" + part + ":kms:eu-west-1:" + account + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"
@@ -290,7 +290,7 @@ func TestRolePolicyIsScopedToTheInputs(t *testing.T) {
 	require.Equal(t, []string{
 		"arn:" + part + ":ssm:eu-west-1:" + account + ":parameter/acme/status/alerts-read-token",
 		"arn:" + part + ":ssm:eu-west-1:" + account + ":parameter/acme/status/tunnel-token",
-	}, byID["ReadOwnParameters"])
+	}, byID["ReadParameters"])
 	require.Equal(t, []string{"arn:" + part + ":s3:::acme-status-replica/box/*"}, byID["ReplicaObjects"])
 	require.Equal(t, []string{"arn:" + part + ":autoscaling:eu-west-1:" + account + ":autoScalingGroup:*:autoScalingGroupName/statusbox-status"}, byID["OwnGroup"])
 	require.Equal(t, []string{a.KMSKeyARN}, byID["OwnKey"])
