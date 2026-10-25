@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.107.0
 
 - **Changed** `pkg/statusbox/ec2`: the status box imports `github.com/truvity/asg` v0.1.0 instead of `pkg/appliance` of `github.com/truvity/aws-structure`; no change to what it deploys. The library is the same code under a new path, and the four `testdata/resourceset-*.golden.json` files are byte-unchanged. `go.mod` swaps the `aws-structure` requirement for `asg`.
 - **Added** `observability-proxy` preset `presets/tenancy-people-path.yaml` (nothing reads it unless listed; no existing render changes): people read only through tenancy-authz. It sets `tenancy.vmAccessReader.enabled`, `tenancy.authz.enabled` and `tenancy.authz.retireGroupReaders` to `true`; the issuer, identities, `authz.securityPolicy.targetRefs` and `authz.networkPolicy.gatewayFrom` stay yours, and the chart still refuses to render without them. Its render is byte-identical to writing the three keys by hand (`tests/presets_test.go`). Cases `tenancy-authz-people-path-preset` and `-explicit`; docs/presets.md.
