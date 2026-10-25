@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.106.1
 
 - **Added** `observability-proxy` preset `presets/tenancy-people-path.yaml` (nothing reads it unless listed; no existing render changes): people read only through tenancy-authz. It sets `tenancy.vmAccessReader.enabled`, `tenancy.authz.enabled` and `tenancy.authz.retireGroupReaders` to `true`; the issuer, identities, `authz.securityPolicy.targetRefs` and `authz.networkPolicy.gatewayFrom` stay yours, and the chart still refuses to render without them. Its render is byte-identical to writing the three keys by hand (`tests/presets_test.go`). Cases `tenancy-authz-people-path-preset` and `-explicit`; docs/presets.md.
 - **Added** `deploy/pulumi/status` helpers for the box's surroundings, estate-free: `LitestreamBucket` (private, versioned, SSE-S3 replica bucket with a lifecycle rule under the prefix; `ResourceName` keeps an existing deployment's resource names, so its URNs do not move), `PutSecureParameters` (the SSM SecureStrings the box reads at boot, resource `param-<name without prefix>`) and `PublicSubnetIDs` (a VPC's public subnets in zone order, two or more required). No existing function changes.
