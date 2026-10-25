@@ -45,7 +45,7 @@ func TestPresetsRenderWhatTheirValuesRender(t *testing.T) {
 		{"observability-emitters", "presets-remote", []string{"/etc/observability-write-ca"}},
 		{"observability-grafana", "presets", []string{"kubernetes.io/arch: arm64"}},
 		{"observability-rum", "presets", []string{"kubernetes.io/arch: arm64"}},
-		{"observability-proxy", "people-path", []string{"kind: SecurityPolicy", "-tenancy-authz"}},
+		{"observability-proxy", "tenancy-authz-people-path", []string{"kind: SecurityPolicy", "-tenancy-authz"}},
 		{"observability-cluster", "sluis-exchange", []string{"kubeauth-subject-token", "useKubeAuth: true", "name: token-exchange"}},
 		{"alert-ingress", "presets", []string{"RootCredentialUsage", "CloudSecurityFinding", "CloudBudgetThreshold"}},
 		{"platform-alerts", "presets", []string{"vm_rows_inserted_total", "vl_rows_ingested_total"}},
@@ -102,5 +102,5 @@ func readGolden(t *testing.T, chart, name string) string {
 func TestPeoplePathPresetRendersTheHandWrittenSwitches(t *testing.T) {
 	assert.Equal(t,
 		readGolden(t, "observability-proxy", "tenancy-authz-retired"),
-		readGolden(t, "observability-proxy", "people-path-preset"))
+		readGolden(t, "observability-proxy", "tenancy-authz-people-path-preset"))
 }
