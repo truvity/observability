@@ -1,5 +1,5 @@
 # A preset case: the people's path switches come from tenancy-people-path, the
-# rest is what no preset can know. Equal to people-path-explicit.
+# rest is what no preset can know. Equal to tenancy-authz-people-path-explicit.
 # A Door case for charts/observability-proxy. It began as the Door half of the
 # stack case of the same name, from the release in which the stack stopped
 # rendering the Door: the stack's values kept to the keys this chart declares,
