@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/truvity/aws-structure/pkg/appliance"
-	"github.com/truvity/aws-structure/pkg/bootstrap"
+	"github.com/truvity/asg"
+	"github.com/truvity/asg/bootstrap"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
 )
@@ -30,11 +30,11 @@ const (
 	privatePageDescription = "the private status page, from the peered network"
 )
 
-// Box is what NewEC2 creates. It is the appliance of truvity/aws-structure
-// (pkg/appliance), registered as the component "statusbox:ec2:Box", plus what
+// Box is what NewEC2 creates. It is the appliance of github.com/truvity/asg,
+// registered as the component "statusbox:ec2:Box", plus what
 // belongs to the status box alone.
 type Box struct {
-	*appliance.Appliance
+	*asg.Appliance
 
 	// Group (promoted from the appliance) is the Auto Scaling group: min = max
 	// = desired = 1, two Availability Zones, a warm pool of one stopped
@@ -74,7 +74,7 @@ func (a Args) privatePorts() []int {
 // template version, which the group's instance refresh rolls out: the one
 // instance is replaced and restores its databases from the replica.
 //
-// The resources are built by pkg/appliance of truvity/aws-structure. The
+// The resources are built by github.com/truvity/asg. The
 // user-data goes through bootstrap.Verbatim and the role's policy through
 // IAM.Policy, the options that carry an existing program over without a
 // change; every logical name, type and parent is the module's own (see
@@ -98,7 +98,7 @@ func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOp
 		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): %w", name, err)
 	}
 
-	app, err := appliance.New(ctx, name, a.applianceArgs(name, rendered), opts...)
+	app, err := asg.New(ctx, name, a.applianceArgs(name, rendered), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("statusbox/ec2: NewEC2(%q, ...): %w", name, err)
 	}
@@ -111,7 +111,7 @@ func NewEC2(ctx *pulumi.Context, name string, a *Args, opts ...pulumi.ResourceOp
 // applianceArgs maps the box onto the appliance library the way step A of its
 // migration describes: the old user-data verbatim, the old policy document, and
 // the Compat options that keep every name where it was.
-func (a Args) applianceArgs(name string, userData *bootstrap.Rendered) *appliance.Args {
+func (a Args) applianceArgs(name string, userData *bootstrap.Rendered) *asg.Args {
 	physical := namesFor(name)
 
 	// The objects the user-data names by digest. They are the box's own, so
@@ -134,13 +134,13 @@ func (a Args) applianceArgs(name string, userData *bootstrap.Rendered) *applianc
 	yes := true
 	maxPrepared := warmPoolMaxPrepared
 
-	args := &appliance.Args{
-		Names:     appliance.Names{Base: physical.asg, Role: physical.role, Hook: physical.hook},
+	args := &asg.Args{
+		Names:     asg.Names{Base: physical.asg, Role: physical.role, Hook: physical.hook},
 		Partition: partition,
 		Tags:      a.Tags,
 		Provider:  a.Provider,
 		UserData:  userData,
-		Objects: appliance.ObjectsArgs{
+		Objects: asg.ObjectsArgs{
 			Bucket:    a.Bucket,
 			KMSKeyARN: a.KMSKeyARN,
 			Extra:     extra,
@@ -153,39 +153,39 @@ func (a Args) applianceArgs(name string, userData *bootstrap.Rendered) *applianc
 				return tags
 			},
 		},
-		Image: appliance.ImageArgs{SSMParameter: a.architecture().ssmAMI},
-		Instance: appliance.InstanceArgs{
+		Image: asg.ImageArgs{SSMParameter: a.architecture().ssmAMI},
+		Instance: asg.InstanceArgs{
 			Type:       a.instanceType(),
-			RootVolume: &appliance.RootVolumeArgs{SizeGiB: a.rootVolumeGiB()},
+			RootVolume: &asg.RootVolumeArgs{SizeGiB: a.rootVolumeGiB()},
 			// A dynamic public IPv4 address, no Elastic IP and no NAT: the box
 			// only dials out, and nothing is admitted in (see SecurityGroup).
 			PublicIP: &yes,
 		},
-		Group:    appliance.GroupArgs{SubnetIDs: a.SubnetIDs},
-		Hook:     &appliance.HookArgs{HeartbeatTimeoutSeconds: hookHeartbeatSeconds},
-		WarmPool: &appliance.WarmPoolArgs{MinSize: 1, MaxGroupPreparedCapacity: &maxPrepared},
+		Group:    asg.GroupArgs{SubnetIDs: a.SubnetIDs},
+		Hook:     &asg.HookArgs{HeartbeatTimeoutSeconds: hookHeartbeatSeconds},
+		WarmPool: &asg.WarmPoolArgs{MinSize: 1, MaxGroupPreparedCapacity: &maxPrepared},
 		// With one instance, a refresh replaces it before launching the next:
 		// the replica has exactly one writer at any time.
-		Refresh: &appliance.RefreshArgs{},
-		IAM: appliance.IAMArgs{
+		Refresh: &asg.RefreshArgs{},
+		IAM: asg.IAMArgs{
 			PermissionsBoundary: a.PermissionsBoundary,
 			PolicyName:          "statusbox",
 			// Step A: the module's own document, not the library's generated
 			// one. Step B replaces it with a generated least-privilege policy.
-			Policy: func(pc appliance.PolicyContext) (string, error) {
+			Policy: func(pc asg.PolicyContext) (string, error) {
 				return a.instancePolicy(physical, pc.Region, pc.Account), nil
 			},
 		},
-		Security: appliance.SecurityArgs{
+		Security: asg.SecurityArgs{
 			VPCID:         a.VPCID,
 			Description:   a.securityGroupDescription(),
 			Ingress:       a.securityGroupIngress(),
 			DeleteTimeout: sgDeleteTimeout,
 		},
-		Compat: appliance.Compat{
+		Compat: asg.Compat{
 			ComponentType:          "statusbox:ec2:Box",
 			GroupTagsExcludeCommon: true,
-			Names: appliance.Logical{
+			Names: asg.Logical{
 				ManagedPolicy: func(int, string) string { return name + "-ssm-core" },
 				Object:        func(o bootstrap.Object) string { return logical[o.SHA256] },
 			},
@@ -201,7 +201,7 @@ func (a Args) applianceArgs(name string, userData *bootstrap.Rendered) *applianc
 
 // securityGroupDescription is the group's description. A description cannot
 // change in place, so it moves only for a box that turns SSH on (that box's
-// group is replaced, create first: see appliance.Names.SecurityGroup).
+// group is replaced, create first: see asg.Names.SecurityGroup).
 func (a Args) securityGroupDescription() string {
 	if len(a.sshCIDRs()) > 0 {
 		return "statusbox: no inbound except the private page and SSH (opkssh) from the listed networks"
@@ -213,12 +213,12 @@ func (a Args) securityGroupDescription() string {
 // securityGroupIngress admits nothing in but PrivateIngressCIDRs to the private
 // instances' ports and, with SSH, SSH.IngressCIDRs to TCP 22. Everything is let
 // out (probes, S3, SSM, the tunnel).
-func (a Args) securityGroupIngress() []appliance.Rule {
-	var rules []appliance.Rule
+func (a Args) securityGroupIngress() []asg.Rule {
+	var rules []asg.Rule
 
 	if len(a.PrivateIngressCIDRs) > 0 {
 		for _, port := range a.privatePorts() {
-			rules = append(rules, appliance.Rule{
+			rules = append(rules, asg.Rule{
 				Description: privatePageDescription,
 				Protocol:    "tcp",
 				FromPort:    port,
@@ -229,7 +229,7 @@ func (a Args) securityGroupIngress() []appliance.Rule {
 	}
 
 	if cidrs := a.sshCIDRs(); len(cidrs) > 0 {
-		rules = append(rules, appliance.Rule{
+		rules = append(rules, asg.Rule{
 			Description: "SSH (opkssh), from the listed networks",
 			Protocol:    "tcp",
 			FromPort:    sshPort,
