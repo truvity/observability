@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.108.0
 
 - **Changed** `pkg/statusbox/ec2`: the status box moves to composed user-data (step B of `github.com/truvity/asg`, v0.2.0). The user-data is a cloud-config made of the box's own module, the library's `watchdog` module, and `tunnel` (the connector rendered by `github.com/truvity/edge/v4` `cloudflare/instanceconnector`), `ssh` and `selfregister` when set; it replaces the shell script that carried them. The setup script is still an S3 object, now fetched by the plan's first step at `/usr/local/sbin/statusbox-setup.sh` (the object key keeps its shape; its content, and so its key, moves with the script). The library owns the warm-pool decision, the launch hook, the health timer, SSH, the DNS record and the tunnel connector, so `setup.sh` loses `boot`, `health`, `cloudflared` and the hook calls; it gains `in-service` and `check`.
 - **Behaviour change** on the next apply: one new launch template version (new user-data) and one instance refresh (MinHealthy 0, as before), so the box restarts once and restores its databases from the replica. The role's policy is now the library's generated document plus the replica statements: the same permissions, with `ReadOwnParameters` now `ReadParameters`, `s3:GetObject` on the exact object keys added (`ReadObjects`), and the same `OwnGroup` and `OwnKey`. The group no longer names the `launch_template` refresh trigger (an in-place update, no refresh). Nothing is replaced: the group, role, instance profile, security group and its rules keep their names and URNs.
