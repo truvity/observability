@@ -7,8 +7,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/truvity/tailscale/pkg/hostaccess"
-
-	"github.com/truvity/observability/pkg/statusbox"
 )
 
 func validSSH() *SSHArgs {
@@ -47,34 +45,29 @@ func TestHostaccessVersionMatchesGoMod(t *testing.T) {
 		"HostaccessVersion must be the truvity/tailscale version go.mod pins: the box verifies the digest of that build's script")
 }
 
-func TestSSHBootstrapCarriesTheFilesAndCommands(t *testing.T) {
-	got, err := sshArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+func TestSSHCarriesTheFilesAndCommands(t *testing.T) {
+	files := writtenFiles(t, sshArgs())
+	got := cloudConfig(t, sshArgs())
 
-	for _, want := range []string{
-		"cat > /etc/hostaccess/hostaccess.env <<'STATUSBOX_SSH_FILE_0'",
-		"HOST_CERT_PRINCIPAL_SOURCE=\"imds-hostname\"",
-		"cat > /etc/hostaccess/opkssh-providers <<",
-		"https://issuer.example.test/realms/acme opkssh 24h",
-		"ec2-user oidc:groups:ops https://issuer.example.test/realms/acme",
-		"cat > /etc/hostaccess/opkssh-auth_id <<",
-		"dnf install -y checkpolicy",
-		"hostaccess-setup-v" + HostaccessVersion + ".sh",
-		"sha256sum -c -",
-		"timeout 600 bash /opt/statusbox/ssh/setup.sh ||",
-	} {
-		require.Contains(t, got, want)
+	require.Contains(t, files["/etc/hostaccess/hostaccess.env"], "HOST_CERT_PRINCIPAL_SOURCE=\"imds-hostname\"")
+	require.Contains(t, files["/etc/hostaccess/opkssh-providers"], "https://issuer.example.test/realms/acme opkssh 24h")
+	require.Contains(t, files["/etc/hostaccess/opkssh-auth_id"], "ec2-user oidc:groups:ops https://issuer.example.test/realms/acme")
+
+	setup := files["/opt/asg/ssh/setup.sh"]
+	for _, want := range []string{"dnf install -y checkpolicy", "hostaccess-setup-v" + HostaccessVersion + ".sh", "sha256sum -c -"} {
+		require.Contains(t, setup, want)
 	}
 
-	// SSH setup is attempted before the install phase that completes the hook.
-	require.Less(t, strings.Index(got, "/opt/statusbox/ssh/setup.sh ||"), strings.Index(got, "exec /usr/local/sbin/statusbox-setup install"))
+	// SSH setup is attempted before the box's install step, time-boxed and
+	// never fatal.
+	require.Less(t, strings.Index(got, "timeout 600 bash /opt/asg/ssh/setup.sh ||"), strings.Index(got, setupPath+" install"))
 }
 
-func TestBootstrapWithoutSSHHasNoSSH(t *testing.T) {
-	got, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+func TestUserDataWithoutSSHHasNoSSH(t *testing.T) {
+	got := cloudConfig(t, validArgs())
 	require.NotContains(t, got, "hostaccess")
 	require.NotContains(t, got, "opkssh")
+	require.NotContains(t, got, "ssh-keygen")
 }
 
 func TestSSHRefusals(t *testing.T) {
@@ -94,16 +87,12 @@ func TestSSHRefusals(t *testing.T) {
 	}
 }
 
-// TestUserDataWithSSHIsWithinTheLimit measures the real thing: the gzip-wrapped
-// user-data with SSH on, for the largest realistic box in the test fixtures.
-// The budget leaves room for the estate's own Configs to grow.
+// TestUserDataWithSSHIsWithinTheLimit measures the real thing: the user-data
+// with SSH, self-registration and the tunnel on, for the largest realistic box
+// in the test fixtures. The budget leaves room for the estate's own Configs to
+// grow.
 func TestUserDataWithSSHIsWithinTheLimit(t *testing.T) {
-	previous := statusbox.FetchChecksums
-	statusbox.FetchChecksums = func(string) (string, error) {
-		return fakeSHA64 + "  gatus_" + GatusVersion + "_linux_arm64\n" + fakeSHA64 + "  gatus_" + GatusVersion + "_linux_amd64\n", nil
-	}
-
-	t.Cleanup(func() { statusbox.FetchChecksums = previous })
+	fakeRelease(t)
 
 	without, err := validArgs().UserData("status")
 	require.NoError(t, err)
@@ -111,9 +100,9 @@ func TestUserDataWithSSHIsWithinTheLimit(t *testing.T) {
 	with, err := sshArgs().UserData("status")
 	require.NoError(t, err)
 
-	t.Logf("user-data bytes: %d without SSH, %d with SSH (limit %d)", len(without), len(with), userDataLimit)
-	require.Less(t, len(with), userDataLimit)
-	require.Less(t, len(with)-len(without), 2*1024, "SSH should cost about a kilobyte of user-data (the script is downloaded, not embedded)")
+	t.Logf("user-data bytes: %d without SSH, %d with SSH (limit %d)", without.Size, with.Size, userDataLimit)
+	require.Less(t, with.Size, userDataLimit)
+	require.Less(t, with.Size-without.Size, 2*1024, "SSH should cost about a kilobyte of user-data (the hostaccess script is downloaded, not embedded)")
 }
 
 func opksshOnlyArgs() Args {
@@ -128,8 +117,7 @@ func TestSSHOpksshOnlyHasNoHostCert(t *testing.T) {
 	a := opksshOnlyArgs()
 	require.NoError(t, a.validate())
 
-	got, err := a.bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+	got := cloudConfig(t, a)
 	require.Contains(t, got, "OPKSSH=\"true\"")
 	require.Contains(t, got, "HOST_CERT=\"false\"")
 	require.NotContains(t, got, "openbao-hostcert")
@@ -137,8 +125,7 @@ func TestSSHOpksshOnlyHasNoHostCert(t *testing.T) {
 }
 
 func TestSSHHostKeyRestoreRunsBeforeSshdSetup(t *testing.T) {
-	got, err := opksshOnlyArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+	setup := writtenFiles(t, opksshOnlyArgs())["/opt/asg/ssh/setup.sh"]
 
 	for _, want := range []string{
 		"aws ssm get-parameter --name /acme/status/ssh-host-key --with-decryption",
@@ -147,56 +134,42 @@ func TestSSHHostKeyRestoreRunsBeforeSshdSetup(t *testing.T) {
 		"HostKey /etc/ssh/ssh_host_ed25519_key",
 		"host key restore failed; sshd keeps its generated key",
 	} {
-		require.Contains(t, got, want)
+		require.Contains(t, setup, want)
 	}
 
-	require.Less(t, strings.Index(got, "ssh-keygen -y"), strings.Index(got, "hostaccess-setup-v"+HostaccessVersion),
+	require.Less(t, strings.Index(setup, "ssh-keygen -y"), strings.Index(setup, "hostaccess-setup-v"+HostaccessVersion),
 		"the key is restored before the hostaccess setup restarts sshd")
-
-	without, err := sshArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
-	require.NotContains(t, without, "ssh-keygen")
+	require.NotContains(t, writtenFiles(t, sshArgs())["/opt/asg/ssh/setup.sh"], "ssh-keygen")
 }
 
 func TestSSHHostKeyParameterIsReadableByTheRole(t *testing.T) {
 	a := opksshOnlyArgs()
-	require.Contains(t, a.parameterNames(), "/acme/status/ssh-host-key")
-	require.Contains(t, a.instancePolicy(namesFor("status"), "eu-west-3", "ACCOUNT"), "parameter/acme/status/ssh-host-key")
-	require.NotContains(t, sshArgs().parameterNames(), "/acme/status/ssh-host-key")
+	require.Contains(t, compose(t, a).Rendered.SSMParameters, "/acme/status/ssh-host-key")
+	require.NotContains(t, compose(t, sshArgs()).Rendered.SSMParameters, "/acme/status/ssh-host-key")
 
 	a.SSH.HostKeyParameter = "relative/name"
 	require.Error(t, a.validate())
 }
 
 func TestUserDataOpksshOnlyIsWithinTheLimit(t *testing.T) {
-	previous := statusbox.FetchChecksums
-	statusbox.FetchChecksums = func(string) (string, error) {
-		return fakeSHA64 + "  gatus_" + GatusVersion + "_linux_arm64\n" + fakeSHA64 + "  gatus_" + GatusVersion + "_linux_amd64\n", nil
-	}
-
-	t.Cleanup(func() { statusbox.FetchChecksums = previous })
+	fakeRelease(t)
 
 	got, err := opksshOnlyArgs().UserData("status")
 	require.NoError(t, err)
-	require.Less(t, len(got), 12*1024)
+	require.Less(t, got.Size, 12*1024)
 }
 
 func TestSSHPrefersPostQuantumKeyExchangeFailSafe(t *testing.T) {
-	got, err := sshArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
+	setup := writtenFiles(t, sshArgs())["/opt/asg/ssh/setup.sh"]
 
 	for _, want := range []string{
 		"KexAlgorithms ^mlkem768x25519-sha256,sntrup761x25519-sha512@openssh.com",
-		"/etc/ssh/sshd_config.d/06-statusbox-kex.conf",
-		"if sshd -t; then systemctl restart sshd; else rm -f /etc/ssh/sshd_config.d/06-statusbox-kex.conf; exit 1; fi",
+		"/etc/ssh/sshd_config.d/06-asg-kex.conf",
+		"if sshd -t; then systemctl restart sshd; else rm -f /etc/ssh/sshd_config.d/06-asg-kex.conf; exit 1; fi",
 		"post-quantum key exchange not enabled; sshd keeps its defaults",
 	} {
-		require.Contains(t, got, want)
+		require.Contains(t, setup, want)
 	}
 
-	require.Less(t, strings.Index(got, "KexAlgorithms"), strings.Index(got, "hostaccess-setup-v"+HostaccessVersion))
-
-	without, err := validArgs().bootstrap(namesFor("status"), fakeChecksums())
-	require.NoError(t, err)
-	require.NotContains(t, without, "KexAlgorithms")
+	require.Less(t, strings.Index(setup, "KexAlgorithms"), strings.Index(setup, "hostaccess-setup-v"+HostaccessVersion))
 }

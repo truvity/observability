@@ -1,0 +1,420 @@
+#cloud-config
+write_files:
+  - path: /etc/asg/watchdog.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      # Rendered by github.com/truvity/asg/modules/watchdog. No secret.
+      FAIL_SECONDS=300
+      RESTART_ATTEMPTS=0
+      RESTART_UNITS=()
+  - path: /etc/statusbox/params.sh
+    owner: root:root
+    permissions: "0644"
+    content: |
+      # Rendered by pkg/statusbox/ec2. Names and pinned checksums only; no secret.
+      SB_ASG_NAME='statusbox-status'
+      SB_HOOK_NAME='statusbox-status-launch'
+      SB_BUCKET='acme-status-replica'
+      SB_PREFIX='box'
+      SB_PING_PARAM=''
+      SB_ENV_PARAMS=('ALERT_URL_OPS_ALERTS_READ_TOKEN=/acme/status/alerts-read-token' 'OIDC_CLIENT_SECRET=/acme/status/oidc-client-secret')
+      SB_INSTANCES=('ops:8082:true:ops.db' 'ops-breakglass:8081:false:ops.db')
+      SB_CONFIGS=('ops:a68760ad960944a7e40622edc1436c67bf87cab60b1a306e9939ac26e3a97953:box/config/a68760ad960944a7e40622edc1436c67bf87cab60b1a306e9939ac26e3a97953.yaml' 'ops-breakglass:a68760ad960944a7e40622edc1436c67bf87cab60b1a306e9939ac26e3a97953:box/config/a68760ad960944a7e40622edc1436c67bf87cab60b1a306e9939ac26e3a97953.yaml')
+      SB_GATUS_URL_arm64='https://github.com/truvity/observability/releases/download/v1.0.0/gatus_v5.37.0-pkce_linux_arm64'
+      SB_GATUS_SHA_arm64='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      SB_LITESTREAM_URL_arm64='https://github.com/benbjohnson/litestream/releases/download/v0.5.17/litestream-0.5.17-linux-arm64.tar.gz'
+      SB_LITESTREAM_SHA_arm64='f8ca4a050095c1efbda2c4365172e61bf9d955ea0d9ac42f448b52e51819baa5'
+      SB_GATUS_URL_amd64='https://github.com/truvity/observability/releases/download/v1.0.0/gatus_v5.37.0-pkce_linux_amd64'
+      SB_GATUS_SHA_amd64='abababababababababababababababababababababababababababababababab'
+      SB_LITESTREAM_URL_amd64='https://github.com/benbjohnson/litestream/releases/download/v0.5.17/litestream-0.5.17-linux-x86_64.tar.gz'
+      SB_LITESTREAM_SHA_amd64='cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d'
+  - path: /etc/systemd/system/asg-in-service.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Start this instance's services when it goes in service
+      After=network-online.target bootstrap-secrets.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      TimeoutStartSec=900
+      ExecStart=/usr/local/lib/asg/lifecycle.sh
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/asg-watchdog.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Local health check; marks the instance Unhealthy when it fails for too long
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/lib/asg/watchdog.sh
+  - path: /etc/systemd/system/asg-watchdog.timer
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Local health check, every 60 seconds
+
+      [Timer]
+      OnBootSec=120s
+      OnUnitActiveSec=60s
+      AccuracySec=1s
+  - path: /etc/systemd/system/bootstrap-ready.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Tell the Auto Scaling group this instance is ready
+      Wants=asg-in-service.service
+      After=network-online.target asg-in-service.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/lib/bootstrap/ready.sh
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/cloudflared.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=cloudflared tunnel (cloudflared)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      User=statusbox
+      Group=statusbox
+      EnvironmentFile=/run/statusbox/tunnel.env
+      ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run
+      Restart=always
+      RestartSec=5
+      NoNewPrivileges=yes
+      PrivateTmp=yes
+  - path: /etc/systemd/system/cloudflared.service.d/10-bootstrap.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Service]
+      Environment=TUNNEL_METRICS=127.0.0.1:20241
+  - path: /usr/local/lib/asg/in-service.d/00-statusbox.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # in-service step: statusbox
+      /usr/local/sbin/statusbox-setup.sh in-service
+  - path: /usr/local/lib/asg/in-service.d/01-tunnel.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # in-service step: tunnel
+      # The tunnel token goes from SSM to /run/statusbox/tunnel.env (tmpfs); it is never printed.
+      cloudflared_load_token() {
+        local param='/acme/status/tunnel-token' envfile=/run/statusbox/tunnel.env value i
+        mkdir -p '/run/statusbox' && chmod 0700 '/run/statusbox' || return 1
+        for i in 1 2 3 4 5 6; do
+          if value="$(aws ssm get-parameter --name "$param" --with-decryption --query Parameter.Value --output text --region "$(tok="$(curl -fsS -m 5 -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)" && curl -fsS -m 5 -H "X-aws-ec2-metadata-token: $tok" http://169.254.169.254/latest/meta-data/placement/region)")"; then
+            break
+          fi
+          value=""
+          [ "$i" = 6 ] || sleep "${CLOUDFLARED_RETRY_SLEEP:-5}"
+        done
+        if [ -z "$value" ] || [ "$value" = None ]; then
+          echo "cloudflared: could not read SSM parameter $param" >&2
+          return 1
+        fi
+        case "$value" in
+          *$'\n'*) echo "cloudflared: the value of $param contains a newline" >&2; value=""; return 1 ;;
+        esac
+        value="${value//\\/\\\\}"
+        value="${value//\"/\\\"}"
+        (umask 077 && printf 'TUNNEL_TOKEN="%s"\n' "$value" >"$envfile.part") || { value=""; return 1; }
+        value=""
+        chmod 0600 "$envfile.part" && mv "$envfile.part" "$envfile"
+      }
+      cloudflared_load_token
+      systemctl daemon-reload
+      systemctl start cloudflared.service
+  - path: /usr/local/lib/asg/in-service.d/02-watchdog.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # in-service step: watchdog
+      systemctl start asg-watchdog.timer
+  - path: /usr/local/lib/asg/lifecycle.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Generated by github.com/truvity/asg/module. Run by asg-in-service.service on
+      # every boot: in the warm pool it does nothing; on a boot into service it runs
+      # in-service.d, then the ready.d checks. Any failure exits non-zero, so the
+      # bootstrap-ready service abandons the launch instead of completing it.
+      set -euo pipefail
+
+      LIB="${ASG_LIB:-/usr/local/lib/asg}"
+
+      log() { printf '%s asg-in-service: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2; }
+
+      imds() {
+        local t
+        t="$(curl -fsS --connect-timeout 5 -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token)" || return 1
+        curl -fsS --connect-timeout 5 -H "X-aws-ec2-metadata-token: $t" "http://169.254.169.254/latest/meta-data/$1"
+      }
+
+      # An empty answer (no such path) means the instance is not in a group at all,
+      # which a cold start under test is: treat it as going in service.
+      state="$(imds autoscaling/target-lifecycle-state 2>/dev/null || true)"
+      case "$state" in
+        Warmed:*)
+          log "target lifecycle state '$state': parked, nothing to start"
+          exit 0
+          ;;
+        InService | "") ;;
+        *)
+          log "target lifecycle state '$state': nothing to do"
+          exit 0
+          ;;
+      esac
+
+      for f in "$LIB"/in-service.d/*; do
+        [ -e "$f" ] || continue
+        log "step $(basename "$f")"
+        bash -e "$f"
+      done
+
+      for f in "$LIB"/ready.d/*; do
+        [ -e "$f" ] || continue
+        limit="$(sed -n 's/^# asg-timeout=//p' "$f" | head -n 1)"
+        deadline=$((SECONDS + ${limit:-120}))
+        until bash "$f" >/dev/null 2>&1; do
+          if [ "$SECONDS" -ge "$deadline" ]; then
+            log "ready check $(basename "$f") did not pass in time"
+            exit 1
+          fi
+          sleep 2
+        done
+        log "ready check $(basename "$f") passed"
+      done
+  - path: /usr/local/lib/asg/ready.d/00-gatus.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # asg-timeout=120
+      # ready check: gatus
+      /usr/local/sbin/statusbox-setup.sh check
+  - path: /usr/local/lib/asg/ready.d/01-tunnel.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # asg-timeout=120
+      # ready check: tunnel
+      curl -fsS -m 3 -o /dev/null http://127.0.0.1:20241/ready
+  - path: /usr/local/lib/asg/watch.d/00-gatus.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # watch check: gatus
+      /usr/local/sbin/statusbox-setup.sh check
+  - path: /usr/local/lib/asg/watch.d/01-tunnel.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # watch check: tunnel
+      curl -fsS -m 3 -o /dev/null http://127.0.0.1:20241/ready
+  - path: /usr/local/lib/asg/watchdog.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # asg-watchdog: runs every check in watch.d; once they have been failing for
+      # FAIL_SECONDS it restarts RESTART_UNITS (up to RESTART_ATTEMPTS times), then
+      # asks the Auto Scaling group to replace this instance. It is the only
+      # recovery a stateless box has: Restart=always in the units handles the quick
+      # failures before that. Generated by github.com/truvity/asg/modules/watchdog.
+      set -uo pipefail
+
+      LIB="${ASG_LIB:-/usr/local/lib/asg}"
+      STATE="${ASG_WATCHDOG_STATE:-/run/asg-watchdog}"
+
+      # shellcheck disable=SC1090
+      . "${ASG_WATCHDOG_CONF:-/etc/asg/watchdog.conf}"
+
+      log() { printf '%s asg-watchdog: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2; }
+
+      imds() {
+        local t
+        t="$(curl -fsS -m 5 -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token)" || return 1
+        curl -fsS -m 5 -H "X-aws-ec2-metadata-token: $t" "http://169.254.169.254/latest/meta-data/$1"
+      }
+
+      ok=1
+      for f in "$LIB"/watch.d/*; do
+        [ -e "$f" ] || continue
+        bash "$f" >/dev/null 2>&1 || { log "check $(basename "$f") failed"; ok=0; }
+      done
+
+      mkdir -p "$STATE"
+      if [ "$ok" = 1 ]; then
+        rm -f "$STATE/unhealthy-since" "$STATE/restarts"
+        exit 0
+      fi
+
+      now="$(date +%s)"
+      [ -f "$STATE/unhealthy-since" ] || echo "$now" >"$STATE/unhealthy-since"
+      since="$(cat "$STATE/unhealthy-since")"
+      log "failing since $since"
+      [ $((now - since)) -ge "$FAIL_SECONDS" ] || exit 0
+
+      restarts="$(cat "$STATE/restarts" 2>/dev/null || echo 0)"
+      if [ "$restarts" -lt "$RESTART_ATTEMPTS" ] && [ "${#RESTART_UNITS[@]}" -gt 0 ]; then
+        restarts=$((restarts + 1))
+        echo "$restarts" >"$STATE/restarts"
+        echo "$now" >"$STATE/unhealthy-since"
+        log "restarting ${RESTART_UNITS[*]} (attempt $restarts of $RESTART_ATTEMPTS)"
+        systemctl restart "${RESTART_UNITS[@]}" || log "restart failed"
+        exit 0
+      fi
+
+      iid="$(imds instance-id)"
+      region="$(imds placement/region)"
+      log "failing for over $((FAIL_SECONDS / 60)) minutes; marking $iid Unhealthy"
+      aws autoscaling set-instance-health --instance-id "$iid" --health-status Unhealthy --region "$region" || log "set-instance-health failed"
+  - path: /usr/local/lib/bootstrap/ready.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Generated by github.com/truvity/asg/bootstrap; run by bootstrap-ready.service on every boot.
+      set -e
+      imds() {
+        local t
+        t="$(curl -fsS --connect-timeout 5 -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token)" || return 1
+        curl -fsS --connect-timeout 5 -H "X-aws-ec2-metadata-token: $t" "http://169.254.169.254/latest/meta-data/$1"
+      }
+      bs_die() {
+        echo "bootstrap: $1" >&2
+        exit 1
+      }
+      export -f imds bs_die
+      bs_abort() {
+        echo "bootstrap: $1" >&2
+        if ! aws autoscaling complete-lifecycle-action --region "$(imds placement/region)" \
+          --auto-scaling-group-name 'statusbox-status' --lifecycle-hook-name 'statusbox-status-launch' \
+          --lifecycle-action-result ABANDON --instance-id "$(imds instance-id)" >/dev/null 2>&1; then
+          aws autoscaling set-instance-health --region "$(imds placement/region)" \
+            --instance-id "$(imds instance-id)" --health-status Unhealthy >/dev/null 2>&1 || true
+        fi
+        exit 1
+      }
+      systemctl is-active --quiet 'asg-in-service.service' || bs_abort 'asg-in-service.service is not active'
+      for i in 1 2 3; do
+        if out="$(aws autoscaling complete-lifecycle-action --region "$(imds placement/region)" \
+          --auto-scaling-group-name 'statusbox-status' --lifecycle-hook-name 'statusbox-status-launch' \
+          --lifecycle-action-result CONTINUE --instance-id "$(imds instance-id)" 2>&1)"; then
+          exit 0
+        fi
+        echo "bootstrap: CONTINUE attempt $i: $out" >&2
+        sleep $((i * 3))
+      done
+      echo "bootstrap: no CONTINUE sent; if an action was pending, the hook's DefaultResult applies" >&2
+      exit 0
+runcmd:
+  - set -e
+  - - bash
+    - -ec
+    - |
+      # fetch objects
+      imds() {
+        local t
+        t="$(curl -fsS --connect-timeout 5 -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token)" || return 1
+        curl -fsS --connect-timeout 5 -H "X-aws-ec2-metadata-token: $t" "http://169.254.169.254/latest/meta-data/$1"
+      }
+      bs_die() {
+        echo "bootstrap: $1" >&2
+        aws autoscaling complete-lifecycle-action --region "$(imds placement/region)" \
+          --auto-scaling-group-name 'statusbox-status' --lifecycle-hook-name 'statusbox-status-launch' \
+          --lifecycle-action-result ABANDON --instance-id "$(imds instance-id)" >/dev/null 2>&1 || true
+        exit 1
+      }
+      bucket='acme-status-replica'
+      region="$(imds placement/region)" || bs_die "no region from the instance metadata"
+      bs_fetch() {
+        local key="$1" sum="$2" dest="$3" mode="$4" owner="$5" tmp i
+        tmp="$(mktemp)" || return 1
+        for i in 1 2 3 4 5; do
+          if aws s3 cp --only-show-errors --region "$region" "s3://$bucket/$key" "$tmp" \
+            && printf '%s  %s\n' "$sum" "$tmp" | sha256sum -c - >/dev/null 2>&1; then
+            install -D -m "$mode" "$tmp" "$dest" && chown "$owner" "$dest" && rm -f "$tmp" && return 0
+            break
+          fi
+          sleep 3
+        done
+        rm -f "$tmp"
+        return 1
+      }
+      bs_fetch 'box/config/8213886d15dedfb5223b598592e77dfe549762d0a4db77c8a0985fcce5ce84e1.sh' '8213886d15dedfb5223b598592e77dfe549762d0a4db77c8a0985fcce5ce84e1' '/usr/local/sbin/statusbox-setup.sh' 0755 'root:root' || bs_die 'cannot fetch /usr/local/sbin/statusbox-setup.sh'
+  - - bash
+    - -ec
+    - |
+      # tunnel install
+      # cloudflared 2026.10.0 linux-arm64: installed to /usr/local/bin/cloudflared, checksum pinned in cloudflare/cloudflared.
+      cloudflared_install() {
+        local want='e6422b9d4f72d3194bc5a38676f13667c06666523217b842a877d72a80b5ac08' url='https://github.com/cloudflare/cloudflared/releases/download/2026.10.0/cloudflared-linux-arm64' dest=/usr/local/bin/cloudflared tmp i
+        if [ -x "$dest" ] && [ "$(sha256sum "$dest" | cut -d' ' -f1)" = "$want" ]; then
+          return 0
+        fi
+        tmp="$(mktemp -d)" || return 1
+        for i in 1 2 3 4 5; do
+          if curl -fsSL --connect-timeout 10 --max-time 300 -o "$tmp/cloudflared" "$url" \
+            && printf '%s  %s\n' "$want" "$tmp/cloudflared" | sha256sum -c - >/dev/null 2>&1; then
+            install -d -m 0755 '/usr/local/bin' || { rm -rf "$tmp"; return 1; }
+            install -m 0755 "$tmp/cloudflared" "$dest" || { rm -rf "$tmp"; return 1; }
+            rm -rf "$tmp"
+            return 0
+          fi
+          echo "cloudflared: download of $url failed or did not match its checksum (attempt $i)" >&2
+          rm -f "$tmp/cloudflared"
+          sleep "${CLOUDFLARED_RETRY_SLEEP:-5}"
+        done
+        rm -rf "$tmp"
+        return 1
+      }
+      cloudflared_install
+  - - bash
+    - -ec
+    - |
+      # systemd daemon-reload
+      systemctl daemon-reload
+  - - bash
+    - -ec
+    - |
+      # statusbox install
+      /usr/local/sbin/statusbox-setup.sh install
+  - - bash
+    - -ec
+    - |
+      # systemd units
+      systemctl enable 'asg-in-service.service'
+  - - bash
+    - -ec
+    - |
+      # report ready
+      systemctl enable --now bootstrap-ready.service

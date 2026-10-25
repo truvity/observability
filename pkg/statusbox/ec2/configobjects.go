@@ -52,19 +52,21 @@ func (o configObject) Key(bucketPrefix string) string {
 }
 
 // setupObject is the setup script as an object: the largest file of the box.
-func (a Args) setupObject() configObject {
+// The plan delivers it (a file with object delivery), so NewEC2 only needs its
+// digest to name the resource and its tags.
+func setupObject() configObject {
 	return configObject{Name: setupName, Ext: "sh", Content: setupScript}
 }
 
-// bucketObjects are every object NewEC2 creates: the setup script, then the
-// configObjects, once per distinct content (two instances may render the same
-// file; one object serves both).
+// bucketObjects are the objects NewEC2 uploads itself: the configObjects, once
+// per distinct content (two instances may render the same file; one object
+// serves both). The setup script is the plan's own object.
 func (a Args) bucketObjects() []configObject {
 	var out []configObject
 
 	seen := map[string]bool{}
 
-	for _, o := range append([]configObject{a.setupObject()}, a.configObjects()...) {
+	for _, o := range a.configObjects() {
 		if seen[o.SHA256()] {
 			continue
 		}

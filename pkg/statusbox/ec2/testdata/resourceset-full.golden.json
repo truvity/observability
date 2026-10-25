@@ -1,5 +1,5 @@
 {
-  "boxUserData": "sha256:bbeea4c4c7f627aacddb1c2767dd81cc9fa676f7f3dadcebb76046e24c179e08",
+  "boxUserData": "sha256:6ff534b420e415c612d2d14863dd65e83f5f8d868af397a01f33de4c544cb220",
   "lookups": [
     "aws:index/getCallerIdentity:getCallerIdentity {}",
     "aws:index/getRegion:getRegion {}",
@@ -30,10 +30,7 @@
             "instanceWarmup": "300",
             "minHealthyPercentage": 0
           },
-          "strategy": "Rolling",
-          "triggers": [
-            "launch_template"
-          ]
+          "strategy": "Rolling"
         },
         "launchTemplate": {
           "id": "status_id",
@@ -140,7 +137,7 @@
           "Team": "ops"
         },
         "updateDefaultVersion": true,
-        "userData": "sha256:2a91d7ff800319b42ba78ddfb71e1e17de902f41cc47844f1fc6ca270724cc06"
+        "userData": "sha256:6d09a3019836ee20345dedb4d451fa43984de4b319c7066c042dcb22e7f14468"
       },
       "name": "status",
       "parent": "statusbox:ec2:Box::status",
@@ -232,7 +229,7 @@
         "inlinePolicies": [
           {
             "name": "statusbox",
-            "policy": "{\n  \"Statement\": [\n    {\n      \"Action\": [\n        \"ssm:GetParameter\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/alerts-read-token\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/oidc-secret\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/ping-url\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/ssh-host-key\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/tunnel-token\"\n      ],\n      \"Sid\": \"ReadOwnParameters\"\n    },\n    {\n      \"Action\": [\n        \"s3:GetObject\",\n        \"s3:PutObject\",\n        \"s3:DeleteObject\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica/box/replica/*\"\n      ],\n      \"Sid\": \"ReplicaObjects\"\n    },\n    {\n      \"Action\": [\n        \"s3:ListBucket\"\n      ],\n      \"Condition\": {\n        \"StringLike\": {\n          \"s3:prefix\": [\n            \"box/replica/*\"\n          ]\n        }\n      },\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ],\n      \"Sid\": \"ReplicaList\"\n    },\n    {\n      \"Action\": [\n        \"s3:GetBucketLocation\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ],\n      \"Sid\": \"ReplicaRegion\"\n    },\n    {\n      \"Action\": [\n        \"autoscaling:CompleteLifecycleAction\",\n        \"autoscaling:SetInstanceHealth\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:autoscaling:eu-west-1:@ACCOUNT@:autoScalingGroup:*:autoScalingGroupName/statusbox-status\"\n      ],\n      \"Sid\": \"OwnGroup\"\n    },\n    {\n      \"Action\": [\n        \"kms:Decrypt\",\n        \"kms:GenerateDataKey\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:kms:eu-west-1:@ACCOUNT@:key/1234abcd-12ab-34cd-56ef-1234567890ab\"\n      ],\n      \"Sid\": \"OwnKey\"\n    },\n    {\n      \"Action\": [\n        \"sts:AssumeRole\"\n      ],\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"arn:@PARTITION@:iam::@ACCOUNT@:role/dns-register\"\n      ],\n      \"Sid\": \"SelfRegisterDNS\"\n    }\n  ],\n  \"Version\": \"2012-10-17\"\n}"
+            "policy": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"ReadParameters\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"ssm:GetParameter\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/alerts-read-token\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/oidc-secret\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/ping-url\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/ssh-host-key\",\n        \"arn:@PARTITION@:ssm:eu-west-1:@ACCOUNT@:parameter/acme/status/tunnel-token\"\n      ]\n    },\n    {\n      \"Sid\": \"ReadObjects\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:GetObject\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica/box/replica/config/2bde766b5437eee4896c653433d96563410d7b5153a887e4b3208e09d6937cf4.yaml\",\n        \"arn:@PARTITION@:s3:::acme-status-replica/box/replica/config/8213886d15dedfb5223b598592e77dfe549762d0a4db77c8a0985fcce5ce84e1.sh\",\n        \"arn:@PARTITION@:s3:::acme-status-replica/box/replica/config/8c3326cb61e8caedfd7efd47bdc34554d0a6028a18847b4e1d74f8f5dd302541.pem\"\n      ]\n    },\n    {\n      \"Sid\": \"OwnGroup\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"autoscaling:CompleteLifecycleAction\",\n        \"autoscaling:SetInstanceHealth\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:autoscaling:eu-west-1:@ACCOUNT@:autoScalingGroup:*:autoScalingGroupName/statusbox-status\"\n      ]\n    },\n    {\n      \"Sid\": \"ReplicaObjects\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:GetObject\",\n        \"s3:PutObject\",\n        \"s3:DeleteObject\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica/box/replica/*\"\n      ]\n    },\n    {\n      \"Sid\": \"ReplicaList\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:ListBucket\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ],\n      \"Condition\": {\n        \"StringLike\": {\n          \"s3:prefix\": [\n            \"box/replica/*\"\n          ]\n        }\n      }\n    },\n    {\n      \"Sid\": \"ReplicaRegion\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:GetBucketLocation\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:s3:::acme-status-replica\"\n      ]\n    },\n    {\n      \"Sid\": \"OwnKey\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"kms:Decrypt\",\n        \"kms:GenerateDataKey\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:kms:eu-west-1:@ACCOUNT@:key/1234abcd-12ab-34cd-56ef-1234567890ab\"\n      ]\n    },\n    {\n      \"Sid\": \"SelfRegisterDNS\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"sts:AssumeRole\"\n      ],\n      \"Resource\": [\n        \"arn:@PARTITION@:iam::@ACCOUNT@:role/dns-register\"\n      ]\n    }\n  ]\n}"
           }
         ],
         "name": "statusbox-status",
@@ -321,9 +318,9 @@
     {
       "inputs": {
         "bucket": "acme-status-replica",
-        "content": "sha256:50227bb0ac6f26a70973fd7ca25a565278cf77e26685c491e7c483e9a504535d",
+        "content": "sha256:8213886d15dedfb5223b598592e77dfe549762d0a4db77c8a0985fcce5ce84e1",
         "contentType": "text/plain",
-        "key": "box/replica/config/50227bb0ac6f26a70973fd7ca25a565278cf77e26685c491e7c483e9a504535d.sh",
+        "key": "box/replica/config/8213886d15dedfb5223b598592e77dfe549762d0a4db77c8a0985fcce5ce84e1.sh",
         "kmsKeyId": "arn:@PARTITION@:kms:eu-west-1:@ACCOUNT@:key/1234abcd-12ab-34cd-56ef-1234567890ab",
         "serverSideEncryption": "aws:kms",
         "tags": {

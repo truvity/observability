@@ -223,10 +223,10 @@ reconcile:
 
 # Run the EC2 backend's setup script (pkg/statusbox/ec2/setup.sh, rendered
 # into the instance's user-data) inside an amazonlinux:2023 container: the
-# pinned Litestream and cloudflared downloads, the units and configs, a real
-# litestream replicate/restore round trip, and the boot phase's ordering (a
-# warm-pool boot restores and starts nothing) with systemctl, aws and the
-# metadata service shimmed. See hack/statusbox-ec2-ci.sh.
+# pinned Litestream download, the units and configs, a real litestream
+# replicate/restore round trip, and the in-service phase's ordering (restore
+# before start) with systemctl, aws and the metadata service shimmed. See
+# hack/statusbox-ec2-ci.sh.
 #
 # Needs Docker; deliberately NOT part of `check`.
 statusbox-ec2:

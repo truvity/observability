@@ -251,7 +251,7 @@ func TestResourceSetIsUnchanged(t *testing.T) {
 					return err
 				}
 
-				userData = box.UserData
+				userData = string(box.UserData.UserData)
 
 				return nil
 			}, pulumi.WithMocks("statusbox-ec2-test", "test", rec))

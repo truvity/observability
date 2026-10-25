@@ -1,36 +1,40 @@
 #!/usr/bin/env bash
-# Runs the EC2 backend's setup script (pkg/statusbox/ec2/setup.sh, embedded in
-# the instance's user-data) inside a plain amazonlinux:2023 container, the OS the
-# instance boots, and proves what can be proved without an instance:
+# Runs the EC2 backend's setup script (pkg/statusbox/ec2/setup.sh, an S3 object
+# the instance's user-data fetches) inside a plain amazonlinux:2023 container,
+# the OS the instance boots, and proves what can be proved without an instance:
 #
-#   - the user-data the Go package renders (its golden file) writes params.sh and
-#     fetches the setup script from the bucket, refusing a wrong digest (the
-#     setup script and the Gatus Configs are S3 objects; a shim `aws` serves a
-#     directory standing in for the bucket), fetch_configs stages the Configs
-#     the same verified way, and the script's install functions run on AL2023: the pinned Litestream and cloudflared downloads match their
-#     checksums, the units and the Litestream configs are written, the units pass
-#     `systemd-analyze verify`, Litestream accepts its config;
+#   - params.sh, taken from the user-data the Go package renders (its golden
+#     file), is what the script is run with; fetch_configs stages the Gatus
+#     Configs from a directory standing in for the bucket (a shim `aws`), and
+#     refuses a wrong digest, and the script's install functions run on AL2023:
+#     the pinned Litestream download matches its checksum, the units and the
+#     Litestream configs are written, the units pass `systemd-analyze verify`,
+#     Litestream accepts its config;
 #   - the listener drop-in's content is the expected one (that Gatus merges it
 #     over the Config was checked against a real Gatus build when the backend
 #     was written; no Gatus build exists before a release, so a stub stands in
 #     for the binary here);
-#   - the boot phase's ordering, with `systemctl`, `aws` and the metadata
-#     service replaced by shims that log their calls: a warm-pool boot
-#     completes the hook and starts nothing, restores nothing and reads no
-#     secret; an in-service boot reads the secrets into /run, restores from the
-#     replica BEFORE it starts any Gatus, and completes the hook; a failure
-#     abandons the launch;
+#   - the in-service phase's ordering, with `systemctl`, `aws` and the metadata
+#     service replaced by shims that log their calls: it reads the secrets into
+#     /run, restores from the replica BEFORE it starts any Gatus, and calls
+#     neither the lifecycle hook nor the tunnel (github.com/truvity/asg owns
+#     both); a failed secret read fails the phase and starts nothing;
+#   - the check phase (the launch's ready check and the watchdog's) fails when
+#     a Gatus is down or does not answer /health;
 #   - a database really round-trips through `litestream replicate` and the
 #     script's restore_instance (against a file replica standing in for S3);
-#   - env_line quotes what systemd's EnvironmentFile needs quoted;
-#   - the health phase marks the instance Unhealthy only after the window.
+#   - env_line quotes what systemd's EnvironmentFile needs quoted.
+#
+# What the library does (the warm-pool decision, the hook, the watchdog's
+# window, the tunnel's phases) is proved by its own tests, which run the
+# generated scripts under bash against fake commands.
 #
 # It does NOT run systemd, Gatus, cloudflared against a tunnel, or anything
 # against AWS. Needs Docker; deliberately not part of `check`.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-golden="$root/pkg/statusbox/ec2/testdata/bootstrap.golden.sh"
+golden="$root/pkg/statusbox/ec2/testdata/userdata.golden.yaml"
 setup="$root/pkg/statusbox/ec2/setup.sh"
 
 # STATUSBOX_EC2_IMAGE lets a laptop reuse an image that already has the packages
@@ -41,7 +45,7 @@ pull=(--pull=always)
 echo "hack/statusbox-ec2-ci.sh: running the EC2 setup script inside amazonlinux:2023"
 docker run --rm -i \
   "${pull[@]}" \
-  -v "$golden:/golden.sh:ro" \
+  -v "$golden:/golden.yaml:ro" \
   -v "$setup:/setup.sh:ro" \
   "${STATUSBOX_EC2_IMAGE:-amazonlinux:2023}" \
   bash -s <<'INNER'
@@ -75,32 +79,23 @@ printf '#!/bin/sh\nexit 0\n' >/early/sleep
 chmod +x /early/*
 PATH_ORIG="$PATH"
 
-# --- stage what the user-data stages: everything but its last line, the exec.
-# The setup script comes from the "bucket", pinned by the digest in params.sh.
-sed '$d' /golden.sh >/tmp/stage.sh
-setup_key="$(sed -n "s/^SB_SETUP_KEY='\(.*\)'$/\1/p" /golden.sh)"
-[ -n "$setup_key" ] || fail "the golden names no setup script object"
-cp /setup.sh "/bucket/$setup_key"
-PATH="/early:$PATH_ORIG" bash /tmp/stage.sh
-[ -x /usr/local/sbin/statusbox-setup ] || fail "the setup script was not fetched"
-[ -f /etc/statusbox/params.sh ] || fail "params.sh was not written"
-ok "user-data writes params.sh and fetches the verified setup script"
-
-# A setup script with the wrong digest is refused, and the launch abandoned.
-rm -f /usr/local/sbin/statusbox-setup /tmp/early-calls
-echo '# tampered' >>"/bucket/$setup_key"
-if PATH="/early:$PATH_ORIG" bash /tmp/stage.sh 2>/dev/null; then
-  fail "a setup script with the wrong digest was accepted"
-fi
-[ ! -e /usr/local/sbin/statusbox-setup ] || fail "a tampered setup script was installed"
-grep -q 'complete-lifecycle-action.*ABANDON' /tmp/early-calls || fail "a tampered setup script must abandon the launch"
-cp /setup.sh "/bucket/$setup_key"
-PATH="/early:$PATH_ORIG" bash /tmp/stage.sh
-ok "a wrong setup digest is refused and abandons the launch"
+# --- params.sh as the user-data writes it: the block of the golden's
+# write_files entry, de-indented. The script itself is installed where the plan
+# puts it.
+mkdir -p /etc/statusbox
+awk '/^  - path: \/etc\/statusbox\/params.sh$/ {f=1; next}
+     f && /^    content: \|$/ {c=1; next}
+     f && c && /^      / {sub(/^      /, ""); print; next}
+     f && c && /^$/ {print; next}
+     f && c {exit}' /golden.yaml >/etc/statusbox/params.sh
+[ -s /etc/statusbox/params.sh ] || fail "the golden carries no params.sh"
+grep -q '^SB_INSTANCES=' /etc/statusbox/params.sh || fail "params.sh has no instances"
+install -D -m 0755 /setup.sh /usr/local/sbin/statusbox-setup.sh
+ok "params.sh taken from the user-data golden; the setup script installed where the plan puts it"
 
 export STATUSBOX_SOURCE_ONLY=1
 # shellcheck disable=SC1091
-. /usr/local/sbin/statusbox-setup
+. /usr/local/sbin/statusbox-setup.sh
 load_params
 
 # The Configs are objects too: serve placeholders under their own digests and
@@ -137,8 +132,7 @@ done
 ensure_user
 install_binaries
 /usr/local/bin/litestream version >/dev/null || fail "litestream does not run"
-/usr/local/bin/cloudflared --version >/dev/null || fail "cloudflared does not run"
-ok "pinned Litestream and cloudflared downloaded, checksum-verified and run on AL2023"
+ok "pinned Litestream downloaded, checksum-verified and run on AL2023"
 
 # A tampered download is refused.
 if fetch_verify "file:///tmp/gatus-stub" /tmp/tampered "$(printf 'x%.0s' $(seq 64))" 2>/dev/null; then
@@ -156,14 +150,15 @@ grep -q '^  address: 0.0.0.0$' /etc/statusbox/instances/ops-breakglass/zz-web.ya
 grep -q 'path: box/ops-breakglass' /etc/statusbox/litestream-ops-breakglass.yml || fail "the replica path"
 ok "listeners and Litestream configs written"
 
-for u in gatus@.service cloudflared.service statusbox-boot.service statusbox-health.service statusbox-health.timer; do
-  [ -f "/etc/systemd/system/$u" ] || fail "missing unit $u"
+[ -f /etc/systemd/system/gatus@.service ] || fail "missing unit gatus@.service"
+for u in cloudflared.service statusbox-boot.service statusbox-health.service statusbox-health.timer; do
+  [ ! -e "/etc/systemd/system/$u" ] || fail "$u moved to github.com/truvity/asg and must not be written here"
 done
-if grep -q '^\[Install\]' /etc/systemd/system/gatus@.service /etc/systemd/system/cloudflared.service; then
-  fail "gatus and cloudflared must not be enabled by themselves: only the boot phase starts them"
+if grep -q '^\[Install\]' /etc/systemd/system/gatus@.service; then
+  fail "gatus must not be enabled by itself: only the in-service phase starts it"
 fi
 systemd-analyze verify /etc/systemd/system/gatus@ops.service 2>&1 | grep -v -i 'EnvironmentFile\|run/statusbox' || true
-ok "units written; gatus and cloudflared have no [Install]"
+ok "units written; gatus has no [Install]"
 
 # --- litestream accepts the generated config (a file replica stands in for S3
 # below, but the s3 shape itself must parse).
@@ -239,77 +234,55 @@ INST_NAME=ops-breakglass INST_DB=ops.db restore_instance
 [ "$(cat /var/lib/statusbox/ops-breakglass/ops.db)" = keep ] || fail "a missing replica must leave the local database alone"
 ok "no replica: the local database is kept"
 
-# --- boot phase: a warm-pool boot does nothing but complete the hook.
-: >/tmp/calls
-echo 'Warmed:Stopped' >/tmp/state
-boot_phase
-grep -q 'complete-lifecycle-action .*--lifecycle-action-result CONTINUE' /tmp/calls || fail "warm boot must complete the hook"
-grep -q 'systemctl start' /tmp/calls && fail "warm boot must start nothing"
-grep -q 'ssm get-parameter' /tmp/calls && fail "warm boot must read no secret"
-[ -e /run/statusbox/gatus.env ] && fail "warm boot must leave no secret file"
-ok "warm-pool boot: hook completed, nothing restored, started or read"
-
-# --- boot phase: going in service restores first, then starts, then completes.
+# --- in-service phase: restore first, then start; no hook, no tunnel.
 rm -rf /var/lib/statusbox/ops/ops.db* /var/lib/statusbox/ops-breakglass/ops.db*
 for n in ops ops-breakglass; do
   cp -r /replica/ops "/replica/$n.tmp" 2>/dev/null || true
 done
 rm -rf /replica/ops-breakglass; mv /replica/ops-breakglass.tmp /replica/ops-breakglass 2>/dev/null || true
 : >/tmp/calls
-echo 'InService' >/tmp/state
-boot_phase
-[ "$(sqlite3 /var/lib/statusbox/ops/ops.db 'SELECT v FROM t')" = history ] || fail "in-service boot must restore before starting"
-start_line="$(grep -n 'systemctl start gatus@' /tmp/calls | head -1 | cut -d: -f1)"
-hook_line="$(grep -n 'complete-lifecycle-action' /tmp/calls | head -1 | cut -d: -f1)"
-[ -n "$start_line" ] && [ -n "$hook_line" ] && [ "$start_line" -lt "$hook_line" ] || fail "the hook must complete after Gatus started"
-grep -q 'systemctl start cloudflared.service' /tmp/calls || fail "cloudflared must start"
-grep -q 'systemctl start statusbox-health.timer' /tmp/calls || fail "the health timer must start only in service"
-grep -q 'lifecycle-action-result CONTINUE' /tmp/calls || fail "hook result"
+in_service_phase
+[ "$(sqlite3 /var/lib/statusbox/ops/ops.db 'SELECT v FROM t')" = history ] || fail "the in-service phase must restore before starting"
+grep -q 'systemctl start gatus@' /tmp/calls || fail "Gatus must start"
+grep -q 'complete-lifecycle-action' /tmp/calls && fail "the lifecycle hook is the library's, not the setup script's"
+grep -q 'cloudflared' /tmp/calls && fail "the tunnel is the library's module, not the setup script's"
 [ "$(stat -c %a /run/statusbox/gatus.env)" = 600 ] || fail "secrets file mode"
 grep -q '^ALERT_URL_OPS_ALERTS_READ_TOKEN="value of /acme/status/alerts-read-token"$' /run/statusbox/gatus.env || fail "gatus.env content"
-grep -q '^TUNNEL_TOKEN="value of /acme/status/tunnel-token"$' /run/statusbox/tunnel.env || fail "tunnel.env content"
-ok "in-service boot: secrets in /run (0600), restore, then Gatus and cloudflared, then the hook"
+[ ! -e /run/statusbox/tunnel.env ] || fail "the tunnel token is the tunnel module's"
+ok "in-service phase: secrets in /run (0600), restore, then Gatus; no hook and no tunnel here"
 
-# --- a failing secret read abandons the launch and starts nothing.
+# --- check phase: the ready check and the watchdog's.
+check_phase || fail "a healthy box must pass the check"
+touch /tmp/health-down
+if (check_phase 2>/dev/null); then fail "a Gatus that does not answer /health must fail the check"; fi
+rm -f /tmp/health-down
+touch /tmp/unit-down
+if (check_phase 2>/dev/null); then fail "a stopped Gatus unit must fail the check"; fi
+rm -f /tmp/unit-down
+ok "check: a down or silent Gatus fails it"
+
+# --- a failing secret read fails the phase and starts nothing.
 : >/tmp/calls
 touch /tmp/ssm-down
 rm -f /run/statusbox/*.env
-sed -i 's/sleep 5/sleep 0/' /usr/local/sbin/statusbox-setup
-. /usr/local/sbin/statusbox-setup
+sed -i 's/sleep 5/sleep 0/' /usr/local/sbin/statusbox-setup.sh
+. /usr/local/sbin/statusbox-setup.sh
 load_params
 # Not in an `if`: bash ignores errexit inside a condition, which is not how the
-# systemd unit runs it.
-# A subshell, because boot_phase turns errexit back on and returns non-zero.
+# library's in-service step runs it (bash -e).
 set +e
-( boot_phase 2>/dev/null )
+( set -e; in_service_phase 2>/dev/null )
 rc=$?
 set -e
-[ "$rc" != 0 ] || fail "a failed secret read must fail the boot"
-grep -q 'lifecycle-action-result ABANDON' /tmp/calls || fail "a failed boot must abandon the launch"
+[ "$rc" != 0 ] || fail "a failed secret read must fail the in-service phase"
 grep -q 'systemctl start gatus@' /tmp/calls && fail "nothing may start when the secrets cannot be read"
 rm -f /tmp/ssm-down
-ok "a failed secret read abandons the launch and starts nothing"
+ok "a failed secret read fails the phase (the library then abandons the launch) and starts nothing"
 
 # --- env_line.
 [ "$(env_line X 'a"b\c d')" = 'X="a\"b\\c d"' ] || fail "env_line quoting: $(env_line X 'a"b\c d')"
 if env_line X $'a\nb' 2>/dev/null; then fail "env_line must refuse a newline"; fi
 ok "env_line quotes and refuses a newline"
-
-# --- health phase.
-mkdir -p /run/statusbox
-rm -f /run/statusbox/unhealthy-since
-: >/tmp/calls
-health_phase
-grep -q set-instance-health /tmp/calls && fail "a healthy box must not be marked"
-touch /tmp/health-down
-SB_HEALTH_MINUTES=5
-load_params() { :; }
-health_phase
-grep -q set-instance-health /tmp/calls && fail "a first failure must not mark the instance"
-echo $(( $(date +%s) - 400 )) >/run/statusbox/unhealthy-since
-health_phase
-grep -q 'autoscaling set-instance-health --instance-id i-0example --health-status Unhealthy' /tmp/calls || fail "a failure past the window must mark the instance Unhealthy"
-ok "health: only a failure past the window marks the instance Unhealthy"
 
 echo "hack/statusbox-ec2-ci.sh: OK"
 INNER
