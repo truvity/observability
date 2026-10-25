@@ -1,0 +1,21 @@
+# Preset: people read through tenancy-authz and nothing else.
+#
+# Turns on the three switches that make up "the people's path" (docs/tenancy-authz.md):
+# the vm_access reader, the tenancy-authz service, and `retireGroupReaders`, which
+# stops rendering the per-principal VMUsers of PERSON principals so a person's
+# raw token sent straight to vmauth gets 401 and the service is the one way in.
+# The ES256 signing key stays `source: eso` (the chart's default).
+#
+# What no preset can know, and you still write: `tenancy.issuerUrl`,
+# `tenancy.audience`, `tenancy.identities`, `tenancy.authz.personAudiences` (when
+# not just `[audience]`), `tenancy.authz.securityPolicy.targetRefs` (the
+# HTTPRoute people read through) and `tenancy.authz.networkPolicy.gatewayFrom`
+# (the Envoy pods that serve it). The chart refuses to render while those are
+# missing. List this file BEFORE your own values. Nothing reads it unless it is
+# listed.
+tenancy:
+  vmAccessReader:
+    enabled: true
+  authz:
+    enabled: true
+    retireGroupReaders: true

@@ -45,6 +45,7 @@ func TestPresetsRenderWhatTheirValuesRender(t *testing.T) {
 		{"observability-emitters", "presets-remote", []string{"/etc/observability-write-ca"}},
 		{"observability-grafana", "presets", []string{"kubernetes.io/arch: arm64"}},
 		{"observability-rum", "presets", []string{"kubernetes.io/arch: arm64"}},
+		{"observability-proxy", "people-path", []string{"kind: SecurityPolicy", "-tenancy-authz"}},
 		{"observability-cluster", "sluis-exchange", []string{"kubeauth-subject-token", "useKubeAuth: true", "name: token-exchange"}},
 		{"alert-ingress", "presets", []string{"RootCredentialUsage", "CloudSecurityFinding", "CloudBudgetThreshold"}},
 		{"platform-alerts", "presets", []string{"vm_rows_inserted_total", "vl_rows_ingested_total"}},
@@ -93,4 +94,13 @@ func readGolden(t *testing.T, chart, name string) string {
 	b, err := os.ReadFile(filepath.Join("golden", chart, name+".yaml"))
 	require.NoError(t, err)
 	return string(b)
+}
+
+// The people's-path preset stands for exactly the three switches the
+// retired-group-readers case sets by hand: its render is that case's, byte for
+// byte, so a consumer that swaps the three keys for the preset sees no change.
+func TestPeoplePathPresetRendersTheHandWrittenSwitches(t *testing.T) {
+	assert.Equal(t,
+		readGolden(t, "observability-proxy", "tenancy-authz-retired"),
+		readGolden(t, "observability-proxy", "people-path-preset"))
 }

@@ -4,6 +4,11 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `observability-proxy` preset `presets/tenancy-people-path.yaml` (nothing reads it unless listed; no existing render changes): people read only through tenancy-authz. It sets `tenancy.vmAccessReader.enabled`, `tenancy.authz.enabled` and `tenancy.authz.retireGroupReaders` to `true`; the issuer, identities, `authz.securityPolicy.targetRefs` and `authz.networkPolicy.gatewayFrom` stay yours, and the chart still refuses to render without them. Its render is byte-identical to writing the three keys by hand (`tests/presets_test.go`). Cases `people-path-preset` and `people-path-explicit`; docs/presets.md.
+- **Added** `deploy/pulumi/status` helpers for the box's surroundings, estate-free: `LitestreamBucket` (private, versioned, SSE-S3 replica bucket with a lifecycle rule under the prefix; `ResourceName` keeps an existing deployment's resource names, so its URNs do not move), `PutSecureParameters` (the SSM SecureStrings the box reads at boot, resource `param-<name without prefix>`) and `PublicSubnetIDs` (a VPC's public subnets in zone order, two or more required). No existing function changes.
+
 ## v0.106.0
 
 - **Added** `observability-alerting` and `observability-stack` `notifications.groupByRoutes` (default `[]`; the render does not move): entries `{match, groupBy}` that group some alerts differently from the root `groupBy`. `match` is exact-match on any alert label (not held to `routeLabels`; typically the `alertgroup` of a rule group), `groupBy` is that entry's `group_by` in full. Each entry renders as a child route ahead of the primary tree's own routes, carrying a copy of those routes, so the alerts it claims are delivered to the same receivers, with the same mention, as before and only their grouping differs; every other alert, and the `also` bridge, are untouched. Use it when one alert's instances differ in labels the root list does not name (a `kind` and a `target`): with the root list a second instance joins the first one's notification and re-sends it, `@here` included. Two entries with the same `match` are refused. Same keys in both charts; the schema gains the key.
