@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.109.1
+
+- Dependency updates.
+
 ## v0.109.0
 
 - **Added** `observability-emitters` TCP probes: a `metrics.scrape.probes` entry may name `host:port` as its `url` with a module whose prober is `tcp` (defined under `blackboxExporter.modules`), for a port that speaks no HTTP or checks client certificates itself. The series are the same `probe_success` and `probe_duration_seconds` under `job="http-probe"` and `probe="<name>"`, so platform-alerts' `probes` group covers them unchanged. A `host:port` url with an http module, or a URL with a tcp module, is refused at render. No existing render changes.
