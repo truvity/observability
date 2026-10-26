@@ -974,6 +974,14 @@ exporter answers 400 and no `probe_success` series is ever written.
 {{- if not (hasKey ($.Values.blackboxExporter.modules | default dict) $m) -}}
 {{- fail (printf "observability-emitters: probe %q names module %q, which is not a key of `blackboxExporter.modules` (%s). The exporter would answer 400 to every probe and write no `probe_success` series, so the alert on it could never fire. Name an existing module, or define it under `blackboxExporter.modules`." $p.name $m (keys $.Values.blackboxExporter.modules | sortAlpha | join ", ")) -}}
 {{- end -}}
+{{- $tcpModule := eq (toString (index $.Values.blackboxExporter.modules $m).prober) "tcp" -}}
+{{- $tcpURL := not (contains "://" (toString $p.url)) -}}
+{{- if and $tcpURL (not $tcpModule) -}}
+{{- fail (printf "observability-emitters: probe %q has the url %q, a host:port, but its module %q is not a tcp prober. The exporter would fail every probe. Name a module with `prober: tcp`, or give the probe an http(s) URL." $p.name (toString $p.url) $m) -}}
+{{- end -}}
+{{- if and $tcpModule (not $tcpURL) -}}
+{{- fail (printf "observability-emitters: probe %q has the URL %q, but its module %q is a tcp prober, which dials host:port. The exporter would fail every probe. Give the probe host:port, or name an http module." $p.name (toString $p.url) $m) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

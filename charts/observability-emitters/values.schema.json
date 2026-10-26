@@ -327,8 +327,8 @@
                   },
                   "url": {
                     "type": "string",
-                    "pattern": "^https?://[^/?#@\\s]+(/[^?#\\s]*)?$",
-                    "description": "scheme://host[:port][/path]: no user info, no query, no fragment."
+                    "pattern": "^(https?://[^/?#@\\s]+(/[^?#\\s]*)?|[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?:[0-9]{1,5})$",
+                    "description": "scheme://host[:port][/path] (no user info, no query, no fragment) for an HTTP probe, or host:port for a TCP one (a module whose prober is tcp)."
                   },
                   "module": {
                     "type": "string",

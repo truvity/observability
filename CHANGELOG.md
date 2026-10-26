@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `observability-emitters` TCP probes: a `metrics.scrape.probes` entry may name `host:port` as its `url` with a module whose prober is `tcp` (defined under `blackboxExporter.modules`), for a port that speaks no HTTP or checks client certificates itself. The series are the same `probe_success` and `probe_duration_seconds` under `job="http-probe"` and `probe="<name>"`, so platform-alerts' `probes` group covers them unchanged. A `host:port` url with an http module, or a URL with a tcp module, is refused at render. No existing render changes.
+
 ## v0.108.0
 
 - **Changed** `pkg/statusbox/ec2`: the status box moves to composed user-data (step B of `github.com/truvity/asg`, v0.2.0). The user-data is a cloud-config made of the box's own module, the library's `watchdog` module, and `tunnel` (the connector rendered by `github.com/truvity/edge/v4` `cloudflare/instanceconnector`), `ssh` and `selfregister` when set; it replaces the shell script that carried them. The setup script is still an S3 object, now fetched by the plan's first step at `/usr/local/sbin/statusbox-setup.sh` (the object key keeps its shape; its content, and so its key, moves with the script). The library owns the warm-pool decision, the launch hook, the health timer, SSH, the DNS record and the tunnel connector, so `setup.sh` loses `boot`, `health`, `cloudflared` and the hook calls; it gains `in-service` and `check`.
