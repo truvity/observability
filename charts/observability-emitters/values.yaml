@@ -315,6 +315,15 @@ metrics:
     #       url: https://status.example.com/health
     #       module: http_2xx      # optional; a key of `blackboxExporter.modules`
     #       interval: 1m          # optional; the agent's own interval
+    #     - name: example-port    # a TCP probe: host:port, and a module
+    #       url: builder.example.private:1234   # whose prober is tcp
+    #       module: tcp_connect
+    #
+    # A TCP probe answers "does the port accept a connection", for a service
+    # that speaks no HTTP or checks client certificates itself; define its
+    # module under `blackboxExporter.modules` (`prober: tcp`). A host:port
+    # url with an http module, or a URL with a tcp module, is refused: the
+    # exporter would fail every probe.
     #
     # Empty by default. A probe's `url` carries no user info, query or
     # fragment: put nothing secret in it. An unknown `module`, or a probe
