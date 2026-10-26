@@ -207,6 +207,46 @@ Alerts: `max by (probe) (probe_success{probe=~"<probe>"}) == 0` and, with
 
 The deadman `<alertName>Absent` is per cluster and probe: a probe that reported within `absentLookback` and no longer does fires with that cluster's label and the probe's name; no probe at all fires through the whole-store `absent()`.
 
+### `groups.probeGroups`
+
+Off by default (`{}`). `groups.probes` is one group: one alert name, one
+selector, one severity. A cluster that alerts differently on different probes
+(a status page, a set of TCP listeners that page harder) names each group here.
+`groups.probes` keeps working unchanged and may be used beside this map, so an
+install moves over one group at a time. Needs `platform-alerts` >= 0.110.0 (the
+key is refused by an older chart's schema).
+
+```yaml
+groups:
+  probes:                      # the single group, as before
+    enabled: true
+    alertName: StatusPageDown
+    probe: status-page
+    severity: critical
+  probeGroups:                 # further groups, each under a name of its own
+    listeners:
+      alertName: ListenerDown
+      probe: "listener-.+"
+      severity: critical
+```
+
+An entry takes the keys of `groups.probes` (`alertName`, `probe`, `summary`,
+`description`, `for`, `severity`, `absentFor`, `absentSeverity`, `certExpiry`)
+with the same meaning and defaults, and one more:
+
+| Value | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | bool | `true` | An entry is rendered unless this is `false`. |
+| `alertName` | string | required | Name of the alert; the deadman is `<alertName>Absent`. No default, because two groups under one name fire as one alert. |
+| `probe` | regex | required | Over the `probe` label. No default, because a default would read every probe in the store. |
+| `certExpiry.alertName` | string | `<alertName>CertExpiring` | Differs from `groups.probes`' fixed default so that two groups with `certExpiry` do not collide. |
+
+The rules of every group sit in the rule group `platform-alerts.probes`:
+`groups.probes` first, then the entries in key order. The map alone enables the
+chart (no other group is needed). Refused: an entry without `alertName` or
+`probe`, an unknown key, and one alert name used by two groups (`groups.probes`
+included). A render that sets only `groups.probes` is unchanged by this key.
+
 ### `groups.publicEndpoints`
 
 Off by default. Reads the status box's own results

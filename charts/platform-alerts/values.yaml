@@ -297,6 +297,39 @@ groups:
       for: 1h
       severity: warning
 
+  # More than one probe group in one cluster (observability >= 0.110.0).
+  #
+  # `probes` above is ONE group: one alert name, one selector, one severity.
+  # A cluster that must alert differently on different probes (one status
+  # page that pages, a set of TCP listeners that pages harder or later)
+  # lists them here, each under a name of its own. `probes` keeps working
+  # as it was and may be used beside this map, which is how an install
+  # moves over one group at a time; prefer this map for anything new.
+  #
+  # Off by default (an empty map). An entry is rendered unless it says
+  # `enabled: false`. The rules join the same rule group as `probes`
+  # (`platform-alerts.probes`), after it, in key order.
+  #
+  # An entry takes the keys of `probes` below, with the same meaning and
+  # defaults. `alertName` and `probe` are required (no default: a shared
+  # name would make two groups fire as one alert, a shared selector would make
+  # each read the other's probes); two groups with one alert name, `probes`
+  # included, are refused at render.
+  #
+  # probeGroups:
+  #   box-front-buildkit:
+  #     alertName: BoxFrontListenerDown
+  #     probe: "box-front-buildkit-.+"
+  #     for: 5m
+  #     severity: critical
+  #     summary: A box-front listener does not answer TCP from inside the VPC
+  #     description: A builder listener has not accepted a TCP connection for 5m.
+  #     absentFor: 15m          # the deadman, `<alertName>Absent`
+  #     absentSeverity: ""      # empty takes `severity`
+  #     certExpiry:             # `alertName` defaults to `<alertName>CertExpiring`
+  #       enabled: false
+  probeGroups: {}
+
   # Public endpoints, as a customer reaches them, probed from OUTSIDE the
   # estate.
   #

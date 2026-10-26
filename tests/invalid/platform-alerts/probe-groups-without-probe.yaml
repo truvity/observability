@@ -1,0 +1,7 @@
+# expect: missing property 'probe'
+# A default selector would read every probe in the store, so a group that does
+# not say which probes it is about is refused.
+groups:
+  probeGroups:
+    listeners:
+      alertName: ExampleListenerDown
