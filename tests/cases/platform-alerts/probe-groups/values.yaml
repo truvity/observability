@@ -1,0 +1,39 @@
+# Two probe groups in one cluster: the single `probes` group watching a
+# status page, and `probeGroups` carrying a second group for TCP listeners
+# (alert name, selector and severity of its own) and a third that is switched
+# off and so renders nothing.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  kargo:
+    enabled: false
+  probes:
+    enabled: true
+    alertName: ExampleStatusDown
+    probe: example-status
+    severity: critical
+  probeGroups:
+    box-front-listeners:
+      alertName: ExampleListenerDown
+      probe: "example-listener-.+"
+      severity: critical
+      summary: An example listener does not answer TCP from this cluster
+      description: The listener has not accepted a TCP connection for 5m.
+      absentSeverity: warning
+    example-http:
+      alertName: ExampleHTTPDown
+      probe: "example-http-.+"
+      for: 10m
+      certExpiry:
+        enabled: true
+        withinDays: 21
+    retired:
+      enabled: false
+      alertName: ExampleRetiredDown
+      probe: example-retired

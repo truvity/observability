@@ -280,6 +280,38 @@
             }
           }
         },
+        "probeGroups": {
+          "type": "object",
+          "description": "Named probe groups, for a cluster that alerts on more than one set of probes. Each entry takes the keys of `probes`; `alertName` and `probe` are required. See values.yaml.",
+          "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["alertName", "probe"],
+            "properties": {
+              "enabled": { "type": "boolean", "description": "An entry is rendered unless this is false." },
+              "alertName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+              "probe": { "type": "string", "minLength": 1 },
+              "summary": { "type": "string", "pattern": "^[^{}]*$", "description": "Plain text replacing the alert's summary. No template braces. Empty keeps the generated summary." },
+              "description": { "type": "string", "pattern": "^[^{}]*$", "description": "Plain text replacing the alert's description. No template braces. Empty keeps the generated description." },
+              "for": { "$ref": "#/definitions/duration" },
+              "severity": { "$ref": "#/definitions/severity" },
+              "absentFor": { "$ref": "#/definitions/duration" },
+              "absentSeverity": { "type": "string", "enum": ["", "critical", "warning", "info"], "description": "Severity of the deadman. Empty takes `severity`." },
+              "certExpiry": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "alertName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+                  "withinDays": { "type": "integer", "minimum": 1 },
+                  "for": { "$ref": "#/definitions/duration" },
+                  "severity": { "$ref": "#/definitions/severity" }
+                }
+              }
+            }
+          }
+        },
         "publicEndpoints": {
           "type": "object",
           "additionalProperties": false,

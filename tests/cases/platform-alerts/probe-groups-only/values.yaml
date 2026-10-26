@@ -1,0 +1,18 @@
+# `probeGroups` alone, with `groups.probes` off: the map is enough to render the
+# probes rule group, and no other group is on.
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  kargo:
+    enabled: false
+  probeGroups:
+    box-front-buildkit:
+      alertName: BoxFrontListenerDown
+      probe: "box-front-buildkit-.+"
+      severity: critical

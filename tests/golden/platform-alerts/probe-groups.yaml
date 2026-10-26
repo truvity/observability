@@ -1,0 +1,169 @@
+---
+# Source: platform-alerts/templates/vmrule.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: platform-alerts
+  labels:
+    app.kubernetes.io/name: platform-alerts
+    app.kubernetes.io/instance: platform-alerts
+    app.kubernetes.io/managed-by: Helm
+    observability.truvity.io/evaluator: metrics
+    observability.truvity.io/rule-type: alert
+spec:
+  groups:
+    - name: platform-alerts.probes
+      interval: 1m
+      rules:
+        # An HTTP probe that is not answering 2xx from this cluster.
+        #
+        # `probe_success` is the blackbox exporter's own series for a probe
+        # of `observability-emitters` (`metrics.scrape.probes`): 1 while the
+        # URL answers as the module accepts (any 2xx by default), 0 for a
+        # refused connection, a TLS failure or any other status. `max by
+        # (probe)` so a probe that resolves to several targets is down only
+        # when all are.
+        - alert: ExampleStatusDown
+          expr: >-
+            max by (k8s_cluster_name, probe) (probe_success{probe=~"example-status"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "HTTP probe {{ $labels.probe }} has not answered 2xx for 5m"
+            description: >-
+              The probe {{ $labels.probe }} (charts/observability-emitters
+              `metrics.scrape.probes`) has read probe_success == 0 for 5m: the URL
+              refused the connection, failed TLS or answered something the
+              probe's module does not accept (any 2xx, by default) from this
+              cluster's own egress.
+        # The deadman for the rule above.
+        #
+        # `probe_success == 0` evaluates to nothing, not to a value, when
+        # the series does not exist: a probe whose series never reached the
+        # store (the exporter down, the VMProbe not selected, the series
+        # filed under labels the store's readers do not see) makes
+        # ExampleStatusDown silent while the probe is not working at all.
+        # `absent()` is true exactly then. With the default selector it
+        # fires only when NO probe reports; name a probe (`probe`) to watch
+        # one, which is what a single-probe estate wants.
+        - alert: ExampleStatusDownAbsent
+          expr: >-
+            (group by (k8s_cluster_name, probe) (max_over_time(probe_success{probe=~"example-status", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name, probe) (probe_success{probe=~"example-status", k8s_cluster_name!=""})) or (absent(probe_success{probe=~"example-status"}) unless on() group(max_over_time(probe_success{probe=~"example-status"}[1d])))
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No probe_success series for example-status for 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              probe_success{probe=~"example-status"} has not been seen in
+              15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so ExampleStatusDown cannot fire even if the
+              URL is down. Check the blackbox exporter and the VMProbe
+              (charts/observability-emitters `metrics.scrape.probes`), that the
+              agent's scrape of the probe is up, and that its series carry the
+              cluster's tenancy labels.
+        # An HTTP probe that is not answering 2xx from this cluster.
+        #
+        # `probe_success` is the blackbox exporter's own series for a probe
+        # of `observability-emitters` (`metrics.scrape.probes`): 1 while the
+        # URL answers as the module accepts (any 2xx by default), 0 for a
+        # refused connection, a TLS failure or any other status. `max by
+        # (probe)` so a probe that resolves to several targets is down only
+        # when all are.
+        - alert: ExampleListenerDown
+          expr: >-
+            max by (k8s_cluster_name, probe) (probe_success{probe=~"example-listener-.+"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "An example listener does not answer TCP from this cluster"
+            description: "The listener has not accepted a TCP connection for 5m."
+        # The deadman for the rule above.
+        #
+        # `probe_success == 0` evaluates to nothing, not to a value, when
+        # the series does not exist: a probe whose series never reached the
+        # store (the exporter down, the VMProbe not selected, the series
+        # filed under labels the store's readers do not see) makes
+        # ExampleListenerDown silent while the probe is not working at all.
+        # `absent()` is true exactly then. With the default selector it
+        # fires only when NO probe reports; name a probe (`probe`) to watch
+        # one, which is what a single-probe estate wants.
+        - alert: ExampleListenerDownAbsent
+          expr: >-
+            (group by (k8s_cluster_name, probe) (max_over_time(probe_success{probe=~"example-listener-.+", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name, probe) (probe_success{probe=~"example-listener-.+", k8s_cluster_name!=""})) or (absent(probe_success{probe=~"example-listener-.+"}) unless on() group(max_over_time(probe_success{probe=~"example-listener-.+"}[1d])))
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No probe_success series for example-listener-.+ for 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              probe_success{probe=~"example-listener-.+"} has not been seen in
+              15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so ExampleListenerDown cannot fire even if the
+              URL is down. Check the blackbox exporter and the VMProbe
+              (charts/observability-emitters `metrics.scrape.probes`), that the
+              agent's scrape of the probe is up, and that its series carry the
+              cluster's tenancy labels.
+        # An HTTP probe that is not answering 2xx from this cluster.
+        #
+        # `probe_success` is the blackbox exporter's own series for a probe
+        # of `observability-emitters` (`metrics.scrape.probes`): 1 while the
+        # URL answers as the module accepts (any 2xx by default), 0 for a
+        # refused connection, a TLS failure or any other status. `max by
+        # (probe)` so a probe that resolves to several targets is down only
+        # when all are.
+        - alert: ExampleHTTPDown
+          expr: >-
+            max by (k8s_cluster_name, probe) (probe_success{probe=~"example-http-.+"}) == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "HTTP probe {{ $labels.probe }} has not answered 2xx for 10m"
+            description: >-
+              The probe {{ $labels.probe }} (charts/observability-emitters
+              `metrics.scrape.probes`) has read probe_success == 0 for 10m: the URL
+              refused the connection, failed TLS or answered something the
+              probe's module does not accept (any 2xx, by default) from this
+              cluster's own egress.
+        # The deadman for the rule above.
+        #
+        # `probe_success == 0` evaluates to nothing, not to a value, when
+        # the series does not exist: a probe whose series never reached the
+        # store (the exporter down, the VMProbe not selected, the series
+        # filed under labels the store's readers do not see) makes
+        # ExampleHTTPDown silent while the probe is not working at all.
+        # `absent()` is true exactly then. With the default selector it
+        # fires only when NO probe reports; name a probe (`probe`) to watch
+        # one, which is what a single-probe estate wants.
+        - alert: ExampleHTTPDownAbsent
+          expr: >-
+            (group by (k8s_cluster_name, probe) (max_over_time(probe_success{probe=~"example-http-.+", k8s_cluster_name!=""}[1d])) unless group by (k8s_cluster_name, probe) (probe_success{probe=~"example-http-.+", k8s_cluster_name!=""})) or (absent(probe_success{probe=~"example-http-.+"}) unless on() group(max_over_time(probe_success{probe=~"example-http-.+"}[1d])))
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No probe_success series for example-http-.+ for 15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}"
+            description: >-
+              probe_success{probe=~"example-http-.+"} has not been seen in
+              15m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}, so ExampleHTTPDown cannot fire even if the
+              URL is down. Check the blackbox exporter and the VMProbe
+              (charts/observability-emitters `metrics.scrape.probes`), that the
+              agent's scrape of the probe is up, and that its series carry the
+              cluster's tenancy labels.
+        # The TLS certificate a probe saw expires within `withinDays`.
+        # `probe_ssl_earliest_cert_expiry` is a Unix time and exists only
+        # for an https target; the earliest certificate of the chain.
+        - alert: ExampleHTTPDownCertExpiring
+          expr: >-
+            min by (k8s_cluster_name, probe) (probe_ssl_earliest_cert_expiry{probe=~"example-http-.+"}) - time() < 1814400
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "The TLS certificate seen by probe {{ $labels.probe }} expires within 21 days"
+            description: >-
+              The earliest certificate in the chain the probe
+              {{ $labels.probe }} (charts/observability-emitters
+              `metrics.scrape.probes`) was shown expires in less than
+              21 days.

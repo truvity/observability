@@ -1,0 +1,7 @@
+# expect: missing property 'alertName'
+# A default name would be shared by every group that leaves it out, and two
+# groups under one name fire as one alert; the schema refuses the missing key.
+groups:
+  probeGroups:
+    listeners:
+      probe: "example-listener-.+"

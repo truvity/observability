@@ -9,6 +9,16 @@ time, with a fixture under tests/invalid for each.
 {{- range $name, $group := .Values.groups -}}
 {{- if $group.enabled -}}{{- $enabled = append $enabled $name -}}{{- end -}}
 {{- end -}}
+{{- /*
+`groups.probeGroups` is a map of named probe groups, not a switch: it counts as
+an enabled group when at least one entry is not `enabled: false`. `$probeGroups`
+is the keys of those entries, in key order.
+*/ -}}
+{{- $probeGroups := list -}}
+{{- range $key, $entry := .Values.groups.probeGroups -}}
+{{- if ne (toString $entry.enabled) "false" -}}{{- $probeGroups = append $probeGroups $key -}}{{- end -}}
+{{- end -}}
+{{- if $probeGroups -}}{{- $enabled = append $enabled "probeGroups" -}}{{- end -}}
 {{- if and (not $enabled) (not .Values.watches) -}}
 {{- fail "platform-alerts: every group is disabled, so this release would render no rules at all. Enable at least one group or a watch, or do not install the chart." -}}
 {{- end -}}
@@ -420,86 +430,24 @@ spec:
             {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" "KargoControllerWorkqueueStuck")) }}{{ . | nindent 12 }}{{- end }}
     {{- end }}
     {{- end }}
-    {{- if .Values.groups.probes.enabled }}
-    {{- $g := .Values.groups.probes }}
+    {{- if or .Values.groups.probes.enabled $probeGroups }}
     - name: platform-alerts.probes
       interval: {{ .Values.interval }}
       rules:
-        # An HTTP probe that is not answering 2xx from this cluster.
-        #
-        # `probe_success` is the blackbox exporter's own series for a probe
-        # of `observability-emitters` (`metrics.scrape.probes`): 1 while the
-        # URL answers as the module accepts (any 2xx by default), 0 for a
-        # refused connection, a TLS failure or any other status. `max by
-        # (probe)` so a probe that resolves to several targets is down only
-        # when all are.
-        - alert: {{ $g.alertName }}
-          expr: >-
-            max by ({{ $b }}probe) (probe_success{probe=~"{{ $g.probe }}"}) == 0
-          for: {{ $g.for }}
-          labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity) | nindent 12 }}
-          annotations:
-            {{- if $g.summary }}
-            summary: {{ $g.summary | quote }}
-            {{- else }}
-            summary: "HTTP probe {{`{{ $labels.probe }}`}} has not answered 2xx for {{ $g.for }}"
-            {{- end }}
-            {{- if $g.description }}
-            description: {{ $g.description | quote }}
-            {{- else }}
-            description: >-
-              The probe {{`{{ $labels.probe }}`}} (charts/observability-emitters
-              `metrics.scrape.probes`) has read probe_success == 0 for {{ $g.for }}: the URL
-              refused the connection, failed TLS or answered something the
-              probe's module does not accept (any 2xx, by default) from this
-              cluster's own egress.
-            {{- end }}
-            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" $g.alertName)) }}{{ . | nindent 12 }}{{- end }}
-        # The deadman for the rule above.
-        #
-        # `probe_success == 0` evaluates to nothing, not to a value, when
-        # the series does not exist: a probe whose series never reached the
-        # store (the exporter down, the VMProbe not selected, the series
-        # filed under labels the store's readers do not see) makes
-        # {{ $g.alertName }} silent while the probe is not working at all.
-        # `absent()` is true exactly then. With the default selector it
-        # fires only when NO probe reports; name a probe (`probe`) to watch
-        # one, which is what a single-probe estate wants.
-        - alert: {{ $g.alertName }}Absent
-          expr: >-
-            {{ include "platform-alerts.absentGuard" (dict "root" $ "sel" (printf `probe_success{probe=~"%s"}` $g.probe) "by" (list "probe")) }}
-          for: {{ $g.absentFor }}
-          labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" (default $g.severity $g.absentSeverity) "omit" $.Values.clusterLabel) | nindent 12 }}
-          annotations:
-            summary: "No probe_success series for {{ $g.probe }} for {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}"
-            description: >-
-              probe_success{probe=~"{{ $g.probe }}"} has not been seen in
-              {{ $g.absentFor }}{{ include "platform-alerts.onCluster" $ }}, so {{ $g.alertName }} cannot fire even if the
-              URL is down. Check the blackbox exporter and the VMProbe
-              (charts/observability-emitters `metrics.scrape.probes`), that the
-              agent's scrape of the probe is up, and that its series carry the
-              cluster's tenancy labels.
-            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" (printf "%sAbsent" $g.alertName))) }}{{ . | nindent 12 }}{{- end }}
-        {{- if $g.certExpiry.enabled }}
-        # The TLS certificate a probe saw expires within `withinDays`.
-        # `probe_ssl_earliest_cert_expiry` is a Unix time and exists only
-        # for an https target; the earliest certificate of the chain.
-        - alert: {{ $g.certExpiry.alertName }}
-          expr: >-
-            min by ({{ $b }}probe) (probe_ssl_earliest_cert_expiry{probe=~"{{ $g.probe }}"}) - time() < {{ mul (int $g.certExpiry.withinDays) 86400 }}
-          for: {{ $g.certExpiry.for }}
-          labels:
-            {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.certExpiry.severity) | nindent 12 }}
-          annotations:
-            summary: "The TLS certificate seen by probe {{`{{ $labels.probe }}`}} expires within {{ $g.certExpiry.withinDays }} days"
-            description: >-
-              The earliest certificate in the chain the probe
-              {{`{{ $labels.probe }}`}} (charts/observability-emitters
-              `metrics.scrape.probes`) was shown expires in less than
-              {{ $g.certExpiry.withinDays }} days.
-            {{- with (include "platform-alerts.runbook" (dict "root" $ "alert" $g.certExpiry.alertName)) }}{{ . | nindent 12 }}{{- end }}
+        {{- $probeAlerts := list }}
+        {{- if .Values.groups.probes.enabled }}
+        {{- $probeAlerts = append $probeAlerts .Values.groups.probes.alertName }}
+        {{- include "platform-alerts.probeRules" (dict "root" $ "g" .Values.groups.probes "b" $b) | nindent 8 }}
+        {{- end }}
+        {{- /* One group per entry of `groups.probeGroups`, after the single `groups.probes`
+               group, in key order. */}}
+        {{- range $key := $probeGroups }}
+        {{- $g := include "platform-alerts.probeGroupDefaults" (dict "key" $key "entry" (index $.Values.groups.probeGroups $key)) | fromJson }}
+        {{- if has $g.alertName $probeAlerts }}
+        {{- fail (printf "platform-alerts: groups.probeGroups.%s: the alert name %q is already used by another probe group, so the two would fire as one alert" $key $g.alertName) }}
+        {{- end }}
+        {{- $probeAlerts = append $probeAlerts $g.alertName }}
+        {{- include "platform-alerts.probeRules" (dict "root" $ "g" $g "b" $b) | nindent 8 }}
         {{- end }}
     {{- end }}
     {{- if .Values.groups.publicEndpoints.enabled }}

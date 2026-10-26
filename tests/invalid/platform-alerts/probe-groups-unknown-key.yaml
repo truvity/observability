@@ -1,0 +1,8 @@
+# expect: additional properties 'selector' not allowed
+# A typo in an alerting chart is a rule that never fires: the key is `probe`.
+groups:
+  probeGroups:
+    listeners:
+      alertName: ExampleListenerDown
+      probe: "example-listener-.+"
+      selector: "example-listener-.+"

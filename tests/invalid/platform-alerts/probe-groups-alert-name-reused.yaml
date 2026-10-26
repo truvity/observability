@@ -1,0 +1,16 @@
+# expect: is already used by another probe group
+# Two groups under one alert name would fire as one alert, whichever probe
+# went down; the second is refused, `groups.probes` included.
+groups:
+  writePath:
+    enabled: false
+  storeLimits:
+    enabled: false
+  probes:
+    enabled: true
+    alertName: ExampleDown
+    probe: example-status
+  probeGroups:
+    listeners:
+      alertName: ExampleDown
+      probe: "example-listener-.+"
