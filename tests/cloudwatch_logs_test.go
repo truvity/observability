@@ -182,3 +182,70 @@ func TestCloudwatchWithoutMatchersKeepsTheSinglePhraseCondition(t *testing.T) {
 	require.Len(t, filter, 1)
 	assert.True(t, strings.HasPrefix(filter[0], "not IsMatch(body.string,"), filter[0])
 }
+
+const cloudwatchInsightsGolden = "golden/observability-emitters/cloudwatch-insights.yaml"
+
+// `readMode: insights` reads a log group of the Infrequent Access class with
+// Logs Insights: a second container posts what the queries return into the
+// collector, whose processors are unchanged, and the `awscloudwatch` receiver
+// is not configured. The default mode renders as it always did (the other
+// goldens do not move).
+func TestCloudwatchInsightsModeReplacesTheReceiverAndKeepsTheProcessors(t *testing.T) {
+	docs := renderedDocs(t, cloudwatchInsightsGolden)
+	cfg := cloudwatchConfig(t, docs)
+
+	assert.Nil(t, dig(cfg, "receivers", "awscloudwatch"))
+	assert.Equal(t, "127.0.0.1:4318", dig(cfg, "receivers", "otlp", "protocols", "http", "endpoint"),
+		"loopback only: nothing but the sidecar may write into the pipeline")
+	assert.Equal(t, []string{"otlp"}, stringList(t, dig(cfg, "service", "pipelines", "logs", "receivers")))
+
+	// The same matching and lifting as the filter mode's render.
+	filterCfg := cloudwatchConfig(t, renderedDocs(t, cloudwatchMatchersGolden))
+	assert.Equal(t, dig(filterCfg, "processors"), dig(cfg, "processors"))
+	assert.Equal(t, dig(filterCfg, "service", "pipelines", "logs", "processors"), dig(cfg, "service", "pipelines", "logs", "processors"))
+
+	sts := findDoc(t, docs, "StatefulSet", func(d map[string]any) bool {
+		return strings.HasSuffix(dig(d, "metadata", "name").(string), "-cloudwatch")
+	})
+	assert.Equal(t, 1, dig(sts, "spec", "replicas"))
+
+	containers, ok := dig(sts, "spec", "template", "spec", "containers").([]any)
+	require.True(t, ok)
+	require.Len(t, containers, 2)
+
+	reader := containers[1].(map[string]any)
+	assert.Equal(t, "insights-reader", reader["name"])
+
+	args := stringList(t, reader["args"])
+	assert.Contains(t, args, "--stream-prefix=authenticator-")
+	assert.Contains(t, args, "--stream-prefix=kube-apiserver-audit-")
+	assert.Contains(t, args, "--overlap=3m")
+
+	// The coarse prefilter is the cheap text half of every way in.
+	var filter string
+
+	for _, a := range args {
+		if strings.HasPrefix(a, "--query-filter=") {
+			filter = a
+		}
+	}
+
+	assert.Contains(t, filter, `@logStream like /^authenticator-/ and @message like / level=warning |msg="access denied"/`)
+	assert.Contains(t, filter, `@logStream like /^kube-apiserver-audit-/ and @message like /"code":(?:401|403)[,}]/`)
+	assert.Contains(t, filter, `@message like /pod-security\.kubernetes\.io\/audit-violations/`)
+	assert.NotContains(t, filter, "ParseJSON", "the parse stays in the collector")
+
+	// The read position shares the collector's volume, so a restart keeps both.
+	mounts, _ := reader["volumeMounts"].([]any)
+	require.Len(t, mounts, 1)
+	assert.Equal(t, "queue", mounts[0].(map[string]any)["name"])
+}
+
+func TestCloudwatchFilterModeHasOneContainer(t *testing.T) {
+	sts := findDoc(t, renderedDocs(t, cloudwatchMatchersGolden), "StatefulSet", func(d map[string]any) bool {
+		return strings.HasSuffix(dig(d, "metadata", "name").(string), "-cloudwatch")
+	})
+
+	containers, _ := dig(sts, "spec", "template", "spec", "containers").([]any)
+	assert.Len(t, containers, 1)
+}

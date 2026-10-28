@@ -775,6 +775,22 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "region": { "type": "string" },
+        "readMode": { "type": "string", "enum": ["filter", "insights"] },
+        "insights": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "overlap": { "$ref": "#/definitions/duration" },
+            "maxWindow": { "$ref": "#/definitions/duration" },
+            "image": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["repository"],
+              "properties": { "repository": { "type": "string", "minLength": 1 }, "tag": { "type": "string" } }
+            },
+            "resources": { "$ref": "#/definitions/resources" }
+          }
+        },
         "logGroup": { "type": "string" },
         "streamPrefixes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "match": { "type": "string" },

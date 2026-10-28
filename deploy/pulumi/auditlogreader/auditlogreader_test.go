@@ -112,3 +112,36 @@ func TestDeployKeepsTheResourceNames(t *testing.T) {
 		assert.Contains(t, joined, want)
 	}
 }
+
+func TestInsightsPolicyAddsQueryStatementsOnly(t *testing.T) {
+	account := strings.Repeat("1", 12)
+
+	base, err := Policy("c1", "eu-west-1", account)
+	require.NoError(t, err)
+
+	doc, err := PolicyInsights("c1", "eu-west-1", account)
+	require.NoError(t, err)
+
+	type policyDoc struct {
+		Statement []struct {
+			Sid      string
+			Action   []string
+			Resource any
+		}
+	}
+
+	var b, p policyDoc
+	require.NoError(t, json.Unmarshal([]byte(base), &b))
+	require.NoError(t, json.Unmarshal([]byte(doc), &p))
+	require.Len(t, p.Statement, 4)
+	assert.Equal(t, b.Statement, p.Statement[:2], "filter-mode statements are unchanged")
+
+	group := "arn:" + "aws" + ":logs:eu-west-1:" + account + ":log-group:/aws/eks/c1/cluster"
+
+	assert.Equal(t, "StartInsightsQuery", p.Statement[2].Sid)
+	assert.Equal(t, []string{"logs:StartQuery"}, p.Statement[2].Action)
+	assert.Equal(t, []any{group, group + ":*"}, p.Statement[2].Resource)
+
+	assert.Equal(t, []string{"logs:GetQueryResults", "logs:StopQuery"}, p.Statement[3].Action)
+	assert.Equal(t, "*", p.Statement[3].Resource)
+}

@@ -1487,7 +1487,10 @@ bind the ServiceAccount to a role that may `logs:FilterLogEvents`,
 | `matchers` | `[]` | More ways in beside `match`: an event is kept when it satisfies any one entry, and an entry is the AND of its keys `streamPrefix` (a member of `streamPrefixes`), `anyOf` (literals, one must be in the text) and `json` (`path` dotted, `anyOf` integers: the value at the path is one of them). At least one key per entry. Set `match: ""` to keep only what the matchers say. |
 | `namespace` | `kube-audit` | The namespace every record is filed under (the scoping key), never the event's own, which is the field `audit.namespace`. Refused: `default`, `kube-system`. |
 | `serviceName` | `kube-apiserver-audit` | `service.name`. |
-| `pollInterval`, `initialLookback`, `maxEventsPerRequest` | `1m`, `10m`, `1000` | Receiver settings; the lookback is the first start only. |
+| `readMode` | `filter` | `filter`: the `awscloudwatch` receiver (FilterLogEvents), for a Standard-class group. `insights`: the `cwlogs-insights-reader` container polls with CloudWatch Logs Insights and posts to the collector; for a group of the Infrequent Access class (no FilterLogEvents, GetLogEvents or subscription filters). See below. |
+| `insights.overlap`, `.maxWindow` | `3m`, `15m` | Insights mode: each window starts `overlap` before the last read position (how late an event may be delivered, by event time, and still be found); a catch-up window is cut into `maxWindow` queries. |
+| `insights.image.repository` / `.tag`, `insights.resources` | `ghcr.io/truvity/observability/cwlogs-insights-reader` / chart appVersion | The reader container. |
+| `pollInterval`, `initialLookback`, `maxEventsPerRequest` | `1m`, `10m`, `1000` | Receiver settings (`maxEventsPerRequest` is the receiver's only); the lookback is the first start only. |
 | `serviceAccount.name` / `.annotations` | `<fullname>-cloudwatch` / `{}` | Name it explicitly when an IAM binding must match byte for byte. |
 | `image`, `resources`, `podSecurityContext`, `containerSecurityContext`, `nodeSelector`, `tolerations`, `queue`, `podMonitor` | as the gateway | Same shapes as `otlp.*`. |
 
@@ -1497,6 +1500,32 @@ Audit events: `audit.namespace`, `audit.resource`, `audit.verb`, `audit.user`,
 answered), `audit.reason`, `audit.source_ip`, `audit.user_agent`; the body is
 the whole audit event. Authenticator lines (`key=value`): `authn.level`,
 `authn.msg`, `authn.error`, `authn.arn`, `authn.username`, `authn.client`.
+
+**`readMode: insights`.** The reader pod gets a second container. Every
+`pollInterval` it runs a Logs Insights query over `[position - overlap, now]`:
+`@logStream like /^(<streamPrefixes>)/`, then a coarse `filter` made from
+`match` and `matchers` (their `like /regex/` text tests: the same literals and
+the same cheap number test the collector uses, without the JSON parse), sorted
+by time, `limit 10000`. A query that returns 10000 rows is split in half until
+it does not; throttling and the concurrent-query limit are retried with backoff.
+Events go to the collector's loopback OTLP receiver with the same resource
+attributes (`aws.region`, `cloudwatch.log.group.name`, `cloudwatch.log.stream`)
+as the `awscloudwatch` receiver, so `filter/match` and the transforms are the
+same processors and the records are the same; the Insights query only
+narrows what is returned. The read position and the `@ptr` of every event sent
+inside the overlap are on the pod's volume (`/var/lib/otelcol/insights/state.json`),
+written after the collector accepted the batch: a restart drops nothing, and
+repeats an event only when the pod dies between the collector's accepting a
+batch and the state write. An event delivered later than `overlap` after its
+timestamp is missed; the `id` log attribute of the receiver (the event id) is not
+set, Insights having none. The role needs `logs:StartQuery` on the group and
+`logs:GetQueryResults` and `logs:StopQuery` (`deploy/pulumi/auditlogreader`
+`Inputs.Insights` / `PolicyInsights`). Insights bills the bytes each query scans
+(about USD 0.005 per GB); every poll scans the window's bytes, so with the
+default overlap each event is scanned about four times. Series:
+`cwlogs_insights_events_total`, `_windows_total{result}`, `_throttled_total`,
+`_window_splits_total`, `_truncated_total`, `_watermark_timestamp_seconds`,
+`_last_success_timestamp_seconds`.
 
 The failed authentications of an EKS cluster (the shape `groups.authFailures`
 reads):

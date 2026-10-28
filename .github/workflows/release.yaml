@@ -28,7 +28,7 @@ jobs:
     with:
       # goreleaser also builds the Lambda layer zips (cmd/otlp-lambda), attached to
       # the release beside checksums.txt.
-      # goreleaser builds cmd/alert-ingress's, cmd/mcp-aggregator's, cmd/tenancy-authz's and cmd/telegram-relay's images
+      # goreleaser builds cmd/alert-ingress's, cmd/mcp-aggregator's, cmd/tenancy-authz's and cmd/telegram-relay's and cmd/cwlogs-insights-reader's images
       # (see .goreleaser.yaml) and cuts the GitHub release + changelog; every chart below is then
       # packaged at the tag's version and pushed to
       # oci://ghcr.io/truvity/charts/<name>.

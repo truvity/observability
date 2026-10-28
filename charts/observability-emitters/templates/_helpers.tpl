@@ -1421,6 +1421,47 @@ are parsed.
 {{- end -}}
 
 {{/*
+The Logs Insights `filter` expression that is the COARSE form of
+`keepConditions`: the same way-ins (`match`, each matcher), as `like /regex/`
+tests that CloudWatch evaluates before it returns rows, so a query returns
+fewer rows for the same bytes scanned. It is only a prefilter: the collector's
+`filter/match` still decides, so the records are identical in both read modes.
+The text tests are the ones the OTTL conditions use (a JSON matcher's number
+test is the cheap text test only, not the parse). Empty when nothing narrows
+the stream.
+*/}}
+{{- define "observability-emitters.cloudwatch.insightsFilter" -}}
+{{- $c := .Values.cloudwatchLogs -}}
+{{- $ways := list -}}
+{{- if $c.match -}}
+{{- $ways = append $ways (printf "@message like /%s/" (include "observability-emitters.cloudwatch.insightsRegex" $c.match)) -}}
+{{- end -}}
+{{- range $m := $c.matchers -}}
+{{- $parts := list -}}
+{{- if $m.streamPrefix -}}
+{{- $parts = append $parts (printf "@logStream like /^%s/" (include "observability-emitters.cloudwatch.insightsRegex" $m.streamPrefix)) -}}
+{{- end -}}
+{{- if $m.anyOf -}}
+{{- $alts := list -}}
+{{- range $m.anyOf -}}{{- $alts = append $alts (include "observability-emitters.cloudwatch.insightsRegex" .) -}}{{- end -}}
+{{- $parts = append $parts (printf "@message like /%s/" (join "|" $alts)) -}}
+{{- end -}}
+{{- if $m.json -}}
+{{- $nums := list -}}
+{{- range $m.json.anyOf -}}{{- $nums = append $nums (printf "%d" (int64 .)) -}}{{- end -}}
+{{- $parts = append $parts (printf "@message like /\"%s\":(?:%s)[,}]/" (include "observability-emitters.cloudwatch.insightsRegex" (last (splitList "." $m.json.path))) (join "|" $nums)) -}}
+{{- end -}}
+{{- $ways = append $ways (printf "(%s)" (join " and " $parts)) -}}
+{{- end -}}
+{{- join " or " $ways -}}
+{{- end -}}
+
+{{/* A literal as a Logs Insights /regex/ body: metacharacters and the delimiter escaped. */}}
+{{- define "observability-emitters.cloudwatch.insightsRegex" -}}
+{{- regexQuoteMeta . | replace "/" "\\/" -}}
+{{- end -}}
+
+{{/*
 The CloudWatch reader's collector configuration.
 
 ONE pipeline: the `awscloudwatch` receiver, a filter that keeps only the
@@ -1454,6 +1495,16 @@ extensions:
       directory: /var/lib/otelcol/queue
 
 receivers:
+{{- if eq ($c.readMode | default "filter") "insights" }}
+  # `cwlogs-insights-reader`, the second container of this pod, posts what
+  # Logs Insights returned here. Loopback only: nothing else may write into
+  # the pipeline. The records carry the same resource attributes as the
+  # `awscloudwatch` receiver's, so the processors below are the same.
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+{{- else }}
   awscloudwatch:
     region: {{ $c.region | quote }}
     # The read position, so a restart resumes instead of re-reading
@@ -1472,6 +1523,7 @@ receivers:
               {{- range $c.streamPrefixes }}
               - {{ . | quote }}
               {{- end }}
+{{- end }}
 
 processors:
 {{- if $keep }}
@@ -1575,7 +1627,7 @@ service:
                 port: 8888
   pipelines:
     logs:
-      receivers: [awscloudwatch]
+      receivers: [{{ ternary "otlp" "awscloudwatch" (eq ($c.readMode | default "filter") "insights") }}]
       processors: [{{ if $keep }}filter/match, {{ end }}transform/audit, transform/authenticator, transform/tenancy, batch]
       exporters: [{{ range $i, $d := $effLogsDestinations }}{{ if $i }}, {{ end }}otlp_http/logs-{{ $d.name }}{{ end }}]
 {{- end -}}
