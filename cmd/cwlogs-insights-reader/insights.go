@@ -21,8 +21,10 @@ const RowCap = 10000
 // API is the slice of the CloudWatch Logs client the reader uses; the tests
 // fake it.
 type API interface {
-	StartQuery(ctx context.Context, in *cloudwatchlogs.StartQueryInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.StartQueryOutput, error)
-	GetQueryResults(ctx context.Context, in *cloudwatchlogs.GetQueryResultsInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetQueryResultsOutput, error)
+	StartQuery(ctx context.Context, in *cloudwatchlogs.StartQueryInput,
+		opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.StartQueryOutput, error)
+	GetQueryResults(ctx context.Context, in *cloudwatchlogs.GetQueryResultsInput,
+		opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetQueryResultsOutput, error)
 	StopQuery(ctx context.Context, in *cloudwatchlogs.StopQueryInput, opts ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.StopQueryOutput, error)
 }
 

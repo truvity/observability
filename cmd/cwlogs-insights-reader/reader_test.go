@@ -49,7 +49,8 @@ func newFake(events ...Event) *fakeAPI {
 	return &fakeAPI{events: events, queries: map[string][2]int64{}, limits: map[string]int{}, polled: map[string]bool{}}
 }
 
-func (f *fakeAPI) StartQuery(_ context.Context, in *cloudwatchlogs.StartQueryInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.StartQueryOutput, error) {
+func (f *fakeAPI) StartQuery(_ context.Context, in *cloudwatchlogs.StartQueryInput,
+	_ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.StartQueryOutput, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -70,7 +71,8 @@ func (f *fakeAPI) StartQuery(_ context.Context, in *cloudwatchlogs.StartQueryInp
 	return &cloudwatchlogs.StartQueryOutput{QueryId: &id}, nil
 }
 
-func (f *fakeAPI) GetQueryResults(_ context.Context, in *cloudwatchlogs.GetQueryResultsInput, _ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetQueryResultsOutput, error) {
+func (f *fakeAPI) GetQueryResults(_ context.Context, in *cloudwatchlogs.GetQueryResultsInput,
+	_ ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetQueryResultsOutput, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -129,10 +131,10 @@ func ev(n int, at time.Time) Event {
 	return Event{Ptr: fmt.Sprintf("ptr-%d", n), Stream: "authenticator-abc", Message: fmt.Sprintf("m%d", n), Timestamp: at}
 }
 
-func fetcher(api API, m *Metrics, cap int) *Fetcher {
+func fetcher(api API, m *Metrics, rowCap int) *Fetcher {
 	return &Fetcher{
 		API: api, LogGroup: "/aws/eks/c/cluster", Streams: []string{"kube-apiserver-audit-", "authenticator-"},
-		Metrics: m, Cap: cap, Retries: 5, Backoff: time.Millisecond,
+		Metrics: m, Cap: rowCap, Retries: 5, Backoff: time.Millisecond,
 		Sleep: func(context.Context, time.Duration) error { return nil },
 	}
 }
@@ -355,7 +357,9 @@ func TestOTLPRecordShape(t *testing.T) {
 		attrs[kv.Key] = kv.Value.GetStringValue()
 	}
 
-	assert.Equal(t, map[string]string{"aws.region": "eu-x-1", "cloudwatch.log.group.name": "/aws/eks/c/cluster", "cloudwatch.log.stream": "authenticator-a"}, attrs)
+	assert.Equal(t, map[string]string{
+		"aws.region": "eu-x-1", "cloudwatch.log.group.name": "/aws/eks/c/cluster", "cloudwatch.log.stream": "authenticator-a",
+	}, attrs)
 	require.Len(t, rl.ScopeLogs[0].LogRecords, 2)
 	assert.Equal(t, "hello", rl.ScopeLogs[0].LogRecords[0].Body.GetStringValue())
 	assert.Equal(t, uint64(t0.UnixNano()), rl.ScopeLogs[0].LogRecords[0].TimeUnixNano)

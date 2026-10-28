@@ -119,10 +119,16 @@ func sleep(ctx context.Context, d time.Duration) error {
 }
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	cfg, err := ParseFlags(flag.CommandLine, os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "configuration:", err)
-		os.Exit(2)
+		return fmt.Errorf("configuration: %w", err)
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("version", version)
@@ -132,8 +138,7 @@ func main() {
 
 	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.Region))
 	if err != nil {
-		logger.Error("aws config", "error", err.Error())
-		os.Exit(1)
+		return fmt.Errorf("aws config: %w", err)
 	}
 
 	registry := prometheus.NewRegistry()
@@ -141,8 +146,7 @@ func main() {
 
 	state, err := LoadState(cfg.StatePath)
 	if err != nil {
-		logger.Error("state", "error", err.Error())
-		os.Exit(1)
+		return fmt.Errorf("state: %w", err)
 	}
 
 	poller := &Poller{
@@ -186,4 +190,6 @@ func main() {
 	defer cancel()
 
 	_ = srv.Shutdown(shutdown)
+
+	return nil
 }
