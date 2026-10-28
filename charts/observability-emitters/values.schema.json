@@ -929,6 +929,26 @@
           "properties": {
             "enabled": {
               "type": "boolean"
+            },
+            "leaderElection": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "leaseDuration",
+                "renewDeadline",
+                "retryPeriod"
+              ],
+              "properties": {
+                "leaseDuration": {
+                  "$ref": "#/definitions/duration"
+                },
+                "renewDeadline": {
+                  "$ref": "#/definitions/duration"
+                },
+                "retryPeriod": {
+                  "$ref": "#/definitions/duration"
+                }
+              }
             }
           }
         },

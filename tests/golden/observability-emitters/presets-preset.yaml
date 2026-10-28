@@ -61,6 +61,9 @@ data:
         auth_type: serviceAccount
         lease_name: observability-emitters-gateway
         lease_namespace: observability
+        lease_duration: 60s
+        renew_deadline: 40s
+        retry_period: 15s
     
     receivers:
       otlp:
@@ -529,7 +532,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: observability-emitters
       annotations:
-        observability-emitters/config-checksum: d4b5b80fa93974cf8a1b15e831d592952df6d91305328815a96e262d2ebeeac5
+        observability-emitters/config-checksum: d95c65f3b0af88ecae502a77b438166a77c8838255fe925f97011d3a0e375926
     spec:
       serviceAccountName: observability-emitters-gateway
       securityContext:
