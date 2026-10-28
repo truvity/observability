@@ -48,6 +48,12 @@ type Inputs struct {
 	EKSClusterName pulumi.StringInput
 	Region         string
 	AccountID      string
+	// Insights adds the Logs Insights statements, for a reader running
+	// `cloudwatchLogs.readMode: insights` (the log group is of the
+	// Infrequent Access class, which FilterLogEvents and GetLogEvents cannot
+	// read). The filter-mode permissions stay, so the same role serves both
+	// modes while a group's class is being changed.
+	Insights bool
 	// PermissionsBoundaryARN is the boundary policy of the role; empty sets none.
 	PermissionsBoundaryARN string
 	// Provider is the AWS provider of the cluster's account.
@@ -101,7 +107,7 @@ func Deploy(ctx *pulumi.Context, in Inputs) error {
 
 	roleName := RoleName(in.ClusterName)
 
-	policy, err := Policy(in.ClusterName, in.Region, in.AccountID)
+	policy, err := policy(in.ClusterName, in.Region, in.AccountID, in.Insights)
 	if err != nil {
 		return err
 	}
@@ -144,27 +150,64 @@ func Deploy(ctx *pulumi.Context, in Inputs) error {
 // account's log groups in this region; it lists names and settings, never
 // events.
 func Policy(cluster, region, account string) (string, error) {
+	return policy(cluster, region, account, false)
+}
+
+// PolicyInsights is Policy plus the Logs Insights statements of
+// `cloudwatchLogs.readMode: insights`:
+//
+//   - logs:StartQuery is scoped to the one log group (a log-group ARN with the
+//     ":*" suffix, as the Insights documentation's example does).
+//   - logs:GetQueryResults and logs:StopQuery take no log-group resource: a
+//     query id is not an ARN, and the service's actions table lists no
+//     resource type for them, so they are granted on "*". They only act on a
+//     query id the caller started (ids are unguessable), and the role can
+//     start queries only on its own group.
+func PolicyInsights(cluster, region, account string) (string, error) {
+	return policy(cluster, region, account, true)
+}
+
+func policy(cluster, region, account string, insights bool) (string, error) {
 	logs := fmt.Sprintf("arn:%s:logs:%s:%s:log-group:", partition, region, account)
 	group := logs + LogGroupName(cluster)
 
-	raw, err := json.Marshal(map[string]any{
-		"Version": policyVersion,
-		"Statement": []map[string]any{
-			{
-				"Sid":      "ListLogGroups",
-				"Effect":   "Allow",
-				"Action":   []string{"logs:DescribeLogGroups"},
-				"Resource": logs + "*",
+	statements := []map[string]any{
+		{
+			"Sid":      "ListLogGroups",
+			"Effect":   "Allow",
+			"Action":   []string{"logs:DescribeLogGroups"},
+			"Resource": logs + "*",
+		},
+		{
+			"Sid":    "ReadControlPlaneLog",
+			"Effect": "Allow",
+			"Action": []string{
+				"logs:DescribeLogStreams", "logs:FilterLogEvents", "logs:GetLogEvents",
 			},
-			{
-				"Sid":    "ReadControlPlaneLog",
-				"Effect": "Allow",
-				"Action": []string{
-					"logs:DescribeLogStreams", "logs:FilterLogEvents", "logs:GetLogEvents",
-				},
+			"Resource": []string{group, group + ":*"},
+		},
+	}
+
+	if insights {
+		statements = append(statements,
+			map[string]any{
+				"Sid":      "StartInsightsQuery",
+				"Effect":   "Allow",
+				"Action":   []string{"logs:StartQuery"},
 				"Resource": []string{group, group + ":*"},
 			},
-		},
+			map[string]any{
+				"Sid":      "ReadInsightsQuery",
+				"Effect":   "Allow",
+				"Action":   []string{"logs:GetQueryResults", "logs:StopQuery"},
+				"Resource": "*",
+			},
+		)
+	}
+
+	raw, err := json.Marshal(map[string]any{
+		"Version":   policyVersion,
+		"Statement": statements,
 	})
 	if err != nil {
 		return "", fmt.Errorf("audit log reader policy: %w", err)
