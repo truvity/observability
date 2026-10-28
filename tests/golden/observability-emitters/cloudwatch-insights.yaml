@@ -205,6 +205,9 @@ data:
         auth_type: serviceAccount
         lease_name: observability-emitters-gateway
         lease_namespace: default
+        lease_duration: 60s
+        renew_deadline: 40s
+        retry_period: 15s
     
     receivers:
       otlp:
@@ -779,7 +782,7 @@ spec:
             - "--stream-prefix=kube-apiserver-audit-"
             - "--stream-prefix=authenticator-"
             - "--query-filter=@message like /pod-security\\.kubernetes\\.io\\/audit-violations/ or (@logStream like /^authenticator-/ and @message like / level=warning |msg=\"access denied\"/) or (@logStream like /^kube-apiserver-audit-/ and @message like /\"code\":(?:401|403)[,}]/)"
-            - "--poll-interval=1m"
+            - "--poll-interval=2m"
             - "--overlap=3m"
             - "--max-window=15m"
             - "--initial-lookback=10m"
@@ -861,7 +864,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: observability-emitters
       annotations:
-        observability-emitters/config-checksum: fb652bc25bb8f8be89dddc9e61f1fb7614ba32b8cdbf9a1e89ee744e58d81c1a
+        observability-emitters/config-checksum: 99fc57e44d7d53661ec2d7c0db60f1afb17027c01ab530a704ae84a64880156b
     spec:
       serviceAccountName: observability-emitters-gateway
       securityContext:
