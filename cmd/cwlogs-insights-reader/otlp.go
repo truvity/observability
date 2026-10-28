@@ -107,7 +107,7 @@ func (s *OTLPSink) post(ctx context.Context, body []byte) error {
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	_, _ = io.Copy(io.Discard, resp.Body)
 
