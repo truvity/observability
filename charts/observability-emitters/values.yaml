@@ -1228,6 +1228,49 @@ otlp:
 # may read the platform's namespace.
 cloudwatchLogs:
   enabled: false
+  # -- How the log group is read.
+  #   filter    (default) the collector's `awscloudwatch` receiver, which uses
+  #             DescribeLogStreams and FilterLogEvents. Needs a log group of
+  #             the Standard class.
+  #   insights  a second container, `cwlogs-insights-reader`, polls with
+  #             CloudWatch Logs Insights (StartQuery / GetQueryResults) and
+  #             hands the events to the collector in the same pod; the
+  #             `awscloudwatch` receiver is not configured. Use it for a log
+  #             group of the Infrequent Access class, which has no
+  #             FilterLogEvents, GetLogEvents or subscription filters. The
+  #             query is a coarse prefilter (`streamPrefixes` plus the cheap
+  #             text tests of `match` and `matchers`); the collector's
+  #             processors do the final matching and field lifting, so the
+  #             records are the same in both modes. Every query scans the
+  #             window's bytes (Insights is billed per GB scanned). The role
+  #             needs logs:StartQuery on the group and logs:GetQueryResults and
+  #             logs:StopQuery (auditlogreader.PolicyInsights).
+  readMode: filter
+  insights:
+    # -- How far before the last read position every window starts. It is how
+    # late CloudWatch may deliver an event (by event time) and still be found;
+    # events already sent are removed again by their @ptr. 2 to 5 minutes.
+    overlap: 3m
+    # -- How often Insights mode polls. Each poll scans `overlap` plus this
+    # much of the log group, so a longer interval is cheaper: with overlap 3m,
+    # 2m scans about 2.5x the ingested bytes per day and 1m about 4x. Empty:
+    # `cloudwatchLogs.pollInterval`. Default 2m.
+    pollInterval: 2m
+    # -- The longest window one query covers, for catching up after a stop.
+    maxWindow: 15m
+    image:
+      # -- ko names the image after cmd/cwlogs-insights-reader
+      # (base_import_paths, .goreleaser.yaml), nested under the release
+      # workflow's ko-docker-repo.
+      repository: ghcr.io/truvity/observability/cwlogs-insights-reader
+      # -- Empty: the chart's appVersion.
+      tag: ""
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
   # -- The AWS region of the log group. Required when enabled.
   region: ""
   # -- The log group to read. Required when enabled; matched as a PREFIX by
@@ -1272,7 +1315,7 @@ cloudwatchLogs:
   namespace: kube-audit
   # -- `service.name` of the records.
   serviceName: kube-apiserver-audit
-  # -- How often the log group is polled.
+  # -- How often the log group is polled (both read modes).
   pollInterval: 1m
   # -- How far back the FIRST start reads. Later starts resume from the
   # position on the volume.

@@ -122,6 +122,43 @@ spec:
             {{- with (include "observability-emitters.otlp.caVolumeMounts" .) }}
             {{- . | nindent 12 }}
             {{- end }}
+        {{- if eq ($c.readMode | default "filter") "insights" }}
+        # Reads the log group with Logs Insights and posts the events to the
+        # collector above over loopback (docs/reference.md, `readMode`). Its
+        # read position and the ids it has sent are on the same volume as the
+        # collector's queue, so a restart repeats and drops nothing.
+        - name: insights-reader
+          image: {{ printf "%s:%s" $c.insights.image.repository ($c.insights.image.tag | default .Chart.AppVersion) | quote }}
+          {{- with $c.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          args:
+            - {{ printf "--region=%s" $c.region | toJson }}
+            - {{ printf "--log-group=%s" $c.logGroup | toJson }}
+            {{- range $c.streamPrefixes }}
+            - {{ printf "--stream-prefix=%s" . | toJson }}
+            {{- end }}
+            {{- with (include "observability-emitters.cloudwatch.insightsFilter" $) }}
+            - {{ printf "--query-filter=%s" . | toJson }}
+            {{- end }}
+            - {{ printf "--poll-interval=%s" ($c.insights.pollInterval | default $c.pollInterval) | toJson }}
+            - {{ printf "--overlap=%s" $c.insights.overlap | toJson }}
+            - {{ printf "--max-window=%s" $c.insights.maxWindow | toJson }}
+            - {{ printf "--initial-lookback=%s" $c.initialLookback | toJson }}
+            - --state-file=/var/lib/otelcol/insights/state.json
+            - --otlp-url=http://127.0.0.1:4318/v1/logs
+            - --metrics-addr=:8889
+          ports:
+            - name: reader-metrics
+              containerPort: 8889
+              protocol: TCP
+          resources:
+            {{- toYaml $c.insights.resources | nindent 12 }}
+          volumeMounts:
+            - name: queue
+              mountPath: /var/lib/otelcol
+        {{- end }}
       volumes:
         - name: config
           configMap:
@@ -163,5 +200,10 @@ spec:
     - port: telemetry
       path: /metrics
       interval: {{ .Values.interval }}
+    {{- if eq ($c.readMode | default "filter") "insights" }}
+    - port: reader-metrics
+      path: /metrics
+      interval: {{ .Values.interval }}
+    {{- end }}
 {{- end }}
 {{- end }}

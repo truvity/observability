@@ -997,6 +997,9 @@ stream-field list files every resource attribute as a stream field.
 {{- define "observability-emitters.validate.cloudwatchLogs" -}}
 {{- $c := .Values.cloudwatchLogs -}}
 {{- if $c.enabled -}}
+{{- if not (has ($c.readMode | default "filter") (list "filter" "insights")) -}}
+{{- fail (printf "observability-emitters: `cloudwatchLogs.readMode` is %q; it must be `filter` (the awscloudwatch receiver, FilterLogEvents) or `insights` (CloudWatch Logs Insights, for a log group of the Infrequent Access class)." $c.readMode) -}}
+{{- end -}}
 {{- if not $c.region -}}
 {{- fail "observability-emitters: `cloudwatchLogs.enabled` is true but `cloudwatchLogs.region` is empty. The receiver would poll no region and read nothing, while the pod stays Ready. Name the AWS region of the log group." -}}
 {{- end -}}
