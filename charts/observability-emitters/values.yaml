@@ -1087,6 +1087,17 @@ otlp:
     # them, so the chart renders a leader-election lease whenever this is
     # on, and only the holder reads.
     enabled: true
+    # -- Timings of that lease (the collector's `k8s_leader_elector`
+    # extension). The holder writes the lease once per `retryPeriod`, and the
+    # cluster's audit log records every write, so a short period is paid for
+    # in audit volume. The price of the defaults here is failover: when the
+    # holder dies, another replica takes over only after `leaseDuration`, and
+    # Events are not read until then. Must satisfy
+    # retryPeriod < renewDeadline < leaseDuration.
+    leaderElection:
+      leaseDuration: 60s
+      renewDeadline: 40s
+      retryPeriod: 15s
   service:
     # -- The address applications send OTLP to. Both protocols, because an
     # SDK's default differs by language.

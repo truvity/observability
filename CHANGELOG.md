@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Changed (a default moves)** `observability-emitters` `gateway.events.leaderElection` (new; `leaseDuration: 60s`, `renewDeadline: 40s`, `retryPeriod: 15s`): the leader lease of the Events reader is now renewed every 15 s instead of at the collector's own, much shorter, period, and a replica takes over after 60 s without a renewal. Every lease write reaches the API server's audit log, so on a managed control plane that bills for audit logs a short period is paid for in bytes. The price is failover: after the holder dies, Kubernetes Events are not read for up to a minute. The gateway's config checksum changes, so its pods roll once on adoption. Set the three keys to the collector's former values to undo it. New key, refused by an older chart's schema: gate its use on the pin. Every golden that renders the gateway moves by three `k8s_leader_elector` lines and the checksum.
+
 ## v0.110.0
 
 - **Added** `platform-alerts` `groups.probeGroups` (default `{}`; no existing render changes): a map of named probe groups, so one cluster can alert on more than one set of probes. Each entry takes the keys of `groups.probes` (`alertName` and `probe` required; `for`, `severity`, `summary`, `description`, `absentFor`, `absentSeverity`, `certExpiry`, and `enabled: false` to switch one off) and renders its own alert, deadman `<alertName>Absent` and optional certificate alert, into the same rule group `platform-alerts.probes` after `groups.probes`. `groups.probes` is unchanged and may be used beside the map, so an install moves one group at a time and nothing has to be reshaped: its keys and defaults stay as they were. An entry's `certExpiry.alertName` defaults to `<alertName>CertExpiring`. Two groups with one alert name, `groups.probes` included, are refused at render. New key, refused by an older chart's schema: gate its use on the pin. New goldens `platform-alerts/probe-groups` and `platform-alerts/probe-groups-only`, four refused fixtures.

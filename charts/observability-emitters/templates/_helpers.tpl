@@ -879,6 +879,9 @@ extensions:
     auth_type: serviceAccount
     lease_name: {{ $full }}
     lease_namespace: {{ $root.Release.Namespace }}
+    lease_duration: {{ $v.events.leaderElection.leaseDuration }}
+    renew_deadline: {{ $v.events.leaderElection.renewDeadline }}
+    retry_period: {{ $v.events.leaderElection.retryPeriod }}
 {{- end }}
 
 receivers:
