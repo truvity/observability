@@ -135,6 +135,19 @@ groups:
     # -- Keep the series' own `clusterLabel` on both alerts (see
     # `pendingPods.keepClusterLabel`). Default false: unchanged render.
     keepClusterLabel: false
+    # -- Regex (RE2, fully anchored, no double quote) of CronJob names both
+    # backup rules skip. Default "" excludes nothing and the render is
+    # unchanged. Why it exists: the group has ONE `maxSuccessAge`, so a
+    # CronJob with a long cadence (a monthly restore drill) cannot share it
+    # with daily backups. Raising `maxSuccessAge` to a month would hide a
+    # stopped daily backup for a month; excluding the long-cadence job
+    # keeps the daily limit strict. Exclude only a CronJob that has its own
+    # freshness and failure rules (for example the restore-drill alerts of
+    # the cnpg group); otherwise nothing watches it. `CronJobNotSucceeding`
+    # filters on the `cronjob` label, `BackupJobFailed` on the `owner_name`
+    # of `kube_job_owner`, so the Jobs of an excluded CronJob drop out too.
+    # Example: ".*-restore-drill$".
+    excludeCronjobs: ""
 
   # The write path.
   #
