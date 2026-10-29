@@ -192,7 +192,12 @@
               "description": "Default true: both backup rules skip a CronJob whose kube_cronjob_spec_suspend is 1. `false` renders the 0.10.0 expressions."
             },
             "namespaceSelector": { "type": "string" },
-            "keepClusterLabel": { "type": "boolean" }
+            "keepClusterLabel": { "type": "boolean" },
+            "excludeCronjobs": {
+              "type": "string",
+              "pattern": "^[^\"]*$",
+              "description": "Regex (fully anchored, RE2). Both backup rules skip CronJobs whose name matches it. Empty excludes nothing. No double quote."
+            }
           }
         },
         "writePath": {

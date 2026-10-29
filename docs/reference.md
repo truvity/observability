@@ -84,6 +84,7 @@ differ between versions, and a wrong name is a rule that never fires.
 | `severity` | enum | `critical` | Severity of `CronJobNotSucceeding`. |
 | `failedSeverity` | enum | `warning` | Severity of `BackupJobFailed`. |
 | `ignoreSuspended` | bool | `true` | 0.11.0. Both rules skip a CronJob whose `kube_cronjob_spec_suspend` is 1 — a suspended backup fired both forever. With that series absent, both behave as before rather than go silent. `false` renders the 0.10.0 expressions byte for byte. See docs/safety.md, "A suspended CronJob that pages forever". |
+| `excludeCronjobs` | string (RE2) | `""` | Both rules skip CronJobs whose name matches this fully anchored regex (`CronJobNotSucceeding` on the `cronjob` label, `BackupJobFailed` on the `owner_name` of `kube_job_owner`, so the Jobs of an excluded CronJob drop out as well). `""` excludes nothing and renders nothing new. Why: the group has one `maxSuccessAge`, so a long-cadence CronJob (a monthly restore drill) cannot share it with daily backups, and a month-long age would hide a stopped daily backup. A drill that has its own freshness and failure rules (the restore-drill alerts of the `cnpg` group) is better excluded here. Excluding a CronJob with no rules of its own leaves it unwatched. No double quote in the value. |
 
 Alerts: `CronJobNotSucceeding`, `BackupJobFailed` (fires on the NEWEST Job
 of each CronJob only — see docs/safety.md, "A failed backup Job that

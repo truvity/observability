@@ -1,0 +1,10 @@
+# `minimal`, with the backup rules skipping CronJobs whose name matches a
+# regex: a long-cadence restore drill that has rules of its own.
+stores:
+  - name: metrics
+    rowsMetric: example_rows_inserted_total
+
+groups:
+  backups:
+    enabled: true
+    excludeCronjobs: ".*-pg-restore$"

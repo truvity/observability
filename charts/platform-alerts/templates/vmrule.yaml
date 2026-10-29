@@ -103,6 +103,17 @@ spec:
     */}}
     {{- $ignoreSuspended := ternary $g.ignoreSuspended true (hasKey $g "ignoreSuspended") }}
     {{- $bns := default $ns $g.namespaceSelector }}
+    {{- /*
+    `excludeCronjobs`: matchers are rendered only when the value is
+    non-empty, so the default render is byte-identical. PromQL regexes
+    are fully anchored.
+    */}}
+    {{- $exCron := "" }}
+    {{- $exOwner := "" }}
+    {{- if $g.excludeCronjobs }}
+    {{- $exCron = printf `, cronjob!~"%s"` $g.excludeCronjobs }}
+    {{- $exOwner = printf `, owner_name!~"%s"` $g.excludeCronjobs }}
+    {{- end }}
     {{- $bomit := ternary $.Values.clusterLabel "" (and $g.keepClusterLabel (ne $.Values.clusterLabel "")) }}
     - name: platform-alerts.backups
       interval: {{ .Values.interval }}
@@ -115,11 +126,11 @@ spec:
         - alert: CronJobNotSucceeding
           expr: >-
             time() - max by ({{ $b }}namespace, cronjob) (
-              kube_cronjob_status_last_successful_time{namespace=~"{{ $bns }}"}
+              kube_cronjob_status_last_successful_time{namespace=~"{{ $bns }}"{{ $exCron }}}
             ) > {{ $g.maxSuccessAge }}
             {{- if $ignoreSuspended }}
             unless on ({{ $c }}namespace, cronjob)
-              kube_cronjob_spec_suspend{namespace=~"{{ $bns }}"} == 1
+              kube_cronjob_spec_suspend{namespace=~"{{ $bns }}"{{ $exCron }}} == 1
             {{- end }}
           labels:
             {{- include "platform-alerts.labels" (dict "root" $ "severity" $g.severity "omit" $bomit) | nindent 12 }}
@@ -154,7 +165,7 @@ spec:
               cronjob_jobs = (
                 kube_job_created{namespace=~"{{ $bns }}"}
                 * on ({{ $c }}namespace, job_name) group_left(owner_name)
-                kube_job_owner{namespace=~"{{ $bns }}", owner_kind="CronJob"}
+                kube_job_owner{namespace=~"{{ $bns }}", owner_kind="CronJob"{{ $exOwner }}}
               ),
               newest_per_cronjob = max by ({{ $c }}namespace, owner_name) (cronjob_jobs)
               {{- if $ignoreSuspended }},
