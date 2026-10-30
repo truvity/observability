@@ -1367,7 +1367,7 @@ blackboxExporter:
   enabled: false
   image:
     repository: prom/blackbox-exporter
-    tag: v0.28.0
+    tag: v0.29.1
   replicaCount: 1
   port: 9115
   # -- Pod Security `restricted`. The image runs as `nobody` already; naming
