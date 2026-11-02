@@ -56,7 +56,7 @@ tar -xzOf "$vm_tgz" victoria-metrics-operator-crds/charts/crds/crd.yaml > "$vm_c
 
 # crdctl is pinned to a release, like every other input: `@latest` would make
 # a regeneration depend on the day it runs. Bump it by hand and read the diff.
-crdctl="github.com/truvity/ocictl/cmd/crdctl@v0.8.1"
+crdctl="github.com/truvity/ocictl/cmd/crdctl@v0.12.0"
 
 # What is dropped is exactly a `description` key with a scalar value.
 # A property NAMED description is a mapping — `description:` with nothing
