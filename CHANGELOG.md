@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.111.1
+
+- Dependency updates.
+
 ## v0.111.0
 
 - **Added** `platform-alerts` `groups.backups.excludeCronjobs` (default `""`; no existing render changes): a fully anchored RE2 regex of CronJob names that both backup rules skip. `CronJobNotSucceeding` gets `cronjob!~"<regex>"` on its `kube_cronjob_status_last_successful_time` and `kube_cronjob_spec_suspend` selectors; `BackupJobFailed` gets `owner_name!~"<regex>"` on `kube_job_owner`, so the Jobs of an excluded CronJob leave the result too. Nothing is rendered while the value is empty. Why: the group has a single `maxSuccessAge`, so a CronJob with a long cadence (a monthly restore drill) cannot share it with daily backups, and a month-long age would hide a stopped daily backup. A drill that already has its own freshness and failure rules (`CNPGRestoreDrillFailed`, `Overdue`, `NeverRun`) is better excluded than given a long age. New key, refused by an older chart's schema: gate its use on the pin. New golden `platform-alerts/exclude-cronjobs`.
