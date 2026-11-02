@@ -384,6 +384,8 @@ while every instance is up.
 | `severity` | enum | `warning` | Severity of `CNPGClusterNotReady`. |
 | `phaseStuckFor` | duration | `10m` | How long the phase must stay not "Cluster in healthy state" with every instance ready before `CNPGClusterPhaseStuck`. |
 | `phaseStuckSeverity` | enum | `warning` | Severity of `CNPGClusterPhaseStuck`. |
+| `pluginErrorFor` | duration | `5m` | How long the phase must say the operator could not interact with a CNPG-I plugin before `CNPGPluginUnreachable`. |
+| `pluginErrorSeverity` | enum | `warning` | Severity of `CNPGPluginUnreachable`. |
 | `absentFor` | duration | `30m` | How long the series can be absent before `CNPGMetricsAbsent`. |
 | `absentSeverity` | enum | `warning` | Severity of `CNPGMetricsAbsent`. |
 | `backupFailedFor` | duration | `10m` | How long the cluster's newest failed `Backup` must be newer than its newest completed one (or it has none completed) before `CNPGBackupFailed`. |
@@ -473,6 +475,37 @@ Run the second command for each instance (`<cluster>-1`, `<cluster>-2`, ...).
 The phase returns to "Cluster in healthy state" within a minute or so. The
 operator restarts do not help, and neither does deleting pods: the reload is
 the fix.
+
+#### Runbook: `CNPGPluginUnreachable`
+
+What it means: the Cluster has been in phase "Cluster cannot proceed to
+reconciliation due to an error while interacting with plugins" for
+`pluginErrorFor` (default 5m). The operator could not reach a CNPG-I plugin
+(barman-cloud, for example) the Cluster uses. Until the plugin answers, no
+Cluster that uses it reconciles and its scheduled base backups do not start.
+WAL archiving runs in the instance pods' sidecar and goes on. The phase is
+only written when a Cluster reconciles, so one Cluster can show it before the
+others.
+
+The case that motivated the rule: a node rotation moved the barman-cloud
+plugin pod onto a node that had booted seconds before, and the operator's
+connections to it timed out. The operator log said `Error while connecting to
+plugin` for every Cluster that reconciled at that moment.
+
+First commands:
+
+```sh
+kubectl -n <cnpg-operator-namespace> logs deploy/<cnpg-operator> --since=30m | grep -i 'plugin'
+kubectl -n <cnpg-operator-namespace> get pods -o wide
+```
+
+- Plugin errors still logged and the plugin pod is Running on a new node:
+  the pod is unreachable. Deleting the plugin pod lets it come back with
+  working networking.
+- No plugin error for several minutes, and the other Clusters are healthy:
+  the plugin is back and this Cluster's phase is stale. If every instance is
+  ready, it is `CNPGClusterPhaseStuck`'s case: reload the configuration on
+  every instance (that runbook, above).
 
 #### Runbook: `CNPGClusterNotReady`
 

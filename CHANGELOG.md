@@ -4,6 +4,10 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## Unreleased
+
+- **Added** `platform-alerts` `groups.cnpg` `CNPGPluginUnreachable` (the group is off by default, so **no default change**): the Cluster's phase says the operator could not interact with a CNPG-I plugin (`phase=~".*interacting with plugins.*"` on `cnpg_cluster_status_condition{type="Ready"} == 0`) for `pluginErrorFor` (default `5m`, severity `pluginErrorSeverity`, default `warning`). One series per Cluster: the phase is not a label. Why: when a node rotation moved the barman-cloud plugin pod onto a node that had just booted, the operator could not reach it, and the only alerts were the generic `CNPGClusterNotReady` (15 minutes later) and `CNPGClusterPhaseStuck`, whose runbook (reload the configuration) does not fix an unreachable plugin. Until the plugin answers, no Cluster that uses it reconciles and its scheduled base backups do not start; WAL archiving goes on. Runbook in docs/reference.md, "Runbook: CNPGPluginUnreachable". New keys, refused by an older chart's schema: gate their use on the pin. The goldens that change are `platform-alerts/cnpg` and `platform-alerts/cnpg-shared-store`.
+
 ## v0.111.1
 
 - Dependency updates.
