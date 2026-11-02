@@ -76,6 +76,33 @@ spec:
               restarting the operator or the pods does not help. Check the pod
               roles first (`kubectl -n {{ $labels.namespace }} get pods -l cnpg.io/cluster={{ $labels.cluster }} -L role`).
               A stuck Cluster also blocks the Argo CD sync that owns it.
+        # The operator could not reach a CNPG-I plugin (barman-cloud, for
+        # example) while reconciling the Cluster: the phase names it. A
+        # plugin pod rescheduled onto a fresh node can be unreachable for a
+        # while; until it answers, no Cluster that uses it reconciles and its
+        # scheduled base backups do not start. WAL archiving runs in the
+        # instance pods' sidecar and goes on. The phase is only written when
+        # a Cluster reconciles, so the rule may fire on one Cluster first.
+        - alert: CNPGPluginUnreachable
+          expr: >-
+            max by (k8s_cluster_name, namespace, cluster) (
+              cnpg_cluster_status_condition{type="Ready", phase=~".*interacting with plugins.*"} == 0
+            )
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The CloudNativePG operator cannot reach a plugin for Cluster {{ $labels.namespace }}/{{ $labels.cluster }}"
+            description: >-
+              The Cluster has been in phase "Cluster cannot proceed to
+              reconciliation due to an error while interacting with plugins"
+              for 5m{{ with $labels.k8s_cluster_name }} on cluster {{ . }}{{ end }}. Its reconciles and
+              scheduled base backups stop until the plugin answers; WAL
+              archiving goes on. First look: the operator's log for "Error
+              while connecting to plugin" and the plugin pod
+              (`kubectl -n <cnpg-operator-namespace> get pods -o wide`). If the
+              log shows no plugin error for several minutes, the phase is
+              stale: see CNPGClusterPhaseStuck.
         # The deadman for the rules above: the series not being exported at
         # all (the preset never applied, or the scrape is dark) reads as
         # healthy to a rule that compares its values.

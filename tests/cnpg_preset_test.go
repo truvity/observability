@@ -8,6 +8,7 @@
 package tests
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -153,6 +154,25 @@ func TestCNPGAlertsRenderTheirExpressions(t *testing.T) {
 	// At the group's own defaults the rule is the same, severity warning.
 	d := cnpgRules(t, "golden/platform-alerts/cnpg.yaml")
 	assert.Equal(t, "15m", d["CNPGClusterNotReady"].hold)
+}
+
+// The plugin rule matches the operator's phase text, not a fixed string, and
+// keeps the phase out of its labels: one series per Cluster.
+func TestCNPGPluginUnreachableRendersItsExpression(t *testing.T) {
+	const expr = `max by (k8s_cluster_name, namespace, cluster) (` +
+		` cnpg_cluster_status_condition{type="Ready", phase=~".*interacting with plugins.*"} == 0 )`
+	got := cnpgRules(t, "golden/platform-alerts/cnpg-shared-store.yaml")
+	require.Contains(t, got, "CNPGPluginUnreachable")
+	assert.Equal(t, expr, got["CNPGPluginUnreachable"].expr)
+	assert.Equal(t, "5m", got["CNPGPluginUnreachable"].hold)
+
+	d := cnpgRules(t, "golden/platform-alerts/cnpg.yaml")
+	require.Contains(t, d, "CNPGPluginUnreachable")
+	assert.Equal(t, "5m", d["CNPGPluginUnreachable"].hold)
+
+	re := regexp.MustCompile(`^.*interacting with plugins.*$`)
+	assert.True(t, re.MatchString("Cluster cannot proceed to reconciliation due to an error while interacting with plugins"))
+	assert.False(t, re.MatchString("Waiting for the instances to become active"))
 }
 
 // A Cluster Ready=False in one phase for ten hours (every instance up, so

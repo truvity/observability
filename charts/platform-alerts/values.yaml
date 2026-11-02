@@ -509,6 +509,10 @@ groups:
     # the same `customResources.cnpg` preset produces.
     phaseStuckFor: 10m
     phaseStuckSeverity: warning
+    # -- How long a Cluster's phase must say the operator could not interact
+    # with a CNPG-I plugin before `CNPGPluginUnreachable` fires.
+    pluginErrorFor: 5m
+    pluginErrorSeverity: warning
     # -- How long the series can be absent before `CNPGMetricsAbsent` fires.
     # Longer than `for`.
     absentFor: 30m
