@@ -138,6 +138,13 @@ global:
       jwksUrl: ""
       # -- The `aud` a workload token carries for Grafana.
       audience: ""
+      # -- How long Grafana keeps the issuer's key set (`[auth.jwt]
+      # cache_ttl`) before fetching it again; a shorter `max-age` from the
+      # issuer wins. Keep it below the time the issuer publishes a new
+      # signing key before it signs with it: a token signed with a key newer
+      # than Grafana's copy is refused ("no keys found") until the copy
+      # expires. Go duration, at least 1s.
+      cacheTTL: 5m
       # -- Subjects that end in one of these get the role None instead of
       # Viewer: the per-cluster grafana-operator, which may write dashboards
       # into ITS folder (folder permission Edit, granted to

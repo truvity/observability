@@ -121,6 +121,7 @@ workloadAuth:
   issuer: https://issuer.example.org        # the token's `iss`, exactly
   jwksUrl: https://issuer.example.org/keys  # https; the issuer's jwks_uri
   audience: grafana-workload                # the gate; see below
+  cacheTTL: 5m                              # default; see "The key set" below
   noRoleSubjectSuffixes:                    # default; subjects lowered to None
     - ":k8s:observability:observability-cluster-grafana-operator"
 ```
@@ -133,7 +134,7 @@ Grafana 13.1.1's source and ini reader):
 enabled = true
 header_name = Authorization
 jwk_set_url = <jwksUrl>
-cache_ttl = 60m
+cache_ttl = <cacheTTL>
 expect_claims = {"aud":"<audience>","iss":"<issuer>"}
 username_attribute_path = join(':', ['workload', sub])
 role_attribute_path = ends_with(sub, ':k8s:observability:observability-cluster-grafana-operator') && 'None' || 'Viewer'
@@ -180,6 +181,13 @@ enable_login_token = false
   cookie; every request carries its own token, and expiry is the token's.
 - Grafana fetches `jwksUrl` from the pod, so the pod needs egress to the
   issuer.
+- **The key set** is kept for `cacheTTL` (default `5m`; a shorter `max-age`
+  from the issuer wins) in Grafana's remote cache, which the replicas share.
+  It must stay below the time the issuer publishes a new signing key before
+  it signs with it (15 minutes for the access issuer): a token signed with a
+  key newer than Grafana's copy is refused with `failed to verify JWT: no
+  keys found` until the copy expires. With 60 minutes, every daily rotation
+  of the access issuer locked the workloads out for up to 45 minutes.
 
 The section is written by the template of one existing `grafana.ini` value
 (the `[auth]` session lifetime), because a Helm values map cannot carry a

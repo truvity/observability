@@ -25,6 +25,7 @@ global:
       issuer: https://issuer.example.org
       jwksUrl: https://issuer.example.org/keys
       audience: grafana-workload
+      cacheTTL: 2m
       noRoleSubjectSuffixes:
         - ":k8s:team-a:writer"
         - ":k8s:team-b:writer"

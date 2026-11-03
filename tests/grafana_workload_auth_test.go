@@ -107,6 +107,7 @@ func TestGrafanaWorkloadAuthLowersTheOperatorToNone(t *testing.T) {
 		"ends_with(sub, ':k8s:team-a:writer') && 'None' || ends_with(sub, ':k8s:team-b:writer') && 'None' || 'Viewer'",
 		two["role_attribute_path"])
 	assertWorkloadRoleCannotEscalate(t, two["role_attribute_path"])
+	assert.Equal(t, "2m", two["cache_ttl"], "workloadAuth.cacheTTL is written as cache_ttl")
 }
 
 func TestGrafanaWorkloadAuthViewersOnlyWhenTheListIsEmpty(t *testing.T) {
@@ -122,6 +123,7 @@ func TestGrafanaWorkloadAuthIsAFixedViewer(t *testing.T) {
 	assert.Equal(t, "true", jwt["enabled"])
 	assert.Equal(t, "Authorization", jwt["header_name"], "the standard header: Grafana strips `Bearer `")
 	assert.Equal(t, "https://issuer.example.org/keys", jwt["jwk_set_url"])
+	assert.Equal(t, "5m", jwt["cache_ttl"], "the default stays below the issuer's 15 min pre-publication of a new key")
 	assert.JSONEq(t, `{"iss":"https://issuer.example.org","aud":"grafana-workload"}`, jwt["expect_claims"])
 
 	// The role is a constant expression: it names no claim but `sub`'s
