@@ -4,7 +4,7 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
-## Unreleased
+## v0.113.0
 
 - **Behaviour change** (opt-in only, **no change unless `global.observabilityGrafana.workloadAuth.enabled` is on**): `observability-grafana` keeps the workload issuer's key set for 5 minutes instead of 60 (`[auth.jwt] cache_ttl`), set by the new `workloadAuth.cacheTTL` (default `5m`). Why: an issuer that publishes a new signing key only a short time before it signs with it (15 minutes for the access issuer) left Grafana holding a copy without the new key for up to 45 minutes after each rotation, and every workload token signed with it was refused with `failed to verify JWT: no keys found` (grafana-operators could not sync, the Grafana connector of observability-mcp could not read). Keep the value below the issuer's pre-publication time. Grafana fetches the key set 12 times an hour instead of once. New key, refused by an older chart's schema: gate its use on the pin. The goldens with `workloadAuth` on move by that line and the config checksum, so Grafana's pods roll once on adoption.
 
