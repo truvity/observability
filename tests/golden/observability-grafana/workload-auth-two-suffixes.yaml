@@ -66,7 +66,7 @@ data:
     enabled = true
     header_name = Authorization
     jwk_set_url = https://issuer.example.org/keys
-    cache_ttl = 60m
+    cache_ttl = 2m
     expect_claims = {"aud":"grafana-workload","iss":"https://issuer.example.org"}
     username_attribute_path = join(':', ['workload', sub])
     role_attribute_path = ends_with(sub, ':k8s:team-a:writer') && 'None' || ends_with(sub, ':k8s:team-b:writer') && 'None' || 'Viewer'
@@ -315,7 +315,7 @@ spec:
         app.kubernetes.io/instance: observability-grafana
         app.kubernetes.io/version: "13.1.1"
       annotations:
-        checksum/config: 2142db2c01066fbb1623257ea8d7df16b2988242ca5fdb18da5c40cc90072f71
+        checksum/config: f03ebb211cda57b38358dd89a8b346d0326965d2c4565fbf0cc7eeab710ca72a
         checksum/sc-dashboard-provider-config: 81f722b8194d01e4a84ce12a0cbbe9b705b2d9145719c803ac264b4786c64a09
         kubectl.kubernetes.io/default-container: grafana
     spec:

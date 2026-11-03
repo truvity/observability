@@ -242,6 +242,11 @@
                   "pattern": "^[^\\s\"'\\\\{}]*$",
                   "description": "The `aud` only a workload token carries; never a human sign-in client's."
                 },
+                "cacheTTL": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*(s|m|h)$",
+                  "description": "How long Grafana keeps the issuer's key set ([auth.jwt] cache_ttl). Keep it below the issuer's pre-publication time of a new signing key. Default 5m."
+                },
                 "noRoleSubjectSuffixes": {
                   "type": "array",
                   "description": "Subjects ending in one of these get the role None instead of Viewer (the per-cluster grafana-operator, which may only write its own folder). Can only lower the role.",

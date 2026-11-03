@@ -183,7 +183,7 @@ sub && 'Viewer'
   enabled = true
   header_name = Authorization
   jwk_set_url = {{ $w.jwksUrl }}
-  cache_ttl = 60m
+  cache_ttl = {{ $w.cacheTTL | default "5m" }}
   expect_claims = {{ dict "iss" $w.issuer "aud" $w.audience | toJson }}
   username_attribute_path = join(':', ['workload', sub])
   role_attribute_path = {{ include "observability-grafana.workloadRolePath" $w }}
