@@ -2084,6 +2084,27 @@ victoria-metrics-k8s-stack:
       # an already-owned volume once rather than at every start (the first
       # start after this default arrives walks the existing data).
       # `backup.seLinuxLevel` still lands under `seLinuxOptions` here.
+      #
+      # Opting out of 65534 (a store on a hostPath volume, for one: the
+      # kubelet never applies `fsGroup` to a hostPath, so nothing chowns
+      # data root wrote and the store cannot write it). Override the user,
+      # not the map:
+      #
+      #   victoria-metrics-k8s-stack:
+      #     vmsingle:
+      #       spec:
+      #         securityContext:
+      #           runAsNonRoot: false
+      #           runAsUser: 0
+      #           runAsGroup: 0
+      #
+      # Maps merge, so the seccomp profile, the dropped capabilities and
+      # the rest stay; `fsGroup` stays too and is inert on a hostPath.
+      # Setting the map to `null` does NOT work: an Argo CD `valuesObject`
+      # strips the null and this default comes back, and through Helm 4
+      # (a values file or `--set`) the null reaches the VMSingle as
+      # `securityContext: null`, which the CRD refuses ("must be of type
+      # object"). See docs/reference.md, "Running a store as root".
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -2353,6 +2374,13 @@ victoria-logs-single:
     # -- The subchart's own pod security context is non-root with an fsGroup
     # and drops every capability already; Pod Security `restricted` also
     # wants a seccomp profile, which it leaves out. Merged with its defaults.
+    #
+    # To run the store as root (a hostPath volume: `fsGroup` never applies
+    # there), set `runAsNonRoot: false`, `runAsUser: 0`, `runAsGroup: 0`
+    # here, beside the seccomp profile; the rest of the context stays. Not
+    # `null`: the subchart then reads `podSecurityContext.enabled` off a
+    # nil map and the render fails. See docs/reference.md, "Running a
+    # store as root". The same holds for `victoria-traces-single.server`.
     podSecurityContext:
       seccompProfile:
         type: RuntimeDefault

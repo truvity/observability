@@ -1400,6 +1400,7 @@ through.
 | `victoria-logs-single.server.serviceMonitor.relabelings`, `victoria-traces-single.server.serviceMonitor.relabelings` | `[]` | **Required under `ha.enabled`, either role, while the ServiceMonitor is on**: an entry `{action: replace, targetLabel: observability_replica, replacement: <this release's replica>}`. The metrics store's own scrape (`templates/selfscrape.yaml`) gets the label from this chart. |
 | `…vmsingle.spec.extraEnvs` | the credential pair | MIRROR of `storeCredentials`. |
 | `…vmsingle.spec.securityContext.seLinuxOptions.level` | unset | MIRROR of `backup.seLinuxLevel`, only required while it is set. See `backup.seLinuxLevel`, above. |
+| `…vmsingle.spec.securityContext` | non-root `65534`, `fsGroup: 65534` (`OnRootMismatch`), `RuntimeDefault` seccomp, no escalation, drop `ALL` | Pod Security `restricted`; the operator inlines it into the store's pod and every container it adds. To run the store as root, override `runAsNonRoot: false`, `runAsUser: 0`, `runAsGroup: 0` and leave the rest: maps merge. **Not `null`**: see "Running a store as root", below. |
 | `victoria-logs-single.server.retentionPeriod` | `90d` | With a unit; the store's own default is `7d`. |
 | `victoria-logs-single.server.retentionMaxDiskUsagePercent` | `80` | **Mutually exclusive** with `retentionDiskSpaceUsage`: with both set the binary refuses to start. |
 | `victoria-logs-single.server.extraArgs['storage.minFreeDiskSpaceBytes']` | `10GiB` | Upstream's default is 10MB. |
@@ -1407,12 +1408,14 @@ through.
 | `victoria-logs-single.server.serviceMonitor.enabled` | `true` | Upstream's own toggle, turned on so something finally scrapes this store: measured against a live install it had zero metric names in the metrics store. A `ServiceMonitor` — see "Scrape objects are always the Prometheus Operator kinds" in docs/safety.md. |
 | `victoria-logs-single.server.serviceMonitor.basicAuth` | the credential pair | MIRROR of `storeCredentials`. The store runs with `-httpAuth.*`; a scrape with the wrong basic auth 401s forever, which looks identical to no scrape object at all. |
 | `victoria-logs-single.server.podSecurityContext.seLinuxOptions.level` | unset | MIRROR of `backup.seLinuxLevel`, only required while it AND `backup.logs.enabled` are both set. |
+| `victoria-logs-single.server.podSecurityContext` | upstream's non-root `1000`, `fsGroup: 2000`, plus `RuntimeDefault` seccomp | Merged with the subchart's defaults. To run the store as root, the same three keys as the metrics store's. **Not `null`**: the subchart reads `podSecurityContext.enabled` off it and the render fails. |
 | `victoria-traces-single.server.retentionPeriod` | `30d` | Traces are the shortest-lived and the largest per unit of value. |
 | `victoria-traces-single.server.extraArgs['retention.maxDiskUsagePercent']` | `80` | The trace chart has no value of its own for it. |
 | `victoria-traces-single.server.extraArgs['servicegraph.enableTask']` | `"false"` | Upstream-experimental background task that computes the Jaeger dependency graph. Off by default because the endpoint answers `200` with an empty list rather than an error when nothing is computing it — see docs/safety.md. |
 | `victoria-traces-single.server.serviceMonitor.enabled` | `true` | Same as the log store's, above, for the same measured reason. |
 | `victoria-traces-single.server.serviceMonitor.basicAuth` | the credential pair | MIRROR of `storeCredentials`. |
 | `victoria-traces-single.server.podSecurityContext.seLinuxOptions.level` | unset | MIRROR of `backup.seLinuxLevel`, only required while it AND `backup.traces.enabled` are both set. |
+| `victoria-traces-single.server.podSecurityContext` | upstream's non-root `1000`, `fsGroup: 2000`, plus `RuntimeDefault` seccomp | Merged with the subchart's defaults. To run the store as root, the same three keys as the metrics store's. **Not `null`**: the subchart reads `podSecurityContext.enabled` off it and the render fails. |
 | `grafana.enabled` | `false` | An estate that already runs one points it at this stack's proxy instead. |
 | `grafana.admin.existingSecret` | `""` | **Required when Grafana is enabled**: with none, the chart generates a random admin password on every render. |
 | `grafana.replicas` | `1` | **Above one requires a shared database.** Grafana's default is SQLite on the pod; the chart refuses more than one replica on it. |
@@ -1422,6 +1425,64 @@ through.
 | `grafana.grafana.ini.database.type` | unset (`sqlite3`) | `postgres` or `mysql` to share it. The password belongs in `envValueFrom.GF_DATABASE_PASSWORD`, never here — this section renders into a ConfigMap. |
 | `grafana.sidecar.dashboards.provider.updateIntervalSeconds` | `30` | **Above 10.** At 10 or below Grafana watches the filesystem, and a ConfigMap projection is a symlink swap that fires no watch event. |
 | `grafana.grafana.ini` | see values.yaml | `use_refresh_token` true, `role_attribute_strict` true, `locking_attempt_timeout_sec` 60–300, analytics off, `[unified_alerting]` and `[alerting]` off. |
+
+### Running a store as root
+
+The stores run as a non-root user: the metrics store as `65534` (this
+chart's default since 0.25.1), the log and trace stores as `1000`
+(upstream's). Each relies on `fsGroup` to make its data volume writable.
+The kubelet never applies `fsGroup` to a **hostPath** volume, so a store
+whose data root wrote, on a hostPath, cannot write it after the change.
+Such a store has to run as root. Override the user and leave the rest of
+the context alone:
+
+```yaml
+victoria-metrics-k8s-stack:
+  vmsingle:
+    spec:
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        runAsGroup: 0
+
+# The same three keys, only for a log or trace store on a hostPath:
+victoria-logs-single:
+  server:
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0
+
+victoria-traces-single:
+  server:
+    podSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0
+```
+
+Helm merges maps, so the seccomp profile, the dropped capabilities and
+the rest of the hardening stay. `fsGroup` stays as well; on a hostPath
+it does nothing. The pods no longer meet Pod Security `restricted`
+(`runAsNonRoot` is false), so a namespace enforcing that profile refuses
+them.
+
+**Setting the map to `null` does not work**, although the 0.25.1 entry in
+the CHANGELOG named it as the opt-out:
+
+- In an Argo CD Application's `valuesObject`, Argo CD drops null keys
+  when it serializes the values. Helm never sees the null and the
+  `65534` default comes back.
+- Through Helm 4, in a values file or as `--set ...=null`, the null
+  survives into the subchart. The VMSingle renders
+  `securityContext: null`, and the API server refuses the object:
+  `spec.securityContext in body must be of type object`. For the log and
+  trace stores the render itself fails: the subchart reads
+  `podSecurityContext.enabled` off a nil map.
+
+`tests/store_optout_test.go` renders both: the override gives a VMSingle
+running as `0` that matches the shipped CRD, and the null gives the
+`securityContext: null` the CRD refuses.
 
 ### Grafana without the proxy
 
