@@ -29,9 +29,8 @@ everything still looks green.
 | `charts/observability-alerting` | The alerting plane of an `observability-stack` install as a chart of its own: the vmalerts, the Alertmanager and its notifications, karma, the Watchdog rule and the store self-alerts, under the same object names the stack renders, so an Application switch adopts them in place. The stack renders them by default; `alerting.source: chart` hands them over. See [docs/adoption.md](docs/adoption.md) (0.71.0). | released |
 | `charts/observability-proxy` | The Door plane of an `observability-stack` install as a chart of its own: the vmauth proxy and its VMUsers, `tenancy-authz` with its SecurityPolicy, and the proxy's NetworkPolicies, under the object names the stack's Door always had, so an Application switch adopts them in place. It is the only chart that renders them: `observability-stack` renders no Door object, and `tenancy.identities` is the one list of who may read what. See [docs/adoption.md](docs/adoption.md) (0.81.0) and [docs/proxy.md](docs/proxy.md). | released |
 
-Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
-the release that adds it, the same tag is the Go module
-`github.com/truvity/observability`'s version. `cmd/alert-ingress` and `cmd/mcp-aggregator` publish
+Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; the
+same tag is the Go module `github.com/truvity/observability`'s version. `cmd/alert-ingress` and `cmd/mcp-aggregator` publish
 alongside them, to `ghcr.io/truvity/observability/alert-ingress` and
 `.../mcp-aggregator` at the same tag — `charts/alert-ingress`'s `image.tag` defaults to it, so an
 install that sets nothing pulls the matching build.
@@ -200,9 +199,9 @@ and the test that catches it.
 
 ## Platform part and company part
 
-**Platform part.** The platform admin applies the charts in the table above and the status box program (`pkg/statusbox/ec2`): the CRDs, the stores with their proxy and Alertmanager, the collectors on every cluster, Grafana and the shared rules. The platform also owns the settings that scope reads and stamp the `owner` label (`tenancy.identities`, `tenancy.owners`); see [docs/target-state.md](docs/target-state.md) and [docs/adoption.md](docs/adoption.md).
+**Platform part.** The platform admin applies the charts in the table above and the status box (`pkg/statusbox/ec2`, a Pulumi component deployed through `deploy/pulumi/status`): the CRDs, the stores with their proxy and Alertmanager, the collectors on every cluster, Grafana and the shared rules. The platform also owns the settings that scope reads and stamp the `owner` label (`tenancy.identities`, `tenancy.owners`); see [docs/target-state.md](docs/target-state.md) and [docs/adoption.md](docs/adoption.md).
 
-**Company part.** A company's SRE writes the scrape objects, the rules and the dashboards of its own applications in its own charts and namespaces, and wires its services' SDKs to the one OTLP address; it applies nothing from this repository by hand. See [docs/emitting.md](docs/emitting.md) and [docs/dashboards.md](docs/dashboards.md).
+**Company part.** A company's SRE writes the scrape objects and the rules of its own applications in its own charts and namespaces, and ships its own dashboards from its own charts, held to the same lint as the generic ones. It wires its services' SDKs to the one OTLP address, and attaches the Lambda layer from the release to its own functions. It applies no chart from the table above. See [docs/emitting.md](docs/emitting.md), [docs/dashboards.md](docs/dashboards.md) and [docs/integrations/aws-lambda.md](docs/integrations/aws-lambda.md).
 
 ## Consumers
 
@@ -210,8 +209,11 @@ and the test that catches it.
   `observability-stack`, `observability-emitters`, `observability-proxy`,
   `observability-alerting`, `observability-cluster`, `observability-grafana`,
   `observability-dashboards`, `observability-mcp`, `observability-rum`,
-  `platform-alerts`, `alert-ingress` and `oncall`; the Go package
-  `deploy/pulumi/credentials`; and the Lambda layer release assets
+  `platform-alerts`, `alert-ingress`, `oncall` and `observability-portal`; the
+  Go packages `pkg/rulecheck`, `pkg/statusbox`, `pkg/statusbox/ec2`,
+  `pkg/tenancy` and those under `deploy/pulumi` (`alertqueue`,
+  `auditlogreader`, `credentials`, `lambdaprobe`, `otlplayer`,
+  `releaseassets`, `status`); and the Lambda layer release assets
 
 ## Neighbours
 
