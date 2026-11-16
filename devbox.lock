@@ -2,8 +2,8 @@
   "lockfile_version": "1",
   "packages": {
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
-      "last_modified": "2026-11-06T15:06:19Z",
-      "resolved": "github:NixOS/nixpkgs/4fe25e12eb9f4c744966dd3de5a05246cf098601?lastModified=1793977579"
+      "last_modified": "2026-11-14T08:26:23Z",
+      "resolved": "github:NixOS/nixpkgs/5d2b81a7a3be3e2f832879028e4d60abbf58e9a0?lastModified=1794644783"
     },
     "go@1.27.0": {
       "last_modified": "2026-08-27T07:16:00Z",
@@ -440,40 +440,40 @@
       }
     },
     "nodejs@26": {
-      "last_modified": "2026-11-01T00:57:29Z",
-      "resolved": "github:NixOS/nixpkgs/d357a2b54f0b6dc4aeb4e993190a52cf151b6f24#nodejs_26",
+      "last_modified": "2026-11-13T07:26:56Z",
+      "resolved": "github:NixOS/nixpkgs/e126e9e73c335158ff8279ac14d5f4afec153716#nodejs_26",
       "source": "devbox-search",
-      "version": "26.13.0",
+      "version": "26.13.1",
       "systems": {
         "aarch64-darwin": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/m75c3h6czizpnqi3lcng1vmx75iinz4y-nodejs-26.13.0",
+              "path": "/nix/store/a1w6d4q0cvrih7vnk3spf274c8ds438i-nodejs-26.13.1",
               "default": true
             }
           ],
-          "store_path": "/nix/store/m75c3h6czizpnqi3lcng1vmx75iinz4y-nodejs-26.13.0"
+          "store_path": "/nix/store/a1w6d4q0cvrih7vnk3spf274c8ds438i-nodejs-26.13.1"
         },
         "aarch64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/3ps5p9pfq2jardgsb1rv8axpvznlvxvx-nodejs-26.13.0",
+              "path": "/nix/store/2i6qk0wimn4mzv16al4bf6n154axknrw-nodejs-26.13.1",
               "default": true
             }
           ],
-          "store_path": "/nix/store/3ps5p9pfq2jardgsb1rv8axpvznlvxvx-nodejs-26.13.0"
+          "store_path": "/nix/store/2i6qk0wimn4mzv16al4bf6n154axknrw-nodejs-26.13.1"
         },
         "x86_64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/ywwchijlngjj756gqp3izz8xw6q8cca2-nodejs-26.13.0",
+              "path": "/nix/store/d9i3p0ykvcz4f3jnpgjxmr7xa5yikibc-nodejs-26.13.1",
               "default": true
             }
           ],
-          "store_path": "/nix/store/ywwchijlngjj756gqp3izz8xw6q8cca2-nodejs-26.13.0"
+          "store_path": "/nix/store/d9i3p0ykvcz4f3jnpgjxmr7xa5yikibc-nodejs-26.13.1"
         }
       }
     },
