@@ -542,6 +542,31 @@
                 "for": { "$ref": "#/definitions/duration" },
                 "severity": { "$ref": "#/definitions/severity" }
               }
+            },
+            "connectFailures": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "selector": { "type": "string", "pattern": "^[^\"]*$", "description": "A regular expression over envoy_cluster_name. No double quote." },
+                "window": { "$ref": "#/definitions/duration" },
+                "threshold": { "type": "number", "minimum": 0 },
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" },
+                "criticalClusters": { "type": "string", "pattern": "^[^\"]*$", "description": "A regular expression over the clusterLabel value. Empty: every cluster gets severity." },
+                "criticalSeverity": { "$ref": "#/definitions/severity" }
+              }
+            },
+            "outlierEjections": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "selector": { "type": "string", "pattern": "^[^\"]*$", "description": "A regular expression over envoy_cluster_name. No double quote." },
+                "window": { "$ref": "#/definitions/duration" },
+                "for": { "$ref": "#/definitions/duration" },
+                "severity": { "$ref": "#/definitions/severity" }
+              }
             }
           }
         },

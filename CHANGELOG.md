@@ -4,6 +4,13 @@ Prose bullets, written for the consumer: what changes in the render, what
 must be done first, and whether a default moved. Newest first, one
 `## vX.Y.Z` heading per tag.
 
+## v0.114.0
+
+- **Behaviour change** (**only where `groups.envoyRoutes.enabled` is on**): `platform-alerts` `groups.envoyRoutes` gains two alerts about the data plane itself, both on by default inside the group. Why: when a node was reclaimed, one proxy pod could not connect to one backend pod, and for more than an hour about one request in six to that route failed. The route's 5xx ratio was a fraction of a fraction, under the ratio rules' traffic floor (`minRequestsPerSecond`) and their 10-minute hold, so the 5xx alert came an hour late. The Envoy cluster still had healthy members on the other proxy replicas, so `EnvoyBackendNoHealthyMembers` was silent. A proxy that retries and ejects endpoints hides such a fault from users altogether, and these two are then the only signal.
+  - `EnvoyUpstreamConnectFailures`: more than `connectFailures.threshold` (default `3`) failed connect attempts (`envoy_cluster_upstream_cx_connect_fail`) by one proxy pod to one Envoy cluster in `connectFailures.window` (default `5m`), held for `connectFailures.for` (default `5m`), `sum by (<cluster>, namespace, pod, envoy_cluster_name)`. No traffic floor: the failure is the signal. Severity is `connectFailures.severity` (default `warning`). With `connectFailures.criticalClusters` (a regular expression over the `clusterLabel` value; empty by default) the rule renders twice, `criticalSeverity` (default `critical`) on the clusters that match and `severity` on the rest, which is how one store that holds a production cluster beside others pages only for production. `criticalClusters` with an empty `clusterLabel` is refused.
+  - `EnvoyOutlierEjections` (warning): `increase(envoy_cluster_outlier_detection_ejections_enforced_total[10m]) > 0` per proxy pod and Envoy cluster, held for `outlierEjections.for` (default `10m`). One ejection is the proxy doing its job and never fires; ejections that keep coming do.
+  - Both select `(http|tls|grpc|tcp)route/.*` Envoy clusters of the group's `job` (`connectFailures.selector`, `outlierEjections.selector`), and both need their metric on the Envoy proxies' keep-list: without it the rule has no data and stays silent. Switch either off with `enabled: false`. New keys, refused by an older chart's schema: gate their use on the pin. The goldens with `envoyRoutes` on move by the two rules (`platform-alerts/generic-gaps`, `generic-gaps-shared-store`, `envoy-no-healthy-members`, `presets-explicit`, `presets-preset`); new goldens `platform-alerts/envoy-connect-failures` and `envoy-connect-failures-off`.
+
 ## v0.113.3
 
 - Dependency updates.

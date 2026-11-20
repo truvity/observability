@@ -976,6 +976,40 @@ groups:
       selector: ""
       for: 3m
       severity: critical
+    # -- One proxy pod failing to connect to a backend
+    # (`EnvoyUpstreamConnectFailures`): more than `threshold` failed connect
+    # attempts (`envoy_cluster_upstream_cx_connect_fail`, per proxy pod and
+    # Envoy cluster) in `window`, held for `for`. No traffic floor: the
+    # failure is the signal, not a share of the requests. The metric must be
+    # on the proxies' keep-list; without it the rule has no data and stays
+    # silent. ON by default (the group itself is opt-in).
+    connectFailures:
+      enabled: true
+      # -- A regular expression over `envoy_cluster_name`, anchored by the
+      # matcher itself. The default is every route's backend; it leaves out
+      # the proxy's own clusters (`prometheus_stats`, the control plane).
+      selector: "(http|tls|grpc|tcp)route/.*"
+      window: 5m
+      threshold: 3
+      for: 5m
+      severity: warning
+      # -- A regular expression over the `clusterLabel` value. Empty: every
+      # cluster gets `severity`. Set: clusters that match get
+      # `criticalSeverity`, the others `severity`. For a store that holds
+      # a production cluster beside the others.
+      criticalClusters: ""
+      criticalSeverity: critical
+    # -- A backend endpoint ejected by outlier detection
+    # (`EnvoyOutlierEjections`): `envoy_cluster_outlier_detection_ejections_enforced_total`
+    # grew in every `window` for `for`. The proxy re-routes around the
+    # endpoint, so users may see nothing, and this is then the only signal.
+    # Same keep-list requirement as above.
+    outlierEjections:
+      enabled: true
+      selector: "(http|tls|grpc|tcp)route/.*"
+      window: 10m
+      for: 10m
+      severity: warning
 
   # cert-manager Certificates: expiry and readiness.
   #

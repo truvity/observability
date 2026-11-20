@@ -102,3 +102,52 @@ spec:
               clients fail at connect. Check the backend's pods (readiness,
               restarts, node pressure) before the route.
             runbook_url: "https://runbooks.example.com/EnvoyBackendNoHealthyMembers"
+        # One gateway pod that cannot connect to one backend pod. The rules
+        # above cannot see it: while the backend's other pods answer, the
+        # route's 5xx ratio is a fraction of a fraction and sits under a
+        # traffic floor, and the Envoy cluster still has healthy members on
+        # the other proxy replicas. `envoy_cluster_upstream_cx_connect_fail`
+        # counts the failed connect attempts of ONE proxy pod to the
+        # cluster, so it is aggregated per pod, not summed over the
+        # replicas, and it has no traffic floor: a connect that fails more
+        # than `threshold` times in `window` is the fault itself, however
+        # little traffic there is. With `criticalClusters` set, the rule is
+        # rendered twice, one per severity, split on the cluster label.
+        - alert: EnvoyUpstreamConnectFailures
+          expr: >-
+            sum by (k8s_cluster_name, namespace, pod, envoy_cluster_name) (increase(envoy_cluster_upstream_cx_connect_fail{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"(http|tls|grpc|tcp)route/.*"}[5m])) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Gateway pod {{ $labels.pod }} cannot connect to backend {{ $labels.envoy_cluster_name }}"
+            description: >-
+              The proxy pod {{ $labels.pod }} failed more than 3
+              connect attempts to the Envoy cluster {{ $labels.envoy_cluster_name }}
+              (a route's backend) in the last 5m, and has done so
+              for 5m. Other proxy pods may reach the backend fine, so the
+              route's 5xx ratio can stay low: some of its requests fail, or
+              retry, on this one pod. Usual causes: the pod
+              holds a stale endpoint (a node that was reclaimed), or a network
+              policy or node networking fault between the two. Restart the proxy
+              pod, then check the backend pod's node.
+            runbook_url: "https://runbooks.example.com/EnvoyUpstreamConnectFailures"
+        # The proxy ejected a backend endpoint (outlier detection, enforced).
+        # Not a page by itself: ejection is the proxy doing its job. It is
+        # the signal that some endpoint keeps failing, so it warns when
+        # ejections keep happening, and goes quiet once they stop.
+        - alert: EnvoyOutlierEjections
+          expr: >-
+            sum by (k8s_cluster_name, namespace, pod, envoy_cluster_name) (increase(envoy_cluster_outlier_detection_ejections_enforced_total{job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"(http|tls|grpc|tcp)route/.*"}[10m])) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Gateway pod {{ $labels.pod }} keeps ejecting endpoints of {{ $labels.envoy_cluster_name }}"
+            description: >-
+              The proxy pod {{ $labels.pod }} enforced outlier ejections on the
+              Envoy cluster {{ $labels.envoy_cluster_name }} within every
+              10m window for 10m: an endpoint of this backend
+              keeps failing and the proxy keeps removing it. Requests are being
+              re-routed, so users may see nothing; find the failing backend pod.
+            runbook_url: "https://runbooks.example.com/EnvoyOutlierEjections"

@@ -1,0 +1,14 @@
+# expect: connectFailures.criticalClusters needs a clusterLabel
+# The split into a critical and a warning rule matches on the cluster label;
+# with none, both matchers would select the same, empty, value and every
+# cluster would get the wrong severity.
+clusterLabel: ""
+groups:
+  writePath:
+    enabled: false
+  storeLimits:
+    enabled: false
+  envoyRoutes:
+    enabled: true
+    connectFailures:
+      criticalClusters: "^(production)$"

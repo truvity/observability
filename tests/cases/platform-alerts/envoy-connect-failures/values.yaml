@@ -1,0 +1,19 @@
+# envoyRoutes at its defaults for the two data-plane fault alerts, with the
+# connect-failure alert critical on the clusters `criticalClusters` names
+# (a store that holds a production cluster beside others) and the outlier
+# alert left at its own defaults.
+namespaceSelector: "^(platform)$"
+runbookBaseUrl: https://runbooks.example.com/
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  envoyRoutes:
+    enabled: true
+    connectFailures:
+      criticalClusters: "^(production)$"

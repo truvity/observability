@@ -50,6 +50,12 @@ func TestGenericGapsRenderTheirExpressions(t *testing.T) {
 			"EnvoyRoute5xxRatioCritical":   {ratio("0.25"), "10m", "critical"},
 			"EnvoyRouteP99LatencyHigh":     {p99("2000"), "10m", "warning"},
 			"EnvoyRouteP99LatencyCritical": {p99("10000"), "10m", "critical"},
+			"EnvoyUpstreamConnectFailures": {
+				`sum by (` + c + `, namespace, pod, envoy_cluster_name) (increase(envoy_cluster_upstream_cx_connect_fail{` +
+					`job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"(http|tls|grpc|tcp)route/.*"}[5m])) > 3`, "5m", "warning"},
+			"EnvoyOutlierEjections": {
+				`sum by (` + c + `, namespace, pod, envoy_cluster_name) (increase(envoy_cluster_outlier_detection_ejections_enforced_total{` +
+					`job=~"envoy-gateway-system/envoy-proxy", envoy_cluster_name=~"(http|tls|grpc|tcp)route/.*"}[10m])) > 0`, "10m", "warning"},
 		},
 		"platform-alerts.certificates": {
 			"CertificateExpiringSoon":   {exp("14"), "", "warning"},

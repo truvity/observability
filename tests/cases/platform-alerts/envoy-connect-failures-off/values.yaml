@@ -1,0 +1,19 @@
+# Both data-plane fault alerts switched off: the group renders what it did
+# before them.
+namespaceSelector: "^(platform)$"
+runbookBaseUrl: https://runbooks.example.com/
+groups:
+  backups:
+    enabled: false
+  writePath:
+    enabled: false
+  volumes:
+    enabled: false
+  storeLimits:
+    enabled: false
+  envoyRoutes:
+    enabled: true
+    connectFailures:
+      enabled: false
+    outlierEjections:
+      enabled: false
