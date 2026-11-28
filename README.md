@@ -16,8 +16,8 @@ everything still looks green.
 | `pkg/tenancy` (Go) | From a list of principals, render the proxy's user entries or the token claim an issuer mints — one input, both shapes, so the two can never disagree. Refuses a name that could widen a grant rather than escaping it. | released |
 | `notifications:` in `observability-stack` | The one router: receiver kinds and how their secret is mounted, the routing shape by cluster × namespace × severity, the message template, and the refusals that retire the `blackhole` default. The stack's own self-alerts are a separate release. | released |
 | `charts/alert-ingress` + `cmd/alert-ingress` | Events born outside the cluster — a threat finding, a root sign-in, a key use, a budget — into the same router: signed notifications from an allow-listed topic, mapped by values, never dropped. | released |
-| `cmd/cwlogs-insights-reader` | The Logs Insights reader of `observability-emitters` `cloudwatchLogs.readMode: insights`: reads an Infrequent Access CloudWatch log group (no FilterLogEvents) and hands the events to the collector beside it. See [docs/reference.md](docs/reference.md). | unreleased |
-| `charts/oncall` + `cmd/telegram-relay` | On call: GoAlert (schedules, escalation, acknowledgement, its alert log as the incident record) fed by Alertmanager, and a relay that turns GoAlert's webhook contact method into a Telegram message to the person paged. No database and no secret value in the chart. See [docs/oncall.md](docs/oncall.md). | unreleased |
+| `cmd/cwlogs-insights-reader` | The Logs Insights reader of `observability-emitters` `cloudwatchLogs.readMode: insights`: reads an Infrequent Access CloudWatch log group (no FilterLogEvents) and hands the events to the collector beside it. See [docs/reference.md](docs/reference.md). | released |
+| `charts/oncall` + `cmd/telegram-relay` | On call: GoAlert (schedules, escalation, acknowledgement, its alert log as the incident record) fed by Alertmanager, and a relay that turns GoAlert's webhook contact method into a Telegram message to the person paged. No database and no secret value in the chart. See [docs/oncall.md](docs/oncall.md). | released |
 | `pkg/statusbox`, `pkg/statusbox/ec2` (Go, Pulumi) | The watcher outside every cluster: several Gatus instances on one immutable EC2 box behind a tunnel and a private network — the deadman, outside-in probes, public status pages per company, and the bridge from an internal alert to a status component. | released |
 | `charts/observability-dashboards` | The generic dashboards, shipped to wherever Grafana runs, and the lint every dashboard passes: a datasource variable, a cluster variable, the cluster in the title. | released |
 | `charts/observability-grafana` | One Grafana as the read UI over several stores: a datasource set per store, OIDC sign-in, a database of its own, dashboards from git only. See [docs/grafana.md](docs/grafana.md). | released |
@@ -27,11 +27,10 @@ everything still looks green.
 | `lambdaext` (Go) + `cmd/otlp-lambda` | The AWS Lambda extension that exports a function's OpenTelemetry data with its IAM role's identity and no stored secret: STS identity token, RFC 8693 exchange at the issuer, a loopback OTLP/HTTP proxy that adds the bearer, and Lambda platform events as OTLP logs. Released as `otlp-lambda-layer_<version>_linux_<arch>.zip` with `checksums.txt`. See [docs/integrations/aws-lambda.md](docs/integrations/aws-lambda.md). | released |
 | `charts/observability-portal` + `apps/portal` | The entrypoint page of an estate: a generic built-in catalog plus the entries and sections an estate adds through values, loaded at runtime from `/config/portal.json`. A TypeScript, React and Vite app behind an unprivileged nginx, published as its own image. See [docs/portal.md](docs/portal.md). | released |
 | `charts/observability-alerting` | The alerting plane of an `observability-stack` install as a chart of its own: the vmalerts, the Alertmanager and its notifications, karma, the Watchdog rule and the store self-alerts, under the same object names the stack renders, so an Application switch adopts them in place. The stack renders them by default; `alerting.source: chart` hands them over. See [docs/adoption.md](docs/adoption.md) (0.71.0). | released |
-| `charts/observability-proxy` | The Door plane of an `observability-stack` install as a chart of its own: the vmauth proxy and its VMUsers, `tenancy-authz` with its SecurityPolicy, and the proxy's NetworkPolicies, under the object names the stack's Door always had, so an Application switch adopts them in place. It is the only chart that renders them: `observability-stack` renders no Door object, and `tenancy.identities` is the one list of who may read what. See [docs/adoption.md](docs/adoption.md) (0.81.0) and [docs/proxy.md](docs/proxy.md). | unreleased |
+| `charts/observability-proxy` | The Door plane of an `observability-stack` install as a chart of its own: the vmauth proxy and its VMUsers, `tenancy-authz` with its SecurityPolicy, and the proxy's NetworkPolicies, under the object names the stack's Door always had, so an Application switch adopts them in place. It is the only chart that renders them: `observability-stack` renders no Door object, and `tenancy.identities` is the one list of who may read what. See [docs/adoption.md](docs/adoption.md) (0.81.0) and [docs/proxy.md](docs/proxy.md). | released |
 
-Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; from
-the release that adds it, the same tag is the Go module
-`github.com/truvity/observability`'s version. `cmd/alert-ingress` and `cmd/mcp-aggregator` publish
+Charts publish to `oci://ghcr.io/truvity/charts/<chart>` on every tag; the
+same tag is the Go module `github.com/truvity/observability`'s version. `cmd/alert-ingress` and `cmd/mcp-aggregator` publish
 alongside them, to `ghcr.io/truvity/observability/alert-ingress` and
 `.../mcp-aggregator` at the same tag — `charts/alert-ingress`'s `image.tag` defaults to it, so an
 install that sets nothing pulls the matching build.
@@ -198,14 +197,27 @@ no argument to put a filter in, so that route cannot be scoped and has to
 be admitted by name. [docs/safety.md](docs/safety.md) has the mechanism
 and the test that catches it.
 
+## Platform part and company part
+
+**Platform part.** The platform admin applies the charts in the table above and the status box (`pkg/statusbox/ec2`, a Pulumi component deployed through `deploy/pulumi/status`): the CRDs, the stores with their proxy and Alertmanager, the collectors on every cluster, Grafana and the shared rules. The platform also owns the settings that scope reads and stamp the `owner` label (`tenancy.identities`, `tenancy.owners`); see [docs/target-state.md](docs/target-state.md) and [docs/adoption.md](docs/adoption.md).
+
+**Company part.** A company's SRE writes the scrape objects and the rules of its own applications in its own charts and namespaces, and ships its own dashboards from its own charts, held to the same lint as the generic ones. It wires its services' SDKs to the one OTLP address, and attaches the Lambda layer from the release to its own functions. It applies no chart from the table above. See [docs/emitting.md](docs/emitting.md), [docs/dashboards.md](docs/dashboards.md) and [docs/integrations/aws-lambda.md](docs/integrations/aws-lambda.md).
+
 ## Consumers
 
-- **truvity/gitops**: charts `observability-crds`, `observability-stack`,
-  `observability-emitters`
+- **the maintainers' platform repository**: the charts `observability-crds`,
+  `observability-stack`, `observability-emitters`, `observability-proxy`,
+  `observability-alerting`, `observability-cluster`, `observability-grafana`,
+  `observability-dashboards`, `observability-mcp`, `observability-rum`,
+  `platform-alerts`, `alert-ingress`, `oncall` and `observability-portal`; the
+  Go packages `pkg/rulecheck`, `pkg/statusbox`, `pkg/statusbox/ec2`,
+  `pkg/tenancy` and those under `deploy/pulumi` (`alertqueue`,
+  `auditlogreader`, `credentials`, `lambdaprobe`, `otlplayer`,
+  `releaseassets`, `status`); and the Lambda layer release assets
 
 ## Neighbours
 
-**access-roster** is the issuer for vmauth tenancy tokens that scope queries
+**sluis** is the issuer for vmauth tenancy tokens that scope queries
 to a caller's grants. **OpenBao** is a relying party: it holds the collector
 bearer, the webhook secrets and the store credentials this repository's
 charts take as Secret names, delivered through External Secrets.
@@ -300,12 +312,12 @@ quietly stop working.
 ## Releasing
 
 One tag stamps every artifact: pushing `vX.Y.Z` releases every chart at
-`X.Y.Z` and, once it exists, the Go module at `vX.Y.Z`. Chart versions are
-committed as `0.0.0` and stamped by the release workflow.
+`X.Y.Z` and the Go module at `vX.Y.Z`. Chart versions are committed as
+`0.0.0` and stamped by the release workflow.
 
-Auto-release is present but **disarmed**, and when armed it only ever cuts
-patches. Minors, majors and every first release are manual tags, pushed
-after the CHANGELOG heading for that version has merged.
+Auto-release is armed and only ever cuts patches. Minors, majors and every
+first release are manual tags, pushed after the CHANGELOG heading for that
+version has merged.
 
 ## Licence
 
